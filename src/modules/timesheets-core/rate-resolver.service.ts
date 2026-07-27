@@ -2,7 +2,12 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { timesheetRates, timesheetRateCards, projectMembers, projects } from "../../db/schema";
+import {
+  timesheetRates,
+  timesheetRateCards,
+  projectMembers,
+  projects,
+} from "../../db/schema";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { pickBestRate, type RateMatchQuery } from "./lib/rate-match";
@@ -14,6 +19,8 @@ export interface ResolvedRate {
   currency: string;
   source: "RATE_CARD" | "PROJECT_MEMBER" | null;
 }
+
+const ORG_CURRENCY_TTL_MS = 60_000;
 
 @Injectable()
 export class RateResolverService {
@@ -38,7 +45,10 @@ export class RateResolverService {
     };
   }
 
-  async resolveMany(orgId: string, queries: RateQuery[]): Promise<ResolvedRate[]> {
+  async resolveMany(
+    orgId: string,
+    queries: RateQuery[],
+  ): Promise<ResolvedRate[]> {
     if (queries.length === 0) return [];
 
     const [rates, defaultCurrency] = await Promise.all([
@@ -49,14 +59,25 @@ export class RateResolverService {
     const cardResults = queries.map((query) => {
       const best = pickBestRate(rates, query);
       return best
-        ? { billRate: parseFloat(best.billRate), currency: best.currency, source: "RATE_CARD" as ResolvedRate["source"] }
+        ? {
+            billRate: parseFloat(best.billRate),
+            currency: best.currency,
+            source: "RATE_CARD" as ResolvedRate["source"],
+          }
         : null;
     });
 
     const fallbackPairs: { projectId: number; userId: string }[] = [];
     queries.forEach((query, i) => {
-      if (cardResults[i] == null && query.projectId != null && query.userId != null) {
-        fallbackPairs.push({ projectId: query.projectId, userId: query.userId });
+      if (
+        cardResults[i] == null &&
+        query.projectId != null &&
+        query.userId != null
+      ) {
+        fallbackPairs.push({
+          projectId: query.projectId,
+          userId: query.userId,
+        });
       }
     });
 
@@ -73,14 +94,19 @@ export class RateResolverService {
         .where(
           and(
             eq(projects.orgId, orgId),
-            inArray(projectMembers.projectId, [...new Set(fallbackPairs.map((p) => p.projectId))]),
-            inArray(projectMembers.userId, [...new Set(fallbackPairs.map((p) => p.userId))]),
+            inArray(projectMembers.projectId, [
+              ...new Set(fallbackPairs.map((p) => p.projectId)),
+            ]),
+            inArray(projectMembers.userId, [
+              ...new Set(fallbackPairs.map((p) => p.userId)),
+            ]),
           ),
         );
 
       for (const row of memberRows) {
         const rate = parseFloat(row.hourlyRate);
-        if (rate > 0) memberRateByKey.set(`${row.projectId}|${row.userId}`, rate);
+        if (rate > 0)
+          memberRateByKey.set(`${row.projectId}|${row.userId}`, rate);
       }
     }
 
@@ -92,7 +118,11 @@ export class RateResolverService {
           ? memberRateByKey.get(`${query.projectId}|${query.userId}`)
           : undefined;
       if (memberRate !== undefined) {
-        return { billRate: memberRate, currency: defaultCurrency, source: "PROJECT_MEMBER" };
+        return {
+          billRate: memberRate,
+          currency: defaultCurrency,
+          source: "PROJECT_MEMBER",
+        };
       }
       return { billRate: null, currency: defaultCurrency, source: null };
     });
@@ -101,7 +131,11 @@ export class RateResolverService {
   private async getRates(orgId: string) {
     return this.cache.cached(
       CACHE_KEYS.timesheetRates(orgId),
-      () => this.db.select().from(timesheetRates).where(eq(timesheetRates.orgId, orgId)),
+      () =>
+        this.db
+          .select()
+          .from(timesheetRates)
+          .where(eq(timesheetRates.orgId, orgId)),
       CACHE_TTL.MEDIUM,
     );
   }
@@ -110,7 +144,12 @@ export class RateResolverService {
     const [defaultCard] = await this.db
       .select({ currency: timesheetRateCards.currency })
       .from(timesheetRateCards)
-      .where(and(eq(timesheetRateCards.orgId, orgId), eq(timesheetRateCards.isDefault, true)))
+      .where(
+        and(
+          eq(timesheetRateCards.orgId, orgId),
+          eq(timesheetRateCards.isDefault, true),
+        ),
+      )
       .limit(1);
 
     return defaultCard?.currency ?? "USD";

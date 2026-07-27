@@ -29,6 +29,7 @@ import {
 } from "./lib/payroll-calc";
 import { payrollSnapshotSchema } from "./dto/payroll.schemas";
 import type {
+  AckExportInput,
   ExportPayrollInput,
   ExportsListQuery,
   PayrollExportRow,
@@ -51,6 +52,8 @@ function toExportDto(
     entryCount: row.entryCount,
     totalHours: parseFloat(row.totalHours),
     note: row.note,
+    ackStatus: row.ackStatus,
+    ackAt: row.ackAt ? row.ackAt.toISOString() : null,
     createdBy: row.createdBy,
     createdByName: creatorName,
     createdAt: row.createdAt.toISOString(),
@@ -275,5 +278,46 @@ export class PayrollExportService {
       rows,
       mapping,
     };
+  }
+
+  async ackExport(orgId: string, userId: string, exportId: number, input: AckExportInput) {
+    const [existing] = await this.db
+      .select({ id: timesheetExports.id, creatorName: users.name })
+      .from(timesheetExports)
+      .leftJoin(users, eq(timesheetExports.createdBy, users.id))
+      .where(and(eq(timesheetExports.id, exportId), eq(timesheetExports.orgId, orgId)))
+      .limit(1);
+
+    if (!existing) throw new NotFoundException("Export not found");
+
+    const [updated] = await this.db
+      .update(timesheetExports)
+      .set({
+        ackStatus: input.status,
+        ackNote: input.note ?? null,
+        ackAt: new Date(),
+        ackBy: userId,
+      })
+      .where(and(eq(timesheetExports.id, exportId), eq(timesheetExports.orgId, orgId)))
+      .returning();
+
+    if (!updated) {
+      throw new InternalServerErrorException("Failed to acknowledge the export");
+    }
+
+    this.audit.log({
+      action: "timesheets.payroll.export_acknowledged",
+      userId,
+      orgId,
+      metadata: {
+        exportId,
+        status: input.status,
+        note: input.note ?? null,
+      },
+    });
+
+    await this.cache.invalidatePattern(CACHE_KEYS.payrollExportsList(orgId, "*", "*"));
+
+    return { export: toExportDto(updated, existing.creatorName ?? null) };
   }
 }

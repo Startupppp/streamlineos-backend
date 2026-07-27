@@ -1,14 +1,16 @@
-import { Inject, Injectable, InternalServerErrorException } from "@nestjs/common";
+import {
+  Inject,
+  Injectable,
+  InternalServerErrorException,
+} from "@nestjs/common";
 import { and, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import {
-  timesheets,
-  timesheetExports,
-  projects,
-} from "../../db/schema";
+import { timesheets, timesheetExports, projects } from "../../db/schema";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { RateResolverService } from "./rate-resolver.service";
+import { FxService } from "./fx.service";
+import { convertAmounts, type ConvertedTotals } from "./lib/fx-convert";
 import type {
   UninvoicedQuery,
   ExportBillingInput,
@@ -35,6 +37,7 @@ export class BillingService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: TimesheetsAuditService,
     private readonly rateResolver: RateResolverService,
+    private readonly fx: FxService,
   ) {}
 
   async getUninvoiced(u: CurrentUserContext, query: UninvoicedQuery) {
@@ -48,7 +51,8 @@ export class BillingService {
 
     if (query.startDate) conditions.push(gte(timesheets.date, query.startDate));
     if (query.endDate) conditions.push(lte(timesheets.date, query.endDate));
-    if (query.projectId) conditions.push(eq(timesheets.projectId, query.projectId));
+    if (query.projectId)
+      conditions.push(eq(timesheets.projectId, query.projectId));
 
     const aggRows = await this.db
       .select({
@@ -69,6 +73,7 @@ export class BillingService {
         userId: timesheets.userId,
         projectId: timesheets.projectId,
         ticketId: timesheets.ticketId,
+        date: timesheets.date,
         hours: timesheets.hours,
       })
       .from(timesheets)
@@ -81,6 +86,7 @@ export class BillingService {
         projectId: entry.projectId,
         userId: entry.userId,
         ticketId: entry.ticketId,
+        date: entry.date,
       })),
     );
 
@@ -92,27 +98,33 @@ export class BillingService {
         const pid = entry.projectId ?? 0;
         extraAmountByProject.set(
           pid,
-          (extraAmountByProject.get(pid) ?? 0) + parseFloat(entry.hours) * resolved.billRate,
+          (extraAmountByProject.get(pid) ?? 0) +
+            parseFloat(entry.hours) * resolved.billRate,
         );
-        resolvedUnratedByProject.set(pid, (resolvedUnratedByProject.get(pid) ?? 0) + 1);
+        resolvedUnratedByProject.set(
+          pid,
+          (resolvedUnratedByProject.get(pid) ?? 0) + 1,
+        );
       }
     });
 
     const projectIds = aggRows
       .map((r) => r.projectId)
       .filter((id): id is number => id !== null);
-    const projectRows = projectIds.length > 0
-      ? await this.db
-          .select({ id: projects.id, name: projects.name })
-          .from(projects)
-          .where(inArray(projects.id, projectIds))
-      : [];
+    const projectRows =
+      projectIds.length > 0
+        ? await this.db
+            .select({ id: projects.id, name: projects.name })
+            .from(projects)
+            .where(inArray(projects.id, projectIds))
+        : [];
     const projectMap = new Map(projectRows.map((p) => [p.id, p.name]));
 
     const groups = aggRows.map((r) => {
       const pid = r.projectId ?? 0;
       const extraAmount = extraAmountByProject.get(pid) ?? 0;
-      const stillUnrated = r.unratedCount - (resolvedUnratedByProject.get(pid) ?? 0);
+      const stillUnrated =
+        r.unratedCount - (resolvedUnratedByProject.get(pid) ?? 0);
       return {
         projectId: pid,
         projectName: projectMap.get(pid) ?? "Unknown Project",
@@ -124,19 +136,76 @@ export class BillingService {
       };
     });
 
-    const totals = groups.reduce(
-      (acc, g) => ({
-        hours: round2(acc.hours + g.totalHours),
-        amount: round2(acc.amount + g.billableAmount),
-        currency: g.currency,
-      }),
-      { hours: 0, amount: 0, currency: "USD" },
-    );
+    const byCurrency = new Map<string, { amount: number; hours: number }>();
+    let totalHours = 0;
+    for (const g of groups) {
+      totalHours = round2(totalHours + g.totalHours);
+      const c = byCurrency.get(g.currency);
+      if (c) {
+        c.amount = round2(c.amount + g.billableAmount);
+        c.hours = round2(c.hours + g.totalHours);
+      } else {
+        byCurrency.set(g.currency, {
+          amount: g.billableAmount,
+          hours: g.totalHours,
+        });
+      }
+    }
+
+    const currencyTotals = [...byCurrency.entries()].map(([currency, v]) => ({
+      currency,
+      amount: v.amount,
+      hours: v.hours,
+    }));
+    const mixed = currencyTotals.length > 1;
+
+    // Conversion evidence against the org default currency, only when there is
+    // something to convert: mixed currencies, or a single non-default currency.
+    const needsConversion =
+      mixed ||
+      (currencyTotals.length === 1 &&
+        currencyTotals[0]!.currency !== defaultCurrency);
+
+    let converted: ConvertedTotals | null = null;
+    if (needsConversion) {
+      const foreignCurrencies = currencyTotals
+        .map((c) => c.currency)
+        .filter((c) => c !== defaultCurrency);
+      const fxRates = await this.fx.getLatestRates(
+        u.orgId,
+        foreignCurrencies,
+        defaultCurrency,
+      );
+      converted = convertAmounts(
+        currencyTotals.map((c) => ({ currency: c.currency, amount: c.amount })),
+        defaultCurrency,
+        fxRates,
+      );
+    }
+
+    const totals = {
+      hours: totalHours,
+      // Only meaningful when a single currency is present; null when mixed so
+      // callers can never display a cross-currency sum as one number.
+      amount: mixed ? null : (currencyTotals[0]?.amount ?? 0),
+      currency: mixed ? null : (currencyTotals[0]?.currency ?? defaultCurrency),
+      mixed,
+      byCurrency: currencyTotals,
+      converted,
+    };
 
     return { groups, totals };
   }
 
   async exportBilling(u: CurrentUserContext, input: ExportBillingInput) {
+    if (input.idempotencyKey) {
+      const existing = await this.findExportByIdempotencyKey(
+        u.orgId,
+        input.idempotencyKey,
+      );
+      if (existing) return existing;
+    }
+
     const conditions = [
       eq(timesheets.orgId, u.orgId),
       eq(timesheets.status, "APPROVED"),
@@ -146,7 +215,8 @@ export class BillingService {
       lte(timesheets.date, input.endDate),
     ];
 
-    if (input.projectId) conditions.push(eq(timesheets.projectId, input.projectId));
+    if (input.projectId)
+      conditions.push(eq(timesheets.projectId, input.projectId));
 
     const entries = await this.db
       .select({
@@ -197,7 +267,10 @@ export class BillingService {
         })
         .returning({ id: timesheetExports.id });
 
-      if (!exported) throw new InternalServerErrorException("Failed to create billing export");
+      if (!exported)
+        throw new InternalServerErrorException(
+          "Failed to create billing export",
+        );
 
       await this.audit.record(tx, {
         orgId: u.orgId,
@@ -219,7 +292,47 @@ export class BillingService {
     };
   }
 
-  async createInvoiceDraft(u: CurrentUserContext, input: CreateInvoiceDraftInput) {
+  private async findExportByIdempotencyKey(
+    orgId: string,
+    idempotencyKey: string,
+  ) {
+    const [row] = await this.db
+      .select({
+        id: timesheetExports.id,
+        entryCount: timesheetExports.entryCount,
+        totalHours: timesheetExports.totalHours,
+        snapshot: timesheetExports.snapshot,
+      })
+      .from(timesheetExports)
+      .where(
+        and(
+          eq(timesheetExports.orgId, orgId),
+          eq(timesheetExports.idempotencyKey, idempotencyKey),
+        ),
+      )
+      .limit(1);
+
+    if (!row) return null;
+
+    const snapshotRows =
+      (row.snapshot as { computedAmount?: number }[] | null) ?? [];
+    const totalAmount = round2(
+      snapshotRows.reduce((sum, r) => sum + (r.computedAmount ?? 0), 0),
+    );
+
+    return {
+      exportId: row.id,
+      entryCount: row.entryCount,
+      totalHours: parseFloat(row.totalHours),
+      totalAmount,
+      duplicate: true,
+    };
+  }
+
+  async createInvoiceDraft(
+    u: CurrentUserContext,
+    input: CreateInvoiceDraftInput,
+  ) {
     const conditions = [
       eq(timesheets.orgId, u.orgId),
       eq(timesheets.status, "APPROVED"),
@@ -230,7 +343,8 @@ export class BillingService {
       lte(timesheets.date, input.endDate),
     ];
 
-    if (input.projectId) conditions.push(eq(timesheets.projectId, input.projectId));
+    if (input.projectId)
+      conditions.push(eq(timesheets.projectId, input.projectId));
 
     const entries = await this.db
       .select({
@@ -280,13 +394,21 @@ export class BillingService {
         })
         .returning({ id: timesheetExports.id });
 
-      if (!exported) throw new InternalServerErrorException("Failed to create invoice draft");
+      if (!exported)
+        throw new InternalServerErrorException(
+          "Failed to create invoice draft",
+        );
 
       if (entryIds.length > 0) {
         await tx
           .update(timesheets)
           .set({ invoicingStatus: "INVOICE_DRAFTED", updatedAt: new Date() })
-          .where(and(inArray(timesheets.id, entryIds), eq(timesheets.orgId, u.orgId)));
+          .where(
+            and(
+              inArray(timesheets.id, entryIds),
+              eq(timesheets.orgId, u.orgId),
+            ),
+          );
       }
 
       await this.audit.record(tx, {
@@ -330,7 +452,8 @@ export class BillingService {
       gte(timesheets.date, input.startDate),
       lte(timesheets.date, input.endDate),
     ];
-    if (input.projectId) conditions.push(eq(timesheets.projectId, input.projectId));
+    if (input.projectId)
+      conditions.push(eq(timesheets.projectId, input.projectId));
 
     const rows = await this.db
       .select({

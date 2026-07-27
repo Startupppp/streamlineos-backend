@@ -146,7 +146,7 @@ export class WorkLogsService {
       })
       .onConflictDoUpdate({
         target: [timesheets.orgId, timesheets.userId, timesheets.date],
-        targetWhere: sql`ticket_id IS NULL`,
+        targetWhere: sql`ticket_id IS NULL AND project_id IS NULL AND voided_at IS NULL`,
         set: {
           description: normalizedDescription,
           hours: body.hours ? body.hours.toString() : sql`${timesheets.hours}`,

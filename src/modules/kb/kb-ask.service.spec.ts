@@ -1,4 +1,7 @@
-import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ServiceUnavailableException,
+} from "@nestjs/common";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { KbAskService } from "./kb-ask.service";
 import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
@@ -8,10 +11,24 @@ import { KbSearchService } from "./kb-search.service";
 const makeGatewayOk = (text: string) => ({
   ok: true as const,
   data: text,
-  aiUsage: { model: "gpt-4o-mini", promptTokens: 10, completionTokens: 5, totalTokens: 15, credits: 0.02, costUsd: 0.0002 },
+  aiUsage: {
+    model: "gpt-4o-mini",
+    promptTokens: 10,
+    completionTokens: 5,
+    totalTokens: 15,
+    credits: 1,
+    costUsd: 0.001,
+  },
 });
 
-const makeGatewayFail = (kind: "quota_exceeded" | "provider_unavailable" | "not_configured" | "invalid_output", message = "error") => ({
+const makeGatewayFail = (
+  kind:
+    | "quota_exceeded"
+    | "provider_unavailable"
+    | "not_configured"
+    | "invalid_output",
+  message = "error",
+) => ({
   ok: false as const,
   kind,
   message,
@@ -26,7 +43,15 @@ const mockEvents = {
   record: jest.fn().mockResolvedValue(undefined),
 };
 
-const articleResult = { kind: "article" as const, id: 1, title: "Getting started", slug: "getting-started", spaceId: 1, contentText: "Some content", updatedAt: new Date("2024-01-01") };
+const articleResult = {
+  kind: "article" as const,
+  id: 1,
+  title: "Getting started",
+  slug: "getting-started",
+  spaceId: 1,
+  contentText: "Some content",
+  updatedAt: new Date("2024-01-01"),
+};
 
 const mockSearch = {
   retrieveTopArticles: jest.fn().mockResolvedValue([articleResult]),
@@ -82,7 +107,9 @@ describe("KbAskService", () => {
   });
 
   it("charges org wallet via gateway (no KbCreditsService) and returns answer", async () => {
-    mockGateway.invokeTextWithUsage.mockResolvedValueOnce(makeGatewayOk("Here is how to reset your password."));
+    mockGateway.invokeTextWithUsage.mockResolvedValueOnce(
+      makeGatewayOk("Here is how to reset your password."),
+    );
 
     const result = await service.ask(user, input);
 
@@ -94,25 +121,38 @@ describe("KbAskService", () => {
     expect(call[0].feature).toBe("kb.ask");
     expect(call[0].tier).toBe("fast");
     expect(call[0].maxTokens).toBe(1024);
+    expect(call[0].charge).toBeDefined();
     expect(call[0].charge).toBe(true);
     expect(call[0].actor).toEqual({ orgId: "org1", userId: "user1" });
   });
 
   it("throws BadRequestException on quota_exceeded", async () => {
-    mockGateway.invokeTextWithUsage.mockResolvedValueOnce(makeGatewayFail("quota_exceeded", "Insufficient AI credits"));
+    mockGateway.invokeTextWithUsage.mockResolvedValueOnce(
+      makeGatewayFail("quota_exceeded", "Insufficient AI credits"),
+    );
     await expect(service.ask(user, input)).rejects.toThrow(BadRequestException);
   });
 
   it("throws ServiceUnavailableException on provider_unavailable", async () => {
-    mockGateway.invokeTextWithUsage.mockResolvedValueOnce(makeGatewayFail("provider_unavailable"));
-    await expect(service.ask(user, input)).rejects.toThrow(ServiceUnavailableException);
+    mockGateway.invokeTextWithUsage.mockResolvedValueOnce(
+      makeGatewayFail("provider_unavailable"),
+    );
+    await expect(service.ask(user, input)).rejects.toThrow(
+      ServiceUnavailableException,
+    );
   });
 
   it("records ai_answer event after a successful response", async () => {
-    mockGateway.invokeTextWithUsage.mockResolvedValueOnce(makeGatewayOk("Reset via the login page."));
+    mockGateway.invokeTextWithUsage.mockResolvedValueOnce(
+      makeGatewayOk("Reset via the login page."),
+    );
 
     await service.ask(user, input);
 
-    expect(mockEvents.record).toHaveBeenCalledWith("org1", "ai_answer", expect.objectContaining({ actorId: "user1" }));
+    expect(mockEvents.record).toHaveBeenCalledWith(
+      "org1",
+      "ai_answer",
+      expect.objectContaining({ actorId: "user1" }),
+    );
   });
 });

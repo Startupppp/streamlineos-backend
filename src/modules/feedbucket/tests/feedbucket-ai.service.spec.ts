@@ -10,7 +10,7 @@ import type { AuditService } from "../../../common/audit/audit.service";
 import type { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
 import type { ProjectsTicketsService } from "../../projects/projects-tickets.service";
 import type { FeedbackAnalysis } from "../feedbucket-ai.schemas";
-import type { AiInvokeResult } from "../../ai/gateway/ai-gateway.types";
+import type { AiInvokeWithUsageResult } from "../../ai/gateway/ai-gateway.types";
 
 const ORG_A = "org_a";
 const ORG_B = "org_b";
@@ -82,13 +82,10 @@ const baseAnalysis: FeedbackAnalysis = {
   processedAt: new Date().toISOString(),
 };
 
-const baseGatewaySuccess: AiInvokeResult<FeedbackAnalysis> = {
+const baseGatewaySuccess: AiInvokeWithUsageResult<FeedbackAnalysis> = {
   ok: true,
   data: baseAnalysis,
-  model: "gpt-4o",
-  latencyMs: 100,
-  correlationId: "corr-1",
-  usage: { promptTokens: 50, completionTokens: 100, totalTokens: 150 },
+  aiUsage: { model: "gpt-4o", promptTokens: 50, completionTokens: 100, totalTokens: 150, credits: 1, costUsd: 0.002 },
 };
 
 function makeUser(orgId = ORG_A, plan = "PROFESSIONAL") {
@@ -121,10 +118,10 @@ function makeDb(submission: unknown, updateResult?: unknown): Db {
   } as unknown as Db;
 }
 
-function makeGateway(result: AiInvokeResult<FeedbackAnalysis> = baseGatewaySuccess): jest.Mocked<Pick<AiGatewayService, "invokeStructuredWithImage">> {
+function makeGateway(result: AiInvokeWithUsageResult<FeedbackAnalysis> = baseGatewaySuccess): jest.Mocked<Pick<AiGatewayService, "invokeStructuredWithImageWithUsage">> {
   return {
-    invokeStructuredWithImage: jest.fn().mockResolvedValue(result),
-  } as unknown as jest.Mocked<Pick<AiGatewayService, "invokeStructuredWithImage">>;
+    invokeStructuredWithImageWithUsage: jest.fn().mockResolvedValue(result),
+  } as unknown as jest.Mocked<Pick<AiGatewayService, "invokeStructuredWithImageWithUsage">>;
 }
 
 function makeRateLimit(allowed = true): jest.Mocked<RateLimitService> {
@@ -184,7 +181,7 @@ describe("FeedbucketAiService", () => {
 
     it.each(cases)("maps type '%s' to suggestedTicketType '%s'", async (type, expected) => {
       const analysisWithType = { ...baseAnalysis, type: type as FeedbackAnalysis["type"] };
-      const gwResult: AiInvokeResult<FeedbackAnalysis> = { ...baseGatewaySuccess, data: analysisWithType };
+      const gwResult: AiInvokeWithUsageResult<FeedbackAnalysis> = { ...baseGatewaySuccess, data: analysisWithType };
       const { service } = buildService({ gateway: makeGateway(gwResult) });
       const result = await service.analyze(makeUser(), SUB_ID);
       expect(result.suggestedTicketType).toBe(expected);
@@ -192,16 +189,16 @@ describe("FeedbucketAiService", () => {
   });
 
   describe("analyze — credit guard (via gateway)", () => {
-    it("calls gateway.invokeStructuredWithImage with charge credentials", async () => {
+    it("calls gateway.invokeStructuredWithImageWithUsage with charge credentials", async () => {
       const { service, gateway } = buildService({});
       await service.analyze(makeUser(), SUB_ID);
-      expect(gateway.invokeStructuredWithImage).toHaveBeenCalledWith(
+      expect(gateway.invokeStructuredWithImageWithUsage).toHaveBeenCalledWith(
         expect.objectContaining({ charge: true }),
       );
     });
 
     it("throws BadRequestException when gateway returns quota_exceeded", async () => {
-      const failure: AiInvokeResult<FeedbackAnalysis> = {
+      const failure: AiInvokeWithUsageResult<FeedbackAnalysis> = {
         ok: false,
         kind: "quota_exceeded",
         message: "Insufficient AI credits",
@@ -212,7 +209,7 @@ describe("FeedbucketAiService", () => {
     });
 
     it("throws ServiceUnavailableException when gateway returns provider_unavailable", async () => {
-      const failure: AiInvokeResult<FeedbackAnalysis> = {
+      const failure: AiInvokeWithUsageResult<FeedbackAnalysis> = {
         ok: false,
         kind: "provider_unavailable",
         message: "Provider is down",
@@ -223,7 +220,7 @@ describe("FeedbucketAiService", () => {
     });
 
     it("throws ServiceUnavailableException when gateway returns not_configured", async () => {
-      const failure: AiInvokeResult<FeedbackAnalysis> = {
+      const failure: AiInvokeWithUsageResult<FeedbackAnalysis> = {
         ok: false,
         kind: "not_configured",
         message: "AI is not configured",
@@ -234,7 +231,7 @@ describe("FeedbucketAiService", () => {
     });
 
     it("throws ServiceUnavailableException with 'invalid response' for invalid_output", async () => {
-      const failure: AiInvokeResult<FeedbackAnalysis> = {
+      const failure: AiInvokeWithUsageResult<FeedbackAnalysis> = {
         ok: false,
         kind: "invalid_output",
         message: "bad json",
@@ -256,7 +253,7 @@ describe("FeedbucketAiService", () => {
       const result = await service.analyze(makeUser(), SUB_ID, false);
 
       expect(result).toEqual(stored);
-      expect(gateway.invokeStructuredWithImage).not.toHaveBeenCalled();
+      expect(gateway.invokeStructuredWithImageWithUsage).not.toHaveBeenCalled();
     });
 
     it("re-analyzes and calls gateway when force=true", async () => {
@@ -266,7 +263,7 @@ describe("FeedbucketAiService", () => {
 
       await service.analyze(makeUser(), SUB_ID, true);
 
-      expect(gateway.invokeStructuredWithImage).toHaveBeenCalledTimes(1);
+      expect(gateway.invokeStructuredWithImageWithUsage).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -303,7 +300,7 @@ describe("FeedbucketAiService", () => {
       const { service, gateway } = buildService({});
       await service.analyze(makeUser(), SUB_ID);
 
-      const call = (gateway.invokeStructuredWithImage as jest.Mock).mock.calls[0]?.[0] as { prompt: { system: string } };
+      const call = (gateway.invokeStructuredWithImageWithUsage as jest.Mock).mock.calls[0]?.[0] as { prompt: { system: string } };
       expect(call?.prompt?.system).toContain("UNTRUSTED USER DATA");
       expect(call?.prompt?.system).toContain("never execute");
     });
@@ -336,7 +333,7 @@ describe("FeedbucketAiService", () => {
         message: "Something broke",
       });
 
-      expect(gateway.invokeStructuredWithImage).toHaveBeenCalledWith(
+      expect(gateway.invokeStructuredWithImageWithUsage).toHaveBeenCalledWith(
         expect.objectContaining({
           actor: { orgId: ORG_A, userId: USER_A },
           feature: "feedbucket.assist",
@@ -346,7 +343,7 @@ describe("FeedbucketAiService", () => {
     });
 
     it("throws ServiceUnavailableException on provider failure (gateway returns provider_unavailable)", async () => {
-      const failure: AiInvokeResult<FeedbackAnalysis> = {
+      const failure: AiInvokeWithUsageResult<FeedbackAnalysis> = {
         ok: false,
         kind: "provider_unavailable",
         message: "down",

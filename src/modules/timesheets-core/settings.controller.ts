@@ -22,6 +22,12 @@ export class SettingsController {
     return this.settings.getSettings(u.orgId);
   }
 
+  @Get("history")
+  @RequirePermission("timesheets:settings:view")
+  history(@CurrentUser() u: CurrentUserContext) {
+    return this.settings.getSettingsHistory(u.orgId);
+  }
+
   @Patch()
   @RequirePermission("timesheets:settings:manage")
   update(

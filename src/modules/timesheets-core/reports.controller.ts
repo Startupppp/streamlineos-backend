@@ -8,7 +8,12 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { ReportsService } from "./reports.service";
-import { overviewQuerySchema, type OverviewQuery } from "./dto/reports.schemas";
+import {
+  overviewQuerySchema,
+  reportRangeQuerySchema,
+  type OverviewQuery,
+  type ReportRangeQuery,
+} from "./dto/reports.schemas";
 
 @RequireModule("build")
 @Controller("timesheets/reports")
@@ -23,5 +28,50 @@ export class ReportsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reports.getOverview(u, query);
+  }
+
+  @Get("utilization")
+  @RequirePermission("timesheets:reports:view")
+  utilization(
+    @Query(new ZodValidationPipe(reportRangeQuerySchema)) query: ReportRangeQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.reports.getUtilization(u, query);
+  }
+
+  @Get("client-profitability")
+  @RequirePermission("timesheets:reports:view")
+  clientProfitability(
+    @Query(new ZodValidationPipe(reportRangeQuerySchema)) query: ReportRangeQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.reports.getClientProfitability(u, query);
+  }
+
+  @Get("compliance")
+  @RequirePermission("timesheets:reports:view")
+  compliance(
+    @Query(new ZodValidationPipe(reportRangeQuerySchema)) query: ReportRangeQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.reports.getCompliance(u, query);
+  }
+
+  @Get("approval-sla")
+  @RequirePermission("timesheets:reports:view")
+  approvalSla(
+    @Query(new ZodValidationPipe(reportRangeQuerySchema)) query: ReportRangeQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.reports.getApprovalSla(u, query);
+  }
+
+  @Get("billing-leakage")
+  @RequirePermission("timesheets:reports:view")
+  billingLeakage(
+    @Query(new ZodValidationPipe(reportRangeQuerySchema)) query: ReportRangeQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.reports.getBillingLeakage(u, query);
   }
 }

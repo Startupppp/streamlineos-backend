@@ -10,7 +10,7 @@ import type { AuditService } from "../../common/audit/audit.service";
 import type { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import type { ProjectsTicketsService } from "../build/projects-tickets.service";
 import type { FeedbackAnalysis } from "./feedbucket-ai.schemas";
-import type { AiInvokeResult } from "../ai/gateway/ai-gateway.types";
+import type { AiInvokeWithUsageResult } from "../ai/gateway/ai-gateway.types";
 
 const ORG_A = "org_a";
 const USER_A = "user_a";
@@ -31,19 +31,16 @@ const baseAnalysis: FeedbackAnalysis = {
   processedAt: new Date().toISOString(),
 };
 
-const SUCCESS_RESULT: AiInvokeResult<FeedbackAnalysis> = {
+const SUCCESS_RESULT: AiInvokeWithUsageResult<FeedbackAnalysis> = {
   ok: true,
   data: baseAnalysis,
-  model: "gpt-4o",
-  latencyMs: 80,
-  correlationId: "corr-1",
-  usage: { promptTokens: 50, completionTokens: 100, totalTokens: 150 },
+  aiUsage: { model: "gpt-4o", promptTokens: 50, completionTokens: 100, totalTokens: 150, credits: 1, costUsd: 0.002 },
 };
 
-function makeGateway(result: AiInvokeResult<FeedbackAnalysis> = SUCCESS_RESULT) {
+function makeGateway(result: AiInvokeWithUsageResult<FeedbackAnalysis> = SUCCESS_RESULT) {
   return {
-    invokeStructuredWithImage: jest.fn().mockResolvedValue(result),
-  } as unknown as jest.Mocked<Pick<AiGatewayService, "invokeStructuredWithImage">>;
+    invokeStructuredWithImageWithUsage: jest.fn().mockResolvedValue(result),
+  } as unknown as jest.Mocked<Pick<AiGatewayService, "invokeStructuredWithImageWithUsage">>;
 }
 
 function makeDb(): Db {
@@ -67,7 +64,7 @@ function buildService(gateway: ReturnType<typeof makeGateway>) {
 
 describe("FeedbucketAiService — gateway migration", () => {
   describe("analyzePublic — charges via gateway with actorUserId", () => {
-    it("calls invokeStructuredWithImage with correct actor and public feature key", async () => {
+    it("calls invokeStructuredWithImageWithUsage with correct actor and public feature key", async () => {
       const gateway = makeGateway();
       const service = buildService(gateway);
 
@@ -79,7 +76,7 @@ describe("FeedbucketAiService — gateway migration", () => {
         message: "Something broke",
       });
 
-      expect(gateway.invokeStructuredWithImage).toHaveBeenCalledWith(
+      expect(gateway.invokeStructuredWithImageWithUsage).toHaveBeenCalledWith(
         expect.objectContaining({
           actor: { orgId: ORG_A, userId: USER_A },
           feature: "feedbucket.assist",
@@ -102,13 +99,13 @@ describe("FeedbucketAiService — gateway migration", () => {
         screenshotBuffer: jpegBuf,
       });
 
-      const call = (gateway.invokeStructuredWithImage as jest.Mock).mock.calls[0]?.[0] as { images: string[] };
+      const call = (gateway.invokeStructuredWithImageWithUsage as jest.Mock).mock.calls[0]?.[0] as { images: string[] };
       expect(call.images).toHaveLength(1);
       expect(call.images[0]).toMatch(/^data:image\/jpeg;base64,/);
     });
 
     it("throws ServiceUnavailableException when gateway returns provider_unavailable (gateway handles refund)", async () => {
-      const failure: AiInvokeResult<FeedbackAnalysis> = {
+      const failure: AiInvokeWithUsageResult<FeedbackAnalysis> = {
         ok: false,
         kind: "provider_unavailable",
         message: "Provider down",
@@ -123,7 +120,7 @@ describe("FeedbucketAiService — gateway migration", () => {
     });
 
     it("throws BadRequestException when gateway returns quota_exceeded", async () => {
-      const failure: AiInvokeResult<FeedbackAnalysis> = {
+      const failure: AiInvokeWithUsageResult<FeedbackAnalysis> = {
         ok: false,
         kind: "quota_exceeded",
         message: "Insufficient AI credits",
@@ -140,14 +137,14 @@ describe("FeedbucketAiService — gateway migration", () => {
 
   describe("analyzePublic — release is handled by gateway (no double-charge)", () => {
     it("does not call credits.refundCredits (old API) — refund is gateway-internal", async () => {
-      const failure: AiInvokeResult<FeedbackAnalysis> = {
+      const failure: AiInvokeWithUsageResult<FeedbackAnalysis> = {
         ok: false,
         kind: "provider_unavailable",
         message: "down",
         correlationId: "c-2",
       };
       const gateway = makeGateway(failure);
-      const invokeStructuredWithImageMock = gateway.invokeStructuredWithImage as jest.Mock;
+      const invokeStructuredWithImageWithUsageMock = gateway.invokeStructuredWithImageWithUsage as jest.Mock;
 
       const service = buildService(gateway);
 
@@ -155,7 +152,7 @@ describe("FeedbucketAiService — gateway migration", () => {
         orgId: ORG_A, actorUserId: USER_A, widgetId: WIDGET_ID, type: "bug", message: "x",
       }).catch(() => undefined);
 
-      expect(invokeStructuredWithImageMock).toHaveBeenCalledTimes(1);
+      expect(invokeStructuredWithImageWithUsageMock).toHaveBeenCalledTimes(1);
     });
   });
 });

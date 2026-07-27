@@ -1,4 +1,7 @@
-import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ServiceUnavailableException,
+} from "@nestjs/common";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { KbRagService } from "./kb-rag.service";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
@@ -14,7 +17,14 @@ const makeGatewayOk = (text: string) => ({
   usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
 });
 
-const makeGatewayFail = (kind: "quota_exceeded" | "provider_unavailable" | "not_configured" | "invalid_output", message = "error") => ({
+const makeGatewayFail = (
+  kind:
+    | "quota_exceeded"
+    | "provider_unavailable"
+    | "not_configured"
+    | "invalid_output",
+  message = "error",
+) => ({
   ok: false as const,
   kind,
   message,
@@ -80,9 +90,14 @@ describe("KbRagService", () => {
 
   describe("answerQuestion (non-public)", () => {
     it("charges credits via gateway for non-public asks", async () => {
-      mockGateway.invokeText.mockResolvedValueOnce(makeGatewayOk("Reset via settings."));
+      mockGateway.invokeText.mockResolvedValueOnce(
+        makeGatewayOk("Reset via settings."),
+      );
 
-      const result = await service.answerQuestion({ orgId: ORG_ID, question: QUESTION });
+      const result = await service.answerQuestion({
+        orgId: ORG_ID,
+        question: QUESTION,
+      });
 
       expect(result.hasContext).toBe(true);
       const [call] = mockGateway.invokeText.mock.calls;
@@ -93,29 +108,42 @@ describe("KbRagService", () => {
 
     it("returns no-context answer when no chunks found", async () => {
       mockDb.limit.mockResolvedValueOnce([]);
-      const result = await service.answerQuestion({ orgId: ORG_ID, question: QUESTION });
+      const result = await service.answerQuestion({
+        orgId: ORG_ID,
+        question: QUESTION,
+      });
       expect(result.hasContext).toBe(false);
       expect(mockGateway.invokeText).not.toHaveBeenCalled();
     });
 
     it("throws BadRequestException on quota_exceeded", async () => {
-      mockGateway.invokeText.mockResolvedValueOnce(makeGatewayFail("quota_exceeded", "Insufficient AI credits"));
-      await expect(service.answerQuestion({ orgId: ORG_ID, question: QUESTION })).rejects.toThrow(BadRequestException);
+      mockGateway.invokeText.mockResolvedValueOnce(
+        makeGatewayFail("quota_exceeded", "Insufficient AI credits"),
+      );
+      await expect(
+        service.answerQuestion({ orgId: ORG_ID, question: QUESTION }),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it("throws ServiceUnavailableException on provider_unavailable", async () => {
-      mockGateway.invokeText.mockResolvedValueOnce(makeGatewayFail("provider_unavailable"));
-      await expect(service.answerQuestion({ orgId: ORG_ID, question: QUESTION })).rejects.toThrow(ServiceUnavailableException);
+      mockGateway.invokeText.mockResolvedValueOnce(
+        makeGatewayFail("provider_unavailable"),
+      );
+      await expect(
+        service.answerQuestion({ orgId: ORG_ID, question: QUESTION }),
+      ).rejects.toThrow(ServiceUnavailableException);
     });
   });
 
   describe("answerQuestion (publicOnly)", () => {
     it("returns no-context answer when org has no published public articles", async () => {
-      mockDb.limit
-        .mockResolvedValueOnce([])
-        .mockResolvedValue([chunkRow]);
+      mockDb.limit.mockResolvedValueOnce([]).mockResolvedValue([chunkRow]);
 
-      const result = await service.answerQuestion({ orgId: ORG_ID, question: QUESTION, publicOnly: true });
+      const result = await service.answerQuestion({
+        orgId: ORG_ID,
+        question: QUESTION,
+        publicOnly: true,
+      });
 
       expect(result.hasContext).toBe(false);
       expect(mockGateway.invokeText).not.toHaveBeenCalled();
@@ -125,9 +153,15 @@ describe("KbRagService", () => {
       mockDb.limit
         .mockResolvedValueOnce([{ id: 99 }])
         .mockResolvedValue([chunkRow]);
-      mockGateway.invokeText.mockResolvedValueOnce(makeGatewayOk("Sure, here is how."));
+      mockGateway.invokeText.mockResolvedValueOnce(
+        makeGatewayOk("Sure, here is how."),
+      );
 
-      const result = await service.answerQuestion({ orgId: ORG_ID, question: QUESTION, publicOnly: true });
+      const result = await service.answerQuestion({
+        orgId: ORG_ID,
+        question: QUESTION,
+        publicOnly: true,
+      });
 
       expect(result.hasContext).toBe(true);
       const [call] = mockGateway.invokeText.mock.calls;
@@ -138,10 +172,16 @@ describe("KbRagService", () => {
       mockDb.limit
         .mockResolvedValueOnce([{ id: 99 }])
         .mockResolvedValue([chunkRow]);
-      mockGateway.invokeText.mockResolvedValueOnce(makeGatewayFail("quota_exceeded", "Insufficient AI credits"));
+      mockGateway.invokeText.mockResolvedValueOnce(
+        makeGatewayFail("quota_exceeded", "Insufficient AI credits"),
+      );
 
       await expect(
-        service.answerQuestion({ orgId: ORG_ID, question: QUESTION, publicOnly: true }),
+        service.answerQuestion({
+          orgId: ORG_ID,
+          question: QUESTION,
+          publicOnly: true,
+        }),
       ).rejects.toThrow(BadRequestException);
     });
   });

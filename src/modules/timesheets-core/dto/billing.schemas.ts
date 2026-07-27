@@ -14,6 +14,7 @@ export const exportBillingSchema = z.object({
   endDate: dateString,
   format: z.enum(["CSV", "XLSX"]),
   projectId: z.number().int().positive().optional(),
+  idempotencyKey: z.string().min(1).max(128).optional(),
 });
 export type ExportBillingInput = z.infer<typeof exportBillingSchema>;
 

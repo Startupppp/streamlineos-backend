@@ -91,7 +91,10 @@ function makeConfirmation(): jest.Mocked<AiConfirmationService> {
       action: "meetings.send-follow-up",
       payload: {
         eventId: 101,
-        followUpDraft: MOCK_FOLLOW_UP,
+        followUpSubject: MOCK_FOLLOW_UP.subject,
+        followUpBody: MOCK_FOLLOW_UP.body,
+        followUpActionItems: JSON.stringify(MOCK_FOLLOW_UP.actionItems),
+        followUpNextMeetingDate: MOCK_FOLLOW_UP.nextMeetingDate,
         channel: "calendar",
       },
     }),
@@ -182,7 +185,7 @@ describe("MeetingsPrepService", () => {
 
       expect(gateway.invokeStructured).toHaveBeenCalledWith(
         expect.objectContaining({
-          charge: expect.objectContaining({ credits: expect.any(Number) }),
+          charge: true,
           actor: { orgId: ORG_A, userId: USER_1 },
         }),
       );
@@ -310,7 +313,14 @@ describe("MeetingsPrepService", () => {
         return {
           proposalId: 1,
           action: "meetings.send-follow-up",
-          payload: { eventId: 101, followUpDraft: MOCK_FOLLOW_UP, channel: "calendar" },
+          payload: {
+            eventId: 101,
+            followUpSubject: MOCK_FOLLOW_UP.subject,
+            followUpBody: MOCK_FOLLOW_UP.body,
+            followUpActionItems: JSON.stringify(MOCK_FOLLOW_UP.actionItems),
+            followUpNextMeetingDate: MOCK_FOLLOW_UP.nextMeetingDate,
+            channel: "calendar",
+          },
         };
       });
 

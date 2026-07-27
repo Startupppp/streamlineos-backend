@@ -4,7 +4,7 @@ import { HttpException, HttpStatus, ServiceUnavailableException } from "@nestjs/
 import { MailAiService } from "./mail-ai.service";
 import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
 import type { MailService } from "./mail.service";
-import type { AiInvokeResult } from "../ai/gateway/ai-gateway.types";
+import type { AiInvokeResult, AiInvokeWithUsageResult, AiUsageMeta } from "../ai/gateway/ai-gateway.types";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
 const ACTOR: CurrentUserContext = {
@@ -64,6 +64,15 @@ const DRAFT_RESULT = {
   bodyHtml: "<p>Thanks for the update!</p>",
 };
 
+const MOCK_AI_USAGE: AiUsageMeta = {
+  model: "gpt-4o-mini",
+  promptTokens: 50,
+  completionTokens: 100,
+  totalTokens: 150,
+  credits: 1,
+  costUsd: 0.001,
+};
+
 function makeGatewaySuccess(data: unknown): AiInvokeResult<unknown> {
   return {
     ok: true,
@@ -79,10 +88,17 @@ function makeGatewayFail(kind: "quota_exceeded" | "provider_unavailable" | "not_
   return { ok: false, kind, message: kind === "quota_exceeded" ? "Insufficient AI credits" : "Provider unavailable", correlationId: "corr-err" };
 }
 
+function toWithUsageResult(result: AiInvokeResult<unknown>): AiInvokeWithUsageResult<unknown> {
+  if (!result.ok) return result;
+  return { ok: true, data: result.data, aiUsage: MOCK_AI_USAGE };
+}
+
 function makeGateway(result: AiInvokeResult<unknown>): jest.Mocked<AiGatewayService> {
   return {
     invokeStructured: jest.fn().mockResolvedValue(result),
+    invokeStructuredWithUsage: jest.fn().mockResolvedValue(toWithUsageResult(result)),
     invokeText: jest.fn(),
+    invokeTextWithUsage: jest.fn(),
   } as unknown as jest.Mocked<AiGatewayService>;
 }
 
@@ -114,6 +130,7 @@ describe("MailAiService", () => {
       expect(result.summary).toBe("Your inbox is empty.");
       expect(result.highlights).toHaveLength(0);
       expect(result.actionItems).toHaveLength(0);
+      expect(gateway.invokeStructuredWithUsage).not.toHaveBeenCalled();
       expect(gateway.invokeStructured).not.toHaveBeenCalled();
     });
 
@@ -125,7 +142,8 @@ describe("MailAiService", () => {
 
       expect(result.summary).toBe(INBOX_SUMMARY_RESULT.summary);
       expect(result.highlights).toHaveLength(1);
-      expect(gateway.invokeStructured).toHaveBeenCalledTimes(1);
+      expect(result.aiUsage).toEqual(MOCK_AI_USAGE);
+      expect(gateway.invokeStructuredWithUsage).toHaveBeenCalledTimes(1);
     });
 
     it("propagates quota_exceeded as 402 Payment Required", async () => {

@@ -1,5 +1,5 @@
 import { Test, type TestingModule } from "@nestjs/testing";
-import { BadRequestException, ForbiddenException, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import { ForbiddenException, HttpException, HttpStatus, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { CrmCopilotService } from "./services/crm-copilot.service";
 import { AiGatewayService } from "./gateway/ai-gateway.service";
 import { OrgFeaturesService } from "./services/org-features.service";
@@ -133,13 +133,15 @@ describe("CrmCopilotService", () => {
       );
     });
 
-    it("throws BadRequestException when gateway returns quota_exceeded", async () => {
+    it("throws 402 HttpException when gateway returns quota_exceeded", async () => {
       const fakeLead = { id: 1, name: "John", email: null, company: null, status: "NEW", priority: null, score: null, potentialValue: null, notes: null };
       service = await buildService([[fakeLead], []]);
       mockOrgFeatures.getFlags.mockResolvedValue(ALL_FLAGS_ON);
       mockGateway.invokeStructured.mockResolvedValue(failResult("quota_exceeded"));
 
-      await expect(service.leadSummary("org1", 1, "user1")).rejects.toThrow(BadRequestException);
+      const err: unknown = await service.leadSummary("org1", 1, "user1").catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(HttpException);
+      expect((err as HttpException).getStatus()).toBe(HttpStatus.PAYMENT_REQUIRED);
     });
 
     it("throws ServiceUnavailableException when gateway returns provider_unavailable", async () => {
@@ -231,12 +233,14 @@ describe("CrmCopilotService", () => {
       ).rejects.toThrow(ForbiddenException);
     });
 
-    it("throws BadRequestException when gateway returns quota_exceeded", async () => {
+    it("throws 402 HttpException when gateway returns quota_exceeded", async () => {
       service = await buildService();
       mockOrgFeatures.getFlags.mockResolvedValue(ALL_FLAGS_ON);
       mockGateway.invokeStructured.mockResolvedValue(failResult("quota_exceeded"));
 
-      await expect(service.summarizeNotes("org1", "user1", "meeting notes here for testing")).rejects.toThrow(BadRequestException);
+      const err: unknown = await service.summarizeNotes("org1", "user1", "meeting notes here for testing").catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(HttpException);
+      expect((err as HttpException).getStatus()).toBe(HttpStatus.PAYMENT_REQUIRED);
     });
 
     it("throws ServiceUnavailableException when gateway returns invalid_output", async () => {

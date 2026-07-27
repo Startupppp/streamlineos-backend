@@ -9,12 +9,22 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { auditQuerySchema, type AuditQuery } from "./dto/audit.schemas";
+import { TimesheetsAuditService } from "./timesheets-audit.service";
 
 @RequireModule("build")
 @Controller("timesheets/audit")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class AuditController {
-  constructor(private readonly auditService: TimesheetsAuditService) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly auditService: TimesheetsAuditService,
+  ) {}
+
+  @Get("verify")
+  @RequirePermission("timesheets:audit:view")
+  verify(@CurrentUser() u: CurrentUserContext) {
+    return this.auditService.verifyChain(u.orgId);
+  }
 
   @Get()
   @RequirePermission("timesheets:audit:view")

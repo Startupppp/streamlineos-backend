@@ -6,7 +6,17 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq, gte, inArray, isNull, lte } from "drizzle-orm";
+import {
+  and,
+  count,
+  desc,
+  gt,
+  eq,
+  gte,
+  inArray,
+  isNull,
+  lte,
+} from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { logger } from "../../common/logger/logger.service";
 import { type Db } from "../../db/drizzle.module";
@@ -14,6 +24,7 @@ import {
   timesheetPeriods,
   timesheets,
   timesheetSettings,
+  userDelegations,
   users,
 } from "../../db/schema";
 import { AccessService } from "../access/access.service";
@@ -21,6 +32,7 @@ import { applyScope } from "../access/apply-scope";
 import { resolveApprovalScope } from "./timesheets-core-scope";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { RateResolverService } from "./rate-resolver.service";
+import { canActOnPeriod } from "./lib/approval-guard";
 import type {
   ApprovalsQuery,
   BulkApproveInput,
@@ -56,6 +68,58 @@ export class ApprovalsService {
     return s;
   }
 
+  /** True when `approverId` has an active, unexpired delegation to the actor. */
+  private async hasActiveDelegation(
+    orgId: string,
+    approverId: string,
+    actorUserId: string,
+  ): Promise<boolean> {
+    const [row] = await this.db
+      .select({ id: userDelegations.id })
+      .from(userDelegations)
+      .where(
+        and(
+          eq(userDelegations.orgId, orgId),
+          eq(userDelegations.delegatorId, approverId),
+          eq(userDelegations.delegateeId, actorUserId),
+          eq(userDelegations.status, "ACTIVE"),
+          lte(userDelegations.startsAt, new Date()),
+          gt(userDelegations.endsAt, new Date()),
+        ),
+      )
+      .limit(1);
+    return !!row;
+  }
+
+  private async assertCanActOnPeriod(
+    u: CurrentUserContext,
+    period: { userId: string; currentApproverId: string | null },
+  ): Promise<void> {
+    const actor = {
+      userId: u.userId,
+      isOrgOwner: !!u.isOrgOwner,
+      isPlatformAdmin: !!u.isPlatformAdmin,
+    };
+
+    let delegateeOfApprover = false;
+    if (
+      period.currentApproverId &&
+      period.currentApproverId !== u.userId &&
+      period.userId !== u.userId
+    ) {
+      delegateeOfApprover = await this.hasActiveDelegation(
+        u.orgId,
+        period.currentApproverId,
+        u.userId,
+      );
+    }
+
+    const decision = canActOnPeriod(actor, period, { delegateeOfApprover });
+    if (!decision.allowed) {
+      throw new ForbiddenException(decision.reason);
+    }
+  }
+
   async listApprovals(u: CurrentUserContext, query: ApprovalsQuery) {
     const scope = await resolveApprovalScope(this.access, u);
     const limit = Math.min(query.limit, 100);
@@ -66,7 +130,10 @@ export class ApprovalsService {
       applyScope(scope, u.userId, { ownerColumn: timesheetPeriods.userId }),
     ];
 
-    if (query.userId && (scope === "all" || u.isPlatformAdmin || u.isOrgOwner)) {
+    if (
+      query.userId &&
+      (scope === "all" || u.isPlatformAdmin || u.isOrgOwner)
+    ) {
       conditions.push(eq(timesheetPeriods.userId, query.userId));
     }
     if (query.startDate) {
@@ -114,12 +181,20 @@ export class ApprovalsService {
 
     const data = rows.map((r) => ({
       ...r,
-      user: { id: r.userId, name: r.userName ?? r.userEmail, email: r.userEmail },
+      user: {
+        id: r.userId,
+        name: r.userName ?? r.userEmail,
+        email: r.userEmail,
+      },
     }));
 
     return {
       data,
-      pagination: { page: query.page, limit, total: totalResult[0]?.total ?? 0 },
+      pagination: {
+        page: query.page,
+        limit,
+        total: totalResult[0]?.total ?? 0,
+      },
     };
   }
 
@@ -127,13 +202,21 @@ export class ApprovalsService {
     const [period] = await this.db
       .select()
       .from(timesheetPeriods)
-      .where(and(eq(timesheetPeriods.id, periodId), eq(timesheetPeriods.orgId, u.orgId)))
+      .where(
+        and(
+          eq(timesheetPeriods.id, periodId),
+          eq(timesheetPeriods.orgId, u.orgId),
+        ),
+      )
       .limit(1);
 
     if (!period) throw new NotFoundException(`Period ${periodId} not found`);
     if (period.status !== "SUBMITTED") {
-      throw new ConflictException(`Period ${periodId} is not in SUBMITTED state`);
+      throw new ConflictException(
+        `Period ${periodId} is not in SUBMITTED state`,
+      );
     }
+    await this.assertCanActOnPeriod(u, period);
 
     const settings = await this.getSettings(u.orgId);
     const lockAfterApproval = settings?.lockAfterApproval ?? true;
@@ -149,7 +232,12 @@ export class ApprovalsService {
           lockedAt: lockAfterApproval ? now : null,
           updatedAt: now,
         })
-        .where(and(eq(timesheetPeriods.id, periodId), eq(timesheetPeriods.orgId, u.orgId)));
+        .where(
+          and(
+            eq(timesheetPeriods.id, periodId),
+            eq(timesheetPeriods.orgId, u.orgId),
+          ),
+        );
 
       await tx
         .update(timesheets)
@@ -188,6 +276,7 @@ export class ApprovalsService {
           projectId: entry.projectId,
           userId: entry.userId,
           ticketId: entry.ticketId,
+          date: entry.date,
         })),
       );
 
@@ -202,7 +291,9 @@ export class ApprovalsService {
               rateSource: resolved.source,
               updatedAt: now,
             })
-            .where(and(eq(timesheets.id, entry.id), eq(timesheets.orgId, u.orgId)));
+            .where(
+              and(eq(timesheets.id, entry.id), eq(timesheets.orgId, u.orgId)),
+            );
         }
       }
 
@@ -245,32 +336,62 @@ export class ApprovalsService {
       })
       .from(timesheetPeriods)
       .leftJoin(users, eq(timesheetPeriods.userId, users.id))
-      .where(and(eq(timesheetPeriods.id, periodId), eq(timesheetPeriods.orgId, u.orgId)))
+      .where(
+        and(
+          eq(timesheetPeriods.id, periodId),
+          eq(timesheetPeriods.orgId, u.orgId),
+        ),
+      )
       .limit(1);
 
     return updated;
   }
 
-  async rejectPeriod(u: CurrentUserContext, periodId: number, input: RejectPeriodInput) {
+  async rejectPeriod(
+    u: CurrentUserContext,
+    periodId: number,
+    input: RejectPeriodInput,
+  ) {
     const [period] = await this.db
       .select()
       .from(timesheetPeriods)
-      .where(and(eq(timesheetPeriods.id, periodId), eq(timesheetPeriods.orgId, u.orgId)))
+      .where(
+        and(
+          eq(timesheetPeriods.id, periodId),
+          eq(timesheetPeriods.orgId, u.orgId),
+        ),
+      )
       .limit(1);
 
     if (!period) throw new NotFoundException("Period not found");
-    if (period.status !== "SUBMITTED") throw new ConflictException("Only submitted periods can be rejected");
+    if (period.status !== "SUBMITTED")
+      throw new ConflictException("Only submitted periods can be rejected");
+    await this.assertCanActOnPeriod(u, period);
 
     const now = new Date();
     await this.db.transaction(async (tx) => {
       await tx
         .update(timesheetPeriods)
-        .set({ status: "REJECTED", rejectedAt: now, rejectionReason: input.reason, updatedAt: now })
-        .where(and(eq(timesheetPeriods.id, periodId), eq(timesheetPeriods.orgId, u.orgId)));
+        .set({
+          status: "REJECTED",
+          rejectedAt: now,
+          rejectionReason: input.reason,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(timesheetPeriods.id, periodId),
+            eq(timesheetPeriods.orgId, u.orgId),
+          ),
+        );
 
       await tx
         .update(timesheets)
-        .set({ status: "REJECTED", rejectionReason: input.reason, updatedAt: now })
+        .set({
+          status: "REJECTED",
+          rejectionReason: input.reason,
+          updatedAt: now,
+        })
         .where(
           and(
             eq(timesheets.timesheetPeriodId, periodId),
@@ -292,7 +413,12 @@ export class ApprovalsService {
     const [updated] = await this.db
       .select()
       .from(timesheetPeriods)
-      .where(and(eq(timesheetPeriods.id, periodId), eq(timesheetPeriods.orgId, u.orgId)))
+      .where(
+        and(
+          eq(timesheetPeriods.id, periodId),
+          eq(timesheetPeriods.orgId, u.orgId),
+        ),
+      )
       .limit(1);
 
     return updated;
@@ -322,8 +448,13 @@ export class ApprovalsService {
   }
 
   async bulkReject(u: CurrentUserContext, input: BulkRejectInput) {
-    const periods = await this.db
-      .select({ id: timesheetPeriods.id, status: timesheetPeriods.status })
+    const candidates = await this.db
+      .select({
+        id: timesheetPeriods.id,
+        status: timesheetPeriods.status,
+        userId: timesheetPeriods.userId,
+        currentApproverId: timesheetPeriods.currentApproverId,
+      })
       .from(timesheetPeriods)
       .where(
         and(
@@ -333,6 +464,16 @@ export class ApprovalsService {
         ),
       );
 
+    const periods = [];
+    for (const p of candidates) {
+      try {
+        await this.assertCanActOnPeriod(u, p);
+        periods.push(p);
+      } catch {
+        // skip periods this actor is not allowed to act on
+      }
+    }
+
     if (periods.length === 0) return { rejected: 0 };
 
     const now = new Date();
@@ -341,12 +482,26 @@ export class ApprovalsService {
     await this.db.transaction(async (tx) => {
       await tx
         .update(timesheetPeriods)
-        .set({ status: "REJECTED", rejectedAt: now, rejectionReason: input.reason, updatedAt: now })
-        .where(and(eq(timesheetPeriods.orgId, u.orgId), inArray(timesheetPeriods.id, ids)));
+        .set({
+          status: "REJECTED",
+          rejectedAt: now,
+          rejectionReason: input.reason,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(timesheetPeriods.orgId, u.orgId),
+            inArray(timesheetPeriods.id, ids),
+          ),
+        );
 
       await tx
         .update(timesheets)
-        .set({ status: "REJECTED", rejectionReason: input.reason, updatedAt: now })
+        .set({
+          status: "REJECTED",
+          rejectionReason: input.reason,
+          updatedAt: now,
+        })
         .where(
           and(
             inArray(timesheets.timesheetPeriodId, ids),

@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { RateResolverService } from "./rate-resolver.service";
+import { FxService } from "./fx.service";
 import { EntriesService } from "./entries.service";
 import { EntriesController } from "./entries.controller";
 import { TimerService } from "./timer.service";
@@ -22,6 +23,9 @@ import { BudgetsController } from "./budgets.controller";
 import { AuditController } from "./audit.controller";
 import { TeamController } from "./team.controller";
 import { TeamService } from "./team.service";
+import { ExceptionsService } from "./exceptions.service";
+import { ExceptionsController } from "./exceptions.controller";
+import { ExceptionsDetectorService } from "./exceptions-detector.service";
 import { TimesheetsAiController } from "./timesheets-ai.controller";
 import { TimesheetsAiService } from "./timesheets-ai.service";
 import { AiModule } from "../ai/ai.module";
@@ -40,11 +44,13 @@ import { AiModule } from "../ai/ai.module";
     BudgetsController,
     AuditController,
     TeamController,
+    ExceptionsController,
     TimesheetsAiController,
   ],
   providers: [
     TimesheetsAuditService,
     RateResolverService,
+    FxService,
     EntriesService,
     TimerService,
     PeriodsService,
@@ -55,8 +61,10 @@ import { AiModule } from "../ai/ai.module";
     RatesService,
     BudgetsService,
     TeamService,
+    ExceptionsService,
+    ExceptionsDetectorService,
     TimesheetsAiService,
   ],
-  exports: [EntriesService, SettingsService],
+  exports: [EntriesService, SettingsService, ExceptionsDetectorService],
 })
 export class TimesheetsCoreModule {}

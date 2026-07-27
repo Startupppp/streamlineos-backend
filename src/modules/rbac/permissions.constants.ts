@@ -3016,6 +3016,19 @@ const TIMESHEETS_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Create and manage project budgets",
   },
+  {
+    name: "timesheets:exceptions:view",
+    resource: "timesheets:exceptions",
+    action: "view",
+    description: "View timesheet exceptions and data-quality issues",
+    scopable: true,
+  },
+  {
+    name: "timesheets:exceptions:manage",
+    resource: "timesheets:exceptions",
+    action: "manage",
+    description: "Resolve, dismiss, and run timesheet exception detection",
+  },
 ];
 
 const BILLING_PERMISSIONS: Permission[] = [
@@ -4293,6 +4306,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "timesheets:audit:view",
     "timesheets:budgets:view",
     "timesheets:budgets:manage",
+    "timesheets:exceptions:view",
+    "timesheets:exceptions:manage",
     "sign:documents:upload",
     "sign:documents:view",
     "sign:envelope:create",
@@ -4801,6 +4816,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "build:qa:view",
     "build:bugs:view",
     "build:ai:use",
+    "timesheets:exceptions:view",
+    "timesheets:exceptions:manage",
     "feedbucket:widgets:view",
     "feedbucket:widgets:create",
     "feedbucket:widgets:update",
@@ -4942,6 +4959,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "timesheets:budgets:manage",
     "build:qa:view",
     "build:bugs:view",
+    "timesheets:exceptions:view",
+    "timesheets:exceptions:manage",
   ],
 
   INVENTORY_MANAGER: [

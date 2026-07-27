@@ -9,11 +9,20 @@ import { SupportReportsService } from "../../support/support-reports.service";
 const ORG = "org-1";
 const USER = "user-1";
 
+const TEST_AI_USAGE = {
+  model: "gemini",
+  promptTokens: 100,
+  completionTokens: 50,
+  totalTokens: 150,
+  credits: 1,
+  costUsd: 0.001,
+};
+
 function makeGateway(ok: boolean) {
   return {
-    invokeText: jest.fn().mockResolvedValue(
+    invokeTextWithUsage: jest.fn().mockResolvedValue(
       ok
-        ? { ok: true, data: "The org is healthy.", model: "gemini", latencyMs: 100, correlationId: "c1", usage: {} }
+        ? { ok: true, data: "The org is healthy.", aiUsage: TEST_AI_USAGE }
         : { ok: false, kind: "quota_exceeded", message: "Quota exceeded", correlationId: "c1" },
     ),
   };
@@ -91,6 +100,7 @@ describe("ExecutiveBriefService", () => {
     expect(result.narrative).toBe("The org is healthy.");
     expect(result.citations.map((c) => c.id)).toEqual(expect.arrayContaining(["projects", "crm", "support"]));
     expect(result.uncertaintyNotes).toHaveLength(0);
+    expect(result.aiUsage).toEqual(TEST_AI_USAGE);
   });
 
   it("surfaces uncertainty when a source fails, never crashes", async () => {

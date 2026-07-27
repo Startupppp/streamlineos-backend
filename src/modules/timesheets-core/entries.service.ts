@@ -23,7 +23,12 @@ import { resolveEntriesScope } from "./timesheets-core-scope";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { weekRange, formatDateOnly } from "./lib/period.helpers";
 import { roundHours } from "./lib/rounding";
-import type { CreateEntryInput, UpdateEntryInput, VoidEntryInput, EntriesQuery } from "./dto/entries.schemas";
+import type {
+  CreateEntryInput,
+  UpdateEntryInput,
+  VoidEntryInput,
+  EntriesQuery,
+} from "./dto/entries.schemas";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
 function buildEntryShape(r: {
@@ -123,14 +128,19 @@ export class EntriesService {
       applyScope(scope, u.userId, { ownerColumn: timesheets.userId }),
     ];
 
-    if (query.userId && scope === "all") conditions.push(eq(timesheets.userId, query.userId));
-    if (query.projectId) conditions.push(eq(timesheets.projectId, query.projectId));
-    if (query.ticketId) conditions.push(eq(timesheets.ticketId, query.ticketId));
+    if (query.userId && scope === "all")
+      conditions.push(eq(timesheets.userId, query.userId));
+    if (query.projectId)
+      conditions.push(eq(timesheets.projectId, query.projectId));
+    if (query.ticketId)
+      conditions.push(eq(timesheets.ticketId, query.ticketId));
     if (query.status) conditions.push(eq(timesheets.status, query.status));
     if (query.startDate) conditions.push(gte(timesheets.date, query.startDate));
     if (query.endDate) conditions.push(lte(timesheets.date, query.endDate));
-    if (query.billable === "true") conditions.push(eq(timesheets.isBillable, true));
-    if (query.billable === "false") conditions.push(eq(timesheets.isBillable, false));
+    if (query.billable === "true")
+      conditions.push(eq(timesheets.isBillable, true));
+    if (query.billable === "false")
+      conditions.push(eq(timesheets.isBillable, false));
 
     const dp = alias(projects, "dp");
     const tp = alias(projects, "tp");
@@ -239,7 +249,9 @@ export class EntriesService {
       .limit(1);
 
     if (!refetch) {
-      throw new ConflictException("Could not resolve the timesheet period for this date");
+      throw new ConflictException(
+        "Could not resolve the timesheet period for this date",
+      );
     }
     return refetch.id;
   }
@@ -272,7 +284,12 @@ export class EntriesService {
         nonBillableHours: sums?.nonBillable ?? "0",
         updatedAt: new Date(),
       })
-      .where(and(eq(timesheetPeriods.id, periodId), eq(timesheetPeriods.orgId, orgId)));
+      .where(
+        and(
+          eq(timesheetPeriods.id, periodId),
+          eq(timesheetPeriods.orgId, orgId),
+        ),
+      );
   }
 
   private async syncTicketTimeSpent(
@@ -296,7 +313,10 @@ export class EntriesService {
       .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)));
   }
 
-  private async assertTicketInOrg(orgId: string, ticketId: number): Promise<void> {
+  private async assertTicketInOrg(
+    orgId: string,
+    ticketId: number,
+  ): Promise<void> {
     const [row] = await this.db
       .select({ id: tickets.id })
       .from(tickets)
@@ -305,7 +325,10 @@ export class EntriesService {
     if (!row) throw new NotFoundException("Ticket not found");
   }
 
-  private async assertProjectInOrg(orgId: string, projectId: number): Promise<void> {
+  private async assertProjectInOrg(
+    orgId: string,
+    projectId: number,
+  ): Promise<void> {
     const [row] = await this.db
       .select({ id: projects.id })
       .from(projects)
@@ -373,12 +396,18 @@ export class EntriesService {
     const hours = roundHours(input.hours, settings?.roundingRule);
 
     const today = formatDateOnly(new Date());
+    const allowFuture = settings?.allowFutureEntries ?? false;
+    if (!allowFuture && input.date > today) {
+      throw new BadRequestException("Future-dated entries are not allowed");
+    }
     if (!allowBackdated && input.date < today) {
       throw new BadRequestException("Backdated entries are not allowed");
     }
     if (backdateLimitDays !== null && input.date < today) {
       const diffDays = Math.floor(
-        (new Date(today).getTime() - new Date(input.date + "T12:00:00").getTime()) / 86_400_000,
+        (new Date(today).getTime() -
+          new Date(input.date + "T12:00:00").getTime()) /
+          86_400_000,
       );
       if (diffDays > backdateLimitDays) {
         throw new BadRequestException(
@@ -388,7 +417,11 @@ export class EntriesService {
     }
 
     const requiredFields = (settings?.requiredFields as string[] | null) ?? [];
-    if (requiredFields.includes("project") && !input.projectId && !input.ticketId) {
+    if (
+      requiredFields.includes("project") &&
+      !input.projectId &&
+      !input.ticketId
+    ) {
       throw new BadRequestException("Field 'project' is required");
     }
     if (requiredFields.includes("description") && !input.description) {
@@ -417,7 +450,8 @@ export class EntriesService {
       );
     }
 
-    const billingType = input.billingType ?? (input.isBillable ? "BILLABLE" : "NON_BILLABLE");
+    const billingType =
+      input.billingType ?? (input.isBillable ? "BILLABLE" : "NON_BILLABLE");
     const isBillable = input.isBillable ?? billingType === "BILLABLE";
 
     if (input.ticketId != null || input.projectId != null) {
@@ -461,7 +495,8 @@ export class EntriesService {
         })
         .returning();
 
-      if (!inserted) throw new ConflictException("Could not create the time entry");
+      if (!inserted)
+        throw new ConflictException("Could not create the time entry");
 
       if (input.ticketId) {
         await this.syncTicketTimeSpent(tx, u.orgId, input.ticketId);
@@ -490,21 +525,36 @@ export class EntriesService {
     return this.getEntryById(u.orgId, entry.id);
   }
 
-  async updateEntry(u: CurrentUserContext, entryId: number, input: UpdateEntryInput) {
+  async updateEntry(
+    u: CurrentUserContext,
+    entryId: number,
+    input: UpdateEntryInput,
+  ) {
     const entry = await this.db.query.timesheets.findFirst({
       where: and(eq(timesheets.id, entryId), eq(timesheets.orgId, u.orgId)),
     });
     if (!entry) throw new NotFoundException("Time entry not found");
 
-    if (entry.voidedAt) throw new ConflictException("Voided entries cannot be edited");
-    if (entry.lockedAt) throw new ConflictException("Locked entries cannot be edited");
-    if (entry.payrollStatus === "EXPORTED") throw new ConflictException("Exported entries cannot be edited");
-    if (entry.invoicingStatus !== "UNINVOICED") throw new ConflictException("Invoiced entries cannot be edited");
-    if (!["PENDING", "REJECTED"].includes(entry.status)) throw new ConflictException("Only pending or rejected entries can be edited");
-    if (entry.submittedAt) throw new ConflictException("Submitted entries cannot be edited");
+    if (entry.voidedAt)
+      throw new ConflictException("Voided entries cannot be edited");
+    if (entry.lockedAt)
+      throw new ConflictException("Locked entries cannot be edited");
+    if (entry.payrollStatus === "EXPORTED")
+      throw new ConflictException("Exported entries cannot be edited");
+    if (entry.invoicingStatus !== "UNINVOICED")
+      throw new ConflictException("Invoiced entries cannot be edited");
+    if (!["PENDING", "REJECTED"].includes(entry.status))
+      throw new ConflictException(
+        "Only pending or rejected entries can be edited",
+      );
+    if (entry.submittedAt)
+      throw new ConflictException("Submitted entries cannot be edited");
 
     const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    const canManage = perms.has("timesheets:approvals:manage") || u.isOrgOwner || u.isPlatformAdmin;
+    const canManage =
+      perms.has("timesheets:approvals:manage") ||
+      u.isOrgOwner ||
+      u.isPlatformAdmin;
     if (!canManage && entry.userId !== u.userId) {
       throw new ForbiddenException("You can only edit your own time entries");
     }
@@ -512,10 +562,15 @@ export class EntriesService {
     const updateData: Record<string, unknown> = { updatedAt: new Date() };
     if (input.hours !== undefined) {
       const settings = await this.loadSettings(u.orgId);
-      updateData.hours = roundHours(input.hours, settings?.roundingRule).toString();
+      updateData.hours = roundHours(
+        input.hours,
+        settings?.roundingRule,
+      ).toString();
     }
-    if (input.description !== undefined) updateData.description = input.description;
-    if (input.isBillable !== undefined) updateData.isBillable = input.isBillable;
+    if (input.description !== undefined)
+      updateData.description = input.description;
+    if (input.isBillable !== undefined)
+      updateData.isBillable = input.isBillable;
     if (input.billingType !== undefined) {
       updateData.billingType = input.billingType;
       if (input.isBillable === undefined) {
@@ -557,7 +612,11 @@ export class EntriesService {
     return this.getEntryById(u.orgId, entryId);
   }
 
-  async voidEntry(u: CurrentUserContext, entryId: number, input: VoidEntryInput) {
+  async voidEntry(
+    u: CurrentUserContext,
+    entryId: number,
+    input: VoidEntryInput,
+  ) {
     const entry = await this.db.query.timesheets.findFirst({
       where: and(eq(timesheets.id, entryId), eq(timesheets.orgId, u.orgId)),
     });
@@ -571,7 +630,10 @@ export class EntriesService {
     }
 
     const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    const canManage = perms.has("timesheets:approvals:manage") || u.isOrgOwner || u.isPlatformAdmin;
+    const canManage =
+      perms.has("timesheets:approvals:manage") ||
+      u.isOrgOwner ||
+      u.isPlatformAdmin;
     if (!canManage && entry.userId !== u.userId) {
       throw new ForbiddenException("You can only void your own time entries");
     }
@@ -579,7 +641,11 @@ export class EntriesService {
     await this.db.transaction(async (tx) => {
       await tx
         .update(timesheets)
-        .set({ voidedAt: new Date(), voidReason: input.reason, updatedAt: new Date() })
+        .set({
+          voidedAt: new Date(),
+          voidReason: input.reason,
+          updatedAt: new Date(),
+        })
         .where(and(eq(timesheets.id, entryId), eq(timesheets.orgId, u.orgId)));
 
       if (entry.ticketId) {

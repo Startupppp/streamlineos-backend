@@ -13,7 +13,12 @@ const MOCK_INSIGHT = {
   title: "Stockout risk: SKU-007",
   body: "Available qty (2) is below weekly demand (10).",
   status: "NEW" as const,
-  sourceRefs: { variantId: 7, variantSku: "SKU-007", onHand: "5.00", committed: "3.00" },
+  sourceRefs: {
+    variantId: 7,
+    variantSku: "SKU-007",
+    onHand: "5.00",
+    committed: "3.00",
+  },
   createdAt: new Date("2026-01-01"),
 };
 
@@ -24,7 +29,10 @@ const MOCK_NARRATION = {
     { label: "Weekly demand", value: "10", isFactual: true },
     { label: "Action needed", value: "Reorder immediately", isFactual: false },
   ],
-  suggestedActions: ["Create a purchase order for SKU-007", "Alert the procurement team"],
+  suggestedActions: [
+    "Create a purchase order for SKU-007",
+    "Alert the procurement team",
+  ],
 };
 
 function buildService(
@@ -48,10 +56,21 @@ describe("InvAiExplainService - explainInsight", () => {
     let capturedPrompt: { system: string; user: string } | undefined;
 
     const gateway = {
-      invokeStructured: jest.fn().mockImplementation((opts: { prompt: { system: string; user: string } }) => {
-        capturedPrompt = opts.prompt;
-        return Promise.resolve({ ok: true, data: MOCK_NARRATION, model: "fast", latencyMs: 100, correlationId: "x", usage: {} });
-      }),
+      invokeStructured: jest
+        .fn()
+        .mockImplementation(
+          (opts: { prompt: { system: string; user: string } }) => {
+            capturedPrompt = opts.prompt;
+            return Promise.resolve({
+              ok: true,
+              data: MOCK_NARRATION,
+              model: "fast",
+              latencyMs: 100,
+              correlationId: "x",
+              usage: {},
+            });
+          },
+        ),
     };
 
     const db = {
@@ -76,7 +95,14 @@ describe("InvAiExplainService - explainInsight", () => {
 
   it("charges credits via feature key inv.insight-explain", async () => {
     const gateway = {
-      invokeStructured: jest.fn().mockResolvedValue({ ok: true, data: MOCK_NARRATION, model: "fast", latencyMs: 100, correlationId: "x", usage: {} }),
+      invokeStructured: jest.fn().mockResolvedValue({
+        ok: true,
+        data: MOCK_NARRATION,
+        model: "fast",
+        latencyMs: 100,
+        correlationId: "x",
+        usage: {},
+      }),
     };
 
     const db = {
@@ -97,7 +123,14 @@ describe("InvAiExplainService - explainInsight", () => {
 
   it("returns structured narration with facts separated from suggestions", async () => {
     const gateway = {
-      invokeStructured: jest.fn().mockResolvedValue({ ok: true, data: MOCK_NARRATION, model: "fast", latencyMs: 100, correlationId: "x", usage: {} }),
+      invokeStructured: jest.fn().mockResolvedValue({
+        ok: true,
+        data: MOCK_NARRATION,
+        model: "fast",
+        latencyMs: 100,
+        correlationId: "x",
+        usage: {},
+      }),
     };
 
     const db = {
@@ -140,7 +173,9 @@ describe("InvAiExplainService - explainInsight", () => {
     };
 
     const service = buildService(db, gateway);
-    await expect(service.explainInsight("org-1", "user-1", 999)).rejects.toThrow(NotFoundException);
+    await expect(
+      service.explainInsight("org-1", "user-1", 999),
+    ).rejects.toThrow(NotFoundException);
     expect(gateway.invokeStructured).not.toHaveBeenCalled();
   });
 
@@ -163,7 +198,9 @@ describe("InvAiExplainService - explainInsight", () => {
     };
 
     const service = buildService(db, gateway);
-    await expect(service.explainInsight("org-1", "user-1", 1)).rejects.toThrow(ServiceUnavailableException);
+    await expect(service.explainInsight("org-1", "user-1", 1)).rejects.toThrow(
+      ServiceUnavailableException,
+    );
   });
 });
 
@@ -216,17 +253,26 @@ describe("InvAiExplainService - getReorderProposal", () => {
     let capturedUserPrompt = "";
 
     const gateway = {
-      invokeStructured: jest.fn().mockImplementation((opts: { prompt: { user: string } }) => {
-        capturedUserPrompt = opts.prompt.user;
-        return Promise.resolve({ ok: true, data: MOCK_EXPLAIN_RESPONSE });
-      }),
+      invokeStructured: jest
+        .fn()
+        .mockImplementation((opts: { prompt: { user: string } }) => {
+          capturedUserPrompt = opts.prompt.user;
+          return Promise.resolve({ ok: true, data: MOCK_EXPLAIN_RESPONSE });
+        }),
     };
-    const confirmation = { propose: jest.fn().mockResolvedValue(MOCK_PROPOSAL) };
+    const confirmation = {
+      propose: jest.fn().mockResolvedValue(MOCK_PROPOSAL),
+    };
     const replenishment = {
       getSuggestionForVariant: jest.fn().mockResolvedValue(MOCK_SUGGESTION),
     };
 
-    const service = buildService(buildReorderDb(), gateway, confirmation, replenishment);
+    const service = buildService(
+      buildReorderDb(),
+      gateway,
+      confirmation,
+      replenishment,
+    );
     const result = await service.getReorderProposal("org-1", "user-1", 77);
 
     expect(capturedUserPrompt).toContain("42");
@@ -237,32 +283,52 @@ describe("InvAiExplainService - getReorderProposal", () => {
     let capturedSystemPrompt = "";
 
     const gateway = {
-      invokeStructured: jest.fn().mockImplementation((opts: { prompt: { system: string } }) => {
-        capturedSystemPrompt = opts.prompt.system;
-        return Promise.resolve({ ok: true, data: MOCK_EXPLAIN_RESPONSE });
-      }),
+      invokeStructured: jest
+        .fn()
+        .mockImplementation((opts: { prompt: { system: string } }) => {
+          capturedSystemPrompt = opts.prompt.system;
+          return Promise.resolve({ ok: true, data: MOCK_EXPLAIN_RESPONSE });
+        }),
     };
-    const confirmation = { propose: jest.fn().mockResolvedValue(MOCK_PROPOSAL) };
+    const confirmation = {
+      propose: jest.fn().mockResolvedValue(MOCK_PROPOSAL),
+    };
     const replenishment = {
       getSuggestionForVariant: jest.fn().mockResolvedValue(MOCK_SUGGESTION),
     };
 
-    const service = buildService(buildReorderDb(), gateway, confirmation, replenishment);
+    const service = buildService(
+      buildReorderDb(),
+      gateway,
+      confirmation,
+      replenishment,
+    );
     await service.getReorderProposal("org-1", "user-1", 77);
 
-    expect(capturedSystemPrompt.toLowerCase()).toMatch(/must not compute|must not derive|must not invent/i);
+    expect(capturedSystemPrompt.toLowerCase()).toMatch(
+      /must not compute|must not derive|must not invent/i,
+    );
   });
 
   it("should charge credits via feature key inv.reorder-explain", async () => {
     const gateway = {
-      invokeStructured: jest.fn().mockResolvedValue({ ok: true, data: MOCK_EXPLAIN_RESPONSE }),
+      invokeStructured: jest
+        .fn()
+        .mockResolvedValue({ ok: true, data: MOCK_EXPLAIN_RESPONSE }),
     };
-    const confirmation = { propose: jest.fn().mockResolvedValue(MOCK_PROPOSAL) };
+    const confirmation = {
+      propose: jest.fn().mockResolvedValue(MOCK_PROPOSAL),
+    };
     const replenishment = {
       getSuggestionForVariant: jest.fn().mockResolvedValue(MOCK_SUGGESTION),
     };
 
-    const service = buildService(buildReorderDb(), gateway, confirmation, replenishment);
+    const service = buildService(
+      buildReorderDb(),
+      gateway,
+      confirmation,
+      replenishment,
+    );
     await service.getReorderProposal("org-1", "user-1", 77);
 
     const callArgs = (gateway.invokeStructured as jest.Mock).mock.calls[0][0];
@@ -272,16 +338,25 @@ describe("InvAiExplainService - getReorderProposal", () => {
 
   it("should call AiConfirmationService.propose with action inventory:create-draft-po, not generatePo", async () => {
     const gateway = {
-      invokeStructured: jest.fn().mockResolvedValue({ ok: true, data: MOCK_EXPLAIN_RESPONSE }),
+      invokeStructured: jest
+        .fn()
+        .mockResolvedValue({ ok: true, data: MOCK_EXPLAIN_RESPONSE }),
     };
     const generatePo = jest.fn();
-    const confirmation = { propose: jest.fn().mockResolvedValue(MOCK_PROPOSAL) };
+    const confirmation = {
+      propose: jest.fn().mockResolvedValue(MOCK_PROPOSAL),
+    };
     const replenishment = {
       getSuggestionForVariant: jest.fn().mockResolvedValue(MOCK_SUGGESTION),
       generatePo,
     };
 
-    const service = buildService(buildReorderDb(), gateway, confirmation, replenishment);
+    const service = buildService(
+      buildReorderDb(),
+      gateway,
+      confirmation,
+      replenishment,
+    );
     await service.getReorderProposal("org-1", "user-1", 77);
 
     expect(confirmation.propose).toHaveBeenCalledTimes(1);
@@ -292,14 +367,23 @@ describe("InvAiExplainService - getReorderProposal", () => {
 
   it("should return proposal from AiConfirmationService.propose in the result", async () => {
     const gateway = {
-      invokeStructured: jest.fn().mockResolvedValue({ ok: true, data: MOCK_EXPLAIN_RESPONSE }),
+      invokeStructured: jest
+        .fn()
+        .mockResolvedValue({ ok: true, data: MOCK_EXPLAIN_RESPONSE }),
     };
-    const confirmation = { propose: jest.fn().mockResolvedValue(MOCK_PROPOSAL) };
+    const confirmation = {
+      propose: jest.fn().mockResolvedValue(MOCK_PROPOSAL),
+    };
     const replenishment = {
       getSuggestionForVariant: jest.fn().mockResolvedValue(MOCK_SUGGESTION),
     };
 
-    const service = buildService(buildReorderDb(), gateway, confirmation, replenishment);
+    const service = buildService(
+      buildReorderDb(),
+      gateway,
+      confirmation,
+      replenishment,
+    );
     const result = await service.getReorderProposal("org-1", "user-1", 77);
 
     expect(result.proposal.proposalId).toBe(101);
@@ -313,8 +397,15 @@ describe("InvAiExplainService - getReorderProposal", () => {
       getSuggestionForVariant: jest.fn().mockResolvedValue(null),
     };
 
-    const service = buildService(buildReorderDb(), gateway, confirmation, replenishment);
-    await expect(service.getReorderProposal("org-1", "user-1", 9999)).rejects.toThrow(NotFoundException);
+    const service = buildService(
+      buildReorderDb(),
+      gateway,
+      confirmation,
+      replenishment,
+    );
+    await expect(
+      service.getReorderProposal("org-1", "user-1", 9999),
+    ).rejects.toThrow(NotFoundException);
     expect(gateway.invokeStructured).not.toHaveBeenCalled();
   });
 
@@ -332,8 +423,15 @@ describe("InvAiExplainService - getReorderProposal", () => {
       getSuggestionForVariant: jest.fn().mockResolvedValue(MOCK_SUGGESTION),
     };
 
-    const service = buildService(buildReorderDb(), gateway, confirmation, replenishment);
-    await expect(service.getReorderProposal("org-1", "user-1", 77)).rejects.toThrow(ServiceUnavailableException);
+    const service = buildService(
+      buildReorderDb(),
+      gateway,
+      confirmation,
+      replenishment,
+    );
+    await expect(
+      service.getReorderProposal("org-1", "user-1", 77),
+    ).rejects.toThrow(ServiceUnavailableException);
     expect(confirmation.propose).not.toHaveBeenCalled();
   });
 
@@ -348,14 +446,23 @@ describe("InvAiExplainService - getReorderProposal", () => {
     };
 
     const gateway = {
-      invokeStructured: jest.fn().mockResolvedValue({ ok: true, data: explainWithBothFactTypes }),
+      invokeStructured: jest
+        .fn()
+        .mockResolvedValue({ ok: true, data: explainWithBothFactTypes }),
     };
-    const confirmation = { propose: jest.fn().mockResolvedValue(MOCK_PROPOSAL) };
+    const confirmation = {
+      propose: jest.fn().mockResolvedValue(MOCK_PROPOSAL),
+    };
     const replenishment = {
       getSuggestionForVariant: jest.fn().mockResolvedValue(MOCK_SUGGESTION),
     };
 
-    const service = buildService(buildReorderDb(), gateway, confirmation, replenishment);
+    const service = buildService(
+      buildReorderDb(),
+      gateway,
+      confirmation,
+      replenishment,
+    );
     const result = await service.getReorderProposal("org-1", "user-1", 77);
 
     const factual = result.explanation.factors.filter((f) => f.isFactual);
@@ -390,8 +497,18 @@ describe("InvAiExplainService - confirmReorderProposal", () => {
     };
     const replenishment = { generatePo };
 
-    const service = buildService(buildReorderDb(), gateway, confirmation, replenishment);
-    await service.confirmReorderProposal("org-1", "user-1", 101, "101.9999999999.abc123");
+    const service = buildService(
+      buildReorderDb(),
+      gateway,
+      confirmation,
+      replenishment,
+    );
+    await service.confirmReorderProposal(
+      "org-1",
+      "user-1",
+      101,
+      "101.9999999999.abc123",
+    );
 
     expect(generatePo).toHaveBeenCalledTimes(1);
     const poArgs = generatePo.mock.calls[0];
@@ -424,13 +541,27 @@ describe("InvAiExplainService - confirmReorderProposal", () => {
       confirm: jest.fn().mockResolvedValue(confirmedPayload),
       markExecuted: jest.fn().mockResolvedValue(undefined),
     };
-    const replenishment = { generatePo: jest.fn().mockResolvedValue({ id: "po-1" }) };
+    const replenishment = {
+      generatePo: jest.fn().mockResolvedValue({ id: "po-1" }),
+    };
 
-    const service = buildService(buildReorderDb(), gateway, confirmation, replenishment);
-    await service.confirmReorderProposal("org-1", "user-1", 101, "101.9999999999.abc123");
+    const service = buildService(
+      buildReorderDb(),
+      gateway,
+      confirmation,
+      replenishment,
+    );
+    await service.confirmReorderProposal(
+      "org-1",
+      "user-1",
+      101,
+      "101.9999999999.abc123",
+    );
 
     expect(confirmation.markExecuted).toHaveBeenCalledTimes(1);
-    expect(confirmation.markExecuted).toHaveBeenCalledWith(101, { poId: "po-1" });
+    expect(confirmation.markExecuted).toHaveBeenCalledWith(101, {
+      poId: "po-1",
+    });
   });
 
   it("should throw NotFoundException when confirmed payload has no vendorId", async () => {
@@ -455,7 +586,12 @@ describe("InvAiExplainService - confirmReorderProposal", () => {
     };
     const replenishment = { generatePo };
 
-    const service = buildService(buildReorderDb(), gateway, confirmation, replenishment);
+    const service = buildService(
+      buildReorderDb(),
+      gateway,
+      confirmation,
+      replenishment,
+    );
     await expect(
       service.confirmReorderProposal("org-1", "user-1", 102, "102.xxx.yyy"),
     ).rejects.toThrow(NotFoundException);
@@ -502,16 +638,24 @@ describe("InvAiExplainService - getSupplierDelayBriefing", () => {
         invAiInsights: {
           findMany: jest
             .fn()
-            .mockResolvedValue([MOCK_DELAY_INSIGHT_V1, MOCK_DELAY_INSIGHT_V2A, MOCK_DELAY_INSIGHT_V2B]),
+            .mockResolvedValue([
+              MOCK_DELAY_INSIGHT_V1,
+              MOCK_DELAY_INSIGHT_V2A,
+              MOCK_DELAY_INSIGHT_V2B,
+            ]),
           findFirst: jest.fn(),
         },
       },
     };
     const gateway = {
-      invokeText: jest.fn().mockResolvedValue({ ok: true, data: "Vendor ACME has shown delays." }),
+      invokeText: jest
+        .fn()
+        .mockResolvedValue({ ok: true, data: "Vendor ACME has shown delays." }),
     };
     const vendors = {
-      getVendorPerformance: jest.fn().mockResolvedValue(MOCK_VENDOR_PERFORMANCE),
+      getVendorPerformance: jest
+        .fn()
+        .mockResolvedValue(MOCK_VENDOR_PERFORMANCE),
     };
 
     const service = buildService(db, gateway, undefined, undefined, vendors);
@@ -523,7 +667,8 @@ describe("InvAiExplainService - getSupplierDelayBriefing", () => {
   });
 
   it("should return AI-generated narration text, not computed numbers", async () => {
-    const aiNarration = "Vendor ACME has shown persistent delays with an on-time rate of 72%.";
+    const aiNarration =
+      "Vendor ACME has shown persistent delays with an on-time rate of 72%.";
     const db = {
       query: {
         invAiInsights: {
@@ -536,7 +681,9 @@ describe("InvAiExplainService - getSupplierDelayBriefing", () => {
       invokeText: jest.fn().mockResolvedValue({ ok: true, data: aiNarration }),
     };
     const vendors = {
-      getVendorPerformance: jest.fn().mockResolvedValue(MOCK_VENDOR_PERFORMANCE),
+      getVendorPerformance: jest
+        .fn()
+        .mockResolvedValue(MOCK_VENDOR_PERFORMANCE),
     };
 
     const service = buildService(db, gateway, undefined, undefined, vendors);
@@ -561,7 +708,9 @@ describe("InvAiExplainService - getSupplierDelayBriefing", () => {
     });
     const gateway = { invokeText };
     const vendors = {
-      getVendorPerformance: jest.fn().mockResolvedValue(MOCK_VENDOR_PERFORMANCE),
+      getVendorPerformance: jest
+        .fn()
+        .mockResolvedValue(MOCK_VENDOR_PERFORMANCE),
     };
 
     const service = buildService(db, gateway, undefined, undefined, vendors);
@@ -569,8 +718,14 @@ describe("InvAiExplainService - getSupplierDelayBriefing", () => {
 
     expect(result.vendors[0]!.performance["onTimeRate"]).toBe(0.72);
     expect(result.vendors[0]!.performance["avgLeadTimeDays"]).toBe(9);
-    const invokeTextReturn = (invokeText.mock.results[0] as { value: Promise<{ ok: boolean; data: string }> }).value;
-    await expect(invokeTextReturn).resolves.toMatchObject({ data: expect.stringContaining("narrative") });
+    const invokeTextReturn = (
+      invokeText.mock.results[0] as {
+        value: Promise<{ ok: boolean; data: string }>;
+      }
+    ).value;
+    await expect(invokeTextReturn).resolves.toMatchObject({
+      data: expect.stringContaining("narrative"),
+    });
   });
 
   it("should charge credits via feature key inv.supplier-delay-briefing", async () => {
@@ -586,7 +741,9 @@ describe("InvAiExplainService - getSupplierDelayBriefing", () => {
       invokeText: jest.fn().mockResolvedValue({ ok: true, data: "Narrative." }),
     };
     const vendors = {
-      getVendorPerformance: jest.fn().mockResolvedValue(MOCK_VENDOR_PERFORMANCE),
+      getVendorPerformance: jest
+        .fn()
+        .mockResolvedValue(MOCK_VENDOR_PERFORMANCE),
     };
 
     const service = buildService(db, gateway, undefined, undefined, vendors);
@@ -615,11 +772,15 @@ describe("InvAiExplainService - getSupplierDelayBriefing", () => {
       }),
     };
     const vendors = {
-      getVendorPerformance: jest.fn().mockResolvedValue(MOCK_VENDOR_PERFORMANCE),
+      getVendorPerformance: jest
+        .fn()
+        .mockResolvedValue(MOCK_VENDOR_PERFORMANCE),
     };
 
     const service = buildService(db, gateway, undefined, undefined, vendors);
-    await expect(service.getSupplierDelayBriefing("org-1", "user-1")).rejects.toThrow(ServiceUnavailableException);
+    await expect(
+      service.getSupplierDelayBriefing("org-1", "user-1"),
+    ).rejects.toThrow(ServiceUnavailableException);
   });
 
   it("should return static narration without calling AI when there are no delay insights", async () => {
@@ -649,16 +810,24 @@ describe("InvAiExplainService - getSupplierDelayBriefing", () => {
         invAiInsights: {
           findMany: jest
             .fn()
-            .mockResolvedValue([MOCK_DELAY_INSIGHT_V1, MOCK_DELAY_INSIGHT_V2A, MOCK_DELAY_INSIGHT_V2B]),
+            .mockResolvedValue([
+              MOCK_DELAY_INSIGHT_V1,
+              MOCK_DELAY_INSIGHT_V2A,
+              MOCK_DELAY_INSIGHT_V2B,
+            ]),
           findFirst: jest.fn(),
         },
       },
     };
     const gateway = {
-      invokeText: jest.fn().mockResolvedValue({ ok: true, data: "Only ACME narrative." }),
+      invokeText: jest
+        .fn()
+        .mockResolvedValue({ ok: true, data: "Only ACME narrative." }),
     };
     const vendors = {
-      getVendorPerformance: jest.fn().mockResolvedValue(MOCK_VENDOR_PERFORMANCE),
+      getVendorPerformance: jest
+        .fn()
+        .mockResolvedValue(MOCK_VENDOR_PERFORMANCE),
     };
 
     const service = buildService(db, gateway, undefined, undefined, vendors);

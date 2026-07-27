@@ -31,6 +31,7 @@ import { CronCrmTasksService } from "./cron-crm-tasks.service";
 import { CronOrganizationService } from "./cron-organization.service";
 import { AiJobsWorkerService } from "../ai-jobs/ai-jobs-worker.service";
 import { SupportKbGapService } from "../support-kb-gap/support-kb-gap.service";
+import { ExceptionsDetectorService } from "../timesheets-core/exceptions-detector.service";
 
 @Public()
 @Controller("cron")
@@ -57,6 +58,7 @@ export class CronController {
     private readonly aiJobsWorker: AiJobsWorkerService,
     private readonly supportKbGap: SupportKbGapService,
     private readonly cronOrganization: CronOrganizationService,
+    private readonly timesheetExceptionsDetector: ExceptionsDetectorService,
   ) {}
 
   @Get("trial-expiry")
@@ -166,7 +168,11 @@ export class CronController {
     assertCronSecret(authorization);
     try {
       const result = await this.leave.runMonthlyLeaveReset();
-      return { success: true, monthlyExpiry: result.monthlyExpiry, yearlyReset: result.yearlyReset };
+      return {
+        success: true,
+        monthlyExpiry: result.monthlyExpiry,
+        yearlyReset: result.yearlyReset,
+      };
     } catch (error) {
       logger.error("Monthly leave reset cron failed", error);
       throw new InternalServerErrorException("Internal server error");
@@ -274,7 +280,11 @@ export class CronController {
     assertCronSecret(authorization);
     try {
       const result = await this.hr.processCertificationExpiry();
-      return { success: true, message: `Processed ${result.fired} certification expiry reminders`, ...result };
+      return {
+        success: true,
+        message: `Processed ${result.fired} certification expiry reminders`,
+        ...result,
+      };
     } catch (error) {
       logger.error("Certification expiry cron failed", error);
       throw new InternalServerErrorException("Internal server error");
@@ -285,7 +295,11 @@ export class CronController {
     assertCronSecret(authorization);
     try {
       const result = await this.hr.processOnboardingCompletionSweep();
-      return { success: true, message: `Dispatched ${result.fired} onboarding completion events`, ...result };
+      return {
+        success: true,
+        message: `Dispatched ${result.fired} onboarding completion events`,
+        ...result,
+      };
     } catch (error) {
       logger.error("Onboarding completion sweep failed", error);
       throw new InternalServerErrorException("Internal server error");
@@ -318,7 +332,11 @@ export class CronController {
     assertCronSecret(authorization);
     try {
       const result = await this.hr.processDocumentExpiry();
-      return { success: true, message: `Processed ${result.fired} document expiry reminders`, ...result };
+      return {
+        success: true,
+        message: `Processed ${result.fired} document expiry reminders`,
+        ...result,
+      };
     } catch (error) {
       logger.error("Document expiry cron failed", error);
       throw new InternalServerErrorException("Internal server error");
@@ -378,13 +396,17 @@ export class CronController {
   }
 
   @Get("notification-delivery-flush")
-  getNotificationDeliveryFlush(@Headers("authorization") authorization?: string) {
+  getNotificationDeliveryFlush(
+    @Headers("authorization") authorization?: string,
+  ) {
     return this.runNotificationDeliveryFlush(authorization);
   }
 
   @Post("notification-delivery-flush")
   @HttpCode(200)
-  postNotificationDeliveryFlush(@Headers("authorization") authorization?: string) {
+  postNotificationDeliveryFlush(
+    @Headers("authorization") authorization?: string,
+  ) {
     return this.runNotificationDeliveryFlush(authorization);
   }
 
@@ -444,7 +466,11 @@ export class CronController {
     assertCronSecret(authorization);
     try {
       const result = await this.support.runUnsnooze();
-      return { success: true, message: `Unsnoozed ${result.unsnoozed} tickets`, ...result };
+      return {
+        success: true,
+        message: `Unsnoozed ${result.unsnoozed} tickets`,
+        ...result,
+      };
     } catch (error) {
       logger.error("Support unsnooze cron failed", error);
       throw new InternalServerErrorException("Internal server error");
@@ -546,16 +572,29 @@ export class CronController {
     }
   }
 
-  private async runHrEnginesSweepByName(authorization?: string, sweepName?: string) {
+  private async runHrEnginesSweepByName(
+    authorization?: string,
+    sweepName?: string,
+  ) {
     assertCronSecret(authorization);
     try {
       if (sweepName === "workflow-sla") {
         const result = await this.hrEngines.sweepWorkflowSlaEscalations();
-        return { success: true, message: `Swept ${result.swept} overdue workflow steps`, ...result };
+        return {
+          success: true,
+          message: `Swept ${result.swept} overdue workflow steps`,
+          ...result,
+        };
       }
-      return { success: false, message: `Unknown sweep name: ${sweepName ?? ""}` };
+      return {
+        success: false,
+        message: `Unknown sweep name: ${sweepName ?? ""}`,
+      };
     } catch (error) {
-      logger.error(`HR engines sweep (${sweepName ?? "unknown"}) cron failed`, error);
+      logger.error(
+        `HR engines sweep (${sweepName ?? "unknown"}) cron failed`,
+        error,
+      );
       throw new InternalServerErrorException("Internal server error");
     }
   }
@@ -679,7 +718,11 @@ export class CronController {
     assertCronSecret(authorization);
     try {
       const result = await this.crmTasks.flushOverdueTasks();
-      return { success: true, message: `Emitted ${result.emitted} task.overdue events`, ...result };
+      return {
+        success: true,
+        message: `Emitted ${result.emitted} task.overdue events`,
+        ...result,
+      };
     } catch (error) {
       logger.error("CRM tasks overdue flush failed", error);
       throw new InternalServerErrorException("Internal server error");
@@ -864,6 +907,35 @@ export class CronController {
       };
     } catch (error) {
       logger.error("Org purge worker cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+  @Get("timesheets-exception-detection")
+  getTimesheetsExceptionDetection(
+    @Headers("authorization") authorization?: string,
+  ) {
+    return this.runTimesheetsExceptionDetection(authorization);
+  }
+
+  @Post("timesheets-exception-detection")
+  @HttpCode(200)
+  postTimesheetsExceptionDetection(
+    @Headers("authorization") authorization?: string,
+  ) {
+    return this.runTimesheetsExceptionDetection(authorization);
+  }
+
+  private async runTimesheetsExceptionDetection(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.timesheetExceptionsDetector.detectAllOrgs();
+      return {
+        success: true,
+        message: `Timesheet exception detection: scanned ${result.orgsScanned} orgs, created ${result.created} exceptions`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Timesheet exception detection cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }
