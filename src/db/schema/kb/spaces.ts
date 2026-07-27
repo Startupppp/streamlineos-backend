@@ -11,8 +11,8 @@ import {
   unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
-import { kbAudienceEnum, kbSpaceRoleEnum } from "../enums";
+import { organizations, users } from "../common/auth";
+import { kbAudienceEnum, kbSpaceRoleEnum } from "../common/enums";
 
 export const kbSpaces = pgTable(
   "kb_spaces",

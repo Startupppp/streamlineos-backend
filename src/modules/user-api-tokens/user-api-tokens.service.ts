@@ -2,7 +2,7 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { randomBytes, randomUUID } from "node:crypto";
 import * as bcrypt from "bcryptjs";
-import { userApiTokens } from "../../db/schema/auth";
+import { userApiTokens } from "../../db/schema/common/auth";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";

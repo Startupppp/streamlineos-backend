@@ -3,8 +3,8 @@ import { relations } from "drizzle-orm";
 import {
   invQualityInspectionStatusEnum, invQualityHoldStatusEnum,
   invQualityDispositionEnum, invRecallStatusEnum,
-} from "../enums";
-import { organizations, users } from "../auth";
+} from "../common/enums";
+import { organizations, users } from "../common/auth";
 import { invProductVariants } from "./core";
 import { invLocations } from "./warehouses";
 import { invLots, invSerialNumbers } from "./traceability";

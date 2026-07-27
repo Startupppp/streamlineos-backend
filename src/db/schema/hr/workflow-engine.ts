@@ -1,6 +1,6 @@
 import { pgTable, pgEnum, text, serial, timestamp, boolean, jsonb, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 
 export const hrWorkflowObjectTypeEnum = pgEnum("hr_workflow_object_type", [
   "leave_request",

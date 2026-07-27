@@ -11,8 +11,8 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { workerEngagementStatusEnum } from "../enums";
-import { organizations, users } from "../auth";
+import { workerEngagementStatusEnum } from "../common/enums";
+import { organizations, users } from "../common/auth";
 import { workers } from "./workers";
 
 export const workerEngagements = pgTable(

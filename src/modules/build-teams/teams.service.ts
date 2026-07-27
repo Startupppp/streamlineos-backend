@@ -13,7 +13,7 @@ import {
   projectWorkspaceMembers,
 } from "../../db/schema/build/teams";
 import { projects } from "../../db/schema/build/core";
-import { users } from "../../db/schema/auth";
+import { users } from "../../db/schema/common/auth";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";

@@ -20,7 +20,7 @@ import {
   users,
   vendorCandidateSubmissions,
 } from "../../db/schema";
-import { orgDepartments } from "../../db/schema/organization";
+import { orgDepartments } from "../../db/schema/common/organization";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { RECRUITMENT_MANAGER_ROLES } from "./recruitment-roles";

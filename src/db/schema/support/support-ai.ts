@@ -12,7 +12,7 @@ import {
   pgEnum,
   unique,
 } from "drizzle-orm/pg-core";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { supportTickets } from "./tickets";
 
 export const SUPPORT_AI_EMBEDDING_DIMENSIONS = 1536;

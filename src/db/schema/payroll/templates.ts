@@ -2,7 +2,7 @@ import {
   pgTable, serial, text, boolean, jsonb, timestamp, index,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 import { payrollTemplateCategoryEnum } from "./enums";
 
 export const payrollTemplates = pgTable("payroll_templates", {

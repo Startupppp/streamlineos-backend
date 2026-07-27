@@ -2,7 +2,7 @@ import {
   pgTable, serial, text, timestamp, date, index, uniqueIndex, unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 import { payrollTaxWindowStatusEnum } from "./enums";
 
 export const payrollTaxWindows = pgTable("payroll_tax_windows", {

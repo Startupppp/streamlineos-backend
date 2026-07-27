@@ -11,7 +11,7 @@ import {
   unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { hrTemplateRenders } from "./template-engine";
 
 export const hrCaseCategoryEnum = pgEnum("hr_case_category", [

@@ -9,7 +9,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 
 /**
  * PM Workspace — the Product Management collaboration/access container inside an Organization

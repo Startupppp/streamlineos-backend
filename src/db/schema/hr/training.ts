@@ -1,5 +1,5 @@
 import { pgTable, text, serial, timestamp, boolean, integer, index, unique } from "drizzle-orm/pg-core";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 
 export const trainingPrograms = pgTable("training_programs", {
   id: serial("id").primaryKey(),
@@ -21,18 +21,4 @@ export const trainingPrograms = pgTable("training_programs", {
 }, (table) => [
   unique("uniq_training_programs_org_id").on(table.orgId, table.id),
   index("idx_training_programs_org_status").on(table.orgId, table.status),
-]);
-
-export const trainingAttendance = pgTable("training_attendance", {
-  id: serial("id").primaryKey(),
-  programId: integer("program_id").references(() => trainingPrograms.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  status: text("status").default("ENROLLED").notNull(),
-  feedbackRating: integer("feedback_rating"),
-  feedbackText: text("feedback_text"),
-  certificateUrl: text("certificate_url"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_training_attendance_program").on(table.programId),
-  index("idx_training_attendance_user").on(table.userId),
 ]);

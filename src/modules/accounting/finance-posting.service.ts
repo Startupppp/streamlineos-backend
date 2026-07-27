@@ -13,7 +13,7 @@ import {
   finApprovalPolicies,
   finApprovalRequests,
 } from "../../db/schema";
-import type { NewJournalLine } from "../../db/schema/accounting";
+import type { NewJournalLine } from "../../db/schema/accounting/accounting";
 import { AuditService } from "../../common/audit/audit.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";

@@ -22,8 +22,8 @@ import {
   loanStatusEnum,
   bonusTypeEnum,
   fnfStatusEnum,
-} from "../enums";
-import { organizations, users } from "../auth";
+} from "../common/enums";
+import { organizations, users } from "../common/auth";
 import { journalEntries, ledgerAccounts } from "../accounting";
 import { projects } from "../build";
 import { resignations } from "./offboarding";

@@ -1,6 +1,6 @@
 import { pgTable, serial, text, integer, boolean, jsonb, timestamp, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 import { signEnvelopes } from "./envelopes";
 
 // Immutable once written. Regeneration must go through an explicit admin/legal recovery

@@ -4,8 +4,8 @@ import {
   invVendorReturnReasonEnum, invCustomerReturnDispositionEnum,
   invPickListStatusEnum, invCycleCountStatusEnum,
   invReturnStatusEnum,
-} from "../enums";
-import { organizations, users } from "../auth";
+} from "../common/enums";
+import { organizations, users } from "../common/auth";
 import { clients } from "../crm/contacts";
 import { invProductVariants, invCategories } from "./core";
 import { invLocations, invWarehouses } from "./warehouses";

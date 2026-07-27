@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { and, count, eq, gte, sql } from "drizzle-orm";
-import { aiFeedback } from "../../../db/schema/ai-feedback";
+import { aiFeedback } from "../../../db/schema/ai/ai-feedback";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CreateFeedbackDto } from "../dto/ai-feedback.schemas";

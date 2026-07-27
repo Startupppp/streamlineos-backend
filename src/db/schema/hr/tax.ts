@@ -1,5 +1,5 @@
 import { pgTable, text, serial, timestamp, boolean, decimal, integer, index, unique } from "drizzle-orm/pg-core";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 
 export const taxDeclarations = pgTable("tax_declarations", {
   id: serial("id").primaryKey(),

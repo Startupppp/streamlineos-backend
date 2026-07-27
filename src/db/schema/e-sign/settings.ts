@@ -1,6 +1,6 @@
 import { pgTable, serial, text, integer, boolean, jsonb, timestamp, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 
 // One row per tenant. Everything here is a default that lower layers (template, envelope)
 // may override — nothing about SignOS behavior should be hardcoded outside this table.

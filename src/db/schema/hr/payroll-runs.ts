@@ -4,8 +4,8 @@ import {
   payrollRunStatusEnum, payrollWorkerTypeEnum, salaryComponentTypeEnum,
   salaryComponentCalcMethodEnum, payrollExceptionSeverityEnum,
   payrollExceptionStatusEnum, payrollApprovalStatusEnum,
-} from "../enums";
-import { organizations, users } from "../auth";
+} from "../common/enums";
+import { organizations, users } from "../common/auth";
 import { payrollPolicyVersions } from "./payroll-policies";
 import { hrPayrollInputPeriods } from "./payroll-inputs";
 

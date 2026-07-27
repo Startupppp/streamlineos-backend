@@ -9,7 +9,7 @@ import {
   index,
   jsonb,
 } from "drizzle-orm/pg-core";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import {
   timesheetExportTypeEnum,
   timesheetExportStatusEnum,

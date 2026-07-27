@@ -11,7 +11,7 @@ import {
   jsonb,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 import { projects } from "../build/core";
 import { timesheetBudgetTypeEnum, timesheetBudgetStatusEnum } from "./enums";
 

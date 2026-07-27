@@ -6,8 +6,8 @@ import {
   unique,
 } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
-import { organizations } from "../auth";
-import { partyTypeEnum } from "../enums";
+import { organizations } from "../common/auth";
+import { partyTypeEnum } from "../common/enums";
 
 export const businessParties = pgTable(
   "business_parties",

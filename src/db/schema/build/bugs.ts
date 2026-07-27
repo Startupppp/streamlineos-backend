@@ -1,5 +1,5 @@
 import { pgTable, pgEnum, text, serial, timestamp, integer, index, unique, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { projects } from "./core";
 import { tickets, projectReleases } from "./tasks";
 import { testCases } from "./qa";

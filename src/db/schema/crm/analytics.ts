@@ -4,8 +4,8 @@ import {
   crmPersonRoleEnum, crmHealthEnum, crmDealStageEnum,
   crmSupportTicketStatusEnum, crmSupportTicketPriorityEnum, crmActivityTypeEnum,
   slaAppliesToEnum, slaPriorityEnum,
-} from "../enums";
-import { organizations, users } from "../auth";
+} from "../common/enums";
+import { organizations, users } from "../common/auth";
 
 export const crmPeople = pgTable("crm_people", {
   id: serial("id").primaryKey(),

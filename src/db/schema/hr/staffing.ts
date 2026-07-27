@@ -1,6 +1,6 @@
 import { pgTable, text, serial, timestamp, integer, decimal, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 import { candidates, jobPostings } from "./hiring";
 
 export type ExternalReferrerStatus = "ACTIVE" | "BLOCKED";

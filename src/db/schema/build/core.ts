@@ -17,8 +17,8 @@ import {
   stateGroupEnum,
   cycleStatusEnum,
   moduleStatusEnum,
-} from "../enums";
-import { organizations, users } from "../auth";
+} from "../common/enums";
+import { organizations, users } from "../common/auth";
 import { deals } from "../crm/deals";
 import { managedProducts } from "./managed-products";
 import { pmWorkspaces } from "./pm-workspaces";

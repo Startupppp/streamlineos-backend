@@ -2,8 +2,8 @@ import {
   pgTable, serial, text, integer, timestamp, index, uniqueIndex, unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
-import { payslipPublishChannelEnum } from "../enums";
+import { organizations, users } from "../common/auth";
+import { payslipPublishChannelEnum } from "../common/enums";
 import { payslipPublicationStatusEnum } from "./enums";
 import { payrollRuns, payrollRunEmployees } from "../hr/payroll-runs";
 import { payslipTemplates } from "../hr/payroll-payout";

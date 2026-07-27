@@ -1,7 +1,7 @@
 import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, unique, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { supportTicketStatusEnum, supportTicketPriorityEnum } from "../enums";
-import { organizations, users } from "../auth";
+import { supportTicketStatusEnum, supportTicketPriorityEnum } from "../common/enums";
+import { organizations, users } from "../common/auth";
 import { clients } from "../crm/contacts";
 
 export const supportTickets = pgTable("support_tickets", {

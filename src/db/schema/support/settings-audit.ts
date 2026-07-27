@@ -1,5 +1,5 @@
 import { pgTable, serial, text, jsonb, timestamp, index, unique } from "drizzle-orm/pg-core";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 
 export const SETTINGS_AUDIT_ENTITY_TYPES = [
   "sla_policy",

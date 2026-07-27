@@ -254,20 +254,6 @@ export const mfaBackupCodes = pgTable("mfa_backup_codes", {
   index("idx_mfa_backup_codes_user").on(table.userId),
 ]);
 
-export const serviceAccounts = pgTable("service_accounts", {
-  id: text("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  name: text("name").notNull(),
-  description: text("description"),
-  isActive: boolean("is_active").default(true).notNull(),
-  permissions: jsonb("permissions").$type<string[]>().default([]).notNull(),
-  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
-}, (table) => [
-  index("idx_service_accounts_org").on(table.orgId),
-]);
-
 export const magicLinkTokens = pgTable("magic_link_tokens", {
   id: text("id").primaryKey(),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),

@@ -3,10 +3,10 @@ import { relations, sql } from "drizzle-orm";
 import {
   jobPostingStatusEnum, candidateStatusEnum, interviewTypeEnum,
   interviewResultEnum, applicationStatusEnum,
-} from "../enums";
-import { organizations, users } from "../auth";
+} from "../common/enums";
+import { organizations, users } from "../common/auth";
 import { departments } from "./employees";
-import { orgDepartments } from "../organization";
+import { orgDepartments } from "../common/organization";
 
 export interface ScreeningQuestion {
   id: string;

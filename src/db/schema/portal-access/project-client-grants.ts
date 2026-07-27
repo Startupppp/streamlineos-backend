@@ -9,9 +9,9 @@ import {
   foreignKey,
 } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 import { partyContacts } from "../party/party-contacts";
-import { portalGrantStatusEnum } from "../enums";
+import { portalGrantStatusEnum } from "../common/enums";
 import { portalMemberships } from "./portal-memberships";
 import { projects } from "../build";
 

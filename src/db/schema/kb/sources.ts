@@ -8,7 +8,7 @@ import {
   unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { kbSpaces } from "./spaces";
 
 export const KB_SOURCE_KINDS = ["file", "note"] as const;

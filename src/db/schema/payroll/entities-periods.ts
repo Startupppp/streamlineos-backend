@@ -14,7 +14,7 @@ import {
   unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 
 export const payrollEntityStatusEnum = pgEnum("payroll_entity_status", [
   "ACTIVE",
@@ -114,41 +114,6 @@ export const payrollPeriods = pgTable(
     ),
     index("idx_payroll_periods_org_status").on(table.orgId, table.status),
     index("idx_payroll_periods_org_key").on(table.orgId, table.periodKey),
-  ],
-);
-
-/** Versioned statutory rule sets (PF/ESI/PT/LWF/TDS/gratuity/min-wage). */
-export const payrollStatutoryRuleSets = pgTable(
-  "payroll_statutory_rule_sets",
-  {
-    id: serial("id").primaryKey(),
-    orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }),
-    entityId: integer("entity_id").references(() => payrollEntities.id, {
-      onDelete: "set null",
-    }),
-    countryCode: text("country_code").notNull().default("IN"),
-    stateCode: text("state_code"),
-    ruleType: text("rule_type").notNull(), // PF | ESI | PT | LWF | TDS | GRATUITY | MIN_WAGE | HRA
-    version: text("version").notNull(),
-    effectiveFrom: date("effective_from").notNull(),
-    effectiveTo: date("effective_to"),
-    config: jsonb("config").notNull().$type<Record<string, unknown>>(),
-    sourceRef: text("source_ref"),
-    isSystemDefault: boolean("is_system_default").default(false).notNull(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at")
-      .defaultNow()
-      .notNull()
-      .$onUpdate(() => new Date()),
-  },
-  (table) => [
-    index("idx_payroll_stat_rules_lookup").on(
-      table.countryCode,
-      table.stateCode,
-      table.ruleType,
-      table.effectiveFrom,
-    ),
-    index("idx_payroll_stat_rules_org").on(table.orgId, table.ruleType),
   ],
 );
 

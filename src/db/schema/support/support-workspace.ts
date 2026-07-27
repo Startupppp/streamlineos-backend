@@ -13,7 +13,7 @@ import {
   unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { supportTickets } from "./tickets";
 
 export const supportSavedViewVisibilityEnum = pgEnum("support_saved_view_visibility", [

@@ -3,8 +3,8 @@ import {
   intakeStatusEnum,
   intakeSourceEnum,
   viewLayoutEnum,
-} from "../enums";
-import { organizations, users } from "../auth";
+} from "../common/enums";
+import { organizations, users } from "../common/auth";
 import { projects } from "./core";
 import { tickets } from "./tasks";
 

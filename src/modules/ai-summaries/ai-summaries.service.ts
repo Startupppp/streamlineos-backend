@@ -2,8 +2,8 @@ import { Inject, Injectable } from "@nestjs/common";
 import { desc, eq, and } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
-import { aiSummarySnapshots } from "../../db/schema/ai-summaries";
-import type { AiSummarySnapshot } from "../../db/schema/ai-summaries";
+import { aiSummarySnapshots } from "../../db/schema/ai/ai-summaries";
+import type { AiSummarySnapshot } from "../../db/schema/ai/ai-summaries";
 import type {
   SnapshotPayload,
   SnapshotStructured,

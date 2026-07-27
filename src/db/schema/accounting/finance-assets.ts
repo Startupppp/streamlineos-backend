@@ -2,7 +2,7 @@ import { boolean, date, decimal, index, integer, pgEnum, pgTable, serial, text, 
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { ledgerAccounts, journalEntries } from "./accounting";
-import { purchaseBills } from "../crm/billing";
+import { purchaseBills } from "../crm/invoicing";
 import { clients } from "../crm/contacts";
 
 export const accDepreciationMethodEnum = pgEnum("acc_depreciation_method", ["STRAIGHT_LINE", "DECLINING_BALANCE", "UNITS_OF_PRODUCTION"]);

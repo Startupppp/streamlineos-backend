@@ -10,7 +10,7 @@ import {
   index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { projects } from "../build/core";
 import { timesheetBillingTypeEnum } from "./enums";
 

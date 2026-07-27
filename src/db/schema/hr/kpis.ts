@@ -1,6 +1,6 @@
 import { pgTable, text, serial, timestamp, boolean, decimal, jsonb, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 
 export const kpiDefinitions = pgTable("kpi_definitions", {
   id: serial("id").primaryKey(),

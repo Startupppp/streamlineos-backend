@@ -4,8 +4,8 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { paginateOffset, buildListResponse } from "../../common/pagination/pagination";
-import { accAssetCategories } from "../../db/schema/finance-assets";
-import { ledgerAccounts } from "../../db/schema/accounting";
+import { accAssetCategories } from "../../db/schema/accounting/finance-assets";
+import { ledgerAccounts } from "../../db/schema/accounting/accounting";
 import type { CreateCategoryInput, ListCategoriesQuery, UpdateCategoryInput } from "./dto/assets.schemas";
 
 @Injectable()

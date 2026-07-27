@@ -10,7 +10,7 @@ import {
   hrWorkflowDelegations,
   type hrWorkflowObjectTypeEnum,
 } from "../../db/schema/hr/workflow-engine";
-import { users, organizationMembers } from "../../db/schema/auth";
+import { users, organizationMembers } from "../../db/schema/common/auth";
 import { departments } from "../../db/schema/hr/employees";
 
 type HrWorkflowObjectType = typeof hrWorkflowObjectTypeEnum.enumValues[number];

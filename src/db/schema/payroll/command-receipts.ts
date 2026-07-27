@@ -10,7 +10,7 @@ import {
   uniqueIndex,
   unique,
 } from "drizzle-orm/pg-core";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { payrollRuns } from "../hr/payroll-runs";
 
 export const payrollCommandStatusEnum = pgEnum("payroll_command_status", [

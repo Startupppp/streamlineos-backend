@@ -1,6 +1,6 @@
 import { pgTable, serial, text, integer, timestamp, index, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 import { signSignatureAssetTypeEnum, signSignatureMethodEnum } from "./enums";
 import { signEnvelopes } from "./envelopes";
 import { signRecipients } from "./recipients";

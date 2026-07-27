@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import { inboxRecords } from "../../db/schema/outbox";
+import { inboxRecords } from "../../db/schema/common/outbox";
 import { type DbOrTx } from "../rbac/access-invalidate";
 
 /**

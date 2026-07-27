@@ -3,8 +3,8 @@ import { relations } from "drizzle-orm";
 import {
   leadEmailDirectionEnum, leadTaskStatusEnum, scoringOperatorEnum,
   assignmentRuleTypeEnum,
-} from "../enums";
-import { organizations, users } from "../auth";
+} from "../common/enums";
+import { organizations, users } from "../common/auth";
 import { crmCampaigns } from "./campaigns";
 
 export const leads = pgTable("leads", {

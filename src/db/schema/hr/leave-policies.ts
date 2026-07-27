@@ -1,5 +1,5 @@
 import { pgTable, text, serial, timestamp, boolean, decimal, integer, index, unique } from "drizzle-orm/pg-core";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 import { leaveTypes } from "./leaves";
 
 export const leavePolicies = pgTable("leave_policies", {

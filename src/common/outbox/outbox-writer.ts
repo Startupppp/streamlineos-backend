@@ -1,4 +1,4 @@
-import { outboxEvents } from "../../db/schema/outbox";
+import { outboxEvents } from "../../db/schema/common/outbox";
 import { buildOutboxEvent } from "./outbox-envelope";
 import { type OutboxEventInput } from "./outbox-event-schema";
 import { type DbOrTx } from "../rbac/access-invalidate";

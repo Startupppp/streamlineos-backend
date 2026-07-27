@@ -6,7 +6,7 @@ import {
   jsonb,
   index,
 } from "drizzle-orm/pg-core";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 
 export const timesheetAuditEvents = pgTable("timesheet_audit_events", {
   id: serial("id").primaryKey(),

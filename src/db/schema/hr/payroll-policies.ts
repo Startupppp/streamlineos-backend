@@ -1,7 +1,7 @@
 import { pgTable, text, serial, timestamp, jsonb, date, integer, index, uniqueIndex, unique, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
-import { payrollPolicyStatusEnum, payFrequencyEnum, payrollCalendarEventTypeEnum } from "../enums";
-import { organizations, users } from "../auth";
+import { payrollPolicyStatusEnum, payFrequencyEnum, payrollCalendarEventTypeEnum } from "../common/enums";
+import { organizations, users } from "../common/auth";
 
 export const payrollPolicies = pgTable("payroll_policies", {
   id: serial("id").primaryKey(),

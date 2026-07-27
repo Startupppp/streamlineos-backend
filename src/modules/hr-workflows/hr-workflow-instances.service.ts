@@ -3,7 +3,7 @@ import { and, eq, desc, inArray, lte, or, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { hrWorkflowInstances, hrWorkflowStepActions, hrWorkflowDelegations } from "../../db/schema/hr/workflow-engine";
-import { users, organizationMembers } from "../../db/schema/auth";
+import { users, organizationMembers } from "../../db/schema/common/auth";
 import { departments } from "../../db/schema/hr/employees";
 import type { WorkflowInstanceQueryDto } from "./dto/workflow.schemas";
 import { HrWorkflowEngineService } from "./hr-workflow-engine.service";

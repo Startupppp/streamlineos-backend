@@ -10,10 +10,10 @@ import { CacheService } from "../../common/cache/cache.service";
 import { paginateOffset, buildListResponse } from "../../common/pagination/pagination";
 import {
   accFixedAssets, accAssetCategories, accDepreciationSchedules,
-} from "../../db/schema/finance-assets";
-import { accNumberSequences, accSystemAccountMap } from "../../db/schema/accounting-core";
-import { ledgerAccounts } from "../../db/schema/accounting";
-import { purchaseBills } from "../../db/schema/crm/billing";
+} from "../../db/schema/accounting/finance-assets";
+import { accNumberSequences, accSystemAccountMap } from "../../db/schema/accounting/accounting-core";
+import { ledgerAccounts } from "../../db/schema/accounting/accounting";
+import { purchaseBills } from "../../db/schema/crm/invoicing";
 import { JournalPostingService, type DraftLine, type DbOrTx } from "../accounting/journal-posting.service";
 import type { SystemAccountPurpose } from "../accounting/finance-posting.types";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";

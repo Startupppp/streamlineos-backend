@@ -1,5 +1,5 @@
 import { pgTable, text, serial, timestamp, date, integer, index, unique } from "drizzle-orm/pg-core";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { attendance } from "./attendance";
 
 export const hrAttendanceRegularizations = pgTable("hr_attendance_regularizations", {

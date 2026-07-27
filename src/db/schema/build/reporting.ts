@@ -1,6 +1,6 @@
 import { pgTable, text, serial, timestamp, date, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 import { projects } from "./core";
 
 export const projectDailySnapshots = pgTable("project_daily_snapshots", {

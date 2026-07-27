@@ -1,5 +1,5 @@
 import { pgTable, pgEnum, text, serial, timestamp, integer, index, unique } from "drizzle-orm/pg-core";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { projects } from "./core";
 
 export const approvalEntityTypeEnum = pgEnum("approval_entity_type", [

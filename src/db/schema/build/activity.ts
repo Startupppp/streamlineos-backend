@@ -1,6 +1,6 @@
 import { pgTable, pgEnum, text, serial, integer, timestamp, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { tickets, ticketComments } from "./tasks";
 
 export const ticketActivityActionEnum = pgEnum("ticket_activity_action", [

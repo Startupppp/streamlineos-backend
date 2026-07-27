@@ -11,7 +11,7 @@ import {
   tickets,
   users,
 } from "../../db/schema";
-import { orgDepartments } from "../../db/schema/organization";
+import { orgDepartments } from "../../db/schema/common/organization";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";

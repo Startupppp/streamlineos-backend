@@ -1,7 +1,7 @@
 import { pgTable, text, serial, timestamp, boolean, decimal, date, integer, index, uniqueIndex, unique, check } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
-import { leaveStatusEnum } from "../enums";
-import { organizations, users } from "../auth";
+import { leaveStatusEnum } from "../common/enums";
+import { organizations, users } from "../common/auth";
 
 export const leaveTypes = pgTable("leave_types", {
   id: serial("id").primaryKey(),

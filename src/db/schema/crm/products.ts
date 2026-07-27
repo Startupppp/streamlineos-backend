@@ -1,6 +1,6 @@
 import { pgTable, text, serial, timestamp, boolean, integer, index, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 
 export const crmProducts = pgTable("crm_products", {
   id: serial("id").primaryKey(),

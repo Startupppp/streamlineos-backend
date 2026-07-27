@@ -1,4 +1,4 @@
-import type { AiSummarySnapshot } from "../../db/schema/ai-summaries";
+import type { AiSummarySnapshot } from "../../db/schema/ai/ai-summaries";
 
 export interface SnapshotStructured {
   highlights: string[];

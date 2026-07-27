@@ -1,6 +1,6 @@
 import { pgTable, text, boolean, integer, jsonb, timestamp, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 
 export const crmPipelines = pgTable("crm_pipelines", {
   id: text("id").primaryKey().$defaultFn(() => randomUUID()),

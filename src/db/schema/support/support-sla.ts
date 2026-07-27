@@ -11,8 +11,8 @@ import {
   unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations } from "../auth";
-import { supportTicketPriorityEnum } from "../enums";
+import { organizations } from "../common/auth";
+import { supportTicketPriorityEnum } from "../common/enums";
 
 export interface WeeklyScheduleDay {
   start: string;

@@ -1,6 +1,6 @@
 import { pgTable, serial, text, integer, timestamp, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 
 export const kbSettings = pgTable(
   "kb_settings",

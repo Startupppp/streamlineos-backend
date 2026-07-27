@@ -3,8 +3,8 @@ import { relations } from "drizzle-orm";
 import {
   payslipLayoutEnum,
   payrollBankBatchStatusEnum, payrollBankItemStatusEnum,
-} from "../enums";
-import { organizations, users } from "../auth";
+} from "../common/enums";
+import { organizations, users } from "../common/auth";
 import { payrollRuns, payrollRunEmployees } from "./payroll-runs";
 
 export const payslipTemplates = pgTable("payslip_templates", {

@@ -6,7 +6,7 @@ import {
 } from "@nestjs/common";
 import { and, count, eq, inArray } from "drizzle-orm";
 import { expenses, finReimbursementBatches, users } from "../../db/schema";
-import { finBankAccounts } from "../../db/schema/finance-banking";
+import { finBankAccounts } from "../../db/schema/accounting/finance-banking";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";

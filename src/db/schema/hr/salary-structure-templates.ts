@@ -1,5 +1,5 @@
 import { pgTable, text, serial, timestamp, boolean, decimal, index, unique } from "drizzle-orm/pg-core";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 
 export const salaryStructureTemplates = pgTable("salary_structure_templates", {
   id: serial("id").primaryKey(),

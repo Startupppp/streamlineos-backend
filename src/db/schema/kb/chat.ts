@@ -1,6 +1,6 @@
 import { pgTable, serial, text, jsonb, timestamp, index, integer, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 
 export const KB_CHAT_ROLES = ["user", "assistant"] as const;
 export type KbChatRole = (typeof KB_CHAT_ROLES)[number];

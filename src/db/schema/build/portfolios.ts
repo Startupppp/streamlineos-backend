@@ -1,5 +1,5 @@
 import { pgTable, pgEnum, text, serial, integer, timestamp, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { projects } from "./core";
 
 export const portfolioStatusEnum = pgEnum("project_portfolio_status", [

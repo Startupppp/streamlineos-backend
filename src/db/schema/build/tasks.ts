@@ -4,8 +4,8 @@ import {
   ticketTypeEnum,
   ticketPriorityEnum,
   workItemRelationTypeEnum,
-} from "../enums";
-import { organizations, users } from "../auth";
+} from "../common/enums";
+import { organizations, users } from "../common/auth";
 import { projects, sprints, customStates, modules, cycles } from "./core";
 
 export const tickets = pgTable("tickets", {

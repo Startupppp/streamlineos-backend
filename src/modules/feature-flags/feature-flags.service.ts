@@ -6,7 +6,7 @@ import {
 } from "@nestjs/common";
 import { eq, and } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { featureFlags, type OrgOverride } from "../../db/schema/feature-flags";
+import { featureFlags, type OrgOverride } from "../../db/schema/common/feature-flags";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";

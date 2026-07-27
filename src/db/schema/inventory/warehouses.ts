@@ -1,8 +1,8 @@
 import { pgTable, text, serial, timestamp, boolean, decimal, integer, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { invLocationTypeEnum } from "../enums";
-import { organizations, users } from "../auth";
-import { orgBranches } from "../organization";
+import { invLocationTypeEnum } from "../common/enums";
+import { organizations, users } from "../common/auth";
+import { orgBranches } from "../common/organization";
 
 export const invWarehouses = pgTable("inv_warehouses", {
   id: serial("id").primaryKey(),

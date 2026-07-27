@@ -16,7 +16,7 @@ import {
 } from "../../db/schema/hr/payroll-inputs";
 import { hrLeaveLedger } from "../../db/schema/hr/leave-ledger";
 import { hrLoanRepayments } from "../../db/schema/hr/benefits";
-import { users } from "../../db/schema/auth";
+import { users } from "../../db/schema/common/auth";
 import { HrAuditService } from "../hr-core/hr-audit.service";
 import { HrAutomationEngineService } from "../hr-automations/hr-automation-engine.service";
 import { PayrollInputsBuildService } from "./payroll-inputs-build.service";

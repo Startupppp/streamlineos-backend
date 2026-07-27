@@ -1,6 +1,6 @@
 import { pgTable, pgEnum, text, serial, integer, timestamp, index, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { clientAccounts } from "./contacts";
 
 export const npsSurveyStatusEnum = pgEnum("nps_survey_status", ["draft", "active", "closed"]);

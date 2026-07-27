@@ -1,7 +1,7 @@
 import { pgTable, text, serial, timestamp, date, jsonb, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { invLotStatusEnum, invSerialStatusEnum } from "../enums";
-import { organizations } from "../auth";
+import { invLotStatusEnum, invSerialStatusEnum } from "../common/enums";
+import { organizations } from "../common/auth";
 import { invProductVariants } from "./core";
 import { invLocations } from "./warehouses";
 

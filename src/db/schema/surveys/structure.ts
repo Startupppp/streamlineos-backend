@@ -1,6 +1,6 @@
 import { pgTable, pgEnum, text, serial, integer, boolean, jsonb, timestamp, index, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 import { surveyForms, surveyVersions } from "./forms";
 
 export const surveyQuestionTypeEnum = pgEnum("survey_question_type", [

@@ -7,7 +7,7 @@ import {
   integer,
   index,
 } from "drizzle-orm/pg-core";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { projects } from "../build/core";
 import { tickets } from "../build/tasks";
 import { timerSessionStatusEnum, timerSessionSourceEnum } from "./enums";

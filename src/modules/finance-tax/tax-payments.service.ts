@@ -2,8 +2,8 @@ import { BadRequestException, ConflictException, Inject, Injectable, NotFoundExc
 import { and, count, desc, eq, gte, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
-import { accTaxPayments } from "../../db/schema/finance-tax";
-import { accountingPeriods } from "../../db/schema/accounting-core";
+import { accTaxPayments } from "../../db/schema/accounting/finance-tax";
+import { accountingPeriods } from "../../db/schema/accounting/accounting-core";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";

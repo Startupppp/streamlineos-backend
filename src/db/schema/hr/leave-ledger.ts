@@ -11,7 +11,7 @@ import {
   pgEnum,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { leaveTypes } from "./leaves";
 
 export const hrLeaveTxnTypeEnum = pgEnum("hr_leave_txn_type", [

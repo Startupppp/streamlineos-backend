@@ -1,7 +1,7 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import { AiSummariesService } from "./ai-summaries.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
-import type { AiSummarySnapshot } from "../../db/schema/ai-summaries";
+import type { AiSummarySnapshot } from "../../db/schema/ai/ai-summaries";
 import type { SnapshotStructured } from "./ai-summaries.types";
 
 const ORG_ID = "org-1";

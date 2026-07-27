@@ -1,9 +1,9 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
-import { commentDrafts } from "../../db/schema/comment-drafts";
+import { commentDrafts } from "../../db/schema/build/comment-drafts";
 import { tickets } from "../../db/schema/build/tasks";
 import { projects } from "../../db/schema/build/core";
-import { users } from "../../db/schema/auth";
+import { users } from "../../db/schema/common/auth";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { UpsertCommentDraftInput } from "./dto/comment-drafts.schemas";

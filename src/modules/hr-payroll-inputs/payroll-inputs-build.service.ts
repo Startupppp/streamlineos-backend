@@ -18,7 +18,7 @@ import {
 
 import { employeeSalaryProfiles } from "../../db/schema/hr/payroll-workforce";
 import { overtimeRequests } from "../../db/schema/hr/overtime";
-import { organizationMembers, users } from "../../db/schema/auth";
+import { organizationMembers, users } from "../../db/schema/common/auth";
 import { AttendanceSummaryService } from "../hr-time/attendance-summary.service";
 import { LeaveLedgerService } from "../hr-time/leave-ledger.service";
 import { HrBenefitsClaimsService } from "../hr-benefits/hr-benefits-claims.service";

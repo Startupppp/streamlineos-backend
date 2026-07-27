@@ -8,15 +8,15 @@ import {
   organizationMembers,
   roles,
   permissions,
-} from "../db/schema/auth";
+} from "../db/schema/common/auth";
 import {
   rolePermissionGrants,
   userRoles,
   accessVersions,
-} from "../db/schema/access";
-import { orgDepartments, orgTeams, orgLocations } from "../db/schema/organization";
+} from "../db/schema/common/access";
+import { orgDepartments, orgTeams, orgLocations } from "../db/schema/common/organization";
 import { departments } from "../db/schema/hr/employees";
-import { subscriptions } from "../db/schema/shared";
+import { subscriptions } from "../db/schema/common/shared";
 import { hrPeople, hrEmployments, hrReportingLines } from "../db/schema/hr/core-people";
 import { hrTeams, hrLocations } from "../db/schema/hr/core-org";
 import { leaveTypes, leaveRequests } from "../db/schema/hr/leaves";

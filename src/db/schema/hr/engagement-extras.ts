@@ -12,7 +12,7 @@ import {
   unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 
 export const rewardPointSourceEnum = pgEnum("reward_point_source", [
   "kudos",

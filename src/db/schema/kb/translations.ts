@@ -9,9 +9,9 @@ import {
   unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 import { kbArticles } from "../support/kb";
-import { kbTranslationStatusEnum } from "../enums";
+import { kbTranslationStatusEnum } from "../common/enums";
 
 export const kbArticleTranslations = pgTable(
   "kb_article_translations",

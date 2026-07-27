@@ -2,8 +2,8 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, inArray, sum } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
-import { invoices, purchaseBills } from "../../db/schema/crm/billing";
-import { organizations } from "../../db/schema/auth";
+import { invoices, purchaseBills } from "../../db/schema/crm/invoicing";
+import { organizations } from "../../db/schema/common/auth";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 
 const INVOICE_POSTED = ["ISSUED", "PAID", "FAILED"] as const;

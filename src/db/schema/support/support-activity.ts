@@ -10,7 +10,7 @@ import {
   foreignKey,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { supportTickets } from "./tickets";
 import { kbArticles } from "./kb";
 

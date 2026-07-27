@@ -14,7 +14,7 @@ import {
   numeric,
   unique,
 } from "drizzle-orm/pg-core";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { departments } from "./employees";
 import { hrLocations } from "./core-org";
 

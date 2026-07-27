@@ -1,6 +1,6 @@
 import { pgTable, text, serial, timestamp, integer, date, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { hrJobRoles } from "./core-org";
 import { successionReadinessEnum } from "./performance";
 

@@ -13,7 +13,7 @@
   foreignKey,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { projects } from "../build";
 import { kbSpaces } from "./spaces";
 import { kbArticles } from "../support/kb";

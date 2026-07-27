@@ -3,7 +3,7 @@ import postgres from "postgres";
 import { and, eq, isNull } from "drizzle-orm";
 import * as schema from "../db/schema";
 import { organizations, departments, users, jobPostings, headcountRequests } from "../db/schema";
-import { orgDepartments } from "../db/schema/organization";
+import { orgDepartments } from "../db/schema/common/organization";
 import { nextDepartmentCode, toDepartmentCode } from "../modules/org-hierarchy/lib/department-code";
 
 type Database = PostgresJsDatabase<typeof schema>;

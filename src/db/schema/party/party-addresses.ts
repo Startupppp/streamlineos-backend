@@ -8,7 +8,7 @@ import {
   unique,
 } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 import { businessParties } from "./business-parties";
 
 export const partyAddresses = pgTable(

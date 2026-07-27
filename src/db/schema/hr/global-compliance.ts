@@ -13,7 +13,7 @@ import {
   date,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { hrEmployments } from "./core-people";
 
 export const hrWorkAuthTypeEnum = pgEnum("hr_work_auth_type", [

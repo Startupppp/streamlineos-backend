@@ -7,7 +7,7 @@ import {
   index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { businessParties } from "../party/business-parties";
 
 export const invPartyVendorProfiles = pgTable(

@@ -31,7 +31,7 @@ import {
   buildBugDescription,
 } from "./feedbucket-ai.prompts";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import type { FeedbucketConsoleEntry, FeedbucketMetadata, FeedbucketNetworkEntry } from "../../db/schema/feedbucket";
+import type { FeedbucketConsoleEntry, FeedbucketMetadata, FeedbucketNetworkEntry } from "../../db/schema/build/feedback";
 import type { AiUsageMeta } from "../ai/gateway/ai-gateway.types";
 
 const FEATURE_KEY = "feedbucket.analyze" as const;

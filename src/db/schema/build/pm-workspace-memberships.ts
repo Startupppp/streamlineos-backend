@@ -8,7 +8,7 @@ import {
   foreignKey,
 } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
-import { organizations, organizationMembers } from "../auth";
+import { organizations, organizationMembers } from "../common/auth";
 import { pmWorkspaces } from "./pm-workspaces";
 
 /**

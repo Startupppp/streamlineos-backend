@@ -1,4 +1,4 @@
-import type { FeedbucketMetadata, FeedbucketConsoleEntry, FeedbucketNetworkEntry } from "../../db/schema/feedbucket";
+import type { FeedbucketMetadata, FeedbucketConsoleEntry, FeedbucketNetworkEntry } from "../../db/schema/build/feedback";
 import type { FeedbackAnalysis } from "./feedbucket-ai.schemas";
 
 const INJECTION_GUARD =

@@ -1,7 +1,7 @@
 import { pgTable, text, serial, timestamp, decimal, date, integer, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { crmCampaignStatusEnum, crmLeadStatusEnum } from "../enums";
-import { organizations, users } from "../auth";
+import { crmCampaignStatusEnum, crmLeadStatusEnum } from "../common/enums";
+import { organizations, users } from "../common/auth";
 
 export const crmCampaigns = pgTable("crm_campaigns", {
   id: serial("id").primaryKey(),

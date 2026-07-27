@@ -1,6 +1,6 @@
 import { pgTable, pgEnum, text, serial, integer, jsonb, timestamp, index, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { surveyForms, surveyVersions } from "./forms";
 import { surveyQuestions } from "./structure";
 

@@ -2,7 +2,7 @@ import {
   pgTable, serial, text, integer, jsonb, timestamp, index, unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { payrollRunEventTypeEnum } from "./enums";
 import { payrollRuns } from "../hr/payroll-runs";
 

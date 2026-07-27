@@ -1,6 +1,6 @@
 import { pgTable, text, integer, boolean, timestamp, jsonb, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 import { crmProducts } from "./products";
 
 export const crmPricebooks = pgTable("crm_pricebooks", {

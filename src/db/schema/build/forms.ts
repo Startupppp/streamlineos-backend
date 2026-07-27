@@ -1,6 +1,6 @@
 import { pgTable, pgEnum, text, serial, integer, boolean, timestamp, jsonb, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { projects } from "./core";
 import { tickets } from "./tasks";
 

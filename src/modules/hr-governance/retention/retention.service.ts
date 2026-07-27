@@ -10,7 +10,7 @@ import { and, count, desc, eq, isNull, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { hrRetentionPolicies, hrDataRequests } from "../../../db/schema/hr/governance";
-import { users, organizationMembers } from "../../../db/schema/auth";
+import { users, organizationMembers } from "../../../db/schema/common/auth";
 import { HrAuditService } from "../../hr-core/hr-audit.service";
 import { isUnderLegalHold } from "../legal-holds/legal-hold-check.helper";
 import type {

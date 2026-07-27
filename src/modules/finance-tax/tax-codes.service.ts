@@ -2,7 +2,7 @@ import { ConflictException, Inject, Injectable, NotFoundException } from "@nestj
 import { and, count, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
-import { accTaxCodes } from "../../db/schema/finance-tax";
+import { accTaxCodes } from "../../db/schema/accounting/finance-tax";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { FinancePostingService } from "../accounting/finance-posting.service";

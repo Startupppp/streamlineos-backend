@@ -1,6 +1,6 @@
 import { pgTable, text, integer, jsonb, timestamp, index, uuid, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 import { leads } from "./leads";
 import { crmCampaigns } from "./campaigns";
 

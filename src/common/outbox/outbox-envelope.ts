@@ -1,5 +1,5 @@
 import { outboxEventInputSchema, type OutboxEventInput } from "./outbox-event-schema";
-import { type outboxEvents } from "../../db/schema/outbox";
+import { type outboxEvents } from "../../db/schema/common/outbox";
 
 export type NewOutboxEvent = typeof outboxEvents.$inferInsert;
 

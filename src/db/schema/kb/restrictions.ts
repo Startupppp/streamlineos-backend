@@ -8,7 +8,7 @@ import {
   unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { kbArticles } from "../support/kb";
 
 export const KB_RESTRICTION_LEVELS = ["view", "edit"] as const;

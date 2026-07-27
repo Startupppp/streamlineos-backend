@@ -1,5 +1,5 @@
 import { pgTable, text, serial, timestamp, boolean, decimal, integer, jsonb, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 
 export const courseCategories = pgTable("course_categories", {
   id: serial("id").primaryKey(),
@@ -33,18 +33,4 @@ export const courses = pgTable("courses", {
 }, (table) => [
   unique("uniq_courses_org_id").on(table.orgId, table.id),
   index("idx_courses_org_status").on(table.orgId, table.status),
-]);
-
-export const courseEnrollments = pgTable("course_enrollments", {
-  id: serial("id").primaryKey(),
-  courseId: integer("course_id").references(() => courses.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  status: text("status").default("ENROLLED").notNull(),
-  progressPct: decimal("progress_pct", { precision: 5, scale: 2 }).default("0").notNull(),
-  completedAt: timestamp("completed_at"),
-  score: decimal("score", { precision: 5, scale: 2 }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  uniqueIndex("uniq_course_enrollments_course_user").on(table.courseId, table.userId),
-  index("idx_course_enrollments_user").on(table.userId),
 ]);

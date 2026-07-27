@@ -11,7 +11,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { organizations, users, organizationMembers } from "../auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 
 export const organizationPeople = pgTable(
   "organization_people",

@@ -1,5 +1,5 @@
 import { pgTable, text, serial, timestamp, date, decimal, boolean, index, unique } from "drizzle-orm/pg-core";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 
 export const overtimeRequests = pgTable("overtime_requests", {
   id: serial("id").primaryKey(),

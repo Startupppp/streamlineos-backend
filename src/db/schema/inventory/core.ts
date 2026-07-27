@@ -1,7 +1,7 @@
 import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, integer, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { invProductStatusEnum, invProductTypeEnum, invTrackingMethodEnum, invCostingMethodEnum } from "../enums";
-import { organizations, users } from "../auth";
+import { invProductStatusEnum, invProductTypeEnum, invTrackingMethodEnum, invCostingMethodEnum } from "../common/enums";
+import { organizations, users } from "../common/auth";
 
 export const invUom = pgTable("inv_uom", {
   id: serial("id").primaryKey(),

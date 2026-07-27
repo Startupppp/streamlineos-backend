@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "./auth";
 import { departments } from "../hr/employees";
 import { tickets } from "../build/tasks";
 

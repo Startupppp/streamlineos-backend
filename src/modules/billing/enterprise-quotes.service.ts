@@ -2,8 +2,8 @@ import { Inject, Injectable, NotFoundException, BadRequestException } from "@nes
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { eq, and, desc, count } from "drizzle-orm";
-import { enterpriseQuotes } from "../../db/schema/billing";
-import { users } from "../../db/schema/auth";
+import { enterpriseQuotes } from "../../db/schema/billing/billing";
+import { users } from "../../db/schema/common/auth";
 import { clientAccounts } from "../../db/schema/crm/contacts";
 import { deals } from "../../db/schema/crm/deals";
 import type {

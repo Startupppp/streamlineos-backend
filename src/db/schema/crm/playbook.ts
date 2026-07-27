@@ -1,6 +1,6 @@
 import { pgTable, text, serial, integer, timestamp, index, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 
 export const playbookEntries = pgTable("playbook_entries", {
   id: serial("id").primaryKey(),

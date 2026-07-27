@@ -10,12 +10,12 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { partyContacts } from "../party/party-contacts";
 import {
   portalAudienceEnum,
   portalMembershipStatusEnum,
-} from "../enums";
+} from "../common/enums";
 
 export const portalMemberships = pgTable(
   "portal_memberships",

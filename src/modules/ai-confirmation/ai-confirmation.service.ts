@@ -7,7 +7,7 @@
 } from "@nestjs/common";
 import { and, eq, lt } from "drizzle-orm";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import { aiActionProposals } from "../../db/schema/ai-confirmation";
+import { aiActionProposals } from "../../db/schema/ai/ai-confirmation";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";

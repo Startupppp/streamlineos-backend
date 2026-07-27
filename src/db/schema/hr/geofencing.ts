@@ -1,5 +1,5 @@
 import { pgTable, text, serial, timestamp, decimal, integer, boolean, index, unique } from "drizzle-orm/pg-core";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 
 export const geofences = pgTable("geofences", {
   id: serial("id").primaryKey(),

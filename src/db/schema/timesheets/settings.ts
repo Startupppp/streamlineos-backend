@@ -8,7 +8,7 @@ import {
   integer,
   jsonb,
 } from "drizzle-orm/pg-core";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 import {
   timesheetRoundingRuleEnum,
   timesheetApprovalModeEnum,

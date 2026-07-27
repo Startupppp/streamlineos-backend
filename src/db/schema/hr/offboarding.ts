@@ -3,9 +3,9 @@ import { relations } from "drizzle-orm";
 import {
   resignationStatusEnum, terminationStatusEnum, exitChecklistStatusEnum,
   onboardingDocumentStatusEnum, docAuditActionEnum,
-} from "../enums";
-import { organizations, users } from "../auth";
-import { orgDepartments } from "../organization";
+} from "../common/enums";
+import { organizations, users } from "../common/auth";
+import { orgDepartments } from "../common/organization";
 import { candidates } from "./hiring";
 
 export const documentTemplates = pgTable("document_templates", {

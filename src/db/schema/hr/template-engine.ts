@@ -12,7 +12,7 @@ import {
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { hrEmployments } from "./core-people";
 
 export const hrTemplateKindEnum = pgEnum("hr_template_kind", [

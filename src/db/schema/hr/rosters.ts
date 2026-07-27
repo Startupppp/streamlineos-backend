@@ -1,5 +1,5 @@
 import { pgTable, text, serial, timestamp, date, integer, index, unique, jsonb } from "drizzle-orm/pg-core";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { shiftTemplates } from "./shifts";
 
 export const rosters = pgTable("rosters", {

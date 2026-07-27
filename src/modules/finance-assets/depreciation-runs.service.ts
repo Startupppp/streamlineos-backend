@@ -12,8 +12,8 @@ import { JournalPostingService, type DraftLine } from "../accounting/journal-pos
 import { paginateOffset, buildListResponse } from "../../common/pagination/pagination";
 import {
   accFixedAssets, accAssetCategories, accDepreciationRuns, accDepreciationSchedules,
-} from "../../db/schema/finance-assets";
-import { ledgerAccounts, journalLines } from "../../db/schema/accounting";
+} from "../../db/schema/accounting/finance-assets";
+import { ledgerAccounts, journalLines } from "../../db/schema/accounting/accounting";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { ListRunsQuery } from "./dto/assets.schemas";
 

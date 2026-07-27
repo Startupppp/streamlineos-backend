@@ -1,12 +1,10 @@
 export * from "./common";
-
 export * from "./build";
 export * from "./timesheets";
 export * from "./hr";
 export * from "./crm";
 export * from "./chat";
 export * from "./blog";
-export * from "./platform";
 export * from "./accounting";
 export * from "./support";
 export * from "./kb";
@@ -19,3 +17,4 @@ export * from "./e-sign";
 export * from "./directory";
 export * from "./party";
 export * from "./portal-access";
+export * from "./payroll";

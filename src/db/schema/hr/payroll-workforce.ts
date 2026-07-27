@@ -4,8 +4,8 @@ import {
   salaryComponentTypeEnum, salaryComponentCalcMethodEnum,
   payrollWorkerTypeEnum, payFrequencyEnum, taxRegimeTypeEnum,
   salaryProfileStatusEnum, payrollLoanAdjustmentTypeEnum,
-} from "../enums";
-import { organizations, users } from "../auth";
+} from "../common/enums";
+import { organizations, users } from "../common/auth";
 import { salaryLoans } from "./payroll";
 import { payrollRuns } from "./payroll-runs";
 import { payrollPolicyVersions } from "./payroll-policies";

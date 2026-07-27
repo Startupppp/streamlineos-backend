@@ -1,5 +1,5 @@
 import { pgTable, text, serial, timestamp, decimal, jsonb, integer, index, unique } from "drizzle-orm/pg-core";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 
 export type BankTransferEntry = {
   userId: string;

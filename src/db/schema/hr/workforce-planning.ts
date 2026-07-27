@@ -1,6 +1,6 @@
 import { pgTable, text, integer, serial, timestamp, unique, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 import { departments } from "./employees";
 import { jobRequisitions } from "./requisitions";
 

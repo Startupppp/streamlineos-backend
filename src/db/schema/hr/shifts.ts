@@ -1,5 +1,5 @@
 import { pgTable, text, serial, timestamp, boolean, time, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 
 export const shiftTemplates = pgTable("shift_templates", {
   id: serial("id").primaryKey(),

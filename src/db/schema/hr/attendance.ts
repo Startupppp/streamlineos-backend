@@ -1,7 +1,7 @@
 import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { wfhRequestStatusEnum, ticketPriorityEnum, ticketStatusEnum, deviceStatusEnum } from "../enums";
-import { organizations, users } from "../auth";
+import { wfhRequestStatusEnum, ticketPriorityEnum, ticketStatusEnum, deviceStatusEnum } from "../common/enums";
+import { organizations, users } from "../common/auth";
 
 export const attendance = pgTable("attendance", {
   id: serial("id").primaryKey(),

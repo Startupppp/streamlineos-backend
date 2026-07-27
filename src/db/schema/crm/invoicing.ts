@@ -2,8 +2,8 @@ import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, intege
 import { relations } from "drizzle-orm";
 import {
   invoiceStatusEnum, quoteStatusEnum,
-} from "../enums";
-import { organizations, users } from "../auth";
+} from "../common/enums";
+import { organizations, users } from "../common/auth";
 import { projects } from "../build";
 import { clients, clientAccounts } from "./contacts";
 import { deals } from "./deals";

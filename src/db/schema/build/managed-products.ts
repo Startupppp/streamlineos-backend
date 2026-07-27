@@ -9,8 +9,8 @@ import {
   unique,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import { managedProductStatusEnum } from "../enums";
-import { organizations, users } from "../auth";
+import { managedProductStatusEnum } from "../common/enums";
+import { organizations, users } from "../common/auth";
 import { pmWorkspaces } from "./pm-workspaces";
 
 export const managedProducts = pgTable(

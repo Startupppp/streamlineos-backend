@@ -9,15 +9,15 @@ import {
   organizationMembers,
   roles,
   invitations,
-} from "../db/schema/auth";
+} from "../db/schema/common/auth";
 import {
   orgBranches,
   orgDepartments,
   orgTeams,
   orgLocations,
-} from "../db/schema/organization";
+} from "../db/schema/common/organization";
 import { departments } from "../db/schema/hr/employees";
-import { subscriptions, auditLogs } from "../db/schema/shared";
+import { subscriptions, auditLogs } from "../db/schema/common/shared";
 
 type Db = PostgresJsDatabase<typeof schema>;
 

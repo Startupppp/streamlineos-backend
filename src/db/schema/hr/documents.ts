@@ -1,7 +1,7 @@
 import { pgTable, text, serial, timestamp, boolean, jsonb, integer, date, index, foreignKey, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { documentTypeEnum, ackStatusEnum } from "../enums";
-import { organizations, users } from "../auth";
+import { documentTypeEnum, ackStatusEnum } from "../common/enums";
+import { organizations, users } from "../common/auth";
 import { departments } from "./employees";
 
 export const richDocuments = pgTable("rich_documents", {

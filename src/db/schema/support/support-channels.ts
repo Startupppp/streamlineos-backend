@@ -1,6 +1,6 @@
 import { pgTable, pgEnum, serial, text, boolean, jsonb, timestamp, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 
 export const supportChannelTypeEnum = pgEnum("support_channel_type", [
   "email",

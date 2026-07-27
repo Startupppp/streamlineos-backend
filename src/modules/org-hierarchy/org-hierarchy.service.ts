@@ -13,7 +13,7 @@ import {
   orgTeams,
   orgLocations,
   orgCostCenters,
-} from "../../db/schema/organization";
+} from "../../db/schema/common/organization";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";

@@ -1,7 +1,7 @@
 import { pgTable, text, serial, timestamp, decimal, date, index, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { assetStatusEnum } from "../enums";
-import { organizations, users } from "../auth";
+import { assetStatusEnum } from "../common/enums";
+import { organizations, users } from "../common/auth";
 
 export const assets = pgTable("assets", {
   id: serial("id").primaryKey(),

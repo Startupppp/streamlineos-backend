@@ -1,5 +1,5 @@
 import { pgTable, serial, text, integer, boolean, jsonb, timestamp, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 import { supportTickets } from "./tickets";
 
 export const CUSTOM_FIELD_TYPES = ["text", "number", "select", "checkbox", "date"] as const;

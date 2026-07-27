@@ -3,8 +3,8 @@ import { relations } from "drizzle-orm";
 import {
   reviewStatusEnum, reviewCycleStatusEnum, meetingStatusEnum,
   pipStatusEnum, surveyStatusEnum, feedbackTypeEnum,
-} from "../enums";
-import { organizations, users } from "../auth";
+} from "../common/enums";
+import { organizations, users } from "../common/auth";
 import { hrTemplates } from "./template-engine";
 
 export const successionReadinessEnum = pgEnum("succession_readiness", ["ready_now", "1_2_years", "3_plus"]);
