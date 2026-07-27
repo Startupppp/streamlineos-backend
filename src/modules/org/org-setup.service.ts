@@ -3,6 +3,7 @@ import { desc, eq, inArray } from "drizzle-orm";
 import {
   roles,
   users,
+  orgModules,
   subscriptions,
   organizations,
   magicLinkTokens,
@@ -18,6 +19,7 @@ import { EmailService } from "../email/email.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
 import { PERMISSIONS } from "../rbac/permissions.constants";
+import { moduleKeysFromOrgModuleValues } from "../../common/rbac/module-vocabulary";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { randomUUID, randomBytes, createHash } from "node:crypto";
@@ -164,6 +166,30 @@ export class OrgSetupService {
     return orgId;
   }
 
+  private async provisionOrgModules(
+    tx: Parameters<Parameters<Db["transaction"]>[0]>[0],
+    orgId: string,
+    orgModuleValues: readonly string[],
+    enabledBy: string,
+  ): Promise<void> {
+    const moduleKeys = moduleKeysFromOrgModuleValues(orgModuleValues);
+    if (moduleKeys.length === 0) return;
+    await tx
+      .insert(orgModules)
+      .values(
+        moduleKeys.map((moduleKey) => ({
+          orgId,
+          moduleKey,
+          enabled: true,
+          enabledBy,
+        })),
+      )
+      .onConflictDoUpdate({
+        target: [orgModules.orgId, orgModules.moduleKey],
+        set: { enabled: true, enabledBy },
+      });
+  }
+
   async completeSetup(u: CurrentUserContext, input: SetupInput) {
     const orgId = await this.resolveOrCreateOrg(u, input);
     if (u.orgId && !u.isOrgOwner) return { success: true, orgId };
@@ -181,6 +207,8 @@ export class OrgSetupService {
           onboardingCompletedAt: new Date(),
         })
         .where(eq(organizations.id, orgId));
+
+      await this.provisionOrgModules(tx, orgId, input.enabledModules, u.userId);
 
       await tx
         .update(users)
@@ -246,6 +274,8 @@ export class OrgSetupService {
           onboardingCompletedAt: new Date(),
         })
         .where(eq(organizations.id, orgId));
+
+      await this.provisionOrgModules(tx, orgId, DEFAULT_SKIP_MODULES, u.userId);
 
       await tx
         .update(users)
