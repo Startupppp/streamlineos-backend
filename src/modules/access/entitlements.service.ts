@@ -4,7 +4,7 @@ import {
   Inject,
   Injectable,
 } from "@nestjs/common";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { orgModules, pmWorkspaces } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -16,8 +16,6 @@ import { logger } from "../../common/logger/logger.service";
 import {
   CORE_MODULE_KEYS,
   MODULE_CATALOG,
-  MODULE_KEY_TO_ORG_MODULE,
-  orgModuleAliasesFor,
 } from "../../common/rbac/module-vocabulary";
 
 export { MODULE_CATALOG };
@@ -136,8 +134,6 @@ export class EntitlementsService {
         );
       }
     }
-    const orgModuleName = MODULE_KEY_TO_ORG_MODULE[moduleKey];
-
     await this.db.transaction(async (tx) => {
       await tx
         .insert(orgModules)
@@ -146,19 +142,6 @@ export class EntitlementsService {
           target: [orgModules.orgId, orgModules.moduleKey],
           set: { enabled, enabledBy },
         });
-
-      if (orgModuleName) {
-        for (const alias of orgModuleAliasesFor(moduleKey)) {
-          await tx.execute(
-            sql`UPDATE organizations SET enabled_modules = array_remove(COALESCE(enabled_modules, '{}'), ${alias}) WHERE id = ${orgId}`,
-          );
-        }
-        if (enabled) {
-          await tx.execute(
-            sql`UPDATE organizations SET enabled_modules = array_append(COALESCE(enabled_modules, '{}'), ${orgModuleName}) WHERE id = ${orgId}`,
-          );
-        }
-      }
 
       if (moduleKey === "build" && enabled) {
         const [existing] = await tx

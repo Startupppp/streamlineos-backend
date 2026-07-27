@@ -47,9 +47,3 @@ export function moduleKeysFromOrgModuleValues(values: readonly string[]): string
   return [...resolved];
 }
 
-export function orgModuleAliasesFor(moduleKey: string): string[] {
-  const normalized = moduleKey.toUpperCase();
-  const projection = MODULE_KEY_TO_ORG_MODULE[moduleKey.toLowerCase()];
-  if (!projection || projection === normalized) return [normalized];
-  return [normalized, projection];
-}

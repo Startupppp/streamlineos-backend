@@ -22,7 +22,6 @@ import { type Db } from "../../db/drizzle.module";
 import { REDIS } from "../../common/cache/cache.service";
 import {
   organizationMembers,
-  organizations,
   subscriptions,
   userApiTokens,
   users,
@@ -32,7 +31,6 @@ interface OrgContext {
   orgId: string;
   role: string;
   isOwner: boolean;
-  enabledModules: string[];
   plan: string | null;
 }
 
@@ -217,7 +215,6 @@ export class JwtAuthGuard implements CanActivate {
       let orgId = claims.orgId;
       let isOrgOwner = claims.isOrgOwner;
       let role = claims.role;
-      let enabledModules = claims.enabledModules;
       let plan = claims.plan;
 
       if (!orgId && !isPlatformAdmin) {
@@ -226,10 +223,6 @@ export class JwtAuthGuard implements CanActivate {
           orgId = resolved.orgId;
           isOrgOwner = resolved.isOwner;
           role = role || resolved.role;
-          enabledModules =
-            enabledModules.length > 0
-              ? enabledModules
-              : resolved.enabledModules;
           plan = plan ?? resolved.plan;
         }
       }
@@ -256,7 +249,7 @@ export class JwtAuthGuard implements CanActivate {
         branchId: claims.branchId ?? null,
         role,
         permissions: claims.permissions,
-        enabledModules,
+        enabledModules: [],
         plan,
         isPlatformAdmin,
         isOrgOwner,
@@ -339,13 +332,8 @@ export class JwtAuthGuard implements CanActivate {
           orgId: organizationMembers.orgId,
           role: organizationMembers.role,
           isOwner: organizationMembers.isOwner,
-          enabledModules: organizations.enabledModules,
         })
         .from(organizationMembers)
-        .innerJoin(
-          organizations,
-          eq(organizations.id, organizationMembers.orgId),
-        )
         .where(eq(organizationMembers.userId, userId))
         .orderBy(desc(organizationMembers.joinedAt)),
     ]);
@@ -367,7 +355,6 @@ export class JwtAuthGuard implements CanActivate {
       orgId: member.orgId,
       role: member.role,
       isOwner: member.isOwner,
-      enabledModules: member.enabledModules ?? [],
       plan: subscription?.plan ?? null,
     };
   }
@@ -425,7 +412,7 @@ export class JwtAuthGuard implements CanActivate {
       branchId: user.branchId ?? null,
       role: resolved.role,
       permissions: [],
-      enabledModules: resolved.enabledModules,
+      enabledModules: [],
       plan: resolved.plan,
       isPlatformAdmin: false,
       isOrgOwner: resolved.isOwner,

@@ -155,7 +155,7 @@ describe("EntitlementsService", () => {
   });
 
   describe("setModuleEnabled", () => {
-    it("wraps the upsert and org sync in a single transaction", async () => {
+    it("wraps the upsert in a single transaction", async () => {
       const { db, mocks } = buildMockDb();
       const { cache } = buildMockCache();
 
@@ -199,22 +199,22 @@ describe("EntitlementsService", () => {
       );
     });
 
-    it("executes two raw SQL calls when enabling a mapped module (array_remove then array_append)", async () => {
+    it("executes no raw SQL calls — org array sync was removed", async () => {
       const { db, mocks } = buildMockDb();
       const { cache } = buildMockCache();
 
       await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
 
-      expect(mocks.execute).toHaveBeenCalledTimes(2);
+      expect(mocks.execute).not.toHaveBeenCalled();
     });
 
-    it("executes exactly one raw SQL call when disabling a mapped module", async () => {
+    it("executes no raw SQL calls when disabling a module", async () => {
       const { db, mocks } = buildMockDb();
       const { cache } = buildMockCache();
 
       await buildService(db, cache).setModuleEnabled("org-1", "hr", false, "user-1");
 
-      expect(mocks.execute).toHaveBeenCalledTimes(1);
+      expect(mocks.execute).not.toHaveBeenCalled();
     });
 
     it("throws 400 BadRequestException when toggling a core module (kb)", async () => {

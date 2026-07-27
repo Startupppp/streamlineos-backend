@@ -13,7 +13,6 @@ import {
   userModuleAccess,
   userPermissions,
   userRoles,
-  users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -119,7 +118,7 @@ export class AccessService {
   private noteMissingAccessTables(error: unknown): void {
     if (this.missingAccessTablesLogged) return;
     this.missingAccessTablesLogged = true;
-    logger.warn("access: rbac tables missing, falling back to legacy resolution", {
+    logger.warn("access: rbac tables missing, returning empty permission set", {
       error: error instanceof Error ? error.message : String(error),
     });
   }
@@ -333,11 +332,9 @@ export class AccessService {
     );
 
     let directRows: { roleId: number }[];
-    let hasDirectRoles: boolean;
 
     if (membershipRows.length > 0) {
       directRows = membershipRows;
-      hasDirectRoles = true;
     } else {
       const userRoleRows = await this.safeAccessTableRead(
         () =>
@@ -348,7 +345,6 @@ export class AccessService {
         [] as { roleId: number }[],
       );
       directRows = userRoleRows;
-      hasDirectRoles = directRows.length > 0;
     }
 
     const roleIds = new Set<number>(directRows.map((row) => row.roleId));
@@ -380,23 +376,6 @@ export class AccessService {
         [],
       );
       for (const row of groupRows) roleIds.add(row.roleId);
-    }
-
-    let legacyRoleSlug: string | null = null;
-    if (!hasDirectRoles) {
-      const user = await this.db.query.users.findFirst({
-        where: eq(users.id, userId),
-        columns: { role: true },
-      });
-      const slug = user?.role;
-      if (slug) {
-        const roleRow = await this.db.query.roles.findFirst({
-          where: and(eq(roles.slug, slug), eq(roles.orgId, orgId)),
-          columns: { id: true },
-        });
-        if (roleRow) roleIds.add(roleRow.id);
-        else legacyRoleSlug = slug;
-      }
     }
 
     const result: Record<string, DataScope> = {};
@@ -447,11 +426,6 @@ export class AccessService {
         const defaults = record ? (ROLE_DEFAULT_PERMISSIONS[record.slug] ?? []) : [];
         for (const key of defaults) merge(key, "all");
       }
-    }
-
-    if (legacyRoleSlug) {
-      const defaults = ROLE_DEFAULT_PERMISSIONS[legacyRoleSlug] ?? [];
-      for (const key of defaults) merge(key, "all");
     }
 
     const grantedUserPerms = await this.db.query.userPermissions.findMany({

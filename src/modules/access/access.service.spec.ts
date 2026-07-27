@@ -1,4 +1,5 @@
 import {
+  AccessService,
   broadest,
   evaluateMembershipGate,
   isActiveDelegation,
@@ -7,6 +8,9 @@ import {
   type DelegationRow,
 } from "./access.service";
 import type { DataScope } from "./access.types";
+import type { Db } from "../../db/drizzle.module";
+import type { CacheService } from "../../common/cache/cache.service";
+import type { EntitlementsService } from "./entitlements.service";
 
 describe("broadest", () => {
   it("ranks none < own < team < all", () => {
@@ -168,5 +172,80 @@ describe("isActiveDelegation", () => {
       }
     }
     expect(result).toEqual({});
+  });
+});
+
+describe("AccessService.resolveUserPermissions", () => {
+  function makeSelectChain(result: unknown[]): Record<string, jest.Mock> {
+    const chain: Record<string, jest.Mock> = {
+      from: jest.fn(),
+      where: jest.fn().mockResolvedValue(result),
+      innerJoin: jest.fn(),
+    };
+    chain.from.mockReturnValue(chain);
+    chain.innerJoin.mockReturnValue(chain);
+    return chain;
+  }
+
+  function buildService(db: unknown): AccessService {
+    const cache = {
+      cached: jest.fn().mockImplementation(async (_key: string, fn: () => Promise<unknown>) => fn()),
+      invalidate: jest.fn().mockResolvedValue(undefined),
+    };
+    const entitlements = {
+      isModuleEnabled: jest.fn().mockResolvedValue(true),
+      getModuleMap: jest.fn().mockResolvedValue({}),
+    };
+    return new AccessService(
+      db as unknown as Db,
+      cache as unknown as CacheService,
+      entitlements as unknown as EntitlementsService,
+    );
+  }
+
+  it("resolves to an empty map for an active member with no role assignments (deny-by-default)", async () => {
+    const db = {
+      query: {
+        accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
+        organizationMembers: {
+          findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 1 }),
+        },
+        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
+      },
+      select: jest.fn()
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([])),
+    };
+
+    const result = await buildService(db).resolveUserPermissions("org-1", "user-1");
+
+    expect(result.size).toBe(0);
+  });
+
+  it("resolves role grants for an active member with a membership_role_assignments row", async () => {
+    const db = {
+      query: {
+        accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
+        organizationMembers: {
+          findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 2 }),
+        },
+        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
+      },
+      select: jest.fn()
+        .mockReturnValueOnce(makeSelectChain([{ roleId: 10 }]))
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([{ id: 10, slug: "HR_ADMIN" }]))
+        .mockReturnValueOnce(makeSelectChain([{ roleId: 10, permissionKey: "hr:employees:view", scope: "all" }]))
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([])),
+    };
+
+    const result = await buildService(db).resolveUserPermissions("org-1", "user-2");
+
+    expect(result.get("hr:employees:view")).toBe("all");
+    expect(result.size).toBeGreaterThan(0);
   });
 });
