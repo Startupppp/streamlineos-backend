@@ -19,7 +19,7 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { PeriodsService } from "./periods.service";
 import { periodsQuerySchema, type PeriodsQuery } from "./dto/periods.schemas";
 
-@RequireModule("projects")
+@RequireModule("build")
 @Controller("timesheets/periods")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class PeriodsController {

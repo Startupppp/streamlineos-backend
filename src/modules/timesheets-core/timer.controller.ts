@@ -24,7 +24,7 @@ import {
   type ConvertTimerInput,
 } from "./dto/timer.schemas";
 
-@RequireModule("projects")
+@RequireModule("build")
 @Controller("timesheets/timer")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class TimerController {

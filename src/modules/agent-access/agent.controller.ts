@@ -38,13 +38,13 @@ export class AgentController {
   ) {}
 
   @Get("me")
-  @RequirePermission("projects:view")
+  @RequirePermission("build:view")
   getMe(@CurrentUser() u: CurrentUserContext) {
     return { userId: u.userId, orgId: u.orgId };
   }
 
   @Get("projects")
-  @RequirePermission("projects:view")
+  @RequirePermission("build:view")
   listProjects(
     @Query(new ZodValidationPipe(listProjectsSchema)) query: ListProjectsInput,
     @CurrentUser() u: CurrentUserContext,
@@ -53,7 +53,7 @@ export class AgentController {
   }
 
   @Post("projects")
-  @RequirePermission("projects:create")
+  @RequirePermission("build:create")
   @HttpCode(201)
   createProject(
     @Body(new ZodValidationPipe(createProjectSchema)) body: CreateProjectInput,
@@ -63,7 +63,7 @@ export class AgentController {
   }
 
   @Post("projects/:projectId/tickets")
-  @RequirePermission("projects:tickets:create")
+  @RequirePermission("build:tickets:create")
   @HttpCode(201)
   createTicket(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -74,7 +74,7 @@ export class AgentController {
   }
 
   @Get("work")
-  @RequirePermission("projects:tickets:view")
+  @RequirePermission("build:tickets:view")
   getAllWork(
     @Query(new ZodValidationPipe(allWorkQuerySchema)) query: AllWorkQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -83,7 +83,7 @@ export class AgentController {
   }
 
   @Get("projects/:projectId/tickets")
-  @RequirePermission("projects:tickets:view")
+  @RequirePermission("build:tickets:view")
   listTickets(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Query(new ZodValidationPipe(ticketsListQuerySchema)) query: TicketsListQuery,
@@ -93,7 +93,7 @@ export class AgentController {
   }
 
   @Get("tickets/:ticketId")
-  @RequirePermission("projects:tickets:view")
+  @RequirePermission("build:tickets:view")
   async getTicket(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -103,7 +103,7 @@ export class AgentController {
   }
 
   @Patch("tickets/:ticketId")
-  @RequirePermission("projects:tickets:update")
+  @RequirePermission("build:tickets:update")
   async updateTicket(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Body(new ZodValidationPipe(agentUpdateTicketSchema)) body: AgentUpdateTicketInput,
@@ -113,7 +113,7 @@ export class AgentController {
   }
 
   @Post("tickets/:ticketId/comments")
-  @RequirePermission("projects:tickets:update")
+  @RequirePermission("build:tickets:update")
   @HttpCode(201)
   async addComment(
     @Param("ticketId", ParseIntPipe) ticketId: number,

@@ -10,7 +10,7 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { auditQuerySchema, type AuditQuery } from "./dto/audit.schemas";
 
-@RequireModule("projects")
+@RequireModule("build")
 @Controller("timesheets/audit")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class AuditController {

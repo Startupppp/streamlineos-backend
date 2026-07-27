@@ -10,7 +10,7 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { SettingsService } from "./settings.service";
 import { updateCoreSettingsSchema, type UpdateCoreSettingsInput } from "./dto/settings.schemas";
 
-@RequireModule("projects")
+@RequireModule("build")
 @Controller("timesheets/settings")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class SettingsController {

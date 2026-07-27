@@ -331,7 +331,7 @@ Tone: Professional, concise, actionable.`;
           query: z.string().min(1).describe("Partial project name to search"),
         }),
         execute: async ({ query }) => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "projects:view");
+          const deny = await this.toolAccess.denyReason(orgId, userId, "build:view");
           if (deny) return { denied: true, reason: deny };
 
           const results = await this.db
@@ -351,7 +351,7 @@ Tone: Professional, concise, actionable.`;
           question: z.string().min(1).describe("Question to ask about the project"),
         }),
         execute: async ({ projectId, question }) => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "projects:ai:use");
+          const deny = await this.toolAccess.denyReason(orgId, userId, "build:ai:use");
           if (deny) return { denied: true, reason: deny };
 
           try {
@@ -368,7 +368,7 @@ Tone: Professional, concise, actionable.`;
           projectId: z.number().int().positive().describe("Numeric project ID"),
         }),
         execute: async ({ projectId }) => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "projects:ai:use");
+          const deny = await this.toolAccess.denyReason(orgId, userId, "build:ai:use");
           if (deny) return { denied: true, reason: deny };
 
           try {

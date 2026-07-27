@@ -11,7 +11,7 @@ describe("ToolAccessService", () => {
   let mockAccess: ReturnType<typeof makeMockAccess>;
 
   beforeEach(async () => {
-    mockAccess = makeMockAccess({ "projects:tickets:view": "all" });
+    mockAccess = makeMockAccess({ "build:tickets:view": "all" });
     const module = await Test.createTestingModule({
       providers: [
         ToolAccessService,
@@ -22,7 +22,7 @@ describe("ToolAccessService", () => {
   });
 
   it("returns null for an allowed scope", async () => {
-    const reason = await svc.denyReason("org1", "user1", "projects:tickets:view");
+    const reason = await svc.denyReason("org1", "user1", "build:tickets:view");
     expect(reason).toBeNull();
   });
 
@@ -50,7 +50,7 @@ describe("ToolAccessService", () => {
   });
 
   it("getPersonTicketStats own-scope denial for a different target — simulated at service level", async () => {
-    mockAccess = makeMockAccess({ "projects:tickets:view": "own" });
+    mockAccess = makeMockAccess({ "build:tickets:view": "own" });
     const m = await Test.createTestingModule({
       providers: [
         ToolAccessService,
@@ -58,7 +58,7 @@ describe("ToolAccessService", () => {
       ],
     }).compile();
     const toolSvc = m.get(ToolAccessService);
-    const scope = await toolSvc.scope("org1", "actorId", "projects:tickets:view");
+    const scope = await toolSvc.scope("org1", "actorId", "build:tickets:view");
     expect(scope).toBe("own");
     const targetUserId: string = "differentUser";
     const actorId: string = "actorId";

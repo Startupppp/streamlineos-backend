@@ -117,7 +117,7 @@ const mockProjectsAiService = {
 
 const mockAccessService = {
   resolveUserPermissions: jest.fn().mockResolvedValue(
-    new Map<string, "all" | "own" | "team" | "none">([["projects:ai:use", "all"]]),
+    new Map<string, "all" | "own" | "team" | "none">([["build:ai:use", "all"]]),
   ),
   isModuleEnabled: jest.fn().mockResolvedValue(true),
 };
@@ -153,7 +153,7 @@ describeWithDb("ProjectsAI RBAC / mocked service (e2e)", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockAccessService.resolveUserPermissions.mockResolvedValue(
-      new Map<string, "all" | "own" | "team" | "none">([["projects:ai:use", "all"]]),
+      new Map<string, "all" | "own" | "team" | "none">([["build:ai:use", "all"]]),
     );
     mockAccessService.isModuleEnabled.mockResolvedValue(true);
     mockProjectsAiService.summarize.mockResolvedValue({
@@ -192,7 +192,7 @@ describeWithDb("ProjectsAI RBAC / mocked service (e2e)", () => {
 
   it("200 + delegates to service on POST /ai/projects/1/summary with projects:ai:use granted", async () => {
     const token = await signToken({
-      permissions: ["projects:ai:use"],
+      permissions: ["build:ai:use"],
       enabledModules: ["projects"],
       isOrgOwner: false,
       plan: "PROFESSIONAL",
@@ -211,7 +211,7 @@ describeWithDb("ProjectsAI RBAC / mocked service (e2e)", () => {
 
   it("200 + delegates to service on POST /ai/projects/1/ask with projects:ai:use granted", async () => {
     const token = await signToken({
-      permissions: ["projects:ai:use"],
+      permissions: ["build:ai:use"],
       enabledModules: ["projects"],
       isOrgOwner: false,
       plan: "PROFESSIONAL",
@@ -229,7 +229,7 @@ describeWithDb("ProjectsAI RBAC / mocked service (e2e)", () => {
 
   it("400 on POST /ai/projects/1/plan with empty prompt", async () => {
     const token = await signToken({
-      permissions: ["projects:ai:use"],
+      permissions: ["build:ai:use"],
       enabledModules: ["projects"],
       isOrgOwner: false,
       plan: "PROFESSIONAL",

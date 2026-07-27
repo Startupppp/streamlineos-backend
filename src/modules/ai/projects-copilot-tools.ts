@@ -33,7 +33,7 @@ export class ProjectsCopilotTools {
           ticketId: z.number().int().positive().describe("Numeric ticket ID"),
         }),
         execute: async ({ ticketId }) => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "projects:tickets:view");
+          const deny = await this.toolAccess.denyReason(orgId, userId, "build:tickets:view");
           if (deny) return { denied: true, reason: deny };
 
           const rows = await this.db
@@ -67,7 +67,7 @@ export class ProjectsCopilotTools {
           limit: z.number().int().min(1).max(10).default(5).describe("Max results to return"),
         }),
         execute: async ({ query, projectId, status, limit }) => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "projects:tickets:view");
+          const deny = await this.toolAccess.denyReason(orgId, userId, "build:tickets:view");
           if (deny) return { denied: true, reason: deny };
 
           const conditions = [eq(tickets.orgId, orgId), ilike(tickets.title, `%${query}%`)];
@@ -102,7 +102,7 @@ export class ProjectsCopilotTools {
           assigneeId: z.string().optional().describe("User ID to assign the ticket to"),
         }),
         execute: async ({ projectId, title, description, type, priority, assigneeId }) => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "projects:tickets:create");
+          const deny = await this.toolAccess.denyReason(orgId, userId, "build:tickets:create");
           if (deny) return { denied: true, reason: deny };
 
           const payload: Record<string, unknown> = { projectId, title, type, priority };
@@ -136,7 +136,7 @@ export class ProjectsCopilotTools {
           reason: z.string().optional().describe("Reason for the status change"),
         }),
         execute: async ({ ticketId, status, reason }) => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "projects:tickets:update");
+          const deny = await this.toolAccess.denyReason(orgId, userId, "build:tickets:update");
           if (deny) return { denied: true, reason: deny };
 
           const existing = await this.db
@@ -176,7 +176,7 @@ export class ProjectsCopilotTools {
           comment: z.string().min(1).max(5000).describe("Comment text to add"),
         }),
         execute: async ({ ticketId, comment }) => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "projects:tickets:update");
+          const deny = await this.toolAccess.denyReason(orgId, userId, "build:tickets:update");
           if (deny) return { denied: true, reason: deny };
 
           const existing = await this.db

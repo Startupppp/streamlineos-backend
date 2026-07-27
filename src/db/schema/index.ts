@@ -4,7 +4,7 @@ export * from "./auth";
 export * from "./email";
 export * from "./access";
 
-export * from "./projects";
+export * from "./build";
 export * from "./timesheets";
 export * from "./hr";
 export * from "./crm";
@@ -45,7 +45,6 @@ export * from "./ai-confirmation";
 export * from "./workspace-search";
 export * from "./ai-summaries";
 export * from "./comment-drafts";
-export * from "./project-teams";
 export * from "./directory";
 export * from "./party";
 export * from "./portal-access";

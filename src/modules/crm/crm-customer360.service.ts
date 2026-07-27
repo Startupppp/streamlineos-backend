@@ -52,7 +52,7 @@ export class CrmCustomer360Service {
       fetchMap.push(["supportTickets", () => this.sections.fetchSupportTicketsForOrg(orgId, orgRow.name)]);
       fetchMap.push(["surveys", () => this.sections.fetchSurveysForOrg(orgId, orgRow.name)]);
     }
-    if (permSet.has("projects:view")) {
+    if (permSet.has("build:view")) {
       fetchMap.push(["projects", () => this.sections.fetchProjectsForOrg(orgId, orgRow.name)]);
     }
     if (permSet.has("crm:quotes:read")) {
@@ -95,7 +95,7 @@ export class CrmCustomer360Service {
       fetchMap.push(["supportTickets", () => this.sections.fetchSupportTicketsForClient(orgId, clientId)]);
       fetchMap.push(["surveys", () => this.sections.fetchSurveysForClient(orgId, clientId)]);
     }
-    if (permSet.has("projects:view")) {
+    if (permSet.has("build:view")) {
       fetchMap.push(["projects", () => this.sections.fetchProjectsForClient(orgId, clientId)]);
     }
     if (permSet.has("crm:quotes:read")) {

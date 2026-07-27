@@ -56,7 +56,7 @@ export class DashboardController {
 
   @Get("active-sprint")
   @UseGuards(ModuleGuard)
-  @RequireModule("projects")
+  @RequireModule("build")
   activeSprint(@CurrentUser() u: CurrentUserContext) {
     return this.project.getActiveSprintSummary(u.orgId, u);
   }
@@ -120,7 +120,7 @@ export class DashboardController {
 
   @Get("my-issues")
   @UseGuards(ModuleGuard)
-  @RequireModule("projects")
+  @RequireModule("build")
   myIssues(
     @Query(new ZodValidationPipe(myIssuesSchema)) query: MyIssuesInput,
     @CurrentUser() u: CurrentUserContext,
@@ -152,16 +152,16 @@ export class DashboardController {
 
   @Get("recent-activity")
   @UseGuards(ModuleGuard, PermissionGuard)
-  @RequireModule("projects")
-  @RequirePermission("projects:tickets:view")
+  @RequireModule("build")
+  @RequirePermission("build:tickets:view")
   recentActivity(@CurrentUser() u: CurrentUserContext) {
     return this.project.getRecentActivity(u.orgId, u);
   }
 
   @Get("recent-projects")
   @UseGuards(ModuleGuard, PermissionGuard)
-  @RequireModule("projects")
-  @RequirePermission("projects:tickets:view")
+  @RequireModule("build")
+  @RequirePermission("build:tickets:view")
   recentProjects(@CurrentUser() u: CurrentUserContext) {
     return this.project.getRecentProjects(u.orgId, u);
   }

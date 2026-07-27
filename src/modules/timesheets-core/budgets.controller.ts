@@ -26,7 +26,7 @@ import {
   type UpdateBudgetInput,
 } from "./dto/budgets.schemas";
 
-@RequireModule("projects")
+@RequireModule("build")
 @Controller("timesheets/budgets")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class BudgetsController {

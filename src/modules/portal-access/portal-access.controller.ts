@@ -33,16 +33,17 @@ import {
   type UpdateGrantInput,
 } from "./dto/portal-access.schemas";
 
-@RequireModule("projects")
+@RequireModule("build")
 @Controller("portal-access")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class PortalAccessController {
   constructor(private readonly svc: PortalAccessService) {}
 
   @Get("memberships")
-  @RequirePermission("projects:portal:view")
+  @RequirePermission("build:portal:view")
   listMemberships(
-    @Query(new ZodValidationPipe(listMembershipsQuerySchema)) query: ListMembershipsQuery,
+    @Query(new ZodValidationPipe(listMembershipsQuerySchema))
+    query: ListMembershipsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listMemberships(u.orgId, query);
@@ -50,27 +51,34 @@ export class PortalAccessController {
 
   @Post("memberships")
   @HttpCode(201)
-  @RequirePermission("projects:clientvisibility:manage")
+  @RequirePermission("build:clientvisibility:manage")
   @Idempotent("portal.createMembership")
   createMembership(
-    @Body(new ZodValidationPipe(createMembershipSchema)) body: CreateMembershipInput,
+    @Body(new ZodValidationPipe(createMembershipSchema))
+    body: CreateMembershipInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createMembership(u.orgId, u.userId, body);
   }
 
   @Patch("memberships/:portalMembershipId/status")
-  @RequirePermission("projects:clientvisibility:manage")
+  @RequirePermission("build:clientvisibility:manage")
   setMembershipStatus(
     @Param("portalMembershipId") portalMembershipId: string,
-    @Body(new ZodValidationPipe(updateMembershipStatusSchema)) body: UpdateMembershipStatusInput,
+    @Body(new ZodValidationPipe(updateMembershipStatusSchema))
+    body: UpdateMembershipStatusInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.setMembershipStatus(u.orgId, u.userId, portalMembershipId, body);
+    return this.svc.setMembershipStatus(
+      u.orgId,
+      u.userId,
+      portalMembershipId,
+      body,
+    );
   }
 
   @Get("grants")
-  @RequirePermission("projects:portal:view")
+  @RequirePermission("build:portal:view")
   listGrants(
     @Query(new ZodValidationPipe(listGrantsQuerySchema)) query: ListGrantsQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -80,7 +88,7 @@ export class PortalAccessController {
 
   @Post("grants")
   @HttpCode(201)
-  @RequirePermission("projects:clientvisibility:manage")
+  @RequirePermission("build:clientvisibility:manage")
   @Idempotent("portal.createGrant")
   createGrant(
     @Body(new ZodValidationPipe(createGrantSchema)) body: CreateGrantInput,
@@ -90,7 +98,7 @@ export class PortalAccessController {
   }
 
   @Patch("grants/:projectClientGrantId")
-  @RequirePermission("projects:clientvisibility:manage")
+  @RequirePermission("build:clientvisibility:manage")
   updateGrant(
     @Param("projectClientGrantId") projectClientGrantId: string,
     @Body(new ZodValidationPipe(updateGrantSchema)) body: UpdateGrantInput,
@@ -101,7 +109,7 @@ export class PortalAccessController {
 
   @Post("grants/:projectClientGrantId/revoke")
   @HttpCode(200)
-  @RequirePermission("projects:clientvisibility:manage")
+  @RequirePermission("build:clientvisibility:manage")
   revokeGrant(
     @Param("projectClientGrantId") projectClientGrantId: string,
     @CurrentUser() u: CurrentUserContext,

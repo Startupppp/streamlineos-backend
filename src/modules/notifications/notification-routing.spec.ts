@@ -4,7 +4,7 @@ import type { NotificationChannel, NotificationEventDefinition, RoutingResult } 
 function makeDef(over: Partial<NotificationEventDefinition> = {}): NotificationEventDefinition {
   return {
     eventKey: "project.task.assigned",
-    sourceModule: "projects",
+    sourceModule: "build",
     category: "PROJECTS",
     displayName: "Task assigned",
     description: "A task was assigned to you",

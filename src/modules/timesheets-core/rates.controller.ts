@@ -26,7 +26,7 @@ import {
   type UpdateRateInput,
 } from "./dto/rates.schemas";
 
-@RequireModule("projects")
+@RequireModule("build")
 @Controller("timesheets/rates")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class RatesController {

@@ -48,7 +48,7 @@ function parseProjectId(raw: string): number {
 
 @Controller("ai")
 @UseGuards(JwtAuthGuard, PermissionGuard, RateLimitGuard)
-@RequirePermission("projects:ai:use")
+@RequirePermission("build:ai:use")
 @UseRateLimit("ai:invoke")
 export class ProjectsAiController {
   constructor(

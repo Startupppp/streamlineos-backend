@@ -242,7 +242,7 @@ export class ChatAssistantController {
 
     switch (confirmedAction) {
       case "ticket.create": {
-        const deny = await this.toolAccess.denyReason(u.orgId, u.userId, "projects:tickets:create");
+        const deny = await this.toolAccess.denyReason(u.orgId, u.userId, "build:tickets:create");
         if (deny) throw new ForbiddenException(deny);
         const svc = this.moduleRef.get(ProjectsTicketsService, { strict: false });
         const createInput = {
@@ -259,7 +259,7 @@ export class ChatAssistantController {
       }
 
       case "ticket.updateStatus": {
-        const deny = await this.toolAccess.denyReason(u.orgId, u.userId, "projects:tickets:update");
+        const deny = await this.toolAccess.denyReason(u.orgId, u.userId, "build:tickets:update");
         if (deny) throw new ForbiddenException(deny);
         const ticketId = Number(payload["ticketId"]);
         const status = String(payload["status"]);
@@ -273,7 +273,7 @@ export class ChatAssistantController {
       }
 
       case "ticket.addComment": {
-        const deny = await this.toolAccess.denyReason(u.orgId, u.userId, "projects:tickets:update");
+        const deny = await this.toolAccess.denyReason(u.orgId, u.userId, "build:tickets:update");
         if (deny) throw new ForbiddenException(deny);
         const commentSvc = this.moduleRef.get(ProjectsTicketCommentsService, { strict: false });
         const comment = await commentSvc.addComment(u, Number(payload["ticketId"]), { content: String(payload["comment"]) });

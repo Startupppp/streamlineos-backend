@@ -19,7 +19,7 @@ import {
 } from "./dto/ai.schemas";
 import { overviewQuerySchema, type OverviewQuery } from "./dto/reports.schemas";
 
-@RequireModule("projects")
+@RequireModule("build")
 @Controller("timesheets")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class TimesheetsAiController {

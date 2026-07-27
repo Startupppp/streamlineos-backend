@@ -10,7 +10,7 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { TeamService } from "./team.service";
 import { teamWeekSummaryQuerySchema, type TeamWeekSummaryQuery } from "./dto/team.schemas";
 
-@RequireModule("projects")
+@RequireModule("build")
 @Controller("timesheets/team")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class TeamController {

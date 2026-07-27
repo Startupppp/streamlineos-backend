@@ -29,7 +29,7 @@ import {
   type RejectPeriodInput,
 } from "./dto/approvals.schemas";
 
-@RequireModule("projects")
+@RequireModule("build")
 @Controller("timesheets/approvals")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class ApprovalsController {

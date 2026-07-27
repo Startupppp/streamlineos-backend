@@ -80,10 +80,10 @@ export class WorkspaceCopilotTools {
           projectId: z.number().int().positive().optional().describe("Filter to a specific project ID"),
         }),
         execute: async ({ userId: targetUserId, projectId }) => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "projects:tickets:view");
+          const deny = await this.toolAccess.denyReason(orgId, userId, "build:tickets:view");
           if (deny) return { denied: true, reason: deny };
 
-          const scope = await this.toolAccess.scope(orgId, userId, "projects:tickets:view");
+          const scope = await this.toolAccess.scope(orgId, userId, "build:tickets:view");
           if (scope === "own" && targetUserId !== userId) {
             return { denied: true, reason: "Permission denied: you can only view your own ticket stats." };
           }

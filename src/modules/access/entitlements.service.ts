@@ -17,7 +17,7 @@ import { logger } from "../../common/logger/logger.service";
 export const MODULE_CATALOG = [
   "hr",
   "crm",
-  "projects",
+  "build",
   "accounting",
   "inventory",
   "kb",
@@ -30,7 +30,7 @@ export const MODULE_CATALOG = [
 const MODULE_KEY_TO_ORG_MODULE: Readonly<Record<string, string>> = {
   hr: "HR",
   crm: "CRM",
-  projects: "PROJECTS",
+  build: "PROJECTS",
   inventory: "INVENTORY",
   accounting: "FINANCE",
   support: "HELPDESK",
@@ -176,7 +176,7 @@ export class EntitlementsService {
         }
       }
 
-      if (moduleKey === "projects" && enabled) {
+      if (moduleKey === "build" && enabled) {
         const [existing] = await tx
           .select({ id: pmWorkspaces.pmWorkspaceId })
           .from(pmWorkspaces)

@@ -81,9 +81,9 @@ describe("ChatActions auth (e2e, no DB required)", () => {
 const mockAccessServiceAllowed = {
   resolveUserPermissions: jest.fn().mockResolvedValue(
     new Map<string, "all" | "own" | "team" | "none">([
-      ["projects:tickets:create", "all"],
-      ["projects:tickets:assign", "all"],
-      ["projects:tickets:update", "all"],
+      ["build:tickets:create", "all"],
+      ["build:tickets:assign", "all"],
+      ["build:tickets:update", "all"],
     ]),
   ),
   isModuleEnabled: jest.fn().mockResolvedValue(true),
@@ -143,9 +143,9 @@ describeWithDb("ChatActions membership-forbidden path (e2e, mocked)", () => {
     jest.clearAllMocks();
     mockAccessServiceAllowed.resolveUserPermissions.mockResolvedValue(
       new Map<string, "all" | "own" | "team" | "none">([
-        ["projects:tickets:create", "all"],
-        ["projects:tickets:assign", "all"],
-        ["projects:tickets:update", "all"],
+        ["build:tickets:create", "all"],
+        ["build:tickets:assign", "all"],
+        ["build:tickets:update", "all"],
       ]),
     );
     mockAccessServiceAllowed.isModuleEnabled.mockResolvedValue(true);
@@ -158,7 +158,7 @@ describeWithDb("ChatActions membership-forbidden path (e2e, mocked)", () => {
 
   it("403 CHAT_ACTION_FORBIDDEN on POST /chat/actions/create-task-from-message when caller is not a project member", async () => {
     const token = await signToken({
-      permissions: ["projects:tickets:create"],
+      permissions: ["build:tickets:create"],
       enabledModules: ["projects", "chat"],
       isOrgOwner: false,
     });
@@ -176,7 +176,7 @@ describeWithDb("ChatActions membership-forbidden path (e2e, mocked)", () => {
 
   it("403 CHAT_ACTION_FORBIDDEN on POST /chat/actions/assign-ticket when caller is not a project member", async () => {
     const token = await signToken({
-      permissions: ["projects:tickets:assign"],
+      permissions: ["build:tickets:assign"],
       enabledModules: ["projects", "chat"],
       isOrgOwner: false,
     });
@@ -194,7 +194,7 @@ describeWithDb("ChatActions membership-forbidden path (e2e, mocked)", () => {
 
   it("403 CHAT_ACTION_FORBIDDEN on POST /chat/actions/set-due-date when caller is not a project member", async () => {
     const token = await signToken({
-      permissions: ["projects:tickets:update"],
+      permissions: ["build:tickets:update"],
       enabledModules: ["projects", "chat"],
       isOrgOwner: false,
     });
@@ -212,7 +212,7 @@ describeWithDb("ChatActions membership-forbidden path (e2e, mocked)", () => {
 
   it("org owners skip the membership DB check entirely on POST /chat/actions/create-task-from-message", async () => {
     const token = await signToken({
-      permissions: ["projects:tickets:create"],
+      permissions: ["build:tickets:create"],
       enabledModules: ["projects", "chat"],
       isOrgOwner: true,
     });

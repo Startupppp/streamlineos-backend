@@ -38,6 +38,6 @@ export async function resolveDashboardStatsFlags(
   return {
     employees: granted("hr:employees:view"),
     attendance: granted("hr:attendance:view"),
-    projects: granted("projects:tickets:view"),
+    projects: granted("build:tickets:view"),
   };
 }

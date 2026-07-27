@@ -1,0 +1,119 @@
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from "@nestjs/common";
+import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { CurrentUser } from "../../common/auth/current-user.decorator";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { PmWorkspacesService } from "./pm-workspaces.service";
+import {
+  addWorkspaceMemberSchema,
+  createWorkspaceSchema,
+  listMembersQuerySchema,
+  listWorkspacesQuerySchema,
+  updateWorkspaceSchema,
+  type AddWorkspaceMemberInput,
+  type CreateWorkspaceInput,
+  type ListMembersQuery,
+  type ListWorkspacesQuery,
+  type UpdateWorkspaceInput,
+} from "./dto/pm-workspaces.schemas";
+
+@RequireModule("build")
+@Controller("product-management/workspaces")
+@UseGuards(JwtAuthGuard, PermissionGuard)
+export class PmWorkspacesController {
+  constructor(private readonly svc: PmWorkspacesService) {}
+
+  @Get()
+  @RequirePermission("build:workspaces:view")
+  listWorkspaces(
+    @Query(new ZodValidationPipe(listWorkspacesQuerySchema)) query: ListWorkspacesQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.listWorkspaces(u.orgId, query);
+  }
+
+  @Get(":pmWorkspaceId")
+  @RequirePermission("build:workspaces:view")
+  getWorkspace(
+    @Param("pmWorkspaceId") pmWorkspaceId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.getWorkspace(u.orgId, pmWorkspaceId);
+  }
+
+  @Post()
+  @HttpCode(201)
+  @RequirePermission("build:workspaces:create")
+  createWorkspace(
+    @Body(new ZodValidationPipe(createWorkspaceSchema)) body: CreateWorkspaceInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.createWorkspace(u.orgId, u.userId, body);
+  }
+
+  @Patch(":pmWorkspaceId")
+  @RequirePermission("build:workspaces:update")
+  updateWorkspace(
+    @Param("pmWorkspaceId") pmWorkspaceId: string,
+    @Body(new ZodValidationPipe(updateWorkspaceSchema)) body: UpdateWorkspaceInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.updateWorkspace(u.orgId, u.userId, pmWorkspaceId, body);
+  }
+
+  @Delete(":pmWorkspaceId")
+  @HttpCode(204)
+  @RequirePermission("build:workspaces:delete")
+  deleteWorkspace(
+    @Param("pmWorkspaceId") pmWorkspaceId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.deleteWorkspace(u.orgId, u.userId, pmWorkspaceId);
+  }
+
+  @Get(":pmWorkspaceId/members")
+  @RequirePermission("build:workspaces:members:view")
+  listMembers(
+    @Param("pmWorkspaceId") pmWorkspaceId: string,
+    @Query(new ZodValidationPipe(listMembersQuerySchema)) query: ListMembersQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.listMembers(u.orgId, pmWorkspaceId, query);
+  }
+
+  @Post(":pmWorkspaceId/members")
+  @HttpCode(201)
+  @RequirePermission("build:workspaces:members:manage")
+  addMember(
+    @Param("pmWorkspaceId") pmWorkspaceId: string,
+    @Body(new ZodValidationPipe(addWorkspaceMemberSchema)) body: AddWorkspaceMemberInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.addMember(u.orgId, u.userId, pmWorkspaceId, body);
+  }
+
+  @Delete(":pmWorkspaceId/members/:pmWorkspaceMembershipId")
+  @HttpCode(200)
+  @RequirePermission("build:workspaces:members:manage")
+  removeMember(
+    @Param("pmWorkspaceId") pmWorkspaceId: string,
+    @Param("pmWorkspaceMembershipId") pmWorkspaceMembershipId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.removeMember(u.orgId, u.userId, pmWorkspaceId, pmWorkspaceMembershipId);
+  }
+}

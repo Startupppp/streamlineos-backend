@@ -10,7 +10,7 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { ReportsService } from "./reports.service";
 import { overviewQuerySchema, type OverviewQuery } from "./dto/reports.schemas";
 
-@RequireModule("projects")
+@RequireModule("build")
 @Controller("timesheets/reports")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class ReportsController {

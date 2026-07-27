@@ -27,7 +27,7 @@ import {
   type RatePreviewQuery,
 } from "./dto/billing.schemas";
 
-@RequireModule("projects")
+@RequireModule("build")
 @Controller("timesheets/billing")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class BillingController {

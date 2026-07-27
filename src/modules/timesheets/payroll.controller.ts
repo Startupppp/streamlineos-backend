@@ -32,7 +32,7 @@ import {
   type UpdateSettingsInput,
 } from "./dto/payroll.schemas";
 
-@RequireModule("projects")
+@RequireModule("build")
 @Controller("timesheets/payroll")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class PayrollController {

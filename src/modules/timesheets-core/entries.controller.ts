@@ -30,7 +30,7 @@ import {
   type VoidEntryInput,
 } from "./dto/entries.schemas";
 
-@RequireModule("projects")
+@RequireModule("build")
 @Controller("timesheets/entries")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class EntriesController {
