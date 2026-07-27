@@ -1,3 +1,4 @@
+SET statement_timeout = 0;
 -- wave-4-phase-c-candidate-keys.sql  (Wave 4 Phase C — tenant candidate keys)
 -- Adds a UNIQUE (org_id, <pk>) CONSTRAINT to every public tenant parent table
 -- that has a NOT-NULL org_id/organization_id column + a single-column primary key

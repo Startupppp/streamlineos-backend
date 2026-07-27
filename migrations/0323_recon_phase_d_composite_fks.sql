@@ -1,3 +1,4 @@
+SET statement_timeout = 0;
 -- wave-4-phase-d-composite-fks.sql  (Wave 4 Phase D — tenant composite FKs)
 -- For every single-column FK whose CHILD has a NOT-NULL org column and whose PARENT
 -- has a (org, pk) candidate key (added in Phase C), adds a SUPPLEMENTARY composite

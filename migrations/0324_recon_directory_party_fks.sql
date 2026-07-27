@@ -1,3 +1,4 @@
+SET statement_timeout = 0;
 -- ============================================================================
 -- Wave 4 — tenant-composite foreign keys for the new bounded-context tables
 -- ============================================================================

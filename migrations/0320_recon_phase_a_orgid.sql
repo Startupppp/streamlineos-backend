@@ -1,3 +1,4 @@
+SET statement_timeout = 0;
 -- wave-4-phase-a-orgid-backfill.sql  (Wave 4 Phase A — denormalized tenant org_id)
 -- Adds a SELF-MAINTAINING org_id to tenant line-item/junction tables that lacked one.
 -- For every public table without org_id/organization_id that has a NOT-NULL single-column
