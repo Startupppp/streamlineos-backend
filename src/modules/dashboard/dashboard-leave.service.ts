@@ -12,7 +12,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
-import { getTodayString } from "./date.helpers";
+import { getTodayString } from "../../common/date";
 import { type DashboardForbidden } from "./dashboard.errors";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AccessService } from "../access/access.service";

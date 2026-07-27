@@ -13,7 +13,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { AckInput, SendAckInput } from "./dto/documents.schemas";
-import { formatDateOnly } from "./date.helpers";
+import { formatDateOnly } from "../../common/date";
 
 interface CalendarEvent {
   date: string;

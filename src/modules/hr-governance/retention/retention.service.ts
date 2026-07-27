@@ -64,7 +64,14 @@ export class RetentionService {
         action: input.action,
         active: input.active ?? true,
       })
-      .returning();
+      .returning()
+      .catch((e: { code?: string }) => {
+        if (e.code === "23505")
+          throw new ConflictException(
+            "A retention policy for this record type and country already exists.",
+          );
+        throw e;
+      });
 
     await this.audit.log({
       orgId,
@@ -92,7 +99,14 @@ export class RetentionService {
       .update(hrRetentionPolicies)
       .set({ ...input, updatedAt: new Date() })
       .where(and(eq(hrRetentionPolicies.orgId, orgId), eq(hrRetentionPolicies.id, policyId)))
-      .returning();
+      .returning()
+      .catch((e: { code?: string }) => {
+        if (e.code === "23505")
+          throw new ConflictException(
+            "A retention policy for this record type and country already exists.",
+          );
+        throw e;
+      });
 
     await this.audit.log({
       orgId,

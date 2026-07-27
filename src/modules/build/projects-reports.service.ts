@@ -3,7 +3,7 @@ import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { customStates, projectDailySnapshots, projects, sprints, tickets, workItemRelations } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { addDays, differenceInCalendarDays, formatDateOnly } from "./projects.date-utils";
+import { addDays, differenceInCalendarDays, formatDateOnly } from "../../common/date";
 import type { BurnupQuery, CfdQuery } from "./dto/projects.schemas";
 import { buildEdges, computeCriticalPath } from "./projects-critical-path.util";
 import { CacheService } from "../../common/cache/cache.service";

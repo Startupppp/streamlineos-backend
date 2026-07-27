@@ -10,7 +10,7 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { endOfDay, startOfDay, subDays } from "./date.util";
+import { endOfDay, startOfDay, subDays } from "../../common/date";
 
 export interface BusyBlock {
   start: string;

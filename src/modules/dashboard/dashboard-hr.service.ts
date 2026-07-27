@@ -19,7 +19,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AccessService } from "../access/access.service";
-import { getTodayString } from "./date.helpers";
+import { getTodayString } from "../../common/date";
 import { resolveDashboardStatsFlags } from "./dashboard-scope";
 
 export interface BirthdayEntry {

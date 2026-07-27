@@ -5,7 +5,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
-import { subMonths, startOfMonth } from "./date.helpers";
+import { subMonths, startOfMonth } from "../../common/date";
 
 export interface CohortRow {
   cohortMonth: string;

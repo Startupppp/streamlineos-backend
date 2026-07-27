@@ -17,7 +17,7 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { branchIdFilter, type BranchContext } from "../leads/branch-filter";
-import { formatDateOnly, subDays } from "./date.helpers";
+import { formatDateOnly, subDays } from "../../common/date";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
 

@@ -8,6 +8,8 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { ModuleGuard } from "../../../common/rbac/module.guard";
+import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
@@ -19,7 +21,9 @@ import { buildCsv } from "./lib/csv";
 
 const CSV_HEADERS = ["account", "description", "debit", "credit", "costCenter"] as const;
 
+@RequireModule("payroll")
 @Controller("payroll/reports/journal")
+@UseGuards(JwtAuthGuard, ModuleGuard)
 export class JournalController {
   constructor(
     private readonly journalService: JournalService,

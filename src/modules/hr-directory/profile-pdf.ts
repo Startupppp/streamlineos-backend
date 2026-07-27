@@ -1,5 +1,5 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
-import { formatDayMonthYear, formatDayMonthYearTime } from "./date.helpers";
+import { formatDayMonthYear, formatDayMonthYearTime } from "../../common/date";
 
 export interface ProfileEmployee {
   id: string;

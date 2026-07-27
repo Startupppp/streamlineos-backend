@@ -9,6 +9,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { ModuleGuard } from "../../../common/rbac/module.guard";
+import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
@@ -18,8 +20,9 @@ import { ManagerInboxService } from "./manager-inbox.service";
 import { TeamRewardsService } from "./team-rewards.service";
 import { managerRejectSchema, type ManagerReject } from "./dto/insights.schemas";
 
+@RequireModule("payroll")
 @Controller("payroll/manager")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class ManagerInboxController {
   constructor(
     private readonly inbox: ManagerInboxService,

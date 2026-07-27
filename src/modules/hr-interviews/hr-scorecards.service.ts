@@ -3,7 +3,7 @@ import { and, eq, gte } from "drizzle-orm";
 import { interviewScorecards, interviews, scorecardTemplates, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { subDays } from "./date.util";
+import { subDays } from "../../common/date";
 import type {
   CreateScorecardTemplateInput,
   ScorecardAnalyticsQueryInput,

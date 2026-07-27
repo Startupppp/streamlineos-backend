@@ -26,7 +26,7 @@ import { HrAutomationEngineService } from "../hr-automations/hr-automation-engin
 import { HrTemplateRenderService } from "../hr-templates/hr-template-render.service";
 import { SessionsService } from "../sessions/sessions.service";
 import { getTerminationEmailTemplate } from "../email/templates/hr";
-import { formatDdMmmYyyy } from "./date.helpers";
+import { formatDdMmmYyyy } from "../../common/date";
 import type {
   TerminationCreateInput,
   TerminationReviewInput,

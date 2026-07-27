@@ -7,7 +7,7 @@ import { AuditService } from "../../common/audit/audit.service";
 import { AccessService } from "../access/access.service";
 import { EmailService } from "../email/email.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { formatDateOnly, getTodayString } from "./date.helpers";
+import { formatDateOnly, getTodayString } from "../../common/date";
 import type {
   ExportWorkLogsQuery,
   ListWorkLogsQuery,

@@ -8,6 +8,8 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { ModuleGuard } from "../../../common/rbac/module.guard";
+import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { PermissionGuard } from "../../access/permission.guard";
@@ -32,8 +34,9 @@ function pagination(q: ReportsQuery): { limit: number; offset: number } {
   return { limit: q.limit ?? 100, offset: q.offset ?? 0 };
 }
 
+@RequireModule("payroll")
 @Controller("payroll/reports")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 @RequirePermission("payroll:reports:view")
 export class ReportsController {
   constructor(

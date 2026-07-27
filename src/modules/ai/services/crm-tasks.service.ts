@@ -6,7 +6,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
 
 import { PriorityResponseSchema } from "../dto/output.schemas";
-import { formatDateOnly } from "../ai-date.util";
+import { formatDateOnly } from "../../../common/date";
 import { throwOnAiFailure } from "./gateway-result.util";
 
 export interface TaskSuggestion {

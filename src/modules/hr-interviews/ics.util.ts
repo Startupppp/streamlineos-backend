@@ -1,4 +1,4 @@
-import { addMinutes, formatLocalDate } from "./date.util";
+import { addMinutes, formatLocalDate } from "../../common/date";
 
 export interface InterviewIcsInput {
   interviewId: number;

@@ -9,7 +9,6 @@ import { and, count, eq, isNull } from "drizzle-orm";
 import {
   hrEmployments,
   hrEmploymentHistory,
-  hrPeople,
   type hrEmploymentLifecycleStatusEnum,
 } from "../../db/schema/hr/core-people";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -246,33 +245,6 @@ export class HrEmploymentsService {
     });
 
     return updated;
-  }
-
-  async transitionByUserId(
-    orgId: string,
-    userId: string,
-    actorId: string,
-    input: TransitionStatusInput,
-  ) {
-    const [row] = await this.db
-      .select({ id: hrEmployments.id })
-      .from(hrEmployments)
-      .innerJoin(hrPeople, eq(hrEmployments.personId, hrPeople.id))
-      .where(
-        and(
-          eq(hrEmployments.orgId, orgId),
-          eq(hrPeople.userId, userId),
-          eq(hrEmployments.isPrimary, true),
-          isNull(hrEmployments.deletedAt),
-        ),
-      )
-      .limit(1);
-
-    if (!row) {
-      throw new NotFoundException("Primary employment not found for user");
-    }
-
-    return this.transition(orgId, row.id, actorId, input);
   }
 
   async remove(orgId: string, employmentId: number, actorId: string) {

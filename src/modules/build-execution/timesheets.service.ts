@@ -15,7 +15,7 @@ import { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { applyScope } from "../access/apply-scope";
 import { resolveTimesheetsScope } from "./timesheets-scope";
-import { formatDateOnly } from "./date.helpers";
+import { formatDateOnly } from "../../common/date";
 import type {
   BillingSummaryQuery,
   LogTimeInput,

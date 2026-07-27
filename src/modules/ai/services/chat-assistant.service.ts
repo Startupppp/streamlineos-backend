@@ -17,7 +17,7 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { getTodayString } from "../ai-date.util";
+import { getTodayString } from "../../../common/date";
 import { logger } from "../../../common/logger/logger.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AI_CREDIT_LEDGER, type AiCreditLedger } from "../gateway/credit-ledger.interface";

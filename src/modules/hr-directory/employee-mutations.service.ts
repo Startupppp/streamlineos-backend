@@ -33,7 +33,7 @@ import { HrAutomationEngineService } from "../hr-automations/hr-automation-engin
 import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";
 import { PersonEmploymentSyncService } from "../hr-core/person-employment-sync.service";
 import { encrypt, encryptBankDetails, type BankDetails } from "../onboarding/crypto.helpers";
-import { differenceInDays, formatDateOnly } from "./date.helpers";
+import { differenceInDays, formatDateOnly } from "../../common/date";
 import { userCan } from "./ability.helpers";
 import { seedEmployeeSalaryProfile } from "./salary-profile-seed.helper";
 import type {

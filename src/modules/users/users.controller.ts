@@ -58,7 +58,7 @@ export class UsersController {
     return this.userOps.getStats(u.orgId);
   }
 
-  @RequirePermission("hr:employees:export")
+  @RequirePermission("hr:export:manage")
   @Get("export")
   async exportUsers(@CurrentUser() u: CurrentUserContext, @Res() res: Response) {
     const data = await this.userOps.exportUsers(u.orgId);

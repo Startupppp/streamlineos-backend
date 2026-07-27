@@ -52,7 +52,7 @@ export const wfhRequests = pgTable("wfh_requests", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_wfh_requests_org_id").on(table.orgId, table.id),
-  uniqueIndex("uniq_wfh_requests_user_date").on(table.userId, table.date),
+  uniqueIndex("uniq_wfh_requests_org_user_date").on(table.orgId, table.userId, table.date),
   index("idx_wfh_requests_org_status").on(table.orgId, table.status),
   index("idx_wfh_requests_org_user_status").on(table.orgId, table.userId, table.status),
 ]);

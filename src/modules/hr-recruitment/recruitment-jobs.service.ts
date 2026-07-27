@@ -21,7 +21,7 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { PlanLimitsService } from "../billing/plan-limits.service";
-import { formatDateOnly } from "./date.util";
+import { formatDateOnly } from "../../common/date";
 import type { AssignRecruiterInput, CreateJobInput, InternalApplyInput, JobListInput, PublishJobInput, UpdateJobInput } from "./dto/jobs.schemas";
 
 type PublishStatus = "PUBLISHED" | "NO_INTEGRATION" | "INACTIVE" | "NO_TOKEN";

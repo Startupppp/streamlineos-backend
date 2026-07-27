@@ -25,7 +25,7 @@ import { EmailService } from "../email/email.service";
 import { AutomationService } from "../automation/automation.service";
 import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";
 import { NotificationsService } from "../notifications/notifications.service";
-import { formatDateOnly } from "./date.helpers";
+import { formatDateOnly } from "../../common/date";
 import { LeaveLedgerService } from "./leave-ledger.service";
 import { HrWorkflowEngineService } from "../hr-workflows/hr-workflow-engine.service";
 import { PayrollInputsService } from "../hr-payroll-inputs/payroll-inputs.service";
@@ -95,93 +95,102 @@ export class LeavesWriteService {
             (1000 * 60 * 60 * 24),
         ) + 1;
 
-    const [balance, leaveType] = await Promise.all([
-      this.db.query.leaveBalances.findFirst({
-        where: and(
-          eq(leaveBalances.userId, u.userId),
-          eq(leaveBalances.orgId, u.orgId),
-          eq(leaveBalances.leaveTypeId, body.leaveTypeId),
-          eq(leaveBalances.year, new Date().getFullYear()),
-        ),
-      }),
-      this.db.query.leaveTypes.findFirst({
-        where: and(eq(leaveTypes.id, body.leaveTypeId), eq(leaveTypes.orgId, u.orgId)),
-        columns: { name: true, daysPerYear: true },
-      }),
-    ]);
-
-    const isUnpaid = (leaveType?.daysPerYear ?? 1) === 0;
-    if (!isUnpaid && balance && Number(balance.balance) < requestedDays) {
-      throw new BadRequestException(
-        `Insufficient leave balance. Available: ${balance.balance}, Required: ${requestedDays}`,
-      );
-    }
-
     const startStr = formatDateOnly(new Date(body.startDate));
     const endStr = formatDateOnly(new Date(body.endDate));
 
-    const [overlapping, blackout] = await Promise.all([
-      this.db.query.leaveRequests.findFirst({
-        where: and(
-          eq(leaveRequests.userId, u.userId),
-          eq(leaveRequests.orgId, u.orgId),
-          lte(leaveRequests.startDate, endStr),
-          gte(leaveRequests.endDate, startStr),
-        ),
-      }),
-      this.db.query.leaveBlackoutDates.findFirst({
-        where: and(
-          eq(leaveBlackoutDates.orgId, u.orgId),
-          lte(leaveBlackoutDates.startDate, endStr),
-          gte(leaveBlackoutDates.endDate, startStr),
-          or(
-            eq(leaveBlackoutDates.appliesTo, "ALL"),
-            eq(leaveBlackoutDates.appliesTo, u.userId),
-          ),
-        ),
-      }),
-    ]);
-
-    if (overlapping && overlapping.status !== "REJECTED" && overlapping.status !== "CANCELLED") {
-      throw new BadRequestException("You already have a leave request for overlapping dates.");
-    }
-
-    if (blackout) {
-      throw new BadRequestException(
-        `Leave cannot be requested during blackout period: ${blackout.reason}`,
-      );
-    }
-
     const teamConflicts = await this.detectTeamConflicts(u.orgId, u.userId, startStr, endStr);
 
-    const [leaveRequest] = await this.db
-      .insert(leaveRequests)
-      .values({
-        orgId: u.orgId,
-        userId: u.userId,
-        leaveTypeId: body.leaveTypeId,
-        startDate: startStr,
-        endDate: endStr,
-        reason: body.reason,
-        priority: body.priority,
-        approverId: body.approverId ?? null,
-        attachmentUrl: body.attachmentUrl ?? null,
-        isHalfDay: body.isHalfDay,
-        halfDayPeriod: body.halfDayPeriod ?? null,
-        status: "PENDING",
-      })
-      .returning();
+    const { leaveRequest, leaveTypeName } = await this.db.transaction(async (tx) => {
+      const balanceRows = await tx
+        .select()
+        .from(leaveBalances)
+        .where(
+          and(
+            eq(leaveBalances.userId, u.userId),
+            eq(leaveBalances.orgId, u.orgId),
+            eq(leaveBalances.leaveTypeId, body.leaveTypeId),
+            eq(leaveBalances.year, new Date().getFullYear()),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      const balance = balanceRows[0];
 
-    if (!leaveRequest) {
-      throw new InternalServerErrorException("Failed to create leave request.");
-    }
+      const leaveTypeRow = await tx.query.leaveTypes.findFirst({
+        where: and(eq(leaveTypes.id, body.leaveTypeId), eq(leaveTypes.orgId, u.orgId)),
+        columns: { name: true, daysPerYear: true },
+      });
+
+      const isUnpaid = (leaveTypeRow?.daysPerYear ?? 1) === 0;
+      if (!isUnpaid && balance && Number(balance.balance) < requestedDays) {
+        throw new BadRequestException(
+          `Insufficient leave balance. Available: ${balance.balance}, Required: ${requestedDays}`,
+        );
+      }
+
+      const [overlapping, blackout] = await Promise.all([
+        tx.query.leaveRequests.findFirst({
+          where: and(
+            eq(leaveRequests.userId, u.userId),
+            eq(leaveRequests.orgId, u.orgId),
+            lte(leaveRequests.startDate, endStr),
+            gte(leaveRequests.endDate, startStr),
+          ),
+        }),
+        tx.query.leaveBlackoutDates.findFirst({
+          where: and(
+            eq(leaveBlackoutDates.orgId, u.orgId),
+            lte(leaveBlackoutDates.startDate, endStr),
+            gte(leaveBlackoutDates.endDate, startStr),
+            or(
+              eq(leaveBlackoutDates.appliesTo, "ALL"),
+              eq(leaveBlackoutDates.appliesTo, u.userId),
+            ),
+          ),
+        }),
+      ]);
+
+      if (overlapping && overlapping.status !== "REJECTED" && overlapping.status !== "CANCELLED") {
+        throw new BadRequestException("You already have a leave request for overlapping dates.");
+      }
+
+      if (blackout) {
+        throw new BadRequestException(
+          `Leave cannot be requested during blackout period: ${blackout.reason}`,
+        );
+      }
+
+      const [inserted] = await tx
+        .insert(leaveRequests)
+        .values({
+          orgId: u.orgId,
+          userId: u.userId,
+          leaveTypeId: body.leaveTypeId,
+          startDate: startStr,
+          endDate: endStr,
+          reason: body.reason,
+          priority: body.priority,
+          approverId: body.approverId ?? null,
+          attachmentUrl: body.attachmentUrl ?? null,
+          isHalfDay: body.isHalfDay,
+          halfDayPeriod: body.halfDayPeriod ?? null,
+          status: "PENDING",
+        })
+        .returning();
+
+      if (!inserted) {
+        throw new InternalServerErrorException("Failed to create leave request.");
+      }
+
+      return { leaveRequest: inserted, leaveTypeName: leaveTypeRow?.name ?? "Leave" };
+    });
 
     void this.startLeaveWorkflow(u, leaveRequest.id, body.approverId);
     void this.dispatchLeaveRequested(
       u,
       leaveRequest.id,
       body,
-      leaveType?.name ?? "Leave",
+      leaveTypeName,
       requestedDays,
     );
 

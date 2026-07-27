@@ -22,8 +22,6 @@ export * from "./rosters";
 export * from "./overtime";
 export * from "./geofencing";
 export * from "./biometric";
-export * from "./learning";
-export * from "./training";
 export * from "./requisitions";
 export * from "./kpis";
 export * from "./feedback";

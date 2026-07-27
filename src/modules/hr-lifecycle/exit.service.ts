@@ -11,7 +11,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { HrTemplateRenderService } from "../hr-templates/hr-template-render.service";
-import { formatDdMmmYyyy, formatDdMmmYyyyTime, formatLongInIN, subMonths } from "./date.helpers";
+import { formatDdMmmYyyy, formatDdMmmYyyyTime, formatLongInIN, subMonths } from "../../common/date";
 import { generateResignationLetter } from "./letters";
 import type { ExperienceLetterInput } from "./dto/hr-lifecycle.schemas";
 

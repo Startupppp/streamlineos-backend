@@ -25,7 +25,7 @@ import { HrPolicyEvaluationService } from "../hr-policies/hr-policy-evaluation.s
 import { AssetsRecoveryService } from "../hr-directory/assets-recovery.service";
 import { HrAuditService } from "../hr-core/hr-audit.service";
 import { IdentityService } from "../hr-enterprise-ops/identity/identity.service";
-import { formatDdMmmYyyy } from "./date.helpers";
+import { formatDdMmmYyyy } from "../../common/date";
 import { HR_NOTIFY_ROLES } from "./hr-role-constants";
 import type {
   ResignationCreateInput,
@@ -130,23 +130,25 @@ export class ExitWriteService {
       if (existing.status !== "HR_APPROVED") {
         throw new BadRequestException("Resignation must be HR-approved first.");
       }
-      await this.db
-        .update(resignations)
-        .set({
-          status: "CEO_APPROVED",
-          ceoReviewedBy: actor.userId,
-          ceoReviewedAt: new Date(),
-          ceoRemarks: input.remarks || null,
-          approvedBy: actor.userId,
-          approvedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(resignations.id, resignationId));
+      await this.db.transaction(async (tx) => {
+        await tx
+          .update(resignations)
+          .set({
+            status: "CEO_APPROVED",
+            ceoReviewedBy: actor.userId,
+            ceoReviewedAt: new Date(),
+            ceoRemarks: input.remarks || null,
+            approvedBy: actor.userId,
+            approvedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(resignations.id, resignationId));
 
-      await this.db
-        .insert(fnfSettlements)
-        .values({ orgId, userId: existing.userId, resignationId, status: "DRAFT" })
-        .onConflictDoNothing();
+        await tx
+          .insert(fnfSettlements)
+          .values({ orgId, userId: existing.userId, resignationId, status: "DRAFT" })
+          .onConflictDoNothing();
+      });
 
       void this.exitChecklist.seedChecklistFromTemplate(orgId, resignationId, actor.userId).catch(() => undefined);
 

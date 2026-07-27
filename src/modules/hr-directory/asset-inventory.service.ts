@@ -4,7 +4,7 @@ import { assets, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { EmailService } from "../email/email.service";
-import { formatDateOnly } from "./date.helpers";
+import { formatDateOnly } from "../../common/date";
 import type {
   AssignAssetInput,
   CreateAssetInput,

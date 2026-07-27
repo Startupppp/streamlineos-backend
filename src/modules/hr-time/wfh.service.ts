@@ -3,7 +3,7 @@ import { and, count, desc, eq, gte, lte } from "drizzle-orm";
 import { users, wfhRequests } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { formatDateOnly } from "./date.helpers";
+import { formatDateOnly } from "../../common/date";
 import type { CreateWfhInput, UpdateWfhInput } from "./dto/wfh.schemas";
 import { HrPolicyEvaluationService } from "../hr-policies/hr-policy-evaluation.service";
 

@@ -9,6 +9,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { ModuleGuard } from "../../../common/rbac/module.guard";
+import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
@@ -17,8 +19,9 @@ import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { PublishingService } from "./publishing.service";
 import { publishSchema, type PublishInput } from "./dto/payout.schemas";
 
+@RequireModule("payroll")
 @Controller("payroll")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class PublishingController {
   constructor(private readonly publishing: PublishingService) {}
 

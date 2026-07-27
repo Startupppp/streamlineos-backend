@@ -5,7 +5,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
-import { formatDateOnly } from "./date.helpers";
+import { formatDateOnly } from "../../common/date";
 import type {
   CreateGoalInput,
   CreateKeyResultInput,

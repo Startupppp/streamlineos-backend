@@ -86,7 +86,12 @@ export class ComplianceRequirementsService {
         active: input.active,
         createdBy: actorId,
       })
-      .returning();
+      .returning()
+      .catch((e: { code?: string }) => {
+        if (e.code === "23505")
+          throw new ConflictException("A compliance requirement with this name already exists.");
+        throw e;
+      });
 
     await this.audit.log({ orgId, actorId, entityType: "hr_compliance_requirements", entityId: String(created.id), action: "created", after: created });
     return created;
@@ -118,7 +123,12 @@ export class ComplianceRequirementsService {
         updatedAt: new Date(),
       })
       .where(and(eq(hrComplianceRequirements.id, id), eq(hrComplianceRequirements.orgId, orgId)))
-      .returning();
+      .returning()
+      .catch((e: { code?: string }) => {
+        if (e.code === "23505")
+          throw new ConflictException("A compliance requirement with this name already exists.");
+        throw e;
+      });
 
     await this.audit.log({ orgId, actorId, entityType: "hr_compliance_requirements", entityId: String(id), action: "updated", before: existing, after: updated });
     return updated;

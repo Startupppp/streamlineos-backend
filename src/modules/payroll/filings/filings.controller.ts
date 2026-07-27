@@ -12,6 +12,8 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { ModuleGuard } from "../../../common/rbac/module.guard";
+import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
@@ -25,8 +27,9 @@ import {
   type AttachAcknowledgementInput,
 } from "./dto/filings.schemas";
 
+@RequireModule("payroll")
 @Controller("payroll/filings")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class PayrollFilingsController {
   constructor(private readonly service: PayrollFilingsService) {}
 
