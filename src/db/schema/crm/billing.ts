@@ -4,7 +4,7 @@ import {
   invoiceStatusEnum, quoteStatusEnum,
 } from "../enums";
 import { organizations, users } from "../auth";
-import { projects } from "../projects";
+import { projects } from "../build";
 import { clients, clientAccounts } from "./contacts";
 import { deals } from "./deals";
 import { crmPricebooks, crmQuoteTemplates } from "./pricebooks";

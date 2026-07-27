@@ -12,7 +12,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { organizations } from "../auth";
-import { projects } from "../projects/core";
+import { projects } from "../build/core";
 import { timesheetBudgetTypeEnum, timesheetBudgetStatusEnum } from "./enums";
 
 export const timesheetBudgets = pgTable("timesheet_budgets", {

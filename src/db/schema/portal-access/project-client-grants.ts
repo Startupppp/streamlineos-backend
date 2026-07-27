@@ -13,7 +13,7 @@ import { organizations } from "../auth";
 import { partyContacts } from "../party/party-contacts";
 import { portalGrantStatusEnum } from "../enums";
 import { portalMemberships } from "./portal-memberships";
-import { projects } from "../projects";
+import { projects } from "../build";
 
 export const projectClientGrants = pgTable(
   "project_client_grants",

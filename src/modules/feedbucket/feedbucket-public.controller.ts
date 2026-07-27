@@ -28,7 +28,7 @@ import { FeedbucketAiService } from "./feedbucket-ai.service";
 import { StorageService } from "../storage/storage.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
-import { ProjectsTicketsService } from "../projects/projects-tickets.service";
+import { ProjectsTicketsService } from "../build/projects-tickets.service";
 import { validateMagicBytes } from "../storage/file-signatures";
 import { publicSubmitSchema, publicAiAssistSchema } from "./feedbucket.schemas";
 import {

@@ -13,8 +13,8 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "./auth";
-import { projects } from "./projects/core";
-import { tickets } from "./projects/tasks";
+import { projects } from "./build/core";
+import { tickets } from "./build/tasks";
 
 export interface FeedbucketAiAnalysis {
   type: "bug" | "feature" | "improvement" | "question" | "praise" | "other";

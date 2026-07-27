@@ -4,7 +4,7 @@ import { relations, sql } from "drizzle-orm";
 import { genderEnum, onboardingStatusEnum, onboardingDocStatusEnum, membershipStatusEnum, organizationStatusEnum, invitationStatusEnum } from "./enums";
 
 import { departments } from "./hr";
-import { tickets } from "./projects";
+import { tickets } from "./build";
 
 export const organizations = pgTable("organizations", {
   id: text("id").primaryKey(),

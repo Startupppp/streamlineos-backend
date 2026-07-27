@@ -1,6 +1,6 @@
 import { pgTable, text, integer, timestamp, unique, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { organizations, users } from "./auth";
-import { tickets } from "./projects/tasks";
+import { tickets } from "./build/tasks";
 
 export const commentDrafts = pgTable("comment_drafts", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),

@@ -27,7 +27,7 @@ import {
   ChatActionTicketStatusFailedException,
   ProjectsTicketNotFoundException,
 } from "../../common/http/api-exceptions";
-import { resolveValidTicketStatuses } from "../projects/ticket-status.util";
+import { resolveValidTicketStatuses } from "../build/ticket-status.util";
 
 @RequireModule("chat")
 @Controller("chat/actions")

@@ -4,7 +4,7 @@ import { organizations, users } from "./auth";
 import { accountTypeEnum, journalEntryStatusEnum } from "./enums";
 import { clients } from "./crm/contacts";
 import { departments } from "./hr/employees";
-import { projects } from "./projects";
+import { projects } from "./build";
 
 export const accNormalBalanceEnum = pgEnum("acc_normal_balance", ["DEBIT", "CREDIT"]);
 

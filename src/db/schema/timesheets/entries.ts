@@ -12,8 +12,8 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { organizations, users } from "../auth";
-import { projects } from "../projects/core";
-import { tickets } from "../projects/tasks";
+import { projects } from "../build/core";
+import { tickets } from "../build/tasks";
 import { timesheetPeriods } from "./periods";
 import { timerSessions } from "./timer";
 import { timesheetExports } from "./exports";

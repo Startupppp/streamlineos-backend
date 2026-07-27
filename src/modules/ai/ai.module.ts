@@ -39,7 +39,7 @@ import { AI_CREDIT_LEDGER } from "./gateway/credit-ledger.interface";
 import { BillingModule } from "../billing/billing.module";
 import { AiCreditsService } from "../billing/ai-credits.service";
 import { AiConfirmationModule } from "../ai-confirmation/ai-confirmation.module";
-import { ProjectsModule } from "../projects/projects.module";
+import { ProjectsModule } from "../build/projects.module";
 import { IntegrationsModule } from "../integrations/integrations.module";
 import { MeetingsAiController } from "./controllers/meetings-ai.controller";
 import { MeetingsPrepService } from "./services/meetings-prep.service";

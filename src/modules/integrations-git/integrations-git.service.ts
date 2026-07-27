@@ -6,7 +6,7 @@ import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
 import { verifyGithubSignature, verifyGitlabToken } from "./git-signature";
 import { asRecord, extractTicketRefs, parseEvent } from "./git-event-parser";
-import { ProjectsTicketsService } from "../projects/projects-tickets.service";
+import { ProjectsTicketsService } from "../build/projects-tickets.service";
 import type {
   GitLinkInput,
   GitProvider,

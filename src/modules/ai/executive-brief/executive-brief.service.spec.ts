@@ -2,7 +2,7 @@ import { Test } from "@nestjs/testing";
 import { ExecutiveBriefService } from "./executive-brief.service";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
 import { AiSummariesService } from "../../ai-summaries/ai-summaries.service";
-import { ProjectsAnalyticsService } from "../../projects/projects-analytics.service";
+import { ProjectsAnalyticsService } from "../../build/projects-analytics.service";
 import { CrmSalesDashboardService } from "../../crm/crm-sales-dashboard.service";
 import { SupportReportsService } from "../../support/support-reports.service";
 

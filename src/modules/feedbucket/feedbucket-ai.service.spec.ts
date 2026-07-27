@@ -8,7 +8,7 @@ import type { AiGatewayService } from "../ai/gateway/ai-gateway.service";
 import type { AiUsageService } from "../ai/services/ai-usage.service";
 import type { AuditService } from "../../common/audit/audit.service";
 import type { RateLimitService } from "../../common/ratelimit/rate-limit.service";
-import type { ProjectsTicketsService } from "../projects/projects-tickets.service";
+import type { ProjectsTicketsService } from "../build/projects-tickets.service";
 import type { FeedbackAnalysis } from "./feedbucket-ai.schemas";
 import type { AiInvokeResult } from "../ai/gateway/ai-gateway.types";
 

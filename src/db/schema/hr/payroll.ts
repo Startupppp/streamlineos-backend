@@ -25,7 +25,7 @@ import {
 } from "../enums";
 import { organizations, users } from "../auth";
 import { journalEntries, ledgerAccounts } from "../accounting";
-import { projects } from "../projects";
+import { projects } from "../build";
 import { resignations } from "./offboarding";
 import { assets } from "./assets";
 

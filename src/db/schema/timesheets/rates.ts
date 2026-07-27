@@ -11,7 +11,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { organizations, users } from "../auth";
-import { projects } from "../projects/core";
+import { projects } from "../build/core";
 import { timesheetBillingTypeEnum } from "./enums";
 
 export const timesheetRateCards = pgTable("timesheet_rate_cards", {

@@ -3,7 +3,7 @@ import { relations } from "drizzle-orm";
 import { organizations, users } from "./auth";
 import { ledgerAccounts } from "./accounting";
 import { departments } from "./hr/employees";
-import { projects } from "./projects";
+import { projects } from "./build";
 
 export const finBudgetPeriodEnum = pgEnum("fin_budget_period", ["MONTHLY", "QUARTERLY", "YEARLY"]);
 export const finBudgetDimensionEnum = pgEnum("fin_budget_dimension", ["NONE", "DEPARTMENT", "PROJECT"]);

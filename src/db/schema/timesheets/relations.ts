@@ -1,7 +1,7 @@
 import { relations } from "drizzle-orm";
 import { users } from "../auth";
-import { projects } from "../projects/core";
-import { tickets } from "../projects/tasks";
+import { projects } from "../build/core";
+import { tickets } from "../build/tasks";
 import { timesheets } from "./entries";
 import { timesheetPeriods } from "./periods";
 import { timerSessions } from "./timer";

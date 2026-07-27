@@ -8,8 +8,8 @@ import {
   index,
 } from "drizzle-orm/pg-core";
 import { organizations, users } from "../auth";
-import { projects } from "../projects/core";
-import { tickets } from "../projects/tasks";
+import { projects } from "../build/core";
+import { tickets } from "../build/tasks";
 import { timerSessionStatusEnum, timerSessionSourceEnum } from "./enums";
 
 export const timerSessions = pgTable("timer_sessions", {

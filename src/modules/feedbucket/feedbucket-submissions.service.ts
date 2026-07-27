@@ -6,7 +6,7 @@ import type { Db } from "../../db/drizzle.module";
 import type { DataScope } from "../access/access.types";
 import { applyFeedbucketScope } from "./feedbucket-scope";
 import type { ListSubmissionsQuery, UpdateSubmissionInput } from "./feedbucket.schemas";
-import type { ProjectsTicketsService } from "../projects/projects-tickets.service";
+import type { ProjectsTicketsService } from "../build/projects-tickets.service";
 
 @Injectable()
 export class FeedbucketSubmissionsService {
