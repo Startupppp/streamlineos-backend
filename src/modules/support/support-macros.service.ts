@@ -365,15 +365,17 @@ export class SupportMacrosService {
   }
 
   async setAgentSkills(orgId: string, userId: string, skills: string[]) {
-    await this.db
-      .delete(supportAgentSkills)
-      .where(and(eq(supportAgentSkills.orgId, orgId), eq(supportAgentSkills.userId, userId)));
-    if (skills.length > 0) {
-      await this.db
-        .insert(supportAgentSkills)
-        .values(skills.map((skill) => ({ orgId, userId, skill })))
-        .onConflictDoNothing();
-    }
+    await this.db.transaction(async (tx) => {
+      await tx
+        .delete(supportAgentSkills)
+        .where(and(eq(supportAgentSkills.orgId, orgId), eq(supportAgentSkills.userId, userId)));
+      if (skills.length > 0) {
+        await tx
+          .insert(supportAgentSkills)
+          .values(skills.map((skill) => ({ orgId, userId, skill })))
+          .onConflictDoNothing();
+      }
+    });
     return { success: true, skills };
   }
 
@@ -386,7 +388,7 @@ export class SupportMacrosService {
       .insert(supportAgentAvailability)
       .values({ orgId, userId, isAvailable })
       .onConflictDoUpdate({
-        target: supportAgentAvailability.userId,
+        target: [supportAgentAvailability.orgId, supportAgentAvailability.userId],
         set: { isAvailable, updatedAt: new Date() },
       })
       .returning();

@@ -12,7 +12,7 @@ export const supportAgentSkills = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex("uniq_support_agent_skills_user_skill").on(table.userId, table.skill),
+    uniqueIndex("uniq_support_agent_skills_org_user_skill").on(table.orgId, table.userId, table.skill),
     index("idx_support_agent_skills_org").on(table.orgId, table.skill),
     unique("uniq_support_agent_skills_org_id").on(table.orgId, table.id),
   ],
@@ -29,7 +29,7 @@ export const supportAgentAvailability = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
-    uniqueIndex("uniq_support_agent_availability_user").on(table.userId),
+    uniqueIndex("uniq_support_agent_availability_org_user").on(table.orgId, table.userId),
     unique("uniq_support_agent_avail_org_id").on(table.orgId, table.id),
   ],
 );
