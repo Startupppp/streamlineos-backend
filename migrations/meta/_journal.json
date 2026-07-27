@@ -187,8 +187,148 @@
     {
       "idx": 26,
       "version": "7",
-      "when": 1784993499547,
-      "tag": "0307_wave_1_4_6_7_9_reconciliation",
+      "when": 1784993499548,
+      "tag": "0307_recon_additive_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1784993499549,
+      "tag": "0308_recon_idempotency_fences",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1784993499550,
+      "tag": "0309_recon_project_teams",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1784993499551,
+      "tag": "0310_recon_owner_pointer",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1784993499552,
+      "tag": "0311_recon_owner_fk_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1784993499553,
+      "tag": "0312_recon_org_modules_fk",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1784993499554,
+      "tag": "0313_recon_org_modules_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1784993499555,
+      "tag": "0314_recon_org_invitation_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1784993499556,
+      "tag": "0315_recon_pm_workspaces",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1784993499557,
+      "tag": "0316_recon_offer_fulfillment",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1784993499558,
+      "tag": "0317_recon_party_overlays",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1784993499559,
+      "tag": "0318_recon_managed_product_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1784993499560,
+      "tag": "0319_recon_email_orgid",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1784993499561,
+      "tag": "0320_recon_phase_a_orgid",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1784993499562,
+      "tag": "0321_recon_defect_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1784993499563,
+      "tag": "0322_recon_phase_c_candidate_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1784993499564,
+      "tag": "0323_recon_phase_d_composite_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1784993499565,
+      "tag": "0324_recon_directory_party_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1784993499566,
+      "tag": "0325_recon_membership_fk",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1784993499567,
+      "tag": "0326_recon_owner_not_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1784993499568,
+      "tag": "0327_recon_decouple_projects_crm",
       "breakpoints": true
     }
   ]
