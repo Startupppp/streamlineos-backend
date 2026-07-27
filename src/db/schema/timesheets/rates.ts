@@ -42,6 +42,8 @@ export const timesheetRates = pgTable("timesheet_rates", {
   costRate: decimal("cost_rate", { precision: 10, scale: 2 }),
   currency: text("currency").notNull().default("USD"),
   priority: integer("priority").notNull().default(0),
+  effectiveFrom: date("effective_from"),
+  effectiveTo: date("effective_to"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (t) => [

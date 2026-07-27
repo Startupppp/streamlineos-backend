@@ -18,6 +18,8 @@ export const timesheetAuditEvents = pgTable("timesheet_audit_events", {
   before: jsonb("before"),
   after: jsonb("after"),
   reason: text("reason"),
+  prevHash: text("prev_hash"),
+  rowHash: text("row_hash"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [
   index("idx_timesheet_audit_entity").on(t.orgId, t.entityType, t.entityId, t.createdAt),

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, asc, count, desc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { timesheetAuditEvents, users } from "../../db/schema";
@@ -132,5 +132,47 @@ export class TimesheetsAuditService {
       data: rows,
       total: totalResult[0]?.total ?? 0,
     };
+  }
+
+  async verifyChain(orgId: string, limit = 10_000) {
+    const rows = await this.db
+      .select()
+      .from(timesheetAuditEvents)
+      .where(eq(timesheetAuditEvents.orgId, orgId))
+      .orderBy(asc(timesheetAuditEvents.id))
+      .limit(limit);
+
+    let prevHash: string | null = null;
+    let legacyRows = 0;
+    let verified = 0;
+
+    for (const row of rows) {
+      if (!row.rowHash) {
+        legacyRows++;
+        continue;
+      }
+      const expected = computeAuditRowHash(prevHash, {
+        orgId: row.orgId,
+        actorUserId: row.actorUserId ?? "",
+        entityType: row.entityType,
+        entityId: row.entityId,
+        action: row.action,
+        before: row.before,
+        after: row.after,
+        reason: row.reason ?? undefined,
+      });
+      if (expected !== row.rowHash || (row.prevHash ?? null) !== prevHash) {
+        return {
+          valid: false,
+          brokenAtId: row.id,
+          checked: verified + legacyRows,
+          legacyRows,
+        };
+      }
+      prevHash = row.rowHash;
+      verified++;
+    }
+
+    return { valid: true, checked: verified + legacyRows, verified, legacyRows };
   }
 }

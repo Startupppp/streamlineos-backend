@@ -152,6 +152,8 @@ export class BillingService {
       }
     }
 
+    const defaultCurrency = await this.rateResolver.getDefaultCurrency(u.orgId);
+
     const currencyTotals = [...byCurrency.entries()].map(([currency, v]) => ({
       currency,
       amount: v.amount,

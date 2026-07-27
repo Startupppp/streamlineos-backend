@@ -5,6 +5,7 @@ export * from "./timer";
 export * from "./rates";
 export * from "./budgets";
 export * from "./exports";
+export * from "./exceptions";
 export * from "./settings";
 export * from "./audit";
 export * from "./relations";

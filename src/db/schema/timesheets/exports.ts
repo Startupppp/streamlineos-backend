@@ -7,8 +7,10 @@ import {
   date,
   integer,
   index,
+  uniqueIndex,
   jsonb,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import {
   timesheetExportTypeEnum,
@@ -30,6 +32,11 @@ export const timesheetExports = pgTable("timesheet_exports", {
   totalHours: decimal("total_hours", { precision: 10, scale: 2 }).notNull().default("0"),
   fileUrl: text("file_url"),
   note: text("note"),
+  idempotencyKey: text("idempotency_key"),
+  ackStatus: text("ack_status"),
+  ackNote: text("ack_note"),
+  ackAt: timestamp("ack_at"),
+  ackBy: text("ack_by").references(() => users.id, { onDelete: "set null" }),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
@@ -39,4 +46,7 @@ export const timesheetExports = pgTable("timesheet_exports", {
     table.createdAt,
   ),
   index("idx_timesheet_exports_created_by").on(table.createdBy),
+  uniqueIndex("uniq_timesheet_exports_idem")
+    .on(table.orgId, table.idempotencyKey)
+    .where(sql`idempotency_key IS NOT NULL`),
 ]);
