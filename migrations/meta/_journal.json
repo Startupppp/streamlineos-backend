@@ -491,6 +491,69 @@
       "when": 1784993499591,
       "tag": "0349_retire_legacy_org_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1784993499592,
+      "tag": "0350_retire_departments",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1784993499593,
+      "tag": "0351_automation_consolidation",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1784993499594,
+      "tag": "0352_custom_fields_consolidation",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1784993499595,
+      "tag": "0353_billing_idempotency",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1784993499596,
+      "tag": "0354_drop_dead_types",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1784993499597,
+      "tag": "0355_journal_lines_hardening",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1784993499598,
+      "tag": "0356_search_and_notification_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1784993499599,
+      "tag": "0357_idempotency_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1784993499600,
+      "tag": "0358_csat_and_client_slug",
+      "breakpoints": true
     }
   ]
 }

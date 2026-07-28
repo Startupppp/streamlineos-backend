@@ -18,6 +18,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { PayoutBatchesService } from "./payout-batches.service";
 import { PayoutValidationService } from "./payout-validation.service";
 import {
@@ -127,6 +128,7 @@ export class PayoutBatchesController {
   @Post("batches/:batchId/import-return")
   @HttpCode(200)
   @RequirePermission("payroll:bank:manage")
+  @Idempotent("payroll.bank-return.import")
   importReturn(
     @Param("batchId", ParseIntPipe) batchId: number,
     @Body(new ZodValidationPipe(bankReturnImportSchema)) body: BankReturnImportInput,

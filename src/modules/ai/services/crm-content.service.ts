@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq } from "drizzle-orm";
-import { users } from "../../../db/schema";
+import { and, eq } from "drizzle-orm";
+import { organizationMembers, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
@@ -66,10 +66,11 @@ export class CrmContentService {
     return result.data;
   }
 
-  private async getSender(userId: string): Promise<{ name: string; role?: string }> {
+  private async getSender(userId: string, orgId: string): Promise<{ name: string; role?: string }> {
     const [user] = await this.db
-      .select({ name: users.name, role: users.role })
+      .select({ name: users.name, role: organizationMembers.role })
       .from(users)
+      .innerJoin(organizationMembers, and(eq(organizationMembers.userId, users.id), eq(organizationMembers.orgId, orgId)))
       .where(eq(users.id, userId));
     return { name: user?.name || "Sales Team", role: user?.role || undefined };
   }
@@ -94,7 +95,7 @@ export class CrmContentService {
 
   async generateEmail(userId: string, input: GenerateEmailInput, actor?: { orgId: string; userId: string | null }) {
     const resolvedActor = actor ?? { orgId: "", userId };
-    const sender = await this.getSender(userId);
+    const sender = await this.getSender(userId, resolvedActor.orgId);
     const base = {
       leadName: input.leadName,
       company: input.company,

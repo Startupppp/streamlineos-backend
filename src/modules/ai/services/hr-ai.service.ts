@@ -9,6 +9,7 @@ import {
   interviews,
   jobPostings,
   leaveRequests,
+  organizationMembers,
   performanceReviews,
   users,
 } from "../../../db/schema";
@@ -61,49 +62,96 @@ export class HrAiService {
     private readonly gateway: AiGatewayService,
   ) {}
 
-  async analyzeAttritionRisk(orgId: string, userId: string): Promise<AttritionRiskResult | null> {
+  async analyzeAttritionRisk(
+    orgId: string,
+    userId: string,
+  ): Promise<AttritionRiskResult | null> {
     const [employee] = await this.db
-      .select({ name: users.name, role: users.role, createdAt: users.createdAt })
+      .select({
+        name: users.name,
+        role: organizationMembers.role,
+        createdAt: users.createdAt,
+      })
       .from(users)
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.userId, users.id),
+          eq(organizationMembers.orgId, orgId),
+        ),
+      )
       .where(eq(users.id, userId));
     if (!employee) return null;
 
     const tenureMonths = employee.createdAt
-      ? Math.floor((Date.now() - new Date(employee.createdAt).getTime()) / (1000 * 60 * 60 * 24 * 30))
+      ? Math.floor(
+          (Date.now() - new Date(employee.createdAt).getTime()) /
+            (1000 * 60 * 60 * 24 * 30),
+        )
       : 0;
 
     const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
     const ninetyDaysAgoStr = ninetyDaysAgo.toISOString().slice(0, 10);
 
-    const [attRate, leaveCount, openTickets, lastReview, activeGoals] = await Promise.all([
-      this.db
-        .select({
-          total: count(),
-          present: sql<number>`SUM(CASE WHEN status = 'PRESENT' THEN 1 ELSE 0 END)::int`,
-        })
-        .from(attendance)
-        .where(and(eq(attendance.orgId, orgId), eq(attendance.userId, userId), gte(attendance.date, ninetyDaysAgoStr))),
-      this.db
-        .select({
-          total: sql<number>`COALESCE(SUM(GREATEST(${leaveRequests.endDate}::date - ${leaveRequests.startDate}::date + 1, 0)), 0)::int`,
-        })
-        .from(leaveRequests)
-        .where(and(eq(leaveRequests.orgId, orgId), eq(leaveRequests.userId, userId), gte(leaveRequests.startDate, ninetyDaysAgoStr))),
-      this.db
-        .select({ count: count() })
-        .from(helpdeskTickets)
-        .where(and(eq(helpdeskTickets.orgId, orgId), eq(helpdeskTickets.userId, userId), sql`${helpdeskTickets.status} != 'DONE'`)),
-      this.db
-        .select({ rating: performanceReviews.overallRating })
-        .from(performanceReviews)
-        .where(and(eq(performanceReviews.orgId, orgId), eq(performanceReviews.userId, userId)))
-        .orderBy(desc(performanceReviews.createdAt))
-        .limit(1),
-      this.db
-        .select({ count: count() })
-        .from(goals)
-        .where(and(eq(goals.orgId, orgId), eq(goals.userId, userId), sql`${goals.status} IN ('IN_PROGRESS', 'NOT_STARTED')`)),
-    ]);
+    const [attRate, leaveCount, openTickets, lastReview, activeGoals] =
+      await Promise.all([
+        this.db
+          .select({
+            total: count(),
+            present: sql<number>`SUM(CASE WHEN status = 'PRESENT' THEN 1 ELSE 0 END)::int`,
+          })
+          .from(attendance)
+          .where(
+            and(
+              eq(attendance.orgId, orgId),
+              eq(attendance.userId, userId),
+              gte(attendance.date, ninetyDaysAgoStr),
+            ),
+          ),
+        this.db
+          .select({
+            total: sql<number>`COALESCE(SUM(GREATEST(${leaveRequests.endDate}::date - ${leaveRequests.startDate}::date + 1, 0)), 0)::int`,
+          })
+          .from(leaveRequests)
+          .where(
+            and(
+              eq(leaveRequests.orgId, orgId),
+              eq(leaveRequests.userId, userId),
+              gte(leaveRequests.startDate, ninetyDaysAgoStr),
+            ),
+          ),
+        this.db
+          .select({ count: count() })
+          .from(helpdeskTickets)
+          .where(
+            and(
+              eq(helpdeskTickets.orgId, orgId),
+              eq(helpdeskTickets.userId, userId),
+              sql`${helpdeskTickets.status} != 'DONE'`,
+            ),
+          ),
+        this.db
+          .select({ rating: performanceReviews.overallRating })
+          .from(performanceReviews)
+          .where(
+            and(
+              eq(performanceReviews.orgId, orgId),
+              eq(performanceReviews.userId, userId),
+            ),
+          )
+          .orderBy(desc(performanceReviews.createdAt))
+          .limit(1),
+        this.db
+          .select({ count: count() })
+          .from(goals)
+          .where(
+            and(
+              eq(goals.orgId, orgId),
+              eq(goals.userId, userId),
+              sql`${goals.status} IN ('IN_PROGRESS', 'NOT_STARTED')`,
+            ),
+          ),
+      ]);
 
     const attendanceRate =
       attRate[0] && attRate[0].total > 0
@@ -118,7 +166,9 @@ export class HrAiService {
       attendanceRate,
       recentLeaveDays: Number(leaveCount[0]?.total ?? 0),
       openTickets: openTickets[0]?.count ?? 0,
-      lastReviewRating: lastReview[0]?.rating ? Number(lastReview[0].rating) : null,
+      lastReviewRating: lastReview[0]?.rating
+        ? Number(lastReview[0].rating)
+        : null,
       lastPromotionMonths: null,
       hasGoals: (activeGoals[0]?.count ?? 0) > 0,
     });
@@ -126,7 +176,12 @@ export class HrAiService {
     const result = await this.gateway.invokeStructured({
       actor: { orgId, userId },
       feature: "hr.attrition-risk",
-      prompt: { system: prompt.system, user: prompt.user, promptKey: "hr.attrition_risk", promptVersion: 1 },
+      prompt: {
+        system: prompt.system,
+        user: prompt.user,
+        promptKey: "hr.attrition_risk",
+        promptVersion: 1,
+      },
       schema: AttritionRiskSchema,
       tier: "fast",
       maxTokens: 512,
@@ -134,7 +189,10 @@ export class HrAiService {
     });
 
     const data = unwrapAiResult(result);
-    data.attritionRiskScore = Math.max(0, Math.min(100, Math.round(data.attritionRiskScore)));
+    data.attritionRiskScore = Math.max(
+      0,
+      Math.min(100, Math.round(data.attritionRiskScore)),
+    );
     return data;
   }
 
@@ -145,16 +203,34 @@ export class HrAiService {
     periodEnd: string,
   ): Promise<ReviewDraftResult | null> {
     const [employee] = await this.db
-      .select({ name: users.name, role: users.role })
+      .select({ name: users.name, role: organizationMembers.role })
       .from(users)
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.userId, users.id),
+          eq(organizationMembers.orgId, orgId),
+        ),
+      )
       .where(eq(users.id, userId));
     if (!employee) return null;
 
     const [employeeGoals, attendanceData] = await Promise.all([
       this.db
-        .select({ goal: goals.title, achieved: goals.status, progress: goals.progress })
+        .select({
+          goal: goals.title,
+          achieved: goals.status,
+          progress: goals.progress,
+        })
         .from(goals)
-        .where(and(eq(goals.orgId, orgId), eq(goals.userId, userId), gte(goals.createdAt, new Date(periodStart)), lte(goals.createdAt, new Date(periodEnd))))
+        .where(
+          and(
+            eq(goals.orgId, orgId),
+            eq(goals.userId, userId),
+            gte(goals.createdAt, new Date(periodStart)),
+            lte(goals.createdAt, new Date(periodEnd)),
+          ),
+        )
         .limit(20),
       this.db
         .select({
@@ -162,12 +238,21 @@ export class HrAiService {
           present: sql<number>`SUM(CASE WHEN status = 'PRESENT' THEN 1 ELSE 0 END)::int`,
         })
         .from(attendance)
-        .where(and(eq(attendance.orgId, orgId), eq(attendance.userId, userId), gte(attendance.date, periodStart), lte(attendance.date, periodEnd))),
+        .where(
+          and(
+            eq(attendance.orgId, orgId),
+            eq(attendance.userId, userId),
+            gte(attendance.date, periodStart),
+            lte(attendance.date, periodEnd),
+          ),
+        ),
     ]);
 
     const attendanceRate =
       attendanceData[0] && attendanceData[0].total > 0
-        ? Math.round((Number(attendanceData[0].present) / attendanceData[0].total) * 100)
+        ? Math.round(
+            (Number(attendanceData[0].present) / attendanceData[0].total) * 100,
+          )
         : null;
 
     const prompt = reviewDraftPrompt({
@@ -189,7 +274,12 @@ export class HrAiService {
     const result = await this.gateway.invokeStructured({
       actor: { orgId, userId },
       feature: "hr.generate-review",
-      prompt: { system: prompt.system, user: prompt.user, promptKey: "hr.review_draft", promptVersion: 1 },
+      prompt: {
+        system: prompt.system,
+        user: prompt.user,
+        promptKey: "hr.review_draft",
+        promptVersion: 1,
+      },
       schema: ReviewDraftSchema,
       tier: "fast",
       maxTokens: 1536,
@@ -198,11 +288,17 @@ export class HrAiService {
 
     const data = unwrapAiResult(result);
     data.overallRating = Math.max(1, Math.min(5, data.overallRating));
-    data.ratings = data.ratings.map((r) => ({ ...r, score: Math.max(1, Math.min(5, r.score)) }));
+    data.ratings = data.ratings.map((r) => ({
+      ...r,
+      score: Math.max(1, Math.min(5, r.score)),
+    }));
     return data;
   }
 
-  async suggestHelpdeskReply(orgId: string, ticketId: number): Promise<HelpdeskReplyResult | null> {
+  async suggestHelpdeskReply(
+    orgId: string,
+    ticketId: number,
+  ): Promise<HelpdeskReplyResult | null> {
     const [ticket] = await this.db
       .select({
         title: helpdeskTickets.title,
@@ -214,7 +310,9 @@ export class HrAiService {
       })
       .from(helpdeskTickets)
       .leftJoin(users, eq(helpdeskTickets.userId, users.id))
-      .where(and(eq(helpdeskTickets.id, ticketId), eq(helpdeskTickets.orgId, orgId)));
+      .where(
+        and(eq(helpdeskTickets.id, ticketId), eq(helpdeskTickets.orgId, orgId)),
+      );
     if (!ticket) return null;
 
     const prompt = helpdeskReplyPrompt({
@@ -228,7 +326,12 @@ export class HrAiService {
     const result = await this.gateway.invokeStructured({
       actor: { orgId, userId: ticket.userId ?? null },
       feature: "hr.helpdesk-reply",
-      prompt: { system: prompt.system, user: prompt.user, promptKey: "hr.helpdesk_reply", promptVersion: 1 },
+      prompt: {
+        system: prompt.system,
+        user: prompt.user,
+        promptKey: "hr.helpdesk_reply",
+        promptVersion: 1,
+      },
       schema: HelpdeskReplySchema,
       tier: "fast",
       maxTokens: 768,
@@ -249,10 +352,18 @@ export class HrAiService {
       .where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)));
     if (!candidate) return null;
 
-    let job: { title: string; description: string | null; requirements: string | null } | null = null;
+    let job: {
+      title: string;
+      description: string | null;
+      requirements: string | null;
+    } | null = null;
     if (jobId) {
       const [jobRecord] = await this.db
-        .select({ title: jobPostings.title, description: jobPostings.description, requirements: jobPostings.requirements })
+        .select({
+          title: jobPostings.title,
+          description: jobPostings.description,
+          requirements: jobPostings.requirements,
+        })
         .from(jobPostings)
         .where(and(eq(jobPostings.id, jobId), eq(jobPostings.orgId, orgId)));
       if (jobRecord) job = jobRecord;
@@ -276,7 +387,12 @@ export class HrAiService {
     const result = await this.gateway.invokeStructured({
       actor: { orgId, userId: null },
       feature: "hr.score-candidate",
-      prompt: { system: prompt.system, user: prompt.user, promptKey: "hr.candidate_scoring", promptVersion: 1 },
+      prompt: {
+        system: prompt.system,
+        user: prompt.user,
+        promptKey: "hr.candidate_scoring",
+        promptVersion: 1,
+      },
       schema: CandidateScoreSchema,
       tier: "fast",
       maxTokens: 512,
@@ -289,11 +405,20 @@ export class HrAiService {
     return data;
   }
 
-  async acceptCandidateScore(orgId: string, candidateId: number, aiScore: number): Promise<{ accepted: boolean }> {
+  async acceptCandidateScore(
+    orgId: string,
+    candidateId: number,
+    aiScore: number,
+  ): Promise<{ accepted: boolean }> {
     const ratingFiveScale = Math.round((aiScore / 100) * 5);
     await this.db
       .update(candidates)
-      .set({ rating: ratingFiveScale, aiScore, aiScoreGeneratedAt: new Date(), updatedAt: new Date() })
+      .set({
+        rating: ratingFiveScale,
+        aiScore,
+        aiScoreGeneratedAt: new Date(),
+        updatedAt: new Date(),
+      })
       .where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)));
     return { accepted: true };
   }
@@ -336,7 +461,12 @@ export class HrAiService {
     const result = await this.gateway.invokeStructured({
       actor: { orgId, userId },
       feature: "hr.policy-qa",
-      prompt: { system: prompt.system, user: prompt.user, promptKey: "hr.policy_qa", promptVersion: 2 },
+      prompt: {
+        system: prompt.system,
+        user: prompt.user,
+        promptKey: "hr.policy_qa",
+        promptVersion: 2,
+      },
       schema: PolicyQaSchema,
       tier: "fast",
       maxTokens: 1024,
@@ -346,7 +476,8 @@ export class HrAiService {
     const data = unwrapAiResult(result);
     // Only keep citations that match policies loaded as evidence (anti-hallucination).
     const citations = sanitizePolicyCitations(data.citations ?? [], policies);
-    const suggestTicket = data.confidence === "not_found" || data.shouldEscalate;
+    const suggestTicket =
+      data.confidence === "not_found" || data.shouldEscalate;
     return {
       ...data,
       citations,
@@ -372,11 +503,21 @@ export class HrAiService {
     };
   }
 
-  async generateInterviewKit(orgId: string, jobPostingId: number): Promise<InterviewKitResult | null> {
+  async generateInterviewKit(
+    orgId: string,
+    jobPostingId: number,
+  ): Promise<InterviewKitResult | null> {
     const [job] = await this.db
-      .select({ title: jobPostings.title, description: jobPostings.description, requirements: jobPostings.requirements, hiringFlowId: jobPostings.hiringFlowId })
+      .select({
+        title: jobPostings.title,
+        description: jobPostings.description,
+        requirements: jobPostings.requirements,
+        hiringFlowId: jobPostings.hiringFlowId,
+      })
       .from(jobPostings)
-      .where(and(eq(jobPostings.id, jobPostingId), eq(jobPostings.orgId, orgId)));
+      .where(
+        and(eq(jobPostings.id, jobPostingId), eq(jobPostings.orgId, orgId)),
+      );
     if (!job) return null;
 
     let roundTypes: string[] | null = null;
@@ -401,7 +542,12 @@ export class HrAiService {
     const result = await this.gateway.invokeStructured({
       actor: { orgId, userId: null },
       feature: "hr.interview-kit",
-      prompt: { system: prompt.system, user: prompt.user, promptKey: "hr.interview_kit", promptVersion: 1 },
+      prompt: {
+        system: prompt.system,
+        user: prompt.user,
+        promptKey: "hr.interview_kit",
+        promptVersion: 1,
+      },
       schema: InterviewKitSchema,
       tier: "fast",
       maxTokens: 2048,
@@ -411,7 +557,13 @@ export class HrAiService {
     return unwrapAiResult(result);
   }
 
-  async draftLetter(orgId: string, _actorUserId: string, targetUserId: string, letterType: string, details: string | null): Promise<LetterDraftResult | null> {
+  async draftLetter(
+    orgId: string,
+    _actorUserId: string,
+    targetUserId: string,
+    letterType: string,
+    details: string | null,
+  ): Promise<LetterDraftResult | null> {
     const empRows = await this.db.execute(sql`
       SELECT p.first_name, p.last_name, e.designation
       FROM hr_employments e
@@ -439,12 +591,22 @@ export class HrAiService {
     }
 
     const safeDetails = details ? redactSensitiveData(details) : null;
-    const prompt = letterDraftPrompt({ letterType, employeeName, currentTitle, details: safeDetails });
+    const prompt = letterDraftPrompt({
+      letterType,
+      employeeName,
+      currentTitle,
+      details: safeDetails,
+    });
 
     const result = await this.gateway.invokeStructured({
       actor: { orgId, userId: targetUserId },
       feature: "hr.letter-draft",
-      prompt: { system: prompt.system, user: prompt.user, promptKey: "hr.letter_draft", promptVersion: 1 },
+      prompt: {
+        system: prompt.system,
+        user: prompt.user,
+        promptKey: "hr.letter_draft",
+        promptVersion: 1,
+      },
       schema: LetterDraftSchema,
       tier: "fast",
       maxTokens: 1024,
@@ -454,18 +616,35 @@ export class HrAiService {
     return unwrapAiResult(result);
   }
 
-  async summarizeInterviewNotes(orgId: string, candidateId: number, jobPostingId?: number): Promise<InterviewNotesSummaryResult | null> {
+  async summarizeInterviewNotes(
+    orgId: string,
+    candidateId: number,
+    jobPostingId?: number,
+  ): Promise<InterviewNotesSummaryResult | null> {
     const [candidate] = await this.db
-      .select({ firstName: candidates.firstName, lastName: candidates.lastName })
+      .select({
+        firstName: candidates.firstName,
+        lastName: candidates.lastName,
+      })
       .from(candidates)
       .where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)));
     if (!candidate) return null;
 
-    const conditions = [eq(interviews.orgId, orgId), eq(interviews.candidateId, candidateId)];
-    if (jobPostingId) conditions.push(eq(interviews.jobPostingId, jobPostingId));
+    const conditions = [
+      eq(interviews.orgId, orgId),
+      eq(interviews.candidateId, candidateId),
+    ];
+    if (jobPostingId)
+      conditions.push(eq(interviews.jobPostingId, jobPostingId));
 
     const interviewRows = await this.db
-      .select({ type: interviews.type, feedback: interviews.feedback, notes: interviews.notes, rating: interviews.rating, result: interviews.result })
+      .select({
+        type: interviews.type,
+        feedback: interviews.feedback,
+        notes: interviews.notes,
+        rating: interviews.rating,
+        result: interviews.result,
+      })
       .from(interviews)
       .where(and(...conditions))
       .orderBy(desc(interviews.scheduledAt))
@@ -478,7 +657,9 @@ export class HrAiService {
       const [job] = await this.db
         .select({ title: jobPostings.title })
         .from(jobPostings)
-        .where(and(eq(jobPostings.id, jobPostingId), eq(jobPostings.orgId, orgId)));
+        .where(
+          and(eq(jobPostings.id, jobPostingId), eq(jobPostings.orgId, orgId)),
+        );
       if (job) jobTitle = job.title;
     }
 
@@ -491,12 +672,21 @@ export class HrAiService {
     }));
 
     const candidateName = `${candidate.firstName} ${candidate.lastName}`;
-    const prompt = interviewNotesSummaryPrompt({ candidateName, jobTitle, rounds });
+    const prompt = interviewNotesSummaryPrompt({
+      candidateName,
+      jobTitle,
+      rounds,
+    });
 
     const result = await this.gateway.invokeStructured({
       actor: { orgId, userId: null },
       feature: "hr.interview-notes-summary",
-      prompt: { system: prompt.system, user: prompt.user, promptKey: "hr.interview_notes_summary", promptVersion: 1 },
+      prompt: {
+        system: prompt.system,
+        user: prompt.user,
+        promptKey: "hr.interview_notes_summary",
+        promptVersion: 1,
+      },
       schema: InterviewNotesSummarySchema,
       tier: "fast",
       maxTokens: 1024,
@@ -511,11 +701,17 @@ export class HrAiService {
     const userId = null;
     const contextLines: string[] = [`Job Title: ${input.title}`];
     if (input.location) contextLines.push(`Location: ${input.location}`);
-    if (input.type) contextLines.push(`Employment Type: ${input.type.replace("_", " ")}`);
+    if (input.type)
+      contextLines.push(`Employment Type: ${input.type.replace("_", " ")}`);
     if (input.salaryMin && input.salaryMax) {
-      contextLines.push(`Salary Range: ₹${input.salaryMin.toLocaleString("en-IN")} – ₹${input.salaryMax.toLocaleString("en-IN")} per annum`);
+      contextLines.push(
+        `Salary Range: ₹${input.salaryMin.toLocaleString("en-IN")} – ₹${input.salaryMax.toLocaleString("en-IN")} per annum`,
+      );
     }
-    if (input.requirements) contextLines.push(`Key Requirements / Skills:\n${input.requirements.slice(0, 2000)}`);
+    if (input.requirements)
+      contextLines.push(
+        `Key Requirements / Skills:\n${input.requirements.slice(0, 2000)}`,
+      );
 
     const system = `You are an expert HR recruiter and technical writer.
 Write a professional, engaging job description in plain text (no markdown formatting).

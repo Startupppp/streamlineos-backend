@@ -15,7 +15,6 @@ import {
   roleAssignments,
   rolePermissionGrants,
   roles,
-  users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -304,11 +303,10 @@ export class RolesService {
       const [{ value: legacyCount }] = await tx
         .select({ value: count() })
         .from(organizationMembers)
-        .innerJoin(users, eq(organizationMembers.userId, users.id))
         .where(
           and(
             eq(organizationMembers.orgId, actor.orgId),
-            eq(users.role, existing.slug),
+            eq(organizationMembers.role, existing.slug),
           ),
         );
 

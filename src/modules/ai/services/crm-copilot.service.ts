@@ -266,9 +266,9 @@ ${truncate(activitiesText, 1500)}`;
     const flags = await this.orgFeatures.getFlags(orgId);
     if (!flags.aiEmailDraft) throw new ForbiddenException("AI email draft is disabled for this organization");
 
-    let entityName = "";
+    let entityName: string;
     let company: string | null = null;
-    let contextLine = "";
+    let contextLine: string;
 
     if (input.entityType === "lead") {
       const [lead] = await this.db

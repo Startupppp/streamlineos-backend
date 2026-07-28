@@ -136,7 +136,7 @@ export class ExecutiveBriefService {
       charge: true,
     });
 
-    let narrative = "";
+    let narrative: string;
     const citations: BriefCitation[] = [];
     let aiUsage: AiUsageMeta | undefined;
 

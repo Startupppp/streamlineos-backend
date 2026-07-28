@@ -54,6 +54,3 @@ export const finExpensePoliciesRelations = relations(finExpensePolicies, ({ one 
   category: one(expenseCategories, { fields: [finExpensePolicies.categoryId], references: [expenseCategories.id] }),
 }));
 
-export type FinReimbursementBatch = typeof finReimbursementBatches.$inferSelect;
-export type NewFinReimbursementBatch = typeof finReimbursementBatches.$inferInsert;
-export type FinExpensePolicy = typeof finExpensePolicies.$inferSelect;

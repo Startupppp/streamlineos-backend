@@ -3,6 +3,7 @@ import {
   ConflictException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import { and, eq, lte, sql } from "drizzle-orm";
@@ -17,6 +18,7 @@ import { TRIAL_GRANT_MILLI } from "./ai-credit-units";
 
 @Injectable()
 export class AiCreditsReservationService {
+  private readonly logger = new Logger(AiCreditsReservationService.name);
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async reserve(input: {
@@ -246,7 +248,8 @@ export class AiCreditsReservationService {
       try {
         await this.release(row.id, "expired");
         swept++;
-      } catch {
+      } catch (err) {
+        this.logger.warn(`Failed to sweep expired reservation ${row.id}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
     return swept;

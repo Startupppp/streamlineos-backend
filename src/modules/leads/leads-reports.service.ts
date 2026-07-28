@@ -130,7 +130,7 @@ export class LeadsReportsService {
           .select({ id: users.id, name: users.name })
           .from(users)
           .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
-          .where(and(eq(organizationMembers.orgId, orgId), eq(users.role, "SALES"))),
+          .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.role, "SALES"))),
       ]);
 
     const totalLeads = totalsRows[0]?.total ?? 0;

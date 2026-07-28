@@ -526,12 +526,6 @@ export const HR_PERMISSIONS: Permission[] = [
     description: "Read headcount planning",
   },
   {
-    name: "hr:workforce:view",
-    resource: "hr:workforce",
-    action: "view",
-    description: "View workforce plans and headcount forecasts",
-  },
-  {
     name: "hr:workforce:manage",
     resource: "hr:workforce",
     action: "manage",

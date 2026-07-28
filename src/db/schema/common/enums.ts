@@ -16,7 +16,6 @@ export const workItemRelationTypeEnum = pgEnum("work_item_relation_type", ["bloc
 export const viewLayoutEnum = pgEnum("view_layout", ["board", "list", "table", "calendar", "gantt"]);
 
 export const leaveStatusEnum = pgEnum("leave_status", ["PENDING", "APPROVED", "REJECTED", "CANCELLED"]);
-export const payrollStatusEnum = pgEnum("payroll_status", ["DRAFT", "PENDING_APPROVAL", "APPROVED", "PAID"]);
 export const expenseStatusEnum = pgEnum("expense_status", ["DRAFT", "SUBMITTED", "PENDING", "APPROVED", "REJECTED", "REIMBURSEMENT_PENDING", "REIMBURSED", "PAID"]);
 export const assetStatusEnum = pgEnum("asset_status", ["AVAILABLE", "ASSIGNED", "MAINTENANCE", "RETIRED"]);
 export const documentTypeEnum = pgEnum("document_type", ["CONTRACT", "CERTIFICATE", "ID_PROOF", "PAYSLIP", "POLICY", "OFFER_LETTER", "RESUME", "OTHER"]);
@@ -44,7 +43,6 @@ export const docAuditActionEnum = pgEnum("doc_audit_action", ["UPLOADED", "APPRO
 
 export const leadEmailDirectionEnum = pgEnum("lead_email_direction", ["sent", "received"]);
 export const leadTaskStatusEnum = pgEnum("lead_task_status", ["open", "done"]);
-export const dealActivityTypeEnum = pgEnum("deal_activity_type", ["stage_change", "note", "call", "email", "meeting", "document"]);
 export const clientAccountStatusEnum = pgEnum("client_account_status", ["ACCOUNT_OPENING", "QUERIES", "PLAN_SELECTED", "INVESTED"]);
 export const incentiveStatusEnum = pgEnum("incentive_status", ["PENDING", "APPROVED", "REJECTED", "ADDED_TO_PAYROLL"]);
 export const scoringOperatorEnum = pgEnum("scoring_operator", ["eq", "gt", "lt", "contains", "in"]);
@@ -63,7 +61,6 @@ export const crmLeadStatusEnum = pgEnum("crm_lead_status", ["visitor", "lead", "
 export const crmSupportTicketStatusEnum = pgEnum("crm_support_ticket_status", ["new", "in_progress", "resolved", "closed"]);
 export const crmSupportTicketPriorityEnum = pgEnum("crm_support_ticket_priority", ["critical", "high", "medium", "low"]);
 export const crmActivityTypeEnum = pgEnum("crm_activity_type", ["deal_won", "meeting", "proposal", "call", "email", "ticket", "escalation"]);
-export const crmEventStatusEnum = pgEnum("crm_event_status", ["planning", "confirmed", "completed"]);
 
 export const jobPostingStatusEnum = pgEnum("job_posting_status", ["DRAFT", "OPEN", "PAUSED", "CLOSED", "FILLED"]);
 export const candidateStatusEnum = pgEnum("candidate_status", ["NEW", "SCREENING", "INTERVIEW", "OFFER", "HIRED", "REJECTED"]);
@@ -125,7 +122,6 @@ export const subscriptionStatusEnum = pgEnum("subscription_status", ["TRIAL", "A
 export const subscriptionPlanEnum = pgEnum("subscription_plan", ["STARTER", "PROFESSIONAL", "ENTERPRISE"]);
 
 export const taskEntityTypeEnum = pgEnum("task_entity_type", ["LEAD", "DEAL", "CONTACT", "PROJECT"]);
-export const taskTypeEnum = pgEnum("task_type", ["CALL", "EMAIL", "MEETING", "CUSTOM"]);
 export const taskStatusEnum = pgEnum("task_status", ["pending", "completed", "cancelled"]);
 
 export const blogPostStatusEnum = pgEnum("blog_post_status", ["draft", "published", "archived"]);
@@ -289,15 +285,6 @@ export const onboardingFlowSessionStatusEnum = pgEnum("onboarding_flow_session_s
 
 export const onboardingFlowStepStatusEnum = pgEnum("onboarding_flow_step_status", [
   "todo", "in_progress", "done", "skipped", "blocked",
-]);
-
-export const onboardingFlowTaskStatusEnum = pgEnum("onboarding_flow_task_status", [
-  "todo", "in_progress", "done", "skipped",
-]);
-
-export const onboardingFlowTaskCategoryEnum = pgEnum("onboarding_flow_task_category", [
-  "profile", "document", "training", "system_access", "equipment",
-  "policy", "module_setup", "guided_action", "payment_setup",
 ]);
 
 export const moduleSetupChecklistStatusEnum = pgEnum("module_setup_checklist_status", [

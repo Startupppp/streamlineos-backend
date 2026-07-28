@@ -73,12 +73,6 @@ export const SURVEYS_PERMISSIONS: Permission[] = [
     description: "View survey analytics and reports",
   },
   {
-    name: "surveys:templates:manage",
-    resource: "surveys:templates",
-    action: "manage",
-    description: "Manage the survey template library",
-  },
-  {
     name: "surveys:live:host",
     resource: "surveys:live",
     action: "host",
@@ -95,11 +89,5 @@ export const SURVEYS_PERMISSIONS: Permission[] = [
     resource: "surveys:automations",
     action: "manage",
     description: "Manage survey automations and lead routing rules",
-  },
-  {
-    name: "surveys:settings:manage",
-    resource: "surveys:settings",
-    action: "manage",
-    description: "Manage survey branding, anonymity, and collector settings",
   },
 ];

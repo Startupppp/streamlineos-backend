@@ -131,13 +131,13 @@ export class LeadsService {
     if (filters?.dateFrom) where.push(gte(leads.createdAt, new Date(filters.dateFrom)));
     if (filters?.dateTo) where.push(lte(leads.createdAt, new Date(filters.dateTo)));
     if (filters?.search) {
-      const s = `%${filters.search.toLowerCase()}%`;
+      const s = `%${filters.search}%`;
       where.push(
         or(
-          sql`LOWER(${leads.name}) LIKE ${s}`,
-          sql`LOWER(${leads.email}) LIKE ${s}`,
-          sql`${leads.phone} LIKE ${s}`,
-          sql`LOWER(${leads.company}) LIKE ${s}`,
+          sql`${leads.name} ILIKE ${s}`,
+          sql`${leads.email} ILIKE ${s}`,
+          sql`${leads.phone} ILIKE ${s}`,
+          sql`${leads.company} ILIKE ${s}`,
         )!,
       );
     }
@@ -205,6 +205,7 @@ export class LeadsService {
         activities: {
           with: { user: { columns: { id: true, name: true, image: true } } },
           orderBy: [desc(leadActivities.date)],
+          limit: 50,
         },
       },
     });

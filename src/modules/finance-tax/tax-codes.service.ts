@@ -61,8 +61,8 @@ export class TaxCodesService {
   }
 
   async create(orgId: string, userId: string, input: CreateTaxCodeInput) {
-    let collectedAccountId: number | null = null;
-    let paidAccountId: number | null = null;
+    let collectedAccountId: number | null;
+    let paidAccountId: number | null;
 
     if (!input.collectedAccountId) {
       collectedAccountId = await this.posting.resolveSystemAccount(orgId, "TAX_PAYABLE");

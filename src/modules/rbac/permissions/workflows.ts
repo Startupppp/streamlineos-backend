@@ -62,12 +62,6 @@ export const WORKFLOW_PERMISSIONS: Permission[] = [
     description: "View workflow templates",
   },
   {
-    name: "workflows:templates:manage",
-    resource: "workflows:templates",
-    action: "manage",
-    description: "Manage workflow templates",
-  },
-  {
     name: "workflows:schedules:manage",
     resource: "workflows:schedules",
     action: "manage",

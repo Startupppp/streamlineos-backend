@@ -123,4 +123,4 @@ export {
   getSignEnvelopeDeclinedEmailTemplate,
   getSignEnvelopeVoidedEmailTemplate,
   getSignBulkJobCompletedEmailTemplate,
-} from "./signos";
+} from "./e-sign";

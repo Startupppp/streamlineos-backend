@@ -166,10 +166,3 @@ export const finBankTransfersRelations = relations(finBankTransfers, ({ one }) =
   creator: one(users, { fields: [finBankTransfers.createdBy], references: [users.id] }),
 }));
 
-export type FinBankAccount = typeof finBankAccounts.$inferSelect;
-export type NewFinBankAccount = typeof finBankAccounts.$inferInsert;
-export type FinBankImport = typeof finBankImports.$inferSelect;
-export type FinBankTransaction = typeof finBankTransactions.$inferSelect;
-export type FinReconciliationMatch = typeof finReconciliationMatches.$inferSelect;
-export type FinReconciliationRule = typeof finReconciliationRules.$inferSelect;
-export type FinBankTransfer = typeof finBankTransfers.$inferSelect;

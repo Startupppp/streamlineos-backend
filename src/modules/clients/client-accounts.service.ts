@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, Logger } from "@nestjs/common";
 import { eq, and, desc, sql, count, or, inArray, isNull } from "drizzle-orm";
 import type { DataScope } from "../access/access.types";
 import { Redis } from "@upstash/redis";
@@ -27,6 +27,7 @@ const CUSTOMER_SUPPORT = "CUSTOMER_SUPPORT";
 
 @Injectable()
 export class ClientAccountsService {
+  private readonly logger = new Logger(ClientAccountsService.name);
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     @Inject(REDIS) private readonly redis: Redis | null,
@@ -353,12 +354,16 @@ export class ClientAccountsService {
       try {
         const acquired = await this.redis.set(lockKey, "1", { ex: 60, nx: true });
         if (!acquired) return;
-      } catch {}
+      } catch (err) {
+        this.logger.warn(`Redis lock acquire failed for client backfill ${orgId}: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
     try {
       await this.backfillConvertedLeadsToClientAccounts(orgId, userId);
       await this.backfillCrmAssignments(orgId);
-    } catch {}
+    } catch (err) {
+      this.logger.warn(`Client account backfill failed for org ${orgId}: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   private async backfillConvertedLeadsToClientAccounts(orgId: string, fallbackSalesRepId: string): Promise<void> {

@@ -228,14 +228,3 @@ export const finRecurringJournalTemplatesRelations = relations(finRecurringJourn
   creator: one(users, { fields: [finRecurringJournalTemplates.createdBy], references: [users.id] }),
 }));
 
-export type AccountingPeriod = typeof accountingPeriods.$inferSelect;
-export type NewAccountingPeriod = typeof accountingPeriods.$inferInsert;
-export type AccountingDimension = typeof accountingDimensions.$inferSelect;
-export type AccountingDimensionValue = typeof accountingDimensionValues.$inferSelect;
-export type AccountingSettings = typeof accountingSettings.$inferSelect;
-export type AccNumberSequence = typeof accNumberSequences.$inferSelect;
-export type AccSystemAccountMap = typeof accSystemAccountMap.$inferSelect;
-export type FinExchangeRate = typeof finExchangeRates.$inferSelect;
-export type FinApprovalPolicy = typeof finApprovalPolicies.$inferSelect;
-export type FinApprovalRequest = typeof finApprovalRequests.$inferSelect;
-export type FinRecurringJournalTemplate = typeof finRecurringJournalTemplates.$inferSelect;

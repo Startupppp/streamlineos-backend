@@ -121,9 +121,7 @@ describe("PayrollInputsService — buildPeriod", () => {
     db.query.hrPayrollInputPeriods.findFirst.mockResolvedValueOnce(period);
     db.where.mockReturnValue({ ...db, returning: jest.fn().mockResolvedValue([makePeriod({ status: "built" })]) });
 
-    try {
-      await service.buildPeriod("org1", "actor1", 1);
-    } catch {}
+    await service.buildPeriod("org1", "actor1", 1).catch(() => undefined);
 
     expect(mockBuildService.buildSnapshots).toHaveBeenCalled();
   });

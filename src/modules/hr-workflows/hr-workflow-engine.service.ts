@@ -276,14 +276,19 @@ export class HrWorkflowEngineService {
         if (!employee?.branchId) return [];
         const locationHr = await this.db.select({ id: users.id })
           .from(users)
-          .where(and(eq(users.branchId, employee.branchId), eq(users.role, "HR")))
+          .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
+          .where(and(
+            eq(organizationMembers.orgId, orgId),
+            eq(users.branchId, employee.branchId),
+            eq(organizationMembers.role, "HR"),
+          ))
           .limit(10);
         return locationHr.map((u) => u.id);
       }
 
       case "dynamic_expression": {
         if (!step.approverValue) return [];
-        return this.resolveDynamicExpression(step.approverValue, subjectEmployeeId);
+        return this.resolveDynamicExpression(step.approverValue, subjectEmployeeId, orgId);
       }
 
       default:
@@ -291,14 +296,16 @@ export class HrWorkflowEngineService {
     }
   }
 
-  private async resolveDynamicExpression(expression: string, _subjectEmployeeId: string): Promise<string[]> {
+  private async resolveDynamicExpression(expression: string, _subjectEmployeeId: string, orgId: string): Promise<string[]> {
     const [employee] = await this.db.select({
       id: users.id,
       reportingTo: users.reportingTo,
       departmentId: users.departmentId,
       branchId: users.branchId,
-      role: users.role,
-    }).from(users).where(eq(users.id, _subjectEmployeeId)).limit(1);
+      role: organizationMembers.role,
+    }).from(users)
+      .innerJoin(organizationMembers, and(eq(organizationMembers.userId, users.id), eq(organizationMembers.orgId, orgId)))
+      .where(eq(users.id, _subjectEmployeeId)).limit(1);
     if (!employee) return [];
 
     const parts = expression.split(".");

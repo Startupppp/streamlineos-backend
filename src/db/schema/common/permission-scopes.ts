@@ -26,4 +26,3 @@ export const permissionSupportedScopesRelations = relations(
   }),
 );
 
-export type PermissionSupportedScope = typeof permissionSupportedScopes.$inferSelect;

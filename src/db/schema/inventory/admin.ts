@@ -53,10 +53,12 @@ export const invIdempotencyKeys = pgTable("inv_idempotency_keys", {
   response: jsonb("response"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   expiresAt: timestamp("expires_at").notNull(),
+  leaseExpiresAt: timestamp("lease_expires_at"),
 }, (table) => [
   uniqueIndex("uniq_inv_idempotency_org_key").on(table.orgId, table.idempotencyKey),
   unique("uniq_inv_idempotency_keys_org_id").on(table.orgId, table.id),
   index("idx_inv_idempotency_expires").on(table.expiresAt),
+  index("idx_inv_idempotency_lease_expires").on(table.leaseExpiresAt),
 ]);
 
 export const invImportJobs = pgTable("inv_import_jobs", {

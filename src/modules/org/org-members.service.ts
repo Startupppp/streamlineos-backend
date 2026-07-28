@@ -45,7 +45,7 @@ export class OrgMembersService {
         name: users.name,
         email: users.email,
         image: users.image,
-        role: users.role,
+        role: organizationMembers.role,
       })
       .from(organizationMembers)
       .innerJoin(users, eq(organizationMembers.userId, users.id))

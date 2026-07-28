@@ -48,6 +48,7 @@ export class DepreciationRunsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:assets:manage")
   @HttpCode(200)
+  @Idempotent("accounting.depreciation-run.reverse")
   reverse(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,

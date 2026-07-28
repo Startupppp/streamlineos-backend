@@ -24,5 +24,3 @@ export const aiFeedback = pgTable(
   ],
 );
 
-export type AiFeedback = typeof aiFeedback.$inferSelect;
-export type NewAiFeedback = typeof aiFeedback.$inferInsert;

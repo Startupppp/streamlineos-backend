@@ -72,7 +72,7 @@ export class RecruitmentTalentPoolsService {
       .innerJoin(candidates, eq(candidates.id, talentPoolMembers.candidateId))
       .where(eq(talentPoolMembers.poolId, poolId))
       .orderBy(desc(talentPoolMembers.addedAt))
-      .limit(500);
+      .limit(100);
   }
 
   async addMember(orgId: string, userId: string, poolId: number, input: AddPoolMemberInput) {

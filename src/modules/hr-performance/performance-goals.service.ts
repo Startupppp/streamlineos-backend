@@ -22,6 +22,7 @@ export class PerformanceGoalsService {
     const myGoals = await this.db.query.goals.findMany({
       where: and(eq(goals.orgId, orgId), eq(goals.userId, userId)),
       orderBy: [desc(goals.createdAt)],
+      limit: 100,
     });
 
     const goalIds = myGoals.map((g) => g.id);
@@ -29,6 +30,7 @@ export class PerformanceGoalsService {
       goalIds.length > 0
         ? await this.db.query.keyResults.findMany({
             where: inArray(keyResults.goalId, goalIds),
+            limit: 100,
           })
         : [];
 

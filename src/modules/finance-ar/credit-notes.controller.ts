@@ -66,6 +66,7 @@ export class CreditNotesController {
   @Post(":creditNoteId/apply")
   @HttpCode(200)
   @RequirePermission("accounting:credit-notes:manage")
+  @Idempotent("accounting.credit-note.apply")
   apply(
     @Param("creditNoteId", ParseIntPipe) creditNoteId: number,
     @Body(new ZodValidationPipe(applyCreditNoteSchema)) body: ApplyCreditNoteInput,

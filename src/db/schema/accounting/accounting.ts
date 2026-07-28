@@ -62,6 +62,7 @@ export const journalEntries = pgTable("journal_entries", {
   index("idx_je_org_date").on(table.orgId, table.entryDate),
   index("idx_je_org_source").on(table.orgId, table.sourceType, table.sourceId),
   index("idx_je_org_status").on(table.orgId, table.status),
+  index("idx_je_org_status_date").on(table.orgId, table.status, table.entryDate),
   foreignKey({ columns: [table.reversedEntryId], foreignColumns: [table.id] }).onDelete("set null"),
 ]);
 
@@ -69,7 +70,7 @@ export const journalLines = pgTable("journal_lines", {
   id: serial("id").primaryKey(),
   entryId: integer("entry_id").references(() => journalEntries.id, { onDelete: "cascade" }).notNull(),
   accountId: integer("account_id").references(() => ledgerAccounts.id, { onDelete: "restrict" }).notNull(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   debit: decimal("debit", { precision: 18, scale: 4 }).default("0").notNull(),
   credit: decimal("credit", { precision: 18, scale: 4 }).default("0").notNull(),
   description: text("description"),
@@ -89,6 +90,13 @@ export const journalLines = pgTable("journal_lines", {
   index("idx_jl_entry").on(table.entryId),
   index("idx_jl_account").on(table.accountId),
   index("idx_jl_org_account").on(table.orgId, table.accountId),
+  foreignKey({ columns: [table.orgId, table.entryId], foreignColumns: [journalEntries.orgId, journalEntries.id] }).onDelete("cascade"),
+  index("idx_jl_org_client").on(table.orgId, table.clientId),
+  index("idx_jl_org_vendor").on(table.orgId, table.vendorId),
+  index("idx_jl_org_project").on(table.orgId, table.projectId),
+  index("idx_jl_org_department").on(table.orgId, table.departmentId),
+  index("idx_jl_org_employee").on(table.orgId, table.employeeId),
+  index("idx_jl_org_tax_code").on(table.orgId, table.taxCodeId),
 ]);
 
 export const ledgerAccountsRelations = relations(ledgerAccounts, ({ one, many }) => ({
@@ -112,9 +120,4 @@ export const journalLinesRelations = relations(journalLines, ({ one }) => ({
   organization: one(organizations, { fields: [journalLines.orgId], references: [organizations.id] }),
 }));
 
-export type LedgerAccount = typeof ledgerAccounts.$inferSelect;
-export type NewLedgerAccount = typeof ledgerAccounts.$inferInsert;
-export type JournalEntry = typeof journalEntries.$inferSelect;
-export type NewJournalEntry = typeof journalEntries.$inferInsert;
-export type JournalLine = typeof journalLines.$inferSelect;
 export type NewJournalLine = typeof journalLines.$inferInsert;

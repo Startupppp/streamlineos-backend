@@ -78,11 +78,11 @@ export class HrAnalyticsService {
         .groupBy(users.gender),
 
       this.db
-        .select({ role: users.role, count: count() })
+        .select({ role: organizationMembers.role, count: count() })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
         .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)))
-        .groupBy(users.role),
+        .groupBy(organizationMembers.role),
 
       this.db
         .select({ count: count() })

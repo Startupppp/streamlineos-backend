@@ -12,6 +12,7 @@ import { assertCronSecret } from "./cron-secret";
 import { CronEmailOutboxService } from "./cron-email-outbox.service";
 import { CronNotificationDeliveryService } from "./cron-notification-delivery.service";
 import { CronOrganizationService } from "./cron-organization.service";
+import { CronIdempotencyService } from "./cron-idempotency.service";
 import { ChatReplyRemindersService } from "../chat/chat-reply-reminders.service";
 import { ExceptionsDetectorService } from "../timesheets-core/exceptions-detector.service";
 
@@ -24,6 +25,7 @@ export class CronPlatformController {
     private readonly notificationDelivery: CronNotificationDeliveryService,
     private readonly cronOrganization: CronOrganizationService,
     private readonly timesheetExceptionsDetector: ExceptionsDetectorService,
+    private readonly idempotency: CronIdempotencyService,
   ) {}
 
   @Get("chat-reply-reminders")
@@ -83,6 +85,17 @@ export class CronPlatformController {
   @HttpCode(200)
   postOrgPurgeWorker(@Headers("authorization") authorization?: string) {
     return this.runOrgPurgeWorker(authorization);
+  }
+
+  @Get("idempotency-fence-sweep")
+  getIdempotencyFenceSweep(@Headers("authorization") authorization?: string) {
+    return this.runIdempotencyFenceSweep(authorization);
+  }
+
+  @Post("idempotency-fence-sweep")
+  @HttpCode(200)
+  postIdempotencyFenceSweep(@Headers("authorization") authorization?: string) {
+    return this.runIdempotencyFenceSweep(authorization);
   }
 
   @Get("timesheets-exception-detection")
@@ -171,6 +184,21 @@ export class CronPlatformController {
       };
     } catch (error) {
       logger.error("Org purge worker cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  private async runIdempotencyFenceSweep(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.idempotency.pruneExpiredFences();
+      return {
+        success: true,
+        message: `Pruned ${result.commandFencesPruned} command fences, ${result.invKeysPruned} inv idempotency keys, ${result.payrollReceiptsPruned} payroll receipts`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Idempotency fence sweep cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

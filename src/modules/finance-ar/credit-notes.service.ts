@@ -198,22 +198,24 @@ export class CreditNotesService {
   }
 
   async apply(orgId: string, userId: string, id: number, input: ApplyCreditNoteInput) {
-    const cn = await this.db.query.creditNotes.findFirst({
-      where: and(eq(creditNotes.id, id), eq(creditNotes.orgId, orgId)),
-    });
-    if (!cn) throw new NotFoundException("Credit note not found");
-    if (cn.status !== "POSTED") throw new ForbiddenException("Only POSTED credit notes can be applied");
-
-    const inv = await this.db.query.invoices.findFirst({
-      where: and(eq(invoices.id, input.invoiceId), eq(invoices.orgId, orgId)),
-      columns: { id: true, total: true, amountPaid: true, status: true },
-    });
-    if (!inv) throw new NotFoundException("Invoice not found");
-
-    const newApplied = round4(Number(cn.appliedAmount) + input.amount);
-    const cnTotal = Number(cn.total);
-
     await this.db.transaction(async (tx) => {
+      const [cn] = await tx
+        .select({ id: creditNotes.id, status: creditNotes.status, appliedAmount: creditNotes.appliedAmount, total: creditNotes.total })
+        .from(creditNotes)
+        .where(and(eq(creditNotes.id, id), eq(creditNotes.orgId, orgId)))
+        .for("update");
+      if (!cn) throw new NotFoundException("Credit note not found");
+      if (cn.status !== "POSTED") throw new ForbiddenException("Only POSTED credit notes can be applied");
+
+      const [inv] = await tx
+        .select({ id: invoices.id, total: invoices.total, amountPaid: invoices.amountPaid, status: invoices.status })
+        .from(invoices)
+        .where(and(eq(invoices.id, input.invoiceId), eq(invoices.orgId, orgId)))
+        .for("update");
+      if (!inv) throw new NotFoundException("Invoice not found");
+
+      const newApplied = round4(Number(cn.appliedAmount) + input.amount);
+      const cnTotal = Number(cn.total);
       const newInvPaid = round4(Number(inv.amountPaid) + input.amount);
       const invTotal = Number(inv.total);
       const newInvStatus = newInvPaid >= invTotal - 0.01 ? "PAID" : "PARTIALLY_PAID";

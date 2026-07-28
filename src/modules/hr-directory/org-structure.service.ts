@@ -193,11 +193,11 @@ export class OrgStructureService {
       groups = Array.from(byLabel, ([label, cnt]) => ({ label, count: cnt }));
     } else if (groupBy === "role") {
       const rows = await this.db
-        .select({ role: users.role, count: count() })
+        .select({ role: organizationMembers.role, count: count() })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
         .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)))
-        .groupBy(users.role);
+        .groupBy(organizationMembers.role);
 
       groups = rows.map((r) => ({ label: r.role ?? "Unassigned", count: Number(r.count) }));
     } else {
@@ -231,7 +231,7 @@ export class OrgStructureService {
           image: users.image,
           designation: users.designation,
           email: users.email,
-          role: users.role,
+          role: organizationMembers.role,
         })
         .from(users)
         .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))

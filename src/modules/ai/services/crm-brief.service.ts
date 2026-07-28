@@ -138,8 +138,8 @@ Please generate a comprehensive account summary with:
 
   async meetingPrep(orgId: string, input: MeetingPrepInput, userId?: string) {
     const { meetingTitle, attendeeType, attendeeId, scheduledAt, notes } = input;
-    let attendeeName = "Unknown";
-    let contextString = "";
+    let attendeeName: string;
+    let contextString: string;
 
     if (attendeeType === "lead") {
       const [lead, activities] = await Promise.all([
@@ -365,7 +365,7 @@ Please generate a structured pre-meeting brief with:
     const flags = await this.orgFeatures.getFlags(orgId);
     if (!flags.aiLeadScoring) throw new ForbiddenException("AI features are disabled for this organization");
 
-    let attendeeName = "Unknown";
+    let attendeeName: string;
 
     if (input.attendeeType === "lead") {
       const lead = await this.db.query.leads.findFirst({

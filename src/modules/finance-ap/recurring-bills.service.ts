@@ -2,6 +2,7 @@ import {
   ConflictException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import { z } from "zod";
@@ -33,6 +34,7 @@ const RECURRING_CACHE_KEY = (orgId: string) => `fin:recurring-bills:${orgId}`;
 
 @Injectable()
 export class RecurringBillsService {
+  private readonly logger = new Logger(RecurringBillsService.name);
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
@@ -230,7 +232,8 @@ export class RecurringBillsService {
           entityId: String(bill.id),
           variables: { billNumber: bill.billNumber, templateName: template.name },
         });
-      } catch {
+      } catch (err) {
+        this.logger.warn(`Recurring bill spawn failed for template ${template.id} (org ${template.orgId}): ${err instanceof Error ? err.message : String(err)}`);
       }
     }
   }

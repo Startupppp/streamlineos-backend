@@ -127,6 +127,7 @@ export const tickets = pgTable(
       .on(t.recurrenceNextRunAt)
       .where(sql`is_recurring = true`),
     index("idx_tickets_customer").on(t.customerId),
+    index("idx_tickets_title_trgm").using("gin", t.title.op("gin_trgm_ops")),
     unique("uniq_tickets_org_id").on(t.orgId, t.id),
   ],
 );

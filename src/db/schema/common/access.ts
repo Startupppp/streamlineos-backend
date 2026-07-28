@@ -297,13 +297,3 @@ export const kbSpaceGrantsRelations = relations(kbSpaceGrants, ({ one }) => ({
   }),
 }));
 
-export type RoleAssignment = typeof roleAssignments.$inferSelect;
-export type RolePermissionGrant = typeof rolePermissionGrants.$inferSelect;
-export type AccessVersion = typeof accessVersions.$inferSelect;
-export type OrgModule = typeof orgModules.$inferSelect;
-export type PrincipalGroup = typeof principalGroups.$inferSelect;
-export type PrincipalGroupMember = typeof principalGroupMembers.$inferSelect;
-export type GroupRoleAssignment = typeof groupRoleAssignments.$inferSelect;
-export type PmProjectGrant = typeof pmProjectGrants.$inferSelect;
-export type PmWorkspaceGrant = typeof pmWorkspaceGrants.$inferSelect;
-export type KbSpaceGrant = typeof kbSpaceGrants.$inferSelect;

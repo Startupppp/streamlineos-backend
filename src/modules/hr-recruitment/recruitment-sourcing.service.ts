@@ -237,7 +237,7 @@ export class RecruitmentSourcingService {
       .leftJoin(jobPostings, eq(vendorCandidateSubmissions.jobPostingId, jobPostings.id))
       .where(eq(vendorCandidateSubmissions.vendorId, vendorId))
       .orderBy(desc(vendorCandidateSubmissions.submittedAt))
-      .limit(200);
+      .limit(100);
 
     if (canViewFinancials) {
       return rows.map((r) => ({
@@ -466,7 +466,7 @@ export class RecruitmentSourcingService {
       .where(eq(externalReferrers.orgId, orgId))
       .groupBy(externalReferrers.id)
       .orderBy(desc(externalReferrers.createdAt))
-      .limit(200);
+      .limit(100);
   }
 
   async updateExternalReferrerStatus(orgId: string, referrerId: number, input: UpdateExternalReferrerStatusInput) {

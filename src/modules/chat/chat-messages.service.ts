@@ -244,23 +244,27 @@ export class ChatMessagesService {
         const userId = message.senderId;
         if (matches.some(m => m === "channel" || m === "everyone" || m === "here")) {
           const memberIds = channelMembers.map(m => m.userId).filter(id => id !== userId);
-          for (const memberId of memberIds) {
+          if (memberIds.length > 0) {
             await this.notifications.publishMentionNotification(orgId, channelId, {
               id: message.id, content: body.content!, senderId: userId, senderName: senderName ?? "Someone",
-            }, [memberId]);
+            }, memberIds);
           }
         }
+        const individualMentionIds: string[] = [];
         for (const member of channelMembers) {
           if (!member.user || member.userId === userId) continue;
           const memberName = member.user.name?.toLowerCase() ?? "";
           if (matches.some(m => memberName.includes(m) || m.includes(memberName.split(" ")[0]))) {
-            await this.notifications.publishMentionNotification(orgId, channelId, {
-              id: message.id,
-              content: body.content!,
-              senderId: userId,
-              senderName: senderName ?? "Someone",
-            }, [member.userId]);
+            individualMentionIds.push(member.userId);
           }
+        }
+        if (individualMentionIds.length > 0) {
+          await this.notifications.publishMentionNotification(orgId, channelId, {
+            id: message.id,
+            content: body.content!,
+            senderId: userId,
+            senderName: senderName ?? "Someone",
+          }, individualMentionIds);
         }
       }
     }

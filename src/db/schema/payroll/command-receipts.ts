@@ -41,6 +41,7 @@ export const payrollCommandReceipts = pgTable(
     actorId: text("actor_id").references(() => users.id, { onDelete: "set null" }),
     startedAt: timestamp("started_at").defaultNow().notNull(),
     finishedAt: timestamp("finished_at"),
+    expiresAt: timestamp("expires_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -57,6 +58,7 @@ export const payrollCommandReceipts = pgTable(
     index("idx_payroll_command_receipts_org_run").on(table.orgId, table.runId),
     index("idx_payroll_command_receipts_org_status").on(table.orgId, table.status),
     index("idx_payroll_command_receipts_correlation").on(table.correlationId),
+    index("idx_payroll_command_receipts_expires").on(table.expiresAt),
   ],
 );
 

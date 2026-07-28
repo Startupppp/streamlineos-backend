@@ -46,6 +46,9 @@ export const notifications = pgTable("notifications", {
   index("idx_notifications_org_category").on(table.orgId, table.category),
   index("idx_notifications_priority").on(table.priority),
   index("idx_notifications_dedupe").on(table.orgId, table.eventKey, table.entityType, table.entityId),
+  index("idx_notifications_org_user_active")
+    .on(table.orgId, table.userId, table.id)
+    .where(sql`deleted_at IS NULL`),
   unique("uniq_notifications_org_id").on(table.orgId, table.id),
 ]);
 
@@ -397,9 +400,6 @@ export const couponRedemptionsRelations = relations(couponRedemptions, ({ one })
   organization: one(organizations, { fields: [couponRedemptions.orgId], references: [organizations.id] }),
   user: one(users, { fields: [couponRedemptions.userId], references: [users.id] }),
 }));
-
-export type Coupon = typeof coupons.$inferSelect;
-export type CouponRedemption = typeof couponRedemptions.$inferSelect;
 
 export const aiUsageLogs = pgTable("ai_usage_logs", {
   id: serial("id").primaryKey(),

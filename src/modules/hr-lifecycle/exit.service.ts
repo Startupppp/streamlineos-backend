@@ -63,7 +63,7 @@ export class ExitService {
         ceoReviewer: { columns: { id: true, name: true } },
       },
       orderBy: [desc(resignations.createdAt)],
-      limit: 500,
+      limit: 100,
     });
   }
 

@@ -102,8 +102,3 @@ export const finCashFlowScenariosRelations = relations(finCashFlowScenarios, ({ 
   creator: one(users, { fields: [finCashFlowScenarios.createdBy], references: [users.id] }),
 }));
 
-export type FinBudget = typeof finBudgets.$inferSelect;
-export type NewFinBudget = typeof finBudgets.$inferInsert;
-export type FinBudgetLine = typeof finBudgetLines.$inferSelect;
-export type FinBudgetRevision = typeof finBudgetRevisions.$inferSelect;
-export type FinCashFlowScenario = typeof finCashFlowScenarios.$inferSelect;

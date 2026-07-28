@@ -309,12 +309,3 @@ export const finPaymentRunItemsRelations = relations(finPaymentRunItems, ({ one 
   vendorPayment: one(vendorPayments, { fields: [finPaymentRunItems.vendorPaymentId], references: [vendorPayments.id] }),
 }));
 
-export type CreditNote = typeof creditNotes.$inferSelect;
-export type NewCreditNote = typeof creditNotes.$inferInsert;
-export type VendorCredit = typeof vendorCredits.$inferSelect;
-export type FinPaymentAllocation = typeof finPaymentAllocations.$inferSelect;
-export type FinVendorPaymentAllocation = typeof finVendorPaymentAllocations.$inferSelect;
-export type FinRecurringInvoiceTemplate = typeof finRecurringInvoiceTemplates.$inferSelect;
-export type FinRecurringBillTemplate = typeof finRecurringBillTemplates.$inferSelect;
-export type FinPaymentRun = typeof finPaymentRuns.$inferSelect;
-export type FinPaymentRunItem = typeof finPaymentRunItems.$inferSelect;

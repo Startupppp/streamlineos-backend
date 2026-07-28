@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException } from "@nestjs/common";
+import { BadRequestException, ConflictException, UnprocessableEntityException } from "@nestjs/common";
 import { StockEngineService, addDec, mulDec, divDec } from "../stock-engine.service";
 import type { StockEngineCommand } from "../stock-engine.types";
 
@@ -201,29 +201,60 @@ describe("StockEngineService", () => {
   });
 
   describe("execute — idempotency", () => {
-    it("throws ConflictException when key is IN_FLIGHT", async () => {
+    it("throws ConflictException when key is IN_FLIGHT and lease is still active", async () => {
       const tx = buildTx();
       let idx = 0;
       tx.insert = jest.fn().mockImplementation(() => idx++ === 0 ? makeFailInsertChain() : makeInsertChain());
-      tx.query.invIdempotencyKeys.findFirst = jest.fn().mockResolvedValue({ status: "IN_FLIGHT", response: null });
+      tx.query.invIdempotencyKeys.findFirst = jest.fn().mockResolvedValue({
+        status: "IN_FLIGHT",
+        requestHash: null,
+        response: null,
+        createdAt: new Date(),
+        expiresAt: new Date(Date.now() + 86_400_000),
+      });
 
       const service = new StockEngineService(buildDb(tx) as never, defaultSettings() as never, defaultAudit() as never, defaultCache() as never);
 
       await expect(service.execute("org1", "u1", baseCmd)).rejects.toThrow(ConflictException);
     });
 
-    it("throws ConflictException with idempotentResult when key is COMPLETED", async () => {
+    it("replays stored response when idempotency key is COMPLETED (no exception)", async () => {
       const storedResult = { transactionIds: [999], levels: [{ productVariantId: 1, locationId: 1, onHand: "10.0000" }] };
       const tx = buildTx();
       let idx = 0;
       tx.insert = jest.fn().mockImplementation(() => idx++ === 0 ? makeFailInsertChain() : makeInsertChain());
-      tx.query.invIdempotencyKeys.findFirst = jest.fn().mockResolvedValue({ status: "COMPLETED", response: storedResult });
+      tx.query.invIdempotencyKeys.findFirst = jest.fn().mockResolvedValue({
+        status: "COMPLETED",
+        requestHash: null,
+        response: storedResult,
+        createdAt: new Date(),
+        expiresAt: new Date(Date.now() + 86_400_000),
+      });
 
       const service = new StockEngineService(buildDb(tx) as never, defaultSettings() as never, defaultAudit() as never, defaultCache() as never);
 
-      const err: ConflictException & { idempotentResult?: unknown } = await service.execute("org1", "u1", baseCmd).catch(e => e);
-      expect(err).toBeInstanceOf(ConflictException);
-      expect(err.idempotentResult).toEqual(storedResult);
+      const result = await service.execute("org1", "u1", baseCmd);
+
+      expect(result.transactionIds).toEqual([999]);
+      expect(result.levels).toHaveLength(1);
+      expect(result.levels[0].onHand).toBe("10.0000");
+    });
+
+    it("throws UnprocessableEntityException when idempotency key was used with a different request", async () => {
+      const tx = buildTx();
+      let idx = 0;
+      tx.insert = jest.fn().mockImplementation(() => idx++ === 0 ? makeFailInsertChain() : makeInsertChain());
+      tx.query.invIdempotencyKeys.findFirst = jest.fn().mockResolvedValue({
+        status: "COMPLETED",
+        requestHash: "a-completely-different-stored-hash",
+        response: { transactionIds: [42], levels: [] },
+        createdAt: new Date(),
+        expiresAt: new Date(Date.now() + 86_400_000),
+      });
+
+      const service = new StockEngineService(buildDb(tx) as never, defaultSettings() as never, defaultAudit() as never, defaultCache() as never);
+
+      await expect(service.execute("org1", "u1", baseCmd)).rejects.toThrow(UnprocessableEntityException);
     });
   });
 
@@ -280,6 +311,150 @@ describe("StockEngineService", () => {
 
       const updateCalls = tx.update.mock.calls as unknown[][];
       expect(updateCalls.length).toBeGreaterThanOrEqual(3);
+    });
+  });
+});
+
+describe("StockEngineService.executeMany", () => {
+  function buildBatchTx(lockedRows: Record<string, unknown>[]): MockTx {
+    return {
+      insert: jest.fn(),
+      update: jest.fn().mockReturnValue(makeUpdateChain()),
+      execute: jest.fn().mockResolvedValueOnce(lockedRows).mockResolvedValue([]),
+      query: {
+        invIdempotencyKeys: { findFirst: jest.fn().mockResolvedValue(null) },
+        invProductVariants: { findFirst: jest.fn().mockResolvedValue({ product: { costingMethod: "WEIGHTED_AVERAGE" } }) },
+        invStockTransactions: { findFirst: jest.fn().mockResolvedValue(null) },
+      },
+    };
+  }
+
+  function setupBatchInserts(tx: MockTx, startId = 100): void {
+    let id = startId;
+    tx.insert = jest.fn().mockImplementation(() => makeInsertChain(id++));
+  }
+
+  describe("lock ordering", () => {
+    it("acquires all level locks in a single execute call regardless of command count", async () => {
+      const lockedRows = [
+        { id: 2, product_variant_id: 1, location_id: 1, lot_id: null, serial_id: null, on_hand: "0.0000", committed: "0.0000", blocked_qty: "0.0000", quality_hold_qty: "0.0000", average_cost: null },
+        { id: 5, product_variant_id: 2, location_id: 2, lot_id: null, serial_id: null, on_hand: "0.0000", committed: "0.0000", blocked_qty: "0.0000", quality_hold_qty: "0.0000", average_cost: null },
+      ];
+      const tx = buildBatchTx(lockedRows);
+      setupBatchInserts(tx, 200);
+      const service = new StockEngineService(buildDb(tx) as never, defaultSettings() as never, defaultAudit() as never, defaultCache() as never);
+
+      const cmd1: StockEngineCommand = { idempotencyKey: "lock-1", sourceType: "t", sourceId: "s", movements: [{ transactionType: "ADJUSTMENT_IN", productVariantId: 1, locationId: 1, quantityDelta: "5.0000" }] };
+      const cmd2: StockEngineCommand = { idempotencyKey: "lock-2", sourceType: "t", sourceId: "s", movements: [{ transactionType: "ADJUSTMENT_IN", productVariantId: 2, locationId: 2, quantityDelta: "3.0000" }] };
+
+      await service.executeMany("org1", "u1", [cmd1, cmd2]);
+
+      expect(tx.execute).toHaveBeenCalledTimes(1);
+    });
+
+    it("returns empty array for empty command list without touching the db", async () => {
+      const tx = buildBatchTx([]);
+      const service = new StockEngineService(buildDb(tx) as never, defaultSettings() as never, defaultAudit() as never, defaultCache() as never);
+
+      const result = await service.executeMany("org1", "u1", []);
+
+      expect(result).toEqual([]);
+      expect(tx.execute).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("partial replay", () => {
+    it("returns stored result for a replayed command and executes the new command", async () => {
+      const storedResult = { transactionIds: [999], levels: [{ productVariantId: 1, locationId: 1, onHand: "10.0000" }] };
+      const lockedRows = [
+        { id: 3, product_variant_id: 2, location_id: 2, lot_id: null, serial_id: null, on_hand: "0.0000", committed: "0.0000", blocked_qty: "0.0000", quality_hold_qty: "0.0000", average_cost: null },
+      ];
+      const tx = buildBatchTx(lockedRows);
+
+      let insertCallCount = 0;
+      tx.insert = jest.fn().mockImplementation(() => {
+        const callIndex = insertCallCount++;
+        if (callIndex === 0) return makeFailInsertChain();
+        return makeInsertChain(300 + callIndex);
+      });
+
+      tx.query.invIdempotencyKeys.findFirst = jest.fn()
+        .mockResolvedValueOnce({
+          status: "COMPLETED",
+          requestHash: null,
+          response: storedResult,
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 86_400_000),
+        })
+        .mockResolvedValue(null);
+
+      const service = new StockEngineService(buildDb(tx) as never, defaultSettings() as never, defaultAudit() as never, defaultCache() as never);
+
+      const replayCmd: StockEngineCommand = { idempotencyKey: "replay-key", sourceType: "t", sourceId: "s", movements: [{ transactionType: "ADJUSTMENT_IN", productVariantId: 1, locationId: 1, quantityDelta: "10.0000" }] };
+      const newCmd: StockEngineCommand = { idempotencyKey: "new-key", sourceType: "t", sourceId: "s", movements: [{ transactionType: "ADJUSTMENT_IN", productVariantId: 2, locationId: 2, quantityDelta: "5.0000" }] };
+
+      const [r1, r2] = await service.executeMany("org1", "u1", [replayCmd, newCmd]);
+
+      expect(r1!.transactionIds).toEqual([999]);
+      expect(r1!.levels[0]!.onHand).toBe("10.0000");
+
+      expect(r2!.levels[0]!.productVariantId).toBe(2);
+      expect(r2!.levels[0]!.onHand).toBe("5.0000");
+    });
+  });
+
+  describe("FIFO correctness across commands sharing a stock level", () => {
+    it("second command reads the in-memory state written by the first command in the same batch", async () => {
+      const lockedRows = [
+        { id: 1, product_variant_id: 1, location_id: 1, lot_id: null, serial_id: null, on_hand: "0.0000", committed: "0.0000", blocked_qty: "0.0000", quality_hold_qty: "0.0000", average_cost: null },
+      ];
+      const tx = buildBatchTx(lockedRows);
+      setupBatchInserts(tx, 700);
+      const settings = defaultSettings({ allowNegativeStock: false });
+      const service = new StockEngineService(buildDb(tx) as never, settings as never, defaultAudit() as never, defaultCache() as never);
+
+      const addCmd: StockEngineCommand = {
+        idempotencyKey: "fifo-batch-add",
+        sourceType: "t",
+        sourceId: "s",
+        movements: [{ transactionType: "ADJUSTMENT_IN", productVariantId: 1, locationId: 1, quantityDelta: "20.0000" }],
+      };
+      const subtractCmd: StockEngineCommand = {
+        idempotencyKey: "fifo-batch-sub",
+        sourceType: "t",
+        sourceId: "s",
+        movements: [{ transactionType: "SALE", productVariantId: 1, locationId: 1, quantityDelta: "-5.0000" }],
+      };
+
+      const [r1, r2] = await service.executeMany("org1", "u1", [addCmd, subtractCmd]);
+
+      expect(r1!.levels[0]!.onHand).toBe("20.0000");
+      expect(r2!.levels[0]!.onHand).toBe("15.0000");
+    });
+
+    it("refuses to go negative when the second command overdrafts the balance written by the first", async () => {
+      const lockedRows = [
+        { id: 1, product_variant_id: 1, location_id: 1, lot_id: null, serial_id: null, on_hand: "0.0000", committed: "0.0000", blocked_qty: "0.0000", quality_hold_qty: "0.0000", average_cost: null },
+      ];
+      const tx = buildBatchTx(lockedRows);
+      setupBatchInserts(tx, 800);
+      const settings = defaultSettings({ allowNegativeStock: false });
+      const service = new StockEngineService(buildDb(tx) as never, settings as never, defaultAudit() as never, defaultCache() as never);
+
+      const addCmd: StockEngineCommand = {
+        idempotencyKey: "fifo-guard-add",
+        sourceType: "t",
+        sourceId: "s",
+        movements: [{ transactionType: "ADJUSTMENT_IN", productVariantId: 1, locationId: 1, quantityDelta: "3.0000" }],
+      };
+      const overdraftCmd: StockEngineCommand = {
+        idempotencyKey: "fifo-guard-sub",
+        sourceType: "t",
+        sourceId: "s",
+        movements: [{ transactionType: "SALE", productVariantId: 1, locationId: 1, quantityDelta: "-10.0000" }],
+      };
+
+      await expect(service.executeMany("org1", "u1", [addCmd, overdraftCmd])).rejects.toThrow(BadRequestException);
     });
   });
 });

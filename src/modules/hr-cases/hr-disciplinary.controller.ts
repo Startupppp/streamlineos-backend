@@ -46,13 +46,13 @@ export class HrDisciplinaryController {
 
   /** Employee: disciplinary actions issued to me. */
   @Get("mine")
-  @RequirePermission("self:payroll")
+  @RequirePermission("self:cases")
   listMine(@CurrentUser() user: CurrentUserContext) {
     return this.disciplinary.listMine(user.orgId, user.userId);
   }
 
   @Get("mine/unacknowledged-count")
-  @RequirePermission("self:payroll")
+  @RequirePermission("self:cases")
   unacknowledgedCount(@CurrentUser() user: CurrentUserContext) {
     return this.disciplinary.listUnacknowledgedCount(user.orgId, user.userId);
   }
@@ -80,7 +80,7 @@ export class HrDisciplinaryController {
   /** Employee acknowledges receipt (not agreement). */
   @Post(":actionId/acknowledge")
   @HttpCode(200)
-  @RequirePermission("self:payroll")
+  @RequirePermission("self:cases")
   acknowledge(
     @CurrentUser() user: CurrentUserContext,
     @Param("actionId", ParseIntPipe) actionId: number,

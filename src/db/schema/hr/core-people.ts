@@ -65,19 +65,6 @@ export const hrReportingLineTypeEnum = pgEnum("hr_reporting_line_type", [
   "dotted",
 ]);
 
-export const hrCustomFieldTypeEnum = pgEnum("hr_custom_field_type", [
-  "text",
-  "number",
-  "date",
-  "select",
-  "multi_select",
-  "boolean",
-  "file",
-  "employee_ref",
-  "department_ref",
-  "currency",
-]);
-
 export const hrPeople = pgTable("hr_people", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),

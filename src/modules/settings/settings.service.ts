@@ -15,7 +15,6 @@ import {
   gitConnections,
   organizations,
   organizationMembers,
-  users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -456,7 +455,6 @@ export class SettingsService {
     }
 
     await this.db.transaction(async (tx) => {
-      await tx.update(users).set({ role }).where(eq(users.id, targetUserId));
       await tx
         .update(organizationMembers)
         .set({ role })

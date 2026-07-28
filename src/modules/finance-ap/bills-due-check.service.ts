@@ -53,7 +53,7 @@ export class BillsDueCheckService {
     for (const bill of due) {
       const dedupeKey = DUE_DEDUPE_KEY(bill.orgId, bill.id);
 
-      let alreadyNotified = false;
+      let alreadyNotified: boolean;
       try {
         const stored = await this.cache.cached<string>(dedupeKey, async () => "PENDING", DUE_DEDUPE_TTL);
         alreadyNotified = stored === "SENT";

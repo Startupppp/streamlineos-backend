@@ -61,7 +61,7 @@ import { ProjectsFormsModule } from "./modules/build-forms/projects-forms.module
 import { ProjectsModule } from "./modules/build/projects.module";
 import { ProjectsByIdModule } from "./modules/build/projects-by-id.module";
 import { SupportModule } from "./modules/support/support.module";
-import { SignosModule } from "./modules/signos/signos.module";
+import { ESignModule } from "./modules/e-sign/e-sign.module";
 import { KbModule } from "./modules/kb/kb.module";
 import { AccountingModule } from "./modules/accounting/accounting.module";
 import { ChatModule } from "./modules/chat/chat.module";
@@ -233,7 +233,7 @@ import { MeService } from "./me/me.service";
     ProjectsModule,
     ProjectsByIdModule,
     SupportModule,
-    SignosModule,
+    ESignModule,
     KbModule,
     AccountingModule,
     ChatModule,

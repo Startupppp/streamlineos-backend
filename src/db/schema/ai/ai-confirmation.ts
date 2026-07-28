@@ -37,5 +37,3 @@ export const aiActionProposals = pgTable(
   ],
 );
 
-export type AiActionProposal = typeof aiActionProposals.$inferSelect;
-export type NewAiActionProposal = typeof aiActionProposals.$inferInsert;

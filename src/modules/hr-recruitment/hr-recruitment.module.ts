@@ -19,6 +19,10 @@ import { RecruitmentCandidatesService } from "./recruitment-candidates.service";
 import { RecruitmentCandidateOpsService } from "./recruitment-candidate-ops.service";
 import { RecruitmentPipelineService } from "./recruitment-pipeline.service";
 import { RecruitmentCandidateRecordsService } from "./recruitment-candidate-records.service";
+import { RecruitmentCalibrationService } from "./recruitment-calibration.service";
+import { RecruitmentReferralChecksService } from "./recruitment-referral-checks.service";
+import { RecruitmentCandidateDocsService } from "./recruitment-candidate-docs.service";
+import { RecruitmentCandidateVaultService } from "./recruitment-candidate-vault.service";
 import { RecruitmentOffersService } from "./recruitment-offers.service";
 import { RecruitmentJobsService } from "./recruitment-jobs.service";
 import { RecruitmentRecruitersService } from "./recruitment-recruiters.service";
@@ -51,6 +55,10 @@ import { RecruitmentHandoffService } from "./recruitment-handoff.service";
     RecruitmentCandidateOpsService,
     RecruitmentPipelineService,
     RecruitmentCandidateRecordsService,
+    RecruitmentCalibrationService,
+    RecruitmentReferralChecksService,
+    RecruitmentCandidateDocsService,
+    RecruitmentCandidateVaultService,
     RecruitmentOffersService,
     RecruitmentJobsService,
     RecruitmentRecruitersService,

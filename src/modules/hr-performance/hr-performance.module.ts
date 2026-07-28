@@ -11,8 +11,14 @@ import { CalibrationController } from "./calibration.controller";
 import { SuccessionController } from "./succession.controller";
 import { PerformanceGoalsService } from "./performance-goals.service";
 import { PerformanceReviewsService } from "./performance-reviews.service";
+import { ReviewCyclesService } from "./review-cycles.service";
+import { OneOnOneMeetingsService } from "./one-on-one-meetings.service";
+import { PerformancePipsService } from "./performance-pips.service";
 import { EngagementService } from "./engagement.service";
 import { EngagementExtrasService } from "./engagement-extras.service";
+import { EngagementMoodPollsService } from "./engagement-mood-polls.service";
+import { EngagementBadgesService } from "./engagement-badges.service";
+import { EngagementCommunitiesCampaignsService } from "./engagement-communities-campaigns.service";
 import { DocumentsService } from "./documents.service";
 import { ComplianceService } from "./compliance.service";
 import { RichDocumentsService } from "./rich-documents.service";
@@ -37,8 +43,14 @@ import { SuccessionService } from "./succession.service";
   providers: [
     PerformanceGoalsService,
     PerformanceReviewsService,
+    ReviewCyclesService,
+    OneOnOneMeetingsService,
+    PerformancePipsService,
     EngagementService,
     EngagementExtrasService,
+    EngagementMoodPollsService,
+    EngagementBadgesService,
+    EngagementCommunitiesCampaignsService,
     DocumentsService,
     ComplianceService,
     RichDocumentsService,

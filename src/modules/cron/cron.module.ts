@@ -44,6 +44,7 @@ import { CronEmailOutboxService } from "./cron-email-outbox.service";
 import { CronSupportService } from "./cron-support.service";
 import { CronFinanceService } from "./cron-finance.service";
 import { CronCrmTasksService } from "./cron-crm-tasks.service";
+import { CronIdempotencyService } from "./cron-idempotency.service";
 import { CronOrganizationService } from "./cron-organization.service";
 import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
 
@@ -98,6 +99,7 @@ import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
     CronNotificationDeliveryService,
     CronFinanceService,
     CronCrmTasksService,
+    CronIdempotencyService,
     CronOrganizationService,
     CronOrgPurgeWorkerService,
   ],

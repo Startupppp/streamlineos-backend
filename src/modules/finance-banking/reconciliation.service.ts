@@ -24,7 +24,10 @@ import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { FinancePostingService } from "../accounting/finance-posting.service";
-import { paginateOffset, buildListResponse } from "../../common/pagination/pagination";
+import {
+  paginateOffset,
+  buildListResponse,
+} from "../../common/pagination/pagination";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type {
   ConfirmMatchInput,
@@ -33,7 +36,8 @@ import type {
   CreateReconciliationRuleInput,
 } from "./dto/reconciliation.schemas";
 
-const CACHE_RECON = (orgId: string, bankAccountId: number) => `fin:banking:recon:${orgId}:${bankAccountId}`;
+const CACHE_RECON = (orgId: string, bankAccountId: number) =>
+  `fin:banking:recon:${orgId}:${bankAccountId}`;
 
 interface RulesQuery {
   page: number;
@@ -55,7 +59,10 @@ export class ReconciliationService {
     const { orgId } = u;
 
     const account = await this.db.query.finBankAccounts.findFirst({
-      where: and(eq(finBankAccounts.id, bankAccountId), eq(finBankAccounts.orgId, orgId)),
+      where: and(
+        eq(finBankAccounts.id, bankAccountId),
+        eq(finBankAccounts.orgId, orgId),
+      ),
     });
     if (!account) throw new NotFoundException("Bank account not found");
 
@@ -63,29 +70,35 @@ export class ReconciliationService {
       this.db
         .select()
         .from(finBankTransactions)
-        .where(and(
-          eq(finBankTransactions.orgId, orgId),
-          eq(finBankTransactions.bankAccountId, bankAccountId),
-          eq(finBankTransactions.status, "UNMATCHED"),
-        ))
+        .where(
+          and(
+            eq(finBankTransactions.orgId, orgId),
+            eq(finBankTransactions.bankAccountId, bankAccountId),
+            eq(finBankTransactions.status, "UNMATCHED"),
+          ),
+        )
         .orderBy(desc(finBankTransactions.txnDate)),
       this.db
         .select()
         .from(finBankTransactions)
-        .where(and(
-          eq(finBankTransactions.orgId, orgId),
-          eq(finBankTransactions.bankAccountId, bankAccountId),
-          eq(finBankTransactions.status, "SUGGESTED"),
-        ))
+        .where(
+          and(
+            eq(finBankTransactions.orgId, orgId),
+            eq(finBankTransactions.bankAccountId, bankAccountId),
+            eq(finBankTransactions.status, "SUGGESTED"),
+          ),
+        )
         .orderBy(desc(finBankTransactions.txnDate)),
       this.db
         .select({ total: count() })
         .from(finBankTransactions)
-        .where(and(
-          eq(finBankTransactions.orgId, orgId),
-          eq(finBankTransactions.bankAccountId, bankAccountId),
-          eq(finBankTransactions.status, "RECONCILED"),
-        )),
+        .where(
+          and(
+            eq(finBankTransactions.orgId, orgId),
+            eq(finBankTransactions.bankAccountId, bankAccountId),
+            eq(finBankTransactions.status, "RECONCILED"),
+          ),
+        ),
     ]);
 
     const suggestedWithMatches = await Promise.all(
@@ -93,15 +106,20 @@ export class ReconciliationService {
         const matches = await this.db
           .select()
           .from(finReconciliationMatches)
-          .where(and(
-            eq(finReconciliationMatches.orgId, orgId),
-            eq(finReconciliationMatches.bankTransactionId, txn.id),
-          ));
+          .where(
+            and(
+              eq(finReconciliationMatches.orgId, orgId),
+              eq(finReconciliationMatches.bankTransactionId, txn.id),
+            ),
+          );
         return { ...txn, suggestedMatches: matches };
       }),
     );
 
-    const ledgerBalance = await this.computeLedgerBalance(orgId, account.ledgerAccountId);
+    const ledgerBalance = await this.computeLedgerBalance(
+      orgId,
+      account.ledgerAccountId,
+    );
 
     return {
       unmatched,
@@ -112,7 +130,11 @@ export class ReconciliationService {
     };
   }
 
-  async confirmMatch(u: CurrentUserContext, bankAccountId: number, input: ConfirmMatchInput) {
+  async confirmMatch(
+    u: CurrentUserContext,
+    bankAccountId: number,
+    input: ConfirmMatchInput,
+  ) {
     const { orgId, userId } = u;
 
     const txn = await this.db.query.finBankTransactions.findFirst({
@@ -131,18 +153,38 @@ export class ReconciliationService {
       throw new BadRequestException("Transaction is ignored — unmatch first");
     }
 
-    if (input.matchType === "BANK_FEE" || input.matchType === "MANUAL_JOURNAL") {
+    if (
+      input.matchType === "BANK_FEE" ||
+      input.matchType === "MANUAL_JOURNAL"
+    ) {
       const txnAmount = Math.abs(parseFloat(txn.amount));
-      const approval = await checkApprovalPolicy(this.db, orgId, "BANK_ADJUSTMENT", txnAmount);
+      const approval = await checkApprovalPolicy(
+        this.db,
+        orgId,
+        "BANK_ADJUSTMENT",
+        txnAmount,
+      );
 
       if (approval.needsApproval) {
-        const existing = await getApprovalRequest(this.db, orgId, "BANK_ADJUSTMENT", txn.id);
+        const existing = await getApprovalRequest(
+          this.db,
+          orgId,
+          "BANK_ADJUSTMENT",
+          txn.id,
+        );
 
-        if (existing?.status === "APPROVED") {
-        } else if (existing?.status === "PENDING") {
-          throw new BadRequestException("Bank adjustment awaiting approval — cannot reconcile yet");
-        } else {
-          await insertApprovalRequest(this.db, orgId, "BANK_ADJUSTMENT", txn.id, userId);
+        if (existing?.status === "PENDING")
+          throw new BadRequestException(
+            "Bank adjustment awaiting approval — cannot reconcile yet",
+          );
+        else if (existing?.status !== "APPROVED") {
+          await insertApprovalRequest(
+            this.db,
+            orgId,
+            "BANK_ADJUSTMENT",
+            txn.id,
+            userId,
+          );
           throw new BadRequestException(
             "Bank adjustment requires approval — approval request created",
           );
@@ -155,56 +197,92 @@ export class ReconciliationService {
 
       if (input.matchType === "BANK_FEE") {
         const account = await tx.query.finBankAccounts.findFirst({
-          where: and(eq(finBankAccounts.id, bankAccountId), eq(finBankAccounts.orgId, orgId)),
+          where: and(
+            eq(finBankAccounts.id, bankAccountId),
+            eq(finBankAccounts.orgId, orgId),
+          ),
           columns: { ledgerAccountId: true, name: true },
         });
         if (!account?.ledgerAccountId) {
-          throw new BadRequestException("Bank account has no linked ledger account");
+          throw new BadRequestException(
+            "Bank account has no linked ledger account",
+          );
         }
 
         const today = txn.txnDate;
         const postResult = await this.posting.postJournal(u, {
           entryDate: today,
-          description: input.memo ?? `Bank fee: ${txn.description ?? txn.reference ?? ""}`,
+          description:
+            input.memo ?? `Bank fee: ${txn.description ?? txn.reference ?? ""}`,
           sourceType: "BANK_TXN",
           sourceId: String(txn.id),
           sourceEvent: "bank_fee",
           lines: [
-            { systemPurpose: "PAYMENT_FEES", debit: String(Math.abs(parseFloat(txn.amount))), credit: "0" },
-            { accountId: account.ledgerAccountId, debit: "0", credit: String(Math.abs(parseFloat(txn.amount))) },
+            {
+              systemPurpose: "PAYMENT_FEES",
+              debit: String(Math.abs(parseFloat(txn.amount))),
+              credit: "0",
+            },
+            {
+              accountId: account.ledgerAccountId,
+              debit: "0",
+              credit: String(Math.abs(parseFloat(txn.amount))),
+            },
           ],
         });
         journalEntryId = postResult.entryId;
-
       } else if (input.matchType === "MANUAL_JOURNAL") {
         const account = await tx.query.finBankAccounts.findFirst({
-          where: and(eq(finBankAccounts.id, bankAccountId), eq(finBankAccounts.orgId, orgId)),
+          where: and(
+            eq(finBankAccounts.id, bankAccountId),
+            eq(finBankAccounts.orgId, orgId),
+          ),
           columns: { ledgerAccountId: true },
         });
-        if (!account?.ledgerAccountId) {
-          throw new BadRequestException("Bank account has no linked ledger account");
-        }
-        if (!input.counterAccountId) {
-          throw new BadRequestException("counterAccountId is required for MANUAL_JOURNAL match");
-        }
+        if (!account?.ledgerAccountId)
+          throw new BadRequestException(
+            "Bank account has no linked ledger account",
+          );
+
+        if (!input.counterAccountId)
+          throw new BadRequestException(
+            "counterAccountId is required for MANUAL_JOURNAL match",
+          );
 
         const amount = String(Math.abs(parseFloat(txn.amount)));
         const isDebit = parseFloat(txn.amount) > 0;
 
         const postResult = await this.posting.postJournal(u, {
           entryDate: txn.txnDate,
-          description: input.memo ?? txn.description ?? `Manual journal for txn ${txn.id}`,
+          description:
+            input.memo ?? txn.description ?? `Manual journal for txn ${txn.id}`,
           sourceType: "BANK_TXN",
           sourceId: String(txn.id),
           sourceEvent: "manual_journal",
           lines: isDebit
             ? [
-                { accountId: account.ledgerAccountId, debit: amount, credit: "0" },
-                { accountId: input.counterAccountId, debit: "0", credit: amount },
+                {
+                  accountId: account.ledgerAccountId,
+                  debit: amount,
+                  credit: "0",
+                },
+                {
+                  accountId: input.counterAccountId,
+                  debit: "0",
+                  credit: amount,
+                },
               ]
             : [
-                { accountId: input.counterAccountId, debit: amount, credit: "0" },
-                { accountId: account.ledgerAccountId, debit: "0", credit: amount },
+                {
+                  accountId: input.counterAccountId,
+                  debit: amount,
+                  credit: "0",
+                },
+                {
+                  accountId: account.ledgerAccountId,
+                  debit: "0",
+                  credit: amount,
+                },
               ],
         });
         journalEntryId = postResult.entryId;
@@ -212,21 +290,25 @@ export class ReconciliationService {
         const existingMatches = await tx
           .select({ journalEntryId: finReconciliationMatches.journalEntryId })
           .from(finReconciliationMatches)
-          .where(and(
-            eq(finReconciliationMatches.orgId, orgId),
-            eq(finReconciliationMatches.bankTransactionId, txn.id),
-            eq(finReconciliationMatches.matchedType, input.matchType),
-          ))
+          .where(
+            and(
+              eq(finReconciliationMatches.orgId, orgId),
+              eq(finReconciliationMatches.bankTransactionId, txn.id),
+              eq(finReconciliationMatches.matchedType, input.matchType),
+            ),
+          )
           .limit(1);
         journalEntryId = existingMatches[0]?.journalEntryId ?? null;
       }
 
       await tx
         .delete(finReconciliationMatches)
-        .where(and(
-          eq(finReconciliationMatches.orgId, orgId),
-          eq(finReconciliationMatches.bankTransactionId, txn.id),
-        ));
+        .where(
+          and(
+            eq(finReconciliationMatches.orgId, orgId),
+            eq(finReconciliationMatches.bankTransactionId, txn.id),
+          ),
+        );
 
       await tx.insert(finReconciliationMatches).values({
         orgId,
@@ -244,19 +326,36 @@ export class ReconciliationService {
       await tx
         .update(finBankTransactions)
         .set({ status: "RECONCILED", matchedJournalEntryId: journalEntryId })
-        .where(and(eq(finBankTransactions.id, txn.id), eq(finBankTransactions.orgId, orgId)));
+        .where(
+          and(
+            eq(finBankTransactions.id, txn.id),
+            eq(finBankTransactions.orgId, orgId),
+          ),
+        );
     });
 
     await this.cache.invalidate(CACHE_RECON(orgId, bankAccountId));
 
     const refreshedAccount = await this.db.query.finBankAccounts.findFirst({
-      where: and(eq(finBankAccounts.id, bankAccountId), eq(finBankAccounts.orgId, orgId)),
+      where: and(
+        eq(finBankAccounts.id, bankAccountId),
+        eq(finBankAccounts.orgId, orgId),
+      ),
       columns: { ledgerAccountId: true, currentBalance: true },
     });
 
-    const ledgerBalance = await this.computeLedgerBalance(orgId, refreshedAccount?.ledgerAccountId ?? null);
+    const ledgerBalance = await this.computeLedgerBalance(
+      orgId,
+      refreshedAccount?.ledgerAccountId ?? null,
+    );
 
-    if (ledgerBalance !== null && refreshedAccount && Math.abs(parseFloat(ledgerBalance) - parseFloat(refreshedAccount.currentBalance)) > 0.01) {
+    if (
+      ledgerBalance !== null &&
+      refreshedAccount &&
+      Math.abs(
+        parseFloat(ledgerBalance) - parseFloat(refreshedAccount.currentBalance),
+      ) > 0.01
+    ) {
       void this.dispatch.emit({
         eventKey: "accounting.reconciliation.mismatch",
         orgId,
@@ -264,7 +363,10 @@ export class ReconciliationService {
         targetUserIds: [userId],
         entityType: "bank_account",
         entityId: String(bankAccountId),
-        variables: { ledgerBalance, bankBalance: refreshedAccount.currentBalance },
+        variables: {
+          ledgerBalance,
+          bankBalance: refreshedAccount.currentBalance,
+        },
       });
     }
 
@@ -274,14 +376,21 @@ export class ReconciliationService {
       orgId,
       resourceType: "bank_transaction",
       resourceId: String(input.transactionId),
-      metadata: { matchType: input.matchType, matchedRecordId: input.matchedRecordId },
+      metadata: {
+        matchType: input.matchType,
+        matchedRecordId: input.matchedRecordId,
+      },
       result: "SUCCESS",
     });
 
     return { success: true };
   }
 
-  async unmatch(u: CurrentUserContext, bankAccountId: number, input: UnmatchInput) {
+  async unmatch(
+    u: CurrentUserContext,
+    bankAccountId: number,
+    input: UnmatchInput,
+  ) {
     const { orgId, userId } = u;
 
     const txn = await this.db.query.finBankTransactions.findFirst({
@@ -296,30 +405,47 @@ export class ReconciliationService {
     const matches = await this.db
       .select()
       .from(finReconciliationMatches)
-      .where(and(
-        eq(finReconciliationMatches.orgId, orgId),
-        eq(finReconciliationMatches.bankTransactionId, txn.id),
-        eq(finReconciliationMatches.isConfirmed, true),
-      ));
+      .where(
+        and(
+          eq(finReconciliationMatches.orgId, orgId),
+          eq(finReconciliationMatches.bankTransactionId, txn.id),
+          eq(finReconciliationMatches.isConfirmed, true),
+        ),
+      );
 
     await this.db.transaction(async (tx) => {
       for (const match of matches) {
-        if (match.journalEntryId && (match.matchedType === "BANK_FEE" || match.matchedType === "MANUAL_JOURNAL")) {
-          await this.posting.reverseJournal(u, match.journalEntryId, "Unmatched from bank reconciliation");
+        if (
+          match.journalEntryId &&
+          (match.matchedType === "BANK_FEE" ||
+            match.matchedType === "MANUAL_JOURNAL")
+        ) {
+          await this.posting.reverseJournal(
+            u,
+            match.journalEntryId,
+            "Unmatched from bank reconciliation",
+          );
         }
       }
 
       await tx
         .delete(finReconciliationMatches)
-        .where(and(
-          eq(finReconciliationMatches.orgId, orgId),
-          eq(finReconciliationMatches.bankTransactionId, txn.id),
-        ));
+        .where(
+          and(
+            eq(finReconciliationMatches.orgId, orgId),
+            eq(finReconciliationMatches.bankTransactionId, txn.id),
+          ),
+        );
 
       await tx
         .update(finBankTransactions)
         .set({ status: "UNMATCHED", matchedJournalEntryId: null })
-        .where(and(eq(finBankTransactions.id, txn.id), eq(finBankTransactions.orgId, orgId)));
+        .where(
+          and(
+            eq(finBankTransactions.id, txn.id),
+            eq(finBankTransactions.orgId, orgId),
+          ),
+        );
     });
 
     await this.cache.invalidate(CACHE_RECON(orgId, bankAccountId));
@@ -336,7 +462,11 @@ export class ReconciliationService {
     return { success: true };
   }
 
-  async ignoreTransaction(u: CurrentUserContext, bankAccountId: number, input: IgnoreTransactionInput) {
+  async ignoreTransaction(
+    u: CurrentUserContext,
+    bankAccountId: number,
+    input: IgnoreTransactionInput,
+  ) {
     const { orgId, userId } = u;
 
     const txn = await this.db.query.finBankTransactions.findFirst({
@@ -355,7 +485,12 @@ export class ReconciliationService {
     await this.db
       .update(finBankTransactions)
       .set({ status: "IGNORED" })
-      .where(and(eq(finBankTransactions.id, txn.id), eq(finBankTransactions.orgId, orgId)));
+      .where(
+        and(
+          eq(finBankTransactions.id, txn.id),
+          eq(finBankTransactions.orgId, orgId),
+        ),
+      );
 
     this.audit.log({
       action: "banking.reconciliation.ignore",
@@ -382,13 +517,20 @@ export class ReconciliationService {
         .orderBy(sql`${finReconciliationRules.priority} DESC`)
         .limit(limit)
         .offset(offset),
-      this.db.select({ total: count() }).from(finReconciliationRules).where(where),
+      this.db
+        .select({ total: count() })
+        .from(finReconciliationRules)
+        .where(where),
     ]);
 
     return buildListResponse(rows, totals?.total ?? 0, query);
   }
 
-  async createRule(u: CurrentUserContext, bankAccountId: number, input: CreateReconciliationRuleInput) {
+  async createRule(
+    u: CurrentUserContext,
+    bankAccountId: number,
+    input: CreateReconciliationRuleInput,
+  ) {
     const { orgId, userId } = u;
 
     await this.assertAccountOwned(orgId, bankAccountId);
@@ -419,20 +561,32 @@ export class ReconciliationService {
     return rule;
   }
 
-  async deleteRule(u: CurrentUserContext, bankAccountId: number, ruleId: number) {
+  async deleteRule(
+    u: CurrentUserContext,
+    bankAccountId: number,
+    ruleId: number,
+  ) {
     const { orgId, userId } = u;
 
     await this.assertAccountOwned(orgId, bankAccountId);
 
     const existing = await this.db.query.finReconciliationRules.findFirst({
-      where: and(eq(finReconciliationRules.id, ruleId), eq(finReconciliationRules.orgId, orgId)),
+      where: and(
+        eq(finReconciliationRules.id, ruleId),
+        eq(finReconciliationRules.orgId, orgId),
+      ),
       columns: { id: true },
     });
     if (!existing) throw new NotFoundException("Reconciliation rule not found");
 
     await this.db
       .delete(finReconciliationRules)
-      .where(and(eq(finReconciliationRules.id, ruleId), eq(finReconciliationRules.orgId, orgId)));
+      .where(
+        and(
+          eq(finReconciliationRules.id, ruleId),
+          eq(finReconciliationRules.orgId, orgId),
+        ),
+      );
 
     this.audit.log({
       action: "banking.rule.delete",
@@ -446,7 +600,10 @@ export class ReconciliationService {
     return { success: true };
   }
 
-  private async computeLedgerBalance(orgId: string, ledgerAccountId: number | null | undefined): Promise<string | null> {
+  private async computeLedgerBalance(
+    orgId: string,
+    ledgerAccountId: number | null | undefined,
+  ): Promise<string | null> {
     if (!ledgerAccountId) return null;
 
     const [result] = await this.db
@@ -454,21 +611,32 @@ export class ReconciliationService {
         balance: sql<string>`COALESCE(SUM(CAST(${journalLines.debit} AS numeric)) - SUM(CAST(${journalLines.credit} AS numeric)), 0)`,
       })
       .from(journalLines)
-      .innerJoin(journalEntries, and(
-        eq(journalEntries.id, journalLines.entryId),
-        eq(journalEntries.status, "POSTED"),
-      ))
-      .where(and(
-        eq(journalLines.accountId, ledgerAccountId),
-        eq(journalEntries.orgId, orgId),
-      ));
+      .innerJoin(
+        journalEntries,
+        and(
+          eq(journalEntries.id, journalLines.entryId),
+          eq(journalEntries.status, "POSTED"),
+        ),
+      )
+      .where(
+        and(
+          eq(journalLines.accountId, ledgerAccountId),
+          eq(journalEntries.orgId, orgId),
+        ),
+      );
 
     return result?.balance ?? "0";
   }
 
-  private async assertAccountOwned(orgId: string, bankAccountId: number): Promise<void> {
+  private async assertAccountOwned(
+    orgId: string,
+    bankAccountId: number,
+  ): Promise<void> {
     const account = await this.db.query.finBankAccounts.findFirst({
-      where: and(eq(finBankAccounts.id, bankAccountId), eq(finBankAccounts.orgId, orgId)),
+      where: and(
+        eq(finBankAccounts.id, bankAccountId),
+        eq(finBankAccounts.orgId, orgId),
+      ),
       columns: { id: true },
     });
     if (!account) throw new NotFoundException("Bank account not found");

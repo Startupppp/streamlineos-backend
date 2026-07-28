@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import {
   surveyVersions,
@@ -95,37 +95,64 @@ export class SurveyResponseService {
   async saveAnswers(sessionId: number, answers: SaveAnswerInput[]) {
     const session = await this.getSession(sessionId);
     if (session.status !== "in_progress") throw new BadRequestException("This response has already been submitted");
+    if (answers.length === 0) return { success: true };
 
-    for (const answer of answers) {
-      await this.upsertAnswer(session, answer);
-    }
+    const choicesByQuestion = await this.prefetchChoices(answers);
+    const rows = this.buildAnswerRows(session, answers, choicesByQuestion);
+    const questionIds = answers.map((a) => a.questionId);
+
+    await this.db.transaction(async (tx) => {
+      await tx
+        .delete(surveyAnswers)
+        .where(and(eq(surveyAnswers.sessionId, session.id), inArray(surveyAnswers.questionId, questionIds)));
+      await tx.insert(surveyAnswers).values(rows);
+    });
+
     return { success: true };
   }
 
-  private async upsertAnswer(session: typeof surveyResponseSessions.$inferSelect, answer: SaveAnswerInput) {
-    let score: number | null = null;
-    if (answer.choiceIds?.length) {
-      const choices = await this.db.query.surveyQuestionChoices.findMany({
-        where: eq(surveyQuestionChoices.questionId, answer.questionId),
-      });
-      const selected = choices.filter((c) => answer.choiceIds!.includes(c.id));
-      if (selected.length) score = selected.reduce((sum, c) => sum + (c.score ?? 0), 0);
+  private async prefetchChoices(
+    answers: SaveAnswerInput[],
+  ): Promise<Map<number, (typeof surveyQuestionChoices.$inferSelect)[]>> {
+    const choiceQuestionIds = answers.filter((a) => a.choiceIds?.length).map((a) => a.questionId);
+    if (choiceQuestionIds.length === 0) return new Map();
+
+    const rows = await this.db.query.surveyQuestionChoices.findMany({
+      where: inArray(surveyQuestionChoices.questionId, choiceQuestionIds),
+    });
+
+    const map = new Map<number, (typeof surveyQuestionChoices.$inferSelect)[]>();
+    for (const row of rows) {
+      const list = map.get(row.questionId) ?? [];
+      list.push(row);
+      map.set(row.questionId, list);
     }
+    return map;
+  }
 
-    await this.db
-      .delete(surveyAnswers)
-      .where(and(eq(surveyAnswers.sessionId, session.id), eq(surveyAnswers.questionId, answer.questionId)));
-
-    await this.db.insert(surveyAnswers).values({
-      orgId: session.orgId,
-      sessionId: session.id,
-      surveyId: session.surveyId,
-      versionId: session.versionId,
-      questionId: answer.questionId,
-      answerValue: answer.answerValue ?? null,
-      answerText: answer.answerText ?? null,
-      choiceIds: answer.choiceIds ?? null,
-      score,
+  private buildAnswerRows(
+    session: typeof surveyResponseSessions.$inferSelect,
+    answers: SaveAnswerInput[],
+    choicesByQuestion: Map<number, (typeof surveyQuestionChoices.$inferSelect)[]>,
+  ): (typeof surveyAnswers.$inferInsert)[] {
+    return answers.map((answer) => {
+      let score: number | null = null;
+      if (answer.choiceIds?.length) {
+        const choices = choicesByQuestion.get(answer.questionId) ?? [];
+        const selected = choices.filter((c) => answer.choiceIds!.includes(c.id));
+        if (selected.length) score = selected.reduce((sum, c) => sum + (c.score ?? 0), 0);
+      }
+      return {
+        orgId: session.orgId,
+        sessionId: session.id,
+        surveyId: session.surveyId,
+        versionId: session.versionId,
+        questionId: answer.questionId,
+        answerValue: answer.answerValue ?? null,
+        answerText: answer.answerText ?? null,
+        choiceIds: answer.choiceIds ?? null,
+        score,
+      };
     });
   }
 
@@ -134,7 +161,15 @@ export class SurveyResponseService {
     if (session.status !== "in_progress") throw new BadRequestException("This response has already been submitted");
 
     if (answers?.length) {
-      for (const answer of answers) await this.upsertAnswer(session, answer);
+      const choicesByQuestion = await this.prefetchChoices(answers);
+      const rows = this.buildAnswerRows(session, answers, choicesByQuestion);
+      const questionIds = answers.map((a) => a.questionId);
+      await this.db.transaction(async (tx) => {
+        await tx
+          .delete(surveyAnswers)
+          .where(and(eq(surveyAnswers.sessionId, session.id), inArray(surveyAnswers.questionId, questionIds)));
+        await tx.insert(surveyAnswers).values(rows);
+      });
     }
 
     const allAnswers = await this.db.query.surveyAnswers.findMany({

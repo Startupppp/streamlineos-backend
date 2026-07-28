@@ -1,18 +1,24 @@
+import { UnprocessableEntityException } from "@nestjs/common";
 import { PayrollCommandReceiptsService } from "../command-receipts.service";
 
-function makeDb(existing: unknown) {
+type UpdateReturning = Array<{ id: number }>;
+
+function makeDb(existing: unknown, updateReturning: UpdateReturning = [{ id: 1 }]) {
   const findFirst = jest.fn().mockResolvedValue(existing);
-  const returning = jest.fn().mockResolvedValue([{ id: 99 }]);
-  const values = jest.fn().mockReturnValue({ returning });
-  const insert = jest.fn().mockReturnValue({ values });
-  const set = jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) });
+  const updateWhere = jest.fn().mockReturnValue({
+    returning: jest.fn().mockResolvedValue(updateReturning),
+  });
+  const set = jest.fn().mockReturnValue({ where: updateWhere });
   const update = jest.fn().mockReturnValue({ set });
+  const insertReturning = jest.fn().mockResolvedValue([{ id: 99 }]);
+  const values = jest.fn().mockReturnValue({ returning: insertReturning });
+  const insert = jest.fn().mockReturnValue({ values });
   return {
     query: { payrollCommandReceipts: { findFirst } },
     insert,
     update,
     _findFirst: findFirst,
-    _returning: returning,
+    _updateWhere: updateWhere,
   };
 }
 
@@ -22,6 +28,7 @@ describe("PayrollCommandReceiptsService", () => {
       id: 1,
       status: "SUCCEEDED",
       response: { runId: 42 },
+      requestHash: null,
       startedAt: new Date(),
     });
     const service = new PayrollCommandReceiptsService(db as never);
@@ -41,6 +48,7 @@ describe("PayrollCommandReceiptsService", () => {
     const db = makeDb({
       id: 2,
       status: "IN_FLIGHT",
+      requestHash: null,
       startedAt: new Date(),
       response: null,
     });
@@ -75,5 +83,76 @@ describe("PayrollCommandReceiptsService", () => {
       expect(result.correlationId).toBeTruthy();
     }
     expect(db.insert).toHaveBeenCalled();
+  });
+
+  it("FAILED branch: rejects a reused key with a different requestHash (422)", async () => {
+    const db = makeDb({
+      id: 3,
+      status: "FAILED",
+      requestHash: "original-hash",
+      startedAt: new Date(),
+      response: null,
+    });
+    const service = new PayrollCommandReceiptsService(db as never);
+
+    await expect(
+      service.begin({
+        orgId: "org-a",
+        command: "run.create",
+        idempotencyKey: "k4",
+        actorId: "u1",
+        requestHash: "a-different-hash",
+      }),
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
+  });
+
+  it("FAILED branch: reclaims the key when requestHash matches and optimistic lock wins", async () => {
+    const db = makeDb(
+      {
+        id: 4,
+        status: "FAILED",
+        requestHash: "same-hash",
+        startedAt: new Date(),
+        response: null,
+      },
+      [{ id: 4 }],
+    );
+    const service = new PayrollCommandReceiptsService(db as never);
+
+    const result = await service.begin({
+      orgId: "org-a",
+      command: "run.create",
+      idempotencyKey: "k5",
+      actorId: "u1",
+      requestHash: "same-hash",
+    });
+
+    expect(result.kind).toBe("fresh");
+    if (result.kind === "fresh") {
+      expect(result.receiptId).toBe(4);
+    }
+  });
+
+  it("FAILED branch: optimistic lock lost (0 rows affected) returns inflight", async () => {
+    const db = makeDb(
+      {
+        id: 5,
+        status: "FAILED",
+        requestHash: null,
+        startedAt: new Date(),
+        response: null,
+      },
+      [],
+    );
+    const service = new PayrollCommandReceiptsService(db as never);
+
+    const result = await service.begin({
+      orgId: "org-a",
+      command: "run.create",
+      idempotencyKey: "k6",
+      actorId: "u1",
+    });
+
+    expect(result).toEqual({ kind: "inflight" });
   });
 });

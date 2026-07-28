@@ -21,6 +21,12 @@ import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import {
+  assertPermissionsGrantable,
+  ROLE_RANK,
+  toGrantableSet,
+} from "../../common/rbac/grantability";
+import { resolveActorRankContext } from "./module-access.helpers";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
 import { AccessService } from "../access/access.service";
@@ -203,12 +209,33 @@ export class ModuleAccessGroupsService {
   ): Promise<ModuleRoleGroup> {
     await this.assertAccess(actor, moduleKey, "manage");
 
+    if (!actor.isOrgOwner && !actor.isPlatformAdmin) {
+      const [resolved, { bestRank, allowedModules }] = await Promise.all([
+        this.access.resolveUserPermissions(actor.orgId, actor.userId),
+        resolveActorRankContext(this.db, actor.orgId, actor.userId),
+      ]);
+      const isOrgAdmin = (resolved.get(ORG_ADMIN_KEY) ?? "none") !== "none";
+      if (!isOrgAdmin) {
+        assertPermissionsGrantable(
+          {
+            isOrgOwner: false,
+            isPlatformAdmin: false,
+            grantable: toGrantableSet(resolved),
+            bestRank,
+            allowedModules,
+          },
+          [],
+          { rank: ROLE_RANK.MODULE_CUSTOM, moduleKey },
+        );
+      }
+    }
+
     const slug = `${moduleKey.toUpperCase()}_${input.name.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_${Date.now()}`;
 
     const row = await this.db.transaction(async (tx) => {
       const [created] = await tx
         .insert(roles)
-        .values({ name: input.name, slug, orgId: actor.orgId, isSystem: false, moduleKey })
+        .values({ name: input.name, slug, orgId: actor.orgId, isSystem: false, moduleKey, rank: ROLE_RANK.MODULE_CUSTOM })
         .returning({ id: roles.id, name: roles.name, isSystem: roles.isSystem });
       if (!created) throw new BadRequestException("Failed to create group");
       await bumpPermissionsVersion(tx, actor.orgId);

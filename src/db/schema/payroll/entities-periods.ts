@@ -29,14 +29,6 @@ export const payrollPeriodStatusEnum = pgEnum("payroll_period_status", [
   "CLOSED",
 ]);
 
-export const payrollRunTypeEnum = pgEnum("payroll_run_type", [
-  "REGULAR",
-  "BONUS",
-  "OFF_CYCLE",
-  "CORRECTION",
-  "FINAL_SETTLEMENT",
-]);
-
 export const payrollJobStatusEnum = pgEnum("payroll_job_status", [
   "PENDING",
   "RUNNING",

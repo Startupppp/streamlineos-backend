@@ -9,6 +9,7 @@ const EMPLOYEE_SELF_SERVICE = [
   "self:payslips",
   "self:payroll",
   "self:onboarding-docs",
+  "self:cases",
   "hr:leaves:create",
   "hr:expenses:create",
   "hr:expenses:view",
@@ -1025,6 +1026,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "tasks:read",
     "tasks:write",
     "hr:employees:read",
+    "hr:employees:view",
+    "hr:employees:manage",
     "hr:requisitions:view",
     "hr:requisitions:manage",
     "hr:interviews:view",
@@ -1032,6 +1035,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "hr:offers:view",
     "hr:offers:manage",
     "hr:onboarding:manage",
+    "hr:analytics:read",
+    "hr:alumni:read",
   ],
 
   SALES_REP: [
@@ -1107,7 +1112,10 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "build:timesheets:manage",
     "build:goals:view",
     "build:goals:manage",
+    "build:delete",
     "build:roadmap:view",
+    "build:roadmap:manage",
+    "build:tickets:delete",
     "build:members:view",
     "build:members:manage",
     "build:customers:view",
@@ -1129,6 +1137,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "self:leaves",
     "self:expenses",
     "self:payslips",
+    "self:cases",
   ],
 
   CLIENT_USER: [

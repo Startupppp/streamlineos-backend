@@ -396,6 +396,7 @@ export class KbArticlesService {
     return this.db.query.kbArticleVersions.findMany({
       where: and(eq(kbArticleVersions.articleId, articleId), eq(kbArticleVersions.orgId, user.orgId)),
       orderBy: [desc(kbArticleVersions.versionNumber)],
+      limit: 100,
     });
   }
 

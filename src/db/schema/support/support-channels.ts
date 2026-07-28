@@ -9,17 +9,6 @@ export const supportChannelTypeEnum = pgEnum("support_channel_type", [
   "sms",
 ]);
 
-export const supportSourceChannelEnum = pgEnum("support_source_channel", [
-  "web",
-  "portal",
-  "email",
-  "chat",
-  "whatsapp",
-  "sms",
-  "api",
-  "internal",
-]);
-
 export const supportChannels = pgTable(
   "support_channels",
   {

@@ -350,6 +350,12 @@ export const SHARED_PERMISSIONS: Permission[] = [
     description: "Upload and view own onboarding documents",
   },
   {
+    name: "self:cases",
+    resource: "self",
+    action: "cases",
+    description: "View and acknowledge disciplinary actions issued to oneself",
+  },
+  {
     name: "branch:view",
     resource: "branch",
     action: "view",
@@ -372,12 +378,6 @@ export const SHARED_PERMISSIONS: Permission[] = [
     resource: "branch",
     action: "delete",
     description: "Delete branches",
-  },
-  {
-    name: "branch:manage_targets",
-    resource: "branch",
-    action: "manage_targets",
-    description: "Manage branch targets",
   },
   {
     name: "ownership:modules:view",

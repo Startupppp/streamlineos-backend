@@ -9,7 +9,7 @@ import {
   jsonb,
   index,
 } from "drizzle-orm/pg-core";
-import { relations, type InferSelectModel, type InferInsertModel } from "drizzle-orm";
+import { relations } from "drizzle-orm";
 
 import { blogPostStatusEnum } from "../common/enums";
 
@@ -102,9 +102,3 @@ export const blogPostsRelations = relations(blogPosts, ({ one }) => ({
   }),
 }));
 
-export type BlogAuthor = InferSelectModel<typeof blogAuthors>;
-export type NewBlogAuthor = InferInsertModel<typeof blogAuthors>;
-export type BlogCategory = InferSelectModel<typeof blogCategories>;
-export type NewBlogCategory = InferInsertModel<typeof blogCategories>;
-export type BlogPost = InferSelectModel<typeof blogPosts>;
-export type NewBlogPost = InferInsertModel<typeof blogPosts>;

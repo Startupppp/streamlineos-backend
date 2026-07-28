@@ -129,7 +129,7 @@ export class TestRunsService {
           createdBy: userId,
         })
         .returning();
-      let caseIds: number[] = [];
+      let caseIds: number[];
       if (input.caseIds && input.caseIds.length > 0) {
         caseIds = input.caseIds;
       } else if (input.suiteId !== undefined) {

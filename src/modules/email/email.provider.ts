@@ -308,7 +308,6 @@ export async function dispatchEmail(options: EmailOptions): Promise<void> {
             await sendWithProvider(fallbackProvider, options);
             return;
           } catch (fallbackError) {
-            lastError = fallbackError;
             logger.error("Email fallback provider failed", {
               fallback: fallbackProvider,
               to: recipients,

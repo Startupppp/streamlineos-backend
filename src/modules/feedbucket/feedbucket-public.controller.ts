@@ -8,6 +8,7 @@ import {
   HttpException,
   HttpStatus,
   Inject,
+  Logger,
   NotFoundException,
   Param,
   Post,
@@ -106,6 +107,7 @@ function parseMultipartField(raw: unknown, fieldName: string): unknown {
 @Public()
 @Controller("public/feedbucket")
 export class FeedbucketPublicController {
+  private readonly logger = new Logger(FeedbucketPublicController.name);
   constructor(
     private readonly publicService: FeedbucketPublicService,
     private readonly aiService: FeedbucketAiService,
@@ -452,6 +454,8 @@ export class FeedbucketPublicController {
             eq(feedbucketSubmissions.orgId, widget.orgId),
           ),
         );
-    } catch {}
+    } catch (err) {
+      this.logger.warn(`linkFeedbackToTicket failed for submission ${submissionId}: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 }

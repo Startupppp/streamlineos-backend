@@ -131,10 +131,13 @@ export class PublishingService {
     // Pre-fetch existing publications once to avoid an N+1 findFirst per employee.
     const existingPubs = await this.db.query.payslipPublications.findMany({
       where: and(eq(payslipPublications.runId, runId), eq(payslipPublications.orgId, orgId)),
-      columns: { runEmployeeId: true, attemptCount: true },
+      columns: { runEmployeeId: true, attemptCount: true, status: true },
     });
     const attemptCountByRunEmployee = new Map(
       existingPubs.map((p) => [p.runEmployeeId, p.attemptCount] as const),
+    );
+    const priorStatusByRunEmployee = new Map(
+      existingPubs.map((p) => [p.runEmployeeId, p.status] as const),
     );
 
     for (const emp of employees) {
@@ -228,15 +231,16 @@ export class PublishingService {
         })
         .returning({ id: payslipPublications.id });
 
+      const wasAlreadyPublished = priorStatusByRunEmployee.get(emp.id) === "PUBLISHED";
       if (pubStatus === "PUBLISHED") {
         published++;
-        if (upsertedPub) {
+        if (upsertedPub && !wasAlreadyPublished) {
           this.notifications
             .notifyPayslipPublished(orgId, emp.userId, upsertedPub.id, run.month)
             .catch(e => logger.error("notifyPayslipPublished failed", { error: e }));
         }
 
-        if (emailPayslips && emp.email && renderedPdfBuffer) {
+        if (!wasAlreadyPublished && emailPayslips && emp.email && renderedPdfBuffer) {
           try {
             const monthLabel = fmtMonthYear(run.month);
             const netAmount = parseFloat(snapshot.totals.net).toLocaleString("en-IN", { minimumFractionDigits: 2 });

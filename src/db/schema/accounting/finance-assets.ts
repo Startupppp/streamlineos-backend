@@ -117,9 +117,3 @@ export const accDepreciationSchedulesRelations = relations(accDepreciationSchedu
   journalEntry: one(journalEntries, { fields: [accDepreciationSchedules.journalEntryId], references: [journalEntries.id] }),
 }));
 
-export type AccAssetCategory = typeof accAssetCategories.$inferSelect;
-export type NewAccAssetCategory = typeof accAssetCategories.$inferInsert;
-export type AccFixedAsset = typeof accFixedAssets.$inferSelect;
-export type NewAccFixedAsset = typeof accFixedAssets.$inferInsert;
-export type AccDepreciationRun = typeof accDepreciationRuns.$inferSelect;
-export type AccDepreciationSchedule = typeof accDepreciationSchedules.$inferSelect;

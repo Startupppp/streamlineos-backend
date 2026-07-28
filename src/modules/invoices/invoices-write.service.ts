@@ -298,17 +298,24 @@ export class InvoicesWriteService {
     const failedIds: number[] = [];
 
     for (const due of dueInvoices) {
+      if (!due.nextRecurringDate) continue;
       try {
-        const input = await this.buildCloneInput(due.id);
-        const advanced = advanceDate(
-          due.nextRecurringDate ?? asOfDate,
-          due.recurringInterval,
-        );
-        const { invoice } = await this.createInvoice(orgId, userId, input);
-        await this.db
+        const advanced = advanceDate(due.nextRecurringDate, due.recurringInterval);
+        const claimed = await this.db
           .update(invoices)
           .set({ nextRecurringDate: advanced, updatedAt: new Date() })
-          .where(and(eq(invoices.id, due.id), eq(invoices.orgId, orgId)));
+          .where(
+            and(
+              eq(invoices.id, due.id),
+              eq(invoices.orgId, orgId),
+              eq(invoices.nextRecurringDate, due.nextRecurringDate),
+            ),
+          )
+          .returning({ id: invoices.id });
+        if (claimed.length === 0) continue;
+
+        const input = await this.buildCloneInput(due.id);
+        const { invoice } = await this.createInvoice(orgId, userId, input);
         invoiceIds.push(invoice.id);
       } catch (error) {
         failedIds.push(due.id);

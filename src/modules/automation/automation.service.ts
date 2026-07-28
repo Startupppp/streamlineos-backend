@@ -131,7 +131,7 @@ export class AutomationService {
     const signature = createHmac("sha256", endpoint.secret).update(body).digest("hex");
 
     let statusCode: number | null = null;
-    let responseBody: string | null = null;
+    let responseBody: string | null;
     let success = false;
 
     try {
@@ -395,6 +395,7 @@ export class AutomationService {
         triggerPrefix
           ? andOp(eqOp(fields.orgId, orgId), like(fields.triggerEvent, `${triggerPrefix}%`))
           : eqOp(fields.orgId, orgId),
+      limit: 100,
     });
   }
 
@@ -451,7 +452,7 @@ export class AutomationService {
         ? and(eq(automationRuns.orgId, orgId), eq(automationRuns.ruleId, ruleId))
         : eq(automationRuns.orgId, orgId),
       orderBy: (fields, { desc: descOp }) => [descOp(fields.createdAt)],
-      limit: 200,
+      limit: 100,
     });
   }
 }

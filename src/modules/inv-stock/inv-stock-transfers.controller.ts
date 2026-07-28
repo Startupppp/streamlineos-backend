@@ -1,4 +1,5 @@
 import { BadRequestException, Controller, Get, Headers, Param, ParseIntPipe, Post, Body, Query, UseGuards } from "@nestjs/common";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../common/rbac/module.guard";
 import { PermissionGuard } from "../access/permission.guard";
@@ -48,6 +49,7 @@ export class InvStockTransfersController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
+  @Idempotent("inventory.stock.transfer.create")
   createTransfer(
     @Body(new ZodValidationPipe(createTransferSchema)) body: CreateTransferInput,
     @CurrentUser() u: CurrentUserContext,

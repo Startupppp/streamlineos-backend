@@ -85,7 +85,7 @@ export class WfhService {
       .innerJoin(users, eq(wfhRequests.userId, users.id))
       .where(and(eq(wfhRequests.orgId, orgId), eq(wfhRequests.status, "PENDING")))
       .orderBy(desc(wfhRequests.createdAt))
-      .limit(200);
+      .limit(100);
 
     return rows.map((r) => ({
       id: r.id,

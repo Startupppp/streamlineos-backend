@@ -14,8 +14,10 @@ import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import {
   assertPermissionsGrantable,
+  buildPermissionModuleMap,
   toGrantableSet,
 } from "../../common/rbac/grantability";
+import { resolveActorRankContext } from "./module-access.helpers";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
 import { AccessService } from "../access/access.service";
@@ -187,23 +189,35 @@ export class ModuleAccessService {
       deduped.set(item.permissionKey, item.scope);
     }
 
-    if (!actor.isOrgOwner && !actor.isPlatformAdmin) {
-      const resolved = await this.access.resolveUserPermissions(
-        actor.orgId,
-        actor.userId,
-      );
-      assertPermissionsGrantable(
-        { isOrgOwner: false, isPlatformAdmin: false, grantable: toGrantableSet(resolved) },
-        Array.from(deduped.keys()),
-      );
-    }
-
     const role = await this.db.query.roles.findFirst({
       where: and(eq(roles.id, roleId), eq(roles.orgId, actor.orgId)),
     });
     if (!role) throw new NotFoundException("Role not found");
     if (role.isSystem) {
       throw new ForbiddenException("System roles cannot be edited");
+    }
+
+    if (!actor.isOrgOwner && !actor.isPlatformAdmin) {
+      const [resolved, { bestRank, allowedModules }] = await Promise.all([
+        this.access.resolveUserPermissions(actor.orgId, actor.userId),
+        resolveActorRankContext(this.db, actor.orgId, actor.userId),
+      ]);
+      const isOrgAdmin = (resolved.get(ORG_ADMIN_KEY) ?? "none") !== "none";
+      if (!isOrgAdmin) {
+        const permMeta = buildPermissionModuleMap(Array.from(deduped.keys()));
+        assertPermissionsGrantable(
+          {
+            isOrgOwner: false,
+            isPlatformAdmin: false,
+            grantable: toGrantableSet(resolved),
+            bestRank,
+            allowedModules,
+          },
+          Array.from(deduped.keys()),
+          { rank: role.rank, moduleKey: role.moduleKey },
+          permMeta,
+        );
+      }
     }
 
     await this.db.transaction(async (tx): Promise<void> => {

@@ -11,6 +11,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { ModuleGuard } from "../../common/rbac/module.guard";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { resolveInvPoScope } from "../inv-stock-engine/inventory-scope";
 import { PoService } from "./po.service";
 import { GrnService } from "./grn.service";
@@ -58,6 +59,7 @@ export class InvPurchaseOrdersController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:create")
+  @Idempotent("inventory.purchase-order.create")
   create(
     @Body(new ZodValidationPipe(createPoSchema)) body: CreatePoInput,
     @CurrentUser() u: CurrentUserContext,
@@ -91,6 +93,7 @@ export class InvPurchaseOrdersController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:approve")
   @HttpCode(HttpStatus.OK)
+  @Idempotent("inventory.purchase-order.send")
   send(
     @Param("poId", ParseIntPipe) poId: number,
     @CurrentUser() u: CurrentUserContext,

@@ -53,5 +53,3 @@ export const featureFlagsRelations = relations(featureFlags, ({ one }) => ({
   }),
 }));
 
-export type FeatureFlag = typeof featureFlags.$inferSelect;
-export type NewFeatureFlag = typeof featureFlags.$inferInsert;

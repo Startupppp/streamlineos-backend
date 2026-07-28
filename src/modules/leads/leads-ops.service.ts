@@ -38,7 +38,10 @@ export type MergeLeadsResult =
 
 export type DistributeResult =
   | { ok: true; data: Record<string, unknown> }
-  | { ok: false; reason: "no_members" | "no_sales" | "all_on_leave" | "no_leads" };
+  | {
+      ok: false;
+      reason: "no_members" | "no_sales" | "all_on_leave" | "no_leads";
+    };
 
 @Injectable()
 export class LeadsOpsService {
@@ -73,20 +76,28 @@ export class LeadsOpsService {
       try {
         await this.email.sendEmail({ to: sp.email, subject, html });
       } catch (error) {
-        logger.error("Failed to send lead distribution email", { salesPersonId: sp.id, error });
+        logger.error("Failed to send lead distribution email", {
+          salesPersonId: sp.id,
+          error,
+        });
       }
     }
   }
 
   getImportBatch(orgId: string, batchId: number) {
     return this.db.query.leadImportBatches.findFirst({
-      where: and(eq(leadImportBatches.id, batchId), eq(leadImportBatches.orgId, orgId)),
+      where: and(
+        eq(leadImportBatches.id, batchId),
+        eq(leadImportBatches.orgId, orgId),
+      ),
     });
   }
 
   async bulkUpdate(orgId: string, userId: string, input: BulkUpdateInput) {
     const { leadIds, update } = input;
-    const setData: Partial<typeof leads.$inferInsert> = { updatedAt: new Date() };
+    const setData: Partial<typeof leads.$inferInsert> = {
+      updatedAt: new Date(),
+    };
 
     if (update.status) setData.status = update.status;
     if (update.priority) setData.priority = update.priority;
@@ -98,7 +109,8 @@ export class LeadsOpsService {
         ),
         columns: { id: true },
       });
-      if (!member) throw new BadRequestException("Assignee not found in organization");
+      if (!member)
+        throw new BadRequestException("Assignee not found in organization");
       setData.assignedToId = update.assignedToId;
       setData.assignedAt = new Date();
       setData.assignedById = userId;
@@ -120,7 +132,11 @@ export class LeadsOpsService {
     return { deleted: input.leadIds.length };
   }
 
-  async mergeLeads(orgId: string, userId: string, input: TopMergeInput): Promise<MergeLeadsResult> {
+  async mergeLeads(
+    orgId: string,
+    userId: string,
+    input: TopMergeInput,
+  ): Promise<MergeLeadsResult> {
     const { winnerId, loserId, overrides } = input;
 
     if (winnerId === loserId) {
@@ -151,7 +167,11 @@ export class LeadsOpsService {
       source: pick("source", winner.source, loser.source),
       notes: pick("notes", winner.notes, loser.notes),
       priority: pick("priority", winner.priority, loser.priority),
-      assignedToId: pick("assignedToId", winner.assignedToId, loser.assignedToId),
+      assignedToId: pick(
+        "assignedToId",
+        winner.assignedToId,
+        loser.assignedToId,
+      ),
       tags: pick("tags", winner.tags, loser.tags),
       updatedAt: new Date(),
     };
@@ -161,15 +181,34 @@ export class LeadsOpsService {
     }
 
     await this.db.transaction(async (tx) => {
-      await tx.update(leads).set(mergedFields).where(and(eq(leads.id, winnerId), eq(leads.orgId, orgId)));
       await tx
         .update(leads)
-        .set({ deletedAt: new Date(), mergedIntoId: winnerId, updatedAt: new Date() })
+        .set(mergedFields)
+        .where(and(eq(leads.id, winnerId), eq(leads.orgId, orgId)));
+      await tx
+        .update(leads)
+        .set({
+          deletedAt: new Date(),
+          mergedIntoId: winnerId,
+          updatedAt: new Date(),
+        })
         .where(and(eq(leads.id, loserId), eq(leads.orgId, orgId)));
-      await tx.update(leadActivities).set({ leadId: winnerId }).where(eq(leadActivities.leadId, loserId));
-      await tx.update(leadNotes).set({ leadId: winnerId }).where(eq(leadNotes.leadId, loserId));
-      await tx.update(leadTasks).set({ leadId: winnerId }).where(eq(leadTasks.leadId, loserId));
-      await tx.update(leadEmails).set({ leadId: winnerId }).where(eq(leadEmails.leadId, loserId));
+      await tx
+        .update(leadActivities)
+        .set({ leadId: winnerId })
+        .where(eq(leadActivities.leadId, loserId));
+      await tx
+        .update(leadNotes)
+        .set({ leadId: winnerId })
+        .where(eq(leadNotes.leadId, loserId));
+      await tx
+        .update(leadTasks)
+        .set({ leadId: winnerId })
+        .where(eq(leadTasks.leadId, loserId));
+      await tx
+        .update(leadEmails)
+        .set({ leadId: winnerId })
+        .where(eq(leadEmails.leadId, loserId));
     });
 
     this.audit.log({
@@ -195,18 +234,26 @@ export class LeadsOpsService {
   }
 
   async importLeads(orgId: string, userId: string, input: ImportInput) {
-    await this.planLimits.assertWithinLimit(orgId, "crmLeads", input.leads.length);
+    await this.planLimits.assertWithinLimit(
+      orgId,
+      "crmLeads",
+      input.leads.length,
+    );
 
     const CHUNK_SIZE = 100;
 
     const importEmails = input.leads
       .map((l) => l.email)
       .filter((e): e is string => !!e && e !== "");
-    const importPhones = input.leads.map((l) => l.phone).filter((p): p is string => !!p);
+    const importPhones = input.leads
+      .map((l) => l.phone)
+      .filter((p): p is string => !!p);
 
     const dedupeParts: SQL[] = [];
-    if (importEmails.length > 0) dedupeParts.push(inArray(leads.email, importEmails));
-    if (importPhones.length > 0) dedupeParts.push(inArray(leads.phone, importPhones));
+    if (importEmails.length > 0)
+      dedupeParts.push(inArray(leads.email, importEmails));
+    if (importPhones.length > 0)
+      dedupeParts.push(inArray(leads.phone, importPhones));
 
     const existingLeads =
       dedupeParts.length > 0
@@ -217,9 +264,13 @@ export class LeadsOpsService {
         : [];
 
     const dupEmails = new Set(
-      existingLeads.map((l) => l.email?.toLowerCase()).filter((e): e is string => !!e),
+      existingLeads
+        .map((l) => l.email?.toLowerCase())
+        .filter((e): e is string => !!e),
     );
-    const dupPhones = new Set(existingLeads.map((l) => l.phone).filter((p): p is string => !!p));
+    const dupPhones = new Set(
+      existingLeads.map((l) => l.phone).filter((p): p is string => !!p),
+    );
 
     let imported = 0;
     let skipped = 0;
@@ -241,7 +292,10 @@ export class LeadsOpsService {
         if (isDuplicate) {
           if (input.duplicateAction === "skip") {
             skipped++;
-            errors.push({ row: rowNum, message: `Duplicate (${lead.email || lead.phone})` });
+            errors.push({
+              row: rowNum,
+              message: `Duplicate (${lead.email || lead.phone})`,
+            });
             continue;
           } else if (input.duplicateAction === "update") {
             const matchField =
@@ -251,7 +305,10 @@ export class LeadsOpsService {
                   ? eq(leads.phone, lead.phone)
                   : undefined;
             if (!matchField) {
-              errors.push({ row: rowNum, message: "Failed to update duplicate" });
+              errors.push({
+                row: rowNum,
+                message: "Failed to update duplicate",
+              });
               continue;
             }
             try {
@@ -266,7 +323,10 @@ export class LeadsOpsService {
                 .where(and(eq(leads.orgId, orgId), matchField));
               updated++;
             } catch {
-              errors.push({ row: rowNum, message: "Failed to update duplicate" });
+              errors.push({
+                row: rowNum,
+                message: "Failed to update duplicate",
+              });
             }
             continue;
           }
@@ -278,11 +338,19 @@ export class LeadsOpsService {
           source: lead.source ?? "other",
           priority: lead.priority ?? "WARM",
         };
-        const rowValidation = await this.crmValidation.evaluate(orgId, "lead", rowRecord, {
-          sourceKey: lead.source ?? "other",
-        });
+        const rowValidation = await this.crmValidation.evaluate(
+          orgId,
+          "lead",
+          rowRecord,
+          {
+            sourceKey: lead.source ?? "other",
+          },
+        );
         if (!rowValidation.valid) {
-          errors.push({ row: rowNum, message: rowValidation.errors.map((e) => e.message).join("; ") });
+          errors.push({
+            row: rowNum,
+            message: rowValidation.errors.map((e) => e.message).join("; "),
+          });
           skipped++;
           continue;
         }
@@ -312,7 +380,10 @@ export class LeadsOpsService {
             status: "NEW" as const,
             assignedById: userId,
           }));
-          const result = await this.db.insert(leads).values(values).returning({ id: leads.id });
+          const result = await this.db
+            .insert(leads)
+            .values(values)
+            .returning({ id: leads.id });
           imported += result.length;
           importedLeadIds.push(...result.map((r) => r.id));
         } catch (insertErr) {
@@ -329,24 +400,21 @@ export class LeadsOpsService {
 
     if (input.autoDistribute && importedLeadIds.length > 0) {
       try {
-        const orgMembers = await this.db.query.organizationMembers.findMany({
-          where: eq(organizationMembers.orgId, orgId),
-          columns: { userId: true },
-        });
-        const orgMemberIds = orgMembers.map((m) => m.userId);
-
-        const salesPeople =
-          orgMemberIds.length > 0
-            ? await this.db.query.users.findMany({
-                where: and(
-                  inArray(users.id, orgMemberIds),
-                  eq(users.isActive, true),
-                  eq(users.hasDashboardAccess, true),
-                  inArray(users.role, ["SALES"]),
-                ),
-                columns: { id: true, name: true },
-              })
-            : [];
+        const salesPeople = await this.db
+          .select({ id: users.id, name: users.name })
+          .from(users)
+          .innerJoin(
+            organizationMembers,
+            eq(organizationMembers.userId, users.id),
+          )
+          .where(
+            and(
+              eq(organizationMembers.orgId, orgId),
+              eq(users.isActive, true),
+              eq(users.hasDashboardAccess, true),
+              inArray(organizationMembers.role, ["SALES"]),
+            ),
+          );
 
         if (salesPeople.length > 0) {
           salesPeopleCount = salesPeople.length;
@@ -362,13 +430,20 @@ export class LeadsOpsService {
             if (leadIds.length === 0) continue;
             await this.db
               .update(leads)
-              .set({ assignedToId: salesPersonId, assignedById: userId, assignedAt: now, updatedAt: now })
+              .set({
+                assignedToId: salesPersonId,
+                assignedById: userId,
+                assignedAt: now,
+                updatedAt: now,
+              })
               .where(and(inArray(leads.id, leadIds), eq(leads.orgId, orgId)));
             distributed += leadIds.length;
           }
         }
       } catch (distErr) {
-        logger.error("Auto-distribute failed after bulk import", { error: distErr });
+        logger.error("Auto-distribute failed after bulk import", {
+          error: distErr,
+        });
       }
     }
 
@@ -383,25 +458,31 @@ export class LeadsOpsService {
     };
   }
 
-  async distribute(orgId: string, userId: string, input: DistributeInput): Promise<DistributeResult> {
-    const orgMembers = await this.db.query.organizationMembers.findMany({
-      where: eq(organizationMembers.orgId, orgId),
-      columns: { userId: true },
-    });
-    const orgMemberIds = orgMembers.map((m) => m.userId);
-    if (orgMemberIds.length === 0) {
-      return { ok: false, reason: "no_members" };
-    }
+  async distribute(
+    orgId: string,
+    userId: string,
+    input: DistributeInput,
+  ): Promise<DistributeResult> {
+    const [firstMember] = await this.db
+      .select({ userId: organizationMembers.userId })
+      .from(organizationMembers)
+      .where(eq(organizationMembers.orgId, orgId))
+      .limit(1);
 
-    const salesPeople = await this.db.query.users.findMany({
-      where: and(
-        inArray(users.id, orgMemberIds),
-        eq(users.isActive, true),
-        eq(users.hasDashboardAccess, true),
-        inArray(users.role, ["SALES"]),
-      ),
-      columns: { id: true, name: true, email: true },
-    });
+    if (!firstMember) return { ok: false, reason: "no_members" };
+
+    const salesPeople = await this.db
+      .select({ id: users.id, name: users.name, email: users.email })
+      .from(users)
+      .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
+      .where(
+        and(
+          eq(organizationMembers.orgId, orgId),
+          eq(users.isActive, true),
+          eq(users.hasDashboardAccess, true),
+          inArray(organizationMembers.role, ["SALES"]),
+        ),
+      );
 
     if (salesPeople.length === 0) {
       return { ok: false, reason: "no_sales" };
@@ -418,11 +499,15 @@ export class LeadsOpsService {
       columns: { userId: true },
     });
     const absentUserIds = new Set(approvedLeaves.map((l) => l.userId));
-    const absentSalesPeople = salesPeople.filter((sp) => absentUserIds.has(sp.id));
+    const absentSalesPeople = salesPeople.filter((sp) =>
+      absentUserIds.has(sp.id),
+    );
 
     let availableSalesPeople = salesPeople;
     if (input.skipAbsent && absentSalesPeople.length > 0) {
-      availableSalesPeople = salesPeople.filter((sp) => !absentUserIds.has(sp.id));
+      availableSalesPeople = salesPeople.filter(
+        (sp) => !absentUserIds.has(sp.id),
+      );
       if (availableSalesPeople.length === 0) {
         return { ok: false, reason: "all_on_leave" };
       }
@@ -451,11 +536,18 @@ export class LeadsOpsService {
       const leadIds = assignedLeads.map((l) => l.id);
       await this.db
         .update(leads)
-        .set({ assignedToId: salesPersonId, assignedById: userId, assignedAt: now, updatedAt: now })
+        .set({
+          assignedToId: salesPersonId,
+          assignedById: userId,
+          assignedAt: now,
+          updatedAt: now,
+        })
         .where(and(inArray(leads.id, leadIds), eq(leads.orgId, orgId)));
     }
 
-    void this.sendDistributionEmails(userId, salesPeople, assignments).catch(() => undefined);
+    void this.sendDistributionEmails(userId, salesPeople, assignments).catch(
+      () => undefined,
+    );
 
     return {
       ok: true,
@@ -467,7 +559,8 @@ export class LeadsOpsService {
         absentNames: absentSalesPeople.map((sp) => sp.name || "Unknown"),
         summary: [...assignments.entries()].map(([id, assignedLeads]) => ({
           userId: id,
-          name: availableSalesPeople.find((sp) => sp.id === id)?.name || "Unknown",
+          name:
+            availableSalesPeople.find((sp) => sp.id === id)?.name || "Unknown",
           count: assignedLeads.length,
         })),
       },

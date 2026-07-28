@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import { Redis } from "@upstash/redis";
 import { REDIS } from "../cache/cache.service";
 
@@ -63,6 +63,7 @@ export interface RateLimitResult {
 
 @Injectable()
 export class RateLimitService {
+  private readonly logger = new Logger(RateLimitService.name);
   private readonly mem = new Map<string, number[]>();
   constructor(@Inject(REDIS) private readonly redis: Redis | null) {}
 
@@ -86,7 +87,9 @@ export class RateLimitService {
           return { allowed: false, retryAfterSecs: ttl };
         }
         return { allowed: true, retryAfterSecs: 0 };
-      } catch {}
+      } catch (err) {
+        this.logger.warn(`Redis rate-limit failed for ${tier}:${identifier}, falling back to in-memory: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
     const memKey = `${tier}:${identifier}`;
     const raw = this.mem.get(memKey);

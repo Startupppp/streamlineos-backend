@@ -59,6 +59,10 @@ export const leads = pgTable("leads", {
   index("idx_leads_source").on(table.source),
   index("idx_leads_score").on(table.score),
   index("idx_leads_deleted").on(table.deletedAt),
+  index("idx_leads_name_trgm").using("gin", table.name.op("gin_trgm_ops")),
+  index("idx_leads_email_trgm").using("gin", table.email.op("gin_trgm_ops")),
+  index("idx_leads_phone_trgm").using("gin", table.phone.op("gin_trgm_ops")),
+  index("idx_leads_company_trgm").using("gin", table.company.op("gin_trgm_ops")),
   unique("uniq_leads_org_id").on(table.orgId, table.id),
 ]);
 

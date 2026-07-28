@@ -1,6 +1,6 @@
-import { randomUUID } from "node:crypto";
-import { BadRequestException, ConflictException, Inject, Injectable } from "@nestjs/common";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { createHash, randomUUID } from "node:crypto";
+import { BadRequestException, ConflictException, Inject, Injectable, UnprocessableEntityException } from "@nestjs/common";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   invStockLevels, invStockTransactions, invValuationLayers,
   invIdempotencyKeys, invProductVariants, invProducts,
@@ -50,6 +50,36 @@ export function addDec(a: string, b: string): string { return formatScaled(parse
 export function mulDec(a: string, b: string): string { return formatScaled(divRoundHalfUp(parseScaled(a) * parseScaled(b), 10000n)); }
 export function divDec(a: string, b: string): string { const bs = parseScaled(b); if (bs === 0n) return "0.0000"; return formatScaled(divRoundHalfUp(parseScaled(a) * 10000n, bs)); }
 
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function extractEngineResult(stored: unknown): StockEngineResult {
+  const transactionIds: number[] = [];
+  const levels: StockEngineResult["levels"] = [];
+
+  if (isPlainObject(stored)) {
+    if (Array.isArray(stored.transactionIds)) {
+      for (const id of stored.transactionIds) {
+        if (typeof id === "number") transactionIds.push(id);
+      }
+    }
+    if (Array.isArray(stored.levels)) {
+      for (const l of stored.levels) {
+        if (isPlainObject(l)) {
+          levels.push({
+            productVariantId: Number(l.productVariantId),
+            locationId: Number(l.locationId),
+            onHand: String(l.onHand ?? "0"),
+          });
+        }
+      }
+    }
+  }
+
+  return { transactionIds, levels };
+}
+
 @Injectable()
 export class StockEngineService {
   constructor(
@@ -60,7 +90,11 @@ export class StockEngineService {
   ) {}
 
   async executeInTx(tx: Tx, orgId: string, userId: string, cmd: StockEngineCommand): Promise<StockEngineResult> {
-    await this.claimIdempotencyKey(tx, orgId, cmd.idempotencyKey);
+    const requestHash = createHash("sha256").update(JSON.stringify(cmd)).digest("hex");
+    const claim = await this.claimIdempotencyKey(tx, orgId, cmd.idempotencyKey, requestHash);
+    if (claim.kind === "replay") {
+      return extractEngineResult(claim.stored);
+    }
     const settings = await this.settingsService.get(orgId);
     const txnIds: number[] = [];
     const levels: StockEngineResult["levels"] = [];
@@ -220,6 +254,277 @@ export class StockEngineService {
     return result;
   }
 
+  async executeMany(orgId: string, userId: string, commands: StockEngineCommand[]): Promise<StockEngineResult[]> {
+    if (commands.length === 0) return [];
+
+    const batchResults = await this.db.transaction(async (tx) => {
+      const requestHashes = commands.map(cmd =>
+        createHash("sha256").update(JSON.stringify(cmd)).digest("hex")
+      );
+
+      const claims: Array<{ kind: "proceed" } | { kind: "replay"; stored: unknown }> = [];
+      for (let i = 0; i < commands.length; i++) {
+        claims.push(await this.claimIdempotencyKey(tx, orgId, commands[i]!.idempotencyKey, requestHashes[i]!));
+      }
+
+      const settings = await this.settingsService.get(orgId);
+
+      type LevelKey = { productVariantId: number; locationId: number; lotId: number | null; serialId: number | null };
+      const uniqueLevelKeys = new Map<string, LevelKey>();
+
+      for (let i = 0; i < commands.length; i++) {
+        if (claims[i]!.kind === "replay") continue;
+        for (const m of commands[i]!.movements) {
+          const k = `${m.productVariantId}:${m.locationId}:${m.lotId ?? null}:${m.serialId ?? null}`;
+          if (!uniqueLevelKeys.has(k)) {
+            uniqueLevelKeys.set(k, {
+              productVariantId: m.productVariantId,
+              locationId: m.locationId,
+              lotId: m.lotId ?? null,
+              serialId: m.serialId ?? null,
+            });
+          }
+        }
+      }
+
+      for (const lk of uniqueLevelKeys.values()) {
+        await tx.insert(invStockLevels).values({
+          orgId,
+          productVariantId: lk.productVariantId,
+          locationId: lk.locationId,
+          lotId: lk.lotId,
+          serialId: lk.serialId,
+          onHand: "0",
+          committed: "0",
+          onOrder: "0",
+          blockedQty: "0",
+          qualityHoldQty: "0",
+          outgoingQty: "0",
+        }).onConflictDoNothing();
+      }
+
+      type LockedRow = {
+        id: number;
+        product_variant_id: number;
+        location_id: number;
+        lot_id: number | null;
+        serial_id: number | null;
+        on_hand: string;
+        committed: string;
+        blocked_qty: string;
+        quality_hold_qty: string;
+        average_cost: string | null;
+      };
+
+      let lockedRows: LockedRow[] = [];
+
+      if (uniqueLevelKeys.size > 0) {
+        const keyList = Array.from(uniqueLevelKeys.values());
+        const orParts = keyList.map(lk =>
+          sql`(product_variant_id = ${lk.productVariantId} AND location_id = ${lk.locationId} AND (lot_id IS NOT DISTINCT FROM ${lk.lotId}) AND (serial_id IS NOT DISTINCT FROM ${lk.serialId}))`
+        );
+        const whereOr = sql.join(orParts, sql` OR `);
+
+        lockedRows = await tx.execute<LockedRow>(sql`
+          SELECT id, product_variant_id, location_id, lot_id, serial_id,
+                 on_hand, committed, blocked_qty, quality_hold_qty, average_cost
+          FROM inv_stock_levels
+          WHERE org_id = ${orgId}
+            AND (${whereOr})
+          ORDER BY id
+          FOR UPDATE
+        `);
+      }
+
+      type LevelState = {
+        id: number;
+        onHand: string;
+        committed: string;
+        blockedQty: string;
+        qualityHoldQty: string;
+        averageCost: string | null;
+      };
+
+      const levelMap = new Map<string, LevelState>();
+      for (const row of lockedRows) {
+        const k = `${row.product_variant_id}:${row.location_id}:${row.lot_id ?? null}:${row.serial_id ?? null}`;
+        levelMap.set(k, {
+          id: row.id,
+          onHand: row.on_hand,
+          committed: row.committed,
+          blockedQty: row.blocked_qty,
+          qualityHoldQty: row.quality_hold_qty,
+          averageCost: row.average_cost,
+        });
+      }
+
+      const results: StockEngineResult[] = [];
+
+      for (let i = 0; i < commands.length; i++) {
+        const claim = claims[i]!;
+        const cmd = commands[i]!;
+
+        if (claim.kind === "replay") {
+          results.push(extractEngineResult(claim.stored));
+          continue;
+        }
+
+        const txnIds: number[] = [];
+        const cmdLevels: StockEngineResult["levels"] = [];
+        const decreasedVariantIds = new Set<number>();
+
+        for (const movement of cmd.movements) {
+          const levelKey = `${movement.productVariantId}:${movement.locationId}:${movement.lotId ?? null}:${movement.serialId ?? null}`;
+          const state = levelMap.get(levelKey);
+          if (!state) throw new BadRequestException({ code: INV_ERRORS.LOCATION_NOT_FOUND });
+
+          const bucket = movement.qualityBucket ?? "ON_HAND";
+          const delta = movement.quantityDelta;
+          const isPositive = parseFloat(delta) > 0;
+
+          const newOnHand = bucket === "ON_HAND" ? addDec(state.onHand, delta) : state.onHand;
+          const newBlocked = bucket === "BLOCKED" ? addDec(state.blockedQty, delta) : state.blockedQty;
+          const newQualityHold = bucket === "QUALITY_HOLD" ? addDec(state.qualityHoldQty, delta) : state.qualityHoldQty;
+
+          if (!settings.allowNegativeStock && parseFloat(newOnHand) < 0) {
+            throw new BadRequestException({ code: INV_ERRORS.INSUFFICIENT_STOCK });
+          }
+
+          const unitCost = movement.unitCost ?? null;
+          const totalCost = unitCost && isPositive ? mulDec(unitCost, delta) : null;
+
+          const [txnRow] = await tx.insert(invStockTransactions).values({
+            orgId,
+            productVariantId: movement.productVariantId,
+            locationId: movement.locationId,
+            lotId: movement.lotId ?? null,
+            serialId: movement.serialId ?? null,
+            transactionType: movement.transactionType as typeof invStockTransactions.$inferInsert["transactionType"],
+            quantityChange: delta,
+            quantityBefore: state.onHand,
+            quantityAfter: newOnHand,
+            unitCost,
+            totalCost,
+            idempotencyKey: cmd.idempotencyKey,
+            reason: cmd.reason ?? null,
+            referenceType: cmd.sourceType,
+            referenceId: cmd.sourceId,
+            metadata: null,
+            notes: null,
+            createdBy: userId,
+          }).returning({ id: invStockTransactions.id });
+
+          if (!txnRow) throw new Error("Failed to insert stock transaction");
+          txnIds.push(txnRow.id);
+
+          let newAvgCost = state.averageCost;
+          if (bucket === "ON_HAND" && isPositive && unitCost) {
+            newAvgCost = await this.updateWeightedAverage(
+              tx, orgId, movement.productVariantId,
+              state.onHand, state.averageCost,
+              delta, unitCost,
+            );
+            await this.recordValuationLayer(
+              tx, orgId, movement.productVariantId, txnRow.id,
+              delta, unitCost, "RECEIPT", cmd.sourceType ?? null, cmd.sourceId,
+            );
+          } else if (bucket === "ON_HAND" && !isPositive) {
+            await this.consumeValuationLayers(tx, orgId, movement.productVariantId, delta, userId);
+          }
+
+          await tx.update(invStockLevels).set({
+            onHand: newOnHand,
+            blockedQty: newBlocked,
+            qualityHoldQty: newQualityHold,
+            averageCost: newAvgCost,
+          }).where(eq(invStockLevels.id, state.id));
+
+          levelMap.set(levelKey, {
+            ...state,
+            onHand: newOnHand,
+            blockedQty: newBlocked,
+            qualityHoldQty: newQualityHold,
+            averageCost: newAvgCost,
+          });
+
+          if (!isPositive && bucket === "ON_HAND") {
+            decreasedVariantIds.add(movement.productVariantId);
+          }
+
+          cmdLevels.push({
+            productVariantId: movement.productVariantId,
+            locationId: movement.locationId,
+            onHand: newOnHand,
+          });
+        }
+
+        await this.auditService.insert(tx, {
+          orgId, actorUserId: userId, action: "stock.movement",
+          resourceType: cmd.sourceType, resourceId: cmd.sourceId,
+          after: { transactionIds: txnIds },
+        });
+
+        if (decreasedVariantIds.size > 0) {
+          const variantIds = Array.from(decreasedVariantIds);
+          const variants = await tx.select({
+            id: invProductVariants.id,
+            reorderPoint: invProducts.reorderPoint,
+          })
+            .from(invProductVariants)
+            .innerJoin(invProducts, eq(invProducts.id, invProductVariants.productId))
+            .where(inArray(invProductVariants.id, variantIds));
+
+          const onHandByVariant = new Map<number, string>();
+          for (const lvl of cmdLevels) {
+            if (decreasedVariantIds.has(lvl.productVariantId)) {
+              onHandByVariant.set(lvl.productVariantId, lvl.onHand);
+            }
+          }
+
+          for (const variant of variants) {
+            const reorderPoint = parseFloat(variant.reorderPoint ?? "0");
+            if (reorderPoint <= 0) continue;
+            const onHand = parseFloat(onHandByVariant.get(variant.id) ?? "0");
+            if (onHand <= reorderPoint) {
+              await OutboxWriter.emit(tx, {
+                eventId: randomUUID(),
+                organizationId: orgId,
+                aggregateType: "inv_product_variant",
+                aggregateId: String(variant.id),
+                aggregateVersion: Date.now(),
+                eventType: "inventory.stock.low",
+                payload: {
+                  productVariantId: variant.id,
+                  onHand: onHandByVariant.get(variant.id) ?? "0",
+                  reorderPoint: variant.reorderPoint,
+                  sourceType: cmd.sourceType,
+                  sourceId: cmd.sourceId,
+                },
+                occurredAt: new Date(),
+              });
+            }
+          }
+        }
+
+        const engineResult: StockEngineResult = { transactionIds: txnIds, levels: cmdLevels };
+        await tx.update(invIdempotencyKeys).set({
+          status: "COMPLETED",
+          response: { ...engineResult } as Record<string, unknown>,
+        }).where(and(
+          eq(invIdempotencyKeys.orgId, orgId),
+          eq(invIdempotencyKeys.idempotencyKey, cmd.idempotencyKey),
+        ));
+
+        results.push(engineResult);
+      }
+
+      return results;
+    });
+
+    void this.invalidateCaches(orgId);
+    return batchResults;
+  }
+
   async reverseInTx(tx: Tx, orgId: string, userId: string, cmd: ReverseCommand): Promise<StockEngineResult> {
     const original = await tx.query.invStockTransactions.findFirst({
       where: and(eq(invStockTransactions.orgId, orgId), eq(invStockTransactions.id, cmd.stockTransactionId)),
@@ -250,21 +555,81 @@ export class StockEngineService {
     return r;
   }
 
-  private async claimIdempotencyKey(tx: Tx, orgId: string, key: string): Promise<void> {
+  private async claimIdempotencyKey(
+    tx: Tx,
+    orgId: string,
+    key: string,
+    requestHash: string,
+  ): Promise<{ kind: "proceed" } | { kind: "replay"; stored: unknown }> {
+    const now = Date.now();
+    const expiresAt = new Date(now + 86_400_000);
+    const leaseExpiresAt = new Date(now + 15 * 60 * 1000);
     try {
       await tx.insert(invIdempotencyKeys).values({
         orgId,
         idempotencyKey: key,
+        requestHash,
         status: "IN_FLIGHT",
-        expiresAt: new Date(Date.now() + 86_400_000),
+        expiresAt,
+        leaseExpiresAt,
       });
+      return { kind: "proceed" };
     } catch {
       const existing = await tx.query.invIdempotencyKeys.findFirst({
         where: and(eq(invIdempotencyKeys.orgId, orgId), eq(invIdempotencyKeys.idempotencyKey, key)),
       });
       if (!existing) throw new Error("Idempotency insert failed unexpectedly");
-      if (existing.status === "COMPLETED") throw Object.assign(new ConflictException({ code: INV_ERRORS.DUPLICATE_IDEMPOTENCY_KEY }), { idempotentResult: existing.response });
-      throw new ConflictException({ code: INV_ERRORS.DUPLICATE_IDEMPOTENCY_KEY });
+
+      if (existing.requestHash !== null && existing.requestHash !== requestHash) {
+        throw new UnprocessableEntityException(
+          "This idempotency key was already used with a different request",
+        );
+      }
+
+      if (existing.status === "COMPLETED") {
+        return { kind: "replay", stored: existing.response };
+      }
+
+      const leaseLock = existing.leaseExpiresAt !== null
+        ? eq(invIdempotencyKeys.leaseExpiresAt, existing.leaseExpiresAt)
+        : isNull(invIdempotencyKeys.leaseExpiresAt);
+
+      if (existing.status === "IN_FLIGHT") {
+        if (existing.leaseExpiresAt !== null && existing.leaseExpiresAt > new Date()) {
+          throw new ConflictException({ code: INV_ERRORS.DUPLICATE_IDEMPOTENCY_KEY });
+        }
+        const reclaimed = await tx
+          .update(invIdempotencyKeys)
+          .set({ status: "IN_FLIGHT", requestHash, expiresAt, leaseExpiresAt })
+          .where(
+            and(
+              eq(invIdempotencyKeys.orgId, orgId),
+              eq(invIdempotencyKeys.idempotencyKey, key),
+              leaseLock,
+            ),
+          )
+          .returning({ id: invIdempotencyKeys.id });
+        if (reclaimed.length === 0) {
+          throw new ConflictException({ code: INV_ERRORS.DUPLICATE_IDEMPOTENCY_KEY });
+        }
+        return { kind: "proceed" };
+      }
+
+      const reclaimed = await tx
+        .update(invIdempotencyKeys)
+        .set({ status: "IN_FLIGHT", requestHash, expiresAt, leaseExpiresAt })
+        .where(
+          and(
+            eq(invIdempotencyKeys.orgId, orgId),
+            eq(invIdempotencyKeys.idempotencyKey, key),
+            leaseLock,
+          ),
+        )
+        .returning({ id: invIdempotencyKeys.id });
+      if (reclaimed.length === 0) {
+        throw new ConflictException({ code: INV_ERRORS.DUPLICATE_IDEMPOTENCY_KEY });
+      }
+      return { kind: "proceed" };
     }
   }
 

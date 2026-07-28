@@ -230,22 +230,22 @@ export class ProjectsTicketsQueryService {
         throw new BadRequestException("Parent ticket must belong to the same project.");
       }
 
-      let current: { id: number; parentTicketId: number | null } | undefined = {
-        id: parentRow[0].id,
-        parentTicketId: parentRow[0].parentTicketId,
-      };
-      let hops = 0;
-      while (current?.parentTicketId != null && hops < 100) {
-        if (selectedSet.has(current.parentTicketId)) {
-          throw new BadRequestException("Cannot set parent: this would create a cycle.");
-        }
-        const ancestor = await this.db
-          .select({ id: tickets.id, parentTicketId: tickets.parentTicketId })
-          .from(tickets)
-          .where(and(eq(tickets.id, current.parentTicketId), eq(tickets.orgId, u.orgId)))
-          .limit(1);
-        current = ancestor[0];
-        hops++;
+      const ancestorCheck = await this.db.execute(sql`
+        WITH RECURSIVE ancestors AS (
+          SELECT id, parent_ticket_id
+          FROM tickets
+          WHERE id = ${parentRow[0].id} AND org_id = ${u.orgId}
+          UNION ALL
+          SELECT t.id, t.parent_ticket_id
+          FROM tickets t
+          INNER JOIN ancestors a ON t.id = a.parent_ticket_id
+          WHERE t.org_id = ${u.orgId}
+        )
+        SELECT count(*)::text AS count FROM ancestors
+        WHERE id IN (${sql.join(body.ticketIds.map((id) => sql`${id}`), sql`, `)})
+      `);
+      if (Number(ancestorCheck[0]?.["count"] ?? "0") > 0) {
+        throw new BadRequestException("Cannot set parent: this would create a cycle.");
       }
     }
 

@@ -8,9 +8,9 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { AutomationEmailService } from "../automation/automation-email.service";
 import { HR_WORKFLOW_STARTER, type HrWorkflowStarterPort } from "./hr-workflow-starter.port";
 import type { HrAutomationAction, HrActionResult } from "../../db/schema/hr/automation-engine";
+import { assertSafeWebhookUrl } from "../../common/security/ssrf-guard";
 
 const WEBHOOK_TIMEOUT_MS = 10_000;
-const PRIVATE_IP_PATTERN = /^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|127\.|::1|localhost)/i;
 
 @Injectable()
 export class HrAutomationActionsService {
@@ -122,12 +122,9 @@ export class HrAutomationActionsService {
     secret: string | null,
   ): Promise<HrActionResult> {
     try {
-      const parsed = new URL(url);
-      if (PRIVATE_IP_PATTERN.test(parsed.hostname)) {
-        return { type: "call_webhook", ok: false, error: "SSRF: private/internal URLs are blocked" };
-      }
-    } catch {
-      return { type: "call_webhook", ok: false, error: "Invalid URL" };
+      assertSafeWebhookUrl(url);
+    } catch (err) {
+      return { type: "call_webhook", ok: false, error: err instanceof Error ? err.message : "Invalid URL" };
     }
 
     const body = JSON.stringify({ orgId, payload, timestamp: new Date().toISOString() });

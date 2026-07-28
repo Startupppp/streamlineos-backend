@@ -17,4 +17,3 @@ export const modulesCatalog = pgTable(
   ],
 );
 
-export type ModuleCatalogEntry = typeof modulesCatalog.$inferSelect;

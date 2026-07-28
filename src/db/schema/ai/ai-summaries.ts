@@ -41,4 +41,3 @@ export const aiSummarySnapshots = pgTable(
 );
 
 export type AiSummarySnapshot = typeof aiSummarySnapshots.$inferSelect;
-export type NewAiSummarySnapshot = typeof aiSummarySnapshots.$inferInsert;

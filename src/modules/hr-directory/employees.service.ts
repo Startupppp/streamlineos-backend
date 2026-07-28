@@ -88,7 +88,7 @@ export class EmployeesService {
     if (isActive === "true") baseConditions.push(eq(users.isActive, true));
     else if (isActive === "false") baseConditions.push(eq(users.isActive, false));
     if (departmentId != null) baseConditions.push(eq(users.orgDepartmentId, departmentId));
-    if (role) baseConditions.push(eq(users.role, role));
+    if (role) baseConditions.push(eq(organizationMembers.role, role));
 
     const branchCond = branchIdFilter(users.branchId, branch);
     if (branchCond) baseConditions.push(branchCond);
@@ -114,7 +114,7 @@ export class EmployeesService {
           firstName: users.firstName,
           lastName: users.lastName,
           email: users.email,
-          role: users.role,
+          role: organizationMembers.role,
           designation: users.designation,
           employeeId: users.employeeId,
           orgDepartmentId: orgUnits.id,

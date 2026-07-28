@@ -200,7 +200,7 @@ export class UsersService {
         firstName: users.firstName,
         lastName: users.lastName,
         image: users.image,
-        role: users.role,
+        role: organizationMembers.role,
         departmentId: users.departmentId,
         designation: users.designation,
         phone: users.phone,

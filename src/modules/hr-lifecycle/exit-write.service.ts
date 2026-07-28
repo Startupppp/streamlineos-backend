@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import { and, eq, inArray } from "drizzle-orm";
@@ -42,6 +43,7 @@ export interface ExitActor {
 
 @Injectable()
 export class ExitWriteService {
+  private readonly logger = new Logger(ExitWriteService.name);
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly email: EmailService,
@@ -379,7 +381,9 @@ export class ExitWriteService {
               noticePeriodDays,
               input.reason,
             );
-          } catch {}
+          } catch (err) {
+            this.logger.warn(`Resignation notification email failed for admin ${admin.email}: ${err instanceof Error ? err.message : String(err)}`);
+          }
         }
       }
 

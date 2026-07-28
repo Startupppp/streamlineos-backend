@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, UnprocessableEntityException } from "@nestjs/common";
 import { createHash, randomUUID } from "crypto";
 import { and, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -34,13 +34,6 @@ export class PayrollCommandReceiptsService {
     return createHash("sha256").update(JSON.stringify(body ?? null)).digest("hex");
   }
 
-  /**
-   * Begin a command under an idempotency key.
-   * - Missing key → always fresh (caller should still set a synthetic key for locking).
-   * - Existing SUCCEEDED → return stored response (replay).
-   * - Existing IN_FLIGHT → concurrent retry.
-   * - Existing FAILED → allow a new attempt only when requestHash matches? We re-open as fresh by updating.
-   */
   async begin(params: {
     orgId: string;
     command: PayrollCommandName;
@@ -58,17 +51,30 @@ export class PayrollCommandReceiptsService {
       ),
     });
 
+    const receiptExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
     if (existing) {
       if (existing.status === "SUCCEEDED") {
         return { kind: "replay", response: existing.response ?? { ok: true } };
       }
+
+      if (
+        existing.requestHash !== null &&
+        params.requestHash !== null &&
+        params.requestHash !== undefined &&
+        existing.requestHash !== params.requestHash
+      ) {
+        throw new UnprocessableEntityException(
+          "This idempotency key was already used with a different request body",
+        );
+      }
+
       if (existing.status === "IN_FLIGHT") {
-        // Stale inflight (>15m) can be reclaimed
         const ageMs = Date.now() - new Date(existing.startedAt).getTime();
         if (ageMs < 15 * 60 * 1000) {
           return { kind: "inflight" };
         }
-        await this.db
+        const reclaimed = await this.db
           .update(payrollCommandReceipts)
           .set({
             status: "IN_FLIGHT",
@@ -80,12 +86,20 @@ export class PayrollCommandReceiptsService {
             errorMessage: null,
             response: null,
             runId: params.runId ?? existing.runId,
+            expiresAt: receiptExpiresAt,
           })
-          .where(eq(payrollCommandReceipts.id, existing.id));
+          .where(
+            and(
+              eq(payrollCommandReceipts.id, existing.id),
+              eq(payrollCommandReceipts.startedAt, existing.startedAt),
+            ),
+          )
+          .returning({ id: payrollCommandReceipts.id });
+        if (reclaimed.length === 0) return { kind: "inflight" };
         return { kind: "fresh", receiptId: existing.id, correlationId };
       }
-      // FAILED → retry same key
-      await this.db
+
+      const reclaimed = await this.db
         .update(payrollCommandReceipts)
         .set({
           status: "IN_FLIGHT",
@@ -97,8 +111,16 @@ export class PayrollCommandReceiptsService {
           errorMessage: null,
           response: null,
           runId: params.runId ?? existing.runId,
+          expiresAt: receiptExpiresAt,
         })
-        .where(eq(payrollCommandReceipts.id, existing.id));
+        .where(
+          and(
+            eq(payrollCommandReceipts.id, existing.id),
+            eq(payrollCommandReceipts.startedAt, existing.startedAt),
+          ),
+        )
+        .returning({ id: payrollCommandReceipts.id });
+      if (reclaimed.length === 0) return { kind: "inflight" };
       return { kind: "fresh", receiptId: existing.id, correlationId };
     }
 
@@ -114,11 +136,11 @@ export class PayrollCommandReceiptsService {
           requestHash: params.requestHash ?? null,
           correlationId,
           actorId: params.actorId,
+          expiresAt: receiptExpiresAt,
         })
         .returning({ id: payrollCommandReceipts.id });
       return { kind: "fresh", receiptId: row!.id, correlationId };
     } catch {
-      // Unique race — re-read
       const raced = await this.db.query.payrollCommandReceipts.findFirst({
         where: and(
           eq(payrollCommandReceipts.orgId, params.orgId),

@@ -273,7 +273,7 @@ export class HrCasesService {
       .from(hrCaseNotes)
       .where(and(...conditions))
       .orderBy(desc(hrCaseNotes.createdAt))
-      .limit(200);
+      .limit(100);
   }
 
   async addNote(
@@ -328,7 +328,7 @@ export class HrCasesService {
       .from(hrCaseDocuments)
       .where(and(...conditions))
       .orderBy(desc(hrCaseDocuments.createdAt))
-      .limit(200);
+      .limit(100);
   }
 
   async addDocument(

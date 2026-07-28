@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
-import { OrganizationService } from "./organization.service";
+import { OrgMembershipService } from "./org-membership.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { SessionsService } from "../sessions/sessions.service";
@@ -10,8 +10,8 @@ const ORG_ID = "org-1";
 const ACTOR_ID = "actor-1";
 const MEMBER_ID = "member-1";
 
-describe("OrganizationService member status guards", () => {
-  let svc: OrganizationService;
+describe("OrgMembershipService member status guards", () => {
+  let svc: OrgMembershipService;
   const findFirst = jest.fn();
   const revokeAllForUser = jest.fn().mockResolvedValue({ revokedCount: 0 });
 
@@ -20,14 +20,14 @@ describe("OrganizationService member status guards", () => {
     revokeAllForUser.mockClear();
     const moduleRef = await Test.createTestingModule({
       providers: [
-        OrganizationService,
+        OrgMembershipService,
         { provide: DRIZZLE, useValue: { query: { organizationMembers: { findFirst } } } },
         { provide: AuditService, useValue: { log: jest.fn() } },
         { provide: CacheService, useValue: { invalidate: jest.fn() } },
         { provide: SessionsService, useValue: { revokeAllForUser } },
       ],
     }).compile();
-    svc = moduleRef.get(OrganizationService);
+    svc = moduleRef.get(OrgMembershipService);
   });
 
   describe("suspendMember", () => {

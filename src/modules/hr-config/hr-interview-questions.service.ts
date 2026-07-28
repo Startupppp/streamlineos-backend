@@ -27,7 +27,7 @@ export class HrInterviewQuestionsService {
     return this.db.query.interviewQuestions.findMany({
       where: and(...conditions),
       orderBy: [desc(interviewQuestions.createdAt)],
-      limit: 200,
+      limit: 100,
     });
   }
 

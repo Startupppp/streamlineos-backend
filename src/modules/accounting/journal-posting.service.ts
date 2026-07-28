@@ -265,6 +265,7 @@ export class JournalPostingService {
             throw new Error(`Account code ${line.accountCode} missing from map`);
           }
           return {
+            orgId: draft.orgId,
             entryId: entry.id,
             accountId,
             debit: line.debit.toFixed(4),

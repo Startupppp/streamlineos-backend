@@ -126,7 +126,7 @@ export class InvStockService {
 
     // [B1-09] stockRow, incomingRow, outgoingRow are fully independent — run in parallel.
     // [B1-23] No typed generic on db.execute; fields read via String()/Number() converters below.
-    const [stockRows, incomingRows, outgoingRows] = await Promise.all([
+    const [stockRows, incomingRows, outgoingRows, warehouseBreakdown] = await Promise.all([
       this.db.execute(sql`
         SELECT
           COALESCE(SUM(on_hand::numeric), 0)::text AS on_hand,
@@ -155,6 +155,20 @@ export class InvStockService {
           AND so.status IN ('CONFIRMED', 'SHIPPED')
           ${warehouseId ? sql`AND so.warehouse_id = ${warehouseId}` : sql``}
       `),
+      this.db.execute(sql`
+        SELECT
+          w.id AS warehouse_id,
+          w.name AS warehouse_name,
+          COALESCE(SUM(sl.on_hand::numeric), 0)::text AS on_hand,
+          COALESCE(SUM(sl.committed::numeric), 0)::text AS committed,
+          COALESCE(SUM(sl.on_hand::numeric - sl.committed::numeric - COALESCE(sl.blocked_qty, 0)::numeric - COALESCE(sl.quality_hold_qty, 0)::numeric), 0)::text AS available
+        FROM inv_stock_levels sl
+        JOIN inv_locations loc ON loc.id = sl.location_id
+        JOIN inv_warehouses w ON w.id = loc.warehouse_id
+        WHERE sl.org_id = ${orgId} AND sl.product_variant_id = ${variantId}
+        ${warehouseId ? sql`AND w.id = ${warehouseId}` : sql``}
+        GROUP BY w.id, w.name
+      `),
     ]);
 
     const stockRow = stockRows[0];
@@ -170,24 +184,6 @@ export class InvStockService {
 
     const available = onHand - committed - blocked - qualityHold;
     const forecasted = onHand + incoming - outgoing;
-
-    // warehouseBreakdown depends only on orgId/variantId/warehouseId (same as stockRow query inputs),
-    // so it is also independent of the three parallel queries above and can start immediately after.
-    // [B1-23] No typed generic on db.execute; fields read via String()/Number() converters below.
-    const warehouseBreakdown = await this.db.execute(sql`
-      SELECT
-        w.id AS warehouse_id,
-        w.name AS warehouse_name,
-        COALESCE(SUM(sl.on_hand::numeric), 0)::text AS on_hand,
-        COALESCE(SUM(sl.committed::numeric), 0)::text AS committed,
-        COALESCE(SUM(sl.on_hand::numeric - sl.committed::numeric - COALESCE(sl.blocked_qty, 0)::numeric - COALESCE(sl.quality_hold_qty, 0)::numeric), 0)::text AS available
-      FROM inv_stock_levels sl
-      JOIN inv_locations loc ON loc.id = sl.location_id
-      JOIN inv_warehouses w ON w.id = loc.warehouse_id
-      WHERE sl.org_id = ${orgId} AND sl.product_variant_id = ${variantId}
-      ${warehouseId ? sql`AND w.id = ${warehouseId}` : sql``}
-      GROUP BY w.id, w.name
-    `);
 
     return {
       variantId,

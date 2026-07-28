@@ -3,6 +3,7 @@ import {
   ConflictException,
   Inject,
   Injectable,
+  InternalServerErrorException,
   Logger,
   NotFoundException,
   Optional,
@@ -31,6 +32,10 @@ import {
   checkRunCompletion,
   refreshBatchPaidStatus,
 } from "./lib/payout-run-completion";
+
+function isDuplicateKeyError(err: unknown): boolean {
+  return typeof err === "object" && err !== null && "code" in err && err.code === "23505";
+}
 
 @Injectable()
 export class PayoutBatchesService {
@@ -198,57 +203,83 @@ export class PayoutBatchesService {
       const totalAmount = itemsData.reduce((s, i) => s + parseFloat(i.amount), 0).toFixed(2);
       const now = new Date();
 
-      const [newBatch] = await this.db.transaction(async (tx) => {
-        const [batch] = await tx
-          .insert(payrollBankBatches)
-          .values({
+      let newBatch: typeof payrollBankBatches.$inferSelect | undefined;
+      try {
+        const [created] = await this.db.transaction(async (tx) => {
+          const [batch] = await tx
+            .insert(payrollBankBatches)
+            .values({
+              orgId,
+              runId,
+              batchNumber,
+              status: "GENERATED",
+              format: groupFormat,
+              totalAmount,
+              itemCount: itemsData.length,
+              idempotencyKey: subKey ?? null,
+              fileKey: uploadResult.key ?? null,
+              generatedBy: userId,
+              generatedAt: now,
+            })
+            .returning();
+
+          if (!batch) throw new BadRequestException("Failed to create batch");
+
+          await tx.insert(payrollBankBatchItems).values(
+            itemsData.map(item => ({
+              orgId,
+              batchId: batch.id,
+              runEmployeeId: item.runEmployeeId,
+              userId: item.userId,
+              amount: item.amount,
+              accountMasked: item.accountMasked,
+              ifsc: item.ifsc,
+              status: "PENDING" as const,
+            })),
+          );
+
+          await tx.insert(payrollRunEvents).values({
             orgId,
             runId,
-            batchNumber,
-            status: "GENERATED",
-            format: groupFormat,
-            totalAmount,
-            itemCount: itemsData.length,
-            idempotencyKey: subKey ?? null,
-            fileKey: uploadResult.key ?? null,
-            generatedBy: userId,
-            generatedAt: now,
-          })
-          .returning();
+            type: "BANK_BATCH_GENERATED",
+            actorId: userId,
+            metadata: {
+              batchId: batch.id,
+              batchNumber,
+              itemCount: itemsData.length,
+              totalAmount,
+              format: groupFormat,
+              currencyCode,
+              fileKey: uploadResult.key ?? null,
+            },
+          });
 
-        if (!batch) throw new BadRequestException("Failed to create batch");
-
-        await tx.insert(payrollBankBatchItems).values(
-          itemsData.map(item => ({
-            orgId,
-            batchId: batch.id,
-            runEmployeeId: item.runEmployeeId,
-            userId: item.userId,
-            amount: item.amount,
-            accountMasked: item.accountMasked,
-            ifsc: item.ifsc,
-            status: "PENDING" as const,
-          })),
-        );
-
-        await tx.insert(payrollRunEvents).values({
-          orgId,
-          runId,
-          type: "BANK_BATCH_GENERATED",
-          actorId: userId,
-          metadata: {
-            batchId: batch.id,
-            batchNumber,
-            itemCount: itemsData.length,
-            totalAmount,
-            format: groupFormat,
-            currencyCode,
-            fileKey: uploadResult.key ?? null,
-          },
+          return [batch];
         });
+        newBatch = created;
+      } catch (err: unknown) {
+        if (subKey && isDuplicateKeyError(err)) {
+          const racedBatch = await this.db.query.payrollBankBatches.findFirst({
+            where: and(
+              eq(payrollBankBatches.orgId, orgId),
+              eq(payrollBankBatches.idempotencyKey, subKey),
+            ),
+          });
+          if (racedBatch) {
+            const racedItems = await this.db.query.payrollBankBatchItems.findMany({
+              where: eq(payrollBankBatchItems.batchId, racedBatch.id),
+            });
+            results.push({ batch: racedBatch, items: racedItems, fileUrl: null, currencyCode, replayed: true });
+            groupIdx++;
+            continue;
+          }
+        }
+        throw err;
+      }
 
-        return [batch];
-      });
+      if (!newBatch) {
+        throw new InternalServerErrorException("Batch creation returned no row");
+      }
 
       this.audit.log({
         action: "payroll.bank_batch_generated",

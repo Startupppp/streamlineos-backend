@@ -1,11 +1,19 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import { orgUnits, users, type OrgUnitMetadata } from "../../db/schema";
+import {
+  orgUnits,
+  organizationMembers,
+  users,
+  type OrgUnitMetadata,
+} from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
-import type { CreateBranchInput, UpdateBranchInput } from "./dto/branches.schemas";
+import type {
+  CreateBranchInput,
+  UpdateBranchInput,
+} from "./dto/branches.schemas";
 
 type BranchMeta = OrgUnitMetadata & { hrContactUserId?: string };
 
@@ -66,7 +74,9 @@ export class BranchesService {
             createdAt: r.createdAt,
             updatedAt: r.updatedAt,
             branchManager: r.head ?? null,
-            branchHr: meta.hrContactUserId ? (hrMap.get(meta.hrContactUserId) ?? null) : null,
+            branchHr: meta.hrContactUserId
+              ? (hrMap.get(meta.hrContactUserId) ?? null)
+              : null,
           };
         });
       },
@@ -92,7 +102,12 @@ export class BranchesService {
 
     const hrUser = meta.hrContactUserId
       ? await this.db
-          .select({ id: users.id, name: users.name, image: users.image, email: users.email })
+          .select({
+            id: users.id,
+            name: users.name,
+            image: users.image,
+            email: users.email,
+          })
           .from(users)
           .where(eq(users.id, meta.hrContactUserId))
           .limit(1)
@@ -100,8 +115,21 @@ export class BranchesService {
       : null;
 
     const employees = await this.db
-      .select({ id: users.id, name: users.name, image: users.image, role: users.role, isActive: users.isActive })
+      .select({
+        id: users.id,
+        name: users.name,
+        image: users.image,
+        role: organizationMembers.role,
+        isActive: users.isActive,
+      })
       .from(users)
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.userId, users.id),
+          eq(organizationMembers.orgId, orgId),
+        ),
+      )
       .where(eq(users.branchId, id));
 
     return {
@@ -174,7 +202,14 @@ export class BranchesService {
     const current = await this.db
       .select({ metadata: orgUnits.metadata })
       .from(orgUnits)
-      .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "BRANCH"), isNull(orgUnits.deletedAt)))
+      .where(
+        and(
+          eq(orgUnits.id, id),
+          eq(orgUnits.orgId, orgId),
+          eq(orgUnits.kind, "BRANCH"),
+          isNull(orgUnits.deletedAt),
+        ),
+      )
       .limit(1)
       .then((r) => r[0] ?? null);
     if (!current) return null;
@@ -189,7 +224,9 @@ export class BranchesService {
       ...(input.address !== undefined ? { address: input.address } : {}),
       ...(input.phone !== undefined ? { phone: input.phone } : {}),
       ...(input.email !== undefined ? { email: input.email } : {}),
-      ...(input.branchHrId !== undefined ? { hrContactUserId: input.branchHrId } : {}),
+      ...(input.branchHrId !== undefined
+        ? { hrContactUserId: input.branchHrId }
+        : {}),
     };
 
     const [updated] = await this.db
@@ -197,12 +234,23 @@ export class BranchesService {
       .set({
         ...(input.name !== undefined ? { name: input.name } : {}),
         ...(input.code !== undefined ? { code: input.code.toUpperCase() } : {}),
-        ...(input.branchManagerId !== undefined ? { headUserId: input.branchManagerId } : {}),
-        ...(input.status !== undefined ? { status: input.status === "ACTIVE" ? "ACTIVE" : "DISABLED" } : {}),
+        ...(input.branchManagerId !== undefined
+          ? { headUserId: input.branchManagerId }
+          : {}),
+        ...(input.status !== undefined
+          ? { status: input.status === "ACTIVE" ? "ACTIVE" : "DISABLED" }
+          : {}),
         metadata: patchedMeta,
         updatedAt: new Date(),
       })
-      .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "BRANCH"), isNull(orgUnits.deletedAt)))
+      .where(
+        and(
+          eq(orgUnits.id, id),
+          eq(orgUnits.orgId, orgId),
+          eq(orgUnits.kind, "BRANCH"),
+          isNull(orgUnits.deletedAt),
+        ),
+      )
       .returning();
     if (!updated) return null;
 
@@ -214,7 +262,14 @@ export class BranchesService {
     const [deleted] = await this.db
       .update(orgUnits)
       .set({ deletedAt: new Date() })
-      .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "BRANCH"), isNull(orgUnits.deletedAt)))
+      .where(
+        and(
+          eq(orgUnits.id, id),
+          eq(orgUnits.orgId, orgId),
+          eq(orgUnits.kind, "BRANCH"),
+          isNull(orgUnits.deletedAt),
+        ),
+      )
       .returning({ id: orgUnits.id });
     if (!deleted) return null;
     await this.cache.invalidate(CACHE_KEYS.branchesList(orgId));

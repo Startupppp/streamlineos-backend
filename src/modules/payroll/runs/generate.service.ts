@@ -1,10 +1,11 @@
 import { Injectable, Inject, Logger, ConflictException } from "@nestjs/common";
-import { and, eq, inArray, count, desc, lt, lte, or, isNotNull } from "drizzle-orm";
+import { and, eq, inArray, sql, count, desc, lt, lte, or, isNotNull } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
   payrollRuns,
   payrollExceptions,
+  payrollLineItems,
   payrollRunEvents,
   payrollPolicies,
   payrollPolicyVersions,
@@ -107,11 +108,16 @@ export class GenerateService {
       await this.clearRunAllocations(orgId, runId);
     }
 
-    const [batch, prevSnapshotByUser, existingEmpIdByUser] = await Promise.all([
+    const [batch, prevSnapshotByUser] = await Promise.all([
       this.pipeline.loadRunBatchData(orgId, runId, run.month, toggles, profiles, lockedPeriodId),
       this.loadPreviousSnapshots(orgId, eligibleUserIds, run.month),
-      this.loadExistingRunEmployeeIds(orgId, runId),
     ]);
+
+    type EmployeeCalcResult = {
+      profile: ProfileData;
+      inputs: InputsSnapshot;
+      pulls: ReturnType<GeneratePipelineService["buildCalcInputsFromBatch"]>;
+    } & ReturnType<GeneratePipelineService["runCalcAndDetect"]>;
 
     let processedCount = 0;
     let grossTotal = 0;
@@ -120,150 +126,246 @@ export class GenerateService {
     let netTotal = 0;
     let finalExceptionCount = 0;
 
+    const calcResults: EmployeeCalcResult[] = [];
+
+    for (const profile of profiles) {
+      const components = batch.componentsByProfileId.get(profile.id) ?? [];
+      const inputs = this.pipeline.buildInputsFromBatch(profile.userId, run.month, toggles, batch);
+      const pulls = this.pipeline.buildCalcInputsFromBatch(profile.userId, toggles, batch);
+
+      const hasAttendanceInput =
+        inputs.source === "ATTENDANCE" ||
+        inputs.source === "UPLOAD" ||
+        inputs.source === "LEAVE" ||
+        inputs.source === "TIMESHEET";
+      const fromLockedSnapshot =
+        inputs.overrideReason === "Locked payroll input period snapshot" ||
+        (inputs.source === "UPLOAD" && Boolean(inputs.overrideReason));
+      const prevSnap = prevSnapshotByUser.get(profile.userId) ?? null;
+
+      const lockedBaselinePull = periodLocked
+        ? buildPulledInputsFromSections(
+            profile.userId,
+            run.month,
+            batch.lockedSectionsByUser.get(profile.userId),
+          )
+        : null;
+
+      const { snapshot, exceptions } = this.pipeline.runCalcAndDetect(
+        profile,
+        components,
+        inputs,
+        pulls,
+        toggles,
+        config,
+        policyVersionId,
+        run.month,
+        prevSnap,
+        hasAttendanceInput,
+        {
+          isSalaryOnHold: heldUserIds.has(profile.userId),
+          duplicateBankAccountUserIds,
+          missingLockedInputPeriod:
+            Boolean(toggles.requireLockedPayrollInputs) && !periodLocked,
+          inputNotFromLockedSnapshot:
+            Boolean(toggles.requireLockedPayrollInputs) &&
+            periodLocked &&
+            !fromLockedSnapshot,
+          missingPfUan: statutoryFlags.get(profile.userId)?.missingPfUan ?? false,
+          missingEsiIp: statutoryFlags.get(profile.userId)?.missingEsiIp ?? false,
+          lockedInputBaseline: lockedBaselinePull
+            ? {
+                paidDays: lockedBaselinePull.paidDays,
+                lopDays: lockedBaselinePull.lopDays,
+              }
+            : null,
+        },
+      );
+
+      const inputsWithConsumed: InputsSnapshot = {
+        ...inputs,
+        consumedReimbursementIds: pulls.consumedReimbursementIds ?? [],
+      };
+
+      calcResults.push({ profile, inputs: inputsWithConsumed, pulls, snapshot, exceptions });
+      grossTotal += parseFloat(snapshot.totals.gross);
+      deductionTotal += parseFloat(snapshot.totals.deductions);
+      employerCostTotal += parseFloat(snapshot.totals.employerContributions);
+      netTotal += parseFloat(snapshot.totals.net);
+      processedCount++;
+    }
+
     await this.db.transaction(async (tx) => {
-      for (const profile of profiles) {
-        const components = batch.componentsByProfileId.get(profile.id) ?? [];
-        const inputs = this.pipeline.buildInputsFromBatch(profile.userId, run.month, toggles, batch);
-        const pulls = this.pipeline.buildCalcInputsFromBatch(profile.userId, toggles, batch);
+      const empIdByUser = new Map<string, number>();
 
-        const hasAttendanceInput =
-          inputs.source === "ATTENDANCE" ||
-          inputs.source === "UPLOAD" ||
-          inputs.source === "LEAVE" ||
-          inputs.source === "TIMESHEET";
-        const fromLockedSnapshot =
-          inputs.overrideReason === "Locked payroll input period snapshot" ||
-          (inputs.source === "UPLOAD" && Boolean(inputs.overrideReason));
-        const prevSnap = prevSnapshotByUser.get(profile.userId) ?? null;
-
-        const lockedBaselinePull = periodLocked
-          ? buildPulledInputsFromSections(
-              profile.userId,
-              run.month,
-              batch.lockedSectionsByUser.get(profile.userId),
-            )
-          : null;
-
-        const { snapshot, exceptions } = this.pipeline.runCalcAndDetect(
-          profile,
-          components,
-          inputs,
-          pulls,
-          toggles,
-          config,
-          policyVersionId,
-          run.month,
-          prevSnap,
-          hasAttendanceInput,
-          {
-            isSalaryOnHold: heldUserIds.has(profile.userId),
-            duplicateBankAccountUserIds,
-            missingLockedInputPeriod:
-              Boolean(toggles.requireLockedPayrollInputs) && !periodLocked,
-            inputNotFromLockedSnapshot:
-              Boolean(toggles.requireLockedPayrollInputs) &&
-              periodLocked &&
-              !fromLockedSnapshot,
-            missingPfUan: statutoryFlags.get(profile.userId)?.missingPfUan ?? false,
-            missingEsiIp: statutoryFlags.get(profile.userId)?.missingEsiIp ?? false,
-            lockedInputBaseline: lockedBaselinePull
-              ? {
-                  paidDays: lockedBaselinePull.paidDays,
-                  lopDays: lockedBaselinePull.lopDays,
-                }
-              : null,
-          },
-        );
-
-        const inputsWithConsumed: InputsSnapshot = {
-          ...inputs,
-          consumedReimbursementIds: pulls.consumedReimbursementIds ?? [],
-        };
-
-        const empId = await this.pipeline.upsertRunEmployee(
-          tx,
+      if (calcResults.length > 0) {
+        const upsertRows = calcResults.map(({ profile, inputs, snapshot }) => ({
           orgId,
           runId,
-          profile,
-          inputsWithConsumed,
-          snapshot,
-          existingEmpIdByUser.get(profile.userId) ?? null,
-        );
-        await this.pipeline.replaceLineItems(tx, orgId, runId, empId, snapshot);
-        await this.pipeline.upsertExceptions(tx, orgId, runId, empId, profile.userId, exceptions);
+          userId: profile.userId,
+          profileId: profile.id,
+          workerType: profile.workerType,
+          currency: profile.currency,
+          payoutCurrency: profile.payoutCurrency,
+          fxRate: snapshot.fxRate ?? null,
+          netPayoutCurrency: snapshot.netPayoutCurrency ?? null,
+          scheduledDays: inputs.scheduledDays,
+          paidDays: inputs.paidDays,
+          lopDays: inputs.lopDays,
+          overtimeHours: inputs.overtimeHours,
+          gross: snapshot.totals.gross,
+          totalDeductions: snapshot.totals.deductions,
+          employerContributions: snapshot.totals.employerContributions,
+          net: snapshot.totals.net,
+          inputsSnapshot: inputs,
+          calculationSnapshot: snapshot,
+        }));
+        const upserted = await tx
+          .insert(payrollRunEmployees)
+          .values(upsertRows)
+          .onConflictDoUpdate({
+            target: [payrollRunEmployees.runId, payrollRunEmployees.userId],
+            set: {
+              profileId: sql`excluded.profile_id`,
+              workerType: sql`excluded.worker_type`,
+              currency: sql`excluded.currency`,
+              payoutCurrency: sql`excluded.payout_currency`,
+              fxRate: sql`excluded.fx_rate`,
+              netPayoutCurrency: sql`excluded.net_payout_currency`,
+              scheduledDays: sql`excluded.scheduled_days`,
+              paidDays: sql`excluded.paid_days`,
+              lopDays: sql`excluded.lop_days`,
+              overtimeHours: sql`excluded.overtime_hours`,
+              gross: sql`excluded.gross`,
+              totalDeductions: sql`excluded.total_deductions`,
+              employerContributions: sql`excluded.employer_contributions`,
+              net: sql`excluded.net`,
+              inputsSnapshot: sql`excluded.inputs_snapshot`,
+              calculationSnapshot: sql`excluded.calculation_snapshot`,
+            },
+          })
+          .returning({ id: payrollRunEmployees.id, userId: payrollRunEmployees.userId });
+        for (const row of upserted) {
+          empIdByUser.set(row.userId, row.id);
+        }
+      }
 
-        const consumedReimbIds = pulls.consumedReimbursementIds ?? [];
-        if (consumedReimbIds.length > 0) {
-          await tx
-            .update(reimbursements)
-            .set({ paidAt: new Date() })
-            .where(inArray(reimbursements.id, consumedReimbIds));
-          await this.recordAllocations(
-            tx,
+      const allEmpIds = [...empIdByUser.values()];
+
+      if (allEmpIds.length > 0) {
+        await tx.delete(payrollLineItems).where(inArray(payrollLineItems.runEmployeeId, allEmpIds));
+
+        const allLineRows = calcResults.flatMap(({ profile, snapshot }) => {
+          const empId = empIdByUser.get(profile.userId);
+          if (empId === undefined) return [];
+          return snapshot.lines.map((line) => ({
             orgId,
             runId,
-            profile.userId,
-            "REIMBURSEMENT",
-            consumedReimbIds.map((id, i) => ({
-              id,
-              amount: pulls.approvedReimbursements[i]?.amount ?? "0",
-            })),
-          );
+            runEmployeeId: empId,
+            code: line.code,
+            name: line.name,
+            category: line.category,
+            amount: line.amount,
+            calcMethod: line.calcMethod,
+            calcExplain: line.explain,
+            taxable: line.taxable,
+            sortOrder: line.sortOrder,
+          }));
+        });
+        if (allLineRows.length > 0) {
+          await tx.insert(payrollLineItems).values(allLineRows);
         }
 
-        const consumedIncentiveIds = pulls.consumedIncentiveIds ?? [];
-        if (consumedIncentiveIds.length > 0) {
-          await tx
-            .update(incentives)
-            .set({ status: "ADDED_TO_PAYROLL" })
-            .where(inArray(incentives.id, consumedIncentiveIds));
-          await this.recordAllocations(
-            tx,
+        await tx
+          .delete(payrollExceptions)
+          .where(
+            and(
+              inArray(payrollExceptions.runEmployeeId, allEmpIds),
+              eq(payrollExceptions.status, "OPEN"),
+            ),
+          );
+
+        const allExceptionRows = calcResults.flatMap(({ profile, exceptions }) => {
+          const empId = empIdByUser.get(profile.userId);
+          if (empId === undefined) return [];
+          return exceptions.map((ex) => ({
             orgId,
             runId,
-            profile.userId,
-            "INCENTIVE",
-            consumedIncentiveIds.map((id, i) => ({
-              id,
-              amount: pulls.approvedIncentives[i]?.amount ?? "0",
-            })),
-          );
+            runEmployeeId: empId,
+            userId: profile.userId,
+            code: ex.code,
+            severity: ex.severity,
+            status: "OPEN" as const,
+            message: ex.message,
+            metadata: ex.metadata,
+          }));
+        });
+        if (allExceptionRows.length > 0) {
+          await tx.insert(payrollExceptions).values(allExceptionRows);
         }
+      }
 
-        const consumedBonusIds = pulls.consumedBonusIds ?? [];
-        if (consumedBonusIds.length > 0) {
-          await this.recordAllocations(
-            tx,
+      const allReimbIds: number[] = [];
+      const allIncentiveIds: number[] = [];
+      const allAllocationRows: (typeof payrollRunAllocations.$inferInsert)[] = [];
+
+      for (const { profile, pulls } of calcResults) {
+        for (const [i, reimbId] of (pulls.consumedReimbursementIds ?? []).entries()) {
+          allReimbIds.push(reimbId);
+          allAllocationRows.push({
             orgId,
             runId,
-            profile.userId,
-            "BONUS",
-            consumedBonusIds.map((id, i) => ({
-              id,
-              amount: pulls.approvedBonuses[i]?.amount ?? "0",
-            })),
-          );
+            userId: profile.userId,
+            sourceType: "REIMBURSEMENT",
+            sourceId: String(reimbId),
+            amount: pulls.approvedReimbursements[i]?.amount ?? "0",
+          });
         }
 
-        if (pulls.activeLoans.length > 0) {
-          await this.recordAllocations(
-            tx,
+        for (const [i, incentiveId] of (pulls.consumedIncentiveIds ?? []).entries()) {
+          allIncentiveIds.push(incentiveId);
+          allAllocationRows.push({
             orgId,
             runId,
-            profile.userId,
-            "LOAN",
-            pulls.activeLoans.map((loan) => ({
-              id: loan.id,
-              amount: loan.emiAmount ?? "0",
-            })),
-          );
+            userId: profile.userId,
+            sourceType: "INCENTIVE",
+            sourceId: String(incentiveId),
+            amount: pulls.approvedIncentives[i]?.amount ?? "0",
+          });
         }
 
-        grossTotal += parseFloat(snapshot.totals.gross);
-        deductionTotal += parseFloat(snapshot.totals.deductions);
-        employerCostTotal += parseFloat(snapshot.totals.employerContributions);
-        netTotal += parseFloat(snapshot.totals.net);
-        processedCount++;
+        for (const [i, bonusId] of (pulls.consumedBonusIds ?? []).entries()) {
+          allAllocationRows.push({
+            orgId,
+            runId,
+            userId: profile.userId,
+            sourceType: "BONUS",
+            sourceId: String(bonusId),
+            amount: pulls.approvedBonuses[i]?.amount ?? "0",
+          });
+        }
+
+        for (const loan of pulls.activeLoans) {
+          allAllocationRows.push({
+            orgId,
+            runId,
+            userId: profile.userId,
+            sourceType: "LOAN",
+            sourceId: String(loan.id),
+            amount: loan.emiAmount ?? "0",
+          });
+        }
+      }
+
+      const paidAt = new Date();
+      if (allReimbIds.length > 0) {
+        await tx.update(reimbursements).set({ paidAt }).where(inArray(reimbursements.id, allReimbIds));
+      }
+      if (allIncentiveIds.length > 0) {
+        await tx.update(incentives).set({ status: "ADDED_TO_PAYROLL" }).where(inArray(incentives.id, allIncentiveIds));
+      }
+      if (allAllocationRows.length > 0) {
+        await tx.insert(payrollRunAllocations).values(allAllocationRows).onConflictDoNothing();
       }
 
       const [openBlockers] = await tx
@@ -292,7 +394,6 @@ export class GenerateService {
           exceptionCount: openBlockers?.total ?? 0,
           policyVersionId,
           calculationVersion: "1.0.0",
-          // Preserve entity-stamped pack from createRun; India calc engine default otherwise.
           statutoryRuleVersion: run.statutoryRuleVersion ?? getIndiaBundleForMonth(run.month).bundleVersion,
         })
         .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
@@ -449,34 +550,6 @@ export class GenerateService {
       .where(and(eq(payrollRunAllocations.orgId, orgId), eq(payrollRunAllocations.runId, runId)));
   }
 
-  /**
-   * Durable exactly-once allocation of source inputs to a run.
-   * Unique (org, sourceType, sourceId) prevents double-consumption across runs.
-   */
-  private async recordAllocations(
-    tx: PayrollTx,
-    orgId: string,
-    runId: number,
-    userId: string,
-    sourceType: "REIMBURSEMENT" | "INCENTIVE" | "BONUS" | "LOAN" | "ADJUSTMENT",
-    items: { id: number; amount: string }[],
-  ): Promise<void> {
-    if (items.length === 0) return;
-    await tx
-      .insert(payrollRunAllocations)
-      .values(
-        items.map((item) => ({
-          orgId,
-          runId,
-          userId,
-          sourceType,
-          sourceId: String(item.id),
-          amount: item.amount,
-        })),
-      )
-      .onConflictDoNothing();
-  }
-
   private async loadPreviousSnapshots(
     orgId: string,
     userIds: string[],
@@ -520,19 +593,6 @@ export class GenerateService {
       }
     }
     return result;
-  }
-
-  private async loadExistingRunEmployeeIds(orgId: string, runId: number): Promise<Map<string, number>> {
-    const rows = await this.db
-      .select({ id: payrollRunEmployees.id, userId: payrollRunEmployees.userId })
-      .from(payrollRunEmployees)
-      .where(and(eq(payrollRunEmployees.orgId, orgId), eq(payrollRunEmployees.runId, runId)));
-
-    const map = new Map<string, number>();
-    for (const row of rows) {
-      if (!map.has(row.userId)) map.set(row.userId, row.id);
-    }
-    return map;
   }
 
   private async loadPolicy(orgId: string, policyVersionId: number | null): Promise<{

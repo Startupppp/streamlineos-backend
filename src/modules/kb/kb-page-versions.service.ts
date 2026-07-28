@@ -41,7 +41,8 @@ export class KbPageVersionsService {
       .from(kbPageVersions)
       .leftJoin(users, eq(kbPageVersions.authorId, users.id))
       .where(and(eq(kbPageVersions.pageId, pageId), eq(kbPageVersions.orgId, orgId)))
-      .orderBy(desc(kbPageVersions.versionNumber));
+      .orderBy(desc(kbPageVersions.versionNumber))
+      .limit(100);
   }
 
   async getVersion(user: CurrentUserContext, pageId: number, versionNumber: number) {

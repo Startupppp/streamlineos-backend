@@ -134,9 +134,3 @@ export const platformSubscriptionsRelations = relations(platformSubscriptions, (
   }),
 }));
 
-export type PlatformMessage = typeof platformMessages.$inferSelect;
-export type PlatformMessageStatus = "NEW" | "READ" | "REPLIED" | "ARCHIVED";
-export type PlatformMessageTopic = "sales" | "support" | "partnership" | "press" | "other";
-export type PlatformVisit = typeof platformVisits.$inferSelect;
-export type PlatformPayment = typeof platformPayments.$inferSelect;
-export type PlatformSubscription = typeof platformSubscriptions.$inferSelect;

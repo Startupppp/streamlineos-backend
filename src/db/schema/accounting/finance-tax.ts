@@ -56,6 +56,3 @@ export const accTaxPaymentsRelations = relations(accTaxPayments, ({ one }) => ({
   creator: one(users, { fields: [accTaxPayments.createdBy], references: [users.id] }),
 }));
 
-export type AccTaxCode = typeof accTaxCodes.$inferSelect;
-export type NewAccTaxCode = typeof accTaxCodes.$inferInsert;
-export type AccTaxPayment = typeof accTaxPayments.$inferSelect;

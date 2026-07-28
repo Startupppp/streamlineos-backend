@@ -33,4 +33,3 @@ export const aiJobs = pgTable("ai_jobs", {
 ]);
 
 export type AiJob = typeof aiJobs.$inferSelect;
-export type NewAiJob = typeof aiJobs.$inferInsert;

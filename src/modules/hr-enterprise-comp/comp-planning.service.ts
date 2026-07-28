@@ -179,7 +179,7 @@ export class CompPlanningService {
       .select()
       .from(hrCompBudgetPools)
       .where(and(eq(hrCompBudgetPools.orgId, orgId), eq(hrCompBudgetPools.cycleId, cycleId)))
-      .limit(200);
+      .limit(100);
   }
 
   async createBudgetPool(orgId: string, actorId: string, input: CreateBudgetPoolInput) {

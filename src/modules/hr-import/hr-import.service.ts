@@ -268,7 +268,7 @@ export class HrImportService {
           email: users.email,
           designation: users.designation,
           department: orgUnits.name,
-          role: users.role,
+          role: organizationMembers.role,
           joiningDate: users.joiningDate,
           isActive: users.isActive,
         })

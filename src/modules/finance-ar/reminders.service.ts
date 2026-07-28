@@ -123,7 +123,7 @@ export class RemindersService {
             .returning({ id: finReminderLog.id });
           if (insertResult.length === 0) continue;
 
-          let targetUserIds: string[] = [];
+          let targetUserIds: string[];
           if (inv.collectionOwnerId) {
             targetUserIds = [inv.collectionOwnerId];
           } else {

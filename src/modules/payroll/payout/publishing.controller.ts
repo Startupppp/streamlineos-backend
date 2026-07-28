@@ -16,6 +16,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { PublishingService } from "./publishing.service";
 import { publishSchema, type PublishInput } from "./dto/payout.schemas";
 
@@ -28,6 +29,7 @@ export class PublishingController {
   @Post("runs/:runId/payslips/publish")
   @HttpCode(200)
   @RequirePermission("payroll:payslips:manage")
+  @Idempotent("payroll.payslips.publish")
   publish(
     @Param("runId", ParseIntPipe) runId: number,
     @Body(new ZodValidationPipe(publishSchema)) body: PublishInput,

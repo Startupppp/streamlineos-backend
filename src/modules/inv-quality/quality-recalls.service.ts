@@ -103,12 +103,13 @@ export class RecallsService {
           serialId: l.serialId ?? null,
         })),
       ).returning();
-      for (const line of lines) {
-        if (line.lotId) {
-          await tx.update(invLots)
-            .set({ status: "RECALLED" })
-            .where(and(eq(invLots.id, line.lotId), eq(invLots.orgId, orgId)));
-        }
+      const recalledLotIds = lines
+        .map(l => l.lotId)
+        .filter((id): id is number => id !== null && id !== undefined);
+      if (recalledLotIds.length > 0) {
+        await tx.update(invLots)
+          .set({ status: "RECALLED" })
+          .where(and(inArray(invLots.id, recalledLotIds), eq(invLots.orgId, orgId)));
       }
       await this.audit.insert(tx, {
         orgId, actorUserId: userId, action: "recall.created",
@@ -128,19 +129,23 @@ export class RecallsService {
 
       const eligibleLevels = allStockLevels.filter(level => parseFloat(level.onHand) > 0);
 
-      for (const level of eligibleLevels) {
+      const recallCommands = eligibleLevels.flatMap(level => {
         const lotId = level.lotId;
-        if (lotId === null || lotId === undefined) continue;
+        if (lotId === null || lotId === undefined) return [];
         const iKey = `recall:${recall.id}:lot:${lotId}:loc:${level.locationId}`;
-        await this.engine.execute(orgId, userId, {
+        return [{
           idempotencyKey: iKey,
           sourceType: "RECALL",
           sourceId: String(recall.id),
           movements: [
-            { transactionType: "QUARANTINE_IN", productVariantId: level.productVariantId, locationId: level.locationId, lotId, quantityDelta: "-" + level.onHand, qualityBucket: "ON_HAND" },
-            { transactionType: "QUARANTINE_IN", productVariantId: level.productVariantId, locationId: level.locationId, lotId, quantityDelta: level.onHand, qualityBucket: "QUALITY_HOLD" },
+            { transactionType: "QUARANTINE_IN", productVariantId: level.productVariantId, locationId: level.locationId, lotId, quantityDelta: "-" + level.onHand, qualityBucket: "ON_HAND" as const },
+            { transactionType: "QUARANTINE_IN", productVariantId: level.productVariantId, locationId: level.locationId, lotId, quantityDelta: level.onHand, qualityBucket: "QUALITY_HOLD" as const },
           ],
-        });
+        }];
+      });
+
+      if (recallCommands.length > 0) {
+        await this.engine.executeMany(orgId, userId, recallCommands);
       }
 
       if (eligibleLevels.length > 0) {

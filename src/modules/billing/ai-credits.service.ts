@@ -346,7 +346,7 @@ export class AiCreditsService {
         if (wallet) {
           currentBalance = wallet.balance;
         } else {
-          [wallet] = await tx.insert(orgAiCredits).values({ orgId }).returning();
+          await tx.insert(orgAiCredits).values({ orgId });
         }
 
         const newBalance = currentBalance + creditsAddedMilli;

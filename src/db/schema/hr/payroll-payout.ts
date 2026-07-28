@@ -40,7 +40,7 @@ export const payrollBankBatches = pgTable("payroll_bank_batches", {
 }, (table) => [
   unique("uniq_payroll_bank_batches_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_payroll_bank_batches_org_number").on(table.orgId, table.batchNumber),
-  uniqueIndex("uniq_payroll_bank_batches_idempotency_key").on(table.idempotencyKey),
+  uniqueIndex("uniq_payroll_bank_batches_org_idempotency_key").on(table.orgId, table.idempotencyKey),
   index("idx_payroll_bank_batches_org_run").on(table.orgId, table.runId),
 ]);
 

@@ -280,21 +280,37 @@ export class ApprovalsService {
         })),
       );
 
+      type RateGroup = { billRate: string; currency: string; rateSource: typeof resolvedRates[number]["source"]; ids: number[] };
+      const rateGroups = new Map<string, RateGroup>();
       for (const [i, entry] of billableEntries.entries()) {
         const resolved = resolvedRates[i];
-        if (resolved && resolved.billRate !== null) {
-          await tx
-            .update(timesheets)
-            .set({
-              billRate: resolved.billRate.toString(),
-              currency: resolved.currency,
-              rateSource: resolved.source,
-              updatedAt: now,
-            })
-            .where(
-              and(eq(timesheets.id, entry.id), eq(timesheets.orgId, u.orgId)),
-            );
-        }
+        if (!resolved || resolved.billRate === null) continue;
+        const groupKey = `${resolved.billRate}:${resolved.currency}:${resolved.source ?? ""}`;
+        const group = rateGroups.get(groupKey) ?? {
+          billRate: resolved.billRate.toString(),
+          currency: resolved.currency,
+          rateSource: resolved.source,
+          ids: [],
+        };
+        group.ids.push(entry.id);
+        rateGroups.set(groupKey, group);
+      }
+
+      for (const group of rateGroups.values()) {
+        await tx
+          .update(timesheets)
+          .set({
+            billRate: group.billRate,
+            currency: group.currency,
+            rateSource: group.rateSource,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(timesheets.orgId, u.orgId),
+              inArray(timesheets.id, group.ids),
+            ),
+          );
       }
 
       await this.audit.record(tx, {

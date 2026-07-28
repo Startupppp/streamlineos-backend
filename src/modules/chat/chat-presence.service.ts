@@ -118,7 +118,7 @@ export class ChatPresenceService {
         name: users.name,
         email: users.email,
         image: users.image,
-        role: users.role,
+        role: organizationMembers.role,
       })
       .from(users)
       .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
