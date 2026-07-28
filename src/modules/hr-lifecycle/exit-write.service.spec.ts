@@ -60,7 +60,7 @@ describe("ExitWriteService.ceoReview — approving a resignation via the real UI
 
     expect(result).toEqual({ success: true });
     expect(insertedTables).toContain(fnfSettlements);
-    expect(exitChecklist.seedChecklistFromTemplate).toHaveBeenCalledWith("org-1", 42, "actor-1");
+    expect(exitChecklist.seedChecklistFromTemplate).toHaveBeenCalledWith("org-1", 42);
   });
 
   it("does not create an FnF settlement or seed a checklist on rejection", async () => {

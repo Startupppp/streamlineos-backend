@@ -272,11 +272,11 @@ export class ModuleChecklistService {
    */
   private async reconcileAndReload(orgId: string, checklist: ChecklistWithItems): Promise<ChecklistWithItems> {
     await this.hrReconciliation.reconcile(orgId, checklist.items);
-    await this.recomputeProgress(checklist.id, orgId);
+    await this.recomputeProgress(checklist.id);
     return this.reload(checklist);
   }
 
-  private async recomputeProgress(checklistId: number, _orgId: string) {
+  private async recomputeProgress(checklistId: number) {
     const items = await this.db.query.moduleSetupChecklistItems.findMany({
       where: eq(moduleSetupChecklistItems.checklistId, checklistId),
     });
@@ -309,7 +309,7 @@ export class ModuleChecklistService {
       .where(eq(moduleSetupChecklistItems.id, item.id));
 
     await this.analytics.track(orgId, userId, "module_checklist_item_completed", { moduleKey, stepKey: itemKey });
-    return this.recomputeProgress(checklist.id, orgId);
+    return this.recomputeProgress(checklist.id);
   }
 
   async skipItem(orgId: string, moduleKey: string, itemKey: string, userId: string, visibleModuleKeys: string[], reason?: string) {
@@ -326,7 +326,7 @@ export class ModuleChecklistService {
       .where(eq(moduleSetupChecklistItems.id, item.id));
 
     await this.analytics.track(orgId, userId, "module_checklist_item_skipped", { moduleKey, stepKey: itemKey, metadata: { reason } });
-    return this.recomputeProgress(checklist.id, orgId);
+    return this.recomputeProgress(checklist.id);
   }
 
   /**
@@ -369,6 +369,6 @@ export class ModuleChecklistService {
     }
 
     await this.analytics.track(orgId, userId, "module_checklist_restarted", { moduleKey });
-    return this.recomputeProgress(checklist.id, orgId);
+    return this.recomputeProgress(checklist.id);
   }
 }

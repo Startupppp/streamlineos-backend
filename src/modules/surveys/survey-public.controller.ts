@@ -95,7 +95,7 @@ export class SurveyPublicController {
     const question = await this.liveSessions.getCurrentQuestion(session);
     const currentQuestion = question && {
       ...question,
-      choices: question.choices.map(({ isCorrect: _isCorrect, ...choice }) => choice),
+      choices: question.choices.map(({ isCorrect: _, ...choice }) => choice),
     };
     return { ...session, currentQuestion };
   }

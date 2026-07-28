@@ -559,7 +559,7 @@ export class HrAiService {
 
   async draftLetter(
     orgId: string,
-    _actorUserId: string,
+    _: string,
     targetUserId: string,
     letterType: string,
     details: string | null,

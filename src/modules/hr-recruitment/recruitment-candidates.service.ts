@@ -6,6 +6,7 @@ import {
   UnprocessableEntityException,
 } from "@nestjs/common";
 import { and, count, desc, eq, ilike, ne, or, sql } from "drizzle-orm";
+import { ROLE_SLUG, HR_ROLE_SLUGS } from "../../common/rbac/role-slugs";
 import { buildListResponse } from "../../common/pagination/pagination";
 import {
   candidateApplications,
@@ -299,7 +300,7 @@ export class RecruitmentCandidatesService {
     await this.db.update(candidates).set(updateFields).where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)));
 
     if (input.status === "REJECTED" && existing.status !== "REJECTED") {
-      await this.notifyByRoles(orgId, ["HR_MANAGER", "CEO", "HR"], {
+      await this.notifyByRoles(orgId, [...HR_ROLE_SLUGS, ROLE_SLUG.CEO], {
         type: "INFO",
         title: "Candidate Rejected",
         message: `${existing.firstName} ${existing.lastName} has been moved to Rejected.`,
@@ -401,7 +402,7 @@ export class RecruitmentCandidatesService {
     });
 
     if (newStage === "REJECTED") {
-      await this.notifyByRoles(orgId, ["HR_MANAGER", "CEO", "HR"], {
+      await this.notifyByRoles(orgId, [...HR_ROLE_SLUGS, ROLE_SLUG.CEO], {
         type: "INFO",
         title: "Candidate Rejected",
         message: `${existing.firstName} ${existing.lastName} has been moved to Rejected.`,

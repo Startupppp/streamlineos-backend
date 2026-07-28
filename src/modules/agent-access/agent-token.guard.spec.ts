@@ -1,6 +1,7 @@
 import { UnauthorizedException } from "@nestjs/common";
 import { ExecutionContext } from "@nestjs/common";
 import { AgentTokenGuard } from "./agent-token.guard";
+import { EntitlementsService } from "../access/entitlements.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { Test } from "@nestjs/testing";
 import { createHash } from "node:crypto";
@@ -66,10 +67,13 @@ describe("AgentTokenGuard", () => {
       },
     };
 
+    const mockEntitlements = { listModules: jest.fn().mockResolvedValue([]) };
+
     const module = await Test.createTestingModule({
       providers: [
         AgentTokenGuard,
         { provide: DRIZZLE, useValue: mockDb },
+        { provide: EntitlementsService, useValue: mockEntitlements },
       ],
     }).compile();
     guard = module.get(AgentTokenGuard);

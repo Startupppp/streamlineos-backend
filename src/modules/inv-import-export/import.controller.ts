@@ -37,7 +37,7 @@ export class ImportController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (!file) throw new BadRequestException("No file provided");
-    return this.svc.previewImport(u.orgId, u.userId, file, body.importType);
+    return this.svc.previewImport(u.orgId, file, body.importType);
   }
 
   @Post("jobs")

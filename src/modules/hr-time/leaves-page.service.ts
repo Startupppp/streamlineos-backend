@@ -9,9 +9,7 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-
-const ROLE_CEO = "CEO";
-const ROLE_HR = "HR";
+import { ROLE_SLUG, HR_ROLE_SLUGS, HR_ROLE_SET } from "../../common/rbac/role-slugs";
 
 @Injectable()
 export class LeavesPageService {
@@ -117,11 +115,11 @@ export class LeavesPageService {
     if (!role) return [];
 
     const targetRoles =
-      role === ROLE_CEO
-        ? [ROLE_HR]
-        : role === ROLE_HR
-          ? [ROLE_CEO]
-          : [ROLE_HR, ROLE_CEO];
+      role === ROLE_SLUG.CEO
+        ? [...HR_ROLE_SLUGS]
+        : HR_ROLE_SET.has(role)
+          ? [ROLE_SLUG.CEO]
+          : [...HR_ROLE_SLUGS, ROLE_SLUG.CEO];
 
     const approverMembers = await this.db.query.organizationMembers.findMany({
       where: and(

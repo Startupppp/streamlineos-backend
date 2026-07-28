@@ -33,6 +33,11 @@ function buildMockDb() {
       },
       invitations: { findFirst: jest.fn().mockResolvedValue(null) },
     },
+    select: jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockResolvedValue([]),
+      }),
+    }),
     transaction: jest.fn().mockImplementation((fn: (tx: unknown) => Promise<unknown>) =>
       fn(universalTx),
     ),

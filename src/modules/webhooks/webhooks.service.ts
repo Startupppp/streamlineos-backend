@@ -18,7 +18,7 @@ export class WebhooksService {
       offset: (filters.page - 1) * filters.pageSize,
     });
 
-    return endpoints.map(({ secret: _secret, ...rest }) => rest);
+    return endpoints.map(({ secret: _, ...rest }) => rest);
   }
 
   async create(orgId: string, userId: string, input: CreateInput) {
@@ -44,7 +44,7 @@ export class WebhooksService {
     });
     if (!endpoint) return null;
 
-    const { secret: _secret, ...safe } = endpoint;
+    const { secret: _, ...safe } = endpoint;
     return safe;
   }
 
@@ -57,7 +57,7 @@ export class WebhooksService {
 
     if (!updated) return null;
 
-    const { secret: _secret, ...safe } = updated;
+    const { secret: _, ...safe } = updated;
     return safe;
   }
 

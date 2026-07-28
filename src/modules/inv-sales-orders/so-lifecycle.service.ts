@@ -56,7 +56,7 @@ export class SoLifecycleService {
 
     if (settings.autoReserveOnConfirm) {
       try {
-        await this._autoReserve(orgId, soId, userId, so.lines, so.warehouseId);
+        await this.autoReserve(orgId, soId, userId, so.lines, so.warehouseId);
       } catch (error) {
         this.logger.warn(
           `Auto-reserve failed for sales order ${soId} in org ${orgId}: ${error instanceof Error ? error.message : String(error)}`,
@@ -293,7 +293,7 @@ export class SoLifecycleService {
     };
   }
 
-  private async _autoReserve(
+  private async autoReserve(
     orgId: string,
     soId: number,
     userId: string,

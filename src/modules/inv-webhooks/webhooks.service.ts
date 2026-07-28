@@ -174,7 +174,7 @@ export class WebhooksService {
       .from(invWebhooks)
       .where(eq(invWebhooks.orgId, orgId))
       .orderBy(desc(invWebhooks.createdAt));
-    return rows.map(({ secret: _s, ...safe }) => safe);
+    return rows.map(({ secret: _, ...safe }) => safe);
   }
 
   async create(orgId: string, userId: string, input: CreateWebhookInput): Promise<WebhookRow> {
@@ -239,7 +239,7 @@ export class WebhooksService {
       after: { url: updated.url, events: updated.events, isActive: updated.isActive },
     });
 
-    const { secret: _s, ...safe } = updated;
+    const { secret: _, ...safe } = updated;
     return safe;
   }
 

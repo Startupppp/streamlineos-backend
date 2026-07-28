@@ -105,7 +105,7 @@ export class SurveyVersionService {
     };
   }
 
-  async publishVersion(orgId: string, surveyId: number, _userId: string) {
+  async publishVersion(orgId: string, surveyId: number) {
     return this.db.transaction(async (tx) => {
       const draft = await tx.query.surveyVersions.findFirst({
         where: and(eq(surveyVersions.orgId, orgId), eq(surveyVersions.surveyId, surveyId), isNull(surveyVersions.publishedAt)),

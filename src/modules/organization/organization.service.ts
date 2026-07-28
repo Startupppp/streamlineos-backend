@@ -2,11 +2,9 @@ import { Injectable } from "@nestjs/common";
 import { OrgProfileService } from "./org-profile.service";
 import { OrgMembershipService } from "./org-membership.service";
 import { OrgLifecycleService } from "./org-lifecycle.service";
-import { OrgOwnershipService } from "./org-ownership.service";
 import type {
   CreateOrganizationInput,
   ListMembersInput,
-  TransferOwnershipInput,
 } from "./dto/organization.schemas";
 
 @Injectable()
@@ -15,7 +13,6 @@ export class OrganizationService {
     private readonly orgProfile: OrgProfileService,
     private readonly orgMembership: OrgMembershipService,
     private readonly orgLifecycle: OrgLifecycleService,
-    private readonly orgOwnership: OrgOwnershipService,
   ) {}
 
   async listUserOrganizations(userId: string) {
@@ -86,13 +83,5 @@ export class OrganizationService {
 
   async cancelPurge(orgId: string, actorUserId: string) {
     return this.orgLifecycle.cancelPurge(orgId, actorUserId);
-  }
-
-  async transferOwnership(
-    orgId: string,
-    currentOwnerId: string,
-    input: TransferOwnershipInput,
-  ) {
-    return this.orgOwnership.transferOwnership(orgId, currentOwnerId, input);
   }
 }

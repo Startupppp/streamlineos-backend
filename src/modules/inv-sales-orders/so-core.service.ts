@@ -21,7 +21,6 @@ import { NumberSequenceService } from "../inv-stock-engine/number-sequence.servi
 import { SoLifecycleService } from "./so-lifecycle.service";
 import { addDec, mulDec } from "../inv-stock-engine/stock-engine.service";
 import type {
-  CancelSoInput,
   CreateSoInput,
   ListSoInput,
   UpdateSoInput,
@@ -330,7 +329,7 @@ export class SoCoreService {
     return this.lifecycle.confirmSo(orgId, soId, userId);
   }
 
-  cancelSo(orgId: string, soId: number, userId: string, _data: CancelSoInput) {
+  cancelSo(orgId: string, soId: number, userId: string) {
     return this.lifecycle.cancelSo(orgId, soId, userId);
   }
 

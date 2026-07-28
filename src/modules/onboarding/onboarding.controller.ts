@@ -51,6 +51,7 @@ import {
   GuidedTourService,
   HR_SETUP_TOUR_KEY,
 } from "../onboarding-flow/guided-tour.service";
+import type { ModuleKey } from "../../common/rbac/module-vocabulary";
 import { OnboardingSessionService } from "../onboarding-flow/onboarding-session.service";
 import {
   checklistItemSkipSchema,
@@ -60,6 +61,8 @@ import {
   type SessionPatchInput,
   type TourProgressInput,
 } from "../onboarding-flow/dto/onboarding-flow.schemas";
+
+const HR_MODULE_KEY: ModuleKey = "hr";
 
 @Controller("onboarding")
 @UseGuards(JwtAuthGuard)
@@ -73,18 +76,8 @@ export class OnboardingController {
     private readonly access: AccessService,
   ) {}
 
-  // NOTE: every static route below must stay ABOVE `getUserTasks` (`GET /onboarding/:userId`,
-  // near the bottom of this class) — it's a catch-all that would otherwise shadow these paths.
-
-  /**
-   * The generic onboarding:module-checklists:* permission is granted to every role (baseline
-   * self-service bundle) so every module's checklist works out of the box.
-   * The HR module checklist is the one exception — it must be HR-only (task requirement) — so
-   * we layer an additional, existing-permission check on top for moduleKey === "HR" only,
-   * matching the manual-OR-check idiom already used in hr-config/hr-document-types.controller.ts.
-   */
   private isHrModuleKey(moduleKey: string): boolean {
-    return moduleKey.toUpperCase() === "HR";
+    return moduleKey.toLowerCase() === HR_MODULE_KEY;
   }
 
   private async assertHrChecklistAccess(

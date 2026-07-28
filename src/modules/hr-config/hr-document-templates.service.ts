@@ -171,7 +171,7 @@ export class HrDocumentTemplatesService {
     }
     const previewContent = template.htmlContent.replace(
       /\{\{([^}]+)\}\}/g,
-      (_match, key: string) => `[${key.trim()}]`,
+      (_, key: string) => `[${key.trim()}]`,
     );
     return { ...template, htmlContent: previewContent, previewVariables: placeholderMap };
   }

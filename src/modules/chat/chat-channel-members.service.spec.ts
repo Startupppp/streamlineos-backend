@@ -1,8 +1,7 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import { ConflictException, ForbiddenException } from "@nestjs/common";
-import { ChatChannelsService } from "./chat-channels.service";
+import { ChatChannelMembersService } from "./chat-channel-members.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
-import { PlanLimitsService } from "../billing/plan-limits.service";
 import { CacheService } from "../../common/cache/cache.service";
 
 const mockDb = {
@@ -23,10 +22,6 @@ const mockDb = {
   transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(mockDb)),
 };
 
-const mockPlanLimits = {
-  assertWithinLimit: jest.fn().mockResolvedValue(undefined),
-};
-
 const mockCache = {
   cached: jest.fn().mockImplementation((_key: string, fetcher: () => Promise<unknown>) => fetcher()),
   invalidate: jest.fn().mockResolvedValue(undefined),
@@ -35,20 +30,19 @@ const mockCache = {
   get: jest.fn().mockResolvedValue(null),
 };
 
-describe("ChatChannelsService", () => {
-  let service: ChatChannelsService;
+describe("ChatChannelMembersService", () => {
+  let service: ChatChannelMembersService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        ChatChannelsService,
+        ChatChannelMembersService,
         { provide: DRIZZLE, useValue: mockDb },
-        { provide: PlanLimitsService, useValue: mockPlanLimits },
         { provide: CacheService, useValue: mockCache },
       ],
     }).compile();
-    service = module.get(ChatChannelsService);
+    service = module.get(ChatChannelMembersService);
   });
 
   describe("addMember", () => {

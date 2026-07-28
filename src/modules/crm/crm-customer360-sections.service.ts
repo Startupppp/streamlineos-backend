@@ -227,7 +227,7 @@ export class CrmCustomer360SectionsService {
     return { items, total: Number(countRow?.count ?? 0) };
   }
 
-  async fetchPaymentsForOrg(orgId: string, _orgName: string): Promise<Customer360Section<unknown>> {
+  async fetchPaymentsForOrg(orgId: string): Promise<Customer360Section<unknown>> {
     const where = eq(payments.orgId, orgId);
     const [items, countRow] = await Promise.all([
       this.db
@@ -271,7 +271,7 @@ export class CrmCustomer360SectionsService {
     return { items, total: Number(countRow?.count ?? 0) };
   }
 
-  async fetchSupportTicketsForOrg(orgId: string, _orgName: string): Promise<Customer360Section<unknown>> {
+  async fetchSupportTicketsForOrg(orgId: string): Promise<Customer360Section<unknown>> {
     const where = eq(supportTickets.orgId, orgId);
     const [items, countRow] = await Promise.all([
       this.db
@@ -306,7 +306,7 @@ export class CrmCustomer360SectionsService {
     return { items, total: Number(countRow?.count ?? 0) };
   }
 
-  async fetchSurveysForOrg(orgId: string, _orgName: string): Promise<Customer360Section<unknown>> {
+  async fetchSurveysForOrg(orgId: string): Promise<Customer360Section<unknown>> {
     const where = eq(csatSurveys.orgId, orgId);
     const [items, countRow] = await Promise.all([
       this.db

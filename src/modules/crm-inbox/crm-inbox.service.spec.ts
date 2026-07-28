@@ -69,6 +69,6 @@ describe("CrmInboxService", () => {
 
   it("completeTask throws NotFoundException for unknown task", async () => {
     mockDb.limit = jest.fn().mockResolvedValue([]);
-    await expect(service.completeTask("org1", 9999, "user1")).rejects.toThrow(NotFoundException);
+    await expect(service.completeTask("org1", 9999)).rejects.toThrow(NotFoundException);
   });
 });

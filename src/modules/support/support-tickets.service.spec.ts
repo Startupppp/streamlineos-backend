@@ -13,6 +13,9 @@ import { SupportCsatService } from "./support-csat.service";
 import { SupportAiService } from "./support-ai.service";
 import { SupportCustomFieldsService } from "./support-custom-fields.service";
 import { SupportMentionsService } from "./support-mentions.service";
+import { SupportTicketActivityService } from "./support-ticket-activity.service";
+import { SupportTicketMessagesService } from "./support-ticket-messages.service";
+import { SupportTicketOperationsService } from "./support-ticket-operations.service";
 
 const mockDb = {
   query: {
@@ -127,6 +130,9 @@ describe("SupportTicketsService", () => {
         { provide: SupportAiService, useValue: mockAi },
         { provide: SupportCustomFieldsService, useValue: mockCustomFields },
         { provide: SupportMentionsService, useValue: mockMentions },
+        SupportTicketActivityService,
+        SupportTicketMessagesService,
+        SupportTicketOperationsService,
       ],
     }).compile();
     service = module.get(SupportTicketsService);

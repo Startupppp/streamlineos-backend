@@ -5,6 +5,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
+import { AuditService } from "../../common/audit/audit.service";
 import type { CreateBroadcastInput, UpdateBroadcastInput, ListBroadcastsInput } from "./dto/broadcast.schemas";
 
 @Injectable()
@@ -12,6 +13,7 @@ export class BroadcastsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly audit: AuditService,
   ) {}
 
   list(orgId: string, filters: ListBroadcastsInput) {
@@ -93,7 +95,7 @@ export class BroadcastsService {
     return created;
   }
 
-  async update(orgId: string, _userId: string, id: number, dto: UpdateBroadcastInput) {
+  async update(orgId: string, id: number, userId: string, dto: UpdateBroadcastInput) {
     const existing = await this.findOne(orgId, id);
     if (existing.status !== "DRAFT") {
       throw new BadRequestException("Only DRAFT broadcasts can be updated");
@@ -113,6 +115,25 @@ export class BroadcastsService {
       .where(and(eq(broadcasts.id, id), eq(broadcasts.orgId, orgId)))
       .returning();
     await this.invalidateCache(orgId);
+
+    this.audit.log({
+      action: "notification.broadcast.updated",
+      userId,
+      orgId,
+      targetId: String(id),
+      targetType: "broadcast",
+      metadata: {
+        ...(dto.title !== undefined && { title: dto.title }),
+        ...(dto.type !== undefined && { type: dto.type }),
+        ...(dto.priority !== undefined && { priority: dto.priority }),
+        ...(dto.category !== undefined && { category: dto.category }),
+        ...(dto.channels !== undefined && { channels: dto.channels }),
+        ...(dto.audience !== undefined && { audience: dto.audience }),
+        ...(dto.scheduledAt !== undefined && { scheduledAt: dto.scheduledAt }),
+        ...(dto.message !== undefined && { messageChanged: true }),
+      },
+    });
+
     return updated;
   }
 
@@ -174,7 +195,7 @@ export class BroadcastsService {
     return sent;
   }
 
-  async cancel(orgId: string, _userId: string, id: number) {
+  async cancel(orgId: string, id: number, userId: string) {
     const broadcast = await this.findOne(orgId, id);
     if (!["DRAFT", "SCHEDULED"].includes(broadcast.status)) {
       throw new BadRequestException("Only DRAFT or SCHEDULED broadcasts can be cancelled");
@@ -185,10 +206,20 @@ export class BroadcastsService {
       .where(and(eq(broadcasts.id, id), eq(broadcasts.orgId, orgId)))
       .returning();
     await this.invalidateCache(orgId);
+
+    this.audit.log({
+      action: "notification.broadcast.cancelled",
+      userId,
+      orgId,
+      targetId: String(id),
+      targetType: "broadcast",
+      metadata: { previousStatus: broadcast.status, title: broadcast.title },
+    });
+
     return cancelled;
   }
 
-  async remove(orgId: string, _userId: string, id: number) {
+  async remove(orgId: string, id: number, userId: string) {
     const broadcast = await this.findOne(orgId, id);
     if (broadcast.status !== "DRAFT") {
       throw new BadRequestException("Only DRAFT broadcasts can be deleted");
@@ -197,6 +228,16 @@ export class BroadcastsService {
       .delete(broadcasts)
       .where(and(eq(broadcasts.id, id), eq(broadcasts.orgId, orgId)));
     await this.invalidateCache(orgId);
+
+    this.audit.log({
+      action: "notification.broadcast.deleted",
+      userId,
+      orgId,
+      targetId: String(id),
+      targetType: "broadcast",
+      metadata: { title: broadcast.title },
+    });
+
     return { success: true };
   }
 

@@ -1,5 +1,6 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { eq, and, count, sql, inArray } from "drizzle-orm";
+import { ROLE_SLUG } from "../../common/rbac/role-slugs";
 import {
   leads,
   deals,
@@ -64,7 +65,7 @@ export class LeadStatusService {
       .where(
         and(
           eq(organizationMembers.orgId, orgId),
-          eq(organizationMembers.role, "CUSTOMER_SUPPORT"),
+          eq(organizationMembers.role, ROLE_SLUG.CUSTOMER_SUPPORT),
         ),
       );
 

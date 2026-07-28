@@ -98,7 +98,7 @@ export class BillingController {
     @Body(new ZodValidationPipe(purchaseAddonSchema)) body: PurchaseAddonInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.billing.purchaseAddon(u.orgId, u.userId, body.addonId, body.quantity);
+    return this.billing.purchaseAddon(u.orgId, body.addonId, body.quantity);
   }
 
   @UseGuards(PermissionGuard)
@@ -258,7 +258,7 @@ export class BillingController {
       return this.aiCredits.purchaseCreditsDirectly(u.orgId, u.userId, body.packId, false, body.paymentId);
     }
     if (this.razorpay.isConfigured()) {
-      return this.billing.purchaseAddon(u.orgId, u.userId, `ai_pack_${body.packId}`, 1);
+      return this.billing.purchaseAddon(u.orgId, `ai_pack_${body.packId}`, 1);
     }
     return this.aiCredits.purchaseCreditsDirectly(u.orgId, u.userId, body.packId);
   }
@@ -437,8 +437,8 @@ export class BillingController {
   @Get("coupons")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
-  listCoupons(@CurrentUser() u: CurrentUserContext) {
-    return this.billing.listCoupons(u.orgId);
+  listCoupons() {
+    return this.billing.listCoupons();
   }
 
   @Post("coupons")

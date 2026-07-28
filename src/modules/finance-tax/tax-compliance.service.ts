@@ -53,7 +53,7 @@ export class TaxComplianceService {
     const results: DueResult[] = [];
 
     for (const oid of orgIds) {
-      const liability = await this.computeNetLiability(oid, from, to);
+      const liability = await this.computeNetLiability(oid);
       if (liability <= 0) continue;
 
       const result: DueResult = {
@@ -87,7 +87,7 @@ export class TaxComplianceService {
     return results;
   }
 
-  private async computeNetLiability(orgId: string, _from: string, _to: string): Promise<number> {
+  private async computeNetLiability(orgId: string): Promise<number> {
     const [outwardAgg, inwardAgg] = await Promise.all([
       this.db
         .select({

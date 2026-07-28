@@ -53,13 +53,6 @@ const workerTypeValues = [
   "AGENCY",
   "FREELANCER",
 ] as const;
-const _engagementStatusValues = [
-  "PLANNED",
-  "ACTIVE",
-  "COMPLETED",
-  "TERMINATED",
-  "CANCELLED",
-] as const;
 
 export const listWorkersQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),

@@ -13,6 +13,7 @@ import {
 } from "../../db/schema/hr/workflow-engine";
 import { users, organizationMembers } from "../../db/schema/common/auth";
 import { orgUnits } from "../../db/schema/common/organization";
+import { HR_ROLE_SLUGS, FINANCE_ROLE_SLUGS } from "../../common/rbac/role-slugs";
 
 type HrWorkflowObjectType = typeof hrWorkflowObjectTypeEnum.enumValues[number];
 
@@ -143,7 +144,7 @@ export class HrWorkflowEngineService {
     if (!currentStep) throw new BadRequestException("No active step found");
 
     const resolvedApprovers = await this.resolveApprovers(currentStep, instance.subjectEmployeeId, orgId);
-    const effectiveActor = await this.resolveEffectiveActor(orgId, actorUserId, resolvedApprovers, currentStep.approverType, instance.objectType as HrWorkflowObjectType, instance.definitionId);
+    const effectiveActor = await this.resolveEffectiveActor(orgId, actorUserId, resolvedApprovers, currentStep.approverType, instance.objectType as HrWorkflowObjectType);
 
     if (!effectiveActor) throw new ForbiddenException("You are not an approver for this step");
 
@@ -257,7 +258,7 @@ export class HrWorkflowEngineService {
       case "hr_role": {
         const hrMembers = await this.db.select({ userId: organizationMembers.userId })
           .from(organizationMembers)
-          .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.role, "HR")))
+          .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.role, [...HR_ROLE_SLUGS])))
           .limit(10);
         return hrMembers.map((m) => m.userId);
       }
@@ -265,7 +266,7 @@ export class HrWorkflowEngineService {
       case "finance_role": {
         const financeMembers = await this.db.select({ userId: organizationMembers.userId })
           .from(organizationMembers)
-          .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.role, "FINANCE")))
+          .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.role, [...FINANCE_ROLE_SLUGS])))
           .limit(10);
         return financeMembers.map((m) => m.userId);
       }
@@ -280,7 +281,7 @@ export class HrWorkflowEngineService {
           .where(and(
             eq(organizationMembers.orgId, orgId),
             eq(users.branchId, employee.branchId),
-            eq(organizationMembers.role, "HR"),
+            inArray(organizationMembers.role, [...HR_ROLE_SLUGS]),
           ))
           .limit(10);
         return locationHr.map((u) => u.id);
@@ -296,7 +297,7 @@ export class HrWorkflowEngineService {
     }
   }
 
-  private async resolveDynamicExpression(expression: string, _subjectEmployeeId: string, orgId: string): Promise<string[]> {
+  private async resolveDynamicExpression(expression: string, subjectEmployeeId: string, orgId: string): Promise<string[]> {
     const [employee] = await this.db.select({
       id: users.id,
       reportingTo: users.reportingTo,
@@ -305,7 +306,7 @@ export class HrWorkflowEngineService {
       role: organizationMembers.role,
     }).from(users)
       .innerJoin(organizationMembers, and(eq(organizationMembers.userId, users.id), eq(organizationMembers.orgId, orgId)))
-      .where(eq(users.id, _subjectEmployeeId)).limit(1);
+      .where(eq(users.id, subjectEmployeeId)).limit(1);
     if (!employee) return [];
 
     const parts = expression.split(".");
@@ -327,9 +328,8 @@ export class HrWorkflowEngineService {
     orgId: string,
     actorUserId: string,
     resolvedApprovers: string[],
-    _approverType: string,
+    _: string,
     objectType: HrWorkflowObjectType,
-    _definitionId: number,
   ): Promise<string | null> {
     if (resolvedApprovers.includes(actorUserId)) return actorUserId;
 

@@ -5,7 +5,7 @@ export interface HrWorkflowStarterPort {
 }
 
 export const nopHrWorkflowStarter: HrWorkflowStarterPort = {
-  async startWorkflow(_orgId, _workflowId, _context) {
+  async startWorkflow(_, __, ___) {
     return null;
   },
 };

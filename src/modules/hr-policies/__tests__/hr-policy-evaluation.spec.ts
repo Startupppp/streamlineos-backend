@@ -151,11 +151,11 @@ describe("HrPolicyEvaluationService", () => {
         from: jest.fn().mockReturnValue({
           innerJoin: jest.fn().mockReturnValue({
             where: jest.fn().mockReturnValue({
-              limit: jest.fn().mockResolvedValue([{ departmentId: 5 }]),
+              limit: jest.fn().mockResolvedValue([{ orgUnitId: "5" }]),
             }),
           }),
           where: jest.fn().mockReturnValue({
-            limit: jest.fn().mockResolvedValue([{ departmentId: 5 }]),
+            limit: jest.fn().mockResolvedValue([{ orgUnitId: "5" }]),
           }),
         }),
       });

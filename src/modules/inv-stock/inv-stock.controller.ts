@@ -75,7 +75,7 @@ export class InvStockController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");
-    return this.reservations.createReservation(u.orgId, u.userId, body, idempotencyKey);
+    return this.reservations.createReservation(u.orgId, u.userId, body);
   }
 
   @Post("release-reservation")

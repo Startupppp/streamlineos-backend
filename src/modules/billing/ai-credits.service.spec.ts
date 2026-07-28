@@ -2,6 +2,8 @@ import { NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { AiCreditsService } from "./ai-credits.service";
+import { AiCreditsReservationService } from "./ai-credits-reservation.service";
+import { AiCreditsPacksService } from "./ai-credits-packs.service";
 
 const mockPack = {
   id: 1,
@@ -66,6 +68,8 @@ describe("AiCreditsService.purchaseCreditsDirectly", () => {
     const module = await Test.createTestingModule({
       providers: [
         AiCreditsService,
+        AiCreditsReservationService,
+        AiCreditsPacksService,
         { provide: DRIZZLE, useValue: mockDb },
       ],
     }).compile();
@@ -160,7 +164,12 @@ describe("AiCreditsService.purchaseCreditsDirectly", () => {
     };
 
     const module = await Test.createTestingModule({
-      providers: [AiCreditsService, { provide: DRIZZLE, useValue: autoDb }],
+      providers: [
+        AiCreditsService,
+        AiCreditsReservationService,
+        AiCreditsPacksService,
+        { provide: DRIZZLE, useValue: autoDb },
+      ],
     }).compile();
     const svc = module.get(AiCreditsService);
 
@@ -200,7 +209,7 @@ describe("AiCreditsService.grantPlanCredits — idempotency", () => {
   it("skips insert when referenceId already has a PLAN_GRANT transaction", async () => {
     const { db, txMock } = makeGrantDb({ id: 99 });
     const module = await Test.createTestingModule({
-      providers: [AiCreditsService, { provide: DRIZZLE, useValue: db }],
+      providers: [AiCreditsService, AiCreditsReservationService, AiCreditsPacksService, { provide: DRIZZLE, useValue: db }],
     }).compile();
     service = module.get(AiCreditsService);
 
@@ -236,7 +245,7 @@ describe("AiCreditsService.grantPlanCredits — idempotency", () => {
     };
 
     const module = await Test.createTestingModule({
-      providers: [AiCreditsService, { provide: DRIZZLE, useValue: db2 }],
+      providers: [AiCreditsService, AiCreditsReservationService, AiCreditsPacksService, { provide: DRIZZLE, useValue: db2 }],
     }).compile();
     service = module.get(AiCreditsService);
 
@@ -248,7 +257,7 @@ describe("AiCreditsService.grantPlanCredits — idempotency", () => {
   it("does nothing for an unknown plan (0 credits)", async () => {
     const db = { transaction: jest.fn() };
     const module = await Test.createTestingModule({
-      providers: [AiCreditsService, { provide: DRIZZLE, useValue: db }],
+      providers: [AiCreditsService, AiCreditsReservationService, AiCreditsPacksService, { provide: DRIZZLE, useValue: db }],
     }).compile();
     service = module.get(AiCreditsService);
 
@@ -274,7 +283,7 @@ describe("AiCreditsService.hasMonthlyPlanGrant", () => {
   it("returns true when a PLAN_GRANT exists this month", async () => {
     const { db } = makeMonthlyGrantDb({ id: 5 });
     const module = await Test.createTestingModule({
-      providers: [AiCreditsService, { provide: DRIZZLE, useValue: db }],
+      providers: [AiCreditsService, AiCreditsReservationService, AiCreditsPacksService, { provide: DRIZZLE, useValue: db }],
     }).compile();
     service = module.get(AiCreditsService);
 
@@ -285,7 +294,7 @@ describe("AiCreditsService.hasMonthlyPlanGrant", () => {
   it("returns false when no PLAN_GRANT exists this month", async () => {
     const { db } = makeMonthlyGrantDb(undefined);
     const module = await Test.createTestingModule({
-      providers: [AiCreditsService, { provide: DRIZZLE, useValue: db }],
+      providers: [AiCreditsService, AiCreditsReservationService, AiCreditsPacksService, { provide: DRIZZLE, useValue: db }],
     }).compile();
     service = module.get(AiCreditsService);
 
@@ -310,7 +319,7 @@ describe("AiCreditsService.hasSameDayPurchaseForPack", () => {
   it("returns true when a same-day PURCHASE exists for this pack", async () => {
     const { db } = makeSameDayDb({ id: 10 });
     const module = await Test.createTestingModule({
-      providers: [AiCreditsService, { provide: DRIZZLE, useValue: db }],
+      providers: [AiCreditsService, AiCreditsReservationService, AiCreditsPacksService, { provide: DRIZZLE, useValue: db }],
     }).compile();
     service = module.get(AiCreditsService);
 
@@ -321,7 +330,7 @@ describe("AiCreditsService.hasSameDayPurchaseForPack", () => {
   it("returns false when no same-day PURCHASE exists", async () => {
     const { db } = makeSameDayDb(undefined);
     const module = await Test.createTestingModule({
-      providers: [AiCreditsService, { provide: DRIZZLE, useValue: db }],
+      providers: [AiCreditsService, AiCreditsReservationService, AiCreditsPacksService, { provide: DRIZZLE, useValue: db }],
     }).compile();
     service = module.get(AiCreditsService);
 
@@ -376,7 +385,7 @@ describe("AiCreditsService.purchaseCreditsDirectly — DB backstop (23505)", () 
     };
 
     const module = await Test.createTestingModule({
-      providers: [AiCreditsService, { provide: DRIZZLE, useValue: dbWithConflict }],
+      providers: [AiCreditsService, AiCreditsReservationService, AiCreditsPacksService, { provide: DRIZZLE, useValue: dbWithConflict }],
     }).compile();
     const svc = module.get(AiCreditsService);
 
@@ -404,7 +413,7 @@ describe("AiCreditsService.purchaseCreditsDirectly — DB backstop (23505)", () 
     };
 
     const module = await Test.createTestingModule({
-      providers: [AiCreditsService, { provide: DRIZZLE, useValue: dbPropagates }],
+      providers: [AiCreditsService, AiCreditsReservationService, AiCreditsPacksService, { provide: DRIZZLE, useValue: dbPropagates }],
     }).compile();
     const svc = module.get(AiCreditsService);
 
@@ -450,7 +459,7 @@ describe("AiCreditsService.getWallet — trial grant on creation", () => {
     };
 
     const module = await Test.createTestingModule({
-      providers: [AiCreditsService, { provide: DRIZZLE, useValue: dbMock }],
+      providers: [AiCreditsService, AiCreditsReservationService, AiCreditsPacksService, { provide: DRIZZLE, useValue: dbMock }],
     }).compile();
     service = module.get(AiCreditsService);
 
@@ -484,7 +493,7 @@ describe("AiCreditsService.getWallet — trial grant on creation", () => {
     };
 
     const module = await Test.createTestingModule({
-      providers: [AiCreditsService, { provide: DRIZZLE, useValue: dbMock2 }],
+      providers: [AiCreditsService, AiCreditsReservationService, AiCreditsPacksService, { provide: DRIZZLE, useValue: dbMock2 }],
     }).compile();
     service = module.get(AiCreditsService);
 

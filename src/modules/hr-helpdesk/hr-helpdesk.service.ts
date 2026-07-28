@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
+import { HR_ROLE_SLUGS } from "../../common/rbac/role-slugs";
 import {
   helpdeskTickets,
   hrHelpdeskComments,
@@ -319,7 +320,7 @@ export class HrHelpdeskService {
       this.db
         .select({ userId: organizationMembers.userId })
         .from(organizationMembers)
-        .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.role, "HR"))),
+        .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.role, [...HR_ROLE_SLUGS]))),
       this.db
         .select({ name: users.name })
         .from(users)

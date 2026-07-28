@@ -13,10 +13,15 @@ import type {
   BroadcastInput,
   RespondInput,
 } from "../dto/emergency.schemas";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import { logger } from "../../../common/logger/logger.service";
 
 @Injectable()
 export class EmergencyService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly dispatch: NotificationDispatchService,
+  ) {}
 
   async listEvents(orgId: string, input: ListEmergencyEventsInput) {
     const { page, limit, status } = input;
@@ -91,7 +96,7 @@ export class EmergencyService {
       .where(and(eq(hrEmergencyEvents.orgId, orgId), eq(hrEmergencyEvents.id, eventId)));
   }
 
-  async broadcast(orgId: string, eventId: string, _input: BroadcastInput) {
+  async broadcast(orgId: string, eventId: string, input: BroadcastInput) {
     const event = await this.getEvent(orgId, eventId);
 
     const memberRows = event.locationId
@@ -113,7 +118,7 @@ export class EmergencyService {
       if (uid) allUserIds.push(uid);
     }
 
-    if (allUserIds.length === 0) return { broadcasted: 0, eventId };
+    if (allUserIds.length === 0) return { broadcasted: 0, notified: 0, eventId };
 
     const alreadyResponded = await this.db
       .select({ userId: hrEmergencyResponses.userId })
@@ -134,7 +139,39 @@ export class EmergencyService {
       );
     }
 
-    return { broadcasted: allUserIds.length, eventId };
+    const broadcastMessage = input.message ?? event.message;
+
+    const deliveryResults = await Promise.allSettled(
+      allUserIds.map((uid) =>
+        this.dispatch.emit({
+          eventKey: "hr.emergency.broadcast",
+          orgId,
+          entityType: "hr_emergency_event",
+          entityId: eventId,
+          targetUserIds: [uid],
+          title: event.name,
+          message: broadcastMessage,
+          priority: "CRITICAL",
+          metadata: { eventType: event.type, locationId: event.locationId ?? null },
+        }),
+      ),
+    );
+
+    let notified = 0;
+    for (const [idx, result] of deliveryResults.entries()) {
+      if (result.status === "rejected") {
+        logger.error("Emergency broadcast delivery failed", {
+          orgId,
+          eventId,
+          userId: allUserIds[idx],
+          error: result.reason,
+        });
+      } else {
+        notified += result.value.notified;
+      }
+    }
+
+    return { broadcasted: allUserIds.length, notified, eventId };
   }
 
   async respond(orgId: string, eventId: string, userId: string, input: RespondInput) {

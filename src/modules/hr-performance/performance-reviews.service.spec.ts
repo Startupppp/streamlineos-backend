@@ -2,6 +2,7 @@ process.env.APP_URL ??= "http://localhost:1000";
 
 import { ConflictException, ForbiddenException } from "@nestjs/common";
 import { PerformanceReviewsService } from "./performance-reviews.service";
+import { ReviewCyclesService } from "./review-cycles.service";
 
 describe("PerformanceReviewsService.updateReview — completed reviews are actually immutable", () => {
   function buildService(existingStatus: string) {
@@ -17,7 +18,7 @@ describe("PerformanceReviewsService.updateReview — completed reviews are actua
         }),
       }),
     };
-    return new PerformanceReviewsService(db as never, undefined as never, undefined as never);
+    return new PerformanceReviewsService(db as never, undefined as never, undefined as never, undefined as never, undefined as never);
   }
 
   function buildOwnershipService(existing: { reviewerId: string; userId: string }) {
@@ -33,7 +34,7 @@ describe("PerformanceReviewsService.updateReview — completed reviews are actua
         }),
       }),
     };
-    return new PerformanceReviewsService(db as never, undefined as never, undefined as never);
+    return new PerformanceReviewsService(db as never, undefined as never, undefined as never, undefined as never, undefined as never);
   }
 
   it("rejects editing ratings on a completed review", async () => {
@@ -89,7 +90,7 @@ describe("PerformanceReviewsService.updateReview — completed reviews are actua
   });
 });
 
-describe("PerformanceReviewsService.getCycle — bounded, projected reviews", () => {
+describe("ReviewCyclesService.getCycle — bounded, projected reviews", () => {
   function buildCycleService() {
     const findManyMock = jest.fn().mockResolvedValue([{ id: 10, userId: "u1", status: "DRAFT" }]);
     const db = {
@@ -98,7 +99,7 @@ describe("PerformanceReviewsService.getCycle — bounded, projected reviews", ()
         performanceReviews: { findMany: findManyMock },
       },
     };
-    const service = new PerformanceReviewsService(db as never, undefined as never, undefined as never);
+    const service = new ReviewCyclesService(db as never, undefined as never);
     return { service, findManyMock };
   }
 

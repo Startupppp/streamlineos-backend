@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, asc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { HR_ROLE_SET } from "../../common/rbac/role-slugs";
 import {
   holidays,
   leaveBalances,
@@ -95,7 +96,7 @@ export class DashboardLeaveService {
           .where(and(eq(leaveRequests.orgId, orgId), eq(leaveRequests.status, "PENDING")));
 
         const resignationStatuses =
-          role === "HR" ? ["SUBMITTED", "PENDING_HR"] : ["HR_APPROVED"];
+          HR_ROLE_SET.has(role) ? ["SUBMITTED", "PENDING_HR"] : ["HR_APPROVED"];
 
         const [resignationCount] = await this.db
           .select({ count: sql<number>`count(*)::int` })

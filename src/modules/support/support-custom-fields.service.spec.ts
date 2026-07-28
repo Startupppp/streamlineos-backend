@@ -4,9 +4,6 @@ import { SupportCustomFieldsService } from "./support-custom-fields.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 
 const mockDb = {
-  query: {
-    supportCustomFields: { findFirst: jest.fn(), findMany: jest.fn() },
-  },
   insert: jest.fn().mockReturnThis(),
   values: jest.fn().mockReturnThis(),
   onConflictDoUpdate: jest.fn().mockResolvedValue(undefined),
@@ -18,6 +15,8 @@ const mockDb = {
   select: jest.fn().mockReturnThis(),
   from: jest.fn().mockReturnThis(),
   innerJoin: jest.fn().mockReturnThis(),
+  limit: jest.fn().mockResolvedValue([]),
+  orderBy: jest.fn().mockResolvedValue([]),
 };
 
 describe("SupportCustomFieldsService", () => {
@@ -28,6 +27,8 @@ describe("SupportCustomFieldsService", () => {
     mockDb.returning.mockResolvedValue([{ id: 1 }]);
     mockDb.onConflictDoUpdate.mockResolvedValue(undefined);
     mockDb.where.mockReturnThis();
+    mockDb.limit.mockResolvedValue([]);
+    mockDb.orderBy.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [SupportCustomFieldsService, { provide: DRIZZLE, useValue: mockDb }],
@@ -37,7 +38,7 @@ describe("SupportCustomFieldsService", () => {
 
   describe("createField", () => {
     it("throws ConflictException when the key already exists for the org", async () => {
-      mockDb.query.supportCustomFields.findFirst.mockResolvedValueOnce({ id: 1 });
+      mockDb.limit.mockResolvedValueOnce([{ id: 1, key: "order_number" }]);
 
       await expect(
         service.createField("org1", {
@@ -53,7 +54,7 @@ describe("SupportCustomFieldsService", () => {
     });
 
     it("creates the field when the key is unique", async () => {
-      mockDb.query.supportCustomFields.findFirst.mockResolvedValueOnce(undefined);
+      mockDb.limit.mockResolvedValueOnce([]);
 
       await service.createField("org1", {
         key: "order_number",
@@ -82,17 +83,19 @@ describe("SupportCustomFieldsService", () => {
 
   describe("setFieldValues", () => {
     it("throws ConflictException when a required active field is missing from the payload", async () => {
-      mockDb.query.supportCustomFields.findMany.mockResolvedValueOnce([
-        { id: 1, label: "Order #", required: true },
-      ]);
+      mockDb.where.mockReturnValueOnce({
+        orderBy: jest.fn().mockResolvedValue([
+          { id: 1, orgId: "org1", key: "order_number", label: "Order #", fieldType: "text",
+            isRequired: true, category: null, displayOrder: 0, isActive: true, options: null,
+            createdAt: new Date(), updatedAt: new Date(), entityType: "support_ticket", projectId: 0 },
+        ]),
+      });
 
       await expect(service.setFieldValues("org1", 42, [], true)).rejects.toThrow(ConflictException);
     });
 
     it("silently drops values for fieldIds that don't belong to the org", async () => {
-      mockDb.query.supportCustomFields.findMany
-        .mockResolvedValueOnce([]) // fields lookup for the provided fieldIds (none found -> not in org)
-        .mockResolvedValueOnce([]); // active-fields check for required enforcement
+      mockDb.where.mockResolvedValueOnce([]);
 
       await service.setFieldValues("org1", 42, [{ fieldId: 999, value: "x" }] as never, true);
 
@@ -100,21 +103,22 @@ describe("SupportCustomFieldsService", () => {
     });
 
     it("upserts a value for a field that belongs to the org", async () => {
-      mockDb.query.supportCustomFields.findMany
-        .mockResolvedValueOnce([{ id: 1, key: "order_number" }])
-        .mockResolvedValueOnce([]);
+      mockDb.where.mockResolvedValueOnce([
+        { id: 1, orgId: "org1", key: "order_number", label: "Order #", fieldType: "text",
+          isRequired: false, category: null, displayOrder: 0, isActive: true, options: null,
+          createdAt: new Date(), updatedAt: new Date(), entityType: "support_ticket", projectId: 0 },
+      ]);
 
       await service.setFieldValues("org1", 42, [{ fieldId: 1, value: "ORD-1" }] as never, true);
 
       expect(mockDb.insert).toHaveBeenCalled();
-      expect(mockDb.values).toHaveBeenCalledWith({ orgId: "org1", ticketId: 42, fieldId: 1, value: "ORD-1" });
+      expect(mockDb.values).toHaveBeenCalledWith([{ orgId: "org1", ticketId: 42, fieldDefinitionId: 1, value: "ORD-1" }]);
       expect(mockDb.onConflictDoUpdate).toHaveBeenCalled();
     });
 
     it("skips DB work entirely when there's nothing to set and required enforcement is off", async () => {
       await service.setFieldValues("org1", 42, [], false);
       expect(mockDb.insert).not.toHaveBeenCalled();
-      expect(mockDb.query.supportCustomFields.findMany).not.toHaveBeenCalled();
     });
   });
 

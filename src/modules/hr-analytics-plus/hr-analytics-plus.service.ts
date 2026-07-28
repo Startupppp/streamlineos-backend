@@ -26,7 +26,7 @@ export class HrAnalyticsPlusService {
     );
   }
 
-  private async buildCommandCenter(orgId: string, _departmentId?: string) {
+  private async buildCommandCenter(orgId: string, _?: string) {
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const twelveMonthsAgo = new Date(now.getFullYear() - 1, now.getMonth(), 1);
@@ -121,7 +121,6 @@ export class HrAnalyticsPlusService {
     const casesCount = Number(openCases[0]?.count ?? 0);
     const moodRaw = avgMood[0]?.avg_mood;
     const payrollGrossRaw = lastPayroll[0]?.gross_total;
-    const _payrollMonthRaw = lastPayroll[0]?.month;
 
     return {
       headcount: {
@@ -341,7 +340,7 @@ export class HrAnalyticsPlusService {
     ];
   }
 
-  async getDrilldown(orgId: string, metric: string, page: number, limit: number, _departmentId?: string) {
+  async getDrilldown(orgId: string, metric: string, page: number, limit: number, _?: string) {
     const offset = (page - 1) * limit;
     let rows: unknown[] = [];
     let total = 0;

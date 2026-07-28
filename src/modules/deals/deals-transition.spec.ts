@@ -10,7 +10,6 @@ import { AuditService } from "../../common/audit/audit.service";
 import { EmailService } from "../email/email.service";
 import { AutomationService } from "../automation/automation.service";
 import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";
-import { PlanLimitsService } from "../billing/plan-limits.service";
 
 function makeMockDb(): Db {
   const updateReturning = jest.fn().mockResolvedValue([
@@ -39,7 +38,27 @@ function makeMockDb(): Db {
         }),
       }),
     }),
-    transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb({})),
+    transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) =>
+      cb({
+        update: jest.fn().mockReturnValue({
+          set: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({ returning: updateReturning }),
+          }),
+        }),
+        insert: jest.fn().mockReturnValue({
+          values: jest.fn().mockReturnValue({
+            returning: jest.fn().mockResolvedValue([]),
+          }),
+        }),
+        select: jest.fn().mockReturnValue({
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue([]),
+            }),
+          }),
+        }),
+      }),
+    ),
   } as unknown as Db;
 }
 
@@ -75,7 +94,9 @@ describe("DealsService – blueprint transition enforcement", () => {
       mockCrmMetadata as unknown as CrmMetadataService,
       { evaluate: jest.fn().mockResolvedValue({ valid: true, errors: [] }) } as unknown as import("../crm-metadata/crm-validation.service").CrmValidationService,
       { emit: jest.fn().mockResolvedValue(undefined) } as unknown as import("../crm-automation-studio/crm-automation-bus.service").CrmAutomationBusService,
-      { assertWithinLimit: jest.fn().mockResolvedValue(undefined) } as unknown as PlanLimitsService,
+      {} as unknown as import("./deals-crud.service").DealsCrudService,
+      {} as unknown as import("./deals-activities.service").DealsActivitiesService,
+      {} as unknown as import("./deals-import-export.service").DealsImportExportService,
     );
   });
 

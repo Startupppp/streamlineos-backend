@@ -21,7 +21,6 @@ export class ExitChecklistService {
   async seedChecklistFromTemplate(
     orgId: string,
     resignationId: number,
-    _actorId: string,
   ): Promise<{ created: number }> {
     const template = await this.db.query.hrTemplates.findFirst({
       where: and(
@@ -47,6 +46,7 @@ export class ExitChecklistService {
       if (items.length > 0) {
         await this.db.insert(exitChecklists).values(
           items.map((ci) => ({
+            orgId,
             resignationId,
             item: ci.title,
             status: "PENDING" as const,
@@ -58,6 +58,7 @@ export class ExitChecklistService {
 
     await this.db.insert(exitChecklists).values(
       DEFAULT_CHECKLIST_ITEMS.map((item) => ({
+        orgId,
         resignationId,
         item,
         status: "PENDING" as const,

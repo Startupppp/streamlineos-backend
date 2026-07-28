@@ -1,4 +1,4 @@
-import { Controller, Get, HttpCode, Post, Patch, Delete, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
+import { Controller, Get, HttpCode, Post, Patch, Delete, Body, Param, ParseIntPipe, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -10,9 +10,11 @@ import { RecruitmentTalentPoolsService } from "./recruitment-talent-pools.servic
 import {
   addPoolMemberSchema,
   createTalentPoolSchema,
+  listPoolMembersQuerySchema,
   updateTalentPoolSchema,
   type AddPoolMemberInput,
   type CreateTalentPoolInput,
+  type ListPoolMembersQueryInput,
   type UpdateTalentPoolInput,
 } from "./dto/talent-pools.schemas";
 
@@ -57,8 +59,12 @@ export class RecruitmentTalentPoolsController {
 
   @Get(":poolId/members")
   @RequirePermission("hr:employees:view")
-  listMembers(@Param("poolId", ParseIntPipe) poolId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.pools.listMembers(u.orgId, poolId);
+  listMembers(
+    @Param("poolId", ParseIntPipe) poolId: number,
+    @Query(new ZodValidationPipe(listPoolMembersQuerySchema)) query: ListPoolMembersQueryInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.pools.listMembers(u.orgId, poolId, query);
   }
 
   @Post(":poolId/members")

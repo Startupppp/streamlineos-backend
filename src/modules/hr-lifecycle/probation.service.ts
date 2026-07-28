@@ -147,7 +147,7 @@ export class ProbationService {
 
   async extend(
     orgId: string,
-    _actorId: string,
+    _: string,
     reviewId: number,
     input: ExtendProbationInput,
   ) {

@@ -74,7 +74,7 @@ export class ScenariosController {
     @Query(new ZodValidationPipe(forecastQuerySchema)) query: ForecastQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.forecast.getForecast(u.orgId, query, u.userId);
+    return this.forecast.getForecast(u.orgId, query);
   }
 
   @Get("forecast/compare")

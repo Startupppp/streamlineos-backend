@@ -84,7 +84,7 @@ export class ProjectsTicketsTransferService {
     const defaultStatus = validStatuses[0]?.name ?? "TODO";
 
     const skipped: Array<{ row: number; reason: string }> = [];
-    const toCreate: Array<typeof tickets.$inferInsert & { _rowIndex: number }> = [];
+    const toCreate: Array<typeof tickets.$inferInsert & { rowIndex: number }> = [];
 
     for (let i = 0; i < body.rows.length; i++) {
       const row = body.rows[i];
@@ -117,7 +117,7 @@ export class ProjectsTicketsTransferService {
         assigneeId,
         dueDate: row.dueDate ?? undefined,
         reporterId: u.userId,
-        _rowIndex: i + 1,
+        rowIndex: i + 1,
       });
     }
 
@@ -140,8 +140,8 @@ export class ProjectsTicketsTransferService {
 
       const rowsWithNumbers = toCreate.map((item) => {
         const ticketNumber = nextNum++;
-        const { _rowIndex, ...values } = item;
-        return { values: { ...values, ticketNumber }, _rowIndex };
+        const { rowIndex, ...values } = item;
+        return { values: { ...values, ticketNumber }, rowIndex };
       });
 
       for (let i = 0; i < rowsWithNumbers.length; i += CHUNK_SIZE) {
@@ -152,7 +152,7 @@ export class ProjectsTicketsTransferService {
         } catch (error) {
           const msg = error instanceof Error ? error.message : "Unknown error";
           for (const r of chunk) {
-            skipped.push({ row: r._rowIndex, reason: msg });
+            skipped.push({ row: r.rowIndex, reason: msg });
           }
         }
       }

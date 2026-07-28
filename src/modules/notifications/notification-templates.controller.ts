@@ -62,7 +62,7 @@ export class NotificationTemplatesController {
     @Body(new ZodValidationPipe(updateTemplateSchema)) dto: UpdateTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.templates.update(u.orgId, u.userId, templateId, dto);
+    return this.templates.update(u.orgId, templateId, u.userId, dto);
   }
 
   @Delete(":templateId")

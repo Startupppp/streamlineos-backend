@@ -136,7 +136,7 @@ export class CommsCopilotTools {
               success: true,
               message: `Message sent to ${recipientName} successfully.`,
             };
-          } catch (_e) {
+          } catch {
             return {
               success: false,
               message: `Failed to send the message. Please try again later.`,

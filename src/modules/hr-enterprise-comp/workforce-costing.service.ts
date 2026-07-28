@@ -8,18 +8,29 @@ import { hrCompCycles } from "../../db/schema/hr/enterprise-comp";
 export class WorkforceCostingService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async costByDepartment(orgId: string, _periodKey: string) {
+  async costByDepartment(orgId: string, periodKey: string) {
+    const parts = periodKey.split("-");
+    const year = Number(parts[0]);
+    const month = Number(parts[1]);
+    const periodEnd = new Date(Date.UTC(year, month, 0));
+    const periodEndStr = periodEnd.toISOString().slice(0, 10);
+
     const rows = await this.db.execute(sql`
       SELECT
         d.id AS department_id,
         d.name AS department_name,
         COUNT(DISTINCT esp.user_id) AS headcount,
         SUM(CAST(esp.annual_ctc AS BIGINT) / 12) AS monthly_cost_cents
-      FROM employee_salary_profiles esp
+      FROM (
+        SELECT DISTINCT ON (user_id) user_id, annual_ctc
+        FROM employee_salary_profiles
+        WHERE org_id = ${orgId}
+          AND effective_from <= ${periodEndStr}
+          AND (effective_to IS NULL OR effective_to > ${periodEndStr})
+        ORDER BY user_id, effective_from DESC
+      ) esp
       JOIN org_unit_members oum ON oum.user_id = esp.user_id
       JOIN org_units d ON d.id = oum.org_unit_id AND d.org_id = ${orgId} AND d.kind = 'DEPARTMENT'
-      WHERE esp.org_id = ${orgId}
-        AND esp.status = 'ACTIVE'
       GROUP BY d.id, d.name
       ORDER BY monthly_cost_cents DESC
     `);

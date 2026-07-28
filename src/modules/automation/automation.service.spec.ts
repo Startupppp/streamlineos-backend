@@ -12,6 +12,11 @@ const mockDb = {
     automationRules: { findMany: jest.fn(), findFirst: jest.fn() },
     automationRuns: { findMany: jest.fn() },
   },
+  select: jest.fn().mockReturnValue({
+    from: jest.fn().mockReturnValue({
+      where: jest.fn().mockResolvedValue([{ total: 0 }]),
+    }),
+  }),
   insert: jest.fn().mockReturnThis(),
   values: jest.fn().mockReturnThis(),
   onConflictDoNothing: jest.fn().mockResolvedValue(undefined),

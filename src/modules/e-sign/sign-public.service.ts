@@ -230,7 +230,7 @@ export class SignPublicService {
     }
   }
 
-  async requestOtp(token: string, _ctx: PublicRequestContext) {
+  async requestOtp(token: string) {
     const { recipient, envelope } = await this.resolveRecipient(token);
     this.assertActive(recipient, envelope);
     if (recipient.authMethod !== "otp_email") throw new BadRequestException("OTP is not enabled for this recipient");
@@ -344,7 +344,7 @@ export class SignPublicService {
     return { accepted: true };
   }
 
-  async setFieldValue(token: string, fieldId: number, input: PublicFieldValueInput, _ctx: PublicRequestContext) {
+  async setFieldValue(token: string, fieldId: number, input: PublicFieldValueInput) {
     const { recipient, envelope } = await this.resolveRecipient(token);
     this.assertActive(recipient, envelope);
     if (!recipient.consentAcceptedAt) throw new ForbiddenException("Please accept the electronic signature consent first");

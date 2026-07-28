@@ -33,7 +33,7 @@ export class ImportService {
     private readonly stockEngine: StockEngineService,
   ) {}
 
-  async previewImport(orgId: string, _userId: string, file: Express.Multer.File, importType: ImportType) {
+  async previewImport(orgId: string, file: Express.Multer.File, importType: ImportType) {
     const text = file.buffer.toString("utf-8");
     const { headers, rows } = parseCsv(text);
     const expectedColumns = EXPECTED_COLUMNS[importType];
@@ -44,7 +44,7 @@ export class ImportService {
 
     const errors: RowError[] = [];
     for (let i = 0; i < rows.length; i++) {
-      const rowErrors = this._validateRow(importType, rows[i]!, i + 2);
+      const rowErrors = this.validateRow(importType, rows[i]!, i + 2);
       errors.push(...rowErrors);
     }
 
@@ -87,7 +87,7 @@ export class ImportService {
       for (let batchIdx = 0; batchIdx < batch.length; batchIdx++) {
         const rowIndex = batchStart + batchIdx;
         const row = batch[batchIdx]!;
-        const rowErrors = this._validateRow(input.importType, row, rowIndex + 1);
+        const rowErrors = this.validateRow(input.importType, row, rowIndex + 1);
         if (rowErrors.length > 0) {
           jobErrors.push(...rowErrors);
           errorRows++;
@@ -95,7 +95,7 @@ export class ImportService {
         }
 
         if (input.importType === "opening-stock") {
-          const rowError = await this._processOpeningStockRow(orgId, userId, job.id, row, rowIndex);
+          const rowError = await this.processOpeningStockRow(orgId, userId, job.id, row, rowIndex);
           if (rowError) {
             jobErrors.push(rowError);
             errorRows++;
@@ -125,7 +125,7 @@ export class ImportService {
     return updated;
   }
 
-  private async _processOpeningStockRow(
+  private async processOpeningStockRow(
     orgId: string,
     userId: string,
     jobId: number,
@@ -179,7 +179,7 @@ export class ImportService {
     }
   }
 
-  private _validateRow(importType: ImportType, row: Record<string, string>, rowIndex: number): RowError[] {
+  private validateRow(importType: ImportType, row: Record<string, string>, rowIndex: number): RowError[] {
     const errors: RowError[] = [];
 
     if (importType === "products") {

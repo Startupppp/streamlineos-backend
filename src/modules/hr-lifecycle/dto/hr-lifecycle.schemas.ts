@@ -153,3 +153,16 @@ export type TerminationReviewInput = z.infer<typeof terminationReviewSchema>;
 export type ListTerminationsQueryInput = z.infer<typeof listTerminationsQuerySchema>;
 export type TerminationLetterQuery = z.infer<typeof terminationLetterQuerySchema>;
 export type AttendanceAnalyticsQuery = z.infer<typeof attendanceAnalyticsQuerySchema>;
+
+export const listResignationsQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  status: z
+    .enum([
+      "SUBMITTED", "PENDING_HR", "HR_APPROVED", "CEO_APPROVED",
+      "IN_PROGRESS", "APPROVED", "WITHDRAWN", "COMPLETED", "REJECTED",
+    ])
+    .optional(),
+});
+
+export type ListResignationsQueryInput = z.infer<typeof listResignationsQuerySchema>;

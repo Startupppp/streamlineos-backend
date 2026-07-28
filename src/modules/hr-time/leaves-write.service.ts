@@ -6,6 +6,7 @@ import {
   InternalServerErrorException,
 } from "@nestjs/common";
 import { and, eq, gte, inArray, lte, or } from "drizzle-orm";
+import { HR_ROLE_SLUGS } from "../../common/rbac/role-slugs";
 import {
   leaveBalances,
   leaveBlackoutDates,
@@ -338,7 +339,7 @@ export class LeavesWriteService {
     const hrMembers = await this.db
       .select({ userId: organizationMembers.userId })
       .from(organizationMembers)
-      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.role, "HR")));
+      .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.role, [...HR_ROLE_SLUGS])));
 
     if (hrMembers.length === 0) return [];
 

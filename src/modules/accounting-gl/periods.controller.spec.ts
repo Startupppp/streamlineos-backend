@@ -1,11 +1,19 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import { INestApplication, CanActivate, ExecutionContext, UnauthorizedException } from "@nestjs/common";
+import type { CallHandler, NestInterceptor } from "@nestjs/common";
 import request from "supertest";
 import { PeriodsController } from "./periods.controller";
 import { PeriodsService } from "./periods.service";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
+import { IdempotencyInterceptor } from "../../common/idempotency/idempotency.interceptor";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+
+class PassthroughIdempotencyInterceptor implements NestInterceptor {
+  intercept(_ctx: ExecutionContext, next: CallHandler) {
+    return next.handle();
+  }
+}
 
 const ORG_ID = "org-abc";
 const USER_CTX: CurrentUserContext = {
@@ -62,6 +70,8 @@ async function buildApp(options: { allowPermission: boolean }): Promise<INestApp
     .useClass(HeaderCheckAuthGuard)
     .overrideGuard(PermissionGuard)
     .useClass(options.allowPermission ? AlwaysAllowPermissionGuard : AlwaysDenyPermissionGuard)
+    .overrideInterceptor(IdempotencyInterceptor)
+    .useClass(PassthroughIdempotencyInterceptor)
     .compile();
 
   const app = moduleRef.createNestApplication();

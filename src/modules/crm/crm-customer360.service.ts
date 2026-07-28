@@ -48,9 +48,9 @@ export class CrmCustomer360Service {
     }
     if (permSet.has("crm:clients:read")) {
       fetchMap.push(["invoices", () => this.sections.fetchInvoicesForOrg(orgId, orgRow.name)]);
-      fetchMap.push(["payments", () => this.sections.fetchPaymentsForOrg(orgId, orgRow.name)]);
-      fetchMap.push(["supportTickets", () => this.sections.fetchSupportTicketsForOrg(orgId, orgRow.name)]);
-      fetchMap.push(["surveys", () => this.sections.fetchSurveysForOrg(orgId, orgRow.name)]);
+      fetchMap.push(["payments", () => this.sections.fetchPaymentsForOrg(orgId)]);
+      fetchMap.push(["supportTickets", () => this.sections.fetchSupportTicketsForOrg(orgId)]);
+      fetchMap.push(["surveys", () => this.sections.fetchSurveysForOrg(orgId)]);
     }
     if (permSet.has("build:view")) {
       fetchMap.push(["projects", () => this.sections.fetchProjectsForOrg(orgId, orgRow.name)]);

@@ -90,7 +90,7 @@ export class InvWarehousesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:warehouses:manage")
   updateLocation(
-    @Param("warehouseId", ParseIntPipe) _warehouseId: number,
+    @Param("warehouseId", ParseIntPipe) _: number,
     @Param("locationId", ParseIntPipe) locationId: number,
     @Body(new ZodValidationPipe(updateLocationSchema)) body: UpdateLocationInput,
     @CurrentUser() u: CurrentUserContext,

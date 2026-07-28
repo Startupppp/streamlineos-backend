@@ -5,6 +5,7 @@ describe("validateEnv", () => {
     NODE_ENV: "test",
     DATABASE_URL: "postgres://u:p@localhost:5432/db",
     BACKEND_JWT_SECRET: "x".repeat(44),
+    PORTAL_JWT_SECRET: "y".repeat(44),
     CORS_ORIGINS: "https://app.example.com",
     APP_URL: "https://app.example.com",
   };

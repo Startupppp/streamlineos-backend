@@ -40,7 +40,6 @@ import {
   schedulePurgeSchema,
   securitySettingsSchema,
   switchOrgSchema,
-  transferOwnershipSchema,
   updateMemberRoleSchema,
   updateOrgSettingsSchema,
   type AcceptInvitationInput,
@@ -54,7 +53,6 @@ import {
   type SchedulePurgeInput,
   type SecuritySettingsInput,
   type SwitchOrgInput,
-  type TransferOwnershipInput,
   type UpdateMemberRoleInput,
   type UpdateOrgSettingsInput,
 } from "./dto/organization.schemas";
@@ -324,18 +322,6 @@ export class OrganizationController {
   restoreOrg(@CurrentUser() u: CurrentUserContext) {
     if (!u.isOrgOwner && !u.isPlatformAdmin) throw new ForbiddenException("Forbidden");
     return this.organization.restoreOrg(u.orgId, u.userId);
-  }
-
-  @Post("transfer-ownership")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("settings:manage")
-  @Idempotent("organization.transferOwnership")
-  transferOwnership(
-    @Body(new ZodValidationPipe(transferOwnershipSchema)) body: TransferOwnershipInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) throw new ForbiddenException("Forbidden");
-    return this.organization.transferOwnership(u.orgId, u.userId, body);
   }
 
   @Post("leave")

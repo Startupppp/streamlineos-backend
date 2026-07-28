@@ -95,7 +95,7 @@ describe("ImportService — opening-stock row validation via previewImport", () 
 
   it("returns no errors for a valid opening-stock row", async () => {
     const file = makeFile("sku,locationCode,quantity\nSKU1,LOC1,10.5");
-    const result = await service.previewImport("org1", "u1", file, "opening-stock");
+    const result = await service.previewImport("org1", file, "opening-stock");
 
     expect(result.errors).toHaveLength(0);
     expect(result.validRows).toBe(1);
@@ -103,7 +103,7 @@ describe("ImportService — opening-stock row validation via previewImport", () 
 
   it("returns quantity error when quantity is not a valid number", async () => {
     const file = makeFile("sku,locationCode,quantity\nSKU1,LOC1,not-a-number");
-    const result = await service.previewImport("org1", "u1", file, "opening-stock");
+    const result = await service.previewImport("org1", file, "opening-stock");
 
     const qtyError = result.errors.find((e: { field: string }) => e.field === "quantity");
     expect(qtyError).toBeDefined();
@@ -111,7 +111,7 @@ describe("ImportService — opening-stock row validation via previewImport", () 
 
   it("returns quantity error when quantity is zero", async () => {
     const file = makeFile("sku,locationCode,quantity\nSKU1,LOC1,0");
-    const result = await service.previewImport("org1", "u1", file, "opening-stock");
+    const result = await service.previewImport("org1", file, "opening-stock");
 
     const qtyError = result.errors.find((e: { field: string }) => e.field === "quantity");
     expect(qtyError).toBeDefined();
@@ -119,7 +119,7 @@ describe("ImportService — opening-stock row validation via previewImport", () 
 
   it("returns quantity error when quantity is negative", async () => {
     const file = makeFile("sku,locationCode,quantity\nSKU1,LOC1,-5");
-    const result = await service.previewImport("org1", "u1", file, "opening-stock");
+    const result = await service.previewImport("org1", file, "opening-stock");
 
     const qtyError = result.errors.find((e: { field: string }) => e.field === "quantity");
     expect(qtyError).toBeDefined();
@@ -127,7 +127,7 @@ describe("ImportService — opening-stock row validation via previewImport", () 
 
   it("returns sku error when sku is missing", async () => {
     const file = makeFile("sku,locationCode,quantity\n,LOC1,10");
-    const result = await service.previewImport("org1", "u1", file, "opening-stock");
+    const result = await service.previewImport("org1", file, "opening-stock");
 
     const skuError = result.errors.find((e: { field: string }) => e.field === "sku");
     expect(skuError).toBeDefined();
@@ -135,7 +135,7 @@ describe("ImportService — opening-stock row validation via previewImport", () 
 
   it("returns error when quantity field is empty", async () => {
     const file = makeFile("sku,locationCode,quantity\nSKU1,LOC1,");
-    const result = await service.previewImport("org1", "u1", file, "opening-stock");
+    const result = await service.previewImport("org1", file, "opening-stock");
 
     const qtyError = result.errors.find((e: { field: string }) => e.field === "quantity");
     expect(qtyError).toBeDefined();
@@ -143,7 +143,7 @@ describe("ImportService — opening-stock row validation via previewImport", () 
 
   it("maps columns from the CSV header for opening-stock", async () => {
     const file = makeFile("sku,locationCode,quantity,unitCost\nSKU1,LOC1,5,10");
-    const result = await service.previewImport("org1", "u1", file, "opening-stock");
+    const result = await service.previewImport("org1", file, "opening-stock");
 
     expect(result.mappedFields).toContain("sku");
     expect(result.mappedFields).toContain("quantity");

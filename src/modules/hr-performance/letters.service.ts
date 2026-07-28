@@ -55,7 +55,7 @@ export class LettersService {
       if (!(v in ctx)) ctx[v] = `{{${v}}}`;
     }
 
-    const outputHtml = bodyHtml.replace(/\{\{([^}]+)\}\}/g, (_m, key: string) => ctx[key.trim()] ?? `{{${key.trim()}}}`);
+    const outputHtml = bodyHtml.replace(/\{\{([^}]+)\}\}/g, (_, key: string) => ctx[key.trim()] ?? `{{${key.trim()}}}`);
 
     return {
       templateId: template.id,

@@ -47,7 +47,7 @@ export class CrmMetadataController {
   @RequirePermission("crm:settings:view")
   listPipelines(
     @CurrentUser() u: CurrentUserContext,
-    @Query(new ZodValidationPipe(listPipelinesSchema)) _q: unknown,
+    @Query(new ZodValidationPipe(listPipelinesSchema)) _: unknown,
   ) {
     return this.svc.listPipelines(u.orgId);
   }

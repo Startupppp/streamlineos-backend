@@ -106,7 +106,7 @@ export class InvCycleCountsService {
   }
 
   async startCycleCount(orgId: string, countId: number) {
-    const cc = await this._requireCount(orgId, countId);
+    const cc = await this.requireCount(orgId, countId);
     if (cc.status !== "PLANNED") throw new BadRequestException("Only PLANNED counts can be started");
 
     await this.db.update(invCycleCounts)
@@ -118,7 +118,7 @@ export class InvCycleCountsService {
   }
 
   async updateLines(orgId: string, countId: number, data: UpdateCountLinesInput) {
-    const cc = await this._requireCount(orgId, countId);
+    const cc = await this.requireCount(orgId, countId);
     if (cc.status !== "COUNTING") throw new BadRequestException("Lines can only be updated while status is COUNTING");
 
     for (const update of data.lines) {
@@ -132,7 +132,7 @@ export class InvCycleCountsService {
   }
 
   async reviewCycleCount(orgId: string, countId: number) {
-    const cc = await this._requireCount(orgId, countId);
+    const cc = await this.requireCount(orgId, countId);
     if (cc.status !== "COUNTING") throw new BadRequestException("Only COUNTING counts can move to REVIEW");
 
     const lines = await this.db.query.invCycleCountLines.findMany({
@@ -158,7 +158,7 @@ export class InvCycleCountsService {
   }
 
   async postCycleCount(orgId: string, userId: string, countId: number, idempotencyKey: string) {
-    const cc = await this._requireCount(orgId, countId);
+    const cc = await this.requireCount(orgId, countId);
     if (cc.status !== "REVIEW") throw new BadRequestException("Only REVIEW counts can be posted");
 
     const lines = await this.db.query.invCycleCountLines.findMany({
@@ -200,7 +200,7 @@ export class InvCycleCountsService {
   }
 
   async cancelCycleCount(orgId: string, countId: number) {
-    const cc = await this._requireCount(orgId, countId);
+    const cc = await this.requireCount(orgId, countId);
     if (cc.status === "POSTED") throw new BadRequestException("Posted counts cannot be cancelled");
 
     await this.db.update(invCycleCounts)
@@ -210,7 +210,7 @@ export class InvCycleCountsService {
     await this.cache.invalidate(CACHE_KEYS.invCycleCountDetail(orgId, countId));
   }
 
-  private async _requireCount(orgId: string, countId: number) {
+  private async requireCount(orgId: string, countId: number) {
     const cc = await this.db.query.invCycleCounts.findFirst({
       where: and(eq(invCycleCounts.orgId, orgId), eq(invCycleCounts.id, countId)),
       columns: { id: true, status: true, countNumber: true },

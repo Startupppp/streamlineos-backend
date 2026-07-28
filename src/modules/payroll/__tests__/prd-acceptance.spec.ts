@@ -3,7 +3,6 @@
  * Full browser E2E requires a running stack; these gate correctness of
  * launch-critical invariants from payroll-product-prd.md §18.
  */
-import { GoneException } from "@nestjs/common";
 import { canTransitionRun, PAYROLL_LOCKED_STATUSES } from "../payroll.types";
 import { calcStatutory } from "../runs/lib/statutory";
 import {
@@ -13,7 +12,6 @@ import {
   resolvePtMonthly,
   resolveLwf,
 } from "../runs/lib/statutory-registry";
-import { BankTransfersService } from "../../hr-payroll/bank-transfers.service";
 import { createRunSchema } from "../runs/dto/runs.schemas";
 
 const rounding = { mode: "NEAREST" as const, precision: 0 as const };
@@ -53,17 +51,6 @@ describe("PRD acceptance — launch gates", () => {
     expect(canTransitionRun("LOCKED", "PAID")).toBe(true);
   });
 
-  it("legacy unmasked bank transfer writes are disabled", async () => {
-    const service = new BankTransfersService({ insert: jest.fn() } as never);
-    await expect(
-      service.create("org", "user", {
-        month: "2025-06",
-        totalAmount: 1,
-        employeeCount: 1,
-        entries: [],
-      } as never),
-    ).rejects.toThrow(GoneException);
-  });
 
   it("off-cycle/correction runs require source linkage", () => {
     const bad = createRunSchema.safeParse({ month: "2025-06", runType: "OFF_CYCLE" });

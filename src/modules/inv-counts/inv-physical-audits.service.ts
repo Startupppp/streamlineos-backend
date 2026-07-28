@@ -102,7 +102,7 @@ export class InvPhysicalAuditsService {
   }
 
   async startAudit(orgId: string, auditId: number) {
-    const audit = await this._requireAudit(orgId, auditId);
+    const audit = await this.requireAudit(orgId, auditId);
     if (audit.status !== "PLANNED") throw new BadRequestException("Only PLANNED audits can be started");
 
     await this.db.update(invPhysicalAudits)
@@ -114,7 +114,7 @@ export class InvPhysicalAuditsService {
   }
 
   async updateLines(orgId: string, auditId: number, data: UpdateCountLinesInput) {
-    const audit = await this._requireAudit(orgId, auditId);
+    const audit = await this.requireAudit(orgId, auditId);
     if (audit.status !== "COUNTING") throw new BadRequestException("Lines can only be updated while status is COUNTING");
 
     for (const update of data.lines) {
@@ -128,7 +128,7 @@ export class InvPhysicalAuditsService {
   }
 
   async reviewAudit(orgId: string, auditId: number) {
-    const audit = await this._requireAudit(orgId, auditId);
+    const audit = await this.requireAudit(orgId, auditId);
     if (audit.status !== "COUNTING") throw new BadRequestException("Only COUNTING audits can move to REVIEW");
 
     const lines = await this.db.query.invPhysicalAuditLines.findMany({
@@ -153,7 +153,7 @@ export class InvPhysicalAuditsService {
   }
 
   async postAudit(orgId: string, userId: string, auditId: number, idempotencyKey: string) {
-    const audit = await this._requireAudit(orgId, auditId);
+    const audit = await this.requireAudit(orgId, auditId);
     if (audit.status !== "REVIEW") throw new BadRequestException("Only REVIEW audits can be posted");
 
     const lines = await this.db.query.invPhysicalAuditLines.findMany({
@@ -193,7 +193,7 @@ export class InvPhysicalAuditsService {
   }
 
   async cancelAudit(orgId: string, auditId: number) {
-    const audit = await this._requireAudit(orgId, auditId);
+    const audit = await this.requireAudit(orgId, auditId);
     if (audit.status === "POSTED") throw new BadRequestException("Posted audits cannot be cancelled");
 
     await this.db.update(invPhysicalAudits)
@@ -203,7 +203,7 @@ export class InvPhysicalAuditsService {
     await this.cache.invalidate(PA_DETAIL_KEY(orgId, auditId));
   }
 
-  private async _requireAudit(orgId: string, auditId: number) {
+  private async requireAudit(orgId: string, auditId: number) {
     const audit = await this.db.query.invPhysicalAudits.findFirst({
       where: and(eq(invPhysicalAudits.orgId, orgId), eq(invPhysicalAudits.id, auditId)),
       columns: { id: true, status: true, auditNumber: true },

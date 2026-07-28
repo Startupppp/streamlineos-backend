@@ -12,9 +12,7 @@ interface DefaultPolicySpec {
   rules: Record<string, unknown>;
 }
 
-export function buildDefaultPolicies(
-  _orgId: string,
-): DefaultPolicySpec[] {
+export function buildDefaultPolicies(): DefaultPolicySpec[] {
   return [
     {
       policyType: "leave",

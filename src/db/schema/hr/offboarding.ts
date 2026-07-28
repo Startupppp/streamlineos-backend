@@ -215,13 +215,21 @@ export const resignations = pgTable("resignations", {
 
 export const exitChecklists = pgTable("exit_checklists", {
   id: serial("id").primaryKey(),
-  resignationId: integer("resignation_id").references(() => resignations.id, { onDelete: "cascade" }).notNull(),
+  orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  resignationId: integer("resignation_id").notNull(),
   item: text("item").notNull(),
   assignedTo: text("assigned_to").references(() => users.id),
   status: exitChecklistStatusEnum("status").default("PENDING").notNull(),
   completedAt: timestamp("completed_at"),
   notes: text("notes"),
-});
+}, (table) => [
+  unique("uniq_exit_checklists_org_id").on(table.orgId, table.id),
+  index("idx_exit_checklists_org_resignation").on(table.orgId, table.resignationId),
+  foreignKey({
+    columns: [table.orgId, table.resignationId],
+    foreignColumns: [resignations.orgId, resignations.id],
+  }).onDelete("cascade"),
+]);
 
 export const terminations = pgTable("terminations", {
   id: serial("id").primaryKey(),

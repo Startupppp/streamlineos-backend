@@ -82,7 +82,7 @@ export class MailCopilotTools {
               isRead: m.isRead,
             }));
             return { success: true, messages, total: messages.length };
-          } catch (_e) {
+          } catch {
             return {
               success: false,
               message: "Failed to list emails. Please try again.",
@@ -142,7 +142,7 @@ export class MailCopilotTools {
               threadId,
             );
             return { success: true, ...summary };
-          } catch (_e) {
+          } catch {
             return {
               success: false,
               message: "Failed to summarize thread. Please try again.",
@@ -227,7 +227,7 @@ export class MailCopilotTools {
                   body.slice(0, 100) + (body.length > 100 ? "…" : ""),
               },
             };
-          } catch (_e) {
+          } catch {
             return {
               success: false,
               message: "Failed to prepare email. Please try again.",

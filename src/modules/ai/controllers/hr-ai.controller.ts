@@ -85,7 +85,6 @@ export class HrAiController {
   @RequirePermission("hr:interviews:manage")
   generateJd(
     @Body(new ZodValidationPipe(generateJdSchema)) body: GenerateJdInput,
-    @CurrentUser() _u: CurrentUserContext,
   ) {
     this.ensureLlm("AI is not configured. Set OPENAI_API_KEY.");
     return this.hr.generateJd(body);

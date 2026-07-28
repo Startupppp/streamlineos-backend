@@ -262,7 +262,7 @@ export class WhiteboardsService {
     input: UpdateWhiteboardInput,
   ) {
     await assertProject(this.db, u.orgId, projectId);
-    const { board: _board, access } = await this.loadBoardWithAccess(u, projectId, whiteboardId);
+    const { board: _, access } = await this.loadBoardWithAccess(u, projectId, whiteboardId);
 
     if (access === "none") throw new NotFoundException("Whiteboard not found");
     if (access === "view") throw new ForbiddenException("Insufficient access to update whiteboard");

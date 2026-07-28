@@ -293,16 +293,31 @@ export class HrAutomationEngineService {
   }
 
   async listRuns(orgId: string, params: { ruleId?: number } & ListRunsInput) {
-    const { page, limit, ruleId } = params;
-    const offset = (page - 1) * limit;
+    const { ruleId } = params;
+    const limit = Math.min(params.limit, 100);
+    const offset = (params.page - 1) * limit;
+    const where = ruleId
+      ? and(eq(hrAutomationRuns.orgId, orgId), eq(hrAutomationRuns.ruleId, ruleId))
+      : eq(hrAutomationRuns.orgId, orgId);
 
-    return this.db.query.hrAutomationRuns.findMany({
-      where: ruleId
-        ? and(eq(hrAutomationRuns.orgId, orgId), eq(hrAutomationRuns.ruleId, ruleId))
-        : eq(hrAutomationRuns.orgId, orgId),
-      orderBy: [desc(hrAutomationRuns.createdAt)],
-      limit,
-      offset,
-    });
+    const [data, countRows] = await Promise.all([
+      this.db.query.hrAutomationRuns.findMany({
+        where,
+        orderBy: [desc(hrAutomationRuns.createdAt)],
+        limit,
+        offset,
+      }),
+      this.db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(hrAutomationRuns)
+        .where(where),
+    ]);
+
+    const total = countRows[0]?.total ?? 0;
+
+    return {
+      data,
+      pagination: { page: params.page, limit, total, totalPages: Math.ceil(total / limit) },
+    };
   }
 }

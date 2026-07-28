@@ -22,8 +22,7 @@ import type {
   UpdateClientStatusInput,
   UpdateRenewalInput,
 } from "./dto/clients.schemas";
-
-const CUSTOMER_SUPPORT = "CUSTOMER_SUPPORT";
+import { ROLE_SLUG, HR_ROLE_SLUGS } from "../../common/rbac/role-slugs";
 
 @Injectable()
 export class ClientAccountsService {
@@ -208,7 +207,7 @@ export class ClientAccountsService {
       ? await this.db
           .select({ userId: organizationMembers.userId })
           .from(organizationMembers)
-          .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.role, "HR")))
+          .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.role, [...HR_ROLE_SLUGS])))
       : [];
 
     const updated = await this.db.transaction(async (tx) => {
@@ -305,7 +304,7 @@ export class ClientAccountsService {
       .select({ userId: organizationMembers.userId, name: users.name, image: users.image })
       .from(organizationMembers)
       .innerJoin(users, eq(users.id, organizationMembers.userId))
-      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.role, CUSTOMER_SUPPORT)));
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.role, ROLE_SLUG.CUSTOMER_SUPPORT)));
 
     if (csMembers.length === 0) {
       return { members: [], unassignedCount: 0 };
@@ -401,7 +400,7 @@ export class ClientAccountsService {
     const csMembers = await this.db
       .select({ userId: organizationMembers.userId })
       .from(organizationMembers)
-      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.role, CUSTOMER_SUPPORT)));
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.role, ROLE_SLUG.CUSTOMER_SUPPORT)));
 
     if (csMembers.length === 0) return;
 

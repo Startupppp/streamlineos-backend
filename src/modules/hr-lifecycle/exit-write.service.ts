@@ -152,7 +152,7 @@ export class ExitWriteService {
           .onConflictDoNothing();
       });
 
-      void this.exitChecklist.seedChecklistFromTemplate(orgId, resignationId, actor.userId).catch(() => undefined);
+      void this.exitChecklist.seedChecklistFromTemplate(orgId, resignationId).catch(() => undefined);
 
       this.dispatchResignationApproved(
         actor.userId,
@@ -258,6 +258,7 @@ export class ExitWriteService {
     if (input.checklistItems?.length) {
       await this.db.insert(exitChecklists).values(
         input.checklistItems.map((item) => ({
+          orgId,
           resignationId,
           item,
           status: "PENDING" as const,
@@ -331,7 +332,7 @@ export class ExitWriteService {
         .values({ orgId, userId: record.userId, resignationId, status: "DRAFT" })
         .onConflictDoNothing();
 
-      void this.exitChecklist.seedChecklistFromTemplate(orgId, resignationId, actorUserId).catch(() => undefined);
+      void this.exitChecklist.seedChecklistFromTemplate(orgId, resignationId).catch(() => undefined);
 
       this.dispatchResignationApprovedAutomation(orgId, resignationId, record.userId, record.lastWorkingDate, actorUserId);
     }

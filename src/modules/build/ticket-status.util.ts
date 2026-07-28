@@ -8,7 +8,6 @@ export async function resolveValidTicketStatuses(
   db: Db,
   projectId: number,
   orgId: string,
-  _statuses: string[],
 ): Promise<Set<string>> {
   const rows = await db
     .select({ name: projectStatuses.name })

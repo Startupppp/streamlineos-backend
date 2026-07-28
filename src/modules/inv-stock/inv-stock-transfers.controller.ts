@@ -66,7 +66,7 @@ export class InvStockTransfersController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");
-    return this.transfers.reserveTransfer(u.orgId, u.userId, transferId, idempotencyKey);
+    return this.transfers.reserveTransfer(u.orgId, u.userId, transferId);
   }
 
   @Post(":transferId/dispatch")

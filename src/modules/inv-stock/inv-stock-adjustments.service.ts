@@ -114,7 +114,7 @@ export class InvStockAdjustmentsService {
         with: { lines: true },
       });
       if (adj) {
-        await this._postAdjustment(orgId, userId, adj, idempotencyKey);
+        await this.applyAdjustmentLines(orgId, userId, adj, idempotencyKey);
       }
     }
 
@@ -149,7 +149,7 @@ export class InvStockAdjustmentsService {
       throw new BadRequestException("Adjustment must be APPROVED or PENDING_POST to post");
     }
 
-    await this._postAdjustment(orgId, userId, adj, idempotencyKey);
+    await this.applyAdjustmentLines(orgId, userId, adj, idempotencyKey);
     return this.getAdjustment(orgId, adjustmentId);
   }
 
@@ -174,7 +174,7 @@ export class InvStockAdjustmentsService {
   // B1-05/B1-11: engine.executeInTx + status transition to POSTED in one transaction.
   // A crash can no longer leave stock moved with the record still at PENDING_POST.
   // Both cache invalidations run in parallel after the tx commits (B1-11).
-  private async _postAdjustment(
+  private async applyAdjustmentLines(
     orgId: string,
     userId: string,
     adj: { id: number; referenceNumber: string; reason: string; notes: string | null; lines: Array<{ productVariantId: number; locationId: number; quantityChange: string }> },

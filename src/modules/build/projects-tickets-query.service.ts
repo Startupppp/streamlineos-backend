@@ -22,7 +22,7 @@ export class ProjectsTicketsQueryService {
   ) {}
 
   async validateTicketStatus(projectId: number, orgId: string, status: string): Promise<void> {
-    const valid = await resolveValidTicketStatuses(this.db, projectId, orgId, [status]);
+    const valid = await resolveValidTicketStatuses(this.db, projectId, orgId);
     if (!valid.has(status)) throw new ProjectsInvalidTicketStatusException(status);
   }
 
@@ -275,7 +275,7 @@ export class ProjectsTicketsQueryService {
     if (body.items.length === 0) return { success: true };
 
     const distinctStatuses = [...new Set(body.items.map((i) => i.status))];
-    const valid = await resolveValidTicketStatuses(this.db, projectId, orgId, distinctStatuses);
+    const valid = await resolveValidTicketStatuses(this.db, projectId, orgId);
     for (const status of distinctStatuses) {
       if (!valid.has(status)) throw new ProjectsInvalidTicketStatusException(status);
     }

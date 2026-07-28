@@ -139,7 +139,7 @@ export class SignDocumentsService {
     return { document: doc, url, expiresInSeconds: SIGNED_URL_EXPIRY_SECONDS };
   }
 
-  async delete(orgId: string, documentId: number, _actor: UploadDocumentActor) {
+  async delete(orgId: string, documentId: number) {
     const doc = await this.get(orgId, documentId);
     await this.loadEditableEnvelope(orgId, doc.envelopeId);
     await this.db.delete(signDocuments).where(eq(signDocuments.id, documentId));

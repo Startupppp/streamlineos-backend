@@ -13,7 +13,7 @@ import { type Db } from "../../db/drizzle.module";
 import { HrTemplateRenderService } from "../hr-templates/hr-template-render.service";
 import { formatDdMmmYyyy, formatDdMmmYyyyTime, formatLongInIN, subMonths } from "../../common/date";
 import { generateResignationLetter } from "./letters";
-import type { ExperienceLetterInput } from "./dto/hr-lifecycle.schemas";
+import type { ExperienceLetterInput, ListResignationsQueryInput } from "./dto/hr-lifecycle.schemas";
 
 type StepStatus = "completed" | "active" | "pending" | "rejected";
 
@@ -51,20 +51,39 @@ export class ExitService {
     private readonly templateRender: HrTemplateRenderService,
   ) {}
 
-  list(orgId: string, userId: string, isAdmin: boolean) {
+  async list(orgId: string, userId: string, isAdmin: boolean, params: ListResignationsQueryInput) {
+    const limit = Math.min(params.limit, 100);
+    const offset = (params.page - 1) * limit;
     const conditions = [eq(resignations.orgId, orgId)];
     if (!isAdmin) conditions.push(eq(resignations.userId, userId));
-    return this.db.query.resignations.findMany({
-      where: and(...conditions),
-      with: {
-        user: { columns: { id: true, name: true, email: true, image: true, designation: true, joiningDate: true } },
-        checklists: true,
-        hrReviewer: { columns: { id: true, name: true } },
-        ceoReviewer: { columns: { id: true, name: true } },
-      },
-      orderBy: [desc(resignations.createdAt)],
-      limit: 100,
-    });
+    if (params.status) conditions.push(eq(resignations.status, params.status));
+    const where = and(...conditions);
+
+    const [data, countRows] = await Promise.all([
+      this.db.query.resignations.findMany({
+        where,
+        with: {
+          user: { columns: { id: true, name: true, email: true, image: true, designation: true, joiningDate: true } },
+          checklists: true,
+          hrReviewer: { columns: { id: true, name: true } },
+          ceoReviewer: { columns: { id: true, name: true } },
+        },
+        orderBy: [desc(resignations.createdAt)],
+        limit,
+        offset,
+      }),
+      this.db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(resignations)
+        .where(where),
+    ]);
+
+    const total = countRows[0]?.total ?? 0;
+
+    return {
+      data,
+      pagination: { page: params.page, limit, total, totalPages: Math.ceil(total / limit) },
+    };
   }
 
   async getDetail(orgId: string, userId: string, isAdmin: boolean, resignationId: number) {

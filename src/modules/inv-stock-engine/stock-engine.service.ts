@@ -173,9 +173,9 @@ export class StockEngineService {
       let newAvgCost = level.average_cost;
       if (bucket === "ON_HAND" && isPositive && unitCost) {
         newAvgCost = await this.updateWeightedAverage(tx, orgId, movement.productVariantId, level.on_hand, level.average_cost, delta, unitCost);
-        await this.recordValuationLayer(tx, orgId, movement.productVariantId, txnRow.id, delta, unitCost, "RECEIPT", cmd.sourceType ?? null, cmd.sourceId);
+        await this.recordValuationLayer(tx, orgId, movement.productVariantId, txnRow.id, delta, unitCost, cmd.sourceType ?? null, cmd.sourceId);
       } else if (bucket === "ON_HAND" && !isPositive) {
-        await this.consumeValuationLayers(tx, orgId, movement.productVariantId, delta, userId);
+        await this.consumeValuationLayers(tx, orgId, movement.productVariantId, delta);
       }
 
       await tx.update(invStockLevels).set({
@@ -426,10 +426,10 @@ export class StockEngineService {
             );
             await this.recordValuationLayer(
               tx, orgId, movement.productVariantId, txnRow.id,
-              delta, unitCost, "RECEIPT", cmd.sourceType ?? null, cmd.sourceId,
+              delta, unitCost, cmd.sourceType ?? null, cmd.sourceId,
             );
           } else if (bucket === "ON_HAND" && !isPositive) {
-            await this.consumeValuationLayers(tx, orgId, movement.productVariantId, delta, userId);
+            await this.consumeValuationLayers(tx, orgId, movement.productVariantId, delta);
           }
 
           await tx.update(invStockLevels).set({
@@ -642,7 +642,7 @@ export class StockEngineService {
     return divDec(addDec(mulDec(String(oldQ), String(oldA)), mulDec(inQty, inCost)), String(totalQ));
   }
 
-  private async recordValuationLayer(tx: Tx, orgId: string, productVariantId: number, txnId: number, qty: string, unitCost: string, _method: string, sourceType: string | null, sourceId: string): Promise<void> {
+  private async recordValuationLayer(tx: Tx, orgId: string, productVariantId: number, txnId: number, qty: string, unitCost: string, sourceType: string | null, sourceId: string): Promise<void> {
     const variant = await tx.query.invProductVariants.findFirst({
       where: eq(invProductVariants.id, productVariantId),
       with: { product: { columns: { costingMethod: true } } },
@@ -657,7 +657,7 @@ export class StockEngineService {
     });
   }
 
-  private async consumeValuationLayers(tx: Tx, orgId: string, productVariantId: number, negDelta: string, _userId: string): Promise<void> {
+  private async consumeValuationLayers(tx: Tx, orgId: string, productVariantId: number, negDelta: string): Promise<void> {
     let remaining = Math.abs(parseFloat(negDelta));
     if (remaining <= 0) return;
 

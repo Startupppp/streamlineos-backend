@@ -42,7 +42,7 @@ export class ExportService {
 
     if (!job) throw new BadRequestException("Failed to create export job");
 
-    const rows = await this._fetchExportRows(orgId, input.exportType);
+    const rows = await this.fetchExportRows(orgId, input.exportType);
     const headers = EXPORT_HEADERS[input.exportType];
     const csvText = toCsv(headers, rows as Record<string, unknown>[]);
 
@@ -70,7 +70,7 @@ export class ExportService {
     return { ...result, resultUrl: undefined };
   }
 
-  private async _fetchExportRows(orgId: string, exportType: ExportType): Promise<unknown[]> {
+  private async fetchExportRows(orgId: string, exportType: ExportType): Promise<unknown[]> {
     if (exportType === "products") {
       return this.db
         .select({

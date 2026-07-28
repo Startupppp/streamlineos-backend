@@ -90,7 +90,7 @@ export class ExpensesController {
     @Body(new ZodValidationPipe(createExpenseSchema)) body: CreateExpenseInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.expensesWrite.create(u.orgId, u.userId, await this.canApprove(u), body);
+    return this.expensesWrite.create(u.orgId, u.userId, body);
   }
 
   @Patch(":expenseId")

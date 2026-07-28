@@ -114,9 +114,9 @@ export class SurveyFormsService {
     return updated;
   }
 
-  async publish(orgId: string, surveyId: number, userId: string) {
+  async publish(orgId: string, surveyId: number) {
     await this.get(orgId, surveyId);
-    return this.versions.publishVersion(orgId, surveyId, userId);
+    return this.versions.publishVersion(orgId, surveyId);
   }
 
   async pause(orgId: string, surveyId: number) {

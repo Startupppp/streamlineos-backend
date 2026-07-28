@@ -23,9 +23,7 @@ import { ChatNotificationsService } from "./chat-notifications.service";
 import { ChatReplyRemindersService } from "./chat-reply-reminders.service";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import type { SendMessageInput } from "./dto/chat.schemas";
-
-const CEO = "CEO";
-const HR = "HR";
+import { ROLE_SLUG, HR_ROLE_SET } from "../../common/rbac/role-slugs";
 
 type PersistedMessage = {
   id: number;
@@ -308,7 +306,7 @@ export class ChatMessagesService {
       throw new ForbiddenException("You are not a member of this channel");
     }
 
-    const isAdmin = role === CEO || role === HR;
+    const isAdmin = role === ROLE_SLUG.CEO || HR_ROLE_SET.has(role);
     if (!isAdmin && message.senderId !== userId) {
       throw new ForbiddenException("You can only delete your own messages");
     }

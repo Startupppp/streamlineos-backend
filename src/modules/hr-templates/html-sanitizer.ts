@@ -45,7 +45,7 @@ export function sanitizeHtml(html: string): string {
   return html
     .replace(/<script[\s\S]*?<\/script>/gi, "")
     .replace(/<style[\s\S]*?<\/style>/gi, "")
-    .replace(/<(\/?)([\w-]+)([^>]*)>/g, (_match, slash: string, tag: string, attrs: string) => {
+    .replace(/<(\/?)([\w-]+)([^>]*)>/g, (_, slash: string, tag: string, attrs: string) => {
       if (slash === "/") {
         const lower = tag.toLowerCase();
         return ALLOWED_TAGS.has(lower) ? `</${lower}>` : "";

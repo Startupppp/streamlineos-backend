@@ -24,14 +24,14 @@ export class InvWarehousesService {
     const hasFilters = filters && (filters.q || filters.status || filters.isDefault !== undefined || filters.country || filters.city);
     if (!hasFilters) {
       return this.cache.cached(CACHE_KEYS.invWarehousesList(orgId), () =>
-        this._queryWarehouses(orgId, {}),
+        this.queryWarehouses(orgId, {}),
         CACHE_TTL.MEDIUM
       );
     }
-    return this._queryWarehouses(orgId, filters ?? {});
+    return this.queryWarehouses(orgId, filters ?? {});
   }
 
-  private async _queryWarehouses(orgId: string, filters: Partial<ListWarehousesInput>) {
+  private async queryWarehouses(orgId: string, filters: Partial<ListWarehousesInput>) {
     const conds = [eq(invWarehouses.orgId, orgId)];
 
     if (filters.q) {

@@ -54,7 +54,7 @@ export class SignPublicController {
   @HttpCode(200)
   async requestOtp(@Param("token") token: string, @Req() req: Request) {
     await this.guard("sign:public-otp-request", token, req);
-    return this.publicSigning.requestOtp(token, { ipAddress: clientIp(req), userAgent: req.headers["user-agent"] });
+    return this.publicSigning.requestOtp(token);
   }
 
   @Post(":token/auth")
@@ -88,7 +88,7 @@ export class SignPublicController {
     @Req() req: Request,
   ) {
     await this.guard("sign:public-session", token, req);
-    return this.publicSigning.setFieldValue(token, fieldId, body, { ipAddress: clientIp(req), userAgent: req.headers["user-agent"] });
+    return this.publicSigning.setFieldValue(token, fieldId, body);
   }
 
   @Post(":token/adopt-signature")

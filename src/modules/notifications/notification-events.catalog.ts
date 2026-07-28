@@ -79,6 +79,16 @@ const HR = [
   e("hr.attendance.missing", "hr", "HRMS", "Missing attendance", { defaultChannels: IA }),
   e("hr.document.expiring", "hr", "HRMS", "Document expiring", { defaultPriority: "HIGH", defaultChannels: IA_EMAIL }),
   e("hr.announcement.created", "hr", "HRMS", "New announcement", { defaultChannels: IA_EMAIL }),
+  e("hr.emergency.broadcast", "hr", "HRMS", "Emergency safety broadcast", {
+    defaultPriority: "CRITICAL",
+    defaultType: "WARNING",
+    defaultChannels: IA_PUSH_EMAIL,
+    allowedChannels: ALLOWED_URGENT,
+    mandatory: true,
+    userConfigurable: false,
+    quietHoursBehavior: "always_bypass",
+    dedupeWindowSeconds: 0,
+  }),
 ];
 
 const PAYROLL = [

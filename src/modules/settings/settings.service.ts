@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import {
   apiKeys,
   automationRules,
@@ -36,6 +36,7 @@ import type {
   CreateCustomFieldInput,
   CreateGitConnectionInput,
   FeatureFlagInput,
+  ListAutomationsQueryInput,
   UpdateAutomationInput,
   UpdateCustomFieldInput,
   UpdateGitConnectionInput,
@@ -116,24 +117,43 @@ export class SettingsService {
     return { success: true };
   }
 
-  listAutomations(orgId: string) {
-    return this.db
-      .select({
-        id: automationRules.id,
-        name: automationRules.name,
-        description: automationRules.description,
-        triggerEvent: automationRules.triggerEvent,
-        conditions: automationRules.conditions,
-        actions: automationRules.actions,
-        isEnabled: automationRules.isEnabled,
-        runCount: automationRules.runCount,
-        lastRunAt: automationRules.lastRunAt,
-        createdAt: automationRules.createdAt,
-        updatedAt: automationRules.updatedAt,
-      })
-      .from(automationRules)
-      .where(eq(automationRules.orgId, orgId))
-      .orderBy(desc(automationRules.createdAt));
+  async listAutomations(orgId: string, params: ListAutomationsQueryInput) {
+    const limit = Math.min(params.limit, 100);
+    const offset = (params.page - 1) * limit;
+    const where = eq(automationRules.orgId, orgId);
+
+    const [data, countRows] = await Promise.all([
+      this.db
+        .select({
+          id: automationRules.id,
+          name: automationRules.name,
+          description: automationRules.description,
+          triggerEvent: automationRules.triggerEvent,
+          conditions: automationRules.conditions,
+          actions: automationRules.actions,
+          isEnabled: automationRules.isEnabled,
+          runCount: automationRules.runCount,
+          lastRunAt: automationRules.lastRunAt,
+          createdAt: automationRules.createdAt,
+          updatedAt: automationRules.updatedAt,
+        })
+        .from(automationRules)
+        .where(where)
+        .orderBy(desc(automationRules.createdAt))
+        .limit(limit)
+        .offset(offset),
+      this.db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(automationRules)
+        .where(where),
+    ]);
+
+    const total = countRows[0]?.total ?? 0;
+
+    return {
+      data,
+      pagination: { page: params.page, limit, total, totalPages: Math.ceil(total / limit) },
+    };
   }
 
   async createAutomation(orgId: string, userId: string, input: CreateAutomationInput) {

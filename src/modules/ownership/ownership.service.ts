@@ -23,6 +23,7 @@ import { bumpPermissionsVersion, type DbOrTx } from "../../common/rbac/access-in
 import { bustMembershipStatusCache } from "../../common/auth/jwt-auth.guard";
 import type {
   DeclineTransferInput,
+  ForceTransferOrgInput,
   InitiateModuleTransferInput,
   InitiateOrgTransferInput,
   ListTransfersInput,
@@ -702,6 +703,157 @@ export class OwnershipService {
         totalPages: Math.ceil(total / filters.limit),
       },
     };
+  }
+
+  async listIncomingTransfers(orgId: string, userId: string) {
+    const [membership] = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+      .limit(1);
+
+    if (!membership) return { data: [] };
+
+    const rows = await this.db
+      .select({
+        id: ownershipTransfers.id,
+        scope: ownershipTransfers.scope,
+        moduleKey: ownershipTransfers.moduleKey,
+        fromMembershipId: ownershipTransfers.fromMembershipId,
+        toMembershipId: ownershipTransfers.toMembershipId,
+        status: ownershipTransfers.status,
+        initiatedAt: ownershipTransfers.initiatedAt,
+        expiresAt: ownershipTransfers.expiresAt,
+        reason: ownershipTransfers.reason,
+        fromName: users.name,
+        fromEmail: users.email,
+      })
+      .from(ownershipTransfers)
+      .leftJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.id, ownershipTransfers.fromMembershipId),
+          eq(organizationMembers.orgId, orgId),
+        ),
+      )
+      .leftJoin(users, eq(users.id, organizationMembers.userId))
+      .where(
+        and(
+          eq(ownershipTransfers.orgId, orgId),
+          eq(ownershipTransfers.toMembershipId, membership.id),
+          eq(ownershipTransfers.status, "PENDING"),
+        ),
+      )
+      .orderBy(desc(ownershipTransfers.initiatedAt))
+      .limit(20);
+
+    return { data: rows };
+  }
+
+  async forceTransferOrgOwnership(
+    orgId: string,
+    actorUserId: string,
+    input: ForceTransferOrgInput,
+  ): Promise<{ success: true }> {
+    const result = await this.db.transaction(async (tx) => {
+      const [org] = await tx
+        .select({ ownerMembershipId: organizations.ownerMembershipId })
+        .from(organizations)
+        .where(eq(organizations.id, orgId))
+        .for("update");
+      if (!org) throw new NotFoundException("Organization not found");
+
+      const [toMembership] = await tx
+        .select({
+          id: organizationMembers.id,
+          userId: organizationMembers.userId,
+          status: organizationMembers.status,
+        })
+        .from(organizationMembers)
+        .where(
+          and(
+            eq(organizationMembers.orgId, orgId),
+            eq(organizationMembers.id, input.toMembershipId),
+          ),
+        )
+        .for("update");
+      if (!toMembership) throw new NotFoundException("Target membership not found in this organization");
+      if (toMembership.status !== "ACTIVE") {
+        throw new BadRequestException("Target membership must be ACTIVE to receive ownership");
+      }
+      if (org.ownerMembershipId === toMembership.id) {
+        throw new BadRequestException("Target member is already the organization owner");
+      }
+
+      let previousOwnerUserId: string | null = null;
+
+      if (org.ownerMembershipId !== null) {
+        const [currentOwner] = await tx
+          .select({
+            id: organizationMembers.id,
+            userId: organizationMembers.userId,
+          })
+          .from(organizationMembers)
+          .where(
+            and(
+              eq(organizationMembers.orgId, orgId),
+              eq(organizationMembers.id, org.ownerMembershipId),
+            ),
+          )
+          .for("update");
+
+        if (currentOwner) {
+          previousOwnerUserId = currentOwner.userId;
+          await tx
+            .update(organizationMembers)
+            .set({ isOwner: false, role: "ADMIN" })
+            .where(eq(organizationMembers.id, currentOwner.id));
+        }
+      }
+
+      await tx
+        .update(organizationMembers)
+        .set({ isOwner: true, role: "OWNER", status: "ACTIVE" })
+        .where(eq(organizationMembers.id, toMembership.id));
+
+      await tx
+        .update(organizations)
+        .set({ ownerMembershipId: toMembership.id })
+        .where(eq(organizations.id, orgId));
+
+      await tx
+        .update(ownershipTransfers)
+        .set({ status: "CANCELLED" })
+        .where(
+          and(
+            eq(ownershipTransfers.orgId, orgId),
+            eq(ownershipTransfers.scope, "ORGANIZATION"),
+            eq(ownershipTransfers.status, "PENDING"),
+          ),
+        );
+
+      await bumpPermissionsVersion(tx, orgId);
+      return { newOwnerUserId: toMembership.userId, previousOwnerUserId };
+    });
+
+    await this.invalidateUserAccess(orgId, result.newOwnerUserId);
+    if (result.previousOwnerUserId) {
+      await this.invalidateUserAccess(orgId, result.previousOwnerUserId);
+    }
+
+    this.audit.log({
+      action: "ownership.org_ownership_forced",
+      userId: actorUserId,
+      orgId,
+      targetId: String(input.toMembershipId),
+      targetType: "membership",
+      metadata: {
+        toMembershipId: input.toMembershipId,
+        reason: input.reason ?? null,
+      },
+    });
+
+    return { success: true as const };
   }
 
   async expireStaleTransfers(orgId?: string): Promise<{ expired: number }> {

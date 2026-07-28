@@ -7,6 +7,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, gte, inArray, like, lte, or, sql } from "drizzle-orm";
+import { ROLE_SLUG, HR_ROLE_SLUGS, HR_ROLE_SET } from "../../common/rbac/role-slugs";
 import { z } from "zod";
 import { expenses, organizationMembers, organizations, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -63,7 +64,7 @@ export class ExpensesWriteService {
     private readonly automation: AutomationService,
   ) {}
 
-  async create(orgId: string, userId: string, _isAdmin: boolean, body: CreateExpenseInput) {
+  async create(orgId: string, userId: string, body: CreateExpenseInput) {
     const [expense] = await this.db
       .insert(expenses)
       .values({
@@ -285,9 +286,9 @@ export class ExpensesWriteService {
 
     const recipientEmails = members
       .filter((m) => {
-        if (body.sendTo === "CEO") return m.role === "CEO";
-        if (body.sendTo === "HR") return m.role === "HR";
-        return m.role === "CEO" || m.role === "HR";
+        if (body.sendTo === "CEO") return m.role === ROLE_SLUG.CEO;
+        if (body.sendTo === "HR") return HR_ROLE_SET.has(m.role);
+        return m.role === ROLE_SLUG.CEO || HR_ROLE_SET.has(m.role);
       })
       .map((m) => m.user?.email)
       .filter((email): email is string => !!email);
@@ -365,7 +366,7 @@ export class ExpensesWriteService {
       const hrMembers = await this.db
         .select({ userId: organizationMembers.userId })
         .from(organizationMembers)
-        .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.role, "HR")));
+        .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.role, [...HR_ROLE_SLUGS])));
       if (hrMembers.length === 0) return;
 
       const hrUsers = await this.db

@@ -323,7 +323,7 @@ export class HrPoliciesService {
       return { seeded: false, message: "Policies already exist for this organisation" };
     }
 
-    const defaults = buildDefaultPolicies(orgId);
+    const defaults = buildDefaultPolicies();
     const today = new Date().toISOString().split("T").at(0) ?? new Date().toISOString().substring(0, 10);
 
     const insertedPolicies = await this.db

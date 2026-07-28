@@ -21,11 +21,13 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { OwnershipService } from "./ownership.service";
 import {
   declineTransferSchema,
+  forceTransferOrgSchema,
   initiateModuleTransferSchema,
   initiateOrgTransferSchema,
   listTransfersSchema,
   setModuleOwnerSchema,
   type DeclineTransferInput,
+  type ForceTransferOrgInput,
   type InitiateModuleTransferInput,
   type InitiateOrgTransferInput,
   type ListTransfersInput,
@@ -82,6 +84,20 @@ export class OwnershipController {
     return this.ownership.initiateOrgTransfer(u.orgId, u.userId, body);
   }
 
+  @Put("org/owner")
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("ownership:org:transfer")
+  forceTransferOrgOwnership(
+    @Body(new ZodValidationPipe(forceTransferOrgSchema)) body: ForceTransferOrgInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (!u.isPlatformAdmin) {
+      throw new ForbiddenException("Platform administrator access required");
+    }
+    return this.ownership.forceTransferOrgOwnership(u.orgId, u.userId, body);
+  }
+
   @Post("modules/:moduleKey/transfer")
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(PermissionGuard)
@@ -98,6 +114,13 @@ export class OwnershipController {
       body,
       u.isOrgOwner || u.isPlatformAdmin,
     );
+  }
+
+  @Get("transfers/incoming")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("ownership:transfer:respond")
+  listIncomingTransfers(@CurrentUser() u: CurrentUserContext) {
+    return this.ownership.listIncomingTransfers(u.orgId, u.userId);
   }
 
   @Get("transfers")

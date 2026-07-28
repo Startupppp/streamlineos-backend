@@ -8,6 +8,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
@@ -25,11 +26,13 @@ import {
   resignationUpdateSchema,
   resignationCeoReviewSchema,
   resignationHrReviewSchema,
+  listResignationsQuerySchema,
   type ExperienceLetterInput,
   type ResignationCreateInput,
   type ResignationUpdateInput,
   type ResignationCeoReviewInput,
   type ResignationHrReviewInput,
+  type ListResignationsQueryInput,
 } from "./dto/hr-lifecycle.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 
@@ -51,8 +54,11 @@ export class ExitController {
 
   @Get()
   @RequirePermission("hr:exit:view")
-  async list(@CurrentUser() u: CurrentUserContext) {
-    return this.exit.list(u.orgId, u.userId, await this.isExitAdmin(u));
+  async list(
+    @Query(new ZodValidationPipe(listResignationsQuerySchema)) query: ListResignationsQueryInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.exit.list(u.orgId, u.userId, await this.isExitAdmin(u), query);
   }
 
   @Post()

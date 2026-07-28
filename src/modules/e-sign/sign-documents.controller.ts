@@ -72,8 +72,8 @@ export class SignDocumentsController {
 
   @Delete("documents/:documentId")
   @RequirePermission("sign:documents:upload")
-  async remove(@Param("documentId", ParseIntPipe) documentId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
-    await this.documents.delete(u.orgId, documentId, { orgId: u.orgId, userId: u.userId, ipAddress: clientIp(req) });
+  async remove(@Param("documentId", ParseIntPipe) documentId: number, @CurrentUser() u: CurrentUserContext) {
+    await this.documents.delete(u.orgId, documentId);
     return { success: true };
   }
 }

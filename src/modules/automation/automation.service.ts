@@ -2,7 +2,7 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { AiNodeExecutorService } from "./ai-workflow-nodes/ai-node-executor.service";
 import type { AiNodeType } from "./ai-workflow-nodes/ai-node-types";
 import { createHmac } from "node:crypto";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, like, sql } from "drizzle-orm";
 import {
   automationRules,
   automationRuns,
@@ -389,14 +389,43 @@ export class AutomationService {
     return { runId: run.id, matched, status, actionResults };
   }
 
-  listRules(orgId: string, triggerPrefix?: string) {
-    return this.db.query.automationRules.findMany({
-      where: (fields, { and: andOp, eq: eqOp, like }) =>
-        triggerPrefix
-          ? andOp(eqOp(fields.orgId, orgId), like(fields.triggerEvent, `${triggerPrefix}%`))
-          : eqOp(fields.orgId, orgId),
-      limit: 100,
-    });
+  async listRules(
+    orgId: string,
+    triggerPrefixOrParams?: string | { page?: number; limit?: number; triggerPrefix?: string },
+  ) {
+    const triggerPrefix =
+      typeof triggerPrefixOrParams === "string"
+        ? triggerPrefixOrParams
+        : triggerPrefixOrParams?.triggerPrefix;
+    const pageNum = typeof triggerPrefixOrParams === "object" ? (triggerPrefixOrParams.page ?? 1) : 1;
+    const limit = Math.min(
+      typeof triggerPrefixOrParams === "object" ? (triggerPrefixOrParams.limit ?? 20) : 100,
+      100,
+    );
+    const offset = (pageNum - 1) * limit;
+    const where = triggerPrefix
+      ? and(eq(automationRules.orgId, orgId), like(automationRules.triggerEvent, `${triggerPrefix}%`))
+      : eq(automationRules.orgId, orgId);
+
+    const [data, countRows] = await Promise.all([
+      this.db.query.automationRules.findMany({
+        where,
+        orderBy: (fields, { desc: descOp }) => [descOp(fields.createdAt)],
+        limit,
+        offset,
+      }),
+      this.db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(automationRules)
+        .where(where),
+    ]);
+
+    const total = countRows[0]?.total ?? 0;
+
+    return {
+      data,
+      pagination: { page: pageNum, limit, total, totalPages: Math.ceil(total / limit) },
+    };
   }
 
   async createRule(orgId: string, userId: string, input: CreateAutomationRuleInput) {

@@ -210,12 +210,10 @@ export class ModuleAccessGroupsService {
     await this.assertAccess(actor, moduleKey, "manage");
 
     if (!actor.isOrgOwner && !actor.isPlatformAdmin) {
-      const [resolved, { bestRank, allowedModules }] = await Promise.all([
-        this.access.resolveUserPermissions(actor.orgId, actor.userId),
-        resolveActorRankContext(this.db, actor.orgId, actor.userId),
-      ]);
+      const resolved = await this.access.resolveUserPermissions(actor.orgId, actor.userId);
       const isOrgAdmin = (resolved.get(ORG_ADMIN_KEY) ?? "none") !== "none";
       if (!isOrgAdmin) {
+        const { bestRank, allowedModules } = await resolveActorRankContext(this.db, actor.orgId, actor.userId);
         assertPermissionsGrantable(
           {
             isOrgOwner: false,

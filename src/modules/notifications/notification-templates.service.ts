@@ -6,6 +6,7 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { NOTIF_CACHE } from "./notification-cache-keys";
+import { AuditService } from "../../common/audit/audit.service";
 import type {
   CreateTemplateInput,
   UpdateTemplateInput,
@@ -19,6 +20,7 @@ export class NotificationTemplatesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly audit: AuditService,
   ) {}
 
   list(orgId: string, filters: ListTemplatesInput) {
@@ -80,7 +82,7 @@ export class NotificationTemplatesService {
     return created;
   }
 
-  async update(orgId: string, _userId: string, id: number, dto: UpdateTemplateInput) {
+  async update(orgId: string, id: number, userId: string, dto: UpdateTemplateInput) {
     const existing = await this.findOne(orgId, id);
     const [updated] = await this.db
       .update(notificationTemplates)
@@ -103,6 +105,26 @@ export class NotificationTemplatesService {
       .returning();
     await this.cache.invalidatePattern(`notification-templates:list:${orgId}:*`);
     await this.cache.del(NOTIF_CACHE.templates(orgId));
+
+    this.audit.log({
+      action: "notification.template.updated",
+      userId,
+      orgId,
+      targetId: String(id),
+      targetType: "notification_template",
+      metadata: {
+        templateKey: existing.templateKey,
+        newVersion: existing.version + 1,
+        ...(dto.name !== undefined && { name: dto.name }),
+        ...(dto.channel !== undefined && { channel: dto.channel }),
+        ...(dto.category !== undefined && { category: dto.category }),
+        ...(dto.locale !== undefined && { locale: dto.locale }),
+        ...(dto.subject !== undefined && { subject: dto.subject }),
+        ...(dto.variables !== undefined && { variables: dto.variables }),
+        ...(dto.body !== undefined && { bodyChanged: true }),
+      },
+    });
+
     return updated;
   }
 

@@ -27,7 +27,6 @@ export class InvReportsExtendedService {
   ) {}
 
   async getDashboardExtras(orgId: string) {
-    const _today = new Date().toISOString().slice(0, 10);
     const thirtyDaysOut = new Date();
     thirtyDaysOut.setDate(thirtyDaysOut.getDate() + 30);
     const thirtyDaysCutoff = thirtyDaysOut.toISOString().slice(0, 10);

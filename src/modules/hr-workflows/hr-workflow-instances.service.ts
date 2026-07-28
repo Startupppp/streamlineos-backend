@@ -11,6 +11,7 @@ import { users, organizationMembers } from "../../db/schema/common/auth";
 import { orgUnits } from "../../db/schema/common/organization";
 import type { WorkflowInstanceQueryDto } from "./dto/workflow.schemas";
 import { HrWorkflowEngineService } from "./hr-workflow-engine.service";
+import { HR_ROLE_SLUGS, FINANCE_ROLE_SLUGS } from "../../common/rbac/role-slugs";
 
 interface ResolvedStep {
   stepOrder: number;
@@ -294,7 +295,7 @@ export class HrWorkflowInstancesService {
         .where(
           and(
             eq(organizationMembers.orgId, orgId),
-            eq(organizationMembers.role, "HR"),
+            inArray(organizationMembers.role, [...HR_ROLE_SLUGS]),
           ),
         )
         .limit(10),
@@ -304,7 +305,7 @@ export class HrWorkflowInstancesService {
         .where(
           and(
             eq(organizationMembers.orgId, orgId),
-            eq(organizationMembers.role, "FINANCE"),
+            inArray(organizationMembers.role, [...FINANCE_ROLE_SLUGS]),
           ),
         )
         .limit(10),
@@ -358,7 +359,7 @@ export class HrWorkflowInstancesService {
               and(
                 eq(organizationMembers.orgId, orgId),
                 inArray(users.branchId, branchIds),
-                eq(organizationMembers.role, "HR"),
+                inArray(organizationMembers.role, [...HR_ROLE_SLUGS]),
               ),
             )
             .limit(branchIds.length * 10)

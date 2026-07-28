@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, UseGuards, HttpCode, Query } from "@nestjs/common";
+import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, UseGuards, HttpCode } from "@nestjs/common";
 import { z } from "zod";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
@@ -35,7 +35,7 @@ export class RostersController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:view")
-  list(@CurrentUser() u: CurrentUserContext, @Query("weekStart") _weekStart?: string) {
+  list(@CurrentUser() u: CurrentUserContext) {
     return this.service.listRosters(u.orgId);
   }
 

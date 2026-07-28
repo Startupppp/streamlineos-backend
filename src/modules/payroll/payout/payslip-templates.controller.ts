@@ -45,7 +45,6 @@ export class PayslipTemplatesController {
   @RequirePermission("payroll:payslips:manage")
   preview(
     @Body(new ZodValidationPipe(previewTemplateSchema)) body: PreviewTemplateInput,
-    @CurrentUser() _u: CurrentUserContext,
   ) {
     return { html: this.templates.preview(body) };
   }

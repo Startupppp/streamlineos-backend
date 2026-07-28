@@ -13,6 +13,7 @@ import {
   notInArray,
   isNotNull,
 } from "drizzle-orm";
+import { SALES_ROLE_SLUGS } from "../../common/rbac/role-slugs";
 import {
   leads,
   leadActivities,
@@ -130,7 +131,7 @@ export class LeadsReportsService {
           .select({ id: users.id, name: users.name })
           .from(users)
           .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
-          .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.role, "SALES"))),
+          .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.role, [...SALES_ROLE_SLUGS]))),
       ]);
 
     const totalLeads = totalsRows[0]?.total ?? 0;

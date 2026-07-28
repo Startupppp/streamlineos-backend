@@ -174,11 +174,11 @@ export class HrPoliciesController {
   @Get(":policyId/preview")
   @RequirePermission("hr:policies:view")
   async preview(
-    @Param("policyId", ParseIntPipe) _policyId: number,
+    @Param("policyId", ParseIntPipe) policyId: number,
     @Query(new ZodValidationPipe(previewQuerySchema)) query: PreviewQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const policy = await this.service.getById(u.orgId, _policyId);
+    const policy = await this.service.getById(u.orgId, policyId);
     return this.service.preview(
       u.orgId,
       query.employeeId,

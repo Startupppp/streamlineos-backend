@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, inArray, sql } from "drizzle-orm";
+import { HR_ROLE_SLUGS } from "../../common/rbac/role-slugs";
 import {
   candidateOffers,
   candidates,
@@ -228,7 +229,7 @@ export class CronRecruitmentService {
     const rows = await this.db
       .select({ userId: organizationMembers.userId })
       .from(organizationMembers)
-      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.role, "HR")));
+      .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.role, [...HR_ROLE_SLUGS])));
 
     const members = rows.map((row) => row.userId);
     cache.set(orgId, members);

@@ -1,5 +1,6 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { eq, and, or, inArray, lte, gte, type SQL } from "drizzle-orm";
+import { SALES_ROLE_SLUGS } from "../../common/rbac/role-slugs";
 import {
   leads,
   leadActivities,
@@ -412,7 +413,7 @@ export class LeadsOpsService {
               eq(organizationMembers.orgId, orgId),
               eq(users.isActive, true),
               eq(users.hasDashboardAccess, true),
-              inArray(organizationMembers.role, ["SALES"]),
+              inArray(organizationMembers.role, [...SALES_ROLE_SLUGS]),
             ),
           );
 
@@ -480,7 +481,7 @@ export class LeadsOpsService {
           eq(organizationMembers.orgId, orgId),
           eq(users.isActive, true),
           eq(users.hasDashboardAccess, true),
-          inArray(organizationMembers.role, ["SALES"]),
+          inArray(organizationMembers.role, [...SALES_ROLE_SLUGS]),
         ),
       );
 

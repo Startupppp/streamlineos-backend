@@ -366,7 +366,7 @@ export class BillingService {
     return { apps: [], addons: [] };
   }
 
-  async purchaseAddon(orgId: string, _userId: string, addonId: string, quantity: number) {
+  async purchaseAddon(orgId: string, addonId: string, quantity: number) {
     if (addonId.startsWith("ai_pack_")) {
       const packId = parseInt(addonId.replace("ai_pack_", ""), 10);
       const packs = await this.aiCredits.listPacks();
@@ -415,7 +415,7 @@ export class BillingService {
     return updated;
   }
 
-  async listCoupons(_orgId: string) {
+  async listCoupons() {
     const all = await this.db.query.coupons.findMany({
       orderBy: (c, { desc: d }) => [d(c.createdAt)],
       with: { redemptions: true },

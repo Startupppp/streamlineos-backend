@@ -363,7 +363,7 @@ Tone: Professional, concise, actionable.`;
 
           try {
             return await this.projectsAi.ask(orgId, projectId, question, userId);
-          } catch (_e) {
+          } catch {
             return { success: false, message: `Project ${projectId} not found or has no ticket data.` };
           }
         },
@@ -380,7 +380,7 @@ Tone: Professional, concise, actionable.`;
 
           try {
             return await this.projectsAi.summarize(orgId, projectId, userId);
-          } catch (_e) {
+          } catch {
             return { success: false, message: `Project ${projectId} not found or has no ticket data.` };
           }
         },
@@ -400,7 +400,7 @@ Tone: Professional, concise, actionable.`;
             const kbAsk = this.moduleRef.get(KbAskService, { strict: false });
             const result = await kbAsk.ask(actor, { question: query });
             return { answer: result.answer, hasContext: result.hasContext };
-          } catch (_e) {
+          } catch {
             return { answer: "Knowledge base search is unavailable right now.", hasContext: false };
           }
         },

@@ -22,9 +22,11 @@ import { AutomationService } from "../automation/automation.service";
 import { SupportSettingsAuditService } from "./support-settings-audit.service";
 import {
   createAutomationRuleSchema,
+  listSupportAutomationsQuerySchema,
   testAutomationSchema,
   updateAutomationRuleSchema,
   type CreateAutomationRuleInput,
+  type ListSupportAutomationsQueryInput,
   type TestAutomationInput,
   type UpdateAutomationRuleInput,
 } from "../automation/dto/automation.schemas";
@@ -44,8 +46,11 @@ export class SupportAutomationsController {
 
   @Get("automations")
   @RequirePermission("support:settings:manage")
-  listAutomations(@CurrentUser() u: CurrentUserContext) {
-    return this.automations.listRules(u.orgId, TICKET_TRIGGER_PREFIX);
+  listAutomations(
+    @Query(new ZodValidationPipe(listSupportAutomationsQuerySchema)) query: ListSupportAutomationsQueryInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.automations.listRules(u.orgId, { ...query, triggerPrefix: TICKET_TRIGGER_PREFIX });
   }
 
   @Post("automations")

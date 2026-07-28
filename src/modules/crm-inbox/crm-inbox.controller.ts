@@ -58,7 +58,7 @@ export class CrmInboxController {
     @Param("taskId", ParseIntPipe) taskId: number,
     @CurrentUser() user: CurrentUserContext,
   ) {
-    await this.svc.completeTask(user.orgId, taskId, user.userId);
+    await this.svc.completeTask(user.orgId, taskId);
     return { success: true };
   }
 }

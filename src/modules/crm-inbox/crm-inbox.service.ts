@@ -483,7 +483,7 @@ export class CrmInboxService {
       .where(and(eq(tasks.id, taskId), eq(tasks.orgId, orgId)));
   }
 
-  async completeTask(orgId: string, taskId: number, _userId: string): Promise<void> {
+  async completeTask(orgId: string, taskId: number): Promise<void> {
     const [task] = await this.db
       .select({ id: tasks.id, orgId: tasks.orgId })
       .from(tasks)

@@ -9,7 +9,7 @@ import { TEMPLATE_VARIABLES } from "./hr-template-variables";
 type RenderContext = Record<string, string>;
 
 function interpolate(template: string, ctx: RenderContext): string {
-  return template.replace(/\{\{([^}]+)\}\}/g, (_match, raw: string) => {
+  return template.replace(/\{\{([^}]+)\}\}/g, (_, raw: string) => {
     const token = raw.trim();
     if (token in ctx) return ctx[token];
     return `⟦missing:${token}⟧`;

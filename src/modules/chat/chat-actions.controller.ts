@@ -64,7 +64,7 @@ export class ChatActionsController {
       return { success: true, prevStatus: ticket.status, nextStatus: body.nextStatus };
     }
 
-    const valid = await resolveValidTicketStatuses(this.db, body.projectId, u.orgId, [body.nextStatus]);
+    const valid = await resolveValidTicketStatuses(this.db, body.projectId, u.orgId);
     if (!valid.has(body.nextStatus)) throw new ChatActionTicketStatusFailedException();
 
     await this.db

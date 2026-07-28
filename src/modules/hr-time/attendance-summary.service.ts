@@ -248,7 +248,7 @@ export class AttendanceSummaryService {
           if (holidaySet.has(row.date)) holidayWorkDays++;
         }
 
-        const latePenaltyDays = this.calculateLatePenaltyDays(lateCount, orgAttendanceRules.lateArrivalPenalty, presentDays);
+        const latePenaltyDays = this.calculateLatePenaltyDays(lateCount, orgAttendanceRules.lateArrivalPenalty);
         const absentDays = Math.max(0, workingDaysInPeriod - presentDays);
         const payableDays = Math.max(0, presentDays - latePenaltyDays);
         const approvedRegularizations = regularizationsByUser.get(userId) ?? 0;
@@ -290,7 +290,7 @@ export class AttendanceSummaryService {
     return count;
   }
 
-  private calculateLatePenaltyDays(lateCount: number, penalty: string, _presentDays: number): number {
+  private calculateLatePenaltyDays(lateCount: number, penalty: string): number {
     if (penalty === "half_day") return lateCount * 0.5;
     if (penalty === "full_day") return lateCount;
     return 0;

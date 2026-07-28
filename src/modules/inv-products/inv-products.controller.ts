@@ -178,7 +178,7 @@ export class InvProductsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:update")
   updateVariant(
-    @Param("productId", ParseIntPipe) _productId: number,
+    @Param("productId", ParseIntPipe) _: number,
     @Param("variantId", ParseIntPipe) variantId: number,
     @Body(new ZodValidationPipe(updateVariantSchema)) body: UpdateVariantInput,
     @CurrentUser() u: CurrentUserContext,

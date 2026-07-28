@@ -29,12 +29,14 @@ import {
   updateCustomFieldSchema,
   updateGitConnectionSchema,
   updateUserRoleSchema,
+  listAutomationsQuerySchema,
   type CreateApiKeyInput,
   type CreateAutomationInput,
   type CreateCustomFieldInput,
   type CreateGitConnectionInput,
   type CustomFieldsListInput,
   type FeatureFlagInput,
+  type ListAutomationsQueryInput,
   type UpdateAutomationInput,
   type UpdateCustomFieldInput,
   type UpdateGitConnectionInput,
@@ -85,8 +87,11 @@ export class SettingsController {
 
   @Get("automations")
   @RequirePermission("settings:automations:view")
-  listAutomations(@CurrentUser() u: CurrentUserContext) {
-    return this.settings.listAutomations(u.orgId);
+  listAutomations(
+    @Query(new ZodValidationPipe(listAutomationsQuerySchema)) query: ListAutomationsQueryInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.settings.listAutomations(u.orgId, query);
   }
 
   @Post("automations")

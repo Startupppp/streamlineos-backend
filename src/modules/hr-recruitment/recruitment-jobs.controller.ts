@@ -134,7 +134,6 @@ export class RecruitmentJobsController {
   async removeRecruiter(
     @Param("jobId", ParseIntPipe) jobId: number,
     @Body(new ZodValidationPipe(assignRecruiterSchema)) body: AssignRecruiterInput,
-    @CurrentUser() _u: CurrentUserContext,
   ) {
     await this.jobs.removeRecruiter(jobId, body);
   }

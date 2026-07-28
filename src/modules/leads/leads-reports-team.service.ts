@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { eq, and, inArray, notInArray, sql, lte, isNotNull } from "drizzle-orm";
+import { SALES_ROLE_SET } from "../../common/rbac/role-slugs";
 import {
   leads,
   leadActivities,
@@ -173,7 +174,7 @@ export class LeadsReportsTeamService {
         ]);
 
         const salesUsers = salesMembers
-          .filter((m) => m.user.role === "SALES")
+          .filter((m) => SALES_ROLE_SET.has(m.user.role))
           .map((m) => m.user);
 
         const semantics = resolveLeadStatusSemantics(statusOptions);
@@ -233,7 +234,7 @@ export class LeadsReportsTeamService {
       inArray(leads.status, semantics.slaOpenKeys),
       lte(leads.updatedAt, twentyFourHoursAgo),
     ];
-    if (opts.role === "SALES" && opts.userId) {
+    if (opts.role !== undefined && SALES_ROLE_SET.has(opts.role) && opts.userId) {
       slaFilters.push(eq(leads.assignedToId, opts.userId));
     }
 

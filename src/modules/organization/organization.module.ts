@@ -6,7 +6,6 @@ import { OrganizationService } from "./organization.service";
 import { OrgProfileService } from "./org-profile.service";
 import { OrgMembershipService } from "./org-membership.service";
 import { OrgLifecycleService } from "./org-lifecycle.service";
-import { OrgOwnershipService } from "./org-ownership.service";
 import { OrganizationSettingsService } from "./organization-settings.service";
 import { InvitationsService } from "./invitations.service";
 import { OrganizationInvitationsController } from "../email/controllers/organization-invitations.controller";
@@ -18,7 +17,6 @@ import { OrganizationInvitationsController } from "../email/controllers/organiza
     OrgProfileService,
     OrgMembershipService,
     OrgLifecycleService,
-    OrgOwnershipService,
     OrganizationService,
     OrganizationSettingsService,
     InvitationsService,

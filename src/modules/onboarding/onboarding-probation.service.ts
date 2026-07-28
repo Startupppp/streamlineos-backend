@@ -93,7 +93,7 @@ export class OnboardingProbationService {
   async setupProbationFromPolicy(
     orgId: string,
     employmentId: number,
-    _personId: number,
+    _: number,
     userId: string,
     joiningDate: Date | null,
   ): Promise<{ probationEndDate: Date | null }> {

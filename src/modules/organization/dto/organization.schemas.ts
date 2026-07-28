@@ -109,10 +109,6 @@ export const switchOrgSchema = z.object({
   orgId: z.string().min(1),
 });
 
-export const transferOwnershipSchema = z.object({
-  newOwnerUserId: z.string().min(1),
-});
-
 export const deleteOrgSchema = z.object({
   confirmation: z.string().min(1).max(200),
 });
@@ -141,7 +137,6 @@ export type InviteMemberInput = z.infer<typeof inviteMemberSchema>;
 export type UpdateMemberRoleInput = z.infer<typeof updateMemberRoleSchema>;
 export type AcceptInvitationInput = z.infer<typeof acceptInvitationSchema>;
 export type SwitchOrgInput = z.infer<typeof switchOrgSchema>;
-export type TransferOwnershipInput = z.infer<typeof transferOwnershipSchema>;
 export type DeleteOrgInput = z.infer<typeof deleteOrgSchema>;
 export type AddCustomDomainInput = z.infer<typeof addCustomDomainSchema>;
 export type CreateHolidayInput = z.infer<typeof createHolidaySchema>;

@@ -48,5 +48,11 @@ export const updateAutomationRuleSchema = z.object({
   isEnabled: z.boolean().optional(),
 });
 
+export const listSupportAutomationsQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+
 export type CreateAutomationRuleInput = z.infer<typeof createAutomationRuleSchema>;
 export type UpdateAutomationRuleInput = z.infer<typeof updateAutomationRuleSchema>;
+export type ListSupportAutomationsQueryInput = z.infer<typeof listSupportAutomationsQuerySchema>;

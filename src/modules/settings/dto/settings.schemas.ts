@@ -220,6 +220,11 @@ export const updateUserRoleSchema = z.object({
   role: z.string().min(1),
 });
 
+export const listAutomationsQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+
 export type CreateApiKeyInput = z.infer<typeof createApiKeySchema>;
 export type CustomFieldsListInput = z.infer<typeof customFieldsListSchema>;
 export type CreateCustomFieldInput = z.infer<typeof createCustomFieldSchema>;
@@ -230,3 +235,4 @@ export type UpdateGitConnectionInput = z.infer<typeof updateGitConnectionSchema>
 export type CreateAutomationInput = z.infer<typeof createAutomationSchema>;
 export type UpdateAutomationInput = z.infer<typeof updateAutomationSchema>;
 export type UpdateUserRoleInput = z.infer<typeof updateUserRoleSchema>;
+export type ListAutomationsQueryInput = z.infer<typeof listAutomationsQuerySchema>;

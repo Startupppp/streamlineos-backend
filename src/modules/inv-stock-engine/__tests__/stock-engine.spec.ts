@@ -20,15 +20,30 @@ function makeFailInsertChain() {
 }
 
 function makeUpdateChain() {
-  const where = jest.fn().mockResolvedValue(undefined);
+  const returning = jest.fn().mockResolvedValue([]);
+  const where = jest.fn().mockImplementation(() =>
+    Object.assign(Promise.resolve(undefined), { returning }),
+  );
   const set = jest.fn().mockReturnValue({ where });
   return { set };
+}
+
+function makeSelectChain(rows: unknown[] = []) {
+  return {
+    from: jest.fn().mockReturnValue({
+      innerJoin: jest.fn().mockReturnValue({
+        where: jest.fn().mockResolvedValue(rows),
+      }),
+      where: jest.fn().mockResolvedValue(rows),
+    }),
+  };
 }
 
 type MockTx = {
   insert: jest.Mock;
   update: jest.Mock;
   execute: jest.Mock;
+  select: jest.Mock;
   query: {
     invIdempotencyKeys: { findFirst: jest.Mock };
     invProductVariants: { findFirst: jest.Mock };
@@ -45,6 +60,7 @@ function buildTx(levelRow?: Record<string, unknown>): MockTx {
     insert: jest.fn(),
     update: jest.fn().mockReturnValue(makeUpdateChain()),
     execute: jest.fn().mockResolvedValue([level]),
+    select: jest.fn().mockImplementation(() => makeSelectChain()),
     query: {
       invIdempotencyKeys: { findFirst: jest.fn().mockResolvedValue(null) },
       invProductVariants: { findFirst: jest.fn().mockResolvedValue({ product: { costingMethod: "WEIGHTED_AVERAGE" } }) },
@@ -210,7 +226,7 @@ describe("StockEngineService", () => {
         requestHash: null,
         response: null,
         createdAt: new Date(),
-        expiresAt: new Date(Date.now() + 86_400_000),
+        leaseExpiresAt: new Date(Date.now() + 86_400_000),
       });
 
       const service = new StockEngineService(buildDb(tx) as never, defaultSettings() as never, defaultAudit() as never, defaultCache() as never);
@@ -228,7 +244,7 @@ describe("StockEngineService", () => {
         requestHash: null,
         response: storedResult,
         createdAt: new Date(),
-        expiresAt: new Date(Date.now() + 86_400_000),
+        leaseExpiresAt: new Date(Date.now() + 86_400_000),
       });
 
       const service = new StockEngineService(buildDb(tx) as never, defaultSettings() as never, defaultAudit() as never, defaultCache() as never);
@@ -249,7 +265,7 @@ describe("StockEngineService", () => {
         requestHash: "a-completely-different-stored-hash",
         response: { transactionIds: [42], levels: [] },
         createdAt: new Date(),
-        expiresAt: new Date(Date.now() + 86_400_000),
+        leaseExpiresAt: new Date(Date.now() + 86_400_000),
       });
 
       const service = new StockEngineService(buildDb(tx) as never, defaultSettings() as never, defaultAudit() as never, defaultCache() as never);
@@ -321,6 +337,7 @@ describe("StockEngineService.executeMany", () => {
       insert: jest.fn(),
       update: jest.fn().mockReturnValue(makeUpdateChain()),
       execute: jest.fn().mockResolvedValueOnce(lockedRows).mockResolvedValue([]),
+      select: jest.fn().mockImplementation(() => makeSelectChain()),
       query: {
         invIdempotencyKeys: { findFirst: jest.fn().mockResolvedValue(null) },
         invProductVariants: { findFirst: jest.fn().mockResolvedValue({ product: { costingMethod: "WEIGHTED_AVERAGE" } }) },

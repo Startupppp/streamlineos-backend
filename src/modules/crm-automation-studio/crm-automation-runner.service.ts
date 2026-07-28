@@ -67,7 +67,7 @@ export class CrmAutomationRunnerService {
         }
 
         for (const actionKey of legacyActions) {
-          const stepLog = await this.executeAction(orgId, actionKey, {}, payload, runSteps);
+          const stepLog = await this.executeAction(orgId, actionKey, {}, payload);
           runSteps.push(stepLog);
         }
       }
@@ -172,7 +172,7 @@ export class CrmAutomationRunnerService {
         continue;
       }
 
-      const stepLog = await this.executeAction(orgId, current.type, current.config ?? {}, payload, steps);
+      const stepLog = await this.executeAction(orgId, current.type, current.config ?? {}, payload);
       steps.push({ ...stepLog, nodeId: current.id });
       current = current.nextId ? nodeMap.get(current.nextId) : undefined;
     }
@@ -185,7 +185,6 @@ export class CrmAutomationRunnerService {
     actionKey: string,
     config: Record<string, unknown>,
     payload: StudioEventPayload,
-    _steps: RunStepLog[],
   ): Promise<RunStepLog> {
     const at = new Date().toISOString();
     const nodeId = `${actionKey}-${at}`;

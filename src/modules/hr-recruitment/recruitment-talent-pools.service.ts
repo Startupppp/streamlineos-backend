@@ -3,7 +3,7 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { candidates, talentPoolMembers, talentPools } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import type { AddPoolMemberInput, CreateTalentPoolInput, UpdateTalentPoolInput } from "./dto/talent-pools.schemas";
+import type { AddPoolMemberInput, CreateTalentPoolInput, ListPoolMembersQueryInput, UpdateTalentPoolInput } from "./dto/talent-pools.schemas";
 
 @Injectable()
 export class RecruitmentTalentPoolsService {
@@ -53,26 +53,44 @@ export class RecruitmentTalentPoolsService {
     return { success: true };
   }
 
-  async listMembers(orgId: string, poolId: number) {
+  async listMembers(orgId: string, poolId: number, params: ListPoolMembersQueryInput) {
     await this.ensurePool(orgId, poolId);
-    return this.db
-      .select({
-        membershipId: talentPoolMembers.id,
-        notes: talentPoolMembers.notes,
-        addedAt: talentPoolMembers.addedAt,
-        candidateId: candidates.id,
-        firstName: candidates.firstName,
-        lastName: candidates.lastName,
-        email: candidates.email,
-        currentCompany: candidates.currentCompany,
-        currentRole: candidates.currentRole,
-        status: candidates.status,
-      })
-      .from(talentPoolMembers)
-      .innerJoin(candidates, eq(candidates.id, talentPoolMembers.candidateId))
-      .where(eq(talentPoolMembers.poolId, poolId))
-      .orderBy(desc(talentPoolMembers.addedAt))
-      .limit(100);
+    const limit = Math.min(params.limit, 100);
+    const offset = (params.page - 1) * limit;
+    const where = eq(talentPoolMembers.poolId, poolId);
+
+    const [data, countRows] = await Promise.all([
+      this.db
+        .select({
+          membershipId: talentPoolMembers.id,
+          notes: talentPoolMembers.notes,
+          addedAt: talentPoolMembers.addedAt,
+          candidateId: candidates.id,
+          firstName: candidates.firstName,
+          lastName: candidates.lastName,
+          email: candidates.email,
+          currentCompany: candidates.currentCompany,
+          currentRole: candidates.currentRole,
+          status: candidates.status,
+        })
+        .from(talentPoolMembers)
+        .innerJoin(candidates, eq(candidates.id, talentPoolMembers.candidateId))
+        .where(where)
+        .orderBy(desc(talentPoolMembers.addedAt))
+        .limit(limit)
+        .offset(offset),
+      this.db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(talentPoolMembers)
+        .where(where),
+    ]);
+
+    const total = countRows[0]?.total ?? 0;
+
+    return {
+      data,
+      pagination: { page: params.page, limit, total, totalPages: Math.ceil(total / limit) },
+    };
   }
 
   async addMember(orgId: string, userId: string, poolId: number, input: AddPoolMemberInput) {

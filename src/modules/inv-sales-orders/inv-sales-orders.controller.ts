@@ -157,7 +157,7 @@ export class InvSalesOrdersController {
     @Body(new ZodValidationPipe(cancelSoSchema)) body: CancelSoInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.soCore.cancelSo(u.orgId, soId, u.userId, body);
+    return this.soCore.cancelSo(u.orgId, soId, u.userId);
   }
 
   @Get(":soId/atp")

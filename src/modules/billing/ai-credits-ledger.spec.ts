@@ -1,5 +1,5 @@
 import { ConflictException } from "@nestjs/common";
-import { AiCreditsService } from "./ai-credits.service";
+import { AiCreditsReservationService } from "./ai-credits-reservation.service";
 
 type SelectChain = {
   from: jest.Mock;
@@ -34,13 +34,13 @@ function buildDb(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function makeService(db: ReturnType<typeof buildDb>): AiCreditsService {
-  return new (AiCreditsService as unknown as new (db: unknown) => AiCreditsService)(db);
+function makeService(db: ReturnType<typeof buildDb>): AiCreditsReservationService {
+  return new (AiCreditsReservationService as unknown as new (db: unknown) => AiCreditsReservationService)(db);
 }
 
-describe("AiCreditsService — reserve/settle/release ledger", () => {
+describe("AiCreditsReservationService — reserve/settle/release ledger", () => {
   let db: ReturnType<typeof buildDb>;
-  let svc: AiCreditsService;
+  let svc: AiCreditsReservationService;
 
   beforeEach(() => {
     db = buildDb();

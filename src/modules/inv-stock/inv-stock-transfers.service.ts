@@ -140,7 +140,7 @@ export class InvStockTransfersService {
   }
 
   // B1-03: All line reservations created atomically in one transaction.
-  async reserveTransfer(orgId: string, userId: string, transferId: number, _idempotencyKey: string) {
+  async reserveTransfer(orgId: string, userId: string, transferId: number) {
     const transfer = await this.db.transaction(async (tx) => {
       const [locked] = await tx.execute<{
         id: number; status: string; from_location_id: number; org_id: string;

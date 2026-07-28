@@ -57,6 +57,7 @@ export class OrgMembershipService {
     const [dataResult, countResult] = await Promise.all([
       this.db
         .select({
+          membershipId: organizationMembers.id,
           userId: organizationMembers.userId,
           role: organizationMembers.role,
           joinedAt: organizationMembers.joinedAt,
@@ -93,6 +94,25 @@ export class OrgMembershipService {
 
   async removeMember(orgId: string, actorUserId: string, memberUserId: string) {
     await this.db.transaction(async (tx) => {
+      const [member] = await tx
+        .select({ isOwner: organizationMembers.isOwner })
+        .from(organizationMembers)
+        .where(
+          and(
+            eq(organizationMembers.userId, memberUserId),
+            eq(organizationMembers.orgId, orgId),
+          ),
+        )
+        .for("update")
+        .limit(1);
+
+      if (!member) throw new NotFoundException("Member not found");
+      if (member.isOwner) {
+        throw new BadRequestException(
+          "Cannot remove the organization owner. Transfer ownership first.",
+        );
+      }
+
       await tx
         .delete(organizationMembers)
         .where(

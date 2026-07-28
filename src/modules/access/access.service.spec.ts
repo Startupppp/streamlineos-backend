@@ -238,6 +238,7 @@ describe("AccessService.resolveUserPermissions", () => {
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([])),
     };
 
@@ -260,6 +261,7 @@ describe("AccessService.resolveUserPermissions", () => {
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([{ id: 10, slug: "HR_ADMIN" }]))
         .mockReturnValueOnce(makeSelectChain([{ roleId: 10, permissionKey: "hr:employees:view", scope: "all" }]))
+        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([])),
     };
 
@@ -284,6 +286,7 @@ describe("AccessService.resolveUserPermissions", () => {
         .mockReturnValueOnce(makeSelectChain([{ roleId: 20 }]))
         .mockReturnValueOnce(makeSelectChain([{ id: 20, slug: "HR_VIEWER" }]))
         .mockReturnValueOnce(makeSelectChain([{ roleId: 20, permissionKey: "hr:employees:view", scope: "own" }]))
+        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([])),
     };
 
@@ -304,6 +307,7 @@ describe("AccessService.resolveUserPermissions", () => {
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([{ principalGroupId: "group-uuid-2" }]))
+        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([])),
     };
@@ -334,6 +338,7 @@ describe("AccessService.resolveUserPermissions", () => {
           { roleId: 30, permissionKey: "hr:employees:view", scope: "own" },
           { roleId: 31, permissionKey: "hr:employees:view", scope: "all" },
         ]))
+        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([])),
     };
 
@@ -354,6 +359,7 @@ describe("AccessService.resolveUserPermissions", () => {
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([])),
     };
 
@@ -372,6 +378,7 @@ describe("AccessService.resolveUserPermissions", () => {
         userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
       },
       select: jest.fn()
+        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([])),

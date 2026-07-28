@@ -195,7 +195,7 @@ export class ProjectsController {
   @Patch(":projectId/custom-states/:stateId")
   @RequirePermission("build:view")
   updateCustomState(
-    @Param("projectId", ParseIntPipe) _projectId: number,
+    @Param("projectId", ParseIntPipe) _: number,
     @Param("stateId", ParseIntPipe) stateId: number,
     @Body(new ZodValidationPipe(updateCustomStateSchema))
     body: UpdateCustomStateInput,
@@ -208,7 +208,7 @@ export class ProjectsController {
   @RequirePermission("build:view")
   @HttpCode(204)
   deleteCustomState(
-    @Param("projectId", ParseIntPipe) _projectId: number,
+    @Param("projectId", ParseIntPipe) _: number,
     @Param("stateId", ParseIntPipe) stateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {

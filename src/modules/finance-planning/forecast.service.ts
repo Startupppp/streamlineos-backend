@@ -139,7 +139,6 @@ export class ForecastService {
   async getForecast(
     orgId: string,
     query: ForecastQuery,
-    _requesterId: string,
   ): Promise<ForecastResponse> {
     const weeks = query.weeks ?? 13;
     return this.cache.cached<ForecastResponse>(
@@ -370,7 +369,7 @@ export class ForecastService {
   async compareForecast(
     orgId: string,
     query: CompareScenariosQuery,
-    requesterId: string,
+    _: string,
   ): Promise<ScenarioCompareResponse> {
     const { scenarioIds } = query;
 
@@ -381,7 +380,7 @@ export class ForecastService {
         .where(and(eq(finCashFlowScenarios.orgId, orgId), inArray(finCashFlowScenarios.id, scenarioIds))),
       Promise.all(
         scenarioIds.map((sid) =>
-          this.getForecast(orgId, { weeks: 13, scenarioId: sid }, requesterId),
+          this.getForecast(orgId, { weeks: 13, scenarioId: sid }),
         ),
       ),
     ]);
