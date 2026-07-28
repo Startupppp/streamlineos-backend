@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, gte, inArray, lte, not, sum } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, lte, not, sum } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import {
@@ -7,6 +7,7 @@ import {
   employeeSalaryProfileComponents,
   employeeSalaryProfiles,
   fnfSettlements,
+  payrollCalendarEvents,
   payrollPolicies,
   payrollPolicyVersions,
   payrollRunEmployees,
@@ -79,8 +80,9 @@ export class EssService {
     const now = new Date(), yr = now.getFullYear(), mo = now.getMonth() + 1;
     const fyStart = mo >= 4 ? `${yr}-04` : `${yr - 1}-04`;
     const fyEnd = mo >= 4 ? `${yr + 1}-03` : `${yr}-03`;
+    const today = now.toISOString().slice(0, 10);
 
-    const [toggles, [latestPub], fyPubs, activeLoans, [pendingRow], window] = await Promise.all([
+    const [toggles, [latestPub], fyPubs, activeLoans, [pendingRow], window, [nextPayEvent]] = await Promise.all([
       this.getActiveToggles(orgId),
       this.db
         .select({ id: payslipPublications.id, publishedAt: payslipPublications.publishedAt, month: payrollRuns.month, net: payrollRunEmployees.net })
@@ -104,6 +106,18 @@ export class EssService {
         .from(reimbursements)
         .where(and(eq(reimbursements.userId, userId), eq(reimbursements.orgId, orgId), eq(reimbursements.status, "PENDING"))),
       this.getActiveWindow(orgId),
+      this.db
+        .select({ date: payrollCalendarEvents.date, title: payrollCalendarEvents.title })
+        .from(payrollCalendarEvents)
+        .where(
+          and(
+            eq(payrollCalendarEvents.orgId, orgId),
+            eq(payrollCalendarEvents.type, "PAY_DATE"),
+            gte(payrollCalendarEvents.date, today),
+          ),
+        )
+        .orderBy(asc(payrollCalendarEvents.date))
+        .limit(1),
     ]);
 
     const [ytdRows, declarations] = await Promise.all([
@@ -182,6 +196,9 @@ export class EssService {
             net: latestPub.net,
             downloadHref: `/payroll/payslips/${latestPub.id}/download`,
           }
+        : null,
+      nextPayDate: nextPayEvent
+        ? { date: nextPayEvent.date, label: nextPayEvent.title }
         : null,
       ytd: { gross: ytdGross, net: ytdNet },
       activeLoanBalance,
