@@ -22,6 +22,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { LeavesService } from "./leaves.service";
 import { LeavesWriteService } from "./leaves-write.service";
+import { LeavesApprovalService } from "./leaves-approval.service";
 import { LeavesPageService } from "./leaves-page.service";
 import {
   approveLeaveSchema,
@@ -52,6 +53,7 @@ export class LeavesController {
   constructor(
     private readonly leaves: LeavesService,
     private readonly leavesWrite: LeavesWriteService,
+    private readonly leavesApproval: LeavesApprovalService,
     private readonly leavesPage: LeavesPageService,
   ) {}
 
@@ -175,7 +177,7 @@ export class LeavesController {
     @Body(new ZodValidationPipe(approveLeaveSchema)) body: ApproveLeaveInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.leavesWrite.approve(u, leaveId, body);
+    return this.leavesApproval.approve(u, leaveId, body);
   }
 
   @Put(":leaveId/reject")
@@ -186,7 +188,7 @@ export class LeavesController {
     @Body(new ZodValidationPipe(rejectLeaveSchema)) body: RejectLeaveInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.leavesWrite.reject(u, leaveId, body);
+    return this.leavesApproval.reject(u, leaveId, body);
   }
 
   @Patch(":leaveId")
@@ -196,7 +198,7 @@ export class LeavesController {
     @Body(new ZodValidationPipe(updateLeaveSchema)) body: UpdateLeaveInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const result = await this.leavesWrite.updateStatus(u, leaveId, body);
+    const result = await this.leavesApproval.updateStatus(u, leaveId, body);
     if (!result.ok) throw new NotFoundException("Leave request not found.");
     return { success: true };
   }

@@ -1,32 +1,20 @@
+import { Inject, Injectable } from "@nestjs/common";
+import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import {
-  ForbiddenException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from "@nestjs/common";
-import { and, count, eq, inArray, isNull, or, sql, asc } from "drizzle-orm";
-import {
-  users,
-  documents,
-  leaveTypes,
   leaveBalances,
-  notifications,
-  onboardingSteps,
+  leaveTypes,
   onboardingTasks,
   onboardingTemplates,
   onboardingTemplateSteps,
   organizationMembers,
-  orgDepartments,
+  users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { AutomationService } from "../automation/automation.service";
 import { HrAutomationEngineService } from "../hr-automations/hr-automation-engine.service";
-import { OnboardingProbationService } from "./onboarding-probation.service";
-import { logger } from "../../common/logger/logger.service";
+import { OnboardingSessionService } from "../onboarding-flow/onboarding-session.service";
+import { PersonEmploymentSyncService } from "../hr-core/person-employment-sync.service";
 import { EmailService } from "../email/email.service";
-import { AccessService } from "../access/access.service";
-import { getOnboardingReminderEmailTemplate } from "../email/templates/notifications-misc";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type {
   BankDetailsInput,
@@ -35,14 +23,11 @@ import type {
   PersonalDetailsInput,
   UpdateTaskInput,
 } from "./dto/onboarding.schemas";
-import { encrypt, encryptBankDetails } from "./crypto.helpers";
-import { resolveCountryRequirements } from "./onboarding-requirements.catalog";
-import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../common/cache/cache-keys";
-import { OnboardingSessionService } from "../onboarding-flow/onboarding-session.service";
-import { HR_NOTIFY_ROLES } from "../hr-lifecycle/hr-role-constants";
-import { PersonEmploymentSyncService } from "../hr-core/person-employment-sync.service";
-import { hrEmployments, hrPeople, hrEmploymentHistory } from "../../db/schema/hr/core-people";
+import { OnboardingTemplateService } from "./onboarding-template.service";
+import { OnboardingDetailsService } from "./onboarding-details.service";
+import { OnboardingTaskService } from "./onboarding-task.service";
+import { OnboardingAdminService } from "./onboarding-admin.service";
+import { hrEmploymentHistory, hrEmployments, hrPeople } from "../../db/schema/hr/core-people";
 
 type DefaultTask = {
   title: string;
@@ -130,13 +115,13 @@ export class OnboardingService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly email: EmailService,
-    private readonly access: AccessService,
-    private readonly automation: AutomationService,
     private readonly hrAutomation: HrAutomationEngineService,
     private readonly sessions: OnboardingSessionService,
-    private readonly probation: OnboardingProbationService,
-    private readonly cache: CacheService,
     private readonly personEmploymentSync: PersonEmploymentSyncService,
+    private readonly templates: OnboardingTemplateService,
+    private readonly details: OnboardingDetailsService,
+    private readonly tasks: OnboardingTaskService,
+    private readonly admin: OnboardingAdminService,
   ) {}
 
   private async markEmploymentOnboarding(orgId: string, userId: string): Promise<void> {
@@ -186,35 +171,6 @@ export class OnboardingService {
         .set({ lifecycleStatus: "ONBOARDING" })
         .where(and(eq(hrEmployments.id, row.employmentId), eq(hrEmployments.orgId, orgId)));
     });
-  }
-
-  async getProgressSummary(orgId: string) {
-    const rows = await this.db
-      .select({
-        userId: onboardingTasks.userId,
-        userName: users.name,
-        totalTasks: sql<number>`count(*)::int`,
-        completedTasks: sql<number>`sum(case when ${onboardingTasks.status} = 'COMPLETED' then 1 else 0 end)::int`,
-        lastCompletedAt: sql<
-          string | null
-        >`max(${onboardingTasks.completedAt})`,
-      })
-      .from(onboardingTasks)
-      .leftJoin(users, eq(onboardingTasks.userId, users.id))
-      .where(eq(onboardingTasks.orgId, orgId))
-      .groupBy(onboardingTasks.userId, users.name);
-
-    return rows.map((r) => ({
-      userId: r.userId,
-      userName: r.userName ?? r.userId,
-      totalTasks: r.totalTasks,
-      completedTasks: r.completedTasks ?? 0,
-      percentComplete:
-        r.totalTasks > 0
-          ? Math.round(((r.completedTasks ?? 0) / r.totalTasks) * 100)
-          : 0,
-      lastCompletedAt: r.lastCompletedAt ?? null,
-    }));
   }
 
   async initiate(orgId: string, input: InitiateInput): Promise<InitiateResult> {
@@ -467,207 +423,26 @@ export class OnboardingService {
       )
         continue;
       seen.add(member.userId);
-      const count = tasksByRole.get(member.role) ?? 1;
+      const taskCount = tasksByRole.get(member.role) ?? 1;
       await this.email.sendOnboardingTaskEmail(
         member.email,
         member.name ?? "there",
         employeeName,
         member.role,
-        count,
+        taskCount,
       );
     }
   }
 
-  async listTemplateDepartments(orgId: string) {
-    return this.db
-      .select({ id: orgDepartments.id, name: orgDepartments.name })
-      .from(orgDepartments)
-      .where(
-        and(
-          eq(orgDepartments.orgId, orgId),
-          isNull(orgDepartments.deletedAt),
-          eq(orgDepartments.status, "ACTIVE"),
-        ),
-      )
-      .orderBy(asc(orgDepartments.name));
-  }
-
-  async listTemplates(orgId: string) {
-    const templates = await this.db
-      .select()
-      .from(onboardingTemplates)
-      .where(eq(onboardingTemplates.orgId, orgId))
-      .orderBy(onboardingTemplates.createdAt);
-
-    const templateIds = templates.map((t) => t.id);
-    const steps =
-      templateIds.length > 0
-        ? await this.db
-            .select()
-            .from(onboardingTemplateSteps)
-            .where(inArray(onboardingTemplateSteps.templateId, templateIds))
-            .orderBy(onboardingTemplateSteps.sortOrder)
-        : [];
-
-    const stepsMap = new Map<number, typeof steps>();
-    for (const step of steps) {
-      const existing = stepsMap.get(step.templateId) ?? [];
-      existing.push(step);
-      stepsMap.set(step.templateId, existing);
-    }
-
-    return templates.map((t) => ({
-      ...t,
-      steps: stepsMap.get(t.id) ?? [],
-    }));
-  }
-
-  createTemplate(orgId: string, userId: string, input: CreateTemplateInput) {
-    return this.db.transaction(async (tx) => {
-      const [template] = await tx
-        .insert(onboardingTemplates)
-        .values({
-          orgId,
-          name: input.name,
-          departmentId: input.departmentId ?? null,
-          description: input.description ?? null,
-          isActive: true,
-          createdBy: userId,
-        })
-        .returning();
-
-      if (!template) {
-        throw new Error("Failed to create template");
-      }
-
-      if (input.steps.length > 0) {
-        await tx.insert(onboardingTemplateSteps).values(
-          input.steps.map((step, i) => ({
-            templateId: template.id,
-            title: step.title,
-            description: step.description ?? null,
-            ownerRole: step.ownerRole,
-            dueOffsetDays: step.dueOffsetDays,
-            isRequired: step.isRequired,
-            isComplianceItem: step.isComplianceItem,
-            sortOrder: i,
-          })),
-        );
-      }
-
-      return { success: true, templateId: template.id };
-    });
-  }
-
-  async savePersonalDetails(
-    orgId: string,
-    userId: string,
-    input: PersonalDetailsInput,
-  ) {
-    const emergencyContact =
-      input.emergencyName && input.emergencyRelation && input.emergencyPhone
-        ? {
-            name: input.emergencyName,
-            relation: input.emergencyRelation,
-            phone: input.emergencyPhone,
-          }
-        : undefined;
-
-    await this.db
-      .update(users)
-      .set({
-        phone: input.phone,
-        ...(input.gender ? { gender: input.gender } : {}),
-        ...(input.dateOfBirth ? { dateOfBirth: input.dateOfBirth } : {}),
-        ...(emergencyContact ? { emergencyContact } : {}),
-      })
-      .where(eq(users.id, userId));
-
-    await this.upsertOnboardingStep(userId, orgId, "Personal Details");
-
-    return { success: true };
-  }
-
-  async getPersonalDetails(orgId: string, userId: string) {
-    const [user] = await this.db
-      .select({
-        phone: users.phone,
-        gender: users.gender,
-        dateOfBirth: users.dateOfBirth,
-        emergencyContact: users.emergencyContact,
-      })
-      .from(organizationMembers)
-      .innerJoin(users, eq(users.id, organizationMembers.userId))
-      .where(
-        and(
-          eq(organizationMembers.orgId, orgId),
-          eq(organizationMembers.userId, userId),
-        ),
-      )
-      .limit(1);
-
-    if (!user) {
-      throw new NotFoundException("User not found in this organization");
-    }
-
-    return {
-      phone: user.phone,
-      gender: user.gender,
-      dateOfBirth: user.dateOfBirth,
-      emergencyName: user.emergencyContact?.name ?? null,
-      emergencyRelation: user.emergencyContact?.relation ?? null,
-      emergencyPhone: user.emergencyContact?.phone ?? null,
-    };
-  }
-
-  async saveBankDetails(
-    orgId: string,
-    userId: string,
-    input: BankDetailsInput,
-  ) {
-    const req = resolveCountryRequirements(input.countryCode);
-    const statutory = input.statutory ?? {};
-    const primaryKey = req.statutoryFields[0]?.key;
-    const primaryTaxId =
-      input.taxId?.trim() ||
-      (primaryKey ? statutory[primaryKey]?.trim() : "") ||
-      "";
-
-    await this.db
-      .update(users)
-      .set({
-        bankDetails: encryptBankDetails({
-          accountNumber: input.accountNumber ?? "",
-          bankName: input.bankName,
-          branch: input.branch ?? "",
-          ifsc: req.bankScheme === "IFSC" ? (input.routingCode ?? "") : "",
-          accountHolder: input.accountHolder,
-          bankCountry: req.countryCode,
-          scheme: req.bankScheme,
-          routingCode: input.routingCode?.trim() || undefined,
-          iban: input.iban?.trim() || undefined,
-          swift: input.swift?.trim() || undefined,
-          pfUanNumber: statutory["uan"]?.trim() || undefined,
-          statutory: Object.keys(statutory).length > 0 ? statutory : undefined,
-        }),
-        ...(primaryTaxId ? { taxId: encrypt(primaryTaxId) } : {}),
-      })
-      .where(eq(users.id, userId));
-
-    await this.upsertOnboardingStep(userId, orgId, "Bank Details");
-
-    return { success: true };
-  }
-
   async submit(orgId: string, userId: string) {
-    await this.upsertOnboardingStep(userId, orgId, "Final Review");
+    await this.details.upsertOnboardingStep(userId, orgId, "Final Review");
 
     await this.db
       .update(users)
       .set({ onboardingCompletedAt: new Date() })
       .where(eq(users.id, userId));
 
-    await this.cache.invalidate(CACHE_KEYS.userSession(userId));
+    await this.details.invalidateSessionCache(userId);
 
     await this.sessions.completeSession(orgId, userId, "employee_onboarding");
 
@@ -700,283 +475,47 @@ export class OnboardingService {
     return { success: true };
   }
 
-  async getUserTasks(u: CurrentUserContext, userId: string) {
-    let isAdmin = u.isOrgOwner || u.isPlatformAdmin;
-    if (!isAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      isAdmin = perms.has("hr:employees:manage");
-    }
-
-    if (!isAdmin && u.userId !== userId) {
-      throw new ForbiddenException("Forbidden");
-    }
-
-    return this.db
-      .select()
-      .from(onboardingTasks)
-      .where(
-        and(
-          eq(onboardingTasks.userId, userId),
-          eq(onboardingTasks.orgId, u.orgId),
-        ),
-      )
-      .orderBy(onboardingTasks.createdAt);
+  getProgressSummary(orgId: string) {
+    return this.admin.getProgressSummary(orgId);
   }
 
-  async updateTask(
-    u: CurrentUserContext,
-    taskId: number,
-    input: UpdateTaskInput,
-  ) {
-    const [task] = await this.db
-      .select()
-      .from(onboardingTasks)
-      .where(
-        and(eq(onboardingTasks.id, taskId), eq(onboardingTasks.orgId, u.orgId)),
-      );
-
-    if (!task) throw new NotFoundException("Task not found");
-
-    let isAdmin = u.isOrgOwner || u.isPlatformAdmin;
-    if (!isAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      isAdmin = perms.has("hr:employees:manage");
-    }
-
-    if (!isAdmin && task.userId !== u.userId) {
-      throw new ForbiddenException("Forbidden");
-    }
-
-    const now = new Date();
-    await this.db
-      .update(onboardingTasks)
-      .set({
-        status: input.status,
-        completedAt: input.status === "COMPLETED" ? now : null,
-        completedBy: input.status === "COMPLETED" ? u.userId : null,
-      })
-      .where(eq(onboardingTasks.id, taskId));
-
-    if (input.status === "COMPLETED") {
-      this.dispatchOnboardingComplete(u.orgId, task.userId);
-    }
-
-    return { success: true };
+  sendReminders(orgId: string, appUrl: string) {
+    return this.admin.sendReminders(orgId, appUrl);
   }
 
-  private dispatchOnboardingComplete(
-    orgId: string,
-    employeeUserId: string,
-  ): void {
-    void (async () => {
-      const pending = await this.db
-        .select({ id: onboardingTasks.id })
-        .from(onboardingTasks)
-        .where(
-          and(
-            eq(onboardingTasks.userId, employeeUserId),
-            eq(onboardingTasks.orgId, orgId),
-            eq(onboardingTasks.status, "PENDING"),
-          ),
-        );
-      if (pending.length > 0) return;
-
-      try {
-        await this.probation.setupProbationForUser(orgId, employeeUserId);
-      } catch {
-        logger.warn("onboarding probation setup failed", {
-          orgId,
-          employeeUserId,
-        });
-      }
-
-      const employee = await this.db.query.users.findFirst({
-        where: eq(users.id, employeeUserId),
-        columns: { email: true, name: true },
-      });
-
-      if (employee?.email) {
-        await this.email.sendOnboardingCompleteEmployeeEmail(
-          employee.email,
-          employee.name ?? "Team Member",
-        );
-      }
-
-      const hrMembers = await this.db
-        .select({ userId: organizationMembers.userId })
-        .from(organizationMembers)
-        .where(
-          and(
-            eq(organizationMembers.orgId, orgId),
-            inArray(organizationMembers.role, [...HR_NOTIFY_ROLES]),
-          ),
-        );
-      if (hrMembers.length === 0) return;
-
-      const hrUsers = await this.db
-        .select({ email: users.email, name: users.name })
-        .from(users)
-        .where(
-          inArray(
-            users.id,
-            hrMembers.map((m) => m.userId),
-          ),
-        );
-
-      const recipients = hrUsers.filter(
-        (m): m is { email: string; name: string | null } => Boolean(m.email),
-      );
-      await Promise.all(
-        recipients.map((m) =>
-          this.email.sendOnboardingCompleteHrEmail(
-            m.email,
-            m.name ?? "HR",
-            employee?.name ?? "Employee",
-          ),
-        ),
-      );
-
-      const onboardedPayload = {
-        userId: employeeUserId,
-        employeeName: employee?.name ?? "",
-        employeeEmail: employee?.email ?? "",
-        totalTasks: 0,
-        completedAt: new Date().toISOString(),
-      };
-      void this.automation
-        .runAutomationsForEvent(orgId, "onboarding.completed", onboardedPayload)
-        .catch(() => undefined);
-      void this.hrAutomation
-        .emit(orgId, "employee.onboarded", onboardedPayload)
-        .catch(() => undefined);
-    })().catch(() => undefined);
+  listTemplateDepartments(orgId: string) {
+    return this.templates.listTemplateDepartments(orgId);
   }
 
-  async sendReminders(
-    orgId: string,
-    appUrl: string,
-  ): Promise<{ sent: number; total: number }> {
-    const incompleteUsers = await this.db
-      .select({
-        userId: onboardingTasks.userId,
-        userName: users.name,
-        userEmail: users.email,
-        totalTasks: count(),
-        pendingTasks: sql<number>`COUNT(CASE WHEN ${onboardingTasks.status} != 'COMPLETED' THEN 1 END)::int`,
-      })
-      .from(onboardingTasks)
-      .innerJoin(users, eq(onboardingTasks.userId, users.id))
-      .where(eq(onboardingTasks.orgId, orgId))
-      .groupBy(onboardingTasks.userId, users.name, users.email)
-      .having(
-        sql`COUNT(CASE WHEN ${onboardingTasks.status} != 'COMPLETED' THEN 1 END) > 0`,
-      );
-
-    if (incompleteUsers.length === 0) {
-      return { sent: 0, total: 0 };
-    }
-
-    let sentCount = 0;
-
-    for (const user of incompleteUsers) {
-      await this.db.insert(notifications).values({
-        orgId,
-        userId: user.userId,
-        type: "WARNING",
-        title: "Onboarding Reminder",
-        message: `You have ${user.pendingTasks} pending onboarding task(s). Please complete them at your earliest convenience.`,
-        link: "/hr/onboarding/my-tasks",
-      });
-
-      if (user.userEmail) {
-        try {
-          await this.email.sendEmail({
-            to: user.userEmail,
-            subject: "Onboarding reminder — pending tasks",
-            html: getOnboardingReminderEmailTemplate(
-              user.userName ?? "there",
-              user.pendingTasks,
-              user.totalTasks,
-            ),
-          });
-          sentCount++;
-        } catch {}
-      }
-    }
-
-    return { sent: sentCount, total: incompleteUsers.length };
+  listTemplates(orgId: string) {
+    return this.templates.listTemplates(orgId);
   }
 
-  async getStatus(
-    userId: string,
-    orgId: string,
-  ): Promise<{
-    personalDetails: boolean;
-    bankDetails: boolean;
-    documents: number;
-    submitted: boolean;
-  }> {
-    const [stepsResult, docCountResult, userRow] = await Promise.all([
-      this.db
-        .select({
-          stepName: onboardingSteps.stepName,
-          status: onboardingSteps.status,
-        })
-        .from(onboardingSteps)
-        .where(
-          and(
-            eq(onboardingSteps.userId, userId),
-            eq(onboardingSteps.orgId, orgId),
-          ),
-        ),
-      this.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(documents)
-        .where(and(eq(documents.userId, userId), eq(documents.orgId, orgId))),
-      this.db
-        .select({ onboardingCompletedAt: users.onboardingCompletedAt })
-        .from(users)
-        .where(eq(users.id, userId)),
-    ]);
-
-    const completedSteps = new Set(
-      stepsResult
-        .filter((s) => s.status === "COMPLETED")
-        .map((s) => s.stepName),
-    );
-
-    return {
-      personalDetails: completedSteps.has("Personal Details"),
-      bankDetails: completedSteps.has("Bank Details"),
-      documents: docCountResult[0]?.count ?? 0,
-      submitted: Boolean(userRow[0]?.onboardingCompletedAt),
-    };
+  createTemplate(orgId: string, userId: string, input: CreateTemplateInput) {
+    return this.templates.createTemplate(orgId, userId, input);
   }
 
-  private async upsertOnboardingStep(
-    userId: string,
-    orgId: string,
-    stepName: string,
-  ) {
-    const existing = await this.db.query.onboardingSteps.findFirst({
-      where: and(
-        eq(onboardingSteps.userId, userId),
-        eq(onboardingSteps.stepName, stepName),
-      ),
-    });
-    if (existing) {
-      await this.db
-        .update(onboardingSteps)
-        .set({ status: "COMPLETED", completedAt: new Date() })
-        .where(eq(onboardingSteps.id, existing.id));
-    } else {
-      await this.db.insert(onboardingSteps).values({
-        userId,
-        orgId,
-        stepName,
-        status: "COMPLETED",
-        completedAt: new Date(),
-      });
-    }
+  savePersonalDetails(orgId: string, userId: string, input: PersonalDetailsInput) {
+    return this.details.savePersonalDetails(orgId, userId, input);
+  }
+
+  getPersonalDetails(orgId: string, userId: string) {
+    return this.details.getPersonalDetails(orgId, userId);
+  }
+
+  saveBankDetails(orgId: string, userId: string, input: BankDetailsInput) {
+    return this.details.saveBankDetails(orgId, userId, input);
+  }
+
+  getStatus(userId: string, orgId: string) {
+    return this.details.getStatus(userId, orgId);
+  }
+
+  getUserTasks(u: CurrentUserContext, userId: string) {
+    return this.tasks.getUserTasks(u, userId);
+  }
+
+  updateTask(u: CurrentUserContext, taskId: number, input: UpdateTaskInput) {
+    return this.tasks.updateTask(u, taskId, input);
   }
 }

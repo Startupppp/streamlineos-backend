@@ -1,0 +1,148 @@
+import { Inject, Injectable } from "@nestjs/common";
+import { and, count, desc, eq, gte, inArray, lt, ne } from "drizzle-orm";
+import { DRIZZLE } from "../../db/drizzle.constants";
+import { type Db } from "../../db/drizzle.module";
+import { aiCreditPacks, aiCreditTransactions } from "../../db/schema";
+import { DEFAULT_AI_CREDIT_PACKS } from "./ai-credit-packs.constants";
+import { milliToCredits } from "../ai/billing/ai-model-pricing.constants";
+
+@Injectable()
+export class AiCreditsPacksService {
+  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+
+  async listPacks() {
+    let packs = await this.db
+      .select()
+      .from(aiCreditPacks)
+      .where(eq(aiCreditPacks.isActive, true))
+      .orderBy(aiCreditPacks.sortOrder);
+
+    if (packs.length === 0) {
+      await this.ensureDefaultPacks();
+      packs = await this.db
+        .select()
+        .from(aiCreditPacks)
+        .where(eq(aiCreditPacks.isActive, true))
+        .orderBy(aiCreditPacks.sortOrder);
+    }
+
+    return packs;
+  }
+
+  private async ensureDefaultPacks() {
+    for (const pack of DEFAULT_AI_CREDIT_PACKS) {
+      await this.db
+        .insert(aiCreditPacks)
+        .values({
+          name: pack.name,
+          credits: pack.credits,
+          bonusCredits: pack.bonusCredits,
+          priceInPaise: pack.priceInPaise,
+          sortOrder: pack.sortOrder,
+          isActive: true,
+        })
+        .onConflictDoNothing({ target: aiCreditPacks.name });
+    }
+  }
+
+  async listTransactions(orgId: string, page: number, limit: number) {
+    const offset = (page - 1) * limit;
+    const [items, [countRow]] = await Promise.all([
+      this.db
+        .select({
+          id: aiCreditTransactions.id,
+          orgId: aiCreditTransactions.orgId,
+          userId: aiCreditTransactions.userId,
+          type: aiCreditTransactions.type,
+          amount: aiCreditTransactions.amount,
+          balanceAfter: aiCreditTransactions.balanceAfter,
+          feature: aiCreditTransactions.feature,
+          model: aiCreditTransactions.model,
+          referenceId: aiCreditTransactions.referenceId,
+          createdAt: aiCreditTransactions.createdAt,
+          promptTokens: aiCreditTransactions.promptTokens,
+          completionTokens: aiCreditTransactions.completionTokens,
+          totalTokens: aiCreditTransactions.totalTokens,
+          costUsd: aiCreditTransactions.costUsd,
+        })
+        .from(aiCreditTransactions)
+        .where(eq(aiCreditTransactions.orgId, orgId))
+        .orderBy(desc(aiCreditTransactions.createdAt))
+        .limit(limit)
+        .offset(offset),
+      this.db
+        .select({ total: count() })
+        .from(aiCreditTransactions)
+        .where(eq(aiCreditTransactions.orgId, orgId)),
+    ]);
+    const total = Number(countRow?.total ?? 0);
+    const mappedItems = items.map((t) => ({
+      ...t,
+      amount: milliToCredits(t.amount),
+      balanceAfter: milliToCredits(t.balanceAfter),
+    }));
+    return { items: mappedItems, total, page, totalPages: Math.ceil(total / limit) };
+  }
+
+  async hasSameDayPurchaseForPack(orgId: string, packId: number): Promise<boolean> {
+    const now = new Date();
+    const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const dayEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+
+    const [row] = await this.db
+      .select({ id: aiCreditTransactions.id })
+      .from(aiCreditTransactions)
+      .where(
+        and(
+          eq(aiCreditTransactions.orgId, orgId),
+          eq(aiCreditTransactions.type, "PURCHASE"),
+          eq(aiCreditTransactions.referenceId, String(packId)),
+          gte(aiCreditTransactions.createdAt, dayStart),
+          lt(aiCreditTransactions.createdAt, dayEnd),
+        ),
+      )
+      .limit(1);
+    return !!row;
+  }
+
+  async hasMonthlyPlanGrant(orgId: string): Promise<boolean> {
+    const now = new Date();
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const monthEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+
+    const [row] = await this.db
+      .select({ id: aiCreditTransactions.id })
+      .from(aiCreditTransactions)
+      .where(
+        and(
+          eq(aiCreditTransactions.orgId, orgId),
+          eq(aiCreditTransactions.type, "PLAN_GRANT"),
+          ne(aiCreditTransactions.feature, "trial-grant"),
+          gte(aiCreditTransactions.createdAt, monthStart),
+          lt(aiCreditTransactions.createdAt, monthEnd),
+        ),
+      )
+      .limit(1);
+    return !!row;
+  }
+
+  async getMonthlyGrantedOrgIds(orgIds: string[]): Promise<Set<string>> {
+    if (orgIds.length === 0) return new Set();
+    const now = new Date();
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const monthEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+    const rows = await this.db
+      .selectDistinct({ orgId: aiCreditTransactions.orgId })
+      .from(aiCreditTransactions)
+      .where(
+        and(
+          eq(aiCreditTransactions.type, "PLAN_GRANT"),
+          ne(aiCreditTransactions.feature, "trial-grant"),
+          gte(aiCreditTransactions.createdAt, monthStart),
+          lt(aiCreditTransactions.createdAt, monthEnd),
+          inArray(aiCreditTransactions.orgId, orgIds),
+        ),
+      );
+    return new Set(rows.map((r) => r.orgId));
+  }
+}

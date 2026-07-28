@@ -1,7 +1,7 @@
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
 import { AccessService } from "../access/access.service";
-import { isScopable } from "../rbac/permissions.constants";
+import { isScopable } from "../rbac/permissions";
 
 export const PAYROLL_RUNS_VIEW_PERMISSION = "payroll:runs:view";
 

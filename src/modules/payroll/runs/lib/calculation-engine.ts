@@ -5,130 +5,21 @@ import type {
   PayrollToggles,
   PayrollWorkerType,
   FormulaScope,
-  MoneyString,
   TaxRegimeType,
   RunEmployeeVariance,
 } from "../../payroll.types";
-import type { SalaryComponentType, SalaryComponentCalcMethod } from "../../payroll.types";
 import { toPaise, fromPaise, pctOf, applyRounding, daysInMonth } from "./money";
 import { evalFormula } from "./formula-engine";
 import { calcStatutory } from "./statutory";
-import {
-  calcSlabTaxRupees,
-  getIndiaBundleForMonth,
-  type TdsRule,
-} from "./statutory-registry";
+import { getIndiaBundleForMonth } from "./statutory-registry";
+import { taxSlabNew, taxSlabOld } from "./calc-tds-helpers";
+import { calcEarningsPhase } from "./calc-earnings-phase";
+import { buildVariablePayLines } from "./calc-variable-pay-phase";
+import type { ResolvedComponent, CalcInputPulls, CalcEngineInput } from "./calc-engine-types";
+import { SORT_BASE_TAX } from "./calc-engine-types";
 
-export interface ResolvedComponent {
-  id: number;
-  code: string;
-  name: string;
-  type: SalaryComponentType;
-  calcMethod: SalaryComponentCalcMethod;
-  amount: MoneyString | null;
-  percent: string | null;
-  formula: string | null;
-  taxable: boolean;
-  showOnPayslip: boolean;
-  includeInCtc: boolean;
-  isStatutory: boolean;
-  sortOrder: number;
-}
-
-export interface CalcInputPulls {
-  approvedBonuses: { amount: MoneyString; type: string; taxable: boolean }[];
-  approvedIncentives: { amount: MoneyString }[];
-  approvedReimbursements: { amount: MoneyString; category: string }[];
-  consumedReimbursementIds?: number[];
-  consumedIncentiveIds?: number[];
-  consumedBonusIds?: number[];
-  activeLoans: {
-    id: number;
-    emiAmount: MoneyString | null;
-    amount: MoneyString;
-    paidEmis: number;
-    totalEmis: number | null;
-    adjustment: { type: string; amount: MoneyString | null } | null;
-  }[];
-  taxDeclaration?: {
-    section80c: string;
-    section80d: string;
-    hra: string;
-    lta: string;
-    homeLoanInterest: string;
-    section80g: string;
-    previousEmploymentIncome: string;
-    previousEmployerTds: string;
-  } | null;
-  /**
-   * Whether a valid PAN is on record for this payee. Undefined = treated as present
-   * (preserves prior behaviour). When explicitly false, §206AA applies the higher
-   * 20% contractor withholding rate.
-   */
-  panAvailable?: boolean;
-}
-
-export interface CalcEngineInput {
-  policyVersionId: number | null;
-  month: string;
-  annualCtcDecimal: MoneyString;
-  workerType: PayrollWorkerType;
-  currency: string;
-  payoutCurrency: string | null;
-  fxRate: string | null;
-  taxRegime: TaxRegimeType | null;
-  components: ResolvedComponent[];
-  toggles: PayrollToggles;
-  config: PayrollPolicyConfig;
-  inputs: {
-    scheduledDays: string;
-    paidDays: string;
-    lopDays: string;
-    overtimeHours: string;
-    billableHours?: string;
-  };
-  pulls: CalcInputPulls;
-  previousSnapshot: CalculationSnapshot | null;
-}
-
-const CESS_RATE = 0.04;
-
-/**
- * Surcharge on income tax by total-income slab (long-standing Indian income-tax
- * law, not a 2026 change). Applied on base tax before health-and-education cess.
- * The new regime caps surcharge at 25% (the 37% top slab was removed for the new
- * regime); the old regime retains the 37% slab above ₹5Cr. Marginal relief is not
- * modelled here — a payroll TDS estimate rounds monthly and reconciles at filing;
- * omitting relief slightly overstates within a narrow band just above each
- * threshold, which is far more correct than applying no surcharge at all.
- */
-export function surchargeRate(taxableRupees: number, regime: "NEW" | "OLD"): number {
-  if (taxableRupees <= 5_000_000) return 0;
-  if (taxableRupees <= 10_000_000) return 0.1;
-  if (taxableRupees <= 20_000_000) return 0.15;
-  if (regime === "NEW") return 0.25; // capped at 25% under the new regime
-  if (taxableRupees <= 50_000_000) return 0.25;
-  return 0.37;
-}
-
-function taxSlabNew(annualGrossPaise: number, tds: TdsRule): number {
-  const regime = tds.newRegime;
-  const taxablePaise = Math.max(0, annualGrossPaise - regime.standardDeductionPaise);
-  const g = taxablePaise / 100;
-  const tax = calcSlabTaxRupees(g, regime);
-  const surcharge = tax * surchargeRate(g, "NEW");
-  return (tax + surcharge) * (1 + parseFloat(tds.cessPercent) / 100);
-}
-
-function taxSlabOld(annualGrossPaise: number, annualDeductionPaise: number, tds: TdsRule): number {
-  const regime = tds.oldRegime;
-  const totalDeductionPaise = regime.standardDeductionPaise + annualDeductionPaise;
-  const taxablePaise = Math.max(0, annualGrossPaise - totalDeductionPaise);
-  const g = taxablePaise / 100;
-  const tax = calcSlabTaxRupees(g, regime);
-  const surcharge = tax * surchargeRate(g, "OLD");
-  return (tax + surcharge) * (1 + parseFloat(tds.cessPercent) / 100);
-}
+export type { ResolvedComponent, CalcInputPulls, CalcEngineInput };
+export { surchargeRate } from "./calc-tds-helpers";
 
 export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
   const {
@@ -149,157 +40,27 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
 
   const totalIncentivePaise = pulls.approvedIncentives.reduce((s, i) => s + toPaise(i.amount), 0);
 
-  const lines: CalculationSnapshotLine[] = [];
-
   const earningComps = components.filter(c => c.type === "EARNING" && !c.isStatutory).sort((a, b) => a.sortOrder - b.sortOrder);
   const deductionComps = components.filter(c => c.type === "DEDUCTION" && !c.isStatutory).sort((a, b) => a.sortOrder - b.sortOrder);
   const adjustmentComps = components.filter(c => c.type === "ADJUSTMENT" && !c.isStatutory).sort((a, b) => a.sortOrder - b.sortOrder);
 
-  let basicPaise = 0;
-  let earningGrossSoFar = 0;
-  const pendingGrossPercent: ResolvedComponent[] = [];
+  const earningResult = calcEarningsPhase({
+    earningComps,
+    monthlyCtcPaise,
+    rounding,
+    totalDaysInMonth,
+    paidDays,
+    scheduledDays,
+    lopDays,
+    overtimeHours,
+    billableHours,
+    totalIncentivePaise,
+    prorationFactor,
+  });
 
-  for (const comp of earningComps) {
-    if (comp.calcMethod === "PERCENT_OF_GROSS") {
-      pendingGrossPercent.push(comp);
-      continue;
-    }
-
-    let rawPaise = 0;
-
-    if (comp.calcMethod === "FIXED" && comp.amount != null) {
-      rawPaise = toPaise(comp.amount);
-    } else if (comp.calcMethod === "PERCENT_OF_BASIC" && comp.percent != null) {
-      const pctBase = basicPaise > 0 ? basicPaise : monthlyCtcPaise;
-      rawPaise = pctOf(pctBase, comp.percent);
-    } else if (comp.calcMethod === "ATTENDANCE_BASED" && comp.amount != null) {
-      rawPaise = Math.round(toPaise(comp.amount) * prorationFactor);
-    } else if (comp.calcMethod === "TIMESHEET_BASED" && comp.amount != null) {
-      rawPaise = Math.round(parseFloat(comp.amount) * billableHours * 100);
-    } else if (comp.calcMethod === "FORMULA" && comp.formula != null) {
-      const scope: FormulaScope = {
-        basic: basicPaise / 100,
-        gross: earningGrossSoFar / 100,
-        ctc: monthlyCtcPaise / 100,
-        days_in_month: totalDaysInMonth,
-        paid_days: paidDays,
-        lop_days: lopDays,
-        overtime_hours: overtimeHours,
-        incentive_amount: totalIncentivePaise / 100,
-        reimbursement_amount: 0,
-      };
-      const result = evalFormula(comp.formula, scope);
-      if (result.ok) {
-        rawPaise = Math.round(result.value * 100);
-      } else {
-        lines.push({
-          code: comp.code,
-          name: comp.name,
-          category: "EARNING",
-          amount: "0.00",
-          calcMethod: comp.calcMethod,
-          taxable: comp.taxable,
-          sortOrder: comp.sortOrder,
-          explain: {
-            method: comp.calcMethod,
-            formula: comp.formula,
-            inputs: { ctc: monthlyCtcPaise / 100, basic: basicPaise / 100 },
-            steps: [`Error: ${result.error}`],
-            note: result.error,
-          },
-        });
-        if (comp.code === "BASIC") basicPaise = 0;
-        continue;
-      }
-    } else if (comp.calcMethod === "MANUAL") {
-      rawPaise = 0;
-    }
-
-    const noProrate = comp.calcMethod === "ATTENDANCE_BASED" || comp.calcMethod === "TIMESHEET_BASED";
-    const proratedPaise = noProrate ? rawPaise : applyRounding(Math.round(rawPaise * prorationFactor), rounding);
-
-    const pctBase = comp.calcMethod === "PERCENT_OF_BASIC"
-      ? (basicPaise > 0 ? basicPaise : monthlyCtcPaise)
-      : monthlyCtcPaise;
-
-    if (comp.calcMethod === "TIMESHEET_BASED") {
-      lines.push({
-        code: comp.code,
-        name: comp.name,
-        category: "EARNING",
-        amount: fromPaise(proratedPaise),
-        calcMethod: comp.calcMethod,
-        taxable: comp.taxable,
-        sortOrder: comp.sortOrder,
-        explain: {
-          method: comp.calcMethod,
-          inputs: { hourlyRate: parseFloat(comp.amount ?? "0"), billableHours },
-          steps: [
-            `${comp.name} = ₹${parseFloat(comp.amount ?? "0").toFixed(2)}/hr × ${billableHours}h = ₹${(proratedPaise / 100).toFixed(2)}`,
-          ],
-        },
-      });
-    } else {
-      const baseLabel = comp.calcMethod === "PERCENT_OF_BASIC"
-        ? (basicPaise > 0 ? `basic ₹${(pctBase / 100).toFixed(2)}` : `monthly CTC ₹${(pctBase / 100).toFixed(2)}`)
-        : "";
-      lines.push({
-        code: comp.code,
-        name: comp.name,
-        category: "EARNING",
-        amount: fromPaise(proratedPaise),
-        calcMethod: comp.calcMethod,
-        taxable: comp.taxable,
-        sortOrder: comp.sortOrder,
-        explain: {
-          method: comp.calcMethod,
-          formula: comp.formula ?? undefined,
-          inputs: { ctc: monthlyCtcPaise / 100, percent: comp.percent ? parseFloat(comp.percent) : 0 },
-          steps: [
-            comp.calcMethod === "PERCENT_OF_BASIC"
-              ? `${comp.name} = ${comp.percent}% of ${baseLabel} = ₹${(rawPaise / 100).toFixed(2)}`
-              : `${comp.name} = ₹${(rawPaise / 100).toFixed(2)}`,
-            proratedPaise !== rawPaise
-              ? `Prorated ₹${(rawPaise / 100).toFixed(2)} × ${paidDays}/${scheduledDays} paid days = ₹${(proratedPaise / 100).toFixed(2)}`
-              : `Full amount = ₹${(proratedPaise / 100).toFixed(2)}`,
-          ],
-        },
-      });
-    }
-
-    if (comp.code === "BASIC") basicPaise = proratedPaise;
-    earningGrossSoFar += proratedPaise;
-  }
-
-  let grossPaise = lines
-    .filter(l => l.category === "EARNING")
-    .reduce((s, l) => s + toPaise(l.amount), 0);
-
-  for (const comp of pendingGrossPercent) {
-    if (comp.percent == null) continue;
-    const rawPaise = pctOf(grossPaise, comp.percent);
-    const proratedPaise = applyRounding(Math.round(rawPaise * prorationFactor), rounding);
-    lines.push({
-      code: comp.code,
-      name: comp.name,
-      category: "EARNING",
-      amount: fromPaise(proratedPaise),
-      calcMethod: comp.calcMethod,
-      taxable: comp.taxable,
-      sortOrder: comp.sortOrder,
-      explain: {
-        method: comp.calcMethod,
-        inputs: { gross: grossPaise / 100, percent: parseFloat(comp.percent) },
-        steps: [
-          `${comp.name} = ${comp.percent}% of gross ₹${(grossPaise / 100).toFixed(2)} = ₹${(proratedPaise / 100).toFixed(2)}`,
-        ],
-      },
-    });
-  }
-
-  grossPaise = lines
-    .filter(l => l.category === "EARNING")
-    .reduce((s, l) => s + toPaise(l.amount), 0);
+  const lines: CalculationSnapshotLine[] = [...earningResult.earningLines];
+  const basicPaise = earningResult.basicPaise;
+  let grossPaise = earningResult.grossPaise;
 
   let nonStatDeductionPaise = 0;
   const pendingGrossDeductions: ResolvedComponent[] = [];
@@ -458,89 +219,16 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
     adjustmentPaise += paise;
   }
 
-  if (toggles.overtime && overtimeHours > 0 && scheduledDays > 0) {
-    const otBasisPaise = config.overtime.basis === "BASIC" ? basicPaise : grossPaise;
-    const ratePerHour = otBasisPaise / (scheduledDays * 8);
-    const otPaise = Math.round(parseFloat(config.overtime.multiplier) * ratePerHour * overtimeHours);
-    lines.push({
-      code: "OVERTIME",
-      name: "Overtime",
-      category: "EARNING",
-      amount: fromPaise(otPaise),
-      calcMethod: "ATTENDANCE_BASED",
-      taxable: true,
-      sortOrder: 800,
-      explain: {
-        method: "ATTENDANCE_BASED",
-        inputs: { basisPaise: otBasisPaise / 100, multiplier: parseFloat(config.overtime.multiplier), overtimeHours },
-        steps: [
-          `OT basis (${config.overtime.basis}) = ₹${(otBasisPaise / 100).toFixed(2)}`,
-          `Rate/hr = ₹${(otBasisPaise / 100).toFixed(2)} / (${scheduledDays} days × 8h) = ₹${(ratePerHour / 100).toFixed(4)}`,
-          `OT = ₹${(ratePerHour / 100).toFixed(4)}/hr × ${config.overtime.multiplier}x × ${overtimeHours}h = ₹${(otPaise / 100).toFixed(2)}`,
-        ],
-      },
-    });
-  }
-
-  if (toggles.bonuses) {
-    pulls.approvedBonuses.forEach((b, idx) => {
-      const bPaise = toPaise(b.amount);
-      lines.push({
-        code: `BONUS_${idx + 1}`,
-        name: `Bonus (${b.type})`,
-        category: "EARNING",
-        amount: fromPaise(bPaise),
-        calcMethod: "MANUAL",
-        taxable: b.taxable,
-        sortOrder: 810 + idx,
-        explain: {
-          method: "MANUAL",
-          inputs: { amount: bPaise / 100 },
-          steps: [`Bonus ${b.type} = ₹${(bPaise / 100).toFixed(2)}`],
-        },
-      });
-    });
-  }
-
-  if (toggles.incentives) {
-    pulls.approvedIncentives.forEach((inc, idx) => {
-      const iPaise = toPaise(inc.amount);
-      lines.push({
-        code: `INCENTIVE_${idx + 1}`,
-        name: "Incentive",
-        category: "EARNING",
-        amount: fromPaise(iPaise),
-        calcMethod: "MANUAL",
-        taxable: true,
-        sortOrder: 820 + idx,
-        explain: {
-          method: "MANUAL",
-          inputs: { amount: iPaise / 100 },
-          steps: [`Incentive = ₹${(iPaise / 100).toFixed(2)}`],
-        },
-      });
-    });
-  }
-
-  if (toggles.reimbursements) {
-    pulls.approvedReimbursements.forEach((r, idx) => {
-      const rPaise = toPaise(r.amount);
-      lines.push({
-        code: `REIMBURSEMENT_${idx + 1}`,
-        name: `Reimbursement (${r.category})`,
-        category: "REIMBURSEMENT",
-        amount: fromPaise(rPaise),
-        calcMethod: "MANUAL",
-        taxable: false,
-        sortOrder: 830 + idx,
-        explain: {
-          method: "MANUAL",
-          inputs: { amount: rPaise / 100 },
-          steps: [`Reimbursement ${r.category} = ₹${(rPaise / 100).toFixed(2)}`],
-        },
-      });
-    });
-  }
+  const variableLines = buildVariablePayLines({
+    toggles,
+    pulls,
+    basicPaise,
+    grossPaise,
+    scheduledDays,
+    overtimeHours,
+    overtime: config.overtime,
+  });
+  lines.push(...variableLines);
 
   grossPaise = lines
     .filter(l => l.category === "EARNING")
@@ -638,8 +326,6 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
     const tdsMode = config.statutory.tdsMode;
     const taxDecl = pulls.taxDeclaration;
     const isContractor = workerType === "CONTRACTOR" || workerType === "CONSULTANT";
-    // §194J professional-fee withholding at 10%; §206AA raises it to 20% when no
-    // valid PAN is on record (higher of the specified rate or 20%).
     const contractorRate = pulls.panAvailable === false ? "20.00" : "10.00";
     const noPanUplift = isContractor && pulls.panAvailable === false;
 
@@ -753,5 +439,3 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
     wageDefinitionWarning: statResult.wageDefinitionWarning ?? null,
   };
 }
-
-const SORT_BASE_TAX = 950;

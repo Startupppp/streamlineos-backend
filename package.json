@@ -115,25 +115,31 @@
       "json",
       "ts"
     ],
-    "rootDir": "src",
+    "rootDir": ".",
+    "roots": [
+      "<rootDir>/src",
+      "<rootDir>/evals"
+    ],
     "testRegex": ".*\\.spec\\.ts$",
     "testPathIgnorePatterns": [
-      "e2e-spec"
+      "e2e-spec",
+      "node_modules",
+      "dist"
     ],
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },
     "setupFiles": [
-      "<rootDir>/test/jest-setup.ts"
+      "<rootDir>/src/test/jest-setup.ts"
     ],
     "collectCoverageFrom": [
-      "**/*.(t|j)s"
+      "src/**/*.(t|j)s"
     ],
-    "coverageDirectory": "../coverage",
+    "coverageDirectory": "./coverage",
     "testEnvironment": "node",
     "workerIdleMemoryLimit": "1GB",
     "moduleNameMapper": {
-      "^src/(.*)$": "<rootDir>/$1"
+      "^src/(.*)$": "<rootDir>/src/$1"
     }
   }
 }

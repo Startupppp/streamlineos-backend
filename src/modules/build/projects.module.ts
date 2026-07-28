@@ -21,6 +21,8 @@ import { ProjectsProvisionService } from "./projects-provision.service";
 import { ProjectsEmailService } from "./projects-email.service";
 import { ProjectsMembersService } from "./projects-members.service";
 import { ProjectsTicketsService } from "./projects-tickets.service";
+import { ProjectsTicketsCreateService } from "./projects-tickets-create.service";
+import { ProjectsTicketsUpdateService } from "./projects-tickets-update.service";
 import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 import { ProjectsWorkQueryService } from "./projects-work-query.service";
 import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
@@ -61,6 +63,8 @@ import { ProjectsAutomationsService } from "./projects-automations.service";
     ProjectsEmailService,
     ProjectsMembersService,
     ProjectsTicketsService,
+    ProjectsTicketsCreateService,
+    ProjectsTicketsUpdateService,
     ProjectsTicketsQueryService,
     ProjectsWorkQueryService,
     ProjectsTicketsReadService,

@@ -24,7 +24,7 @@ import {
   PERMISSIONS,
   ROLE_DEFAULT_PERMISSIONS,
   type Permission,
-} from "../rbac/permissions.constants";
+} from "../rbac/permissions";
 import type { SetModuleRolePermissionsInput } from "./dto/module-access.schemas";
 
 const MANAGED_MODULES = new Set<string>(ACCESS_MANAGED_MODULES);

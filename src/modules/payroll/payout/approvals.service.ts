@@ -20,7 +20,7 @@ import {
   userRoles,
 } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
-import { ROLE_DEFAULT_PERMISSIONS } from "../../rbac/permissions.constants";
+import { ROLE_DEFAULT_PERMISSIONS } from "../../rbac/permissions";
 import { logger } from "../../../common/logger/logger.service";
 import {
   DEFAULT_PAYROLL_TOGGLES,

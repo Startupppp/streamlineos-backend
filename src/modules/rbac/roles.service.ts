@@ -1,18 +1,15 @@
 import {
-  BadRequestException,
   ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, count, eq, gte, inArray, like, ne } from "drizzle-orm";
+import { and, asc, count, eq, gte, inArray, like } from "drizzle-orm";
 import {
   auditLogs,
-  departmentMembers,
   departments,
   groupRoles,
-  membershipRoleAssignments,
   organizationMembers,
   rolePermissionGrants,
   roles,
@@ -20,7 +17,7 @@ import {
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
-import { type Db } from "../../db/drizzle.module";
+import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
@@ -33,9 +30,11 @@ import {
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
 import { AccessService } from "../access/access.service";
-import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { ROLE_TEMPLATES, type RoleTemplate } from "./role-templates.constants";
-import { PERMISSIONS, ROLE_DEFAULT_PERMISSIONS } from "./permissions.constants";
+import { PERMISSIONS } from "./permissions";
+import { RoleLockoutService } from "./role-lockout.service";
+import { RolePermissionService } from "./role-permission.service";
+import { RoleMemberService } from "./role-member.service";
 import type {
   CloneTemplateInput,
   CreateRoleInput,
@@ -44,7 +43,6 @@ import type {
   UpdateRoleInput,
 } from "./dto/rbac.schemas";
 
-const RBAC_MANAGE_KEY = "settings:rbac:manage";
 const CATALOG_KEYS = new Set(PERMISSIONS.map((permission) => permission.name));
 const ROLES_PAGE_LIMIT = 100;
 
@@ -55,14 +53,11 @@ export class RolesService {
     private readonly cache: CacheService,
     private readonly audit: AuditService,
     private readonly access: AccessService,
-    private readonly dispatch: NotificationDispatchService,
+    private readonly lockout: RoleLockoutService,
+    private readonly rolePermission: RolePermissionService,
+    private readonly roleMember: RoleMemberService,
   ) {}
 
-  /**
-   * Enforce server-owned grantability (§5): the caller may only write permissions that are
-   * a subset of their own grantable set, and may only propagate reserved admin keys when they
-   * hold organization-admin authority. Owner / Platform Admin bypass without a DB read.
-   */
   private async assertGrantable(
     actor: CurrentUserContext,
     requestedKeys: readonly string[],
@@ -218,7 +213,7 @@ export class RolesService {
     actor: CurrentUserContext,
     roleId: number,
   ): Promise<{ success: true }> {
-    const willLockOut = await this.wouldLockOutLastAdmin(actor.orgId, undefined, roleId);
+    const willLockOut = await this.lockout.wouldLockOutLastAdmin(actor.orgId, undefined, roleId);
     if (willLockOut) {
       throw new ForbiddenException(
         "Cannot delete a role that would remove all role-management access",
@@ -276,389 +271,22 @@ export class RolesService {
     return { success: true };
   }
 
-  async getRolePermissions(
+  getRolePermissions(
     orgId: string,
     roleId: number,
   ): Promise<{ permissionKey: string; scope: DataScope }[]> {
-    const role = await this.getRole(orgId, roleId);
-
-    const grants = await this.db
-      .select({
-        permissionKey: rolePermissionGrants.permissionKey,
-        scope: rolePermissionGrants.scope,
-      })
-      .from(rolePermissionGrants)
-      .where(
-        and(
-          eq(rolePermissionGrants.orgId, orgId),
-          eq(rolePermissionGrants.roleId, roleId),
-        ),
-      )
-      .limit(500);
-    if (grants.length > 0) return grants;
-
-    return (ROLE_DEFAULT_PERMISSIONS[role.slug] ?? []).map((permissionKey) => ({
-      permissionKey,
-      scope: "all" as DataScope,
-    }));
+    return this.rolePermission.getRolePermissions(orgId, roleId);
   }
 
-  async setRolePermissions(
+  setRolePermissions(
     actor: CurrentUserContext,
     roleId: number,
     input: SetRolePermissionsInput,
   ): Promise<{ success: true }> {
-    await this.getRole(actor.orgId, roleId);
-
-    const deduped = new Map<string, DataScope>();
-    for (const item of input.items) {
-      if (!CATALOG_KEYS.has(item.permissionKey)) {
-        throw new BadRequestException(
-          `Unknown permission key: ${item.permissionKey}`,
-        );
-      }
-      deduped.set(item.permissionKey, item.scope);
-    }
-
-    await this.assertGrantable(actor, Array.from(deduped.keys()));
-
-    await this.db.transaction(async (tx): Promise<void> => {
-      await tx
-        .delete(rolePermissionGrants)
-        .where(
-          and(
-            eq(rolePermissionGrants.orgId, actor.orgId),
-            eq(rolePermissionGrants.roleId, roleId),
-          ),
-        );
-
-      if (deduped.size > 0) {
-        await tx.insert(rolePermissionGrants).values(
-          Array.from(deduped, ([permissionKey, scope]) => ({
-            orgId: actor.orgId,
-            roleId,
-            permissionKey,
-            scope,
-          })),
-        );
-      }
-
-      await bumpPermissionsVersion(tx, actor.orgId);
-    });
-
-    await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
-
-    this.audit.log({
-      action: "role.permissions.set",
-      userId: actor.userId,
-      orgId: actor.orgId,
-      targetId: String(roleId),
-      targetType: "role",
-      metadata: { count: deduped.size },
-    });
-
-    return { success: true };
+    return this.rolePermission.setRolePermissions(actor, roleId, input);
   }
 
-  async getRoleMembers(orgId: string, roleId: number) {
-    await this.getRole(orgId, roleId);
-
-    const direct = await this.db
-      .select({
-        userId: userRoles.userId,
-        name: users.name,
-        email: users.email,
-        image: users.image,
-      })
-      .from(userRoles)
-      .innerJoin(users, eq(userRoles.userId, users.id))
-      .where(and(eq(userRoles.orgId, orgId), eq(userRoles.roleId, roleId)))
-      .limit(100);
-
-    const departmentRows = await this.db
-      .select({ departmentId: groupRoles.groupId, name: departments.name })
-      .from(groupRoles)
-      .innerJoin(departments, eq(groupRoles.groupId, departments.id))
-      .where(
-        and(
-          eq(groupRoles.orgId, orgId),
-          eq(groupRoles.groupType, "department"),
-          eq(groupRoles.roleId, roleId),
-        ),
-      )
-      .limit(100);
-
-    const departmentIds = departmentRows.map((row) => row.departmentId);
-    const departmentNameById = new Map(
-      departmentRows.map((row) => [row.departmentId, row.name] as const),
-    );
-    const viaDepartment =
-      departmentIds.length > 0
-        ? await this.db
-            .select({
-              userId: departmentMembers.userId,
-              name: users.name,
-              email: users.email,
-              image: users.image,
-              departmentId: departmentMembers.departmentId,
-            })
-            .from(departmentMembers)
-            .innerJoin(users, eq(departmentMembers.userId, users.id))
-            .where(inArray(departmentMembers.departmentId, departmentIds))
-            .limit(500)
-        : [];
-
-    const members: Array<{
-      id: string;
-      principalType: "user" | "department";
-      principalId: string;
-      name: string | null;
-      email: string | null;
-      image: string | null;
-      via: "direct" | "department";
-      departmentId: number | null;
-      departmentName: string | null;
-    }> = [];
-
-    for (const member of direct) {
-      members.push({
-        id: `user:${member.userId}`,
-        principalType: "user",
-        principalId: member.userId,
-        name: member.name,
-        email: member.email,
-        image: member.image,
-        via: "direct",
-        departmentId: null,
-        departmentName: null,
-      });
-    }
-
-    for (const row of departmentRows) {
-      members.push({
-        id: `department:${row.departmentId}`,
-        principalType: "department",
-        principalId: String(row.departmentId),
-        name: row.name,
-        email: null,
-        image: null,
-        via: "direct",
-        departmentId: row.departmentId,
-        departmentName: row.name,
-      });
-    }
-
-    for (const member of viaDepartment) {
-      members.push({
-        id: `user:${member.userId}:dept:${member.departmentId}`,
-        principalType: "user",
-        principalId: member.userId,
-        name: member.name,
-        email: member.email,
-        image: member.image,
-        via: "department",
-        departmentId: member.departmentId,
-        departmentName: departmentNameById.get(member.departmentId) ?? null,
-      });
-    }
-
-    return members;
-  }
-
-  async addRoleMember(
-    actor: CurrentUserContext,
-    roleId: number,
-    input: RoleMemberInput,
-  ): Promise<{ success: true }> {
-    await this.getRole(actor.orgId, roleId);
-
-    if (input.principalType === "user") {
-      const member = await this.db.query.organizationMembers.findFirst({
-        where: and(
-          eq(organizationMembers.orgId, actor.orgId),
-          eq(organizationMembers.userId, input.principalId),
-        ),
-        columns: { id: true },
-      });
-      if (!member)
-        throw new BadRequestException(
-          "User is not a member of this organization",
-        );
-
-      await this.db.transaction(async (tx): Promise<void> => {
-        await tx
-          .insert(userRoles)
-          .values({
-            orgId: actor.orgId,
-            userId: input.principalId,
-            roleId,
-            assignedBy: actor.userId,
-          })
-          .onConflictDoNothing();
-        await tx
-          .insert(membershipRoleAssignments)
-          .values({
-            organizationId: actor.orgId,
-            organizationMembershipId: member.id,
-            roleId,
-            assignedBy: actor.userId,
-          })
-          .onConflictDoNothing();
-        await bumpPermissionsVersion(tx, actor.orgId);
-      });
-    } else {
-      const department = await this.db.query.departments.findFirst({
-        where: and(
-          eq(departments.id, input.principalId),
-          eq(departments.orgId, actor.orgId),
-        ),
-        columns: { id: true },
-      });
-      if (!department)
-        throw new BadRequestException(
-          "Department not found in this organization",
-        );
-
-      await this.db.transaction(async (tx): Promise<void> => {
-        await tx
-          .insert(groupRoles)
-          .values({
-            orgId: actor.orgId,
-            groupType: "department",
-            groupId: input.principalId,
-            roleId,
-          })
-          .onConflictDoNothing();
-        await bumpPermissionsVersion(tx, actor.orgId);
-      });
-    }
-
-    await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
-
-    this.audit.log({
-      action: "role.member.added",
-      userId: actor.userId,
-      orgId: actor.orgId,
-      targetId: String(roleId),
-      targetType: "role",
-      metadata: {
-        principalType: input.principalType,
-        principalId: input.principalId,
-      },
-    });
-
-    if (input.principalType === "user") {
-      void this.dispatch.emit({
-        eventKey: "security.role.changed",
-        orgId: actor.orgId,
-        actorUserId: actor.userId,
-        targetUserIds: [input.principalId],
-        entityType: "role",
-        entityId: String(roleId),
-        title: "Your role or permissions were updated",
-        message: "A role has been assigned to your account. Your access permissions may have changed.",
-        link: "/settings/security",
-      }).catch(() => undefined);
-    }
-
-    return { success: true };
-  }
-
-  async removeRoleMember(
-    actor: CurrentUserContext,
-    roleId: number,
-    input: RoleMemberInput,
-  ): Promise<{ success: true }> {
-    await this.getRole(actor.orgId, roleId);
-
-    if (input.principalType === "user") {
-      const willLockOut = await this.wouldLockOutLastAdmin(actor.orgId, input.principalId);
-      if (willLockOut) {
-        throw new ForbiddenException(
-          "Cannot remove the last administrator with role-management access",
-        );
-      }
-    }
-
-    const membershipForRemoval = input.principalType === "user"
-      ? await this.db.query.organizationMembers.findFirst({
-          where: and(
-            eq(organizationMembers.orgId, actor.orgId),
-            eq(organizationMembers.userId, input.principalId),
-          ),
-          columns: { id: true },
-        })
-      : undefined;
-
-    await this.db.transaction(async (tx): Promise<void> => {
-      if (input.principalType === "user") {
-        await tx
-          .delete(userRoles)
-          .where(
-            and(
-              eq(userRoles.orgId, actor.orgId),
-              eq(userRoles.roleId, roleId),
-              eq(userRoles.userId, input.principalId),
-            ),
-          );
-        if (membershipForRemoval !== undefined) {
-          await tx
-            .delete(membershipRoleAssignments)
-            .where(
-              and(
-                eq(membershipRoleAssignments.organizationId, actor.orgId),
-                eq(membershipRoleAssignments.organizationMembershipId, membershipForRemoval.id),
-                eq(membershipRoleAssignments.roleId, roleId),
-              ),
-            );
-        }
-      } else {
-        await tx
-          .delete(groupRoles)
-          .where(
-            and(
-              eq(groupRoles.orgId, actor.orgId),
-              eq(groupRoles.roleId, roleId),
-              eq(groupRoles.groupType, "department"),
-              eq(groupRoles.groupId, input.principalId),
-            ),
-          );
-      }
-      await bumpPermissionsVersion(tx, actor.orgId);
-    });
-
-    await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
-
-    this.audit.log({
-      action: "role.member.removed",
-      userId: actor.userId,
-      orgId: actor.orgId,
-      targetId: String(roleId),
-      targetType: "role",
-      metadata: {
-        principalType: input.principalType,
-        principalId: input.principalId,
-      },
-    });
-
-    if (input.principalType === "user") {
-      void this.dispatch.emit({
-        eventKey: "security.role.changed",
-        orgId: actor.orgId,
-        actorUserId: actor.userId,
-        targetUserIds: [input.principalId],
-        entityType: "role",
-        entityId: String(roleId),
-        title: "Your role or permissions were updated",
-        message: "A role has been removed from your account. Your access permissions may have changed.",
-        link: "/settings/security",
-      }).catch(() => undefined);
-    }
-
-    return { success: true };
-  }
-
-  async getPermissionsMatrix(orgId: string): Promise<
+  getPermissionsMatrix(orgId: string): Promise<
     {
       roleId: number;
       roleName: string;
@@ -666,43 +294,7 @@ export class RolesService {
       permissions: string[];
     }[]
   > {
-    const orgRoles = await this.db
-      .select({
-        id: roles.id,
-        name: roles.name,
-        slug: roles.slug,
-      })
-      .from(roles)
-      .where(eq(roles.orgId, orgId))
-      .orderBy(asc(roles.name))
-      .limit(ROLES_PAGE_LIMIT);
-
-    const allGrants = await this.db
-      .select({
-        roleId: rolePermissionGrants.roleId,
-        permissionKey: rolePermissionGrants.permissionKey,
-      })
-      .from(rolePermissionGrants)
-      .where(eq(rolePermissionGrants.orgId, orgId))
-      .limit(10000);
-
-    const grantsByRole = new Map<number, string[]>();
-    for (const grant of allGrants) {
-      const existing = grantsByRole.get(grant.roleId) ?? [];
-      existing.push(grant.permissionKey);
-      grantsByRole.set(grant.roleId, existing);
-    }
-
-    return orgRoles.map((role) => {
-      const explicit = grantsByRole.get(role.id);
-      const permissions = explicit ?? (ROLE_DEFAULT_PERMISSIONS[role.slug] ?? []);
-      return {
-        roleId: role.id,
-        roleName: role.name,
-        roleSlug: role.slug,
-        permissions,
-      };
-    });
+    return this.rolePermission.getPermissionsMatrix(orgId);
   }
 
   listTemplates(): readonly RoleTemplate[] {
@@ -838,48 +430,37 @@ export class RolesService {
     return created;
   }
 
-  async wouldLockOutLastAdmin(
+  getRoleMembers(orgId: string, roleId: number) {
+    return this.roleMember.getRoleMembers(orgId, roleId);
+  }
+
+  addRoleMember(
+    actor: CurrentUserContext,
+    roleId: number,
+    input: RoleMemberInput,
+  ): Promise<{ success: true }> {
+    return this.roleMember.addRoleMember(actor, roleId, input);
+  }
+
+  removeRoleMember(
+    actor: CurrentUserContext,
+    roleId: number,
+    input: RoleMemberInput,
+  ): Promise<{ success: true }> {
+    return this.roleMember.removeRoleMember(actor, roleId, input);
+  }
+
+  wouldLockOutLastAdmin(
     orgId: string,
     excludeUserId?: string,
     excludeRoleId?: number,
     excludePermissionKey?: string,
   ): Promise<boolean> {
-    const ownerRows = await this.db
-      .select({ userId: organizationMembers.userId })
-      .from(organizationMembers)
-      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.isOwner, true)))
-      .limit(1)
-      .catch(() => null);
-    if (ownerRows && ownerRows.length > 0) return false;
-
-    const excludedRoleId: number | undefined =
-      excludeRoleId !== undefined && excludePermissionKey === RBAC_MANAGE_KEY
-        ? excludeRoleId
-        : undefined;
-
-    const rows = await this.db
-      .select({ userId: userRoles.userId })
-      .from(userRoles)
-      .innerJoin(
-        rolePermissionGrants,
-        and(
-          eq(rolePermissionGrants.roleId, userRoles.roleId),
-          eq(rolePermissionGrants.orgId, orgId),
-          eq(rolePermissionGrants.permissionKey, RBAC_MANAGE_KEY),
-          ne(rolePermissionGrants.scope, "none"),
-          excludedRoleId !== undefined
-            ? ne(rolePermissionGrants.roleId, excludedRoleId)
-            : undefined,
-        ),
-      )
-      .where(eq(userRoles.orgId, orgId))
-      .catch(() => null);
-
-    if (!rows) return false;
-
-    const holderIds = new Set(rows.map((r) => r.userId));
-    if (excludeUserId) holderIds.delete(excludeUserId);
-
-    return holderIds.size === 0;
+    return this.lockout.wouldLockOutLastAdmin(
+      orgId,
+      excludeUserId,
+      excludeRoleId,
+      excludePermissionKey,
+    );
   }
 }

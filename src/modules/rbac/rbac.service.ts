@@ -2,7 +2,7 @@ import { BadRequestException, ForbiddenException, Inject, Injectable } from "@ne
 import { and, eq } from "drizzle-orm";
 import {
   rolePermissionGrants,
-  rolePermissions,
+  roles,
   userPermissions,
   users,
 } from "../../db/schema";
@@ -14,7 +14,7 @@ import {
   assertPermissionsGrantable,
   toGrantableSet,
 } from "../../common/rbac/grantability";
-import { PERMISSIONS, ROLE_DEFAULT_PERMISSIONS, type Permission } from "./permissions.constants";
+import { PERMISSIONS, ROLE_DEFAULT_PERMISSIONS, type Permission } from "./permissions";
 import type { AssignRolePermissionInput, RevokeRolePermissionInput } from "./dto/rbac.schemas";
 import { AccessService } from "../access/access.service";
 import { RolesService } from "./roles.service";
@@ -50,13 +50,7 @@ export class RbacService {
       limit: 500,
     });
 
-    const rolePerms = role
-      ? await this.db.query.rolePermissions.findMany({
-          where: and(eq(rolePermissions.role, role), eq(rolePermissions.orgId, orgId)),
-          with: { permission: true },
-          limit: 500,
-        })
-      : [];
+    const rolePerms = role ? await this.grantsForRoleSlug(role, orgId) : [];
 
     const defaultPerms = role ? (ROLE_DEFAULT_PERMISSIONS[role] ?? []) : [];
 
@@ -66,9 +60,7 @@ export class RbacService {
       if (up.permission?.name) permissionSet.add(up.permission.name);
     });
 
-    rolePerms.forEach((rp) => {
-      if (rp.permission?.name) permissionSet.add(rp.permission.name);
-    });
+    rolePerms.forEach((key) => permissionSet.add(key));
 
     defaultPerms.forEach((perm) => permissionSet.add(perm));
 
@@ -76,17 +68,25 @@ export class RbacService {
   }
 
   async getRolePermissions(role: string, orgId: string): Promise<string[]> {
-    const perms = await this.db.query.rolePermissions.findMany({
-      where: and(eq(rolePermissions.role, role), eq(rolePermissions.orgId, orgId)),
-      with: { permission: true },
-      limit: 500,
-    });
+    const keys = await this.grantsForRoleSlug(role, orgId);
+    return Array.from(new Set(keys));
+  }
 
-    const result = new Set<string>();
-    for (const rp of perms) {
-      if (rp.permission?.name) result.add(rp.permission.name);
-    }
-    return Array.from(result);
+  private async grantsForRoleSlug(role: string, orgId: string): Promise<string[]> {
+    const rows = await this.db
+      .select({ permissionKey: rolePermissionGrants.permissionKey })
+      .from(rolePermissionGrants)
+      .innerJoin(roles, eq(rolePermissionGrants.roleId, roles.id))
+      .where(
+        and(
+          eq(rolePermissionGrants.orgId, orgId),
+          eq(roles.orgId, orgId),
+          eq(roles.slug, role),
+        ),
+      )
+      .limit(500);
+
+    return rows.map((row) => row.permissionKey);
   }
 
   async assignRolePermission(

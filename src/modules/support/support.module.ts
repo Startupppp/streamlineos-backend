@@ -34,6 +34,9 @@ import { SupportReportsService } from "./support-reports.service";
 import { SupportCustomFieldsService } from "./support-custom-fields.service";
 import { SupportSettingsAuditService } from "./support-settings-audit.service";
 import { SupportTicketsService } from "./support-tickets.service";
+import { SupportTicketActivityService } from "./support-ticket-activity.service";
+import { SupportTicketMessagesService } from "./support-ticket-messages.service";
+import { SupportTicketOperationsService } from "./support-ticket-operations.service";
 import { SupportNotificationsService } from "./support-notifications.service";
 import { SupportMentionsService } from "./support-mentions.service";
 import { SupportDraftsService } from "./support-drafts.service";
@@ -72,6 +75,9 @@ import { SupportIntegrationsService } from "./support-integrations.service";
     SupportReportsService,
     SupportCustomFieldsService,
     SupportSettingsAuditService,
+    SupportTicketActivityService,
+    SupportTicketMessagesService,
+    SupportTicketOperationsService,
     SupportTicketsService,
     SupportNotificationsService,
     SupportMentionsService,

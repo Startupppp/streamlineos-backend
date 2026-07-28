@@ -70,7 +70,7 @@ export class HrCalendarService {
 
     const isAdmin = user.isOrgOwner || user.isPlatformAdmin || user.permissions.includes("hr:helpdesk:manage");
     const canSeeTravel = isAdmin || user.permissions.includes("hr:travel:view");
-    const canSeeInterviews = isAdmin || user.permissions.includes("hr:recruitment:view");
+    const canSeeInterviews = isAdmin || user.permissions.includes("hr:interviews:view");
 
     const events: CalendarEvent[] = [];
     const fetches: Promise<void>[] = [];

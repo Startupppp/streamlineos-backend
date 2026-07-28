@@ -2,12 +2,12 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { AccessService } from "../access/access.service";
 import type { DataScope } from "../access/access.types";
 
-jest.mock("../rbac/permissions.constants", () => ({
-  ...jest.requireActual("../rbac/permissions.constants"),
+jest.mock("../rbac/permissions", () => ({
+  ...jest.requireActual("../rbac/permissions"),
   isScopable: jest.fn(() => true),
 }));
 
-import { isScopable } from "../rbac/permissions.constants";
+import { isScopable } from "../rbac/permissions";
 import { LEAVES_PERMISSION, resolveLeavesViewScope } from "./leaves-scope";
 
 const mockAccess = {

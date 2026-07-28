@@ -12,6 +12,8 @@ import { BackgroundVerificationController } from "./background-verification.cont
 import { AccessRequestsController } from "./access-requests.controller";
 import { EmployeesService } from "./employees.service";
 import { EmployeeMutationsService } from "./employee-mutations.service";
+import { EmployeeOnboardingService } from "./employee-onboarding.service";
+import { EmployeeBulkOnboardingService } from "./employee-bulk-onboarding.service";
 import { OrgStructureService } from "./org-structure.service";
 import { CelebrationsService } from "./celebrations.service";
 import { EmployeeSkillsService } from "./employee-skills.service";
@@ -36,6 +38,8 @@ import { AccessRequestsService } from "./access-requests.service";
   providers: [
     EmployeesService,
     EmployeeMutationsService,
+    EmployeeOnboardingService,
+    EmployeeBulkOnboardingService,
     OrgStructureService,
     CelebrationsService,
     EmployeeSkillsService,

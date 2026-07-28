@@ -22,6 +22,9 @@ import { SignRecipientsController } from "./sign-recipients.controller";
 import { SignFieldsService } from "./sign-fields.service";
 import { SignFieldsController } from "./sign-fields.controller";
 import { SignEnvelopesService } from "./sign-envelopes.service";
+import { SignEnvelopeValidationService } from "./sign-envelope-validation.service";
+import { SignEnvelopeDispatchService } from "./sign-envelope-dispatch.service";
+import { SignEnvelopeSweepsService } from "./sign-envelope-sweeps.service";
 import { SignEnvelopesController } from "./sign-envelopes.controller";
 import { SignFinalizationService } from "./sign-finalization.service";
 import { SignPublicService } from "./sign-public.service";
@@ -63,6 +66,9 @@ import { SignReportsController } from "./sign-reports.controller";
     SignRecipientsService,
     SignFieldsService,
     SignEnvelopesService,
+    SignEnvelopeValidationService,
+    SignEnvelopeDispatchService,
+    SignEnvelopeSweepsService,
     SignFinalizationService,
     SignTemplatesService,
     SignPublicService,

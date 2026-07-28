@@ -5,6 +5,7 @@ export const MODULE_CATALOG = [
   "accounting",
   "inventory",
   "kb",
+  "chat",
   "support",
   "surveys",
   "payroll",

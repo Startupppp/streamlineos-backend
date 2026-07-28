@@ -18,7 +18,7 @@ import { OnboardingSessionService } from "../onboarding-flow/onboarding-session.
 import { EmailService } from "../email/email.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
-import { PERMISSIONS } from "../rbac/permissions.constants";
+import { PERMISSIONS } from "../rbac/permissions";
 import { moduleKeysFromOrgModuleValues } from "../../common/rbac/module-vocabulary";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";

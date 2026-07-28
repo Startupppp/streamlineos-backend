@@ -21,6 +21,7 @@ import { LeavePoliciesController } from "./leave-policies.controller";
 import { LeavePolicySummaryController } from "./leave-policy-summary.controller";
 import { LeavesService } from "./leaves.service";
 import { LeavesWriteService } from "./leaves-write.service";
+import { LeavesApprovalService } from "./leaves-approval.service";
 import { LeavesPageService } from "./leaves-page.service";
 import { AttendanceService } from "./attendance.service";
 import { AttendancePolicyService } from "./attendance-policy.service";
@@ -65,6 +66,7 @@ import { LeaveLedgerService } from "./leave-ledger.service";
   providers: [
     LeavesService,
     LeavesWriteService,
+    LeavesApprovalService,
     LeaveLedgerService,
     LeavesPageService,
     AttendanceService,

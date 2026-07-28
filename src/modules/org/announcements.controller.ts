@@ -14,7 +14,7 @@ import {
 } from "./dto/announcements.schemas";
 
 @UseGuards(JwtAuthGuard)
-@Controller("hr/announcements")
+@Controller("org/announcements")
 export class AnnouncementsController {
   constructor(private readonly service: AnnouncementsService) {}
 

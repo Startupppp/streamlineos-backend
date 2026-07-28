@@ -52,7 +52,7 @@ export class RunsController {
 
   @Post()
   @HttpCode(201)
-  @RequirePermission("payroll:runs:update")
+  @RequirePermission("payroll:runs:create")
   async create(
     @Body(new ZodValidationPipe(createRunSchema)) body: CreateRunInput,
     @CurrentUser() u: CurrentUserContext,

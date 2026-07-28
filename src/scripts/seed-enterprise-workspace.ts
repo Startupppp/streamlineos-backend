@@ -33,7 +33,7 @@ import {
   hrWorkflowInstances,
   hrWorkflowStepActions,
 } from "../db/schema/hr/workflow-engine";
-import { PERMISSIONS, ROLE_DEFAULT_PERMISSIONS } from "../modules/rbac/permissions.constants";
+import { PERMISSIONS, ROLE_DEFAULT_PERMISSIONS } from "../modules/rbac/permissions";
 
 type Db = PostgresJsDatabase<typeof schema>;
 

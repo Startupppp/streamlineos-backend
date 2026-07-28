@@ -1,11 +1,10 @@
-import { RolesService } from "./roles.service";
-import { ROLE_DEFAULT_PERMISSIONS } from "./permissions.constants";
+import { RolePermissionService } from "./role-permission.service";
+import { ROLE_DEFAULT_PERMISSIONS } from "./permissions";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { AccessService } from "../access/access.service";
-import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 
 type RoleRow = { id: number; name: string; slug: string };
 type GrantRow = { roleId: number; permissionKey: string };
@@ -70,21 +69,17 @@ function makeAudit(): AuditService {
   return { log: jest.fn() } as Partial<AuditService> as AuditService;
 }
 
-function makeDispatch(): NotificationDispatchService {
-  return { emit: jest.fn() } as unknown as NotificationDispatchService;
-}
-
 function makeAccess(): AccessService {
   return {
     resolveUserPermissions: jest.fn().mockResolvedValue(new Map()),
   } as unknown as AccessService;
 }
 
-function makeService(db: Db): RolesService {
-  return new RolesService(db, makeCache(), makeAudit(), makeAccess(), makeDispatch());
+function makeService(db: Db): RolePermissionService {
+  return new RolePermissionService(db, makeCache(), makeAudit(), makeAccess());
 }
 
-describe("RolesService.getPermissionsMatrix", () => {
+describe("RolePermissionService.getPermissionsMatrix", () => {
   it("returns an entry per role with permissions from grants when grants exist", async () => {
     const orgRoles: RoleRow[] = [
       { id: 1, name: "Admin", slug: "OWNER" },

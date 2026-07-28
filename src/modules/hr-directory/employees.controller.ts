@@ -22,6 +22,8 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import type { BranchContext } from "../leads/branch-filter";
 import { EmployeesService } from "./employees.service";
 import { EmployeeMutationsService } from "./employee-mutations.service";
+import { EmployeeOnboardingService } from "./employee-onboarding.service";
+import { EmployeeBulkOnboardingService } from "./employee-bulk-onboarding.service";
 import { CelebrationsService } from "./celebrations.service";
 import { EmployeeSkillsService } from "./employee-skills.service";
 import { AccessService } from "../access/access.service";
@@ -50,6 +52,8 @@ export class EmployeesController {
   constructor(
     private readonly employees: EmployeesService,
     private readonly mutations: EmployeeMutationsService,
+    private readonly onboarding: EmployeeOnboardingService,
+    private readonly bulkOnboarding: EmployeeBulkOnboardingService,
     private readonly celebrations: CelebrationsService,
     private readonly skills: EmployeeSkillsService,
     private readonly access: AccessService,
@@ -62,7 +66,7 @@ export class EmployeesController {
     @Body(new ZodValidationPipe(onboardEmployeeSchema)) body: OnboardEmployeeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.mutations.onboardEmployee(u, body);
+    return this.onboarding.onboardEmployee(u, body);
   }
 
   @Post("onboard/bulk")
@@ -72,7 +76,7 @@ export class EmployeesController {
     @Body(new ZodValidationPipe(bulkOnboardEmployeesSchema)) body: BulkOnboardEmployeesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.mutations.onboardEmployeesBulk(u, body.employees);
+    return this.bulkOnboarding.onboardEmployeesBulk(u, body.employees);
   }
 
   @Get()

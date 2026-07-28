@@ -8,7 +8,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
-import { resolveInvStockScope } from "../inventory/inventory-scope";
+import { resolveInvStockScope } from "../inv-stock-engine/inventory-scope";
 import { InvStockAdjustmentsService } from "./inv-stock-adjustments.service";
 import {
   listAdjustmentsSchema, createAdjustmentSchema,

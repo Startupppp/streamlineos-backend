@@ -23,7 +23,11 @@ import { FinanceAssetsModule } from "../finance-assets/finance-assets.module";
 import { AiJobsModule } from "../ai-jobs/ai-jobs.module";
 import { SupportKbGapModule } from "../support-kb-gap";
 import { TimesheetsCoreModule } from "../timesheets-core/timesheets-core.module";
-import { CronController } from "./cron.controller";
+import { CronBillingController } from "./cron-billing.controller";
+import { CronHrController } from "./cron-hr.controller";
+import { CronPlatformController } from "./cron-platform.controller";
+import { CronSupportController } from "./cron-support.controller";
+import { CronBuildController } from "./cron-build.controller";
 import { CronNotificationDeliveryService } from "./cron-notification-delivery.service";
 import { CronAttendanceService } from "./cron-attendance.service";
 import { CronBillingService } from "./cron-billing.service";
@@ -44,8 +48,39 @@ import { CronOrganizationService } from "./cron-organization.service";
 import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
 
 @Module({
-  imports: [AutomationModule, AiModule, AiJobsModule, SupportKbGapModule, EmailModule, ChatModule, KbModule, SupportModule, NotificationsModule, HrAutomationsModule, HrTimeModule, HrWorkflowsModule, HrCoreModule, HrLifecycleModule, HrGlobalModule, AccountingGlModule, InvoicesModule, FinanceArModule, FinanceApModule, FinanceTaxModule, FinanceAssetsModule, CrmAutomationStudioModule, BillingModule, TimesheetsCoreModule],
-  controllers: [CronController],
+  imports: [
+    AutomationModule,
+    AiModule,
+    AiJobsModule,
+    SupportKbGapModule,
+    EmailModule,
+    ChatModule,
+    KbModule,
+    SupportModule,
+    NotificationsModule,
+    HrAutomationsModule,
+    HrTimeModule,
+    HrWorkflowsModule,
+    HrCoreModule,
+    HrLifecycleModule,
+    HrGlobalModule,
+    AccountingGlModule,
+    InvoicesModule,
+    FinanceArModule,
+    FinanceApModule,
+    FinanceTaxModule,
+    FinanceAssetsModule,
+    CrmAutomationStudioModule,
+    BillingModule,
+    TimesheetsCoreModule,
+  ],
+  controllers: [
+    CronBillingController,
+    CronHrController,
+    CronPlatformController,
+    CronSupportController,
+    CronBuildController,
+  ],
   providers: [
     CronAttendanceService,
     CronBillingService,

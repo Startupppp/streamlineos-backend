@@ -7,7 +7,7 @@ import {
   NotFoundException,
   Optional,
 } from "@nestjs/common";
-import { and, desc, eq, inArray, not, sql } from "drizzle-orm";
+import { and, desc, eq, not } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -26,52 +26,11 @@ import { PayrollPostingService } from "../payroll-posting.service";
 import { assertOrgMember } from "../lib/org-membership";
 import { JournalOutboxService } from "../insights/journal-outbox.service";
 import { parseBankReturnCsv } from "./lib/bank-return";
-
-function defaultFormatFromCurrency(currency: string): PayoutBatchFormat {
-  if (currency === "INR") return "NEFT_CSV";
-  if (currency === "USD") return "ACH_CSV";
-  if (currency === "EUR") return "SEPA_CSV";
-  return "GENERIC_CSV";
-}
-
-function csvHeader(format: PayoutBatchFormat): string {
-  switch (format) {
-    case "NEFT_CSV":
-    case "RTGS_CSV":
-      return "SrNo,EmployeeName,AccountNumber,IFSCCode,Amount,Narration";
-    case "ACH_CSV":
-      return "SrNo,EmployeeName,RoutingNumber,AccountNumber,Amount,Narration";
-    case "SEPA_CSV":
-      return "SrNo,EmployeeName,IBAN,BIC,Currency,Amount,Reference";
-    case "GENERIC_CSV":
-      return "SrNo,EmployeeName,AccountNumber,BankCode,Currency,Amount,Narration";
-  }
-}
-
-function csvRow(
-  format: PayoutBatchFormat,
-  idx: number,
-  name: string,
-  accountNumber: string,
-  bankCode: string,
-  currency: string,
-  amount: string,
-  narration: string,
-): string {
-  const safeName = name.replace(/"/g, "");
-  const amt = parseFloat(amount).toFixed(2);
-  switch (format) {
-    case "NEFT_CSV":
-    case "RTGS_CSV":
-      return `${idx},"${safeName}","${accountNumber}","${bankCode}",${amt},"${narration}"`;
-    case "ACH_CSV":
-      return `${idx},"${safeName}","${bankCode}","${accountNumber}",${amt},"${narration}"`;
-    case "SEPA_CSV":
-      return `${idx},"${safeName}","${accountNumber}","${bankCode}","${currency}",${amt},"${narration}"`;
-    case "GENERIC_CSV":
-      return `${idx},"${safeName}","${accountNumber}","${bankCode}","${currency}",${amt},"${narration}"`;
-  }
-}
+import { defaultFormatFromCurrency, csvHeader, csvRow } from "./lib/payout-csv";
+import {
+  checkRunCompletion,
+  refreshBatchPaidStatus,
+} from "./lib/payout-run-completion";
 
 @Injectable()
 export class PayoutBatchesService {
@@ -84,6 +43,16 @@ export class PayoutBatchesService {
     private readonly payrollPosting: PayrollPostingService,
     @Optional() private readonly journalOutbox?: JournalOutboxService,
   ) {}
+
+  private get completionDeps() {
+    return {
+      db: this.db,
+      audit: this.audit,
+      payrollPosting: this.payrollPosting,
+      journalOutbox: this.journalOutbox,
+      logger: this.logger,
+    };
+  }
 
   async createBatch(
     orgId: string,
@@ -160,7 +129,7 @@ export class PayoutBatchesService {
     const narrationLabel = `Salary ${month}`.trim();
 
     const [seqRow] = await this.db
-      .select({ count: sql<number>`count(*)::int` })
+      .select({ count: payrollBankBatches.id })
       .from(payrollBankBatches)
       .where(and(eq(payrollBankBatches.orgId, orgId), eq(payrollBankBatches.runId, runId)));
     const baseSeq = seqRow?.count ?? 0;
@@ -444,8 +413,8 @@ export class PayoutBatchesService {
       });
     }
 
-    await this.refreshBatchPaidStatus(orgId, batchId);
-    await this.checkRunCompletion(orgId, batchId, actorId);
+    await refreshBatchPaidStatus(this.db, orgId, batchId);
+    await checkRunCompletion(this.completionDeps, orgId, batchId, actorId);
     return { success: true };
   }
 
@@ -492,8 +461,8 @@ export class PayoutBatchesService {
       });
     }
 
-    await this.refreshBatchPaidStatus(orgId, batchId);
-    await this.checkRunCompletion(orgId, batchId, actorId);
+    await refreshBatchPaidStatus(this.db, orgId, batchId);
+    await checkRunCompletion(this.completionDeps, orgId, batchId, actorId);
     return { success: true };
   }
 
@@ -552,167 +521,10 @@ export class PayoutBatchesService {
       metadata: { batchId, transactionRef },
     });
 
-    await this.checkRunCompletion(orgId, batchId, actorId);
+    await checkRunCompletion(this.completionDeps, orgId, batchId, actorId);
     return { success: true };
   }
 
-  private async checkRunCompletion(orgId: string, batchId: number, actorId: string) {
-    const batch = await this.db.query.payrollBankBatches.findFirst({
-      where: and(eq(payrollBankBatches.id, batchId), eq(payrollBankBatches.orgId, orgId)),
-      columns: { runId: true },
-    });
-    if (!batch) return;
-
-    const runId = batch.runId;
-
-    const allBatches = await this.db
-      .select({ id: payrollBankBatches.id })
-      .from(payrollBankBatches)
-      .where(and(eq(payrollBankBatches.orgId, orgId), eq(payrollBankBatches.runId, runId)));
-
-    const batchIds = allBatches.map(b => b.id);
-    if (batchIds.length === 0) return;
-
-    const pendingItems = await this.db
-      .select({ id: payrollBankBatchItems.id })
-      .from(payrollBankBatchItems)
-      .where(
-        and(
-          eq(payrollBankBatchItems.orgId, orgId),
-          inArray(payrollBankBatchItems.batchId, batchIds),
-          not(eq(payrollBankBatchItems.status, "PAID")),
-          not(eq(payrollBankBatchItems.status, "FAILED")),
-          not(eq(payrollBankBatchItems.status, "HELD")),
-        ),
-      )
-      .limit(1);
-
-    if (pendingItems.length > 0) return;
-
-    const paidItemUserIds = await this.db
-      .select({ userId: payrollBankBatchItems.userId })
-      .from(payrollBankBatchItems)
-      .where(
-        and(
-          eq(payrollBankBatchItems.orgId, orgId),
-          inArray(payrollBankBatchItems.batchId, batchIds),
-          eq(payrollBankBatchItems.status, "PAID"),
-        ),
-      );
-
-    const paidUserIds = paidItemUserIds.map(r => r.userId);
-
-    const now = new Date();
-    let runMarkedPaid = false;
-
-    await this.db.transaction(async (tx) => {
-      const [currentRun] = await tx
-        .select({ status: payrollRuns.status })
-        .from(payrollRuns)
-        .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)))
-        .limit(1);
-
-      if (!currentRun || currentRun.status === "PAID" || currentRun.status === "PAYSLIPS_PUBLISHED" || currentRun.status === "CLOSED") {
-        return;
-      }
-
-      await tx
-        .update(payrollRuns)
-        .set({ status: "PAID", paidAt: now, paidBy: actorId })
-        .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
-
-      if (paidUserIds.length > 0) {
-        await tx
-          .update(payrollRunEmployees)
-          .set({ status: "PAID" })
-          .where(
-            and(
-              eq(payrollRunEmployees.runId, runId),
-              eq(payrollRunEmployees.orgId, orgId),
-              inArray(payrollRunEmployees.userId, paidUserIds),
-            ),
-          );
-      }
-
-      await tx.insert(payrollRunEvents).values({
-        orgId,
-        runId,
-        type: "MARKED_PAID",
-        actorId,
-        metadata: { paidCount: paidUserIds.length },
-      });
-
-      runMarkedPaid = true;
-    });
-
-    if (runMarkedPaid) {
-      this.audit.log({
-        action: "payroll.marked_paid",
-        userId: actorId,
-        orgId,
-        targetId: String(runId),
-        targetType: "payroll_run",
-        metadata: { paidCount: paidUserIds.length },
-      });
-
-      const paidRun = await this.db
-        .select({ month: payrollRuns.month, netTotal: payrollRuns.netTotal })
-        .from(payrollRuns)
-        .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)))
-        .limit(1);
-
-      if (paidRun[0]) {
-        void this.payrollPosting.postPaid(
-          { userId: actorId, orgId, branchId: null, role: "system", permissions: [], enabledModules: [], plan: null, isPlatformAdmin: false, isOrgOwner: true, sessionId: "system" },
-          runId,
-          paidRun[0].month,
-          paidRun[0].netTotal ?? "0",
-        );
-        void this.autoSnapshotJournal(orgId, actorId, paidRun[0].month, runId);
-      }
-    }
-  }
-
-  /**
-   * Best-effort immutable journal outbox snapshot when a run is fully paid.
-   * Never blocks payout; failures are logged only.
-   */
-  private async autoSnapshotJournal(
-    orgId: string,
-    actorId: string,
-    periodKey: string,
-    runId: number,
-  ): Promise<void> {
-    if (!this.journalOutbox) return;
-    try {
-      const batch = await this.journalOutbox.createBatch(orgId, actorId, {
-        periodKey,
-        note: `Auto-snapshot after run #${runId} marked paid`,
-      });
-      this.logger.log(
-        `Journal outbox auto-snapshot batch #${batch.id} v${batch.version} for ${periodKey}`,
-      );
-      this.audit.log({
-        action: "payroll.journal_batch_auto_created",
-        userId: actorId,
-        orgId,
-        targetId: String(batch.id),
-        targetType: "payroll_journal_batch",
-        metadata: { periodKey, runId, version: batch.version, status: batch.status },
-      });
-    } catch (err) {
-      this.logger.warn(
-        `Journal auto-snapshot skipped for ${periodKey}: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
-    }
-  }
-
-  /**
-   * Apply bank return CSV to a batch (mark items paid/failed).
-   * Provider-independent manual workflow.
-   */
   async importBankReturn(
     orgId: string,
     batchId: number,
@@ -806,8 +618,8 @@ export class PayoutBatchesService {
       }
     }
 
-    await this.refreshBatchPaidStatus(orgId, batchId);
-    await this.checkRunCompletion(orgId, batchId, actorId);
+    await refreshBatchPaidStatus(this.db, orgId, batchId);
+    await checkRunCompletion(this.completionDeps, orgId, batchId, actorId);
 
     this.audit.log({
       action: "payroll.bank_return_imported",
@@ -827,41 +639,6 @@ export class PayoutBatchesService {
       honestyNote: parsed.honestyNote,
       mode: "export_manual" as const,
     };
-  }
-
-  /** Recompute batch status from item PAID/FAILED mix after bulk updates. */
-  private async refreshBatchPaidStatus(orgId: string, batchId: number): Promise<void> {
-    const rows = await this.db
-      .select({
-        status: payrollBankBatchItems.status,
-        n: sql<number>`count(*)::int`,
-      })
-      .from(payrollBankBatchItems)
-      .where(
-        and(eq(payrollBankBatchItems.batchId, batchId), eq(payrollBankBatchItems.orgId, orgId)),
-      )
-      .groupBy(payrollBankBatchItems.status);
-
-    let paid = 0;
-    let failed = 0;
-    let other = 0;
-    for (const r of rows) {
-      if (r.status === "PAID") paid += r.n;
-      else if (r.status === "FAILED") failed += r.n;
-      else other += r.n;
-    }
-
-    let status: "PAID" | "PARTIALLY_PAID" | "FAILED" | "SENT" | null = null;
-    if (other === 0 && failed === 0 && paid > 0) status = "PAID";
-    else if (other === 0 && paid === 0 && failed > 0) status = "FAILED";
-    else if (paid > 0 || failed > 0) status = "PARTIALLY_PAID";
-
-    if (status) {
-      await this.db
-        .update(payrollBankBatches)
-        .set({ status })
-        .where(and(eq(payrollBankBatches.id, batchId), eq(payrollBankBatches.orgId, orgId)));
-    }
   }
 
   async getFile(orgId: string, batchId: number) {

@@ -11,7 +11,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { ModuleGuard } from "../../common/rbac/module.guard";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
-import { resolveInvPoScope } from "../inventory/inventory-scope";
+import { resolveInvPoScope } from "../inv-stock-engine/inventory-scope";
 import { PoService } from "./po.service";
 import { GrnService } from "./grn.service";
 import {

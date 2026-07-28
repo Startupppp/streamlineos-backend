@@ -9,6 +9,10 @@ import { OnboardingFlowModule } from "../onboarding-flow/onboarding-flow.module"
 import { OnboardingRequirementsService } from "./onboarding-requirements.service";
 import { HrCoreModule } from "../hr-core/hr-core.module";
 import { HrLifecycleModule } from "../hr-lifecycle/hr-lifecycle.module";
+import { OnboardingTemplateService } from "./onboarding-template.service";
+import { OnboardingDetailsService } from "./onboarding-details.service";
+import { OnboardingTaskService } from "./onboarding-task.service";
+import { OnboardingAdminService } from "./onboarding-admin.service";
 
 @Module({
   imports: [
@@ -23,6 +27,10 @@ import { HrLifecycleModule } from "../hr-lifecycle/hr-lifecycle.module";
     OnboardingService,
     OnboardingProbationService,
     OnboardingRequirementsService,
+    OnboardingTemplateService,
+    OnboardingDetailsService,
+    OnboardingTaskService,
+    OnboardingAdminService,
   ],
   controllers: [OnboardingController],
 })

@@ -9,7 +9,7 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { ModuleGuard } from "../../common/rbac/module.guard";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { InvProductsService } from "./inv-products.service";
-import { resolveInvProductsScope } from "../inventory/inventory-scope";
+import { resolveInvProductsScope } from "../inv-stock-engine/inventory-scope";
 import {
   listProductsSchema, createProductSchema, updateProductSchema,
   createVariantSchema, updateVariantSchema, createCategorySchema, createUomSchema, listVariantsSchema,

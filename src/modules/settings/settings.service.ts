@@ -21,7 +21,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { queryAiUsage } from "./ai-usage.query";
-import { ALL_ROLES, PERMISSIONS } from "../rbac/permissions.constants";
+import { ALL_ROLES, PERMISSIONS } from "../rbac/permissions";
 import { PlanLimitsService } from "../billing/plan-limits.service";
 import {
   VALID_API_KEY_SCOPES,

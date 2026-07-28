@@ -3,6 +3,8 @@ import { PayrollTemplatesController } from "./templates.controller";
 import { PayrollTemplatesService } from "./templates.service";
 import { PayrollPoliciesController } from "./policies.controller";
 import { PayrollPoliciesService } from "./policies.service";
+import { PolicyQueryService } from "./policy-query.service";
+import { PolicyMutationService } from "./policy-mutation.service";
 import { PayrollComponentsController } from "./components.controller";
 import { PayrollComponentsService } from "./components.service";
 
@@ -14,6 +16,8 @@ import { PayrollComponentsService } from "./components.service";
   ],
   providers: [
     PayrollTemplatesService,
+    PolicyQueryService,
+    PolicyMutationService,
     PayrollPoliciesService,
     PayrollComponentsService,
   ],

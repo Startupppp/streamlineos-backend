@@ -1,6 +1,6 @@
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
-import { isScopable } from "../rbac/permissions.constants";
+import { isScopable } from "../rbac/permissions";
 
 export const ASSETS_PERMISSION = "hr:assets:manage";
 

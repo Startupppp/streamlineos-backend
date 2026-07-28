@@ -11,7 +11,7 @@ import {
   roles,
   userRoles,
 } from "../db/schema";
-import { PERMISSIONS, ROLE_DEFAULT_PERMISSIONS } from "../modules/rbac/permissions.constants";
+import { PERMISSIONS, ROLE_DEFAULT_PERMISSIONS } from "../modules/rbac/permissions";
 
 type Database = PostgresJsDatabase<typeof schema>;
 
