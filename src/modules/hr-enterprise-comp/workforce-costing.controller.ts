@@ -1,4 +1,4 @@
-import { Controller, Get, Param, ParseIntPipe, Query, UseGuards } from "@nestjs/common";
+import { Controller, Get, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -10,7 +10,6 @@ import { WorkforceCostingService } from "./workforce-costing.service";
 import { z } from "zod";
 
 const costByDeptSchema = z.object({ periodKey: z.string().min(7) });
-const forecastSchema = z.object({ cycleId: z.coerce.number().int().positive() });
 
 @RequireModule("hr")
 @Controller("hr/enterprise/comp/costing")
@@ -46,7 +45,7 @@ export class WorkforceCostingController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:salary:view")
   forecasted(
-    @Query(new ZodValidationPipe(forecastSchema)) query: { cycleId: number },
+    @Query(new ZodValidationPipe(z.object({ cycleId: z.coerce.number().int().positive() }))) query: { cycleId: number },
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.forecastedCost(u.orgId, query.cycleId);

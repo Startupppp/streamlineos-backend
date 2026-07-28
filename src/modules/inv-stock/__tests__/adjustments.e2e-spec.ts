@@ -9,7 +9,7 @@ describe("/inventory/stock/adjustments (e2e)", () => {
   let app: INestApplication;
   let ownerToken: string;
   let nonOwnerToken: string;
-  let createdId: number;
+  let _createdId: number;
 
   beforeAll(async () => {
     process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
@@ -56,7 +56,7 @@ describe("/inventory/stock/adjustments (e2e)", () => {
     expect([200, 201, 400, 404]).toContain(res.status);
     if (res.status === 200 || res.status === 201) {
       const body = res.body.data ?? res.body;
-      if (body?.id) createdId = body.id;
+      if (body?.id) _createdId = body.id;
     }
   });
 

@@ -1,5 +1,5 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, eq, sql } from "drizzle-orm";
+import { ConflictException, Inject, Injectable } from "@nestjs/common";
+import { and, count, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import {
@@ -12,7 +12,7 @@ import {
 } from "../../db/schema";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
-import { SETTINGS_CACHE_KEY, COA_TREE_CACHE_KEY, SETUP_STATUS_CACHE_KEY, PURPOSE_ALLOWED_TYPES, SEQUENCE_DEFAULTS } from "./accounting-settings.constants";
+import { SETTINGS_CACHE_KEY, SETUP_STATUS_CACHE_KEY, SEQUENCE_DEFAULTS } from "./accounting-settings.constants";
 import type { UpdateSettingsInput, UpdateSequenceInput, SequenceEntityType, UpsertPaymentTermsInput } from "./dto/settings.schemas";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 

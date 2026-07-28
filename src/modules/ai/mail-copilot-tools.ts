@@ -185,7 +185,7 @@ export class MailCopilotTools {
                 message: "No active mail accounts connected.",
               };
 
-            let resolvedAccount = accountEmail
+            const resolvedAccount = accountEmail
               ? activeAccounts.find((a) => a.accountEmail === accountEmail)
               : (activeAccounts.find((a) => a.isPrimary) ??
                 activeAccounts[activeAccounts.length - 1]);

@@ -50,7 +50,7 @@ export class InvStockReservationsService {
     }, CACHE_TTL.SHORT);
   }
 
-  async createReservation(orgId: string, userId: string, input: CreateReservationInput, idempotencyKey: string) {
+  async createReservation(orgId: string, userId: string, input: CreateReservationInput, _idempotencyKey: string) {
     const reservation = await this.reservationService.createReservation(orgId, userId, {
       sourceType: input.sourceType,
       sourceId: input.sourceId,

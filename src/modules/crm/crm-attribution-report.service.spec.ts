@@ -15,7 +15,7 @@ function makeInsertChain() {
   };
 }
 
-function makeSelectChain(resolveWith: unknown[]) {
+function _makeSelectChain(resolveWith: unknown[]) {
   const chain: Record<string, unknown> = {};
   const terminal = jest.fn().mockResolvedValue(resolveWith);
   chain.select = jest.fn().mockReturnValue(chain);

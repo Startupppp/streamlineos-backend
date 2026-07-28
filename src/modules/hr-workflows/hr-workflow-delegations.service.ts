@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException, BadRequestException } from "@nestjs/common";
-import { and, eq, desc, lte } from "drizzle-orm";
+import { and, eq, desc } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { hrWorkflowDelegations } from "../../db/schema/hr/workflow-engine";

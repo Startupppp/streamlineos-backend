@@ -2,7 +2,6 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import {
   contacts,
-  clients,
   deals,
   leads,
   invoices,

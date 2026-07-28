@@ -6,7 +6,7 @@ import { Test } from "@nestjs/testing";
 import { createHash } from "node:crypto";
 
 const VALID_TOKEN = "slos_" + "a".repeat(48);
-const VALID_HASH = createHash("sha256").update(VALID_TOKEN).digest("hex");
+const _VALID_HASH = createHash("sha256").update(VALID_TOKEN).digest("hex");
 const TOKEN_ID = 42;
 const USER_ID = "user-1";
 const ORG_ID = "org-1";

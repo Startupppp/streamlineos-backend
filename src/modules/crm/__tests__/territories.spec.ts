@@ -1,5 +1,4 @@
 import { TerritoryMatchService } from "../territory-match.service";
-import { DRIZZLE } from "../../../db/drizzle.constants";
 
 function makeDbWithTerritories(rows: unknown[]) {
   return {

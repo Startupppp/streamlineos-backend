@@ -49,7 +49,6 @@ describe("SubmissionsService.createSubmission", () => {
   });
 
   it("throws 404 when form is not found", async () => {
-    (mockDb["query"] as Record<string, unknown>);
     (mockDb.query as { projectForms: { findFirst: jest.Mock } }).projectForms.findFirst.mockResolvedValueOnce(undefined);
 
     await expect(

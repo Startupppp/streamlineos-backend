@@ -83,6 +83,10 @@ export class OnboardingController {
    * we layer an additional, existing-permission check on top for moduleKey === "HR" only,
    * matching the manual-OR-check idiom already used in hr-config/hr-document-types.controller.ts.
    */
+  private isHrModuleKey(moduleKey: string): boolean {
+    return moduleKey.toUpperCase() === "HR";
+  }
+
   private async assertHrChecklistAccess(
     u: CurrentUserContext,
     mode: "view" | "manage",
@@ -141,7 +145,7 @@ export class OnboardingController {
     @Param("moduleKey") moduleKey: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (moduleKey === "hr") await this.assertHrChecklistAccess(u, "view");
+    if (this.isHrModuleKey(moduleKey)) await this.assertHrChecklistAccess(u, "view");
     return this.checklists.getChecklist(u.orgId, moduleKey, u.enabledModules);
   }
 
@@ -153,7 +157,7 @@ export class OnboardingController {
     @Param("itemKey") itemKey: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (moduleKey === "hr") await this.assertHrChecklistAccess(u, "manage");
+    if (this.isHrModuleKey(moduleKey)) await this.assertHrChecklistAccess(u, "manage");
     return this.checklists.completeItem(
       u.orgId,
       moduleKey,
@@ -173,7 +177,7 @@ export class OnboardingController {
     body: ChecklistItemSkipInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (moduleKey === "hr") await this.assertHrChecklistAccess(u, "manage");
+    if (this.isHrModuleKey(moduleKey)) await this.assertHrChecklistAccess(u, "manage");
     return this.checklists.skipItem(
       u.orgId,
       moduleKey,
@@ -191,7 +195,7 @@ export class OnboardingController {
     @Param("moduleKey") moduleKey: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (moduleKey === "hr") await this.assertHrChecklistAccess(u, "manage");
+    if (this.isHrModuleKey(moduleKey)) await this.assertHrChecklistAccess(u, "manage");
     return this.checklists.dismissChecklist(
       u.orgId,
       moduleKey,
@@ -207,7 +211,7 @@ export class OnboardingController {
     @Param("moduleKey") moduleKey: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (moduleKey === "hr") await this.assertHrChecklistAccess(u, "manage");
+    if (this.isHrModuleKey(moduleKey)) await this.assertHrChecklistAccess(u, "manage");
     return this.checklists.restartChecklist(
       u.orgId,
       moduleKey,

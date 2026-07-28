@@ -1,7 +1,4 @@
 import { SupportAiService } from "./support-ai.service";
-import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
-import { EmbeddingsService } from "../ai/providers/embeddings.service";
-import { OrgFeaturesService } from "../ai/services/org-features.service";
 import { SupportAiSettingsService } from "./support-ai-settings.service";
 import { SupportAiEmbeddingsHelper } from "./support-ai-embeddings.helper";
 import { SupportAiReportHelper } from "./support-ai-report.helper";

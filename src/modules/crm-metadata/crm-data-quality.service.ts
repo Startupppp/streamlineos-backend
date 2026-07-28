@@ -2,7 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, count, desc, eq, isNull, lt, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
-import { leads, deals, dealActivities, crmOrganizations, crmPipelineStages } from "../../db/schema";
+import { leads, deals, dealActivities, crmPipelineStages } from "../../db/schema";
 
 const OFFENDER_LIMIT = 10;
 const PHONE_BASIC_RE = /^[+\d\s\-().]{7,20}$/;

@@ -5,22 +5,10 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import {
-  hrEmployments,
-  hrPeople,
   orgUnits,
-  attendance,
-  leaveRequests,
-  leaveTypes,
-  hrLeaveLedger,
-  payrollRuns,
-  hrSuccessionPlans,
-  hrRoleSkillRequirements,
-  hrCases,
-  hrMoodCheckins,
 } from "../../db/schema";
 import {
   hrHeadcountPlans,
-  hrHiringPlanItems,
 } from "../../db/schema/hr/workforce-planning";
 
 @Injectable()
@@ -38,7 +26,7 @@ export class HrAnalyticsPlusService {
     );
   }
 
-  private async buildCommandCenter(orgId: string, departmentId?: string) {
+  private async buildCommandCenter(orgId: string, _departmentId?: string) {
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const twelveMonthsAgo = new Date(now.getFullYear() - 1, now.getMonth(), 1);
@@ -133,7 +121,7 @@ export class HrAnalyticsPlusService {
     const casesCount = Number(openCases[0]?.count ?? 0);
     const moodRaw = avgMood[0]?.avg_mood;
     const payrollGrossRaw = lastPayroll[0]?.gross_total;
-    const payrollMonthRaw = lastPayroll[0]?.month;
+    const _payrollMonthRaw = lastPayroll[0]?.month;
 
     return {
       headcount: {
@@ -353,7 +341,7 @@ export class HrAnalyticsPlusService {
     ];
   }
 
-  async getDrilldown(orgId: string, metric: string, page: number, limit: number, departmentId?: string) {
+  async getDrilldown(orgId: string, metric: string, page: number, limit: number, _departmentId?: string) {
     const offset = (page - 1) * limit;
     let rows: unknown[] = [];
     let total = 0;

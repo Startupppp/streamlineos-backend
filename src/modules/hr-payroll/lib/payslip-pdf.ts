@@ -272,7 +272,7 @@ export async function generatePayslipPdf(data: PayslipPdfData): Promise<Buffer> 
   bankY = drawSectionHeader(col1X, bankY, "BANK DETAILS");
   bankY = drawRow(col1X, bankY, "Bank Name", data.bankName ?? "—");
   bankY = drawRow(col1X, bankY, "Account Number", data.maskedAccount ?? "—");
-  bankY = drawRow(col1X, bankY, "IFSC Code", data.ifsc ?? "—");
+  drawRow(col1X, bankY, "IFSC Code", data.ifsc ?? "—");
 
   let authY = y;
   authY = drawSectionHeader(col2X, authY, "AUTHORISATION");

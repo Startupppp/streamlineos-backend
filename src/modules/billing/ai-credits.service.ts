@@ -336,7 +336,7 @@ export class AiCreditsService {
 
     try {
       await this.db.transaction(async (tx) => {
-        let [wallet] = await tx
+        const [wallet] = await tx
           .select()
           .from(orgAiCredits)
           .where(eq(orgAiCredits.orgId, orgId))

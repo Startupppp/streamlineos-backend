@@ -14,7 +14,6 @@ import {
   roleAssignments,
   rolePermissionGrants,
   supportKnowledgeGaps,
-  supportTicketEmbeddings,
   supportTickets,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";

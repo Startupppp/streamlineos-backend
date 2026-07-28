@@ -329,7 +329,7 @@ export class TaxReportsService {
     let cumulative = 0;
     const months = Array.from(outputByMonth.values()).sort((a, b) => a.month.localeCompare(b.month));
 
-    let taxPayableBalance = 0;
+    let taxPayableBalance: number;
     try {
       const accountId = await this.posting.resolveSystemAccount(orgId, "TAX_PAYABLE");
       const rows = await this.db

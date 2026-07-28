@@ -10,14 +10,6 @@ export interface AutomationGraphNode {
   branches?: { condition: Record<string, unknown>; nextId: string }[];
 }
 
-type CrmAutomationTrigger =
-  | "lead.created"
-  | "lead.status_changed"
-  | "lead.score_changed"
-  | "lead.assigned"
-  | "deal.stage_changed"
-  | "task.overdue";
-
 export type CrmAutomationAction =
   | "send_email"
   | "assign_to"

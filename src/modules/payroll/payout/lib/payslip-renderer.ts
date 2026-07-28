@@ -351,7 +351,7 @@ export function renderPayslipHtml(params: RenderParams): string {
 
 export function buildPayslipPdfData(params: RenderParams): PayslipPdfData {
   const { snapshot, employee, org, month } = params;
-  const { lines, totals, currency } = snapshot;
+  const { lines, totals } = snapshot;
 
   const findLine = (code: string): CalculationSnapshotLine | undefined =>
     lines.find(l => l.code === code && l.category === "EARNING");

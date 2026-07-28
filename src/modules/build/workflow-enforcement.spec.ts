@@ -18,7 +18,7 @@ describe("ProjectsTicketsQueryService.assertTransitionAllowed — fail-open enfo
   let svc: ProjectsTicketsQueryService;
   let mockDb: Record<string, unknown>;
 
-  function makeSelectTransitions(rows: { fromStatusId: number | null; toStatusId: number }[]) {
+  function _makeSelectTransitions(rows: { fromStatusId: number | null; toStatusId: number }[]) {
     return jest.fn().mockReturnValueOnce({
       from: jest.fn().mockReturnValue({
         where: jest.fn().mockResolvedValue(rows),
@@ -26,7 +26,7 @@ describe("ProjectsTicketsQueryService.assertTransitionAllowed — fail-open enfo
     });
   }
 
-  function makeSelectStatuses(rows: { id: number; name: string }[]) {
+  function _makeSelectStatuses(rows: { id: number; name: string }[]) {
     return jest.fn().mockReturnValueOnce({
       from: jest.fn().mockReturnValue({
         where: jest.fn().mockResolvedValue(rows),

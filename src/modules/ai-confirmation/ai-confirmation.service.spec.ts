@@ -1,6 +1,5 @@
 ﻿import { BadRequestException, ConflictException, ForbiddenException } from "@nestjs/common";
 import { AiConfirmationService } from "./ai-confirmation.service";
-import { DRIZZLE } from "../../db/drizzle.constants";
 
 process.env.AI_CONFIRMATION_SECRET = "test-secret-for-unit-tests-xxxxxxxxxxxxx";
 
@@ -85,7 +84,7 @@ function makeFakeDb(store: ReturnType<typeof makeStore>) {
     then: undefined as unknown,
   };
 
-  function selectChain(resultFn: () => FakeRow[]): unknown {
+  function _selectChain(resultFn: () => FakeRow[]): unknown {
     const chain: Record<string, unknown> = {};
     chain.from = () => chain;
     chain.where = () => chain;
@@ -96,7 +95,7 @@ function makeFakeDb(store: ReturnType<typeof makeStore>) {
     return chain;
   }
 
-  function updateChain(resultFn: () => FakeRow[], returnFn?: () => Array<{ id: number }>): unknown {
+  function _updateChain(resultFn: () => FakeRow[], returnFn?: () => Array<{ id: number }>): unknown {
     const chain: Record<string, unknown> = {};
     chain.where = () => chain;
     chain.then = (resolve: (v: FakeRow[]) => void, reject: (e: unknown) => void) =>
@@ -105,7 +104,7 @@ function makeFakeDb(store: ReturnType<typeof makeStore>) {
     return chain;
   }
 
-  let _pendingInsert: Omit<FakeRow, "id" | "createdAt" | "updatedAt"> & { idempotencyKey?: string | null } | null = null;
+  const _pendingInsert: Omit<FakeRow, "id" | "createdAt" | "updatedAt"> & { idempotencyKey?: string | null } | null = null;
   let _pendingPatch: Partial<FakeRow> | null = null;
   let _selectId: number | null = null;
 
@@ -179,7 +178,7 @@ describe("AiConfirmationService — isolated unit tests", () => {
 
     const auditMock = { log: jest.fn() };
 
-    async function proposeAndGetRow(
+    async function _proposeAndGetRow(
       opts: Partial<Parameters<AiConfirmationService["propose"]>[0]> = {},
     ) {
       const input = {

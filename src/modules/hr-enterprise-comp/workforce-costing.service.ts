@@ -8,7 +8,7 @@ import { hrCompCycles } from "../../db/schema/hr/enterprise-comp";
 export class WorkforceCostingService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async costByDepartment(orgId: string, periodKey: string) {
+  async costByDepartment(orgId: string, _periodKey: string) {
     const rows = await this.db.execute(sql`
       SELECT
         d.id AS department_id,

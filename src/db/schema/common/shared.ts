@@ -1,12 +1,11 @@
 
-import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, unique, uniqueIndex, numeric, date, varchar } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, unique, uniqueIndex, numeric, varchar } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import {
   notificationTypeEnum,
   notificationPriorityEnum,
   notificationCategoryEnum,
   broadcastStatusEnum,
-  deliveryStatusEnum,
   notificationChannelEnum,
   subscriptionStatusEnum,
   subscriptionPlanEnum,

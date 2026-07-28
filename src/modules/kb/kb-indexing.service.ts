@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { createHash } from "node:crypto";
 import { Readable } from "stream";
-import { and, count, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, count, eq, isNull, sql } from "drizzle-orm";
 import {
   kbArticles,
   kbArticleAttachments,
@@ -87,7 +87,7 @@ export class KbIndexingService {
       let chunkEnd = end;
 
       if (end < text.length) {
-        let lastSpace = text.lastIndexOf(" ", end);
+        const lastSpace = text.lastIndexOf(" ", end);
         if (lastSpace > pos && lastSpace > pos + chunkSize - 200) {
           chunkEnd = lastSpace;
         }
@@ -357,7 +357,7 @@ export class KbIndexingService {
       };
     }
 
-    let text = "";
+    let text: string;
     try {
       const { body } = await this.storage.getFileStream(attachment.fileKey);
       const buffer = await this.streamToBuffer(body);
@@ -439,7 +439,7 @@ export class KbIndexingService {
       return { chunks: 0, warning: null };
     }
 
-    let text = "";
+    let text: string;
     try {
       text = await extractAttachmentText(buffer, mimeType);
     } catch (err) {

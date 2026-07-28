@@ -1,11 +1,7 @@
 import type {
   CalculationSnapshot,
   CalculationSnapshotLine,
-  PayrollPolicyConfig,
-  PayrollToggles,
-  PayrollWorkerType,
   FormulaScope,
-  TaxRegimeType,
   RunEmployeeVariance,
 } from "../../payroll.types";
 import { toPaise, fromPaise, pctOf, applyRounding, daysInMonth } from "./money";
@@ -83,7 +79,7 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
       continue;
     }
 
-    let paise = 0;
+    let paise: number;
 
     if (comp.calcMethod === "FIXED" && comp.amount != null) {
       paise = applyRounding(toPaise(comp.amount), rounding);
@@ -164,7 +160,7 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
   let adjustmentPaise = 0;
 
   for (const comp of adjustmentComps) {
-    let paise = 0;
+    let paise: number;
 
     if (comp.calcMethod === "FIXED" && comp.amount != null) {
       paise = applyRounding(toPaise(comp.amount), rounding);
@@ -270,7 +266,7 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
   lines.push(...statResult.lines);
 
   let totalDeductionPaise = statResult.totalEmployeeDeductionPaise + nonStatDeductionPaise + adjustmentPaise;
-  let totalEmployerPaise = statResult.totalEmployerContributionPaise;
+  const totalEmployerPaise = statResult.totalEmployerContributionPaise;
 
   if (toggles.loans) {
     pulls.activeLoans.forEach((loan, idx) => {
@@ -279,7 +275,7 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
       const paidPaise = emiPaise * loan.paidEmis;
       const outstandingPaise = Math.max(0, totalPrincipalPaise - paidPaise);
 
-      let recoverablePaise = 0;
+      let recoverablePaise: number;
       const adj = loan.adjustment;
 
       if (adj?.type === "SKIP_EMI") {

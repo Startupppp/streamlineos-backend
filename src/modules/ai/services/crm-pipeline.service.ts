@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { and, count, desc, eq, isNull, lt, max } from "drizzle-orm";
+import { and, count, eq, isNull, lt, max } from "drizzle-orm";
 import { dealActivities, deals, leads } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";

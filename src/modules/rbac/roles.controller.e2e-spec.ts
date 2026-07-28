@@ -9,7 +9,7 @@ describe("/roles (e2e)", () => {
   let app: INestApplication;
   let ownerToken: string;
   let memberToken: string;
-  let rbacManagerToken: string;
+  let _rbacManagerToken: string;
 
   beforeAll(async () => {
     process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
@@ -21,7 +21,7 @@ describe("/roles (e2e)", () => {
 
     ownerToken = await signToken({ orgId: "org_rbac_01", role: "OWNER", isOrgOwner: true });
     memberToken = await signToken({ orgId: "org_rbac_01", role: "MEMBER", isOrgOwner: false, permissions: [] });
-    rbacManagerToken = await signToken({ orgId: "org_rbac_01", role: "MANAGER", isOrgOwner: false, permissions: ["settings:rbac:manage"] });
+    _rbacManagerToken = await signToken({ orgId: "org_rbac_01", role: "MANAGER", isOrgOwner: false, permissions: ["settings:rbac:manage"] });
   });
 
   afterAll(async () => app.close());

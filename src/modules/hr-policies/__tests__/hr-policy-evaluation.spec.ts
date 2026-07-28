@@ -107,7 +107,7 @@ describe("HrPolicyEvaluationService", () => {
 
       mockDb.query.hrPolicies.findMany.mockResolvedValue([deptPolicy, empPolicy]);
 
-      const attrs = {
+      const _attrs = {
         userId: "u1",
         departmentId: 10,
         teamIds: [],

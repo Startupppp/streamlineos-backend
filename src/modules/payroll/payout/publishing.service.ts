@@ -29,7 +29,7 @@ import { PayrollNotificationsService } from "../insights/payroll-notifications.s
 import { logger } from "../../../common/logger/logger.service";
 import { decryptBankDetails } from "../../../modules/hr-payroll/lib/encryption";
 import { generatePayslipPdf } from "../../../modules/hr-payroll/lib/payslip-pdf";
-import { renderPayslipHtml, buildPayslipPdfData } from "./lib/payslip-renderer";
+import { buildPayslipPdfData } from "./lib/payslip-renderer";
 import { getPayslipEmailTemplate } from "../../email/templates/payroll";
 import type { CalculationSnapshot, PayrollToggles } from "../payroll.types";
 import type { PayslipTemplateConfig } from "./dto/payout.schemas";
@@ -168,7 +168,7 @@ export class PublishingService {
       });
 
       let pdfUrl: string | null = null;
-      let renderedPdfBuffer: Buffer | null = null;
+      let renderedPdfBuffer: Buffer | null;
       let failureReason: string | null = null;
       try {
         renderedPdfBuffer = await generatePayslipPdf(pdfData);

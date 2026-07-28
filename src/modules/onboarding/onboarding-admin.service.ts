@@ -43,7 +43,7 @@ export class OnboardingAdminService {
 
   async sendReminders(
     orgId: string,
-    appUrl: string,
+    _appUrl: string,
   ): Promise<{ sent: number; total: number }> {
     const incompleteUsers = await this.db
       .select({

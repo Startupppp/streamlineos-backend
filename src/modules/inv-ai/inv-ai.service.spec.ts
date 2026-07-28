@@ -9,11 +9,11 @@ function buildAiService(db: object) {
   return new InvAiService(db as never, mockCache as never);
 }
 
-function buildValuationService(db: object) {
+function _buildValuationService(db: object) {
   return new InvValuationService(db as never, mockCache as never);
 }
 
-function buildReplenishmentService(db: object) {
+function _buildReplenishmentService(db: object) {
   return new InvReplenishmentService(db as never, mockCache as never, mockNumSeq as never);
 }
 

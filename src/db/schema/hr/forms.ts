@@ -4,7 +4,6 @@ import {
   text,
   serial,
   timestamp,
-  boolean,
   jsonb,
   integer,
   index,

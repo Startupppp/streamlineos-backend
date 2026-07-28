@@ -7,20 +7,16 @@ import {
   invStockTransactions,
   invGrns,
   invGrnLines,
-  invPoLines,
   invPurchaseOrders,
   invVendors,
   invShipments,
   invShipmentLines,
-  invSalesOrders,
   invVendorReturnLines,
   invVendorReturns,
   invCustomerReturnLines,
   invCustomerReturns,
   invLocations,
   invWarehouses,
-  invProductVariants,
-  invProducts,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";

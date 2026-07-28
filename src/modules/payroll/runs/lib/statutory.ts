@@ -53,7 +53,9 @@ function applyPackBrackets(
   for (const band of brackets) {
     if (basePaise <= previousTopPaise) break;
     const bandTopPaise =
-      band.upToMonthly != null ? Math.round(parseFloat(band.upToMonthly) * 100) : basePaise;
+      band.upToMonthly != null
+        ? Math.round(parseFloat(band.upToMonthly) * 100)
+        : basePaise;
     const amountInBand = Math.min(basePaise, bandTopPaise) - previousTopPaise;
     if (amountInBand > 0) {
       taxPaise += pctOf(amountInBand, band.percent);
@@ -75,7 +77,8 @@ function calcPackItem(
   sortIndex: number,
 ): CalculationSnapshotLine | null {
   const effectivePercent = percentOverride ?? item.calc.percent;
-  const base = item.calc.method === "PERCENT_OF_BASIC" ? basicPaise : grossPaise;
+  const base =
+    item.calc.method === "PERCENT_OF_BASIC" ? basicPaise : grossPaise;
 
   const wageFloor =
     item.calc.wageFloorMonthly != null
@@ -93,7 +96,8 @@ function calcPackItem(
     rawPaise = Math.round(parseFloat(item.calc.fixedAmount ?? "0") * 100);
     steps.push(`${item.label} = ${(rawPaise / 100).toFixed(2)} (fixed)`);
   } else if (
-    (item.calc.method === "PERCENT_OF_BASIC" || item.calc.method === "PERCENT_OF_GROSS") &&
+    (item.calc.method === "PERCENT_OF_BASIC" ||
+      item.calc.method === "PERCENT_OF_GROSS") &&
     effectivePercent != null
   ) {
     const wageCeiling =
@@ -102,19 +106,24 @@ function calcPackItem(
         : null;
     const cappedBase = wageCeiling != null ? Math.min(base, wageCeiling) : base;
     rawPaise = pctOf(cappedBase, effectivePercent);
-    const baseLabel = item.calc.method === "PERCENT_OF_BASIC" ? "basic" : "gross";
+    const baseLabel =
+      item.calc.method === "PERCENT_OF_BASIC" ? "basic" : "gross";
     steps.push(
       wageCeiling != null && base > wageCeiling
         ? `Base = min(${baseLabel} ${(base / 100).toFixed(2)}, ceiling ${(wageCeiling / 100).toFixed(2)}) = ${(cappedBase / 100).toFixed(2)}`
         : `Base = ${baseLabel} ${(base / 100).toFixed(2)}`,
     );
-    steps.push(`${item.label} = ${(cappedBase / 100).toFixed(2)} × ${effectivePercent}% = ${(rawPaise / 100).toFixed(2)}`);
+    steps.push(
+      `${item.label} = ${(cappedBase / 100).toFixed(2)} × ${effectivePercent}% = ${(rawPaise / 100).toFixed(2)}`,
+    );
   } else if (item.calc.method === "BRACKETS" && item.calc.brackets != null) {
     if (item.calc.brackets.length === 0) {
       return null;
     }
     rawPaise = applyPackBrackets(grossPaise, item.calc.brackets);
-    steps.push(`${item.label} = bracket calc on gross ${(grossPaise / 100).toFixed(2)} = ${(rawPaise / 100).toFixed(2)}`);
+    steps.push(
+      `${item.label} = bracket calc on gross ${(grossPaise / 100).toFixed(2)} = ${(rawPaise / 100).toFixed(2)}`,
+    );
     for (const band of item.calc.brackets) {
       steps.push(`  Band ≤ ${band.upToMonthly ?? "∞"}: ${band.percent}%`);
     }
@@ -191,7 +200,7 @@ function calcStatutoryFromPack(
 }
 
 export function calcStatutory(input: StatutoryInput): StatutoryResult {
-  const { workerType, toggles, config } = input;
+  const { workerType, config } = input;
 
   if (workerType === "CONTRACTOR" || workerType === "CONSULTANT") {
     return {
@@ -216,8 +225,18 @@ export function calcStatutory(input: StatutoryInput): StatutoryResult {
  * Canonical India path — all PF/ESI/PT/LWF/gratuity use the versioned registry.
  * Policy config percents/ceilings may still override registry defaults for org customization.
  */
-function calcStatutoryIndiaFromRegistry(input: StatutoryInput): StatutoryResult {
-  const { toggles, config, basicPaise, grossPaise, rounding, stateCode, daPaise = 0 } = input;
+function calcStatutoryIndiaFromRegistry(
+  input: StatutoryInput,
+): StatutoryResult {
+  const {
+    toggles,
+    config,
+    basicPaise,
+    grossPaise,
+    rounding,
+    stateCode,
+    daPaise = 0,
+  } = input;
   const bundle: IndiaStatutoryBundle = input.month
     ? getIndiaBundleForMonth(input.month)
     : getIndiaBundleForDate();
@@ -235,12 +254,15 @@ function calcStatutoryIndiaFromRegistry(input: StatutoryInput): StatutoryResult 
   const wageDefinitionWarning = wageCheck.ok ? undefined : wageCheck.message;
 
   if (toggles.pf) {
-    const empPct = config.statutory.pfEmployeePercent ?? bundle.pf.employeePercent;
-    const erPct = config.statutory.pfEmployerPercent ?? bundle.pf.employerPercent;
+    const empPct =
+      config.statutory.pfEmployeePercent ?? bundle.pf.employeePercent;
+    const erPct =
+      config.statutory.pfEmployerPercent ?? bundle.pf.employerPercent;
     // Prefer policy ceiling if set; else registry monthlyWageCeiling (correct name).
     // Policy may still pass the legacy 15000 monthly or misnamed 21600 — prefer explicit monthly.
     const ceilingStr =
-      config.statutory.pfWageCeiling != null && config.statutory.pfWageCeiling !== ""
+      config.statutory.pfWageCeiling != null &&
+      config.statutory.pfWageCeiling !== ""
         ? config.statutory.pfWageCeiling
         : bundle.pf.monthlyWageCeiling;
     const ceilingPaise = toPaise(ceilingStr);
@@ -298,10 +320,13 @@ function calcStatutoryIndiaFromRegistry(input: StatutoryInput): StatutoryResult 
   }
 
   if (toggles.esi) {
-    const empPct = config.statutory.esiEmployeePercent ?? bundle.esi.employeePercent;
-    const erPct = config.statutory.esiEmployerPercent ?? bundle.esi.employerPercent;
+    const empPct =
+      config.statutory.esiEmployeePercent ?? bundle.esi.employeePercent;
+    const erPct =
+      config.statutory.esiEmployerPercent ?? bundle.esi.employerPercent;
     const ceilingStr =
-      config.statutory.esiWageCeiling != null && config.statutory.esiWageCeiling !== ""
+      config.statutory.esiWageCeiling != null &&
+      config.statutory.esiWageCeiling !== ""
         ? config.statutory.esiWageCeiling
         : bundle.esi.monthlyEligibilityCeiling;
     const esiCeilingPaise = toPaise(ceilingStr);
@@ -323,7 +348,7 @@ function calcStatutoryIndiaFromRegistry(input: StatutoryInput): StatutoryResult 
             gross: grossPaise / 100,
             monthlyEligibilityCeiling: esiCeilingPaise / 100,
             esiEmployeePercent: parseFloat(empPct),
-            },
+          },
           steps: [
             `Rule ${bundle.esi.version}: Gross ₹${(grossPaise / 100).toFixed(2)} ≤ ESI ceiling ₹${(esiCeilingPaise / 100).toFixed(2)}`,
             `ESI Employee = ₹${(grossPaise / 100).toFixed(2)} × ${empPct}% = ₹${(esiEmpPaise / 100).toFixed(2)}`,
@@ -341,7 +366,10 @@ function calcStatutoryIndiaFromRegistry(input: StatutoryInput): StatutoryResult 
         sortOrder: SORT_BASE + 4,
         explain: {
           method: "PERCENT_OF_GROSS",
-          inputs: { gross: grossPaise / 100, esiEmployerPercent: parseFloat(erPct) },
+          inputs: {
+            gross: grossPaise / 100,
+            esiEmployerPercent: parseFloat(erPct),
+          },
           steps: [
             `ESI Employer = ₹${(grossPaise / 100).toFixed(2)} × ${erPct}% = ₹${(esiErPaise / 100).toFixed(2)}`,
           ],
@@ -355,7 +383,8 @@ function calcStatutoryIndiaFromRegistry(input: StatutoryInput): StatutoryResult 
 
   if (toggles.professionalTax) {
     const ptMonthly =
-      config.statutory.professionalTaxMonthly != null && config.statutory.professionalTaxMonthly !== ""
+      config.statutory.professionalTaxMonthly != null &&
+      config.statutory.professionalTaxMonthly !== ""
         ? config.statutory.professionalTaxMonthly
         : resolvePtMonthly(bundle, stateCode);
     const ptRounded = applyRounding(toPaise(ptMonthly), rounding);

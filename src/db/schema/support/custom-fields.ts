@@ -3,7 +3,6 @@ import {
   serial,
   text,
   integer,
-  boolean,
   timestamp,
   index,
   uniqueIndex,

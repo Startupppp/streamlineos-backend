@@ -2,7 +2,7 @@ import {
   BadRequestException, Inject, Injectable, NotFoundException,
   UnprocessableEntityException,
 } from "@nestjs/common";
-import { and, count, desc, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, lt } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";

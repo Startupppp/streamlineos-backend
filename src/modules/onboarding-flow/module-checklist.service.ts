@@ -276,7 +276,7 @@ export class ModuleChecklistService {
     return this.reload(checklist);
   }
 
-  private async recomputeProgress(checklistId: number, orgId: string) {
+  private async recomputeProgress(checklistId: number, _orgId: string) {
     const items = await this.db.query.moduleSetupChecklistItems.findMany({
       where: eq(moduleSetupChecklistItems.checklistId, checklistId),
     });

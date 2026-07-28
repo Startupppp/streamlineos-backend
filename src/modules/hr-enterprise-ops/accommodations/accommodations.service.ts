@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, desc, eq, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -16,7 +16,7 @@ import type {
   UpdateAccommodationTaskInput,
 } from "../dto/accommodations.schemas";
 
-const SENSITIVE_FIELDS = ["confidential_medical_note", "confidentialMedicalNote"] as const;
+const _SENSITIVE_FIELDS = ["confidential_medical_note", "confidentialMedicalNote"] as const;
 
 function maskSensitive<T extends { confidentialMedicalNote?: string | null }>(
   row: T,

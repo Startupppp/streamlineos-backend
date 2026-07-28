@@ -6,7 +6,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CreateAutomationRuleInput, UpdateAutomationRuleInput } from "./dto/automation-rules.schemas";
 import { CrmAutomationRunnerService } from "../crm-automation-studio/crm-automation-runner.service";
-import { testAutomationRuleSchema, type TestAutomationRuleInput } from "../crm-automation-studio/dto/automation-studio.schemas";
+import type { TestAutomationRuleInput } from "../crm-automation-studio/dto/automation-studio.schemas";
 import type { CrmAutomationCondition } from "../../db/schema/crm/automation-rules";
 import { PlanLimitsService } from "../billing/plan-limits.service";
 

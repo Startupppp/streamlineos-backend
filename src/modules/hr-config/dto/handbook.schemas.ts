@@ -15,7 +15,7 @@ export const createHandbookSchema = z.object({
     .min(2, "Title must be at least 2 characters")
     .max(100, "Title must be at most 100 characters")
     .refine((v) => v.length > 0, "Title is required")
-    .refine((v) => !/  /.test(v), "Title must not contain consecutive spaces")
+    .refine((v) => !/ {2}/.test(v), "Title must not contain consecutive spaces")
     .refine((v) => !CONSECUTIVE_SPECIAL_CHARS.test(v), "Title must not contain consecutive special characters"),
   documentId: z.number().int().positive().optional(),
   documentUrl: z

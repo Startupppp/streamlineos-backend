@@ -6,7 +6,6 @@ import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { buildListResponse, paginateOffset } from "../../common/pagination/pagination";
-import { logger } from "../../common/logger/logger.service";
 import type { CreateReminderPolicyInput, UpdateReminderPolicyInput, ListReminderPoliciesQuery, ListReminderLogQuery } from "./dto/finance-ar.schemas";
 
 @Injectable()

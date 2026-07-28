@@ -10,7 +10,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { AiInvokeResult } from "../gateway/ai-gateway.types";
 
 const ORG_A = "org-A";
-const ORG_B = "org-B";
+const _ORG_B = "org-B";
 const USER_1 = "user-1";
 const EVENT_ID = "101";
 

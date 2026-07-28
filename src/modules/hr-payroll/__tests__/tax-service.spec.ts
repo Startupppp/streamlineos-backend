@@ -1,7 +1,6 @@
 import { TaxService } from "../tax.service";
-import { DRIZZLE } from "../../../db/drizzle.constants";
 
-function makeDb(selectResult: unknown[] = [], updateResult: unknown[] = [], insertResult: unknown[] = []) {
+function makeDb(selectResult: unknown[] = [], _updateResult: unknown[] = [], insertResult: unknown[] = []) {
   const returning = jest.fn().mockResolvedValue(insertResult);
   const where = jest.fn().mockReturnValue({ returning });
   const set = jest.fn().mockReturnValue({ where });

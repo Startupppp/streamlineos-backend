@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { ticketAssignees, tickets } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";

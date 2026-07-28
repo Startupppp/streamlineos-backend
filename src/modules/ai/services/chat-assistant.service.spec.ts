@@ -13,7 +13,7 @@ jest.mock("../../../common/ratelimit/rate-limit.service", () => ({ RateLimitServ
 import { BadRequestException } from "@nestjs/common";
 import { streamText } from "ai";
 import { ChatAssistantService } from "./chat-assistant.service";
-import { AI_CREDIT_LEDGER, type AiCreditLedger } from "../gateway/credit-ledger.interface";
+import { type AiCreditLedger } from "../gateway/credit-ledger.interface";
 import type { AiUsageService } from "./ai-usage.service";
 
 const ACTOR = {
@@ -41,7 +41,7 @@ function makeUsageSvc(): jest.Mocked<AiUsageService> {
   return { track: jest.fn().mockResolvedValue(undefined) } as unknown as jest.Mocked<AiUsageService>;
 }
 
-function makeFakeStream(onFinishCb?: (opts: { text: string }) => Promise<void>) {
+function _makeFakeStream(onFinishCb?: (opts: { text: string }) => Promise<void>) {
   return {
     _onFinish: onFinishCb,
     triggerFinish: async (text: string) => {

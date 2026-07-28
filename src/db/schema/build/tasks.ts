@@ -22,11 +22,6 @@ import {
 } from "../common/enums";
 import { organizations, users } from "../common/auth";
 import { projects, sprints, customStates, modules, cycles } from "./core";
-import {
-  timerSessions,
-  timesheetExports,
-  timesheetPeriods,
-} from "../timesheets";
 import { clients } from "../crm/contacts";
 import { customFieldDefinitions } from "../custom-field-engine";
 

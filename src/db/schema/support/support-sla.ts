@@ -1,6 +1,5 @@
 import {
   pgTable,
-  pgEnum,
   serial,
   text,
   integer,

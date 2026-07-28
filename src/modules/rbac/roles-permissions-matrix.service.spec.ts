@@ -1,6 +1,5 @@
 import { RolePermissionService } from "./role-permission.service";
 import { ROLE_DEFAULT_PERMISSIONS } from "./permissions";
-import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";

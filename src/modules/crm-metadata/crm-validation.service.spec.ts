@@ -31,7 +31,7 @@ function makeRule(overrides: Record<string, unknown> = {}) {
 
 describe("CrmValidationService", () => {
   let svc: CrmValidationService;
-  let dbSpy: jest.SpyInstance;
+  let _dbSpy: jest.SpyInstance;
 
   beforeEach(() => {
     svc = new CrmValidationService(mockDb as never);
@@ -39,7 +39,7 @@ describe("CrmValidationService", () => {
   });
 
   function stubRules(rules: ReturnType<typeof makeRule>[]) {
-    dbSpy = jest
+    _dbSpy = jest
       .spyOn(mockDb, "orderBy")
       .mockResolvedValue(rules);
   }

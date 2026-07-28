@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
@@ -22,7 +21,6 @@ import { JournalPostingService } from "../accounting/journal-posting.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import {
   checkApprovalPolicy,
-  insertApprovalRequest,
   getApprovalRequest,
 } from "./ap-approval.helper";
 import type { BillApprovalNote, BillCancel } from "./dto/finance-ap.schemas";

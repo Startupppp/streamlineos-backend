@@ -31,7 +31,7 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-const AP_ACCOUNT_CODE = "2000";
+const _AP_ACCOUNT_CODE = "2000";
 
 const VC_CACHE_KEY = (orgId: string) => `fin:vendor-credits:list:${orgId}`;
 

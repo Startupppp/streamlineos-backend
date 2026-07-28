@@ -1,9 +1,8 @@
 import { Injectable, Inject } from "@nestjs/common";
-import { eq, and, inArray, sql } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
-  payrollRuns,
   payrollRunEmployees,
   payrollLineItems,
   employeeSalaryProfiles,

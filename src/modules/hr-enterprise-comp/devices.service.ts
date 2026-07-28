@@ -104,7 +104,7 @@ export class DevicesService {
     return this.db.select().from(hrDeviceSyncLogs).where(and(eq(hrDeviceSyncLogs.orgId, orgId), eq(hrDeviceSyncLogs.status, "failed"))).orderBy(desc(hrDeviceSyncLogs.syncedAt)).limit(limit);
   }
 
-  async detectDuplicatePunches(orgId: string, deviceId: number, windowMinutes = 5) {
+  async detectDuplicatePunches(orgId: string, deviceId: number, _windowMinutes = 5) {
     const rows = await this.db.execute(
       sql`SELECT biometric_user_id, user_id, date_trunc('minute', punch_time) AS punch_window, count(*) AS cnt
           FROM biometric_logs

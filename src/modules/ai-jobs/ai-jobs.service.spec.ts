@@ -64,7 +64,7 @@ function buildDb(overrides: Partial<MockDb> = {}): MockDb {
   };
 }
 
-function buildService(db: MockDb): AiJobsService {
+function _buildService(db: MockDb): AiJobsService {
   return new AiJobsService(db as unknown as Parameters<typeof AiJobsService.prototype.enqueue>[0] & never);
 }
 

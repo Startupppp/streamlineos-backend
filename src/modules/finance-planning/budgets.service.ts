@@ -27,7 +27,7 @@ const BUDGET_CACHE_PREFIX = (orgId: string, budgetId: number) =>
 const BVA_CACHE_PREFIX = (orgId: string, budgetId: number) =>
   `fin:bva:${orgId}:${budgetId}`;
 
-const BUDGET_CACHE_TTL = 300;
+const _BUDGET_CACHE_TTL = 300;
 
 @Injectable()
 export class BudgetsService {

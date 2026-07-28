@@ -27,7 +27,6 @@ import {
 } from "./dto/enterprise-comp.schemas";
 import { z } from "zod";
 
-const seedPresetsSchema = z.object({ countryCode: z.string().length(2), periodKey: z.string().min(7) });
 
 @RequireModule("hr")
 @Controller("hr/enterprise/comp/payroll-compliance")
@@ -135,7 +134,7 @@ export class PayrollComplianceController {
   @RequirePermission("hr:payroll:manage")
   @HttpCode(200)
   seedPresets(
-    @Body(new ZodValidationPipe(seedPresetsSchema)) body: { countryCode: string; periodKey: string },
+    @Body(new ZodValidationPipe(z.object({ countryCode: z.string().length(2), periodKey: z.string().min(7) }))) body: { countryCode: string; periodKey: string },
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.seedCountryPresets(u.orgId, u.userId, body.countryCode, body.periodKey);

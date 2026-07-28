@@ -17,7 +17,7 @@ import {
   roles,
   users,
 } from "../../db/schema";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 describe("Leads PermissionGuard wiring (e2e, no DB required)", () => {
   let app: INestApplication;

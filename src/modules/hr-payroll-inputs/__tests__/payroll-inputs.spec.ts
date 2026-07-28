@@ -6,7 +6,7 @@ import { HrAuditService } from "../../hr-core/hr-audit.service";
 import { HrAutomationEngineService } from "../../hr-automations/hr-automation-engine.service";
 import { PayrollInputsBuildService } from "../payroll-inputs-build.service";
 
-function chainable(terminal: unknown = undefined) {
+function _chainable(terminal: unknown = undefined) {
   const obj: Record<string, jest.Mock> = {};
   const methods = ["select", "from", "where", "set", "orderBy", "innerJoin", "offset", "limit", "returning", "catch", "update", "insert", "values", "delete", "groupBy"];
   for (const m of methods) {

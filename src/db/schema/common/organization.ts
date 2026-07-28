@@ -10,8 +10,7 @@ import {
 import { relations } from "drizzle-orm";
 import { organizations, users } from "./auth";
 
-const nodeStatusEnum = ["ACTIVE", "DISABLED", "ARCHIVED"] as const;
-type NodeStatus = (typeof nodeStatusEnum)[number];
+type NodeStatus = "ACTIVE" | "DISABLED" | "ARCHIVED";
 
 export type OrgUnitKind =
   | "BUSINESS_UNIT"

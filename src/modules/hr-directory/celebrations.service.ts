@@ -164,7 +164,7 @@ export class CelebrationsService {
   async getAvailability(orgId: string, userIds: string | undefined): Promise<AvailabilityEntry[]> {
     const today = formatDateOnly(new Date());
 
-    let userIdList: string[] = [];
+    let userIdList: string[];
     if (userIds) {
       userIdList = userIds
         .split(",")

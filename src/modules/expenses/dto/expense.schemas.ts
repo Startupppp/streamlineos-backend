@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const EXPENSE_STATUSES = ["PENDING", "APPROVED", "REJECTED", "PAID"] as const;
+const _EXPENSE_STATUSES = ["PENDING", "APPROVED", "REJECTED", "PAID"] as const;
 const ALL_EXPENSE_STATUSES = [
   "DRAFT",
   "SUBMITTED",
@@ -172,7 +172,7 @@ export const updateExpensePatchSchema = z.union([
   updateExpenseDetailsSchema,
 ]);
 
-export type ExpenseStatus = (typeof EXPENSE_STATUSES)[number];
+export type ExpenseStatus = (typeof _EXPENSE_STATUSES)[number];
 export type AllExpenseStatus = (typeof ALL_EXPENSE_STATUSES)[number];
 export type ListInput = z.infer<typeof listSchema>;
 export type PageDataInput = z.infer<typeof pageDataSchema>;

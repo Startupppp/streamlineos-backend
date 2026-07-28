@@ -336,7 +336,7 @@ Provide a verdict (STRONG_HIRE, HIRE, ON_FENCE or NO_HIRE), an overall composite
 
   private fallbackExtract(text: string): ParsedResume {
     const email = text.match(
-      /([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/,
+      /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/,
     );
     const phone = text.match(/(\+?[\d\s\-().]{7,15}\d)/);
     const name = text.match(/^([A-Z][a-z]+(?:\s[A-Z][a-z]+){1,3})/m);

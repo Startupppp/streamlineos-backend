@@ -15,7 +15,7 @@ describe("AgentTokensService", () => {
     query: { agentTokens: { findFirst: jest.Mock } };
   };
 
-  function makeSelectChain(rows: unknown[]) {
+  function _makeSelectChain(rows: unknown[]) {
     return {
       from: jest.fn().mockReturnValue({
         where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue(rows) }),

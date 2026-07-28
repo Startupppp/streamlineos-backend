@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, decimal, integer, boolean, jsonb, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, decimal, integer, jsonb, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { invChannelTypeEnum, invChannelStatusEnum, invChannelPubStatusEnum, inv3plStatusEnum } from "../common/enums";
 import { organizations } from "../common/auth";

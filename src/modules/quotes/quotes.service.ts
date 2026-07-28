@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { and, count, desc, eq, ilike, sql } from "drizzle-orm";
 import { clientAccounts, crmQuoteSettings, deals, quoteLineItems, quotes, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";

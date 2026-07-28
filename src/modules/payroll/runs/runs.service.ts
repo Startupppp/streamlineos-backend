@@ -16,7 +16,7 @@ import type { DataScope } from "../../access/access.types";
 import { applyScope } from "../../access/apply-scope";
 import { buildRunChecklist } from "./lib/checklist";
 import type { ListRunsQuery, ListRunEmployeesQuery, AddRunAdjustmentInput } from "./dto/runs.schemas";
-import type { PayrollChecklistItem, PayrollToggles, PayrollPolicyConfig, VarianceSummary } from "../payroll.types";
+import type { PayrollChecklistItem, PayrollToggles, VarianceSummary } from "../payroll.types";
 import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
 import { toPaise, fromPaise } from "./lib/money";
 import { AuditService } from "../../../common/audit/audit.service";

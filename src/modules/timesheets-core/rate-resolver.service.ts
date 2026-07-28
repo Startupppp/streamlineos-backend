@@ -20,7 +20,7 @@ export interface ResolvedRate {
   source: "RATE_CARD" | "PROJECT_MEMBER" | null;
 }
 
-const ORG_CURRENCY_TTL_MS = 60_000;
+const _ORG_CURRENCY_TTL_MS = 60_000;
 
 @Injectable()
 export class RateResolverService {

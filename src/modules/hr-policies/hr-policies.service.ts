@@ -8,7 +8,7 @@ import {
 import { and, count, desc, eq, ilike, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
-import { hrPolicies, hrPolicyScopes, hrPolicyAssignments } from "../../db/schema";
+import { hrPolicies, hrPolicyScopes } from "../../db/schema";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import type {
@@ -16,7 +16,7 @@ import type {
   PoliciesListQuery,
   UpdatePolicyInput,
 } from "./dto/hr-policy.schemas";
-import { validatePolicyRules, buildDefaultRules } from "./hr-policy-types";
+import { validatePolicyRules } from "./hr-policy-types";
 import type { PolicyType } from "./hr-policy-types";
 import { buildDefaultPolicies } from "./seed-default-policies";
 import { HrPolicyEvaluationService } from "./hr-policy-evaluation.service";

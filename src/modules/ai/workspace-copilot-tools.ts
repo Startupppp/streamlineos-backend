@@ -1,8 +1,8 @@
 import { Injectable, Inject } from "@nestjs/common";
 import { tool } from "ai";
 import { z } from "zod";
-import { and, count, eq, ilike, sql } from "drizzle-orm";
-import { organizationMembers, projects, tickets, users } from "../../db/schema";
+import { and, eq, sql } from "drizzle-orm";
+import { organizationMembers, tickets, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { ToolAccessService } from "./tool-access.service";

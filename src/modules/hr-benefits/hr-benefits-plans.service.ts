@@ -4,7 +4,6 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import {
   hrBenefitPlans,
-  hrBenefitEnrollments,
   hrBenefitEnrollmentWindows,
 } from "../../db/schema/hr/benefits";
 import type {

@@ -26,7 +26,7 @@ import type {
   BankTransactionsQuery,
 } from "./dto/bank-accounts.schemas";
 
-const CACHE_BANK_ACCOUNTS = (orgId: string) => `fin:banking:accounts:${orgId}`;
+const _CACHE_BANK_ACCOUNTS = (orgId: string) => `fin:banking:accounts:${orgId}`;
 const CACHE_BANK_ACCOUNT_DETAIL = (orgId: string, id: number) => `fin:banking:account:${orgId}:${id}`;
 
 @Injectable()

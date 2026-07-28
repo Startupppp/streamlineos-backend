@@ -5,7 +5,6 @@ import {
   supportSlaPolicies,
   supportTickets,
   organizationMembers,
-  type WeeklySchedule,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";

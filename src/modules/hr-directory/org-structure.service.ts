@@ -164,7 +164,7 @@ export class OrgStructureService {
 
   private async buildHeadcount(orgId: string, query: HeadcountInput) {
     const { groupBy } = query;
-    let groups: HeadcountGroup[] = [];
+    let groups: HeadcountGroup[];
 
     if (groupBy === "department") {
       const rows = await this.db

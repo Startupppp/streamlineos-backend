@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException } from "@nestjs/common";
+import { ConflictException } from "@nestjs/common";
 import { AiCreditsService } from "./ai-credits.service";
 
 type SelectChain = {
@@ -8,7 +8,7 @@ type SelectChain = {
   for: jest.Mock;
 };
 
-function makeSelectChain(returnValue: unknown): SelectChain {
+function _makeSelectChain(returnValue: unknown): SelectChain {
   const chain = {} as SelectChain;
   chain.for = jest.fn().mockResolvedValue(returnValue);
   chain.limit = jest.fn().mockReturnValue(chain.for as unknown as SelectChain);
@@ -17,7 +17,7 @@ function makeSelectChain(returnValue: unknown): SelectChain {
   return chain;
 }
 
-function makeInsertChain(returnValue: unknown) {
+function _makeInsertChain(returnValue: unknown) {
   const returning = jest.fn().mockResolvedValue(returnValue);
   const values = jest.fn().mockReturnValue({ returning });
   const into = jest.fn().mockReturnValue({ values });

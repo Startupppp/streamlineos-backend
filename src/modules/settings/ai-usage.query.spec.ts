@@ -3,7 +3,7 @@ import { queryAiUsage } from "./ai-usage.query";
 function thenableChain(result: unknown[]) {
   const p = Promise.resolve(result);
   const chain: Record<string, unknown> = {};
-  const self = () => chain;
+  const _self = () => chain;
   for (const m of ["select", "from", "where", "groupBy", "orderBy", "limit"]) {
     chain[m] = jest.fn().mockReturnValue(chain);
   }

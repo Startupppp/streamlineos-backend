@@ -61,12 +61,11 @@ async function buildModule(): Promise<{ executor: AiNodeExecutorService; handler
 
 describe("AiNodeExecutorService", () => {
   let executor: AiNodeExecutorService;
-  let handler: WorkflowAiNodeHandler;
 
   beforeEach(async () => {
     jest.clearAllMocks();
     mockFlags.evaluate.mockResolvedValue(true);
-    ({ executor, handler } = await buildModule());
+    ({ executor } = await buildModule());
   });
 
   // classify

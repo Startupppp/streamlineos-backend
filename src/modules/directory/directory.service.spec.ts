@@ -103,7 +103,7 @@ describe("DirectoryService", () => {
   }
 
   /** Returns a chain: .select().from().where() (no limit — for listEngagements count select) */
-  function makeSelectChainNoLimit(rows: unknown[]) {
+  function _makeSelectChainNoLimit(rows: unknown[]) {
     const fromChain = { where: jest.fn().mockResolvedValue(rows) };
     const selectChain = { from: jest.fn().mockReturnValue(fromChain) };
     return { selectChain, fromChain };
@@ -787,9 +787,9 @@ describe("DirectoryService", () => {
       const existing = makeEngagement();
       const terminated = makeEngagement({ status: "TERMINATED", terminationReason: "Resigned" });
 
-      let selectCount = 0;
+      let _selectCount = 0;
       (mockDb as { select: jest.Mock }).select.mockImplementation(() => {
-        selectCount++;
+        _selectCount++;
         // loadEngagement: .select().from().where().limit()
         const limitFn = jest.fn().mockResolvedValue([existing]);
         return {
@@ -831,9 +831,9 @@ describe("DirectoryService", () => {
     it("uses existing endsOn when not provided in input", async () => {
       const existing = makeEngagement({ endsOn: "2024-06-30" });
 
-      let selectCount = 0;
+      let _selectCount = 0;
       (mockDb as { select: jest.Mock }).select.mockImplementation(() => {
-        selectCount++;
+        _selectCount++;
         const limitFn = jest.fn().mockResolvedValue([existing]);
         return {
           from: jest.fn().mockReturnValue({

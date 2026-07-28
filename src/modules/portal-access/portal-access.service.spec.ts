@@ -65,7 +65,7 @@ describe("PortalAccessService", () => {
 
   // Left-join chain used by listMemberships/listGrants rows query:
   // .select().from().leftJoin().where().limit(rows).offset(resolvedRows)
-  function makeLeftJoinChain(rows: unknown[]) {
+  function _makeLeftJoinChain(rows: unknown[]) {
     const offsetChain = jest.fn().mockResolvedValue(rows);
     const limitChain = jest.fn().mockReturnValue({ offset: offsetChain });
     const whereChain = { limit: limitChain };
@@ -76,7 +76,7 @@ describe("PortalAccessService", () => {
   }
 
   // Count chain: .select().from().where(resolvedRows)
-  function makeCountChain(total: number) {
+  function _makeCountChain(total: number) {
     const whereResult = jest.fn().mockResolvedValue([{ total }]);
     const fromChain = { where: whereResult };
     const selectChain = { from: jest.fn().mockReturnValue(fromChain) };

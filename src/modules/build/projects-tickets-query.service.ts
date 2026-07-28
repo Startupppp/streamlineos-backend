@@ -1,9 +1,8 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, count, desc, eq, inArray, isNull, ne, sql, type SQL } from "drizzle-orm";
+import { and, count, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import {
   projectMembers,
   projectStatuses,
-  ticketAssignees,
   tickets,
   workflowTransitions,
 } from "../../db/schema";

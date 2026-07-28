@@ -91,7 +91,7 @@ export class EmergencyService {
       .where(and(eq(hrEmergencyEvents.orgId, orgId), eq(hrEmergencyEvents.id, eventId)));
   }
 
-  async broadcast(orgId: string, eventId: string, input: BroadcastInput) {
+  async broadcast(orgId: string, eventId: string, _input: BroadcastInput) {
     const event = await this.getEvent(orgId, eventId);
 
     const memberRows = event.locationId
