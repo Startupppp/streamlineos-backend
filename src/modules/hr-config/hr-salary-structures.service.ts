@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
-import { salaryStructures } from "../../db/schema";
+import { employeeSalaryProfiles } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
@@ -17,16 +17,16 @@ export class HrSalaryStructuresService {
   ) {}
 
   list(orgId: string, userId: string | undefined, requestingUserId: string, isAdmin: boolean) {
-    const conditions = [eq(salaryStructures.orgId, orgId)];
+    const conditions = [eq(employeeSalaryProfiles.orgId, orgId)];
     if (userId) {
-      conditions.push(eq(salaryStructures.userId, userId));
+      conditions.push(eq(employeeSalaryProfiles.userId, userId));
     } else if (!isAdmin && requestingUserId) {
-      conditions.push(eq(salaryStructures.userId, requestingUserId));
+      conditions.push(eq(employeeSalaryProfiles.userId, requestingUserId));
     }
 
-    return this.db.query.salaryStructures.findMany({
+    return this.db.query.employeeSalaryProfiles.findMany({
       where: and(...conditions),
-      orderBy: [desc(salaryStructures.effectiveFrom)],
+      orderBy: [desc(employeeSalaryProfiles.effectiveFrom)],
     });
   }
 
@@ -35,30 +35,33 @@ export class HrSalaryStructuresService {
       throw new BadRequestException("userId, basicSalary, and effectiveFrom are required.");
     }
 
-    const [structure] = await this.db.transaction(async (tx) => {
+    const annualCtc = (input.basicSalary * 12).toFixed(2);
+
+    const [profile] = await this.db.transaction(async (tx) => {
       await tx
-        .update(salaryStructures)
-        .set({ isActive: false })
+        .update(employeeSalaryProfiles)
+        .set({ status: "SUPERSEDED" })
         .where(
           and(
-            eq(salaryStructures.userId, input.userId),
-            eq(salaryStructures.orgId, orgId),
-            eq(salaryStructures.isActive, true),
+            eq(employeeSalaryProfiles.userId, input.userId),
+            eq(employeeSalaryProfiles.orgId, orgId),
+            eq(employeeSalaryProfiles.status, "ACTIVE"),
           ),
         );
 
       return tx
-        .insert(salaryStructures)
+        .insert(employeeSalaryProfiles)
         .values({
           orgId,
           userId: input.userId,
+          annualCtc,
           basicSalary: input.basicSalary.toString(),
           hraPercentage: input.hraPercentage.toString(),
           allowances: input.allowances.toString(),
           deductions: input.deductions.toString(),
           effectiveFrom: formatDateOnly(new Date(input.effectiveFrom)),
           effectiveTo: input.effectiveTo ? formatDateOnly(new Date(input.effectiveTo)) : undefined,
-          isActive: true,
+          status: "ACTIVE",
         })
         .returning();
     });
@@ -74,6 +77,6 @@ export class HrSalaryStructuresService {
       metadata: { basicSalary: input.basicSalary, effectiveFrom: input.effectiveFrom },
     });
 
-    return structure;
+    return profile;
   }
 }

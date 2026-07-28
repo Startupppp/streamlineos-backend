@@ -111,7 +111,7 @@ export class ChatChannelsController {
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const channel = await this.members.getChannel(channelId, u.userId);
+    const channel = await this.members.getChannel(channelId, u.userId, u.orgId);
     if (!channel) throw new NotFoundException("Channel not found");
     return channel;
   }
@@ -125,7 +125,7 @@ export class ChatChannelsController {
     @Body(new ZodValidationPipe(updateChannelSchema)) body: UpdateChannelInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.members.updateChannel(channelId, u.userId, body);
+    return this.members.updateChannel(channelId, u.userId, body, u.orgId);
   }
 
   @ApiOperation({ summary: "List members of a channel" })
@@ -174,7 +174,7 @@ export class ChatChannelsController {
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.members.joinPublicChannel(channelId, u.userId);
+    return this.members.joinPublicChannel(channelId, u.userId, u.orgId);
   }
 
   @ApiOperation({ summary: "Leave a channel" })

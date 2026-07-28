@@ -8,12 +8,13 @@ import {
 import { and, asc, count, eq, gte, inArray, like } from "drizzle-orm";
 import {
   auditLogs,
-  departments,
-  groupRoles,
+  groupRoleAssignments,
   organizationMembers,
+  permissions,
+  principalGroups,
+  roleAssignments,
   rolePermissionGrants,
   roles,
-  userRoles,
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -25,13 +26,21 @@ import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import {
   assertKnownPermissionKeys,
   assertPermissionsGrantable,
+  buildPermissionModuleMap,
+  ROLE_RANK,
   toGrantableSet,
+  type RoleGrantTarget,
 } from "../../common/rbac/grantability";
+import { MODULE_CATALOG } from "../../common/rbac/module-vocabulary";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
 import { AccessService } from "../access/access.service";
 import { ROLE_TEMPLATES, type RoleTemplate } from "./role-templates.constants";
-import { PERMISSIONS } from "./permissions";
+import {
+  MODULE_ACCESS_PERMISSIONS,
+  PERMISSIONS,
+  moduleScopedPermissions,
+} from "./permissions";
 import { RoleLockoutService } from "./role-lockout.service";
 import { RolePermissionService } from "./role-permission.service";
 import { RoleMemberService } from "./role-member.service";
@@ -58,27 +67,81 @@ export class RolesService {
     private readonly roleMember: RoleMemberService,
   ) {}
 
+  private async resolveActorRankContext(
+    orgId: string,
+    userId: string,
+  ): Promise<{ bestRank: number; allowedModules: Set<string> | null }> {
+    const rows = await this.db
+      .select({ rank: roles.rank, moduleKey: roles.moduleKey })
+      .from(roleAssignments)
+      .innerJoin(
+        roles,
+        and(eq(roleAssignments.roleId, roles.id), eq(roles.orgId, orgId)),
+      )
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, roleAssignments.orgId),
+          eq(organizationMembers.id, roleAssignments.organizationMembershipId),
+        ),
+      )
+      .where(and(eq(roleAssignments.orgId, orgId), eq(organizationMembers.userId, userId)))
+      .limit(100);
+
+    if (rows.length === 0) {
+      return { bestRank: ROLE_RANK.FUNCTIONAL, allowedModules: null };
+    }
+
+    let bestRank: number = ROLE_RANK.FUNCTIONAL;
+    for (const row of rows) {
+      if (row.rank < bestRank) bestRank = row.rank;
+    }
+
+    const topRankRoles = rows.filter((r) => r.rank === bestRank);
+    const hasOrgWideRole = topRankRoles.some((r) => r.moduleKey === null);
+    if (hasOrgWideRole) {
+      return { bestRank, allowedModules: null };
+    }
+
+    const modules = new Set(
+      topRankRoles
+        .map((r) => r.moduleKey)
+        .filter((m): m is string => m !== null),
+    );
+    return { bestRank, allowedModules: modules };
+  }
+
   private async assertGrantable(
     actor: CurrentUserContext,
     requestedKeys: readonly string[],
+    target?: RoleGrantTarget,
   ): Promise<void> {
     if (actor.isOrgOwner || actor.isPlatformAdmin) return;
-    const resolved = await this.access.resolveUserPermissions(
-      actor.orgId,
-      actor.userId,
-    );
+    const [resolved, { bestRank, allowedModules }] = await Promise.all([
+      this.access.resolveUserPermissions(actor.orgId, actor.userId),
+      this.resolveActorRankContext(actor.orgId, actor.userId),
+    ]);
+    const permMeta = buildPermissionModuleMap(requestedKeys);
     assertPermissionsGrantable(
-      { isOrgOwner: false, isPlatformAdmin: false, grantable: toGrantableSet(resolved) },
+      {
+        isOrgOwner: false,
+        isPlatformAdmin: false,
+        grantable: toGrantableSet(resolved),
+        bestRank,
+        allowedModules,
+      },
       requestedKeys,
+      target,
+      permMeta,
     );
   }
 
   async listAssignableDepartments(orgId: string) {
     return this.db
-      .select({ id: departments.id, name: departments.name })
-      .from(departments)
-      .where(eq(departments.orgId, orgId))
-      .orderBy(asc(departments.name));
+      .select({ id: principalGroups.id, name: principalGroups.name, kind: principalGroups.kind })
+      .from(principalGroups)
+      .where(eq(principalGroups.orgId, orgId))
+      .orderBy(asc(principalGroups.name));
   }
 
   async getRoles(orgId: string) {
@@ -104,7 +167,10 @@ export class RolesService {
 
   async createRole(actor: CurrentUserContext, input: CreateRoleInput) {
     assertKnownPermissionKeys(input.permissions, CATALOG_KEYS);
-    await this.assertGrantable(actor, input.permissions);
+    const targetRank = input.rank ?? ROLE_RANK.FUNCTIONAL;
+    const targetModuleKey = input.moduleKey ?? null;
+    const target: RoleGrantTarget = { rank: targetRank, moduleKey: targetModuleKey };
+    await this.assertGrantable(actor, input.permissions, target);
 
     const created = await this.db.transaction(async (tx) => {
       const existing = await tx.query.roles.findFirst({
@@ -120,6 +186,8 @@ export class RolesService {
           slug: input.slug,
           orgId: actor.orgId,
           isSystem: false,
+          moduleKey: targetModuleKey,
+          rank: targetRank,
         })
         .returning();
 
@@ -147,16 +215,21 @@ export class RolesService {
     roleId: number,
     input: UpdateRoleInput,
   ): Promise<{ success: true }> {
-    if (input.permissions !== undefined) {
-      assertKnownPermissionKeys(input.permissions, CATALOG_KEYS);
-      await this.assertGrantable(actor, input.permissions);
-    }
-
     await this.db.transaction(async (tx): Promise<void> => {
       const existing = await tx.query.roles.findFirst({
         where: and(eq(roles.id, roleId), eq(roles.orgId, actor.orgId)),
       });
       if (!existing) throw new NotFoundException("Role not found");
+
+      if (existing.isSystem && (input.name !== undefined || input.permissions !== undefined)) {
+        throw new ForbiddenException("System roles cannot be modified");
+      }
+
+      if (input.permissions !== undefined) {
+        assertKnownPermissionKeys(input.permissions, CATALOG_KEYS);
+        const target: RoleGrantTarget = { rank: existing.rank, moduleKey: existing.moduleKey };
+        await this.assertGrantable(actor, input.permissions, target);
+      }
 
       const updateData: {
         updatedAt: Date;
@@ -164,7 +237,7 @@ export class RolesService {
       } = {
         updatedAt: new Date(),
       };
-      if (input.name && !existing.isSystem) updateData.name = input.name;
+      if (input.name) updateData.name = input.name;
 
       await tx
         .update(roles)
@@ -241,16 +314,16 @@ export class RolesService {
 
       const [{ value: directCount }] = await tx
         .select({ value: count() })
-        .from(userRoles)
+        .from(roleAssignments)
         .where(
-          and(eq(userRoles.orgId, actor.orgId), eq(userRoles.roleId, roleId)),
+          and(eq(roleAssignments.orgId, actor.orgId), eq(roleAssignments.roleId, roleId)),
         );
 
       const [{ value: groupCount }] = await tx
         .select({ value: count() })
-        .from(groupRoles)
+        .from(groupRoleAssignments)
         .where(
-          and(eq(groupRoles.orgId, actor.orgId), eq(groupRoles.roleId, roleId)),
+          and(eq(groupRoleAssignments.orgId, actor.orgId), eq(groupRoleAssignments.roleId, roleId)),
         );
 
       const total =
@@ -325,8 +398,8 @@ export class RolesService {
     const [assignedRow] = roleIds.length > 0
       ? await this.db
           .select({ value: count() })
-          .from(userRoles)
-          .where(and(eq(userRoles.orgId, orgId), inArray(userRoles.roleId, roleIds)))
+          .from(roleAssignments)
+          .where(and(eq(roleAssignments.orgId, orgId), inArray(roleAssignments.roleId, roleIds)))
       : [{ value: 0 }];
 
     const [changesRow] = await this.db
@@ -350,7 +423,96 @@ export class RolesService {
     };
   }
 
+  private async resolveDbPermissionSet(): Promise<Set<string>> {
+    const rows = await this.db
+      .select({ name: permissions.name })
+      .from(permissions)
+      .limit(2000);
+    return new Set(rows.map((r) => r.name));
+  }
+
+  private buildOrgAdminPermissionKeys(dbCatalog: Set<string>): string[] {
+    const accessKeys = MODULE_ACCESS_PERMISSIONS.map((p) => p.name);
+    const candidates = [
+      ...new Set([
+        ...moduleScopedPermissions("settings"),
+        "audit-log:read",
+        "reports:view",
+        "reports:export",
+        "ownership:modules:view",
+        "ownership:modules:manage",
+        ...accessKeys,
+      ]),
+    ];
+    return candidates.filter((key) => dbCatalog.has(key));
+  }
+
+  private buildModuleAdminPermissionKeys(
+    moduleKey: string,
+    dbCatalog: Set<string>,
+  ): string[] {
+    return moduleScopedPermissions(moduleKey).filter((key) => dbCatalog.has(key));
+  }
+
   async seedDefaultRoles(actor: CurrentUserContext) {
+    const dbCatalog = await this.resolveDbPermissionSet();
+
+    const systemRoleSpecs: Array<{
+      slug: string;
+      name: string;
+      rank: number;
+      moduleKey: string | null;
+      permissionKeys: string[];
+    }> = [
+      {
+        slug: "ORG_ADMIN",
+        name: "Org Admin",
+        rank: ROLE_RANK.ORG_ADMIN,
+        moduleKey: null,
+        permissionKeys: this.buildOrgAdminPermissionKeys(dbCatalog),
+      },
+      ...MODULE_CATALOG.map((mod) => ({
+        slug: `${mod.toUpperCase()}_MODULE_ADMIN`,
+        name: `${mod.charAt(0).toUpperCase() + mod.slice(1)} Module Admin`,
+        rank: ROLE_RANK.MODULE_ADMIN,
+        moduleKey: mod,
+        permissionKeys: this.buildModuleAdminPermissionKeys(mod, dbCatalog),
+      })),
+    ];
+
+    for (const spec of systemRoleSpecs) {
+      await this.db.transaction(async (tx) => {
+        const created = await tx
+          .insert(roles)
+          .values({
+            name: spec.name,
+            slug: spec.slug,
+            orgId: actor.orgId,
+            isSystem: true,
+            rank: spec.rank,
+            moduleKey: spec.moduleKey,
+          })
+          .onConflictDoNothing({ target: [roles.slug, roles.orgId] })
+          .returning({ id: roles.id });
+
+        if (created.length > 0 && spec.permissionKeys.length > 0) {
+          const row = created[0];
+          if (row) {
+            await tx.insert(rolePermissionGrants).values(
+              spec.permissionKeys.map((permissionKey) => ({
+                orgId: actor.orgId,
+                roleId: row.id,
+                permissionKey,
+                scope: "all" as const,
+              })),
+            ).onConflictDoNothing();
+          }
+        }
+
+        await bumpPermissionsVersion(tx, actor.orgId);
+      });
+    }
+
     const starterTemplateIds = [
       "engineering",
       "sales_rep",
@@ -390,7 +552,8 @@ export class RolesService {
       CATALOG_KEYS.has(key),
     );
 
-    await this.assertGrantable(actor, validPermissions);
+    const cloneTarget: RoleGrantTarget = { rank: ROLE_RANK.FUNCTIONAL, moduleKey: null };
+    await this.assertGrantable(actor, validPermissions, cloneTarget);
 
     const created = await this.db.transaction(async (tx) => {
       const existing = await tx.query.roles.findFirst({
@@ -408,6 +571,8 @@ export class RolesService {
           slug,
           orgId: actor.orgId,
           isSystem: false,
+          rank: ROLE_RANK.FUNCTIONAL,
+          moduleKey: null,
         })
         .returning();
 

@@ -37,29 +37,6 @@ export const workflowVersions = pgTable("workflow_versions", {
   index("idx_workflow_versions_workflow_version").on(table.workflowId, table.version),
 ]);
 
-export const workflowTriggers = pgTable("workflow_triggers", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  workflowVersionId: uuid("workflow_version_id").references(() => workflowVersions.id, { onDelete: "cascade" }).notNull(),
-  triggerType: workflowTriggerTypeEnum("trigger_type").notNull(),
-  configuration: jsonb("configuration").$type<Record<string, unknown>>().default({}),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_workflow_triggers_version").on(table.workflowVersionId),
-]);
-
-export const workflowActions = pgTable("workflow_actions", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  workflowVersionId: uuid("workflow_version_id").references(() => workflowVersions.id, { onDelete: "cascade" }).notNull(),
-  nodeId: text("node_id").notNull(),
-  nodeType: workflowNodeTypeEnum("node_type").notNull(),
-  actionType: text("action_type").notNull(),
-  configuration: jsonb("configuration").$type<Record<string, unknown>>().default({}),
-  position: jsonb("position").$type<{ x: number; y: number }>(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_workflow_actions_version").on(table.workflowVersionId),
-]);
-
 export const workflowExecutions = pgTable("workflow_executions", {
   id: uuid("id").defaultRandom().primaryKey(),
   workflowId: uuid("workflow_id").references(() => workflows.id, { onDelete: "cascade" }).notNull(),
@@ -185,18 +162,8 @@ export const workflowsRelations = relations(workflows, ({ one, many }) => ({
 
 export const workflowVersionsRelations = relations(workflowVersions, ({ one, many }) => ({
   workflow: one(workflows, { fields: [workflowVersions.workflowId], references: [workflows.id] }),
-  triggers: many(workflowTriggers),
-  actions: many(workflowActions),
   variables: many(workflowVariables),
   executions: many(workflowExecutions),
-}));
-
-export const workflowTriggersRelations = relations(workflowTriggers, ({ one }) => ({
-  version: one(workflowVersions, { fields: [workflowTriggers.workflowVersionId], references: [workflowVersions.id] }),
-}));
-
-export const workflowActionsRelations = relations(workflowActions, ({ one }) => ({
-  version: one(workflowVersions, { fields: [workflowActions.workflowVersionId], references: [workflowVersions.id] }),
 }));
 
 export const workflowExecutionsRelations = relations(workflowExecutions, ({ one, many }) => ({

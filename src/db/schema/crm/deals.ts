@@ -22,17 +22,16 @@ import {
   taskStatusEnum,
 } from "../common/enums";
 import { organizations, users } from "../common/auth";
-import { payrolls } from "../hr";
+import { orgUnits } from "../common/organization";
 import { leads } from "./leads";
 import {
   clients,
-  branches,
   clientAccounts,
   contacts,
   crmOrganizations,
 } from "./contacts";
 import { crmPipelines } from "./metadata";
-import { crmSla } from "./analytics";
+import { crmPeople, crmSla } from "./analytics";
 
 export const deals = pgTable(
   "deals",
@@ -446,75 +445,6 @@ export const commissions = pgTable(
   ],
 );
 
-export const targets = pgTable(
-  "targets",
-  {
-    id: serial("id").primaryKey(),
-    orgId: text("org_id")
-      .references(() => organizations.id, { onDelete: "cascade" })
-      .notNull(),
-    userId: text("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
-    metricType: text("metric_type").notNull(),
-    targetValue: decimal("target_value", { precision: 15, scale: 2 }).notNull(),
-    currentValue: decimal("current_value", { precision: 15, scale: 2 })
-      .default("0")
-      .notNull(),
-    period: text("period").default("daily").notNull(),
-    startDate: date("start_date").notNull(),
-    endDate: date("end_date").notNull(),
-    setById: text("set_by_id").references(() => users.id, {
-      onDelete: "set null",
-    }),
-    branchId: integer("branch_id").references(() => branches.id, {
-      onDelete: "set null",
-    }),
-    parentTargetId: integer("parent_target_id"),
-    notes: text("notes"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at")
-      .defaultNow()
-      .notNull()
-      .$onUpdate(() => new Date()),
-  },
-  (table) => [
-    foreignKey({
-      columns: [table.parentTargetId],
-      foreignColumns: [table.id],
-    }).onDelete("set null"),
-    index("idx_targets_user_period").on(table.userId, table.period),
-    index("idx_targets_branch").on(table.branchId),
-    index("idx_targets_parent").on(table.parentTargetId),
-    unique("uniq_targets_org_id").on(table.orgId, table.id),
-  ],
-);
-
-export const targetHistory = pgTable(
-  "target_history",
-  {
-    id: serial("id").primaryKey(),
-    targetId: integer("target_id")
-      .references(() => targets.id, { onDelete: "cascade" })
-      .notNull(),
-    orgId: text("org_id")
-      .references(() => organizations.id, { onDelete: "cascade" })
-      .notNull(),
-    changedById: text("changed_by_id")
-      .references(() => users.id)
-      .notNull(),
-    field: text("field").notNull(),
-    oldValue: text("old_value"),
-    newValue: text("new_value"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-  },
-  (table) => [
-    index("idx_target_history_target").on(table.targetId),
-    index("idx_target_history_org_created").on(table.orgId, table.createdAt),
-    unique("uniq_target_history_org_id").on(table.orgId, table.id),
-  ],
-);
-
 export const incentiveConfig = pgTable(
   "incentive_config",
   {
@@ -522,7 +452,7 @@ export const incentiveConfig = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    branchId: integer("branch_id").references(() => branches.id),
+    branchId: text("branch_id").references(() => orgUnits.id, { onDelete: "set null" }),
     incentiveRate: decimal("incentive_rate", {
       precision: 5,
       scale: 2,
@@ -545,7 +475,7 @@ export const incentives = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    branchId: integer("branch_id").references(() => branches.id),
+    branchId: text("branch_id").references(() => orgUnits.id, { onDelete: "set null" }),
     clientAccountId: integer("client_account_id")
       .notNull()
       .references(() => clientAccounts.id),
@@ -568,7 +498,6 @@ export const incentives = pgTable(
     status: incentiveStatusEnum("status").notNull().default("PENDING"),
     approvedBy: text("approved_by").references(() => users.id),
     approvedAt: timestamp("approved_at"),
-    payrollId: integer("payroll_id").references(() => payrolls.id),
     notes: text("notes"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
@@ -678,9 +607,6 @@ export const territories = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     name: text("name").notNull(),
-    states: text("states").array().default([]),
-    cities: text("cities").array().default([]),
-    assignedReps: integer("assigned_reps").array().default([]),
     description: text("description"),
     isActive: boolean("is_active").default(true).notNull(),
     criteria: jsonb("criteria")
@@ -698,6 +624,62 @@ export const territories = pgTable(
   (table) => [
     index("territories_org_id_idx").on(table.orgId),
     unique("uniq_territories_org_id").on(table.orgId, table.id),
+  ],
+);
+
+export const territoryReps = pgTable(
+  "territory_reps",
+  {
+    id: serial("id").primaryKey(),
+    orgId: text("org_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
+    territoryId: integer("territory_id").notNull(),
+    crmPersonId: integer("crm_person_id")
+      .references(() => crmPeople.id, { onDelete: "cascade" })
+      .notNull(),
+    assignedAt: timestamp("assigned_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("uniq_territory_reps_territory_person").on(
+      table.territoryId,
+      table.crmPersonId,
+    ),
+    index("idx_territory_reps_org").on(table.orgId),
+    index("idx_territory_reps_territory").on(table.territoryId),
+    foreignKey({
+      columns: [table.orgId, table.territoryId],
+      foreignColumns: [territories.orgId, territories.id],
+    }).onDelete("cascade"),
+    unique("uniq_territory_reps_org_id").on(table.orgId, table.id),
+  ],
+);
+
+export const territoryLocations = pgTable(
+  "territory_locations",
+  {
+    id: serial("id").primaryKey(),
+    orgId: text("org_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
+    territoryId: integer("territory_id").notNull(),
+    kind: text("kind").notNull(),
+    value: text("value").notNull(),
+  },
+  (table) => [
+    uniqueIndex("uniq_territory_locations_territory_kind_value").on(
+      table.territoryId,
+      table.kind,
+      table.value,
+    ),
+    index("idx_territory_locations_org").on(table.orgId),
+    index("idx_territory_locations_territory").on(table.territoryId),
+    foreignKey({
+      columns: [table.orgId, table.territoryId],
+      foreignColumns: [territories.orgId, territories.id],
+    }).onDelete("cascade"),
   ],
 );
 
@@ -725,39 +707,6 @@ export const crmSlaBreachLog = pgTable(
     ),
     index("idx_sla_breach_org_idx").on(table.orgId),
     index("idx_sla_breach_lead_idx").on(table.leadId),
-  ],
-);
-
-export const customFieldDefinitions = pgTable(
-  "custom_field_definitions",
-  {
-    id: serial("id").primaryKey(),
-    orgId: text("org_id")
-      .references(() => organizations.id, { onDelete: "cascade" })
-      .notNull(),
-    entityType: text("entity_type").notNull(),
-    name: text("name").notNull(),
-    label: text("label").notNull(),
-    fieldType: text("field_type").notNull().default("text"),
-    options: jsonb("options").$type<Array<{ value: string; label: string }>>(),
-    isRequired: boolean("is_required").default(false).notNull(),
-    isActive: boolean("is_active").default(true).notNull(),
-    sortOrder: integer("sort_order").default(0).notNull(),
-    createdBy: text("created_by").references(() => users.id),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at")
-      .defaultNow()
-      .notNull()
-      .$onUpdate(() => new Date()),
-  },
-  (table) => [
-    index("cfd_org_entity_name_idx").on(
-      table.orgId,
-      table.entityType,
-      table.name,
-    ),
-    index("idx_cfd_org_entity").on(table.orgId, table.entityType),
-    unique("uniq_custom_field_defs_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -816,27 +765,6 @@ export const dealMeetingAttendeesRelations = relations(
 export const dealActivitiesRelations = relations(dealActivities, ({ one }) => ({
   deal: one(deals, { fields: [dealActivities.dealId], references: [deals.id] }),
   user: one(users, { fields: [dealActivities.userId], references: [users.id] }),
-}));
-
-export const targetsRelations = relations(targets, ({ one, many }) => ({
-  user: one(users, { fields: [targets.userId], references: [users.id] }),
-  setBy: one(users, {
-    fields: [targets.setById],
-    references: [users.id],
-    relationName: "targetSetter",
-  }),
-  history: many(targetHistory),
-}));
-
-export const targetHistoryRelations = relations(targetHistory, ({ one }) => ({
-  target: one(targets, {
-    fields: [targetHistory.targetId],
-    references: [targets.id],
-  }),
-  changedBy: one(users, {
-    fields: [targetHistory.changedById],
-    references: [users.id],
-  }),
 }));
 
 export const incentivesRelations = relations(incentives, ({ one }) => ({
@@ -905,7 +833,7 @@ export const taskSequenceStepsRelations = relations(
   }),
 );
 
-export const territoriesRelations = relations(territories, ({ one }) => ({
+export const territoriesRelations = relations(territories, ({ one, many }) => ({
   organization: one(organizations, {
     fields: [territories.orgId],
     references: [organizations.id],
@@ -914,18 +842,27 @@ export const territoriesRelations = relations(territories, ({ one }) => ({
     fields: [territories.createdBy],
     references: [users.id],
   }),
+  reps: many(territoryReps),
+  locations: many(territoryLocations),
 }));
 
-export const customFieldDefinitionsRelations = relations(
-  customFieldDefinitions,
+export const territoryRepsRelations = relations(territoryReps, ({ one }) => ({
+  territory: one(territories, {
+    fields: [territoryReps.orgId, territoryReps.territoryId],
+    references: [territories.orgId, territories.id],
+  }),
+  crmPerson: one(crmPeople, {
+    fields: [territoryReps.crmPersonId],
+    references: [crmPeople.id],
+  }),
+}));
+
+export const territoryLocationsRelations = relations(
+  territoryLocations,
   ({ one }) => ({
-    organization: one(organizations, {
-      fields: [customFieldDefinitions.orgId],
-      references: [organizations.id],
-    }),
-    creator: one(users, {
-      fields: [customFieldDefinitions.createdBy],
-      references: [users.id],
+    territory: one(territories, {
+      fields: [territoryLocations.orgId, territoryLocations.territoryId],
+      references: [territories.orgId, territories.id],
     }),
   }),
 );

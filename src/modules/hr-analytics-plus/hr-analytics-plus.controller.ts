@@ -22,7 +22,7 @@ import { HrAnalyticsPlusService } from "./hr-analytics-plus.service";
 
 const headcountPlanSchema = z.object({
   fiscalYear: z.number().int().min(2020).max(2050),
-  departmentId: z.number().int().positive().optional(),
+  departmentId: z.string().uuid().optional(),
   budgetedHeadcount: z.number().int().positive(),
   budgetedCostCents: z.number().int().positive().optional(),
   note: z.string().max(500).optional(),
@@ -45,7 +45,7 @@ export class HrAnalyticsPlusController {
   @Get()
   getCommandCenter(
     @CurrentUser() u: CurrentUserContext,
-    @Query("departmentId", new ParseIntPipe({ optional: true })) departmentId?: number,
+    @Query("departmentId") departmentId?: string,
   ) {
     return this.svc.getCommandCenter(u.orgId, departmentId);
   }
@@ -53,7 +53,7 @@ export class HrAnalyticsPlusController {
   @Get("attrition")
   getAttrition(
     @CurrentUser() u: CurrentUserContext,
-    @Query("departmentId", new ParseIntPipe({ optional: true })) departmentId?: number,
+    @Query("departmentId") departmentId?: string,
   ) {
     return this.svc.getAttrition(u.orgId, departmentId);
   }
@@ -61,7 +61,7 @@ export class HrAnalyticsPlusController {
   @Get("leave-trends")
   getLeaveTrends(
     @CurrentUser() u: CurrentUserContext,
-    @Query("departmentId", new ParseIntPipe({ optional: true })) departmentId?: number,
+    @Query("departmentId") departmentId?: string,
   ) {
     return this.svc.getLeaveTrends(u.orgId, departmentId);
   }
@@ -93,7 +93,7 @@ export class HrAnalyticsPlusController {
   @Get("compliance-gaps")
   getComplianceGaps(
     @CurrentUser() u: CurrentUserContext,
-    @Query("departmentId", new ParseIntPipe({ optional: true })) departmentId?: number,
+    @Query("departmentId") departmentId?: string,
   ) {
     return this.svc.getComplianceGaps(u.orgId, departmentId);
   }
@@ -109,7 +109,7 @@ export class HrAnalyticsPlusController {
     @Query("metric") metric: string,
     @Query("page", new ParseIntPipe({ optional: true })) page = 1,
     @Query("limit", new ParseIntPipe({ optional: true })) limit = 20,
-    @Query("departmentId", new ParseIntPipe({ optional: true })) departmentId?: number,
+    @Query("departmentId") departmentId?: string,
   ) {
     const parsedMetric = drilldownMetricSchema.parse(metric);
     return this.svc.getDrilldown(u.orgId, parsedMetric, page, Math.min(limit, 100), departmentId);

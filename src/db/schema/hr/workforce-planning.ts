@@ -1,7 +1,7 @@
 import { pgTable, text, integer, serial, timestamp, unique, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../common/auth";
-import { departments } from "./employees";
+import { orgUnits } from "../common/organization";
 import { jobRequisitions } from "./requisitions";
 
 export const hrHeadcountPlans = pgTable(
@@ -12,7 +12,7 @@ export const hrHeadcountPlans = pgTable(
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     fiscalYear: integer("fiscal_year").notNull(),
-    departmentId: integer("department_id").references(() => departments.id, { onDelete: "set null" }),
+    departmentId: text("department_id").references(() => orgUnits.id, { onDelete: "set null" }),
     budgetedHeadcount: integer("budgeted_headcount").notNull(),
     budgetedCostCents: integer("budgeted_cost_cents"),
     note: text("note"),
@@ -56,9 +56,9 @@ export const hrHeadcountPlansRelations = relations(hrHeadcountPlans, ({ one, man
     fields: [hrHeadcountPlans.orgId],
     references: [organizations.id],
   }),
-  department: one(departments, {
+  department: one(orgUnits, {
     fields: [hrHeadcountPlans.departmentId],
-    references: [departments.id],
+    references: [orgUnits.id],
   }),
   hiringItems: many(hrHiringPlanItems),
 }));

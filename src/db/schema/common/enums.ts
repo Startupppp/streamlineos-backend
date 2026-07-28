@@ -52,7 +52,6 @@ export const assignmentRuleTypeEnum = pgEnum("assignment_rule_type", ["assign_us
 export const slaAppliesToEnum = pgEnum("sla_applies_to", ["lead", "deal", "both"]);
 export const slaPriorityEnum = pgEnum("sla_priority", ["low", "medium", "high", "urgent"]);
 export const orgSizeEnum = pgEnum("org_size", ["1-10", "11-50", "51-200", "201-1000", "1000+"]);
-export const branchStatusEnum = pgEnum("branch_status", ["ACTIVE", "INACTIVE"]);
 
 export const membershipStatusEnum = pgEnum("membership_status", ["INVITED", "ACTIVE", "SUSPENDED", "LEFT"]);
 

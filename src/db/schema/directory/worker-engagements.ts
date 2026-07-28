@@ -14,6 +14,7 @@ import { randomUUID } from "node:crypto";
 import { workerEngagementStatusEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
 import { workers } from "./workers";
+import { hrJobRoles, hrJobLevels } from "../hr/core-org";
 
 export const workerEngagements = pgTable(
   "worker_engagements",
@@ -48,8 +49,8 @@ export const workerEngagements = pgTable(
     teamId: text("team_id"),
     managerEngagementId: text("manager_engagement_id"),
     designation: text("designation"),
-    jobRoleId: integer("job_role_id"),
-    jobLevelId: integer("job_level_id"),
+    jobRoleId: integer("job_role_id").references(() => hrJobRoles.id, { onDelete: "set null" }),
+    jobLevelId: integer("job_level_id").references(() => hrJobLevels.id, { onDelete: "set null" }),
     employmentTypeId: integer("employment_type_id"),
     probationEndsOn: date("probation_ends_on"),
     noticePeriodDays: integer("notice_period_days"),

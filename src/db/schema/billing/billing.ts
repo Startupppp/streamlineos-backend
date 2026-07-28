@@ -86,7 +86,7 @@ export const appInstallations = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-    appId: integer("app_id").notNull(),
+    appId: integer("app_id").notNull().references(() => marketplaceApps.id, { onDelete: "restrict" }),
     installedBy: text("installed_by").notNull().references(() => users.id, { onDelete: "cascade" }),
     status: appInstallStatusEnum("status").notNull().default("ACTIVE"),
     trialEndsAt: timestamp("trial_ends_at"),
@@ -124,7 +124,7 @@ export const orgAiCredits = pgTable(
     lifetimeGranted: integer("lifetime_granted").default(0).notNull(),
     lifetimeConsumed: integer("lifetime_consumed").default(0).notNull(),
     autoTopUpEnabled: boolean("auto_top_up_enabled").default(false).notNull(),
-    autoTopUpPackId: integer("auto_top_up_pack_id"),
+    autoTopUpPackId: integer("auto_top_up_pack_id").references(() => aiCreditPacks.id, { onDelete: "set null" }),
     autoTopUpThreshold: integer("auto_top_up_threshold").default(100000),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -157,6 +157,7 @@ export const aiCreditTransactions = pgTable(
     index("ai_credit_txns_org_idx").on(t.orgId),
     index("ai_credit_txns_org_created_idx").on(t.orgId, t.createdAt),
     uniqueIndex("uq_ai_credit_txns_plan_grant_ref").on(t.orgId, t.referenceId).where(sql`type = 'PLAN_GRANT' AND reference_id IS NOT NULL`),
+    uniqueIndex("uq_ai_credit_txns_purchase_ref").on(t.orgId, t.referenceId).where(sql`type = 'PURCHASE' AND reference_id IS NOT NULL`),
     unique("uniq_ai_credit_transactions_org_id").on(t.orgId, t.id),
   ],
 );

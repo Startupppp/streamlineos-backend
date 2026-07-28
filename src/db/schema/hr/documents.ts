@@ -2,7 +2,7 @@ import { pgTable, text, serial, timestamp, boolean, jsonb, integer, date, index,
 import { relations } from "drizzle-orm";
 import { documentTypeEnum, ackStatusEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
-import { departments } from "./employees";
+import { orgUnits } from "../common/organization";
 
 export const richDocuments = pgTable("rich_documents", {
   id: serial("id").primaryKey(),
@@ -26,7 +26,7 @@ export const documents = pgTable("documents", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
-  departmentId: integer("department_id").references(() => departments.id, { onDelete: "set null" }),
+  departmentId: text("department_id").references(() => orgUnits.id, { onDelete: "set null" }),
   name: text("name").notNull(),
   description: text("description"),
   type: documentTypeEnum("type").notNull(),

@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { AccessService } from "../access/access.service";
+import { EntitlementsService } from "../access/entitlements.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { eq, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
@@ -50,6 +51,7 @@ export class AuthService {
     private readonly cache: CacheService,
     private readonly audit: AuditService,
     private readonly access: AccessService,
+    private readonly entitlements: EntitlementsService,
     private readonly authTokens: AuthTokensService,
     private readonly dispatch: NotificationDispatchService,
   ) {}
@@ -150,7 +152,7 @@ export class AuthService {
     role: string | null;
     isActive: boolean;
     hasDashboardAccess: boolean;
-    branchId: number | null;
+    branchId: string | null;
     totpEnabled: boolean;
     orgId: string | null;
     isOrgOwner: boolean;
@@ -204,16 +206,20 @@ export class AuthService {
 
         if (membership) {
           mfaEnforced = membership.mfaEnforced;
-          enabledModules = membership.enabledModules ?? [];
           orgOnboardingCompletedAt = membership.orgOnboardingCompletedAt?.toISOString() ?? null;
 
-          const sub = await this.db.query.subscriptions.findFirst({
-            where: eq(subscriptions.orgId, membership.orgId),
-            columns: { plan: true, status: true },
-          });
+          const [sub, moduleStatuses] = await Promise.all([
+            this.db.query.subscriptions.findFirst({
+              where: eq(subscriptions.orgId, membership.orgId),
+              columns: { plan: true, status: true },
+            }),
+            this.entitlements.listModules(membership.orgId).catch(() => []),
+          ]);
+
           if (sub) {
             plan = sub.status === "ACTIVE" || sub.status === "TRIAL" ? sub.plan : "FREE";
           }
+          enabledModules = moduleStatuses.filter((m) => m.enabled).map((m) => m.moduleKey);
 
           try {
             const permMap = await this.access.resolveUserPermissions(membership.orgId, userId);

@@ -1,6 +1,8 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import {
+  organizationMembers,
+  roleAssignments,
   rolePermissionGrants,
   roles,
   userPermissions,
@@ -12,12 +14,22 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import {
   assertPermissionsGrantable,
+  buildPermissionModuleMap,
+  ROLE_RANK,
   toGrantableSet,
 } from "../../common/rbac/grantability";
-import { PERMISSIONS, ROLE_DEFAULT_PERMISSIONS, type Permission } from "./permissions";
-import type { AssignRolePermissionInput, RevokeRolePermissionInput } from "./dto/rbac.schemas";
+import { PERMISSIONS, ROLE_DEFAULT_PERMISSIONS, type Permission, isScopable } from "./permissions";
+import type {
+  AssignRolePermissionInput,
+  DiscoveryGrantableResult,
+  DiscoveryMemberEntry,
+  DiscoveryPermissionEntry,
+  DiscoveryTemplateEntry,
+  RevokeRolePermissionInput,
+} from "./dto/rbac.schemas";
 import { AccessService } from "../access/access.service";
 import { RolesService } from "./roles.service";
+import { ROLE_TEMPLATES } from "./role-templates.constants";
 
 const RBAC_MANAGE_KEY = "settings:rbac:manage";
 const CATALOG_KEYS = new Set(PERMISSIONS.map((p) => p.name));
@@ -172,5 +184,168 @@ export class RbacService {
     const resolved = await this.access.resolveUserPermissions(actor.orgId, actor.userId);
     const scope = resolved.get(RBAC_MANAGE_KEY);
     return !!scope && scope !== "none";
+  }
+
+  private async resolveActorRankContext(
+    orgId: string,
+    userId: string,
+  ): Promise<{ bestRank: number; allowedModules: Set<string> | null }> {
+    const rows = await this.db
+      .select({ rank: roles.rank, moduleKey: roles.moduleKey })
+      .from(roleAssignments)
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(roleAssignments.organizationMembershipId, organizationMembers.id),
+          eq(roleAssignments.orgId, organizationMembers.orgId),
+        ),
+      )
+      .innerJoin(
+        roles,
+        and(eq(roleAssignments.roleId, roles.id), eq(roles.orgId, orgId)),
+      )
+      .where(
+        and(
+          eq(roleAssignments.orgId, orgId),
+          eq(organizationMembers.userId, userId),
+        ),
+      )
+      .limit(100);
+
+    if (rows.length === 0) {
+      return { bestRank: ROLE_RANK.FUNCTIONAL, allowedModules: null };
+    }
+
+    let bestRank: number = ROLE_RANK.FUNCTIONAL;
+    for (const row of rows) {
+      if (row.rank < bestRank) bestRank = row.rank;
+    }
+
+    const topRankRoles = rows.filter((r) => r.rank === bestRank);
+    const hasOrgWideRole = topRankRoles.some((r) => r.moduleKey === null);
+    if (hasOrgWideRole) {
+      return { bestRank, allowedModules: null };
+    }
+
+    const modules = new Set(
+      topRankRoles
+        .map((r) => r.moduleKey)
+        .filter((m): m is string => m !== null),
+    );
+    return { bestRank, allowedModules: modules };
+  }
+
+  async getDiscoveryPermissions(
+    actor: CurrentUserContext,
+  ): Promise<DiscoveryPermissionEntry[]> {
+    if (actor.isOrgOwner || actor.isPlatformAdmin) {
+      return PERMISSIONS.map((p) => ({
+        name: p.name,
+        resource: p.resource,
+        action: p.action,
+        description: p.description,
+        moduleKey: p.name.indexOf(":") === -1 ? null : p.name.slice(0, p.name.indexOf(":")),
+        scopable: isScopable(p.name),
+      }));
+    }
+
+    const { allowedModules } = await this.resolveActorRankContext(actor.orgId, actor.userId);
+    return PERMISSIONS
+      .filter((p) => {
+        if (allowedModules === null) return true;
+        const mod = p.name.indexOf(":") === -1 ? null : p.name.slice(0, p.name.indexOf(":"));
+        return mod !== null && allowedModules.has(mod);
+      })
+      .map((p) => ({
+        name: p.name,
+        resource: p.resource,
+        action: p.action,
+        description: p.description,
+        moduleKey: p.name.indexOf(":") === -1 ? null : p.name.slice(0, p.name.indexOf(":")),
+        scopable: isScopable(p.name),
+      }));
+  }
+
+  async getDiscoveryGrantable(
+    actor: CurrentUserContext,
+  ): Promise<DiscoveryGrantableResult> {
+    if (actor.isOrgOwner || actor.isPlatformAdmin) {
+      return {
+        grantableKeys: PERMISSIONS.map((p) => p.name),
+        assignableRanks: [ROLE_RANK.MODULE_ADMIN, ROLE_RANK.MODULE_CUSTOM, ROLE_RANK.FUNCTIONAL],
+        allowedModules: null,
+      };
+    }
+
+    const [resolved, { bestRank, allowedModules }] = await Promise.all([
+      this.access.resolveUserPermissions(actor.orgId, actor.userId),
+      this.resolveActorRankContext(actor.orgId, actor.userId),
+    ]);
+
+    const grantable = toGrantableSet(resolved);
+    const permMeta = buildPermissionModuleMap(PERMISSIONS.map((p) => p.name));
+
+    const grantableKeys = PERMISSIONS
+      .map((p) => p.name)
+      .filter((key) => {
+        if (!grantable.has(key)) return false;
+        if (allowedModules !== null) {
+          const mod = permMeta.get(key);
+          if (!mod || !allowedModules.has(mod)) return false;
+        }
+        return true;
+      });
+
+    const assignableRanks = ([ROLE_RANK.MODULE_ADMIN, ROLE_RANK.MODULE_CUSTOM, ROLE_RANK.FUNCTIONAL] as number[])
+      .filter((rank) => rank > bestRank);
+
+    return {
+      grantableKeys,
+      assignableRanks,
+      allowedModules: allowedModules !== null ? Array.from(allowedModules) : null,
+    };
+  }
+
+  getDiscoveryTemplates(actor: CurrentUserContext): DiscoveryTemplateEntry[] {
+    if (actor.isOrgOwner || actor.isPlatformAdmin) {
+      return ROLE_TEMPLATES.map((t) => ({
+        id: t.id,
+        name: t.name,
+        slug: t.slug,
+        permissionCount: t.permissions.length,
+      }));
+    }
+
+    return ROLE_TEMPLATES.map((t) => ({
+      id: t.id,
+      name: t.name,
+      slug: t.slug,
+      permissionCount: t.permissions.length,
+    }));
+  }
+
+  async getDiscoveryMembers(orgId: string): Promise<DiscoveryMemberEntry[]> {
+    const rows = await this.db
+      .select({
+        userId: organizationMembers.userId,
+        name: users.name,
+        email: users.email,
+      })
+      .from(organizationMembers)
+      .innerJoin(users, eq(organizationMembers.userId, users.id))
+      .where(
+        and(
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.status, "ACTIVE"),
+        ),
+      )
+      .orderBy(users.name)
+      .limit(500);
+
+    return rows.map((r) => ({
+      userId: r.userId,
+      name: r.name,
+      email: r.email,
+    }));
   }
 }

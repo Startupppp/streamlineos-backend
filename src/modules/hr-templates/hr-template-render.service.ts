@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
-import { organizations, users, departments, organizationMembers } from "../../db/schema";
+import { organizations, orgUnits, users, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { escapeHtml, sanitizeHtml } from "./html-sanitizer";
@@ -81,7 +81,7 @@ export class HrTemplateRenderService {
           employeeId: users.employeeId,
           joiningDate: users.joiningDate,
           dateOfBirth: users.dateOfBirth,
-          departmentId: users.departmentId,
+          orgDepartmentId: users.orgDepartmentId,
           reportingTo: users.reportingTo,
           monthlySalary: users.monthlySalary,
         })
@@ -119,11 +119,11 @@ export class HrTemplateRenderService {
         }
 
         const [deptResult, mgrResult] = await Promise.all([
-          empRow.departmentId
+          empRow.orgDepartmentId
             ? this.db
-                .select({ name: departments.name })
-                .from(departments)
-                .where(and(eq(departments.id, empRow.departmentId), eq(departments.orgId, orgId)))
+                .select({ name: orgUnits.name })
+                .from(orgUnits)
+                .where(and(eq(orgUnits.id, empRow.orgDepartmentId), eq(orgUnits.orgId, orgId)))
                 .limit(1)
             : Promise.resolve([]),
           empRow.reportingTo

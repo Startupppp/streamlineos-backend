@@ -130,6 +130,7 @@ export class InvProductCatalogService {
         this.db.query.invCategories.findMany({
           where: eq(invCategories.orgId, orgId),
           orderBy: [asc(invCategories.name)],
+          limit: 100,
         }),
       CACHE_TTL.MEDIUM,
     );
@@ -185,6 +186,7 @@ export class InvProductCatalogService {
         this.db.query.invUom.findMany({
           where: eq(invUom.orgId, orgId),
           orderBy: [asc(invUom.name)],
+          limit: 100,
         }),
       CACHE_TTL.MEDIUM,
     );

@@ -19,7 +19,7 @@ export class CrmValidationRulesService {
   ) {}
 
   async list(orgId: string) {
-    return this.db.select().from(crmValidationRules).where(eq(crmValidationRules.orgId, orgId)).orderBy(crmValidationRules.sortOrder);
+    return this.db.select().from(crmValidationRules).where(eq(crmValidationRules.orgId, orgId)).orderBy(crmValidationRules.sortOrder).limit(100);
   }
 
   async create(u: CurrentUserContext, input: CreateValidationRuleInput) {

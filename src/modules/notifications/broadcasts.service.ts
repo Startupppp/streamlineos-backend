@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { eq, and, desc, lt, inArray } from "drizzle-orm";
-import { broadcasts, notifications, userMemberships, userRoles, users } from "../../db/schema";
+import { broadcasts, notifications, organizationMembers, roleAssignments, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -210,9 +210,9 @@ export class BroadcastsService {
       const ids = dedupe(audience.userIds ?? []);
       if (ids.length === 0) return [];
       const rows = await this.db
-        .select({ userId: userMemberships.userId })
-        .from(userMemberships)
-        .where(and(eq(userMemberships.orgId, orgId), inArray(userMemberships.userId, ids)));
+        .select({ userId: organizationMembers.userId })
+        .from(organizationMembers)
+        .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.userId, ids)));
       return dedupe(rows.map((r) => r.userId));
     }
 
@@ -220,9 +220,16 @@ export class BroadcastsService {
       const roleIds = (audience.roleIds ?? []).map(Number).filter((n) => Number.isInteger(n));
       if (roleIds.length === 0) return [];
       const rows = await this.db
-        .select({ userId: userRoles.userId })
-        .from(userRoles)
-        .where(and(eq(userRoles.orgId, orgId), inArray(userRoles.roleId, roleIds)));
+        .select({ userId: organizationMembers.userId })
+        .from(roleAssignments)
+        .innerJoin(
+          organizationMembers,
+          and(
+            eq(organizationMembers.orgId, roleAssignments.orgId),
+            eq(organizationMembers.id, roleAssignments.organizationMembershipId),
+          ),
+        )
+        .where(and(eq(roleAssignments.orgId, orgId), inArray(roleAssignments.roleId, roleIds)));
       return dedupe(rows.map((r) => r.userId));
     }
 
@@ -230,17 +237,17 @@ export class BroadcastsService {
       const deptIds = (audience.departmentIds ?? []).map(Number).filter((n) => Number.isInteger(n));
       if (deptIds.length === 0) return [];
       const rows = await this.db
-        .select({ userId: userMemberships.userId })
-        .from(userMemberships)
-        .innerJoin(users, eq(users.id, userMemberships.userId))
-        .where(and(eq(userMemberships.orgId, orgId), inArray(users.departmentId, deptIds)));
+        .select({ userId: organizationMembers.userId })
+        .from(organizationMembers)
+        .innerJoin(users, eq(users.id, organizationMembers.userId))
+        .where(and(eq(organizationMembers.orgId, orgId), inArray(users.departmentId, deptIds)));
       return dedupe(rows.map((r) => r.userId));
     }
 
     const memberships = await this.db
-      .select({ userId: userMemberships.userId })
-      .from(userMemberships)
-      .where(eq(userMemberships.orgId, orgId));
+      .select({ userId: organizationMembers.userId })
+      .from(organizationMembers)
+      .where(eq(organizationMembers.orgId, orgId));
     return dedupe(memberships.map((m) => m.userId));
   }
 

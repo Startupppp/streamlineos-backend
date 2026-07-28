@@ -1,41 +1,103 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, inArray } from "drizzle-orm";
-import { supportCustomFields, supportTicketCustomFieldValues } from "../../db/schema";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { customFieldDefinitions } from "../../db/schema/custom-field-engine";
+import { supportTicketCustomFieldValues } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CreateCustomFieldInput, CustomFieldValueInput, UpdateCustomFieldInput } from "./dto/support.schemas";
+
+const SUPPORT_ENTITY_TYPE = "support_ticket" as const;
+
+type SupportFieldShape = {
+  id: number;
+  orgId: string;
+  key: string;
+  label: string;
+  fieldType: string;
+  options: string[] | null | undefined;
+  required: boolean;
+  category: string | null | undefined;
+  sortOrder: number;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+};
 
 @Injectable()
 export class SupportCustomFieldsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  listFields(orgId: string, activeOnly = false) {
-    return this.db.query.supportCustomFields.findMany({
-      where: activeOnly
-        ? and(eq(supportCustomFields.orgId, orgId), eq(supportCustomFields.isActive, true))
-        : eq(supportCustomFields.orgId, orgId),
-      orderBy: (fields, { asc }) => [asc(fields.sortOrder), asc(fields.id)],
-    });
+  private toSupportField(
+    def: typeof customFieldDefinitions.$inferSelect,
+  ): SupportFieldShape {
+    return {
+      id: def.id,
+      orgId: def.orgId,
+      key: def.key,
+      label: def.label,
+      fieldType: def.fieldType,
+      options: def.options?.map((o) => o.value),
+      required: def.isRequired,
+      category: def.category,
+      sortOrder: def.displayOrder,
+      isActive: def.isActive,
+      createdAt: def.createdAt,
+      updatedAt: def.updatedAt,
+    };
+  }
+
+  async listFields(orgId: string, activeOnly = false) {
+    const rows = await this.db
+      .select()
+      .from(customFieldDefinitions)
+      .where(
+        activeOnly
+          ? and(
+              eq(customFieldDefinitions.orgId, orgId),
+              eq(customFieldDefinitions.entityType, SUPPORT_ENTITY_TYPE),
+              eq(customFieldDefinitions.isActive, true),
+            )
+          : and(
+              eq(customFieldDefinitions.orgId, orgId),
+              eq(customFieldDefinitions.entityType, SUPPORT_ENTITY_TYPE),
+            ),
+      )
+      .orderBy(asc(customFieldDefinitions.displayOrder), asc(customFieldDefinitions.id));
+    return rows.map((r) => this.toSupportField(r));
   }
 
   async createField(orgId: string, input: CreateCustomFieldInput) {
-    const existing = await this.db.query.supportCustomFields.findFirst({
-      where: and(eq(supportCustomFields.orgId, orgId), eq(supportCustomFields.key, input.key)),
-      columns: { id: true },
-    });
-    if (existing) throw new ConflictException(`A custom field with key "${input.key}" already exists`);
+    const [existing] = await this.db
+      .select({ id: customFieldDefinitions.id })
+      .from(customFieldDefinitions)
+      .where(
+        and(
+          eq(customFieldDefinitions.orgId, orgId),
+          eq(customFieldDefinitions.entityType, SUPPORT_ENTITY_TYPE),
+          eq(customFieldDefinitions.key, input.key),
+        ),
+      )
+      .limit(1);
+    if (existing) {
+      throw new ConflictException(`A custom field with key "${input.key}" already exists`);
+    }
 
     const [field] = await this.db
-      .insert(supportCustomFields)
+      .insert(customFieldDefinitions)
       .values({
         orgId,
+        entityType: SUPPORT_ENTITY_TYPE,
+        projectId: 0,
         key: input.key,
         label: input.label,
         fieldType: input.fieldType,
-        options: input.fieldType === "select" ? (input.options ?? []) : undefined,
-        required: input.required,
+        options:
+          input.fieldType === "select"
+            ? (input.options ?? []).map((v) => ({ label: v, value: v }))
+            : null,
+        isRequired: input.required,
         category: input.category ?? null,
-        sortOrder: input.sortOrder,
+        displayOrder: input.sortOrder,
         isActive: input.isActive,
       })
       .returning()
@@ -45,23 +107,47 @@ export class SupportCustomFieldsService {
         }
         throw e;
       });
-    return field;
+    if (!field) throw new ConflictException("Failed to create custom field");
+    return this.toSupportField(field);
   }
 
   async updateField(orgId: string, fieldId: number, input: UpdateCustomFieldInput) {
     const [updated] = await this.db
-      .update(supportCustomFields)
-      .set({ ...input, updatedAt: new Date() })
-      .where(and(eq(supportCustomFields.id, fieldId), eq(supportCustomFields.orgId, orgId)))
+      .update(customFieldDefinitions)
+      .set({
+        label: input.label,
+        options:
+          input.options !== undefined
+            ? input.options.map((v) => ({ label: v, value: v }))
+            : undefined,
+        isRequired: input.required,
+        category: input.category,
+        displayOrder: input.sortOrder,
+        isActive: input.isActive,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(customFieldDefinitions.id, fieldId),
+          eq(customFieldDefinitions.orgId, orgId),
+          eq(customFieldDefinitions.entityType, SUPPORT_ENTITY_TYPE),
+        ),
+      )
       .returning();
     if (!updated) throw new NotFoundException("Custom field not found");
-    return updated;
+    return this.toSupportField(updated);
   }
 
   async deleteField(orgId: string, fieldId: number) {
     const [deleted] = await this.db
-      .delete(supportCustomFields)
-      .where(and(eq(supportCustomFields.id, fieldId), eq(supportCustomFields.orgId, orgId)))
+      .delete(customFieldDefinitions)
+      .where(
+        and(
+          eq(customFieldDefinitions.id, fieldId),
+          eq(customFieldDefinitions.orgId, orgId),
+          eq(customFieldDefinitions.entityType, SUPPORT_ENTITY_TYPE),
+        ),
+      )
       .returning();
     if (!deleted) throw new NotFoundException("Custom field not found");
     return { success: true };
@@ -70,33 +156,46 @@ export class SupportCustomFieldsService {
   async getFieldValues(orgId: string, ticketId: number) {
     return this.db
       .select({
-        fieldId: supportTicketCustomFieldValues.fieldId,
+        fieldId: supportTicketCustomFieldValues.fieldDefinitionId,
         value: supportTicketCustomFieldValues.value,
-        key: supportCustomFields.key,
-        label: supportCustomFields.label,
-        fieldType: supportCustomFields.fieldType,
+        key: customFieldDefinitions.key,
+        label: customFieldDefinitions.label,
+        fieldType: customFieldDefinitions.fieldType,
       })
       .from(supportTicketCustomFieldValues)
-      .innerJoin(supportCustomFields, eq(supportCustomFields.id, supportTicketCustomFieldValues.fieldId))
-      .where(and(eq(supportTicketCustomFieldValues.orgId, orgId), eq(supportTicketCustomFieldValues.ticketId, ticketId)));
+      .innerJoin(
+        customFieldDefinitions,
+        eq(customFieldDefinitions.id, supportTicketCustomFieldValues.fieldDefinitionId),
+      )
+      .where(
+        and(
+          eq(supportTicketCustomFieldValues.orgId, orgId),
+          eq(supportTicketCustomFieldValues.ticketId, ticketId),
+        ),
+      );
   }
 
-  /**
-   * Validates that every fieldId belongs to this org (silently drops any that
-   * don't, rather than failing the whole ticket write over a stale client
-   * payload) then upserts each value. Required-field enforcement happens at
-   * create time only — updates may touch a subset of fields without being
-   * forced to resupply every required one.
-   */
-  async setFieldValues(orgId: string, ticketId: number, values: CustomFieldValueInput[], enforceRequired: boolean) {
+  async setFieldValues(
+    orgId: string,
+    ticketId: number,
+    values: CustomFieldValueInput[],
+    enforceRequired: boolean,
+  ) {
     if (values.length === 0 && !enforceRequired) return;
 
     const fieldIds = values.map((v) => v.fieldId);
     const fields =
       fieldIds.length > 0
-        ? await this.db.query.supportCustomFields.findMany({
-            where: and(eq(supportCustomFields.orgId, orgId), inArray(supportCustomFields.id, fieldIds)),
-          })
+        ? await this.db
+            .select()
+            .from(customFieldDefinitions)
+            .where(
+              and(
+                eq(customFieldDefinitions.orgId, orgId),
+                eq(customFieldDefinitions.entityType, SUPPORT_ENTITY_TYPE),
+                inArray(customFieldDefinitions.id, fieldIds),
+              ),
+            )
         : [];
     const fieldById = new Map(fields.map((f) => [f.id, f]));
 
@@ -111,15 +210,21 @@ export class SupportCustomFieldsService {
       }
     }
 
-    for (const value of values) {
-      if (!fieldById.has(value.fieldId)) continue;
-      await this.db
-        .insert(supportTicketCustomFieldValues)
-        .values({ orgId, ticketId, fieldId: value.fieldId, value: value.value })
-        .onConflictDoUpdate({
-          target: [supportTicketCustomFieldValues.ticketId, supportTicketCustomFieldValues.fieldId],
-          set: { value: value.value, updatedAt: new Date() },
-        });
-    }
+    const upsertRows = values
+      .filter((v) => fieldById.has(v.fieldId))
+      .map((v) => ({ orgId, ticketId, fieldDefinitionId: v.fieldId, value: v.value }));
+
+    if (upsertRows.length === 0) return;
+
+    await this.db
+      .insert(supportTicketCustomFieldValues)
+      .values(upsertRows)
+      .onConflictDoUpdate({
+        target: [
+          supportTicketCustomFieldValues.ticketId,
+          supportTicketCustomFieldValues.fieldDefinitionId,
+        ],
+        set: { value: sql`excluded.value`, updatedAt: new Date() },
+      });
   }
 }

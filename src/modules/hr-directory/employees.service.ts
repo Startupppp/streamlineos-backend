@@ -2,7 +2,6 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { SQL, and, avg, count, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
 import {
   attendance,
-  departments,
   leaveRequests,
   organizationMembers,
   performanceReviews,
@@ -11,7 +10,7 @@ import {
   tickets,
   users,
 } from "../../db/schema";
-import { orgDepartments } from "../../db/schema/common/organization";
+import { orgUnits } from "../../db/schema/common/organization";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -118,11 +117,8 @@ export class EmployeesService {
           role: users.role,
           designation: users.designation,
           employeeId: users.employeeId,
-          departmentId: users.departmentId,
-          departmentIdJoin: departments.id,
-          departmentName: departments.name,
-          orgDepartmentId: orgDepartments.id,
-          orgDepartmentName: orgDepartments.name,
+          orgDepartmentId: orgUnits.id,
+          orgDepartmentName: orgUnits.name,
           image: users.image,
           isActive: users.isActive,
           joiningDate: users.joiningDate,
@@ -132,8 +128,7 @@ export class EmployeesService {
         })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .leftJoin(departments, eq(users.departmentId, departments.id))
-        .leftJoin(orgDepartments, eq(users.orgDepartmentId, orgDepartments.id))
+        .leftJoin(orgUnits, and(eq(users.orgDepartmentId, orgUnits.id), eq(orgUnits.kind, "DEPARTMENT")))
         .where(where)
         .orderBy(users.name)
         .limit(limit)
@@ -157,13 +152,10 @@ export class EmployeesService {
         role: row.role,
         designation: row.designation,
         employeeId: row.employeeId,
-        departmentId: row.departmentId,
         department:
           row.orgDepartmentId != null && row.orgDepartmentName
             ? { id: row.orgDepartmentId, name: row.orgDepartmentName }
-            : row.departmentIdJoin != null && row.departmentName
-              ? { id: String(row.departmentIdJoin), name: row.departmentName }
-              : null,
+            : null,
         image: row.image,
         isActive: row.isActive,
         joiningDate: row.joiningDate,

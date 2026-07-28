@@ -1,29 +1,6 @@
-import { pgTable, text, timestamp, boolean, jsonb, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, jsonb, index } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { users, organizations } from "./auth";
-
-export const userMemberships = pgTable("user_memberships", {
-  id: text("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  businessUnitId: text("business_unit_id"),
-  branchId: integer("branch_id"),
-  departmentId: integer("department_id"),
-  teamId: text("team_id"),
-  managerUserId: text("manager_user_id").references(() => users.id, { onDelete: "set null" }),
-  isPrimary: boolean("is_primary").default(true).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
-}, (table) => [
-  uniqueIndex("uniq_user_memberships_user_org").on(table.userId, table.orgId),
-  index("idx_user_memberships_org").on(table.orgId),
-  index("idx_user_memberships_manager").on(table.managerUserId),
-  index("idx_user_memberships_dept").on(table.departmentId),
-  index("idx_user_memberships_branch").on(table.branchId),
-  index("idx_user_memberships_team").on(table.teamId),
-  index("idx_user_memberships_bu").on(table.businessUnitId),
-  unique("uniq_user_memberships_org_id").on(table.orgId, table.id),
-]);
+import { users } from "./auth";
 
 export const userPreferences = pgTable("user_preferences", {
   userId: text("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
@@ -44,13 +21,6 @@ export const userPreferences = pgTable("user_preferences", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 });
 
-export const userMembershipsRelations = relations(userMemberships, ({ one }) => ({
-  user: one(users, { fields: [userMemberships.userId], references: [users.id] }),
-  org: one(organizations, { fields: [userMemberships.orgId], references: [organizations.id] }),
-  manager: one(users, { fields: [userMemberships.managerUserId], references: [users.id], relationName: "membershipManager" }),
-}));
-
 export const userPreferencesRelations = relations(userPreferences, ({ one }) => ({
   user: one(users, { fields: [userPreferences.userId], references: [users.id] }),
 }));
-

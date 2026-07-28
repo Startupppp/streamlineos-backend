@@ -11,7 +11,6 @@ import { and, count, desc, eq, sql } from "drizzle-orm";
 import {
   candidateReferrals,
   candidates,
-  departments,
   externalReferrals,
   externalReferrers,
   headcountRequests,
@@ -20,7 +19,7 @@ import {
   users,
   vendorCandidateSubmissions,
 } from "../../db/schema";
-import { orgDepartments } from "../../db/schema/common/organization";
+import { orgUnits } from "../../db/schema/common/organization";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { RECRUITMENT_MANAGER_ROLES } from "./recruitment-roles";
@@ -301,7 +300,6 @@ export class RecruitmentSourcingService {
       .select({
         id: headcountRequests.id,
         orgId: headcountRequests.orgId,
-        departmentId: headcountRequests.departmentId,
         orgDepartmentId: headcountRequests.orgDepartmentId,
         requestedBy: headcountRequests.requestedBy,
         requestedRole: headcountRequests.requestedRole,
@@ -315,14 +313,12 @@ export class RecruitmentSourcingService {
         linkedJobPostingId: headcountRequests.linkedJobPostingId,
         createdAt: headcountRequests.createdAt,
         updatedAt: headcountRequests.updatedAt,
-        departmentName: departments.name,
-        orgDepartmentName: orgDepartments.name,
+        departmentName: orgUnits.name,
         requesterName: users.name,
         requesterEmail: users.email,
       })
       .from(headcountRequests)
-      .leftJoin(departments, eq(headcountRequests.departmentId, departments.id))
-      .leftJoin(orgDepartments, eq(headcountRequests.orgDepartmentId, orgDepartments.id))
+      .leftJoin(orgUnits, and(eq(headcountRequests.orgDepartmentId, orgUnits.id), eq(orgUnits.kind, "DEPARTMENT")))
       .leftJoin(users, eq(headcountRequests.requestedBy, users.id))
       .where(and(...conditions))
       .orderBy(desc(headcountRequests.createdAt))
@@ -411,7 +407,6 @@ export class RecruitmentSourcingService {
         .values({
           orgId,
           title: request.requestedRole,
-          departmentId: request.departmentId,
           orgDepartmentId: request.orgDepartmentId,
           postedBy: userId,
           status: "DRAFT",

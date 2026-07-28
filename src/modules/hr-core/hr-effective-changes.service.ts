@@ -199,7 +199,7 @@ export class HrEffectiveChangesService {
 
         let didApply = false;
 
-        if (change.changeType === "department" && typeof newVal["departmentId"] === "number") {
+        if (change.changeType === "department" && typeof newVal["departmentId"] === "string") {
           await tx
             .update(hrEmployments)
             .set({ departmentId: newVal["departmentId"] })
@@ -232,10 +232,10 @@ export class HrEffectiveChangesService {
               ),
             );
           didApply = true;
-        } else if (change.changeType === "location" && typeof newVal["locationId"] === "number") {
+        } else if (change.changeType === "location" && typeof newVal["locationId"] === "string") {
           await tx
             .update(hrEmployments)
-            .set({ locationId: newVal["locationId"] })
+            .set({ locationId: String(newVal["locationId"]) })
             .where(
               and(
                 eq(hrEmployments.id, change.employmentId),

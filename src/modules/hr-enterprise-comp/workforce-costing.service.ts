@@ -16,8 +16,8 @@ export class WorkforceCostingService {
         COUNT(DISTINCT esp.user_id) AS headcount,
         SUM(CAST(esp.annual_ctc AS BIGINT) / 12) AS monthly_cost_cents
       FROM employee_salary_profiles esp
-      JOIN department_members dm ON dm.user_id = esp.user_id
-      JOIN departments d ON d.id = dm.department_id AND d.org_id = ${orgId}
+      JOIN org_unit_members oum ON oum.user_id = esp.user_id
+      JOIN org_units d ON d.id = oum.org_unit_id AND d.org_id = ${orgId} AND d.kind = 'DEPARTMENT'
       WHERE esp.org_id = ${orgId}
         AND esp.status = 'ACTIVE'
       GROUP BY d.id, d.name

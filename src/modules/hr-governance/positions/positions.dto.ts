@@ -7,7 +7,7 @@ export const paginationSchema = z.object({
 
 export const createPositionSchema = z.object({
   title: z.string().min(1).max(300),
-  departmentId: z.number().int().positive().optional(),
+  departmentId: z.string().uuid().optional(),
   jobLevelId: z.number().int().positive().optional(),
   status: z.enum(["open", "filled", "frozen", "future"]),
   budgetedCostCents: z.number().int().positive().optional(),
@@ -20,7 +20,7 @@ export const updatePositionSchema = createPositionSchema.partial();
 
 export const listPositionsSchema = paginationSchema.extend({
   status: z.enum(["open", "filled", "frozen", "future"]).optional(),
-  departmentId: z.coerce.number().int().positive().optional(),
+  departmentId: z.string().uuid().optional(),
 });
 
 export const assignPositionSchema = z.object({

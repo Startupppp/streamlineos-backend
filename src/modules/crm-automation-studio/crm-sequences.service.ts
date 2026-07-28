@@ -19,7 +19,8 @@ export class CrmSequencesService {
       .select()
       .from(crmSequences)
       .where(and(eq(crmSequences.orgId, orgId), isNull(crmSequences.deletedAt)))
-      .orderBy(desc(crmSequences.createdAt));
+      .orderBy(desc(crmSequences.createdAt))
+      .limit(100);
     return { sequences };
   }
 

@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, serial, timestamp, boolean, jsonb, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, serial, timestamp, boolean, jsonb, integer, index, unique, uniqueIndex, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 
@@ -130,11 +130,27 @@ export const hrWorkflowStepActions = pgTable("hr_workflow_step_actions", {
   actedByUserId: text("acted_by_user_id").references(() => users.id, { onDelete: "restrict" }).notNull(),
   action: hrWorkflowActionEnum("action").notNull(),
   comment: text("comment"),
-  attachments: jsonb("attachments").$type<{ url: string; name: string }[]>(),
   actedAt: timestamp("acted_at").defaultNow().notNull(),
 }, (table) => [
   unique("uniq_hr_workflow_step_actions_org_id").on(table.orgId, table.id),
   index("idx_hr_wf_actions_org_instance").on(table.orgId, table.instanceId),
+]);
+
+export const hrWorkflowInstanceAttachments = pgTable("hr_workflow_instance_attachments", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  actionId: integer("action_id").notNull(),
+  url: text("url").notNull(),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_hr_wf_inst_attachments_org").on(table.orgId),
+  index("idx_hr_wf_inst_attachments_action").on(table.actionId),
+  foreignKey({
+    columns: [table.orgId, table.actionId],
+    foreignColumns: [hrWorkflowStepActions.orgId, hrWorkflowStepActions.id],
+  }).onDelete("cascade"),
+  unique("uniq_hr_wf_inst_attachments_org_id").on(table.orgId, table.id),
 ]);
 
 export const hrWorkflowDelegations = pgTable("hr_workflow_delegations", {
@@ -173,9 +189,20 @@ export const hrWorkflowInstancesRelations = relations(hrWorkflowInstances, ({ on
   actions: many(hrWorkflowStepActions),
 }));
 
-export const hrWorkflowStepActionsRelations = relations(hrWorkflowStepActions, ({ one }) => ({
+export const hrWorkflowStepActionsRelations = relations(hrWorkflowStepActions, ({ one, many }) => ({
   instance: one(hrWorkflowInstances, {
     fields: [hrWorkflowStepActions.instanceId],
     references: [hrWorkflowInstances.id],
   }),
+  attachments: many(hrWorkflowInstanceAttachments),
 }));
+
+export const hrWorkflowInstanceAttachmentsRelations = relations(
+  hrWorkflowInstanceAttachments,
+  ({ one }) => ({
+    action: one(hrWorkflowStepActions, {
+      fields: [hrWorkflowInstanceAttachments.orgId, hrWorkflowInstanceAttachments.actionId],
+      references: [hrWorkflowStepActions.orgId, hrWorkflowStepActions.id],
+    }),
+  }),
+);

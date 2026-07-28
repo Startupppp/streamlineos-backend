@@ -27,6 +27,8 @@ import {
   timesheetExports,
   timesheetPeriods,
 } from "../timesheets";
+import { clients } from "../crm/contacts";
+import { customFieldDefinitions } from "../custom-field-engine";
 
 export const tickets = pgTable(
   "tickets",
@@ -103,6 +105,14 @@ export const tickets = pgTable(
     foreignKey({
       columns: [t.parentTicketId],
       foreignColumns: [t.id],
+    }).onDelete("set null"),
+    foreignKey({
+      columns: [t.recurrenceParentId],
+      foreignColumns: [t.id],
+    }).onDelete("set null"),
+    foreignKey({
+      columns: [t.customerId],
+      foreignColumns: [clients.id],
     }).onDelete("set null"),
     uniqueIndex("uniq_tickets_project_number").on(t.projectId, t.ticketNumber),
     index("idx_tickets_project_status").on(t.projectId, t.status),
@@ -340,33 +350,6 @@ export const ticketChecklistItems = pgTable(
   ],
 );
 
-export const projectCustomFields = pgTable(
-  "project_custom_fields",
-  {
-    id: serial("id").primaryKey(),
-    orgId: text("org_id")
-      .references(() => organizations.id, { onDelete: "cascade" })
-      .notNull(),
-    projectId: integer("project_id")
-      .references(() => projects.id, { onDelete: "cascade" })
-      .notNull(),
-    name: text("name").notNull(),
-    type: text("type").notNull().default("text"),
-    options: text("options").array(),
-    required: boolean("required").default(false).notNull(),
-    position: integer("position").default(0).notNull(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-  },
-  (table) => [
-    index("idx_project_custom_fields_project").on(table.projectId),
-    uniqueIndex("uniq_project_custom_fields_name").on(
-      table.projectId,
-      table.name,
-    ),
-    unique("uniq_project_custom_fields_org_id").on(table.orgId, table.id),
-  ],
-);
-
 export const ticketCustomFieldValues = pgTable(
   "ticket_custom_field_values",
   {
@@ -377,8 +360,8 @@ export const ticketCustomFieldValues = pgTable(
     ticketId: integer("ticket_id")
       .references(() => tickets.id, { onDelete: "cascade" })
       .notNull(),
-    fieldId: integer("field_id")
-      .references(() => projectCustomFields.id, { onDelete: "cascade" })
+    fieldDefinitionId: integer("field_definition_id")
+      .references(() => customFieldDefinitions.id, { onDelete: "cascade" })
       .notNull(),
     value: text("value"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -390,9 +373,10 @@ export const ticketCustomFieldValues = pgTable(
   (table) => [
     uniqueIndex("uniq_ticket_custom_field_values").on(
       table.ticketId,
-      table.fieldId,
+      table.fieldDefinitionId,
     ),
     index("idx_ticket_custom_field_values_ticket").on(table.ticketId),
+    unique("uniq_tcfv_org_id").on(table.orgId, table.id),
   ],
 );
 

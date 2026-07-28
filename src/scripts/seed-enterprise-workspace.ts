@@ -1,6 +1,6 @@
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import * as schema from "../db/schema";
 import {
   users,
@@ -10,15 +10,13 @@ import {
   permissions,
 } from "../db/schema/common/auth";
 import {
+  roleAssignments,
   rolePermissionGrants,
-  userRoles,
   accessVersions,
 } from "../db/schema/common/access";
-import { orgDepartments, orgTeams, orgLocations } from "../db/schema/common/organization";
-import { departments } from "../db/schema/hr/employees";
+import { orgUnits } from "../db/schema/common/organization";
 import { subscriptions } from "../db/schema/common/shared";
 import { hrPeople, hrEmployments, hrReportingLines } from "../db/schema/hr/core-people";
-import { hrTeams, hrLocations } from "../db/schema/hr/core-org";
 import { leaveTypes, leaveRequests } from "../db/schema/hr/leaves";
 import { leavePolicies } from "../db/schema/hr/leave-policies";
 import { attendance, holidays, helpdeskTickets } from "../db/schema/hr/attendance";
@@ -99,7 +97,17 @@ async function seedRbac(db: Db, orgId: string, memberUserId: string, memberRole:
 
   const ownerRole = orgRoles.find((r) => r.slug === memberRole);
   if (ownerRole) {
-    await db.insert(userRoles).values({ orgId, userId: memberUserId, roleId: ownerRole.id }).onConflictDoNothing();
+    const [memberRow] = await db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, memberUserId)))
+      .limit(1);
+    if (memberRow !== undefined) {
+      await db
+        .insert(roleAssignments)
+        .values({ orgId, organizationMembershipId: memberRow.id, roleId: ownerRole.id })
+        .onConflictDoNothing();
+    }
   }
   await db.insert(accessVersions).values({ orgId, permissionsVersion: 1 }).onConflictDoNothing({ target: accessVersions.orgId });
 }
@@ -114,7 +122,6 @@ async function seed(db: Db): Promise<Record<string, unknown>> {
     industry: "Technology",
     companySize: "51-200",
     country: "IN",
-    enabledModules: ["HR", "CRM", "PROJECTS", "SUPPORT", "ACCOUNTING"],
     onboardingCompletedAt: now,
     status: "ACTIVE",
   }).onConflictDoNothing({ target: organizations.id });
@@ -177,57 +184,42 @@ async function seed(db: Db): Promise<Record<string, unknown>> {
     }).onConflictDoNothing();
   }
 
-  const deptNames = ["Engineering", "People Operations"] as const;
-  const deptIds = new Map<string, number>();
-  for (const name of deptNames) {
-    const [row] = await db.insert(departments).values({
-      orgId: ORG_ID,
-      name,
-      managerId: name === "Engineering" ? PEOPLE[0].id : PEOPLE[1].id,
-    }).onConflictDoNothing().returning({ id: departments.id });
-    if (row) deptIds.set(name, row.id);
-  }
-  const existingDepts = await db
-    .select({ id: departments.id, name: departments.name })
-    .from(departments)
-    .where(eq(departments.orgId, ORG_ID));
-  for (const d of existingDepts) deptIds.set(d.name, d.id);
-
   for (const d of [
-    { name: "Engineering", code: "ENG" },
-    { name: "People Operations", code: "HR" },
+    { name: "Engineering", code: "ENG", headUserId: PEOPLE[0].id },
+    { name: "People Operations", code: "HR", headUserId: PEOPLE[1].id },
   ]) {
-    await db.insert(orgDepartments).values({ orgId: ORG_ID, name: d.name, code: d.code, status: "ACTIVE" }).onConflictDoNothing();
+    await db.insert(orgUnits).values({ orgId: ORG_ID, kind: "DEPARTMENT", name: d.name, code: d.code, headUserId: d.headUserId }).onConflictDoNothing();
   }
+  const deptUnitRows = await db
+    .select({ id: orgUnits.id, name: orgUnits.name })
+    .from(orgUnits)
+    .where(and(eq(orgUnits.orgId, ORG_ID), eq(orgUnits.kind, "DEPARTMENT")));
+  const deptIds = new Map<string, string>(deptUnitRows.map((r) => [r.name, r.id]));
   for (const t of [
-    { name: "Platform Team", code: "PLAT" },
-    { name: "Talent Team", code: "TA" },
+    { name: "Platform Team", code: "PLAT", leadId: PEOPLE[0].id },
+    { name: "Talent Team", code: "TA", leadId: PEOPLE[1].id },
   ]) {
-    await db.insert(orgTeams).values({ orgId: ORG_ID, name: t.name, code: t.code, status: "ACTIVE" }).onConflictDoNothing();
-    await db.insert(hrTeams).values({ orgId: ORG_ID, name: t.name, code: t.code, leadUserId: t.code === "PLAT" ? PEOPLE[0].id : PEOPLE[1].id }).onConflictDoNothing();
+    await db.insert(orgUnits).values({ orgId: ORG_ID, kind: "TEAM", name: t.name, code: t.code, headUserId: t.leadId }).onConflictDoNothing();
   }
   for (const loc of [
     { name: "Mumbai HQ", code: "BOM", city: "Mumbai" },
     { name: "Bangalore Tech Park", code: "BLR", city: "Bangalore" },
   ]) {
-    await db.insert(orgLocations).values({
+    await db.insert(orgUnits).values({
       orgId: ORG_ID,
-      name: loc.name,
-      type: "OFFICE",
-      address: `${loc.city}, India`,
-      status: "ACTIVE",
-    }).onConflictDoNothing();
-    await db.insert(hrLocations).values({
-      orgId: ORG_ID,
+      kind: "LOCATION",
       name: loc.name,
       code: loc.code,
-      type: "OFFICE",
-      address: { city: loc.city, country: "IN" },
+      metadata: { city: loc.city, country: "IN", locationType: "OFFICE" as const },
     }).onConflictDoNothing();
   }
 
-  const hrLocRows = await db.select({ id: hrLocations.id, name: hrLocations.name }).from(hrLocations).where(eq(hrLocations.orgId, ORG_ID));
-  const locId = hrLocRows[0]?.id ?? null;
+  const locRows = await db
+    .select({ id: orgUnits.id })
+    .from(orgUnits)
+    .where(and(eq(orgUnits.orgId, ORG_ID), eq(orgUnits.kind, "LOCATION")))
+    .limit(1);
+  const locId = locRows[0]?.id ?? null;
   const employmentIds = new Map<string, number>();
 
   for (const p of PEOPLE) {
@@ -340,7 +332,7 @@ async function seed(db: Db): Promise<Record<string, unknown>> {
   const [job] = await db.insert(jobPostings).values({
     orgId: ORG_ID,
     title: "Senior Software Engineer",
-    departmentId: deptIds.get("Engineering") ?? null,
+    orgDepartmentId: deptIds.get("Engineering") ?? null,
     location: "Mumbai / Remote",
     type: "FULL_TIME",
     description: "Build scalable HR and enterprise products.",
@@ -476,7 +468,7 @@ async function seed(db: Db): Promise<Record<string, unknown>> {
     adminEmail: ADMIN_EMAIL,
     plan: "ENTERPRISE",
     employees: PEOPLE.length,
-    departments: deptNames.length,
+    departments: 2,
     teams: 2,
     managers: 2,
     locations: 2,

@@ -2,12 +2,12 @@ import { pgTable, text, serial, timestamp, boolean, decimal, integer, index, uni
 import { relations } from "drizzle-orm";
 import { invLocationTypeEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
-import { orgBranches } from "../common/organization";
+import { orgUnits } from "../common/organization";
 
 export const invWarehouses = pgTable("inv_warehouses", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  branchId: text("branch_id").references(() => orgBranches.id, { onDelete: "set null" }),
+  branchId: text("branch_id").references(() => orgUnits.id, { onDelete: "set null" }),
   name: text("name").notNull(),
   code: text("code").notNull(),
   address: text("address"),
@@ -53,7 +53,7 @@ export const invLocations = pgTable("inv_locations", {
 
 export const invWarehousesRelations = relations(invWarehouses, ({ one, many }) => ({
   organization: one(organizations, { fields: [invWarehouses.orgId], references: [organizations.id] }),
-  branch: one(orgBranches, { fields: [invWarehouses.branchId], references: [orgBranches.id] }),
+  branch: one(orgUnits, { fields: [invWarehouses.branchId], references: [orgUnits.id] }),
   manager: one(users, { fields: [invWarehouses.managerUserId], references: [users.id], relationName: "warehouseManager" }),
   creator: one(users, { fields: [invWarehouses.createdBy], references: [users.id], relationName: "warehouseCreator" }),
   locations: many(invLocations),

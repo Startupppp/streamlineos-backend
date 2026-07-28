@@ -11,7 +11,7 @@ export class CrmBlueprintsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async list(orgId: string) {
-    return this.db.select().from(crmBlueprints).where(eq(crmBlueprints.orgId, orgId));
+    return this.db.select().from(crmBlueprints).where(eq(crmBlueprints.orgId, orgId)).limit(100);
   }
 
   async create(u: CurrentUserContext, input: CreateBlueprintInput) {
@@ -38,7 +38,7 @@ export class CrmBlueprintsService {
   async listTransitions(orgId: string, blueprintId: string) {
     return this.db.select().from(crmBlueprintTransitions).where(
       and(eq(crmBlueprintTransitions.orgId, orgId), eq(crmBlueprintTransitions.blueprintId, blueprintId)),
-    );
+    ).limit(100);
   }
 
   async createTransition(u: CurrentUserContext, blueprintId: string, input: CreateTransitionInput) {

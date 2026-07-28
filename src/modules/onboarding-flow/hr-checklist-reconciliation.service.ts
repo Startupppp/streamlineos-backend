@@ -3,12 +3,11 @@ import { and, count, eq, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import {
-  departments,
   documentTypes,
   hiringFlows,
   holidays,
   hrJobRoles,
-  hrLocations,
+  orgUnits,
   hrPositions,
   hrWorkflowDefinitions,
   leavePolicies,
@@ -108,12 +107,17 @@ export class HrChecklistReconciliationService {
         where: eq(organizations.id, orgId),
         columns: { name: true, country: true, timezone: true },
       }),
-      this.countRows(this.db.select({ value: count() }).from(departments).where(eq(departments.orgId, orgId))),
       this.countRows(
         this.db
           .select({ value: count() })
-          .from(hrLocations)
-          .where(and(eq(hrLocations.orgId, orgId), isNull(hrLocations.deletedAt))),
+          .from(orgUnits)
+          .where(and(eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "DEPARTMENT"), isNull(orgUnits.deletedAt))),
+      ),
+      this.countRows(
+        this.db
+          .select({ value: count() })
+          .from(orgUnits)
+          .where(and(eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "LOCATION"), isNull(orgUnits.deletedAt))),
       ),
       this.countRows(
         this.db

@@ -28,7 +28,8 @@ export class CrmPricebooksService {
       .select()
       .from(crmPricebooks)
       .where(and(eq(crmPricebooks.orgId, orgId), isNull(crmPricebooks.deletedAt)))
-      .orderBy(desc(crmPricebooks.isDefault), desc(crmPricebooks.createdAt));
+      .orderBy(desc(crmPricebooks.isDefault), desc(crmPricebooks.createdAt))
+      .limit(100);
   }
 
   async createPricebook(orgId: string, input: CreatePricebookInput) {
@@ -115,7 +116,8 @@ export class CrmPricebooksService {
       })
       .from(crmPricebookEntries)
       .leftJoin(crmProducts, eq(crmPricebookEntries.productId, crmProducts.id))
-      .where(and(eq(crmPricebookEntries.pricebookId, pricebookId), eq(crmPricebookEntries.orgId, orgId)));
+      .where(and(eq(crmPricebookEntries.pricebookId, pricebookId), eq(crmPricebookEntries.orgId, orgId)))
+      .limit(100);
   }
 
   async upsertEntry(orgId: string, pricebookId: string, input: UpsertEntryInput) {
@@ -278,7 +280,8 @@ export class CrmPricebooksService {
       .select()
       .from(crmQuoteTemplates)
       .where(and(eq(crmQuoteTemplates.orgId, orgId), isNull(crmQuoteTemplates.deletedAt)))
-      .orderBy(desc(crmQuoteTemplates.isDefault), desc(crmQuoteTemplates.createdAt));
+      .orderBy(desc(crmQuoteTemplates.isDefault), desc(crmQuoteTemplates.createdAt))
+      .limit(100);
   }
 
   async createTemplate(orgId: string, input: CreateTemplateInput) {

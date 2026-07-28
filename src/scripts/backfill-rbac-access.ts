@@ -6,12 +6,13 @@ import {
   accessVersions,
   organizationMembers,
   organizations,
+  permissionSupportedScopes,
   permissions,
+  roleAssignments,
   rolePermissionGrants,
   roles,
-  userRoles,
 } from "../db/schema";
-import { PERMISSIONS, ROLE_DEFAULT_PERMISSIONS } from "../modules/rbac/permissions";
+import { PERMISSIONS, ROLE_DEFAULT_PERMISSIONS, isScopable } from "../modules/rbac/permissions";
 
 type Database = PostgresJsDatabase<typeof schema>;
 
@@ -74,8 +75,25 @@ async function backfill(db: Database): Promise<BackfillSummary> {
           resource: p.resource,
           action: p.action,
           description: p.description ?? null,
+          moduleKey: p.name.split(":")[0] ?? null,
         })),
       )
+      .onConflictDoNothing();
+
+    const scopeRows = PERMISSIONS.flatMap((p): { permissionKey: string; scope: "all" | "team" | "own" }[] => {
+      const rows: { permissionKey: string; scope: "all" | "team" | "own" }[] = [
+        { permissionKey: p.name, scope: "all" },
+      ];
+      if (isScopable(p.name)) {
+        rows.push({ permissionKey: p.name, scope: "team" });
+        rows.push({ permissionKey: p.name, scope: "own" });
+      }
+      return rows;
+    });
+
+    await db
+      .insert(permissionSupportedScopes)
+      .values(scopeRows)
       .onConflictDoNothing();
   }
 
@@ -97,7 +115,11 @@ async function backfill(db: Database): Promise<BackfillSummary> {
   for (const org of orgs) {
     await db.transaction(async (tx) => {
       const members = await tx
-        .select({ userId: organizationMembers.userId, role: organizationMembers.role })
+        .select({
+          id: organizationMembers.id,
+          userId: organizationMembers.userId,
+          role: organizationMembers.role,
+        })
         .from(organizationMembers)
         .where(eq(organizationMembers.orgId, org.id));
 
@@ -147,23 +169,21 @@ async function backfill(db: Database): Promise<BackfillSummary> {
       }
 
       const roleIdBySlug = new Map(orgRoles.map((role) => [role.slug, role.id]));
-      const userRoleRows: { orgId: string; userId: string; roleId: number }[] = [];
+      const assignmentRows: { orgId: string; organizationMembershipId: number; roleId: number }[] = [];
       for (const member of members) {
         const roleId = roleIdBySlug.get(member.role);
         if (roleId === undefined) {
           summary.userRolesSkipped += 1;
           continue;
         }
-        userRoleRows.push({ orgId: org.id, userId: member.userId, roleId });
+        assignmentRows.push({ orgId: org.id, organizationMembershipId: member.id, roleId });
       }
-      if (userRoleRows.length > 0) {
+      if (assignmentRows.length > 0) {
         const inserted = await tx
-          .insert(userRoles)
-          .values(userRoleRows)
-          .onConflictDoNothing({
-            target: [userRoles.orgId, userRoles.userId, userRoles.roleId],
-          })
-          .returning({ id: userRoles.id });
+          .insert(roleAssignments)
+          .values(assignmentRows)
+          .onConflictDoNothing()
+          .returning({ id: roleAssignments.id });
         summary.userRolesInserted += inserted.length;
       }
 

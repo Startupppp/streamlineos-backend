@@ -5,22 +5,20 @@ import {
   kbSpaceMembers,
   kbArticles,
   kbArticleRestrictions,
+  kbSpaceGrants,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ResourceGrantsService } from "../access/resource-grants.service";
 import { CacheService } from "../../common/cache/cache.service";
 
 const KB_MANAGE_SPACES = "kb:spaces:manage";
-const KB_SPACE_RESOURCE_TYPE = "kb:space";
 const KB_SPACE_VIEWER_PERMISSION = "kb:space:viewer";
 
 @Injectable()
 export class KbAccessService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly resourceGrants: ResourceGrantsService,
     private readonly cache: CacheService,
   ) {}
 
@@ -82,21 +80,20 @@ export class KbAccessService {
       )
       .map((s) => s.id);
 
-    const grantedSpaceIdStrings = await Promise.all(
-      spaces.map(async (s) => {
-        const has = await this.resourceGrants.hasGrant(
-          user.orgId,
-          user.userId,
-          KB_SPACE_RESOURCE_TYPE,
-          String(s.id),
-          KB_SPACE_VIEWER_PERMISSION,
-        );
-        return has ? s.id : null;
-      }),
-    );
-    const resourceGrantedIds = grantedSpaceIdStrings.filter((id): id is number => id !== null);
+    const explicitGrantRows = await this.db
+      .selectDistinct({ spaceId: kbSpaceGrants.spaceId })
+      .from(kbSpaceGrants)
+      .where(
+        and(
+          eq(kbSpaceGrants.orgId, user.orgId),
+          eq(kbSpaceGrants.principalType, "user"),
+          eq(kbSpaceGrants.principalId, user.userId),
+          eq(kbSpaceGrants.permissionKey, KB_SPACE_VIEWER_PERMISSION),
+        ),
+      );
+    const explicitGrantedIds = explicitGrantRows.map((r) => r.spaceId);
 
-    return [...new Set([...memberAccessIds, ...resourceGrantedIds])];
+    return [...new Set([...memberAccessIds, ...explicitGrantedIds])];
   }
 
   async assertSpaceAccessible(user: CurrentUserContext, spaceId: number): Promise<void> {

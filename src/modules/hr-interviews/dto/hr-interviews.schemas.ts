@@ -153,7 +153,7 @@ const reportFiltersSchema = z.object({
   status: z.string().optional(),
   dateFrom: z.string().optional(),
   dateTo: z.string().optional(),
-  departmentId: z.number().int().positive().optional(),
+  departmentId: z.string().uuid().optional(),
 });
 
 export const generateReportSchema = z.object({

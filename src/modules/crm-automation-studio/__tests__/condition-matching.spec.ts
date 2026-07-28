@@ -54,9 +54,15 @@ describe("CRM condition matching — evaluateConditions", () => {
     expect(evaluateConditions(conditions, { title: "SMB Deal Q3" })).toBe(false);
   });
 
-  it("in (via eq on stringified array member): returns false for unknown op gracefully", () => {
+  it("in: returns true when field value is in the provided array", () => {
     const conditions: Condition[] = [{ field: "stage", op: "eq", value: "won" }];
     Object.assign(conditions[0], { op: "in", value: ["won", "lost"] });
+    expect(evaluateConditions(conditions, { stage: "won" })).toBe(true);
+  });
+
+  it("truly unknown op: returns false gracefully", () => {
+    const conditions: Condition[] = [{ field: "stage", op: "eq", value: "won" }];
+    Object.assign(conditions[0], { op: "regex", value: "^won$" });
     expect(evaluateConditions(conditions, { stage: "won" })).toBe(false);
   });
 

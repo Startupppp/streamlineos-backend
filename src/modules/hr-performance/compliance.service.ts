@@ -130,7 +130,7 @@ export class ComplianceService {
             and(
               eq(organizationMembers.orgId, orgId),
               eq(users.isActive, true),
-              sql`${users.id} NOT IN (SELECT user_id FROM payrolls WHERE org_id = ${orgId} AND month = to_char(now(), 'YYYY-MM'))`,
+              sql`${users.id} NOT IN (SELECT pre.user_id FROM payroll_run_employees pre JOIN payroll_runs pr ON pr.id = pre.run_id WHERE pr.org_id = ${orgId} AND pr.month = to_char(now(), 'YYYY-MM'))`,
             ),
           ),
       ]);

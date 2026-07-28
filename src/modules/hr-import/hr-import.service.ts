@@ -14,7 +14,7 @@ import {
   documents,
   users,
   organizationMembers,
-  departments,
+  orgUnits,
 } from "../../db/schema";
 import { hrImportJobs, hrImportRows } from "../../db/schema/hr/import-jobs";
 import { HrAuditService } from "../hr-core/hr-audit.service";
@@ -267,14 +267,14 @@ export class HrImportService {
           lastName: users.lastName,
           email: users.email,
           designation: users.designation,
-          department: departments.name,
+          department: orgUnits.name,
           role: users.role,
           joiningDate: users.joiningDate,
           isActive: users.isActive,
         })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .leftJoin(departments, eq(departments.id, users.departmentId))
+        .leftJoin(orgUnits, and(eq(orgUnits.id, users.orgDepartmentId), eq(orgUnits.kind, "DEPARTMENT")))
         .where(eq(organizationMembers.orgId, orgId))
         .limit(limit)
         .offset(offset);

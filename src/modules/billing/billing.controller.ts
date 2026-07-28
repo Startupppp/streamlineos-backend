@@ -1,4 +1,5 @@
 import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -144,6 +145,7 @@ export class BillingController {
   }
 
   @Patch("razorpay")
+  @Idempotent("billing.subscription.verify")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   verifyPayment(
@@ -238,6 +240,7 @@ export class BillingController {
   }
 
   @Post("ai-credits/purchase")
+  @Idempotent("billing.ai-credits.purchase")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:ai-credits:purchase")

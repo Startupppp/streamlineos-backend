@@ -1,15 +1,14 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, eq, isNull, or, sql } from "drizzle-orm";
+import { and, count, eq, isNull, or } from "drizzle-orm";
 import {
   hrJobRoles,
   hrJobLevels,
-  hrLocations,
-  hrTeams,
 } from "../../db/schema/hr/core-org";
+import { orgUnits, type OrgUnitMetadata } from "../../db/schema/common/organization";
 import { hrEmployments } from "../../db/schema/hr/core-people";
-import { departments } from "../../db/schema/hr/employees";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import { randomUUID } from "node:crypto";
 
 type CatalogInput = {
   name: string;
@@ -30,59 +29,110 @@ type LocationInput = CatalogInput & {
   };
 };
 
+type ValidLocationType = OrgUnitMetadata["locationType"];
+
+function toLocationType(raw: string | undefined): ValidLocationType {
+  const allowed: ValidLocationType[] = ["OFFICE", "WAREHOUSE", "STORE", "FACTORY", "REMOTE"];
+  const upper = (raw ?? "OFFICE").toUpperCase() as ValidLocationType;
+  return allowed.includes(upper) ? upper : "OFFICE";
+}
+
+function buildLocationMetadata(input: LocationInput): OrgUnitMetadata {
+  return {
+    locationType: toLocationType(input.type),
+    address: input.address?.line1,
+    city: input.address?.city,
+    state: input.address?.state,
+    country: input.address?.country,
+    postalCode: input.address?.postalCode,
+  };
+}
+
 @Injectable()
 export class HrOrgCatalogService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   listLocations(orgId: string) {
-    return this.db.query.hrLocations.findMany({
-      where: and(eq(hrLocations.orgId, orgId), isNull(hrLocations.deletedAt)),
-      orderBy: hrLocations.name,
+    return this.db.query.orgUnits.findMany({
+      where: and(
+        eq(orgUnits.orgId, orgId),
+        eq(orgUnits.kind, "LOCATION"),
+        isNull(orgUnits.deletedAt),
+      ),
+      orderBy: orgUnits.name,
       limit: 500,
     });
   }
 
   async createLocation(orgId: string, input: LocationInput) {
+    const code = input.code
+      ? input.code.toUpperCase()
+      : input.name
+          .toUpperCase()
+          .replace(/[^A-Z0-9]/g, "")
+          .substring(0, 6) || "LOC";
     try {
       const [row] = await this.db
-        .insert(hrLocations)
+        .insert(orgUnits)
         .values({
+          id: randomUUID(),
           orgId,
+          kind: "LOCATION",
           name: input.name,
-          code: input.code ?? null,
-          type: input.type ?? "OFFICE",
-          address: input.address ?? null,
+          code,
+          description: input.description ?? null,
+          metadata: buildLocationMetadata(input),
         })
         .returning();
       return row;
     } catch (err: unknown) {
       if (typeof err === "object" && err !== null && "code" in err && (err as { code: string }).code === "23505") {
-        throw new ConflictException("A location with this name already exists");
+        throw new ConflictException("A location with this code already exists in the organization");
       }
       throw err;
     }
   }
 
-  async updateLocation(orgId: string, id: number, input: Partial<LocationInput>) {
+  async updateLocation(orgId: string, id: string, input: Partial<LocationInput>) {
+    const current = await this.db
+      .select({ metadata: orgUnits.metadata })
+      .from(orgUnits)
+      .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "LOCATION"), isNull(orgUnits.deletedAt)))
+      .limit(1)
+      .then((r) => r[0] ?? null);
+    if (!current) throw new NotFoundException("Location not found");
+
+    const existing = (current.metadata ?? {}) as OrgUnitMetadata;
+    const updatedMeta: OrgUnitMetadata = {
+      ...existing,
+      ...(input.type !== undefined ? { locationType: toLocationType(input.type) } : {}),
+      ...(input.address?.line1 !== undefined ? { address: input.address.line1 } : {}),
+      ...(input.address?.city !== undefined ? { city: input.address.city } : {}),
+      ...(input.address?.state !== undefined ? { state: input.address.state } : {}),
+      ...(input.address?.country !== undefined ? { country: input.address.country } : {}),
+      ...(input.address?.postalCode !== undefined ? { postalCode: input.address.postalCode } : {}),
+    };
+
     const [row] = await this.db
-      .update(hrLocations)
+      .update(orgUnits)
       .set({
-        ...(input.name !== undefined && { name: input.name }),
-        ...(input.type !== undefined && { type: input.type }),
-        ...(input.address !== undefined && { address: input.address }),
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.code !== undefined ? { code: input.code.toUpperCase() } : {}),
+        metadata: updatedMeta,
+        updatedAt: new Date(),
       })
-      .where(and(eq(hrLocations.id, id), eq(hrLocations.orgId, orgId), isNull(hrLocations.deletedAt)))
+      .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "LOCATION"), isNull(orgUnits.deletedAt)))
       .returning();
     if (!row) throw new NotFoundException("Location not found");
     return row;
   }
 
-  async deleteLocation(orgId: string, id: number) {
+  async deleteLocation(orgId: string, id: string) {
     const [row] = await this.db
-      .update(hrLocations)
-      .set({ deletedAt: sql`now()` })
-      .where(and(eq(hrLocations.id, id), eq(hrLocations.orgId, orgId)))
-      .returning({ id: hrLocations.id });
+      .update(orgUnits)
+      .set({ deletedAt: new Date() })
+      .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "LOCATION"), isNull(orgUnits.deletedAt)))
+      .returning({ id: orgUnits.id });
     if (!row) throw new NotFoundException("Location not found");
     return { success: true };
   }
@@ -162,26 +212,33 @@ export class HrOrgCatalogService {
   }
 
   listTeams(orgId: string) {
-    return this.db.query.hrTeams.findMany({
-      where: and(eq(hrTeams.orgId, orgId), isNull(hrTeams.deletedAt), eq(hrTeams.isActive, true)),
-      orderBy: hrTeams.name,
+    return this.db.query.orgUnits.findMany({
+      where: and(eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "TEAM"), isNull(orgUnits.deletedAt)),
+      orderBy: orgUnits.name,
       limit: 500,
     });
   }
 
   async createTeam(orgId: string, input: CatalogInput) {
-    try {
-      const [row] = await this.db
-        .insert(hrTeams)
-        .values({ orgId, name: input.name, code: input.code ?? null, description: input.description ?? null })
-        .returning();
-      return row;
-    } catch (err: unknown) {
-      if (typeof err === "object" && err !== null && "code" in err && (err as { code: string }).code === "23505") {
-        throw new ConflictException("A team with this name already exists");
-      }
-      throw err;
+    const code = input.code ?? input.name.substring(0, 8).toUpperCase().replace(/\s/g, "");
+    const existing = await this.db.query.orgUnits.findFirst({
+      where: and(eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "TEAM"), eq(orgUnits.name, input.name)),
+    });
+    if (existing) {
+      throw new ConflictException("A team with this name already exists");
     }
+    const [row] = await this.db
+      .insert(orgUnits)
+      .values({
+        id: randomUUID(),
+        orgId,
+        kind: "TEAM",
+        name: input.name,
+        code,
+        description: input.description ?? null,
+      })
+      .returning();
+    return row;
   }
 
   async deleteJobRole(orgId: string, id: number) {
@@ -204,26 +261,26 @@ export class HrOrgCatalogService {
     return { success: true };
   }
 
-  async updateTeam(orgId: string, id: number, input: Partial<CatalogInput>) {
+  async updateTeam(orgId: string, id: string, input: Partial<CatalogInput>) {
     const [row] = await this.db
-      .update(hrTeams)
+      .update(orgUnits)
       .set({
         ...(input.name !== undefined && { name: input.name }),
         ...(input.code !== undefined && { code: input.code }),
         ...(input.description !== undefined && { description: input.description }),
       })
-      .where(and(eq(hrTeams.id, id), eq(hrTeams.orgId, orgId), isNull(hrTeams.deletedAt)))
+      .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "TEAM"), isNull(orgUnits.deletedAt)))
       .returning();
     if (!row) throw new NotFoundException("Team not found");
     return row;
   }
 
-  async deleteTeam(orgId: string, id: number) {
+  async deleteTeam(orgId: string, id: string) {
     const [row] = await this.db
-      .update(hrTeams)
-      .set({ deletedAt: sql`now()`, isActive: false })
-      .where(and(eq(hrTeams.id, id), eq(hrTeams.orgId, orgId)))
-      .returning({ id: hrTeams.id });
+      .update(orgUnits)
+      .set({ deletedAt: new Date() })
+      .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "TEAM")))
+      .returning({ id: orgUnits.id });
     if (!row) throw new NotFoundException("Team not found");
     return { success: true };
   }
@@ -240,11 +297,11 @@ export class HrOrgCatalogService {
       const rows = await this.db
         .select({
           groupId: hrEmployments.departmentId,
-          groupName: departments.name,
+          groupName: orgUnits.name,
           headcount: count(hrEmployments.id),
         })
         .from(hrEmployments)
-        .leftJoin(departments, eq(hrEmployments.departmentId, departments.id))
+        .leftJoin(orgUnits, eq(hrEmployments.departmentId, orgUnits.id))
         .where(
           and(
             eq(hrEmployments.orgId, orgId),
@@ -252,7 +309,7 @@ export class HrOrgCatalogService {
             isNull(hrEmployments.deletedAt),
           ),
         )
-        .groupBy(hrEmployments.departmentId, departments.name);
+        .groupBy(hrEmployments.departmentId, orgUnits.name);
       return rows;
     }
 
@@ -260,11 +317,11 @@ export class HrOrgCatalogService {
       const rows = await this.db
         .select({
           groupId: hrEmployments.locationId,
-          groupName: hrLocations.name,
+          groupName: orgUnits.name,
           headcount: count(hrEmployments.id),
         })
         .from(hrEmployments)
-        .leftJoin(hrLocations, eq(hrEmployments.locationId, hrLocations.id))
+        .leftJoin(orgUnits, eq(hrEmployments.locationId, orgUnits.id))
         .where(
           and(
             eq(hrEmployments.orgId, orgId),
@@ -272,7 +329,7 @@ export class HrOrgCatalogService {
             isNull(hrEmployments.deletedAt),
           ),
         )
-        .groupBy(hrEmployments.locationId, hrLocations.name);
+        .groupBy(hrEmployments.locationId, orgUnits.name);
       return rows;
     }
 

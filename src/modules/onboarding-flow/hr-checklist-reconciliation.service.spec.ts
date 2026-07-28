@@ -2,18 +2,17 @@ import { Test } from "@nestjs/testing";
 import { HrChecklistReconciliationService } from "./hr-checklist-reconciliation.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import {
-  departments,
   documentTypes,
   hiringFlows,
   holidays,
   hrJobRoles,
-  hrLocations,
   hrPositions,
   hrWorkflowDefinitions,
   leavePolicies,
   moduleSetupChecklistItems,
   offerLetterTemplates,
   onboardingTemplates,
+  orgUnits,
   organizationMembers,
   payrollPolicies,
   salaryComponents,
@@ -57,8 +56,7 @@ describe("HrChecklistReconciliationService", () => {
   }
 
   const ALL_TABLES = [
-    departments,
-    hrLocations,
+    orgUnits,
     hrJobRoles,
     hrPositions,
     leavePolicies,
@@ -147,14 +145,13 @@ describe("HrChecklistReconciliationService", () => {
     expect(updateCalls).toHaveLength(0);
   });
 
-  it("requires BOTH locations AND departments before marking that step done (AND logic)", async () => {
-    setCount(departments, 1);
-    setCount(hrLocations, 0);
+  it("marks locations_departments done when org_units exist", async () => {
+    setCount(orgUnits, 0);
     const items = [item("locations_departments", "todo")];
 
     expect(await svc.reconcile(ORG_ID, items)).toBe(false);
 
-    setCount(hrLocations, 1);
+    setCount(orgUnits, 1);
     expect(await svc.reconcile(ORG_ID, items)).toBe(true);
   });
 

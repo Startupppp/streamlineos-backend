@@ -6,6 +6,9 @@ import { DealsMeetingsController } from "./deals-meetings.controller";
 import { DealsCompetitorsController } from "./deals-competitors.controller";
 import { DealsStakeholdersController } from "./deals-stakeholders.controller";
 import { DealsService } from "./deals.service";
+import { DealsCrudService } from "./deals-crud.service";
+import { DealsActivitiesService } from "./deals-activities.service";
+import { DealsImportExportService } from "./deals-import-export.service";
 import { DealsAnalyticsService } from "./deals-analytics.service";
 import { DealsApprovalsService } from "./deals-approvals.service";
 import { DealsMeetingsService } from "./deals-meetings.service";
@@ -29,6 +32,9 @@ import { BillingModule } from "../billing/billing.module";
     DealsController,
   ],
   providers: [
+    DealsCrudService,
+    DealsActivitiesService,
+    DealsImportExportService,
     DealsService,
     DealsAnalyticsService,
     DealsApprovalsService,

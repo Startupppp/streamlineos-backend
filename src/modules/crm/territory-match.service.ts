@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
-import { territories } from "../../db/schema";
+import { territories, territoryReps } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { TerritoryCriteria } from "../../db/schema/crm/deals";
@@ -20,7 +20,7 @@ interface MatchResult {
     id: number;
     name: string;
     priority: number;
-    assignedReps: number[] | null;
+    assignedReps: number[];
   };
   assignedReps: number[];
 }
@@ -30,24 +30,40 @@ export class TerritoryMatchService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async match(orgId: string, input: MatchInput): Promise<MatchResult | null> {
-    const rows = await this.db
-      .select({
-        id: territories.id,
-        name: territories.name,
-        priority: territories.priority,
-        assignedReps: territories.assignedReps,
-        criteria: territories.criteria,
-      })
-      .from(territories)
-      .where(and(eq(territories.orgId, orgId), eq(territories.isActive, true)))
-      .orderBy(desc(territories.priority))
-      .limit(200);
+    const [rows, allReps] = await Promise.all([
+      this.db
+        .select({
+          id: territories.id,
+          name: territories.name,
+          priority: territories.priority,
+          criteria: territories.criteria,
+        })
+        .from(territories)
+        .where(and(eq(territories.orgId, orgId), eq(territories.isActive, true)))
+        .orderBy(desc(territories.priority))
+        .limit(200),
+      this.db
+        .select({ territoryId: territoryReps.territoryId, crmPersonId: territoryReps.crmPersonId })
+        .from(territoryReps)
+        .where(eq(territoryReps.orgId, orgId)),
+    ]);
+
+    const repsByTerritory = new Map<number, number[]>();
+    for (const rep of allReps) {
+      const existing = repsByTerritory.get(rep.territoryId);
+      if (existing) {
+        existing.push(rep.crmPersonId);
+      } else {
+        repsByTerritory.set(rep.territoryId, [rep.crmPersonId]);
+      }
+    }
 
     for (const row of rows) {
       if (this.criteriaMatches(row.criteria, input)) {
+        const reps = repsByTerritory.get(row.id) ?? [];
         return {
-          territory: { id: row.id, name: row.name, priority: row.priority, assignedReps: row.assignedReps },
-          assignedReps: row.assignedReps ?? [],
+          territory: { id: row.id, name: row.name, priority: row.priority, assignedReps: reps },
+          assignedReps: reps,
         };
       }
     }

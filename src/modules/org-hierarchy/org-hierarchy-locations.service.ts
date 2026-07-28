@@ -3,9 +3,9 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { orgLocations } from "../../db/schema/common/organization";
+import { orgUnits } from "../../db/schema/common/organization";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -26,40 +26,48 @@ export class OrgHierarchyLocationsService {
 
   listLocations(orgId: string) {
     return this.cache.cached(
-      CACHE_KEYS.orgLocations(orgId),
+      CACHE_KEYS.orgUnits(orgId, "LOCATION"),
       () =>
         this.db
           .select()
-          .from(orgLocations)
-          .where(eq(orgLocations.orgId, orgId)),
+          .from(orgUnits)
+          .where(and(eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "LOCATION"), isNull(orgUnits.deletedAt))),
       CACHE_TTL.MEDIUM,
     );
   }
 
   async getLocation(orgId: string, id: string) {
     return (
-      (await this.db.query.orgLocations.findFirst({
-        where: and(eq(orgLocations.id, id), eq(orgLocations.orgId, orgId)),
+      (await this.db.query.orgUnits.findFirst({
+        where: and(
+          eq(orgUnits.id, id),
+          eq(orgUnits.orgId, orgId),
+          eq(orgUnits.kind, "LOCATION"),
+        ),
       })) ?? null
     );
   }
 
   async createLocation(orgId: string, userId: string, body: CreateOrgLocationInput) {
     const [row] = await this.db
-      .insert(orgLocations)
+      .insert(orgUnits)
       .values({
         id: randomUUID(),
         orgId,
+        kind: "LOCATION",
         name: body.name,
-        type: body.type ?? "OFFICE",
-        address: body.address,
-        latitude: body.latitude?.toString(),
-        longitude: body.longitude?.toString(),
+        code: body.name.substring(0, 8).toUpperCase().replace(/\s/g, ""),
+        metadata: {
+          locationType: body.type ?? "OFFICE",
+          ...(body.address !== undefined && { address: body.address }),
+          ...(body.latitude !== undefined && { latitude: body.latitude }),
+          ...(body.longitude !== undefined && { longitude: body.longitude }),
+        },
       })
       .returning();
 
-    await this.cache.invalidate(CACHE_KEYS.orgLocations(orgId));
-    await this.audit.log({ action: "org.location.created", userId, orgId, targetId: row!.id, targetType: "org_location" });
+    await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "LOCATION"));
+    await this.audit.log({ action: "org.location.created", userId, orgId, targetId: row!.id, targetType: "org_unit" });
 
     return row;
   }
@@ -68,18 +76,25 @@ export class OrgHierarchyLocationsService {
     const existing = await this.getLocation(orgId, id);
     if (!existing) throw new NotFoundException("Location not found");
 
+    const existingMeta = (existing.metadata ?? {}) as Record<string, unknown>;
     const [row] = await this.db
-      .update(orgLocations)
+      .update(orgUnits)
       .set({
-        ...body,
-        latitude: body.latitude?.toString() ?? (body.latitude === null ? null : undefined),
-        longitude: body.longitude?.toString() ?? (body.longitude === null ? null : undefined),
+        ...(body.name !== undefined && { name: body.name }),
+        ...(body.status !== undefined && { status: body.status }),
+        metadata: {
+          ...existingMeta,
+          ...(body.type !== undefined && { locationType: body.type }),
+          ...(body.address !== undefined && { address: body.address }),
+          ...(body.latitude !== undefined && { latitude: body.latitude ?? undefined }),
+          ...(body.longitude !== undefined && { longitude: body.longitude ?? undefined }),
+        },
       })
-      .where(and(eq(orgLocations.id, id), eq(orgLocations.orgId, orgId)))
+      .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "LOCATION")))
       .returning();
 
-    await this.cache.invalidate(CACHE_KEYS.orgLocations(orgId));
-    await this.audit.log({ action: "org.location.updated", userId, orgId, targetId: id, targetType: "org_location" });
+    await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "LOCATION"));
+    await this.audit.log({ action: "org.location.updated", userId, orgId, targetId: id, targetType: "org_unit" });
 
     return row;
   }
@@ -89,10 +104,11 @@ export class OrgHierarchyLocationsService {
     if (!existing) throw new NotFoundException("Location not found");
 
     await this.db
-      .delete(orgLocations)
-      .where(and(eq(orgLocations.id, id), eq(orgLocations.orgId, orgId)));
+      .update(orgUnits)
+      .set({ deletedAt: new Date() })
+      .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "LOCATION")));
 
-    await this.cache.invalidate(CACHE_KEYS.orgLocations(orgId));
-    await this.audit.log({ action: "org.location.deleted", userId, orgId, targetId: id, targetType: "org_location" });
+    await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "LOCATION"));
+    await this.audit.log({ action: "org.location.deleted", userId, orgId, targetId: id, targetType: "org_unit" });
   }
 }

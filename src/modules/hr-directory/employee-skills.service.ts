@@ -1,9 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { SQL, and, eq, ilike, inArray, notInArray, or } from "drizzle-orm";
 import {
-  departmentMembers,
-  departments,
   employeeSkills,
+  orgUnitMembers,
+  orgUnits,
   organizationMembers,
   terminations,
   users,
@@ -103,7 +103,6 @@ export class EmployeeSkillsService {
         image: users.image,
         designation: users.designation,
         role: organizationMembers.role,
-        departmentId: users.departmentId,
       })
       .from(organizationMembers)
       .innerJoin(users, eq(users.id, organizationMembers.userId))
@@ -115,19 +114,19 @@ export class EmployeeSkillsService {
     let filteredUserIds = [...memberMap.keys()];
 
     if (query.department) {
-      const deptRows = await this.db
-        .select({ id: departments.id, name: departments.name })
-        .from(departments)
-        .where(and(eq(departments.orgId, orgId), ilike(departments.name, `%${query.department}%`)));
+      const orgDeptRows = await this.db
+        .select({ id: orgUnits.id })
+        .from(orgUnits)
+        .where(and(eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "DEPARTMENT"), ilike(orgUnits.name, `%${query.department}%`)));
 
-      if (deptRows.length === 0) return [];
+      if (orgDeptRows.length === 0) return [];
 
-      const deptIdValues = deptRows.map((d) => d.id);
+      const orgDeptIdValues = orgDeptRows.map((d) => d.id);
 
       const deptMemberRows = await this.db
-        .select({ userId: departmentMembers.userId })
-        .from(departmentMembers)
-        .where(inArray(departmentMembers.departmentId, deptIdValues));
+        .select({ userId: orgUnitMembers.userId })
+        .from(orgUnitMembers)
+        .where(inArray(orgUnitMembers.orgUnitId, orgDeptIdValues));
 
       const deptUserSet = new Set(deptMemberRows.map((d) => d.userId));
       filteredUserIds = filteredUserIds.filter((id) => deptUserSet.has(id));

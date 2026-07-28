@@ -1,7 +1,7 @@
 ﻿export interface BackendClaims {
   sub: string;
   orgId: string | null;
-  branchId: number | null;
+  branchId: string | null;
   role: string;
   permissions: string[];
   enabledModules: string[];
@@ -14,7 +14,7 @@
 export interface CurrentUserContext {
   userId: string;
   orgId: string;
-  branchId: number | null;
+  branchId: string | null;
   role: string;
   permissions: string[];
   enabledModules: string[];

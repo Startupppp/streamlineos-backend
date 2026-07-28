@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, ne } from "drizzle-orm";
-import { organizationMembers, rolePermissionGrants, userRoles } from "../../db/schema";
+import { organizationMembers, roleAssignments, rolePermissionGrants } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 
@@ -30,12 +30,12 @@ export class RoleLockoutService {
         : undefined;
 
     const rows = await this.db
-      .select({ userId: userRoles.userId })
-      .from(userRoles)
+      .select({ userId: organizationMembers.userId })
+      .from(roleAssignments)
       .innerJoin(
         rolePermissionGrants,
         and(
-          eq(rolePermissionGrants.roleId, userRoles.roleId),
+          eq(rolePermissionGrants.roleId, roleAssignments.roleId),
           eq(rolePermissionGrants.orgId, orgId),
           eq(rolePermissionGrants.permissionKey, RBAC_MANAGE_KEY),
           ne(rolePermissionGrants.scope, "none"),
@@ -44,7 +44,14 @@ export class RoleLockoutService {
             : undefined,
         ),
       )
-      .where(eq(userRoles.orgId, orgId))
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, roleAssignments.orgId),
+          eq(organizationMembers.id, roleAssignments.organizationMembershipId),
+        ),
+      )
+      .where(eq(roleAssignments.orgId, orgId))
       .catch(() => null);
 
     if (!rows) return false;

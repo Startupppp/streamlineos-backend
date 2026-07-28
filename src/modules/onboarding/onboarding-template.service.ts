@@ -3,7 +3,7 @@ import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import {
   onboardingTemplates,
   onboardingTemplateSteps,
-  orgDepartments,
+  orgUnits,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -15,16 +15,17 @@ export class OnboardingTemplateService {
 
   listTemplateDepartments(orgId: string) {
     return this.db
-      .select({ id: orgDepartments.id, name: orgDepartments.name })
-      .from(orgDepartments)
+      .select({ id: orgUnits.id, name: orgUnits.name })
+      .from(orgUnits)
       .where(
         and(
-          eq(orgDepartments.orgId, orgId),
-          isNull(orgDepartments.deletedAt),
-          eq(orgDepartments.status, "ACTIVE"),
+          eq(orgUnits.orgId, orgId),
+          eq(orgUnits.kind, "DEPARTMENT"),
+          isNull(orgUnits.deletedAt),
+          eq(orgUnits.status, "ACTIVE"),
         ),
       )
-      .orderBy(asc(orgDepartments.name));
+      .orderBy(asc(orgUnits.name));
   }
 
   async listTemplates(orgId: string) {

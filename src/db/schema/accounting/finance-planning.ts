@@ -2,7 +2,7 @@ import { boolean, date, decimal, index, integer, jsonb, pgEnum, pgTable, serial,
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { ledgerAccounts } from "./accounting";
-import { departments } from "../hr/employees";
+import { orgUnits } from "../common/organization";
 import { projects } from "../build";
 
 export const finBudgetPeriodEnum = pgEnum("fin_budget_period", ["MONTHLY", "QUARTERLY", "YEARLY"]);
@@ -35,7 +35,7 @@ export const finBudgetLines = pgTable("fin_budget_lines", {
   budgetId: integer("budget_id").references(() => finBudgets.id, { onDelete: "cascade" }).notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   accountId: integer("account_id").references(() => ledgerAccounts.id).notNull(),
-  departmentId: integer("department_id").references(() => departments.id),
+  departmentId: text("department_id").references(() => orgUnits.id, { onDelete: "set null" }),
   projectId: integer("project_id").references(() => projects.id),
   periodKey: text("period_key").notNull(),
   amount: decimal("amount", { precision: 18, scale: 4 }).notNull(),
@@ -87,7 +87,7 @@ export const finBudgetLinesRelations = relations(finBudgetLines, ({ one }) => ({
   budget: one(finBudgets, { fields: [finBudgetLines.budgetId], references: [finBudgets.id] }),
   organization: one(organizations, { fields: [finBudgetLines.orgId], references: [organizations.id] }),
   account: one(ledgerAccounts, { fields: [finBudgetLines.accountId], references: [ledgerAccounts.id] }),
-  department: one(departments, { fields: [finBudgetLines.departmentId], references: [departments.id] }),
+  department: one(orgUnits, { fields: [finBudgetLines.departmentId], references: [orgUnits.id] }),
   project: one(projects, { fields: [finBudgetLines.projectId], references: [projects.id] }),
 }));
 

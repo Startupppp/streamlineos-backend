@@ -12,12 +12,12 @@ import {
   organizationMembers,
   organizations,
   permissions,
+  roleAssignments,
   rolePermissionGrants,
   roles,
-  userRoles,
   users,
 } from "../../db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 describe("Leads PermissionGuard wiring (e2e, no DB required)", () => {
   let app: INestApplication;
@@ -85,7 +85,6 @@ describeWithDb(
     async function cleanup(): Promise<void> {
       await db.delete(leads).where(eq(leads.orgId, ORG_ID));
       await db.delete(rolePermissionGrants).where(eq(rolePermissionGrants.orgId, ORG_ID));
-      await db.delete(userRoles).where(eq(userRoles.orgId, ORG_ID));
       await db.delete(accessVersions).where(eq(accessVersions.orgId, ORG_ID));
       await db.delete(roles).where(eq(roles.orgId, ORG_ID));
       await db.delete(organizationMembers).where(eq(organizationMembers.orgId, ORG_ID));
@@ -146,12 +145,23 @@ describeWithDb(
       const salesRoleId = salesRole[0].id;
       const deniedRoleId = deniedRole[0].id;
 
+      const membershipRows = await db
+        .select({ id: organizationMembers.id, userId: organizationMembers.userId })
+        .from(organizationMembers)
+        .where(eq(organizationMembers.orgId, ORG_ID));
+      const memberIdByUserId = new Map(membershipRows.map((m) => [m.userId, m.id]));
+      const getMembershipId = (userId: string): number => {
+        const id = memberIdByUserId.get(userId);
+        if (id === undefined) throw new Error(`Membership not found for user ${userId}`);
+        return id;
+      };
+
       await db
-        .insert(userRoles)
+        .insert(roleAssignments)
         .values([
-          { orgId: ORG_ID, userId: U.own, roleId: ownRoleId },
-          { orgId: ORG_ID, userId: U.sales, roleId: salesRoleId },
-          { orgId: ORG_ID, userId: U.denied, roleId: deniedRoleId },
+          { orgId: ORG_ID, organizationMembershipId: getMembershipId(U.own), roleId: ownRoleId },
+          { orgId: ORG_ID, organizationMembershipId: getMembershipId(U.sales), roleId: salesRoleId },
+          { orgId: ORG_ID, organizationMembershipId: getMembershipId(U.denied), roleId: deniedRoleId },
         ])
         .onConflictDoNothing();
 

@@ -1,18 +1,16 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, gt, inArray } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, or } from "drizzle-orm";
 import {
   accessVersions,
-  departmentMembers,
-  departments,
-  groupRoles,
-  membershipRoleAssignments,
+  groupRoleAssignments,
   organizationMembers,
+  principalGroupMembers,
+  roleAssignments,
   rolePermissionGrants,
   roles,
   userDelegations,
   userModuleAccess,
   userPermissions,
-  userRoles,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -67,6 +65,10 @@ export interface DelegationRow {
 
 export function isActiveDelegation(row: DelegationRow, now: Date): boolean {
   return row.status === "ACTIVE" && row.endsAt > now;
+}
+
+export function isActiveAssignment(row: { expiresAt: Date | null }, now: Date): boolean {
+  return row.expiresAt === null || row.expiresAt > now;
 }
 
 export function moduleOf(permissionKey: string): string {
@@ -316,66 +318,58 @@ export class AccessService {
     if (gate.isOwner) return allCatalogScopes();
 
     const membershipId = member?.id ?? 0;
+    const now = new Date();
 
-    const membershipRows = await this.safeAccessTableRead(
+    const assignmentRows = await this.safeAccessTableRead(
       () =>
         this.db
-          .select({ roleId: membershipRoleAssignments.roleId })
-          .from(membershipRoleAssignments)
+          .select({ roleId: roleAssignments.roleId })
+          .from(roleAssignments)
           .where(
             and(
-              eq(membershipRoleAssignments.organizationId, orgId),
-              eq(membershipRoleAssignments.organizationMembershipId, membershipId),
+              eq(roleAssignments.orgId, orgId),
+              eq(roleAssignments.organizationMembershipId, membershipId),
+              or(
+                isNull(roleAssignments.expiresAt),
+                gt(roleAssignments.expiresAt, now),
+              ),
             ),
           ),
       [] as { roleId: number }[],
     );
 
-    let directRows: { roleId: number }[];
+    const roleIds = new Set<number>(assignmentRows.map((row) => row.roleId));
 
-    if (membershipRows.length > 0) {
-      directRows = membershipRows;
-    } else {
-      const userRoleRows = await this.safeAccessTableRead(
-        () =>
-          this.db
-            .select({ roleId: userRoles.roleId })
-            .from(userRoles)
-            .where(and(eq(userRoles.orgId, orgId), eq(userRoles.userId, userId))),
-        [] as { roleId: number }[],
-      );
-      directRows = userRoleRows;
-    }
-
-    const roleIds = new Set<number>(directRows.map((row) => row.roleId));
-
-    const deptRows = await this.safeAccessTableRead(
+    const groupMemberRows = await this.safeAccessTableRead(
       () =>
         this.db
-          .select({ departmentId: departmentMembers.departmentId })
-          .from(departmentMembers)
-          .innerJoin(departments, eq(departmentMembers.departmentId, departments.id))
-          .where(and(eq(departmentMembers.userId, userId), eq(departments.orgId, orgId))),
-      [],
+          .select({ principalGroupId: principalGroupMembers.principalGroupId })
+          .from(principalGroupMembers)
+          .where(
+            and(
+              eq(principalGroupMembers.orgId, orgId),
+              eq(principalGroupMembers.organizationMembershipId, membershipId),
+            ),
+          ),
+      [] as { principalGroupId: string }[],
     );
-    const departmentIds = deptRows.map((row) => row.departmentId);
+    const groupIds = groupMemberRows.map((row) => row.principalGroupId);
 
-    if (departmentIds.length > 0) {
-      const groupRows = await this.safeAccessTableRead(
+    if (groupIds.length > 0) {
+      const groupRoleRows = await this.safeAccessTableRead(
         () =>
           this.db
-            .select({ roleId: groupRoles.roleId })
-            .from(groupRoles)
+            .select({ roleId: groupRoleAssignments.roleId })
+            .from(groupRoleAssignments)
             .where(
               and(
-                eq(groupRoles.orgId, orgId),
-                eq(groupRoles.groupType, "department"),
-                inArray(groupRoles.groupId, departmentIds),
+                eq(groupRoleAssignments.orgId, orgId),
+                inArray(groupRoleAssignments.principalGroupId, groupIds),
               ),
             ),
-        [],
+        [] as { roleId: number }[],
       );
-      for (const row of groupRows) roleIds.add(row.roleId);
+      for (const row of groupRoleRows) roleIds.add(row.roleId);
     }
 
     const result: Record<string, DataScope> = {};

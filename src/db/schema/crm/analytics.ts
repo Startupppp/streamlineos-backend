@@ -152,23 +152,6 @@ export const crmSla = pgTable("crm_sla_policies", {
   unique("uniq_crm_sla_policies_org_id").on(table.orgId, table.id),
 ]);
 
-export const crmViews = pgTable("crm_views", {
-  id: serial("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  createdBy: text("created_by").references(() => users.id).notNull(),
-  name: text("name").notNull(),
-  entityType: text("entity_type").notNull(),
-  filters: jsonb("filters").$type<Record<string, unknown>>().default({}),
-  sortBy: text("sort_by"),
-  sortDir: text("sort_dir").default("asc").notNull(),
-  isPublic: boolean("is_public").default(false).notNull(),
-  isPinned: boolean("is_pinned").default(false).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_crm_views_org").on(table.orgId),
-  unique("uniq_crm_views_org_id").on(table.orgId, table.id),
-]);
-
 export const crmPeopleRelations = relations(crmPeople, ({ one, many }) => ({
   organization: one(organizations, { fields: [crmPeople.orgId], references: [organizations.id] }),
   deals: many(crmDeals),
@@ -209,9 +192,4 @@ export const crmEmailTemplatesRelations = relations(crmEmailTemplates, ({ one })
 
 export const crmSlaRelations = relations(crmSla, ({ one }) => ({
   organization: one(organizations, { fields: [crmSla.orgId], references: [organizations.id] }),
-}));
-
-export const crmViewsRelations = relations(crmViews, ({ one }) => ({
-  organization: one(organizations, { fields: [crmViews.orgId], references: [organizations.id] }),
-  creator: one(users, { fields: [crmViews.createdBy], references: [users.id] }),
 }));

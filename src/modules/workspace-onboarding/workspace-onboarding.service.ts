@@ -1,8 +1,9 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
-import { orgBusinessUnits, orgBranches, orgDepartments, orgTeams, organizations } from "../../db/schema";
+import { orgUnits, organizations } from "../../db/schema";
 import { ModuleChecklistService } from "../onboarding-flow/module-checklist.service";
 
 const INDUSTRY_TEMPLATES: Record<string, string[]> = {
@@ -66,65 +67,65 @@ export class WorkspaceOnboardingService {
 
     await this.db.transaction(async (tx) => {
       const [existingBu] = await tx
-        .select({ id: orgBusinessUnits.id })
-        .from(orgBusinessUnits)
-        .where(eq(orgBusinessUnits.orgId, orgId))
+        .select({ id: orgUnits.id })
+        .from(orgUnits)
+        .where(and(eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "BUSINESS_UNIT")))
         .limit(1);
 
       let buId: string | undefined = existingBu?.id;
       if (!existingBu) {
         const [insertedBu] = await tx
-          .insert(orgBusinessUnits)
-          .values({ orgId, name: orgName, code: "HQ" })
-          .returning({ id: orgBusinessUnits.id });
+          .insert(orgUnits)
+          .values({ id: randomUUID(), orgId, kind: "BUSINESS_UNIT", name: orgName, code: "HQ" })
+          .returning({ id: orgUnits.id });
         buId = insertedBu?.id;
         createdBusinessUnits = 1;
       }
 
       const [existingBranch] = await tx
-        .select({ id: orgBranches.id })
-        .from(orgBranches)
-        .where(eq(orgBranches.orgId, orgId))
+        .select({ id: orgUnits.id })
+        .from(orgUnits)
+        .where(and(eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "BRANCH")))
         .limit(1);
 
       let branchId: string | undefined = existingBranch?.id;
       if (!existingBranch) {
         const [insertedBranch] = await tx
-          .insert(orgBranches)
-          .values({ orgId, name: "Main Office", code: "MAIN", businessUnitId: buId })
-          .returning({ id: orgBranches.id });
+          .insert(orgUnits)
+          .values({ id: randomUUID(), orgId, kind: "BRANCH", name: "Main Office", code: "MAIN", parentId: buId })
+          .returning({ id: orgUnits.id });
         branchId = insertedBranch?.id;
         createdBranches = 1;
       }
 
       for (const deptName of deptNames) {
         const [existingDept] = await tx
-          .select({ id: orgDepartments.id })
-          .from(orgDepartments)
-          .where(and(eq(orgDepartments.orgId, orgId), eq(orgDepartments.name, deptName)))
+          .select({ id: orgUnits.id })
+          .from(orgUnits)
+          .where(and(eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "DEPARTMENT"), eq(orgUnits.name, deptName)))
           .limit(1);
 
         let deptId: string | undefined = existingDept?.id;
         if (!existingDept) {
           const code = deptCode(deptName);
           const [insertedDept] = await tx
-            .insert(orgDepartments)
-            .values({ orgId, name: deptName, code, branchId })
-            .returning({ id: orgDepartments.id });
+            .insert(orgUnits)
+            .values({ id: randomUUID(), orgId, kind: "DEPARTMENT", name: deptName, code, parentId: branchId })
+            .returning({ id: orgUnits.id });
           deptId = insertedDept?.id;
           createdDepartments += 1;
         }
 
         const teamName = `${deptName} Team`;
         const [existingTeam] = await tx
-          .select({ id: orgTeams.id })
-          .from(orgTeams)
-          .where(and(eq(orgTeams.orgId, orgId), eq(orgTeams.name, teamName)))
+          .select({ id: orgUnits.id })
+          .from(orgUnits)
+          .where(and(eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "TEAM"), eq(orgUnits.name, teamName)))
           .limit(1);
 
         if (!existingTeam) {
           const code = teamCode(deptName);
-          await tx.insert(orgTeams).values({ orgId, name: teamName, code, departmentId: deptId });
+          await tx.insert(orgUnits).values({ id: randomUUID(), orgId, kind: "TEAM", name: teamName, code, parentId: deptId });
           createdTeams += 1;
         }
       }

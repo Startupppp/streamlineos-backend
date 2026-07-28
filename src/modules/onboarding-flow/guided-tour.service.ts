@@ -23,7 +23,7 @@ export class GuidedTourService {
 
     await this.db
       .insert(guidedTours)
-      .values({ orgId: null, tourKey: HR_SETUP_TOUR_KEY, moduleKey: "HR", role: null, steps: [], isActive: true });
+      .values({ orgId: null, tourKey: HR_SETUP_TOUR_KEY, moduleKey: "hr", role: null, steps: [], isActive: true });
   }
 
   async listToursForUser(orgId: string, userId: string, role?: string) {

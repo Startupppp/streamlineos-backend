@@ -43,11 +43,11 @@ export class ChatChannelMembersService {
     return member;
   }
 
-  async getChannel(channelId: number, userId: string) {
+  async getChannel(channelId: number, userId: string, orgId: string) {
     await this.assertMember(channelId, userId);
 
     const channel = await this.db.query.chatChannels.findFirst({
-      where: eq(chatChannels.id, channelId),
+      where: and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, orgId)),
       with: {
         members: {
           with: {
@@ -114,7 +114,7 @@ export class ChatChannelMembersService {
     return { ok: true };
   }
 
-  async updateChannel(channelId: number, userId: string, body: UpdateChannelInput) {
+  async updateChannel(channelId: number, userId: string, body: UpdateChannelInput, orgId: string) {
     const membership = await this.db.query.chatChannelMembers.findFirst({
       where: and(
         eq(chatChannelMembers.channelId, channelId),
@@ -132,15 +132,19 @@ export class ChatChannelMembersService {
     if (body.description !== undefined) updateData.description = body.description;
     if (body.avatarUrl !== undefined) updateData.avatarUrl = body.avatarUrl;
 
-    await this.db.update(chatChannels).set(updateData).where(eq(chatChannels.id, channelId));
+    await this.db
+      .update(chatChannels)
+      .set(updateData)
+      .where(and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, orgId)));
 
     return { ok: true };
   }
 
-  async joinPublicChannel(channelId: number, userId: string) {
+  async joinPublicChannel(channelId: number, userId: string, orgId: string) {
     const channel = await this.db.query.chatChannels.findFirst({
       where: and(
         eq(chatChannels.id, channelId),
+        eq(chatChannels.orgId, orgId),
         eq(chatChannels.type, "PUBLIC"),
         eq(chatChannels.isArchived, false),
       ),

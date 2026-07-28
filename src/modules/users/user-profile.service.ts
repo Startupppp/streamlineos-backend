@@ -9,9 +9,11 @@ import {
   devices,
   loginHistory,
   organizationMembers,
-  userMemberships,
+  orgUnitMembers,
+  orgUnits,
   userPreferences,
   userSessions,
+  type OrgUnitKind,
 } from "../../db/schema";
 import type {
   ListAuditInput,
@@ -258,21 +260,24 @@ export class UserProfileService {
 
   async getMembership(orgId: string, userId: string) {
     await this.assertMember(orgId, userId);
-    const membership = await this.db.query.userMemberships.findFirst({
-      where: and(eq(userMemberships.orgId, orgId), eq(userMemberships.userId, userId)),
-    });
-    return (
-      membership ?? {
-        userId,
-        orgId,
-        businessUnitId: null,
-        branchId: null,
-        departmentId: null,
-        teamId: null,
-        managerUserId: null,
-        isPrimary: true,
-      }
-    );
+
+    const rows = await this.db
+      .select({ unitId: orgUnitMembers.orgUnitId, kind: orgUnits.kind, name: orgUnits.name })
+      .from(orgUnitMembers)
+      .innerJoin(orgUnits, eq(orgUnitMembers.orgUnitId, orgUnits.id))
+      .where(and(eq(orgUnitMembers.userId, userId), eq(orgUnitMembers.orgId, orgId)));
+
+    const byKind = (kind: string) => rows.find((r) => r.kind === kind)?.unitId ?? null;
+
+    return {
+      userId,
+      orgId,
+      businessUnitId: byKind("BUSINESS_UNIT"),
+      branchId: byKind("BRANCH"),
+      departmentId: byKind("DEPARTMENT"),
+      teamId: byKind("TEAM"),
+      managerUserId: null,
+    };
   }
 
   async updateMembership(
@@ -283,32 +288,38 @@ export class UserProfileService {
   ) {
     await this.assertMember(orgId, userId);
 
-    const existing = await this.db.query.userMemberships.findFirst({
-      where: and(eq(userMemberships.orgId, orgId), eq(userMemberships.userId, userId)),
+    const kindMap: Array<{ kind: OrgUnitKind; unitId: string | null | undefined }> = [
+      { kind: "BUSINESS_UNIT", unitId: data.businessUnitId },
+      { kind: "BRANCH", unitId: data.branchId },
+      { kind: "DEPARTMENT", unitId: data.departmentId },
+      { kind: "TEAM", unitId: data.teamId },
+    ];
+
+    await this.db.transaction(async (tx) => {
+      for (const { kind, unitId } of kindMap) {
+        if (unitId === undefined) continue;
+
+        const existingRows = await tx
+          .select({ id: orgUnitMembers.id, orgUnitId: orgUnitMembers.orgUnitId })
+          .from(orgUnitMembers)
+          .innerJoin(orgUnits, eq(orgUnitMembers.orgUnitId, orgUnits.id))
+          .where(and(eq(orgUnitMembers.userId, userId), eq(orgUnitMembers.orgId, orgId), eq(orgUnits.kind, kind)));
+
+        for (const row of existingRows) {
+          await tx.delete(orgUnitMembers).where(eq(orgUnitMembers.id, row.id));
+        }
+
+        if (unitId !== null) {
+          await tx.insert(orgUnitMembers).values({
+            id: randomUUID(),
+            orgId,
+            orgUnitId: unitId,
+            userId,
+            role: "member",
+          }).onConflictDoNothing();
+        }
+      }
     });
-
-    const updateData: Record<string, unknown> = {};
-    if (data.businessUnitId !== undefined) updateData.businessUnitId = data.businessUnitId;
-    if (data.branchId !== undefined) updateData.branchId = data.branchId;
-    if (data.departmentId !== undefined) updateData.departmentId = data.departmentId;
-    if (data.teamId !== undefined) updateData.teamId = data.teamId;
-    if (data.managerUserId !== undefined) updateData.managerUserId = data.managerUserId;
-    if (data.isPrimary !== undefined) updateData.isPrimary = data.isPrimary;
-
-    if (existing) {
-      await this.db
-        .update(userMemberships)
-        .set(updateData)
-        .where(and(eq(userMemberships.orgId, orgId), eq(userMemberships.userId, userId)));
-    } else {
-      await this.db.insert(userMemberships).values({
-        id: randomUUID(),
-        orgId,
-        userId,
-        isPrimary: data.isPrimary ?? true,
-        ...updateData,
-      });
-    }
 
     this.audit.log({
       action: "user.membership.updated",

@@ -3,6 +3,8 @@ import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { RateResolverService } from "./rate-resolver.service";
 import { FxService } from "./fx.service";
 import { EntriesService } from "./entries.service";
+import { EntriesReadService } from "./entries-read.service";
+import { EntriesPeriodService } from "./entries-period.service";
 import { EntriesController } from "./entries.controller";
 import { TimerService } from "./timer.service";
 import { TimerController } from "./timer.controller";
@@ -51,6 +53,8 @@ import { AiModule } from "../ai/ai.module";
     TimesheetsAuditService,
     RateResolverService,
     FxService,
+    EntriesReadService,
+    EntriesPeriodService,
     EntriesService,
     TimerService,
     PeriodsService,

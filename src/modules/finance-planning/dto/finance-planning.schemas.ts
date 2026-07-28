@@ -28,7 +28,7 @@ export const budgetLineSchema = z.object({
   accountId: z.number().int().positive(),
   periodKey: z.string().min(1).max(20),
   amount: z.number().nonnegative(),
-  departmentId: z.number().int().positive().optional(),
+  departmentId: z.string().uuid().optional(),
   projectId: z.number().int().positive().optional(),
 });
 export type BudgetLineInput = z.infer<typeof budgetLineSchema>;

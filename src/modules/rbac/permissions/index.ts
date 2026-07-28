@@ -54,3 +54,4 @@ const SCOPABLE_PERMISSIONS = new Set(
 export function isScopable(key: string): boolean {
   return SCOPABLE_PERMISSIONS.has(key);
 }
+

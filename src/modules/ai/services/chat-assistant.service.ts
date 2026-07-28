@@ -11,7 +11,8 @@ import {
   deals,
   leads,
   leaveRequests,
-  payrolls,
+  payrollRuns,
+  payrollRunEmployees,
   projects,
   tickets,
 } from "../../../db/schema";
@@ -120,11 +121,17 @@ export class ChatAssistantService {
         ),
         limit: 5,
       }),
-      this.db.query.payrolls.findMany({
-        where: and(eq(payrolls.userId, userId), eq(payrolls.orgId, orgId)),
-        orderBy: [desc(payrolls.createdAt)],
-        limit: 3,
-      }),
+      this.db
+        .select({
+          month: payrollRuns.month,
+          netSalary: payrollRunEmployees.net,
+          status: payrollRunEmployees.status,
+        })
+        .from(payrollRunEmployees)
+        .innerJoin(payrollRuns, eq(payrollRunEmployees.runId, payrollRuns.id))
+        .where(and(eq(payrollRunEmployees.userId, userId), eq(payrollRuns.orgId, orgId)))
+        .orderBy(desc(payrollRuns.createdAt))
+        .limit(3),
       this.db.select({ count: count() }).from(leads).where(and(eq(leads.orgId, orgId), eq(leads.assignedToId, userId))),
       this.db.select({ count: count() }).from(leads).where(and(eq(leads.orgId, orgId), eq(leads.priority, "HOT"))),
       this.db

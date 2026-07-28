@@ -9,7 +9,6 @@ import {
 import {
   reimbursements,
   salaryLoans,
-  salaryStructures,
 } from "../../db/schema";
 import {
   hrEmployments,
@@ -71,7 +70,6 @@ export class PayrollInputsBuildService {
       reimbursementRows,
       loanRows,
       salaryProfileRows,
-      salaryStructureRows,
       employmentRows,
       benefitsClaimsRows,
       loanRepaymentRows,
@@ -126,16 +124,6 @@ export class PayrollInputsBuildService {
             eq(employeeSalaryProfiles.status, "ACTIVE"),
             inArray(employeeSalaryProfiles.userId, userIds),
             lte(employeeSalaryProfiles.effectiveFrom, end),
-          ),
-        ),
-      this.db
-        .select()
-        .from(salaryStructures)
-        .where(
-          and(
-            eq(salaryStructures.orgId, orgId),
-            eq(salaryStructures.isActive, true),
-            inArray(salaryStructures.userId, userIds),
           ),
         ),
       this.db
@@ -218,11 +206,6 @@ export class PayrollInputsBuildService {
       }
     }
 
-    const salaryStructureByUser = new Map<string, typeof salaryStructures.$inferSelect>();
-    for (const row of salaryStructureRows) {
-      salaryStructureByUser.set(row.userId, row);
-    }
-
     type EmploymentRow = (typeof employmentRows)[number];
 
     const employmentByUser = new Map<string, EmploymentRow>();
@@ -250,7 +233,6 @@ export class PayrollInputsBuildService {
       const benefitClaims = benefitsClaimsByUser.get(userId) ?? [];
       const dueRepayments = loanRepaymentsByUser.get(userId) ?? [];
       const salaryProfile = salaryProfileByUser.get(userId);
-      const salaryStructure = salaryStructureByUser.get(userId);
       const employment = employmentByUser.get(userId);
 
       const employeeMasterPayload = {
@@ -270,8 +252,8 @@ export class PayrollInputsBuildService {
             currency: salaryProfile.currency,
             payFrequency: salaryProfile.payFrequency,
             effectiveFrom: salaryProfile.effectiveFrom,
-            basicSalary: salaryStructure?.basicSalary ?? null,
-            allowances: salaryStructure?.allowances ?? null,
+            basicSalary: salaryProfile.basicSalary ?? null,
+            allowances: salaryProfile.allowances ?? null,
           }
         : {
             profileId: null,
@@ -279,8 +261,8 @@ export class PayrollInputsBuildService {
             currency: "INR",
             payFrequency: "MONTHLY",
             effectiveFrom: null,
-            basicSalary: salaryStructure?.basicSalary ?? null,
-            allowances: salaryStructure?.allowances ?? null,
+            basicSalary: null,
+            allowances: null,
           };
 
       const attendancePayload = attendance ?? {

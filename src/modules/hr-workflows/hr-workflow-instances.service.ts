@@ -4,7 +4,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { hrWorkflowInstances, hrWorkflowStepActions, hrWorkflowDelegations } from "../../db/schema/hr/workflow-engine";
 import { users, organizationMembers } from "../../db/schema/common/auth";
-import { departments } from "../../db/schema/hr/employees";
+import { orgUnits } from "../../db/schema/common/organization";
 import type { WorkflowInstanceQueryDto } from "./dto/workflow.schemas";
 import { HrWorkflowEngineService } from "./hr-workflow-engine.service";
 
@@ -208,7 +208,7 @@ export class HrWorkflowInstancesService {
     const uniqueSubjectIds = [...new Set(subjectIds)];
     const [subjectRows, hrMembers, financeMembers] = await Promise.all([
       uniqueSubjectIds.length > 0
-        ? this.db.select({ id: users.id, reportingTo: users.reportingTo, departmentId: users.departmentId, branchId: users.branchId, role: users.role })
+        ? this.db.select({ id: users.id, reportingTo: users.reportingTo, orgDepartmentId: users.orgDepartmentId, branchId: users.branchId, role: users.role })
             .from(users).where(inArray(users.id, uniqueSubjectIds))
         : Promise.resolve([]),
       this.db.select({ userId: organizationMembers.userId }).from(organizationMembers)
@@ -219,16 +219,16 @@ export class HrWorkflowInstancesService {
 
     const subjectMap = new Map(subjectRows.map((u) => [u.id, u]));
     const managerIds = [...new Set(subjectRows.map((u) => u.reportingTo).filter((id): id is string => id !== null && id !== undefined))];
-    const deptIds = [...new Set(subjectRows.map((u) => u.departmentId).filter((id): id is number => id !== null && id !== undefined))];
-    const branchIds = [...new Set(subjectRows.map((u) => u.branchId).filter((id): id is number => id !== null && id !== undefined))];
+    const deptIds = [...new Set(subjectRows.map((u) => u.orgDepartmentId).filter((id): id is string => id !== null && id !== undefined))];
+    const branchIds = [...new Set(subjectRows.map((u) => u.branchId).filter((id): id is string => id !== null && id !== undefined))];
 
     const [managerRows, deptRows, locationHrRows] = await Promise.all([
       managerIds.length > 0 ? this.db.select({ id: users.id, reportingTo: users.reportingTo }).from(users).where(inArray(users.id, managerIds)) : Promise.resolve([]),
-      deptIds.length > 0 ? this.db.select({ id: departments.id, managerId: departments.managerId }).from(departments).where(inArray(departments.id, deptIds)) : Promise.resolve([]),
+      deptIds.length > 0 ? this.db.select({ id: orgUnits.id, managerId: orgUnits.headUserId }).from(orgUnits).where(inArray(orgUnits.id, deptIds)) : Promise.resolve([]),
       branchIds.length > 0 ? this.db.select({ id: users.id, branchId: users.branchId }).from(users).where(and(inArray(users.branchId, branchIds), eq(users.role, "HR"))).limit(branchIds.length * 10) : Promise.resolve([]),
     ]);
 
-    const locationHrMap = new Map<number, string[]>();
+    const locationHrMap = new Map<string, string[]>();
     for (const row of locationHrRows) {
       if (row.branchId === null || row.branchId === undefined) continue;
       const existing = locationHrMap.get(row.branchId);
@@ -263,7 +263,7 @@ export class HrWorkflowInstancesService {
         return mm ? [mm] : [];
       }
       case "department_head": {
-        const deptId = cache.subjectMap.get(subjectEmployeeId)?.departmentId;
+        const deptId = cache.subjectMap.get(subjectEmployeeId)?.orgDepartmentId;
         if (!deptId) return [];
         const managerId = cache.deptMap.get(deptId)?.managerId;
         return managerId ? [managerId] : [];

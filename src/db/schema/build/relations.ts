@@ -20,8 +20,6 @@ import {
   workItemRelations,
   ticketChecklists,
   ticketChecklistItems,
-  projectCustomFields,
-  ticketCustomFieldValues,
   projectReleases,
   releaseTickets,
   projectWebhooks,
@@ -177,17 +175,6 @@ export const ticketChecklistItemsRelations = relations(ticketChecklistItems, ({ 
   checklist: one(ticketChecklists, {
     fields: [ticketChecklistItems.checklistId],
     references: [ticketChecklists.id],
-  }),
-}));
-
-export const projectCustomFieldsRelations = relations(projectCustomFields, ({ many }) => ({
-  values: many(ticketCustomFieldValues),
-}));
-
-export const ticketCustomFieldValuesRelations = relations(ticketCustomFieldValues, ({ one }) => ({
-  field: one(projectCustomFields, {
-    fields: [ticketCustomFieldValues.fieldId],
-    references: [projectCustomFields.id],
   }),
 }));
 

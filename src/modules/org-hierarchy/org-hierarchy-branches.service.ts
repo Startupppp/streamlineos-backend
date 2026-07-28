@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
@@ -6,7 +7,7 @@ import {
 } from "@nestjs/common";
 import { and, eq, ilike, isNull, or, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { orgBranches } from "../../db/schema/common/organization";
+import { orgUnits } from "../../db/schema/common/organization";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -30,53 +31,69 @@ export class OrgHierarchyBranchesService {
     const { page, limit, search, status } = query;
     const offset = (page - 1) * limit;
     const filters = and(
-      eq(orgBranches.orgId, orgId),
-      isNull(orgBranches.deletedAt),
-      ...(search ? [or(ilike(orgBranches.name, `%${search}%`), ilike(orgBranches.code, `%${search}%`))] : []),
-      ...(status ? [sql`${orgBranches.status} = ${status}`] : []),
+      eq(orgUnits.orgId, orgId),
+      eq(orgUnits.kind, "BRANCH"),
+      isNull(orgUnits.deletedAt),
+      ...(search ? [or(ilike(orgUnits.name, `%${search}%`), ilike(orgUnits.code, `%${search}%`))] : []),
+      ...(status ? [sql`${orgUnits.status} = ${status}`] : []),
     );
     const [rows, [{ count }]] = await Promise.all([
-      this.db.select().from(orgBranches).where(filters).limit(limit).offset(offset),
-      this.db.select({ count: sql<number>`count(*)::int` }).from(orgBranches).where(filters),
+      this.db.select().from(orgUnits).where(filters).limit(limit).offset(offset),
+      this.db.select({ count: sql<number>`count(*)::int` }).from(orgUnits).where(filters),
     ]);
     return { data: rows, total: count, page, limit };
   }
 
   async getOrgBranch(orgId: string, id: string) {
     return (
-      (await this.db.query.orgBranches.findFirst({
+      (await this.db.query.orgUnits.findFirst({
         where: and(
-          eq(orgBranches.id, id),
-          eq(orgBranches.orgId, orgId),
-          isNull(orgBranches.deletedAt),
+          eq(orgUnits.id, id),
+          eq(orgUnits.orgId, orgId),
+          eq(orgUnits.kind, "BRANCH"),
+          isNull(orgUnits.deletedAt),
         ),
       })) ?? null
     );
   }
 
   async createOrgBranch(orgId: string, userId: string, body: CreateOrgBranchInput) {
-    const conflict = await this.db.query.orgBranches.findFirst({
+    const conflict = await this.db.query.orgUnits.findFirst({
       where: and(
-        eq(orgBranches.orgId, orgId),
-        eq(orgBranches.code, body.code.toUpperCase()),
-        isNull(orgBranches.deletedAt),
+        eq(orgUnits.orgId, orgId),
+        eq(orgUnits.kind, "BRANCH"),
+        eq(orgUnits.code, body.code.toUpperCase()),
+        isNull(orgUnits.deletedAt),
       ),
     });
     if (conflict) throw new ConflictException("Branch code already exists");
 
+    const { address, city, state, country, postalCode, phone, email, businessUnitId, managerUserId, ...rest } = body;
+
     const [row] = await this.db
-      .insert(orgBranches)
+      .insert(orgUnits)
       .values({
         id: randomUUID(),
         orgId,
-        ...body,
+        kind: "BRANCH",
+        ...rest,
         code: body.code.toUpperCase(),
-        email: body.email || undefined,
+        headUserId: managerUserId ?? undefined,
+        parentId: businessUnitId ?? undefined,
+        metadata: {
+          ...(address !== undefined && { address }),
+          ...(city !== undefined && { city }),
+          ...(state !== undefined && { state }),
+          ...(country !== undefined && { country }),
+          ...(postalCode !== undefined && { postalCode }),
+          ...(phone !== undefined && { phone }),
+          ...(email && email !== "" ? { email } : {}),
+        },
       })
       .returning();
 
-    await this.cache.invalidate(CACHE_KEYS.orgBranches(orgId));
-    await this.audit.log({ action: "org.branch.created", userId, orgId, targetId: row!.id, targetType: "org_branch" });
+    await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "BRANCH"));
+    await this.audit.log({ action: "org.branch.created", userId, orgId, targetId: row!.id, targetType: "org_unit" });
 
     return row;
   }
@@ -86,24 +103,44 @@ export class OrgHierarchyBranchesService {
     if (!existing) throw new NotFoundException("Branch not found");
 
     if (body.code && body.code !== existing.code) {
-      const conflict = await this.db.query.orgBranches.findFirst({
+      const conflict = await this.db.query.orgUnits.findFirst({
         where: and(
-          eq(orgBranches.orgId, orgId),
-          eq(orgBranches.code, body.code.toUpperCase()),
-          isNull(orgBranches.deletedAt),
+          eq(orgUnits.orgId, orgId),
+          eq(orgUnits.kind, "BRANCH"),
+          eq(orgUnits.code, body.code.toUpperCase()),
+          isNull(orgUnits.deletedAt),
         ),
       });
       if (conflict) throw new ConflictException("Branch code already exists");
     }
 
+    const { address, city, state, country, postalCode, phone, email, businessUnitId, managerUserId, status, name, code } = body;
+    const existingMeta = (existing.metadata ?? {}) as Record<string, unknown>;
+
     const [row] = await this.db
-      .update(orgBranches)
-      .set({ ...body, code: body.code?.toUpperCase(), email: body.email || undefined })
-      .where(and(eq(orgBranches.id, id), eq(orgBranches.orgId, orgId)))
+      .update(orgUnits)
+      .set({
+        ...(name !== undefined && { name }),
+        ...(code !== undefined && { code: code.toUpperCase() }),
+        ...(status !== undefined && { status }),
+        ...(managerUserId !== undefined && { headUserId: managerUserId }),
+        ...(businessUnitId !== undefined && { parentId: businessUnitId }),
+        metadata: {
+          ...existingMeta,
+          ...(address !== undefined && { address }),
+          ...(city !== undefined && { city }),
+          ...(state !== undefined && { state }),
+          ...(country !== undefined && { country }),
+          ...(postalCode !== undefined && { postalCode }),
+          ...(phone !== undefined && { phone }),
+          ...(email !== undefined && { email: email || undefined }),
+        },
+      })
+      .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "BRANCH")))
       .returning();
 
-    await this.cache.invalidate(CACHE_KEYS.orgBranches(orgId));
-    await this.audit.log({ action: "org.branch.updated", userId, orgId, targetId: id, targetType: "org_branch" });
+    await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "BRANCH"));
+    await this.audit.log({ action: "org.branch.updated", userId, orgId, targetId: id, targetType: "org_unit" });
 
     return row;
   }
@@ -113,24 +150,31 @@ export class OrgHierarchyBranchesService {
     if (!existing) throw new NotFoundException("Branch not found");
 
     await this.db
-      .update(orgBranches)
+      .update(orgUnits)
       .set({ deletedAt: new Date() })
-      .where(and(eq(orgBranches.id, id), eq(orgBranches.orgId, orgId)));
+      .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "BRANCH")));
 
-    await this.cache.invalidate(CACHE_KEYS.orgBranches(orgId));
-    await this.audit.log({ action: "org.branch.deleted", userId, orgId, targetId: id, targetType: "org_branch" });
+    await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "BRANCH"));
+    await this.audit.log({ action: "org.branch.deleted", userId, orgId, targetId: id, targetType: "org_unit" });
   }
 
   async moveBranch(orgId: string, branchId: string, newBusinessUnitId: string | null) {
-    const branch = await this.db.query.orgBranches.findFirst({
-      where: and(eq(orgBranches.id, branchId), eq(orgBranches.orgId, orgId)),
+    const branch = await this.db.query.orgUnits.findFirst({
+      where: and(
+        eq(orgUnits.id, branchId),
+        eq(orgUnits.orgId, orgId),
+        eq(orgUnits.kind, "BRANCH"),
+      ),
     });
-    if (!branch) throw new Error("Branch not found");
+    if (!branch) throw new NotFoundException("Branch not found");
+    if (newBusinessUnitId !== null && newBusinessUnitId === branchId) {
+      throw new BadRequestException("A unit cannot be its own parent");
+    }
 
     await this.db
-      .update(orgBranches)
-      .set({ businessUnitId: newBusinessUnitId, updatedAt: new Date() })
-      .where(and(eq(orgBranches.id, branchId), eq(orgBranches.orgId, orgId)));
+      .update(orgUnits)
+      .set({ parentId: newBusinessUnitId, updatedAt: new Date() })
+      .where(and(eq(orgUnits.id, branchId), eq(orgUnits.orgId, orgId)));
 
     return { success: true };
   }

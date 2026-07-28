@@ -21,12 +21,6 @@ export class HrDepartmentsController {
     return this.departments.list(u.orgId);
   }
 
-  @Get("legacy")
-  @RequirePermission("hr:employees:view")
-  listLegacy(@CurrentUser() u: CurrentUserContext) {
-    return this.departments.listLegacy(u.orgId);
-  }
-
   @Post()
   @RequirePermission("hr:employees:manage")
   @HttpCode(201)

@@ -5,11 +5,15 @@ import type { Request } from "express";
 import { agentTokens, organizationMembers, organizations, subscriptions, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import { EntitlementsService } from "../access/entitlements.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
 @Injectable()
 export class AgentTokenGuard implements CanActivate {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly entitlements: EntitlementsService,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest<Request & { user?: CurrentUserContext }>();
@@ -61,7 +65,6 @@ export class AgentTokenGuard implements CanActivate {
           orgId: organizationMembers.orgId,
           role: organizationMembers.role,
           isOwner: organizationMembers.isOwner,
-          enabledModules: organizations.enabledModules,
         })
         .from(organizationMembers)
         .innerJoin(organizations, eq(organizations.id, organizationMembers.orgId))
@@ -74,11 +77,14 @@ export class AgentTokenGuard implements CanActivate {
     const member = memberRows[0];
     if (!member) return null;
 
-    const subRows = await this.db
-      .select({ plan: subscriptions.plan })
-      .from(subscriptions)
-      .where(eq(subscriptions.orgId, row.orgId))
-      .limit(1);
+    const [subRows, moduleStatuses] = await Promise.all([
+      this.db
+        .select({ plan: subscriptions.plan })
+        .from(subscriptions)
+        .where(eq(subscriptions.orgId, row.orgId))
+        .limit(1),
+      this.entitlements.listModules(row.orgId).catch(() => []),
+    ]);
 
     return {
       userId: row.userId,
@@ -86,7 +92,7 @@ export class AgentTokenGuard implements CanActivate {
       branchId: user.branchId ?? null,
       role: member.role,
       permissions: [],
-      enabledModules: member.enabledModules ?? [],
+      enabledModules: moduleStatuses.filter((m) => m.enabled).map((m) => m.moduleKey),
       plan: subRows[0]?.plan ?? null,
       isPlatformAdmin: false,
       isOrgOwner: member.isOwner,

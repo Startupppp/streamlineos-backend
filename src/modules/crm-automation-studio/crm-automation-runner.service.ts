@@ -9,7 +9,7 @@ import {
   tasks,
   leads,
   deals,
-  userMemberships,
+  organizationMembers,
 } from "../../db/schema";
 import type { CrmAutomationCondition, AutomationGraphNode } from "../../db/schema/crm/automation-rules";
 import { logger } from "../../common/logger/logger.service";
@@ -268,9 +268,9 @@ export class CrmAutomationRunnerService {
           const targetUserId = typeof config["userId"] === "string" ? config["userId"] : null;
           if (!targetUserId) return { nodeId, type: actionKey, status: "skipped", message: "missing_userId", at };
           const [membership] = await this.db
-            .select({ userId: userMemberships.userId })
-            .from(userMemberships)
-            .where(and(eq(userMemberships.orgId, orgId), eq(userMemberships.userId, targetUserId)))
+            .select({ userId: organizationMembers.userId })
+            .from(organizationMembers)
+            .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, targetUserId)))
             .limit(1);
           if (!membership) return { nodeId, type: actionKey, status: "error", message: "user_not_in_org", at };
           if (payload.entityType === "lead") {

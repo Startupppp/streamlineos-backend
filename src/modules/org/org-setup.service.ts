@@ -19,7 +19,6 @@ import { EmailService } from "../email/email.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
 import { PERMISSIONS } from "../rbac/permissions";
-import { moduleKeysFromOrgModuleValues } from "../../common/rbac/module-vocabulary";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { randomUUID, randomBytes, createHash } from "node:crypto";
@@ -31,7 +30,7 @@ import {
   TRIAL_PLAN,
 } from "../billing/plan-entitlements.constants";
 
-const DEFAULT_SKIP_MODULES = ["HR", "CRM", "PROJECTS"];
+const DEFAULT_SKIP_MODULES = ["hr", "crm", "build"];
 
 @Injectable()
 export class OrgSetupService {
@@ -178,10 +177,9 @@ export class OrgSetupService {
   private async provisionOrgModules(
     tx: Parameters<Parameters<Db["transaction"]>[0]>[0],
     orgId: string,
-    orgModuleValues: readonly string[],
+    moduleKeys: readonly string[],
     enabledBy: string,
   ): Promise<void> {
-    const moduleKeys = moduleKeysFromOrgModuleValues(orgModuleValues);
     if (moduleKeys.length === 0) return;
     await tx
       .insert(orgModules)
@@ -212,7 +210,6 @@ export class OrgSetupService {
           ...(input.country ? { country: input.country } : {}),
           ...(input.timezone ? { timezone: input.timezone } : {}),
           ...(input.companyName ? { name: input.companyName } : {}),
-          enabledModules: input.enabledModules,
           onboardingCompletedAt: new Date(),
         })
         .where(eq(organizations.id, orgId));
@@ -279,7 +276,6 @@ export class OrgSetupService {
         .set({
           industry: "IT Services",
           companySize: "1-10",
-          enabledModules: DEFAULT_SKIP_MODULES,
           onboardingCompletedAt: new Date(),
         })
         .where(eq(organizations.id, orgId));

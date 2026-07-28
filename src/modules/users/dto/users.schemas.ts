@@ -7,7 +7,7 @@ export const listUsersSchema = z.object({
   status: z.enum(["active", "suspended", "archived"]).optional(),
   role: z.string().optional(),
   departmentId: z.coerce.number().int().optional(),
-  branchId: z.coerce.number().int().optional(),
+  branchId: z.string().optional(),
   teamId: z.string().optional(),
   managerUserId: z.string().optional(),
   sortBy: z.enum(["name", "joinedAt", "status"]).default("joinedAt"),
@@ -86,11 +86,10 @@ export type UpdatePreferencesInput = z.infer<typeof updatePreferencesSchema>;
 
 export const updateMembershipSchema = z.object({
   businessUnitId: z.string().optional().nullable(),
-  branchId: z.number().int().optional().nullable(),
-  departmentId: z.number().int().optional().nullable(),
+  branchId: z.string().optional().nullable(),
+  departmentId: z.string().optional().nullable(),
   teamId: z.string().optional().nullable(),
   managerUserId: z.string().optional().nullable(),
-  isPrimary: z.boolean().optional(),
 });
 export type UpdateMembershipInput = z.infer<typeof updateMembershipSchema>;
 
@@ -121,7 +120,7 @@ export const bulkUpdateUsersSchema = z.object({
   userIds: z.array(z.string()).min(1).max(200),
   role: z.string().optional(),
   departmentId: z.number().int().optional().nullable(),
-  branchId: z.number().int().optional().nullable(),
+  branchId: z.string().optional().nullable(),
   teamId: z.string().optional().nullable(),
   managerUserId: z.string().optional().nullable(),
 });
@@ -135,7 +134,7 @@ export const createUserSchema = z.object({
   designation: z.string().optional(),
   phone: z.string().optional(),
   departmentId: z.coerce.number().int().optional(),
-  branchId: z.coerce.number().int().optional(),
+  branchId: z.string().optional(),
   sendInvite: z.boolean().default(true),
 });
 export type CreateUserInput = z.infer<typeof createUserSchema>;

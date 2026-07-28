@@ -1,4 +1,4 @@
-import { Controller, Get, Param, ParseIntPipe, Query, UseGuards } from "@nestjs/common";
+import { Controller, Get, Param, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -48,7 +48,7 @@ export class OrgStructureController {
 
   @Get("teams/:teamId")
   @RequirePermission("hr:employees:view")
-  team(@Param("teamId", ParseIntPipe) teamId: number, @CurrentUser() u: CurrentUserContext) {
+  team(@Param("teamId") teamId: string, @CurrentUser() u: CurrentUserContext) {
     return this.orgStructure.getTeam(u.orgId, teamId);
   }
 }

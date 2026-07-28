@@ -49,7 +49,12 @@ export class KbService {
         views: kbArticles.views,
         helpfulCount: kbArticles.helpfulCount,
         notHelpfulCount: kbArticles.notHelpfulCount,
-        tags: kbArticles.tags,
+        tags: sql<string[]>`ARRAY(
+          SELECT kt.name FROM kb_article_tags kat
+          JOIN kb_tags kt ON kt.id = kat.tag_id
+          WHERE kat.article_id = ${kbArticles.id}
+          ORDER BY kt.name
+        )`,
         publishedAt: kbArticles.publishedAt,
       })
       .from(kbArticles)
@@ -76,7 +81,12 @@ export class KbService {
         views: kbArticles.views,
         helpfulCount: kbArticles.helpfulCount,
         notHelpfulCount: kbArticles.notHelpfulCount,
-        tags: kbArticles.tags,
+        tags: sql<string[]>`ARRAY(
+          SELECT kt.name FROM kb_article_tags kat
+          JOIN kb_tags kt ON kt.id = kat.tag_id
+          WHERE kat.article_id = ${kbArticles.id}
+          ORDER BY kt.name
+        )`,
         seoTitle: kbArticles.seoTitle,
         seoDescription: kbArticles.seoDescription,
         publishedAt: kbArticles.publishedAt,

@@ -8,9 +8,10 @@ import {
   index,
   unique,
   uniqueIndex,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { managedProductStatusEnum } from "../common/enums";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 import { pmWorkspaces } from "./pm-workspaces";
 
 export const managedProducts = pgTable(
@@ -49,5 +50,9 @@ export const managedProducts = pgTable(
     uniqueIndex("uniq_managed_products_org_key").on(table.orgId, table.key),
     index("idx_managed_products_org_status").on(table.orgId, table.status),
     unique("uniq_managed_products_org_pk").on(table.orgId, table.managedProductId),
+    foreignKey({
+      columns: [table.orgId, table.ownerMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    }).onDelete("restrict"),
   ],
 );

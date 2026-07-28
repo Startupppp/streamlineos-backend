@@ -11,14 +11,13 @@ import { and, count, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import {
   auditLogs,
   candidateOffers,
-  departmentMembers,
-  departments,
   leaveBlackoutDates,
+  orgUnitMembers,
+  orgUnits,
   onboardingTasks,
   organizationMembers,
   organizations,
   userPermissions,
-  userRoles,
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -293,19 +292,15 @@ export class OrganizationService {
           ),
         );
 
-      // Purge derived grants so a re-invited member cannot silently resurrect old access.
-      await tx
-        .delete(userRoles)
-        .where(and(eq(userRoles.orgId, orgId), eq(userRoles.userId, memberUserId)));
       await tx
         .delete(userPermissions)
         .where(and(eq(userPermissions.orgId, orgId), eq(userPermissions.userId, memberUserId)));
-      await tx.delete(departmentMembers).where(
+      await tx.delete(orgUnitMembers).where(
         and(
-          eq(departmentMembers.userId, memberUserId),
+          eq(orgUnitMembers.userId, memberUserId),
           inArray(
-            departmentMembers.departmentId,
-            tx.select({ id: departments.id }).from(departments).where(eq(departments.orgId, orgId)),
+            orgUnitMembers.orgUnitId,
+            tx.select({ id: orgUnits.id }).from(orgUnits).where(eq(orgUnits.orgId, orgId)),
           ),
         ),
       );
@@ -689,14 +684,6 @@ export class OrganizationService {
       throw new BadRequestException("Organization is already purged");
     }
 
-    const actorMembership = await this.db.query.organizationMembers.findFirst({
-      where: and(
-        eq(organizationMembers.orgId, orgId),
-        eq(organizationMembers.userId, actorUserId),
-      ),
-      columns: { id: true },
-    });
-
     const purgeJobId = randomUUID();
     const purgeScheduledAt = new Date(Date.now() + scheduledForDays * 24 * 60 * 60 * 1000);
 
@@ -705,7 +692,7 @@ export class OrganizationService {
       .set({
         statusV2: "PURGE_SCHEDULED",
         purgeScheduledAt,
-        purgeScheduledBy: actorMembership?.id ?? null,
+        purgeScheduledBy: actorUserId,
         purgeReason: reason,
         purgeJobId,
       })

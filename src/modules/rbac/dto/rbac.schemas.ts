@@ -25,6 +25,8 @@ export const createRoleSchema = z.object({
     .max(50)
     .regex(/^[A-Z0-9_]+$/),
   permissions: z.array(z.string().min(1).max(120)).max(300).default([]),
+  moduleKey: z.string().max(64).optional(),
+  rank: z.number().int().min(20).max(40).optional(),
 });
 
 export const updateRoleSchema = z.object({
@@ -60,8 +62,8 @@ export const roleMemberSchema = z.discriminatedUnion("principalType", [
     principalId: z.string().min(1).max(255),
   }),
   z.object({
-    principalType: z.literal("department"),
-    principalId: z.number().int().positive(),
+    principalType: z.literal("group"),
+    principalId: z.string().uuid(),
   }),
 ]);
 
@@ -73,3 +75,31 @@ export type UpdateRoleInput = z.infer<typeof updateRoleSchema>;
 export type CloneTemplateInput = z.infer<typeof cloneTemplateSchema>;
 export type SetRolePermissionsInput = z.infer<typeof setRolePermissionsSchema>;
 export type RoleMemberInput = z.infer<typeof roleMemberSchema>;
+
+export interface DiscoveryPermissionEntry {
+  name: string;
+  resource: string;
+  action: string;
+  description: string;
+  moduleKey: string | null;
+  scopable: boolean;
+}
+
+export interface DiscoveryGrantableResult {
+  grantableKeys: string[];
+  assignableRanks: number[];
+  allowedModules: string[] | null;
+}
+
+export interface DiscoveryTemplateEntry {
+  id: string;
+  name: string;
+  slug: string;
+  permissionCount: number;
+}
+
+export interface DiscoveryMemberEntry {
+  userId: string;
+  name: string | null;
+  email: string;
+}

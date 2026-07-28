@@ -1,12 +1,13 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, eq, gte, lte, sql } from "drizzle-orm";
+import { and, count, eq, gte, isNull, lte, sql } from "drizzle-orm";
 import {
   organizationMembers,
+  orgUnits,
   users,
   attendance,
   leaveRequests,
-  payrolls,
-  departments,
+  payrollRuns,
+  payrollRunEmployees,
   expenses,
   resignations,
 } from "../../db/schema";
@@ -63,11 +64,11 @@ export class HrAnalyticsService {
         .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true))),
 
       this.db
-        .select({ departmentId: users.departmentId, count: count() })
+        .select({ orgDepartmentId: users.orgDepartmentId, count: count() })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
         .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)))
-        .groupBy(users.departmentId),
+        .groupBy(users.orgDepartmentId),
 
       this.db
         .select({ gender: users.gender, count: count() })
@@ -105,9 +106,10 @@ export class HrAnalyticsService {
         .orderBy(sql`to_char(${leaveRequests.startDate}::date, 'YYYY-MM')`),
 
       this.db
-        .select({ total: sql<string>`COALESCE(SUM(${payrolls.netSalary}::numeric), 0)` })
-        .from(payrolls)
-        .where(and(eq(payrolls.orgId, orgId), gte(payrolls.month, `${year}-01`), lte(payrolls.month, `${year}-12`))),
+        .select({ total: sql<string>`COALESCE(SUM(${payrollRunEmployees.net}::numeric), 0)` })
+        .from(payrollRunEmployees)
+        .innerJoin(payrollRuns, eq(payrollRunEmployees.runId, payrollRuns.id))
+        .where(and(eq(payrollRuns.orgId, orgId), gte(payrollRuns.month, `${year}-01`), lte(payrollRuns.month, `${year}-12`))),
 
       this.db
         .select({ count: count() })
@@ -143,7 +145,7 @@ export class HrAnalyticsService {
         .groupBy(sql`to_char(${resignations.createdAt}, 'Mon')`, sql`EXTRACT(MONTH FROM ${resignations.createdAt})`)
         .orderBy(sql`EXTRACT(MONTH FROM ${resignations.createdAt})`),
 
-      this.db.select({ id: departments.id, name: departments.name }).from(departments).where(eq(departments.orgId, orgId)),
+      this.db.select({ id: orgUnits.id, name: orgUnits.name }).from(orgUnits).where(and(eq(orgUnits.orgId, orgId), isNull(orgUnits.deletedAt), eq(orgUnits.kind, "DEPARTMENT"))),
     ]);
 
     const deptMap = new Map(allDepts.map((d) => [d.id, d.name]));
@@ -168,7 +170,7 @@ export class HrAnalyticsService {
         newThisMonth: Number(recentJoinsResult[0]?.count ?? 0),
       },
       departments: deptDistribution.map((d) => ({
-        name: d.departmentId ? (deptMap.get(d.departmentId) ?? "Other") : "Unassigned",
+        name: d.orgDepartmentId ? (deptMap.get(d.orgDepartmentId) ?? "Other") : "Unassigned",
         count: Number(d.count),
       })),
       gender: genderDistribution.map((g) => ({
@@ -217,11 +219,11 @@ export class HrAnalyticsService {
 
     const [deptWise, dailySummary, totalPresent, allDepts] = await Promise.all([
       this.db
-        .select({ departmentId: users.departmentId, count: count() })
+        .select({ orgDepartmentId: users.orgDepartmentId, count: count() })
         .from(attendance)
         .innerJoin(users, eq(attendance.userId, users.id))
         .where(and(eq(attendance.orgId, orgId), gte(attendance.date, startDate), lte(attendance.date, endDate)))
-        .groupBy(users.departmentId),
+        .groupBy(users.orgDepartmentId),
 
       this.db
         .select({ date: attendance.date, count: count() })
@@ -235,7 +237,7 @@ export class HrAnalyticsService {
         .from(attendance)
         .where(and(eq(attendance.orgId, orgId), gte(attendance.date, startDate), lte(attendance.date, endDate))),
 
-      this.db.select({ id: departments.id, name: departments.name }).from(departments).where(eq(departments.orgId, orgId)),
+      this.db.select({ id: orgUnits.id, name: orgUnits.name }).from(orgUnits).where(and(eq(orgUnits.orgId, orgId), isNull(orgUnits.deletedAt), eq(orgUnits.kind, "DEPARTMENT"))),
     ]);
 
     const deptMap = new Map(allDepts.map((d) => [d.id, d.name]));
@@ -245,7 +247,7 @@ export class HrAnalyticsService {
       month,
       totalAttendanceLogs: Number(totalPresent[0]?.count ?? 0),
       byDepartment: deptWise.map((d) => ({
-        department: d.departmentId ? (deptMap.get(d.departmentId) ?? "Other") : "Unassigned",
+        department: d.orgDepartmentId ? (deptMap.get(d.orgDepartmentId) ?? "Other") : "Unassigned",
         count: Number(d.count),
       })),
       daily: dailySummary.map((d) => ({

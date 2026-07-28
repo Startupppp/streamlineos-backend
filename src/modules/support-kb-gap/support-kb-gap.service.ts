@@ -10,11 +10,12 @@ import {
   kbArticles,
   kbEvents,
   kbSpaces,
+  organizationMembers,
+  roleAssignments,
   rolePermissionGrants,
   supportKnowledgeGaps,
   supportTicketEmbeddings,
   supportTickets,
-  userRoles,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -442,17 +443,24 @@ export class SupportKbGapService {
 
   private async findKbOwners(orgId: string): Promise<string[]> {
     const rows = await this.db
-      .selectDistinct({ userId: userRoles.userId })
-      .from(userRoles)
+      .selectDistinct({ userId: organizationMembers.userId })
+      .from(roleAssignments)
       .innerJoin(
         rolePermissionGrants,
         and(
-          eq(rolePermissionGrants.roleId, userRoles.roleId),
+          eq(rolePermissionGrants.roleId, roleAssignments.roleId),
           eq(rolePermissionGrants.orgId, orgId),
           eq(rolePermissionGrants.permissionKey, KB_OWNER_PERMISSION),
         ),
       )
-      .where(eq(userRoles.orgId, orgId))
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, roleAssignments.orgId),
+          eq(organizationMembers.id, roleAssignments.organizationMembershipId),
+        ),
+      )
+      .where(eq(roleAssignments.orgId, orgId))
       .limit(3);
 
     return rows.map((r) => r.userId);

@@ -2,9 +2,9 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, count, eq, gte, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import {
   organizationMembers,
+  orgUnitMembers,
+  orgUnits,
   users,
-  departments,
-  departmentMembers,
   attendance,
   wfhRequests,
   jobPostings,
@@ -93,7 +93,7 @@ export class HrDashboardReportsService {
   private async buildTimeToFill(orgId: string) {
     const filledJobs = await this.db
       .select({
-        departmentId: jobPostings.departmentId,
+        orgDepartmentId: jobPostings.orgDepartmentId,
         createdAt: jobPostings.createdAt,
         updatedAt: jobPostings.updatedAt,
       })
@@ -115,7 +115,7 @@ export class HrDashboardReportsService {
       );
       totalDays += days;
 
-      const deptKey = job.departmentId != null ? String(job.departmentId) : "unknown";
+      const deptKey = job.orgDepartmentId ?? "unknown";
       if (!deptMap[deptKey]) deptMap[deptKey] = { total: 0, count: 0 };
       deptMap[deptKey].total += days;
       deptMap[deptKey].count++;
@@ -123,21 +123,19 @@ export class HrDashboardReportsService {
 
     const avgDaysOverall = Math.round(totalDays / filledJobs.length);
 
-    const deptIds = Object.keys(deptMap)
-      .filter((k) => k !== "unknown")
-      .map(Number);
+    const deptIds = Object.keys(deptMap).filter((k) => k !== "unknown");
 
-    let deptNames: Record<number, string> = {};
+    let deptNames: Record<string, string> = {};
     if (deptIds.length > 0) {
       const rows = await this.db
-        .select({ id: departments.id, name: departments.name })
-        .from(departments)
-        .where(inArray(departments.id, deptIds));
+        .select({ id: orgUnits.id, name: orgUnits.name })
+        .from(orgUnits)
+        .where(inArray(orgUnits.id, deptIds));
       deptNames = Object.fromEntries(rows.map((r) => [r.id, r.name]));
     }
 
     const byDepartment = Object.entries(deptMap).map(([deptId, { total, count: deptCount }]) => ({
-      department: deptId === "unknown" ? "No Department" : (deptNames[Number(deptId)] ?? `Dept ${deptId}`),
+      department: deptId === "unknown" ? "No Department" : (deptNames[deptId] ?? `Dept ${deptId}`),
       avgDays: Math.round(total / deptCount),
       filledCount: deptCount,
     }));
@@ -219,21 +217,21 @@ export class HrDashboardReportsService {
           ),
 
         this.db
-          .select({ departmentName: departments.name, presentCount: count(attendance.id) })
-          .from(departments)
-          .leftJoin(departmentMembers, eq(departmentMembers.departmentId, departments.id))
+          .select({ departmentName: orgUnits.name, presentCount: count(attendance.id) })
+          .from(orgUnits)
+          .leftJoin(orgUnitMembers, eq(orgUnitMembers.orgUnitId, orgUnits.id))
           .leftJoin(
             attendance,
             and(
-              eq(attendance.userId, departmentMembers.userId),
+              eq(attendance.userId, orgUnitMembers.userId),
               eq(attendance.orgId, orgId),
               gte(attendance.date, monthStart),
               lte(attendance.date, monthEnd),
               inArray(attendance.status, ["PRESENT", "HALF_DAY", "LATE"]),
             ),
           )
-          .where(eq(departments.orgId, orgId))
-          .groupBy(departments.id, departments.name)
+          .where(and(eq(orgUnits.orgId, orgId), isNull(orgUnits.deletedAt), eq(orgUnits.kind, "DEPARTMENT")))
+          .groupBy(orgUnits.id, orgUnits.name)
           .orderBy(sql`count(${attendance.id}) desc`),
       ]);
 
@@ -307,12 +305,12 @@ export class HrDashboardReportsService {
         dateOfBirth: users.dateOfBirth,
         joiningDate: users.joiningDate,
         taxId: users.taxId,
-        departmentName: departments.name,
+        departmentName: orgUnits.name,
       })
       .from(organizationMembers)
       .innerJoin(users, eq(users.id, organizationMembers.userId))
-      .leftJoin(departmentMembers, eq(departmentMembers.userId, organizationMembers.userId))
-      .leftJoin(departments, eq(departments.id, departmentMembers.departmentId))
+      .leftJoin(orgUnitMembers, eq(orgUnitMembers.userId, organizationMembers.userId))
+      .leftJoin(orgUnits, eq(orgUnits.id, orgUnitMembers.orgUnitId))
       .where(eq(organizationMembers.orgId, orgId));
   }
 }

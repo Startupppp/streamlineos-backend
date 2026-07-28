@@ -4,8 +4,8 @@ import {
   payrollRuns,
   payrollLineItems,
   payrollRunEmployees,
+  orgUnits,
   users,
-  departments,
   employeeSalaryProfiles,
 } from "../../../../db/schema";
 
@@ -79,7 +79,7 @@ export async function getLineItemsForRun(
     );
 
   if (filters?.department)
-    conditions.push(eq(departments.name, filters.department));
+    conditions.push(eq(orgUnits.name, filters.department));
 
   if (filters?.costCenter)
     conditions.push(eq(employeeSalaryProfiles.costCenter, filters.costCenter));
@@ -103,7 +103,7 @@ export async function getLineItemsForRun(
         profileId: payrollRunEmployees.profileId,
       },
       userName: users.name,
-      departmentName: departments.name,
+      departmentName: orgUnits.name,
       costCenter: employeeSalaryProfiles.costCenter,
     })
     .from(payrollLineItems)
@@ -112,7 +112,7 @@ export async function getLineItemsForRun(
       eq(payrollLineItems.runEmployeeId, payrollRunEmployees.id),
     )
     .innerJoin(users, eq(payrollRunEmployees.userId, users.id))
-    .leftJoin(departments, eq(departments.id, users.departmentId))
+    .leftJoin(orgUnits, and(eq(orgUnits.id, users.orgDepartmentId), eq(orgUnits.kind, "DEPARTMENT")))
     .leftJoin(
       employeeSalaryProfiles,
       eq(employeeSalaryProfiles.id, payrollRunEmployees.profileId),

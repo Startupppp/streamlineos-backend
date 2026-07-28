@@ -10,7 +10,7 @@ export interface PostJournalLine {
   clientId?: number;
   vendorId?: number;
   projectId?: number;
-  departmentId?: number;
+  departmentId?: string;
   employeeId?: number;
   taxCodeId?: number;
   dimensionValues?: Record<string, string>;

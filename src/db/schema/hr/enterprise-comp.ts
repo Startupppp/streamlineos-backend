@@ -15,8 +15,7 @@ import {
   unique,
 } from "drizzle-orm/pg-core";
 import { organizations, users } from "../common/auth";
-import { departments } from "./employees";
-import { hrLocations } from "./core-org";
+import { orgUnits } from "../common/organization";
 
 // ─── Pack 1: Time Clock Devices ─────────────────────────────────────────────
 
@@ -49,7 +48,7 @@ export const hrTimeDevices = pgTable(
     name: text("name").notNull(),
     serialNumber: text("serial_number").notNull(),
     type: hrTimeDeviceTypeEnum("type").notNull(),
-    locationId: integer("location_id").references(() => hrLocations.id, { onDelete: "set null" }),
+    locationId: text("location_id").references(() => orgUnits.id, { onDelete: "set null" }),
     status: hrTimeDeviceStatusEnum("status").default("active").notNull(),
     lastSyncAt: timestamp("last_sync_at"),
     effectiveFrom: date("effective_from"),
@@ -283,7 +282,7 @@ export const hrCompBudgetPools = pgTable(
     cycleId: integer("cycle_id")
       .notNull()
       .references(() => hrCompCycles.id, { onDelete: "cascade" }),
-    departmentId: integer("department_id").references(() => departments.id, {
+    departmentId: text("department_id").references(() => orgUnits.id, {
       onDelete: "set null",
     }),
     allocatedCents: bigint("allocated_cents", { mode: "number" }).notNull(),

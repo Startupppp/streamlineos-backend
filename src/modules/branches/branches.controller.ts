@@ -5,7 +5,6 @@ import {
   Get,
   NotFoundException,
   Param,
-  ParseIntPipe,
   Patch,
   Post,
   UseGuards,
@@ -38,7 +37,7 @@ export class BranchesController {
   @Get(":branchId")
   @RequirePermission("branch:view")
   async getOne(
-    @Param("branchId", ParseIntPipe) branchId: number,
+    @Param("branchId") branchId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const branch = await this.branches.getOne(u.orgId, branchId);
@@ -58,7 +57,7 @@ export class BranchesController {
   @Patch(":branchId")
   @RequirePermission("branch:update")
   async update(
-    @Param("branchId", ParseIntPipe) branchId: number,
+    @Param("branchId") branchId: string,
     @Body(new ZodValidationPipe(updateBranchSchema)) body: UpdateBranchInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
@@ -70,7 +69,7 @@ export class BranchesController {
   @Delete(":branchId")
   @RequirePermission("branch:delete")
   async remove(
-    @Param("branchId", ParseIntPipe) branchId: number,
+    @Param("branchId") branchId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const deleted = await this.branches.remove(u.orgId, branchId);

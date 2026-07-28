@@ -9,6 +9,7 @@ import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import {
   orgCustomDomains,
   orgHolidays,
+  organizationAllowedEmailDomains,
   organizationMembers,
   organizations,
 } from "../../db/schema";
@@ -27,7 +28,6 @@ type OrgSettingsUpdate = {
   currency?: string;
   fiscalYearStart?: number;
   mfaEnforced?: boolean;
-  allowedEmailDomains?: string[];
   settings?: Record<string, unknown>;
   industry?: string | null;
   website?: string | null;
@@ -42,12 +42,10 @@ type OrgSettingsUpdate = {
   businessHours?: Record<string, { open: string; close: string; enabled: boolean }> | null;
   companySize?: string | null;
   country?: string | null;
-  enabledModules?: string[];
 };
 
 type SecuritySettingsUpdate = {
   mfaEnforced?: boolean;
-  allowedEmailDomains?: string[];
   maxConcurrentSessions?: number | null;
 };
 
@@ -81,8 +79,6 @@ export class OrganizationSettingsService {
     if (input.fiscalYearStart !== undefined) updateData.fiscalYearStart = input.fiscalYearStart;
     if (input.logo !== undefined) updateData.logo = input.logo;
     if (input.mfaEnforced !== undefined) updateData.mfaEnforced = input.mfaEnforced;
-    if (input.allowedEmailDomains !== undefined)
-      updateData.allowedEmailDomains = input.allowedEmailDomains;
     if (input.industry !== undefined) updateData.industry = input.industry;
     if (input.website !== undefined) updateData.website = input.website;
     if (input.legalName !== undefined) updateData.legalName = input.legalName;
@@ -97,7 +93,6 @@ export class OrganizationSettingsService {
     if (input.businessHours !== undefined) updateData.businessHours = input.businessHours;
     if (input.companySize !== undefined) updateData.companySize = input.companySize;
     if (input.country !== undefined) updateData.country = input.country;
-    if (input.enabledModules !== undefined) updateData.enabledModules = input.enabledModules;
 
     const hasSettingsUpdate =
       input.directoryPublic !== undefined ||
@@ -156,6 +151,10 @@ export class OrganizationSettingsService {
       await this.db.update(organizations).set(updateData).where(eq(organizations.id, orgId));
     }
 
+    if (input.allowedEmailDomains !== undefined) {
+      await this.replaceAllowedDomains(orgId, input.allowedEmailDomains);
+    }
+
     this.audit.log({
       action: "settings.updated",
       userId: actorUserId,
@@ -175,14 +174,23 @@ export class OrganizationSettingsService {
   ) {
     const updateData: SecuritySettingsUpdate = {};
     if (input.mfaEnforced !== undefined) updateData.mfaEnforced = input.mfaEnforced;
-    if (input.allowedEmailDomains !== undefined)
-      updateData.allowedEmailDomains = input.allowedEmailDomains;
     if (input.maxConcurrentSessions !== undefined)
       updateData.maxConcurrentSessions = input.maxConcurrentSessions;
 
-    if (Object.keys(updateData).length === 0) return { success: true };
+    const hasOrgUpdate = Object.keys(updateData).length > 0;
+    const hasDomainsUpdate = input.allowedEmailDomains !== undefined;
 
-    await this.db.update(organizations).set(updateData).where(eq(organizations.id, orgId));
+    if (!hasOrgUpdate && !hasDomainsUpdate) return { success: true };
+
+    const ops: Promise<unknown>[] = [];
+
+    if (hasOrgUpdate) {
+      ops.push(this.db.update(organizations).set(updateData).where(eq(organizations.id, orgId)));
+    }
+    if (hasDomainsUpdate) {
+      ops.push(this.replaceAllowedDomains(orgId, input.allowedEmailDomains!));
+    }
+    await Promise.all(ops);
 
     this.audit.log({
       action: "security_settings.updated",
@@ -190,7 +198,7 @@ export class OrganizationSettingsService {
       orgId,
       targetId: orgId,
       targetType: "organization",
-      metadata: updateData,
+      metadata: { ...updateData, ...(hasDomainsUpdate ? { allowedEmailDomains: input.allowedEmailDomains } : {}) },
     });
 
     const members = await this.db
@@ -205,15 +213,33 @@ export class OrganizationSettingsService {
     return { success: true };
   }
 
-  async getSettings(orgId: string) {
-    const data = await this.db.query.organizations.findFirst({
-      where: eq(organizations.id, orgId),
+  private async replaceAllowedDomains(orgId: string, domains: string[]): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      await tx
+        .delete(organizationAllowedEmailDomains)
+        .where(eq(organizationAllowedEmailDomains.orgId, orgId));
+      if (domains.length > 0) {
+        await tx.insert(organizationAllowedEmailDomains).values(
+          domains.map((domain) => ({ orgId, domain: domain.toLowerCase() })),
+        );
+      }
     });
+  }
+
+  async getSettings(orgId: string) {
+    const [data, domainRows] = await Promise.all([
+      this.db.query.organizations.findFirst({ where: eq(organizations.id, orgId) }),
+      this.db
+        .select({ domain: organizationAllowedEmailDomains.domain })
+        .from(organizationAllowedEmailDomains)
+        .where(eq(organizationAllowedEmailDomains.orgId, orgId)),
+    ]);
     if (!data) return null;
 
     const settings: Record<string, unknown> = data.settings ?? {};
     return {
       ...data,
+      allowedEmailDomains: domainRows.map((r) => r.domain),
       primaryColor: typeof settings.primaryColor === "string" ? settings.primaryColor : null,
       loginBgUrl: typeof settings.loginBgUrl === "string" ? settings.loginBgUrl : null,
       ipAllowlist: Array.isArray(settings.ipAllowlist) ? settings.ipAllowlist : [],

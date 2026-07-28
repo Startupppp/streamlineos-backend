@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, unique, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, integer, index, unique, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { supportTicketStatusEnum, supportTicketPriorityEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
@@ -51,7 +51,6 @@ export const supportTicketMessages = pgTable("support_ticket_messages", {
   authorId: text("author_id").references(() => users.id),
   body: text("body").notNull(),
   isInternal: boolean("is_internal").default(false).notNull(),
-  attachments: jsonb("attachments").$type<{ fileName: string; fileUrl: string; fileSize: number; mimeType: string }[]>().default([]),
   sourceChannel: text("source_channel").default("web").notNull(),
   sourceMessageId: text("source_message_id"),
   sourceContactEmail: text("source_contact_email"),
@@ -63,6 +62,21 @@ export const supportTicketMessages = pgTable("support_ticket_messages", {
   index("idx_support_ticket_messages_source_message").on(table.sourceMessageId),
 ]);
 
+export const supportTicketAttachments = pgTable("support_ticket_attachments", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  messageId: integer("message_id").references(() => supportTicketMessages.id, { onDelete: "cascade" }).notNull(),
+  fileName: text("file_name").notNull(),
+  fileUrl: text("file_url").notNull(),
+  fileSize: integer("file_size"),
+  mimeType: text("mime_type"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_support_ticket_attachments_org").on(table.orgId),
+  index("idx_support_ticket_attachments_message").on(table.messageId),
+  unique("uniq_support_ticket_attachments_org_id").on(table.orgId, table.id),
+]);
+
 export const supportTicketsRelations = relations(supportTickets, ({ one, many }) => ({
   organization: one(organizations, { fields: [supportTickets.orgId], references: [organizations.id] }),
   client: one(clients, { fields: [supportTickets.clientId], references: [clients.id] }),
@@ -71,7 +85,19 @@ export const supportTicketsRelations = relations(supportTickets, ({ one, many })
   messages: many(supportTicketMessages),
 }));
 
-export const supportTicketMessagesRelations = relations(supportTicketMessages, ({ one }) => ({
+export const supportTicketMessagesRelations = relations(supportTicketMessages, ({ one, many }) => ({
   ticket: one(supportTickets, { fields: [supportTicketMessages.ticketId], references: [supportTickets.id] }),
   author: one(users, { fields: [supportTicketMessages.authorId], references: [users.id] }),
+  attachments: many(supportTicketAttachments),
+}));
+
+export const supportTicketAttachmentsRelations = relations(supportTicketAttachments, ({ one }) => ({
+  message: one(supportTicketMessages, {
+    fields: [supportTicketAttachments.messageId],
+    references: [supportTicketMessages.id],
+  }),
+  organization: one(organizations, {
+    fields: [supportTicketAttachments.orgId],
+    references: [organizations.id],
+  }),
 }));

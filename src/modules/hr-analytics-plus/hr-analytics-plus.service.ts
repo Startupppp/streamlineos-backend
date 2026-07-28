@@ -7,8 +7,7 @@ import { CACHE_TTL } from "../../common/cache/cache-keys";
 import {
   hrEmployments,
   hrPeople,
-  hrEmployeeProfiles,
-  departments,
+  orgUnits,
   attendance,
   leaveRequests,
   leaveTypes,
@@ -31,7 +30,7 @@ export class HrAnalyticsPlusService {
     private readonly cache: CacheService,
   ) {}
 
-  getCommandCenter(orgId: string, departmentId?: number) {
+  getCommandCenter(orgId: string, departmentId?: string) {
     return this.cache.cached(
       `hr:analytics-plus:cc:${orgId}:${departmentId ?? "all"}`,
       () => this.buildCommandCenter(orgId, departmentId),
@@ -39,7 +38,7 @@ export class HrAnalyticsPlusService {
     );
   }
 
-  private async buildCommandCenter(orgId: string, departmentId?: number) {
+  private async buildCommandCenter(orgId: string, departmentId?: string) {
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const twelveMonthsAgo = new Date(now.getFullYear() - 1, now.getMonth(), 1);
@@ -153,7 +152,7 @@ export class HrAnalyticsPlusService {
     };
   }
 
-  getAttrition(orgId: string, departmentId?: number) {
+  getAttrition(orgId: string, departmentId?: string) {
     return this.cache.cached(
       `hr:analytics-plus:attrition:${orgId}:${departmentId ?? "all"}`,
       async () => {
@@ -182,7 +181,7 @@ export class HrAnalyticsPlusService {
           this.db.execute(sql`
             SELECT d.name as department, COUNT(*) as exits
             FROM hr_employments e
-            JOIN departments d ON d.id = e.department_id
+            JOIN org_units d ON d.id = e.department_id
             WHERE e.org_id = ${orgId} AND e.exit_date IS NOT NULL
               AND e.exit_date >= NOW() - INTERVAL '24 months' AND e.deleted_at IS NULL
             GROUP BY d.name
@@ -222,7 +221,7 @@ export class HrAnalyticsPlusService {
     );
   }
 
-  getLeaveTrends(orgId: string, departmentId?: number) {
+  getLeaveTrends(orgId: string, departmentId?: string) {
     return this.cache.cached(
       `hr:analytics-plus:leave:${orgId}:${departmentId ?? "all"}`,
       async () => {
@@ -317,7 +316,7 @@ export class HrAnalyticsPlusService {
     );
   }
 
-  getComplianceGaps(orgId: string, departmentId?: number) {
+  getComplianceGaps(orgId: string, departmentId?: string) {
     return this.cache.cached(
       `hr:analytics-plus:compliance:${orgId}:${departmentId ?? "all"}`,
       async () => {
@@ -354,7 +353,7 @@ export class HrAnalyticsPlusService {
     ];
   }
 
-  async getDrilldown(orgId: string, metric: string, page: number, limit: number, departmentId?: number) {
+  async getDrilldown(orgId: string, metric: string, page: number, limit: number, departmentId?: string) {
     const offset = (page - 1) * limit;
     let rows: unknown[] = [];
     let total = 0;
@@ -364,7 +363,7 @@ export class HrAnalyticsPlusService {
         SELECT e.id, e.employee_number, p.first_name, p.last_name, e.exit_date, e.exit_reason, d.name as department
         FROM hr_employments e
         JOIN hr_people p ON p.id = e.person_id
-        LEFT JOIN departments d ON d.id = e.department_id
+        LEFT JOIN org_units d ON d.id = e.department_id
         WHERE e.org_id = ${orgId} AND e.exit_date IS NOT NULL AND e.deleted_at IS NULL
         ORDER BY e.exit_date DESC
         LIMIT ${limit} OFFSET ${offset}
@@ -423,21 +422,21 @@ export class HrAnalyticsPlusService {
         id: hrHeadcountPlans.id,
         fiscalYear: hrHeadcountPlans.fiscalYear,
         departmentId: hrHeadcountPlans.departmentId,
-        departmentName: departments.name,
+        departmentName: orgUnits.name,
         budgetedHeadcount: hrHeadcountPlans.budgetedHeadcount,
         budgetedCostCents: hrHeadcountPlans.budgetedCostCents,
         note: hrHeadcountPlans.note,
         createdAt: hrHeadcountPlans.createdAt,
       })
       .from(hrHeadcountPlans)
-      .leftJoin(departments, eq(departments.id, hrHeadcountPlans.departmentId))
+      .leftJoin(orgUnits, eq(orgUnits.id, hrHeadcountPlans.departmentId))
       .where(eq(hrHeadcountPlans.orgId, orgId))
-      .orderBy(hrHeadcountPlans.fiscalYear, departments.name);
+      .orderBy(hrHeadcountPlans.fiscalYear, orgUnits.name);
   }
 
   createHeadcountPlan(orgId: string, data: {
     fiscalYear: number;
-    departmentId?: number;
+    departmentId?: string;
     budgetedHeadcount: number;
     budgetedCostCents?: number;
     note?: string;
@@ -452,7 +451,7 @@ export class HrAnalyticsPlusService {
     orgId: string,
     id: number,
     data: Partial<{
-      departmentId: number;
+      departmentId: string;
       budgetedHeadcount: number;
       budgetedCostCents: number;
       note: string;
@@ -477,7 +476,7 @@ export class HrAnalyticsPlusService {
         h.budgeted_cost_cents,
         COUNT(e.id) FILTER (WHERE e.lifecycle_status = 'ACTIVE' AND e.deleted_at IS NULL) as actual_headcount
       FROM hr_headcount_plans h
-      LEFT JOIN departments d ON d.id = h.department_id
+      LEFT JOIN org_units d ON d.id = h.department_id
       LEFT JOIN hr_employments e ON e.org_id = h.org_id AND e.department_id = h.department_id
       WHERE h.org_id = ${orgId}
       GROUP BY h.id, h.fiscal_year, h.department_id, d.name, h.budgeted_headcount, h.budgeted_cost_cents
@@ -489,7 +488,7 @@ export class HrAnalyticsPlusService {
       return {
         planId: Number(row.id ?? 0),
         fiscalYear: Number(row.fiscal_year ?? 0),
-        departmentId: row.department_id == null ? null : Number(row.department_id),
+        departmentId: row.department_id == null ? null : String(row.department_id),
         departmentName: String(row.department_name ?? "Organization-wide"),
         budgeted,
         actual,
@@ -503,13 +502,14 @@ export class HrAnalyticsPlusService {
       SELECT
         r.skill_name,
         COUNT(DISTINCT r.id) as required_count,
-        COUNT(DISTINCT CASE WHEN p.skills::text LIKE '%' || r.skill_name || '%' THEN e.id END) as covered_count
+        COUNT(DISTINCT CASE WHEN es.id IS NOT NULL THEN e.id END) as covered_count
       FROM hr_role_skill_requirements r
       JOIN hr_employments e ON e.org_id = r.org_id AND e.lifecycle_status = 'ACTIVE' AND e.job_role_id = r.job_role_id AND e.deleted_at IS NULL
-      LEFT JOIN hr_employee_profiles p ON p.employment_id = e.id
+      JOIN hr_people hp ON hp.id = e.person_id AND hp.deleted_at IS NULL AND hp.user_id IS NOT NULL
+      LEFT JOIN employee_skills es ON es.org_id = r.org_id AND es.user_id = hp.user_id AND es.skill_name ILIKE r.skill_name
       WHERE r.org_id = ${orgId}
       GROUP BY r.skill_name
-      ORDER BY (COUNT(DISTINCT r.id) - COUNT(DISTINCT CASE WHEN p.skills::text LIKE '%' || r.skill_name || '%' THEN e.id END)) DESC
+      ORDER BY (COUNT(DISTINCT r.id) - COUNT(DISTINCT CASE WHEN es.id IS NOT NULL THEN e.id END)) DESC
     `);
     return {
       gaps: Array.from(rows, (row) => {

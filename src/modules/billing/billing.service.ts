@@ -138,49 +138,56 @@ export class BillingService {
     const periodEnd = new Date(now);
     periodEnd.setMonth(periodEnd.getMonth() + 1);
 
-    await this.db.transaction(async (tx) => {
-      const existing = await tx.query.subscriptions.findFirst({
-        where: eq(subscriptions.orgId, orgId),
-      });
+    try {
+      await this.db.transaction(async (tx) => {
+        const existing = await tx.query.subscriptions.findFirst({
+          where: eq(subscriptions.orgId, orgId),
+        });
 
-      let subscriptionId: number;
-      if (existing) {
-        await tx
-          .update(subscriptions)
-          .set({
-            plan: input.plan,
-            status: "ACTIVE",
-            currentPeriodStart: now,
-            currentPeriodEnd: periodEnd,
-            updatedAt: now,
-          })
-          .where(eq(subscriptions.id, existing.id));
-        subscriptionId = existing.id;
-      } else {
-        const [created] = await tx
-          .insert(subscriptions)
-          .values({
-            orgId,
-            plan: input.plan,
-            status: "ACTIVE",
-            currentPeriodStart: now,
-            currentPeriodEnd: periodEnd,
-          })
-          .returning({ id: subscriptions.id });
-        subscriptionId = created.id;
+        let subscriptionId: number;
+        if (existing) {
+          await tx
+            .update(subscriptions)
+            .set({
+              plan: input.plan,
+              status: "ACTIVE",
+              currentPeriodStart: now,
+              currentPeriodEnd: periodEnd,
+              updatedAt: now,
+            })
+            .where(eq(subscriptions.id, existing.id));
+          subscriptionId = existing.id;
+        } else {
+          const [created] = await tx
+            .insert(subscriptions)
+            .values({
+              orgId,
+              plan: input.plan,
+              status: "ACTIVE",
+              currentPeriodStart: now,
+              currentPeriodEnd: periodEnd,
+            })
+            .returning({ id: subscriptions.id });
+          subscriptionId = created.id;
+        }
+
+        await tx.insert(subscriptionPayments).values({
+          orgId,
+          subscriptionId,
+          razorpayPaymentId: input.razorpay_payment_id,
+          razorpayOrderId: input.razorpay_order_id,
+          amount: (amount / 100).toFixed(2),
+          currency: "INR",
+          status: "captured",
+          paidAt: now,
+        });
+      });
+    } catch (err: unknown) {
+      if ((err as { code?: string }).code === "23505") {
+        return { success: true, plan: input.plan, status: "ACTIVE" };
       }
-
-      await tx.insert(subscriptionPayments).values({
-        orgId,
-        subscriptionId,
-        razorpayPaymentId: input.razorpay_payment_id,
-        razorpayOrderId: input.razorpay_order_id,
-        amount: (amount / 100).toFixed(2),
-        currency: "INR",
-        status: "captured",
-        paidAt: now,
-      });
-    });
+      throw err;
+    }
 
     this.planLimits.bust(orgId);
 

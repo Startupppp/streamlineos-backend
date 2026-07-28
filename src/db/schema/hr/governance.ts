@@ -13,7 +13,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
-import { departments } from "./employees";
+import { orgUnits } from "../common/organization";
 import { hrJobLevels } from "./core-org";
 
 export const hrLegalHoldStatusEnum = pgEnum("hr_legal_hold_status", ["active", "released"]);
@@ -199,7 +199,7 @@ export const hrPositions = pgTable(
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
-    departmentId: integer("department_id").references(() => departments.id, { onDelete: "set null" }),
+    departmentId: text("department_id").references(() => orgUnits.id, { onDelete: "set null" }),
     jobLevelId: integer("job_level_id").references(() => hrJobLevels.id, { onDelete: "set null" }),
     status: hrPositionStatusEnum("status").notNull().default("open"),
     budgetedCostCents: integer("budgeted_cost_cents"),
@@ -341,7 +341,7 @@ export const hrProxyAccessRelations = relations(hrProxyAccess, ({ one }) => ({
 
 export const hrPositionsRelations = relations(hrPositions, ({ one }) => ({
   org: one(organizations, { fields: [hrPositions.orgId], references: [organizations.id] }),
-  department: one(departments, { fields: [hrPositions.departmentId], references: [departments.id] }),
+  department: one(orgUnits, { fields: [hrPositions.departmentId], references: [orgUnits.id] }),
   incumbent: one(users, { fields: [hrPositions.incumbentUserId], references: [users.id] }),
 }));
 

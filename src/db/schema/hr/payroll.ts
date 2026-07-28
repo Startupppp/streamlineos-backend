@@ -4,7 +4,6 @@ import {
   serial,
   timestamp,
   boolean,
-  jsonb,
   decimal,
   bigint,
   date,
@@ -15,7 +14,6 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
-  payrollStatusEnum,
   expenseStatusEnum,
   assetStatusEnum,
   reimbursementStatusEnum,
@@ -28,93 +26,6 @@ import { journalEntries, ledgerAccounts } from "../accounting";
 import { projects } from "../build";
 import { resignations } from "./offboarding";
 import { assets } from "./assets";
-
-export const payrolls = pgTable(
-  "payrolls",
-  {
-    id: serial("id").primaryKey(),
-    orgId: text("org_id")
-      .references(() => organizations.id, { onDelete: "cascade" })
-      .notNull(),
-    userId: text("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "restrict" }),
-    month: text("month").notNull(),
-    basicSalary: decimal("basic_salary", { precision: 15, scale: 2 }).notNull(),
-    hra: decimal("hra", { precision: 15, scale: 2 }).default("0").notNull(),
-    allowances: decimal("allowances", { precision: 15, scale: 2 })
-      .default("0")
-      .notNull(),
-    deductions: decimal("deductions", { precision: 15, scale: 2 })
-      .default("0")
-      .notNull(),
-    grossSalary: decimal("gross_salary", { precision: 15, scale: 2 }).notNull(),
-    netSalary: decimal("net_salary", { precision: 15, scale: 2 }).notNull(),
-    status: payrollStatusEnum("status").default("DRAFT").notNull(),
-    generatedBy: text("generated_by").references(() => users.id, {
-      onDelete: "set null",
-    }),
-    approvedBy: text("approved_by").references(() => users.id, {
-      onDelete: "set null",
-    }),
-    overtimeType: text("overtime_type"),
-    overtimeDays: decimal("overtime_days", { precision: 6, scale: 2 })
-      .default("0")
-      .notNull(),
-    overtimeHours: decimal("overtime_hours", { precision: 6, scale: 2 })
-      .default("0")
-      .notNull(),
-    overtimeAmount: decimal("overtime_amount", { precision: 15, scale: 2 })
-      .default("0")
-      .notNull(),
-    payslipUrl: text("payslip_url"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-  },
-  (table) => [
-    unique("uniq_payrolls_org_id").on(table.orgId, table.id),
-    uniqueIndex("uniq_payrolls_user_month").on(table.userId, table.month),
-    index("idx_payrolls_org_month_status").on(
-      table.orgId,
-      table.month,
-      table.status,
-    ),
-  ],
-);
-
-export const salaryStructures = pgTable(
-  "salary_structures",
-  {
-    id: serial("id").primaryKey(),
-    orgId: text("org_id")
-      .references(() => organizations.id, { onDelete: "cascade" })
-      .notNull(),
-    userId: text("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    basicSalary: decimal("basic_salary", { precision: 15, scale: 2 }).notNull(),
-    hraPercentage: decimal("hra_percentage", { precision: 5, scale: 2 })
-      .default("40")
-      .notNull(),
-    allowances: decimal("allowances", { precision: 15, scale: 2 })
-      .default("0")
-      .notNull(),
-    deductions: decimal("deductions", { precision: 15, scale: 2 })
-      .default("0")
-      .notNull(),
-    effectiveFrom: date("effective_from").notNull(),
-    effectiveTo: date("effective_to"),
-    isActive: boolean("is_active").default(true).notNull(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at")
-      .defaultNow()
-      .notNull()
-      .$onUpdate(() => new Date()),
-  },
-  (table) => [
-    unique("uniq_salary_structures_org_id").on(table.orgId, table.id),
-    index("idx_salary_structures_user_active").on(table.userId, table.isActive),
-  ],
-);
 
 export const expenseCategories = pgTable(
   "expense_categories",
@@ -388,30 +299,6 @@ export const assetReturns = pgTable(
     index("idx_asset_returns_user").on(table.userId),
     index("idx_asset_returns_org_status").on(table.orgId, table.status),
   ],
-);
-
-export const payrollsRelations = relations(payrolls, ({ one }) => ({
-  user: one(users, { fields: [payrolls.userId], references: [users.id] }),
-  generatedByUser: one(users, {
-    fields: [payrolls.generatedBy],
-    references: [users.id],
-    relationName: "payrollGeneratedBy",
-  }),
-  approvedByUser: one(users, {
-    fields: [payrolls.approvedBy],
-    references: [users.id],
-    relationName: "payrollApprovedBy",
-  }),
-}));
-
-export const salaryStructuresRelations = relations(
-  salaryStructures,
-  ({ one }) => ({
-    user: one(users, {
-      fields: [salaryStructures.userId],
-      references: [users.id],
-    }),
-  }),
 );
 
 export const expenseCategoriesRelations = relations(

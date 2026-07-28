@@ -379,6 +379,118 @@
       "when": 1784993499575,
       "tag": "0333_pm_workspace_id_not_null",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1784993499576,
+      "tag": "0334_drop_dead_schema_objects",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1784993499577,
+      "tag": "0335_org_arrays_and_invites",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1784993499578,
+      "tag": "0336_kb_hr_array_normalization",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1784993499579,
+      "tag": "0337_modules_catalog",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1784993499580,
+      "tag": "0338_module_ownership",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1784993499581,
+      "tag": "0339_remaining_array_normalization",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1784993499582,
+      "tag": "0340_module_scoped_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1784993499583,
+      "tag": "0341_org_units_consolidation",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1784993499584,
+      "tag": "0342_role_assignment_collapse",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1784993499585,
+      "tag": "0343_module_admin_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1784993499586,
+      "tag": "0344_org_consolidation_finish",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1784993499587,
+      "tag": "0345_payroll_generation_collapse",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1784993499588,
+      "tag": "0346_invitation_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1784993499589,
+      "tag": "0347_fk_repairs",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1784993499590,
+      "tag": "0348_drop_polymorphic_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1784993499591,
+      "tag": "0349_retire_legacy_org_tables",
+      "breakpoints": true
     }
   ]
 }

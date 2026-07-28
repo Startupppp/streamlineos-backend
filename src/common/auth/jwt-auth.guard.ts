@@ -81,7 +81,7 @@ function extractClaims(payload: JWTPayload): BackendClaims {
         ? payload["orgId"]
         : null,
     branchId:
-      typeof payload["branchId"] === "number" ? payload["branchId"] : null,
+      typeof payload["branchId"] === "string" ? payload["branchId"] : null,
     role: typeof payload["role"] === "string" ? payload["role"] : "",
     permissions: Array.isArray(payload["permissions"])
       ? payload["permissions"].filter((x): x is string => typeof x === "string")

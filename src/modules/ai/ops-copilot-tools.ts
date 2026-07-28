@@ -8,7 +8,8 @@ import {
   invStockLevels,
   leaveBalances,
   leaveTypes,
-  payrolls,
+  payrollRuns,
+  payrollRunEmployees,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -28,14 +29,19 @@ export class OpsCopilotTools {
 
   private async selfPayrollRows(orgId: string, userId: string, month?: string, year?: string) {
     return this.db
-      .select({ month: payrolls.month, status: payrolls.status, netSalary: payrolls.netSalary })
-      .from(payrolls)
+      .select({
+        month: payrollRuns.month,
+        status: payrollRunEmployees.status,
+        netSalary: payrollRunEmployees.net,
+      })
+      .from(payrollRunEmployees)
+      .innerJoin(payrollRuns, eq(payrollRunEmployees.runId, payrollRuns.id))
       .where(
         and(
-          eq(payrolls.orgId, orgId),
-          eq(payrolls.userId, userId),
-          month ? eq(payrolls.month, month) : undefined,
-          year ? sql`${payrolls.month} LIKE ${year + "-%"}` : undefined,
+          eq(payrollRuns.orgId, orgId),
+          eq(payrollRunEmployees.userId, userId),
+          month ? eq(payrollRuns.month, month) : undefined,
+          year ? sql`${payrollRuns.month} LIKE ${year + "-%"}` : undefined,
         ),
       )
       .limit(12);
@@ -151,15 +157,16 @@ export class OpsCopilotTools {
             total_net: string;
           }>(sql`
             SELECT
-              status,
-              COUNT(*) AS count,
-              SUM(net_salary::numeric) AS total_net
-            FROM payrolls
-            WHERE org_id = ${orgId}
-              ${month ? sql`AND month = ${month}` : sql``}
-              ${year && !month ? sql`AND month LIKE ${year + "-%"}` : sql``}
-            GROUP BY status
-            ORDER BY status
+              pr.status,
+              COUNT(pre.id) AS count,
+              SUM(pre.net::numeric) AS total_net
+            FROM payroll_run_employees pre
+            JOIN payroll_runs pr ON pr.id = pre.run_id
+            WHERE pr.org_id = ${orgId}
+              ${month ? sql`AND pr.month = ${month}` : sql``}
+              ${year && !month ? sql`AND pr.month LIKE ${year + "-%"}` : sql``}
+            GROUP BY pr.status
+            ORDER BY pr.status
           `);
 
           return {

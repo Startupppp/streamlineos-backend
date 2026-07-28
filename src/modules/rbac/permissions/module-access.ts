@@ -3,8 +3,15 @@ import type { Permission } from "./types";
 export const ACCESS_MANAGED_MODULES = [
   "hr",
   "crm",
-  "inventory",
   "build",
+  "accounting",
+  "inventory",
+  "kb",
+  "chat",
+  "support",
+  "surveys",
+  "payroll",
+  "sign",
 ] as const;
 
 export const MODULE_ACCESS_PERMISSIONS: Permission[] =

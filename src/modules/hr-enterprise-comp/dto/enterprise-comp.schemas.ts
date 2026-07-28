@@ -11,7 +11,7 @@ export const createTimeDeviceSchema = z.object({
   name: z.string().min(1).max(200),
   serialNumber: z.string().min(1).max(100),
   type: z.enum(["biometric", "rfid", "mobile", "other"]),
-  locationId: z.number().int().positive().optional(),
+  locationId: z.string().uuid().optional(),
   effectiveFrom: z.string().optional(),
   effectiveTo: z.string().optional(),
 });
@@ -149,7 +149,7 @@ export const approveRecommendationSchema = z.object({
 
 export const createBudgetPoolSchema = z.object({
   cycleId: z.number().int().positive(),
-  departmentId: z.number().int().positive().optional(),
+  departmentId: z.string().uuid().optional(),
   allocatedCents: z.number().int().min(0),
 });
 

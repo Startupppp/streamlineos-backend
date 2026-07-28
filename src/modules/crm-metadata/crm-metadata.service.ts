@@ -41,7 +41,7 @@ export class CrmMetadataService {
   }
 
   async listPipelines(orgId: string) {
-    return this.db.select().from(crmPipelines).where(eq(crmPipelines.orgId, orgId)).orderBy(asc(crmPipelines.sortOrder));
+    return this.db.select().from(crmPipelines).where(eq(crmPipelines.orgId, orgId)).orderBy(asc(crmPipelines.sortOrder)).limit(100);
   }
 
   async createPipeline(u: CurrentUserContext, input: CreatePipelineInput) {
@@ -72,7 +72,7 @@ export class CrmMetadataService {
 
   async listStages(orgId: string, pipelineId: string) {
     await this.assertPipelineOwner(orgId, pipelineId);
-    return this.db.select().from(crmPipelineStages).where(and(eq(crmPipelineStages.orgId, orgId), eq(crmPipelineStages.pipelineId, pipelineId))).orderBy(asc(crmPipelineStages.sortOrder));
+    return this.db.select().from(crmPipelineStages).where(and(eq(crmPipelineStages.orgId, orgId), eq(crmPipelineStages.pipelineId, pipelineId))).orderBy(asc(crmPipelineStages.sortOrder)).limit(100);
   }
 
   async createStage(u: CurrentUserContext, pipelineId: string, input: CreateStageInput) {
@@ -120,7 +120,7 @@ export class CrmMetadataService {
   }
 
   async listOptions(orgId: string, optionType: string) {
-    return this.db.select().from(crmOptions).where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, optionType))).orderBy(asc(crmOptions.sortOrder));
+    return this.db.select().from(crmOptions).where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, optionType))).orderBy(asc(crmOptions.sortOrder)).limit(100);
   }
 
   async createOption(u: CurrentUserContext, optionType: string, input: CreateOptionInput) {

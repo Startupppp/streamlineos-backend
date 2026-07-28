@@ -8,12 +8,13 @@ import {
 } from "@nestjs/common";
 import { and, asc, count, desc, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm";
 import {
-  departmentMembers,
-  departments,
   leaveBalances,
   leaveRequests,
   leaveTypes,
-  users,  leavePolicies,
+  orgUnitMembers,
+  orgUnits,
+  users,
+  leavePolicies,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -212,23 +213,24 @@ export class LeavesService {
     const [byDept, monthly, byType, deptAvgDays] = await Promise.all([
       this.db
         .select({
-          department: departments.name,
+          department: orgUnits.name,
           total: count(leaveRequests.id),
           approved: sql<number>`SUM(CASE WHEN ${leaveRequests.status} = 'APPROVED' THEN 1 ELSE 0 END)`.mapWith(Number),
           pending: sql<number>`SUM(CASE WHEN ${leaveRequests.status} = 'PENDING' THEN 1 ELSE 0 END)`.mapWith(Number),
           rejected: sql<number>`SUM(CASE WHEN ${leaveRequests.status} = 'REJECTED' THEN 1 ELSE 0 END)`.mapWith(Number),
         })
         .from(leaveRequests)
-        .innerJoin(departmentMembers, eq(departmentMembers.userId, leaveRequests.userId))
-        .innerJoin(departments, eq(departments.id, departmentMembers.departmentId))
+        .innerJoin(orgUnitMembers, eq(orgUnitMembers.userId, leaveRequests.userId))
+        .innerJoin(orgUnits, eq(orgUnits.id, orgUnitMembers.orgUnitId))
         .where(
           and(
             eq(leaveRequests.orgId, orgId),
             gte(leaveRequests.startDate, yearStart),
             lte(leaveRequests.startDate, yearEnd),
+            eq(orgUnits.kind, "DEPARTMENT"),
           ),
         )
-        .groupBy(departments.name),
+        .groupBy(orgUnits.name),
 
       this.db
         .select({
@@ -270,23 +272,24 @@ export class LeavesService {
 
       this.db
         .select({
-          department: departments.name,
+          department: orgUnits.name,
           avgDays: sql<number>`ROUND(AVG(
             (${leaveRequests.endDate}::date - ${leaveRequests.startDate}::date) + 1
           ), 1)`.mapWith(Number),
         })
         .from(leaveRequests)
-        .innerJoin(departmentMembers, eq(departmentMembers.userId, leaveRequests.userId))
-        .innerJoin(departments, eq(departments.id, departmentMembers.departmentId))
+        .innerJoin(orgUnitMembers, eq(orgUnitMembers.userId, leaveRequests.userId))
+        .innerJoin(orgUnits, eq(orgUnits.id, orgUnitMembers.orgUnitId))
         .where(
           and(
             eq(leaveRequests.orgId, orgId),
             eq(leaveRequests.status, "APPROVED"),
             gte(leaveRequests.startDate, yearStart),
             lte(leaveRequests.startDate, yearEnd),
+            eq(orgUnits.kind, "DEPARTMENT"),
           ),
         )
-        .groupBy(departments.name),
+        .groupBy(orgUnits.name),
     ]);
 
     return {

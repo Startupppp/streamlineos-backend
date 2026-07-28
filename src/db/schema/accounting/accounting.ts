@@ -3,7 +3,7 @@ import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { accountTypeEnum, journalEntryStatusEnum } from "../common/enums";
 import { clients } from "../crm/contacts";
-import { departments } from "../hr/employees";
+import { orgUnits } from "../common/organization";
 import { projects } from "../build";
 
 export const accNormalBalanceEnum = pgEnum("acc_normal_balance", ["DEBIT", "CREDIT"]);
@@ -81,7 +81,7 @@ export const journalLines = pgTable("journal_lines", {
   clientId: integer("client_id").references(() => clients.id, { onDelete: "set null" }),
   vendorId: integer("vendor_id").references(() => clients.id, { onDelete: "set null" }),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
-  departmentId: integer("department_id").references(() => departments.id, { onDelete: "set null" }),
+  departmentId: text("department_id").references(() => orgUnits.id, { onDelete: "set null" }),
   employeeId: integer("employee_id"),
   taxCodeId: integer("tax_code_id"),
   dimensionValues: jsonb("dimension_values"),

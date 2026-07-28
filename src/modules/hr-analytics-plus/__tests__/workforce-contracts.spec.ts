@@ -107,7 +107,7 @@ describe("workforce analytics response contracts", () => {
       {
         planId: 11,
         fiscalYear: 2026,
-        departmentId: 4,
+        departmentId: "4",
         departmentName: "Engineering",
         budgeted: 20,
         actual: 17,

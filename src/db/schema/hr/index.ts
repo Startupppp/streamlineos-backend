@@ -1,4 +1,3 @@
-export * from "./employees";
 export * from "./core-people";
 export * from "./core-org";
 export * from "./core-audit";

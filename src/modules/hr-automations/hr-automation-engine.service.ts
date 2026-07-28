@@ -13,6 +13,7 @@ import type {
 } from "./dto/hr-automation.schemas";
 import type { HrAutomationEvent } from "./hr-automation-events";
 import type { HrWebhooksService } from "./hr-webhooks.service";
+import { evaluateNormalizedCondition, evaluateNormalizedConditions, type NormalizedCondition } from "../automation/shared-condition-evaluator";
 
 const MAX_DEPTH = 3;
 const COOLDOWN_MS = 5_000;
@@ -23,55 +24,8 @@ function cooldownKey(ruleId: number, entityId: string): string {
   return `${ruleId}:${entityId}`;
 }
 
-function evaluateCondition(condition: HrAutomationCondition, payload: Record<string, unknown>): boolean {
-  const actual = Object.prototype.hasOwnProperty.call(payload, condition.field)
-    ? payload[condition.field]
-    : undefined;
-
-  const toString = (v: unknown): string => {
-    if (v === null || v === undefined) return "";
-    if (typeof v === "string") return v;
-    return String(v);
-  };
-
-  const toNum = (v: unknown): number | null => {
-    if (typeof v === "number" && Number.isFinite(v)) return v;
-    if (typeof v === "string") {
-      const n = Number(v);
-      return Number.isFinite(n) ? n : null;
-    }
-    return null;
-  };
-
-  switch (condition.operator) {
-    case "eq":
-      return toString(actual) === toString(condition.value);
-    case "neq":
-      return toString(actual) !== toString(condition.value);
-    case "in": {
-      const arr = Array.isArray(condition.value) ? condition.value : [String(condition.value)];
-      return arr.map(String).includes(toString(actual));
-    }
-    case "gte": {
-      const a = toNum(actual);
-      const b = toNum(condition.value);
-      return a !== null && b !== null && a >= b;
-    }
-    case "lte": {
-      const a = toNum(actual);
-      const b = toNum(condition.value);
-      return a !== null && b !== null && a <= b;
-    }
-    case "contains":
-      return toString(actual).toLowerCase().includes(toString(condition.value).toLowerCase());
-    default:
-      return false;
-  }
-}
-
-function evaluateConditions(conditions: HrAutomationCondition[], payload: Record<string, unknown>): boolean {
-  if (!conditions || conditions.length === 0) return true;
-  return conditions.every((c) => evaluateCondition(c, payload));
+function toNormalized(c: HrAutomationCondition): NormalizedCondition {
+  return { field: c.field, op: c.operator, value: c.value };
 }
 
 export interface EmitOptions {
@@ -169,7 +123,7 @@ export class HrAutomationEngineService {
       return;
     }
 
-    const conditionsMet = evaluateConditions(rule.conditions, payload);
+    const conditionsMet = evaluateNormalizedConditions(rule.conditions.map(toNormalized), payload);
     if (!conditionsMet) {
       await this.db.insert(hrAutomationRuns).values({
         orgId,
@@ -231,9 +185,9 @@ export class HrAutomationEngineService {
     });
     if (!rule) throw new NotFoundException("Automation rule not found");
 
-    const matchedConditions = rule.conditions.map((c) => ({
+    const matchedConditions = rule.conditions.map((c): { condition: HrAutomationCondition; matched: boolean } => ({
       condition: c,
-      matched: evaluateCondition(c, payload),
+      matched: evaluateNormalizedCondition(toNormalized(c), payload),
     }));
 
     const matched = matchedConditions.every((r) => r.matched);

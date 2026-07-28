@@ -24,6 +24,8 @@ import { LeavesWriteService } from "./leaves-write.service";
 import { LeavesApprovalService } from "./leaves-approval.service";
 import { LeavesPageService } from "./leaves-page.service";
 import { AttendanceService } from "./attendance.service";
+import { AttendanceClockService } from "./attendance-clock.service";
+import { AttendanceReadService } from "./attendance-read.service";
 import { AttendancePolicyService } from "./attendance-policy.service";
 import { AttendanceRegularizationService } from "./attendance-regularization.service";
 import { AttendanceSummaryService } from "./attendance-summary.service";
@@ -69,6 +71,8 @@ import { LeaveLedgerService } from "./leave-ledger.service";
     LeavesApprovalService,
     LeaveLedgerService,
     LeavesPageService,
+    AttendanceClockService,
+    AttendanceReadService,
     AttendanceService,
     AttendancePolicyService,
     AttendanceRegularizationService,

@@ -20,7 +20,6 @@ export class MeService {
       where: eq(users.id, userId),
       columns: {
         totpSecret: false,
-        googleRefreshToken: false,
       },
     });
 

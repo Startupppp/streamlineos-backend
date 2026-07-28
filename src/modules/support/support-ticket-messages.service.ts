@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, eq } from "drizzle-orm";
 import {
   supportTicketMessages,
+  supportTicketAttachments,
   supportTickets,
   users,
 } from "../../db/schema";
@@ -34,7 +35,10 @@ export class SupportTicketMessagesService {
 
     return this.db.query.supportTicketMessages.findMany({
       where: eq(supportTicketMessages.ticketId, ticketId),
-      with: { author: { columns: { id: true, name: true, image: true } } },
+      with: {
+        author: { columns: { id: true, name: true, image: true } },
+        attachments: { columns: { id: true, fileName: true, fileUrl: true, fileSize: true, mimeType: true } },
+      },
       orderBy: [asc(supportTicketMessages.createdAt)],
     });
   }
@@ -51,7 +55,10 @@ export class SupportTicketMessagesService {
         eq(supportTicketMessages.ticketId, ticketId),
         eq(supportTicketMessages.isInternal, false),
       ),
-      with: { author: { columns: { id: true, name: true, image: true } } },
+      with: {
+        author: { columns: { id: true, name: true, image: true } },
+        attachments: { columns: { id: true, fileName: true, fileUrl: true, fileSize: true, mimeType: true } },
+      },
       orderBy: [asc(supportTicketMessages.createdAt)],
     });
   }
@@ -83,20 +90,38 @@ export class SupportTicketMessagesService {
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
 
-    const [message] = await this.db
-      .insert(supportTicketMessages)
-      .values({
-        ticketId,
-        authorId: userId,
-        body: input.body,
-        isInternal: input.isInternal,
-        attachments: input.attachments ?? [],
-        sourceChannel: source?.channel ?? "web",
-        sourceMessageId: source?.messageId ?? null,
-        sourceContactEmail: source?.contactEmail ?? null,
-        sourceContactName: source?.contactName ?? null,
-      })
-      .returning();
+    const message = await this.db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(supportTicketMessages)
+        .values({
+          ticketId,
+          authorId: userId,
+          body: input.body,
+          isInternal: input.isInternal,
+          sourceChannel: source?.channel ?? "web",
+          sourceMessageId: source?.messageId ?? null,
+          sourceContactEmail: source?.contactEmail ?? null,
+          sourceContactName: source?.contactName ?? null,
+        })
+        .returning();
+
+      if (!created) throw new Error("Failed to create message");
+
+      if (input.attachments && input.attachments.length > 0) {
+        await tx.insert(supportTicketAttachments).values(
+          input.attachments.map((a) => ({
+            orgId,
+            messageId: created.id,
+            fileName: a.fileName,
+            fileUrl: a.fileUrl,
+            fileSize: a.fileSize,
+            mimeType: a.mimeType,
+          })),
+        );
+      }
+
+      return created;
+    });
 
     await this.activity.recordActivity(
       orgId,

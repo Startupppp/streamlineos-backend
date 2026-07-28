@@ -17,8 +17,10 @@ import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { EmailService } from "../email/email.service";
 import { PlanLimitsService } from "../billing/plan-limits.service";
 import {
+  invitationEvents,
   invitations,
   magicLinkTokens,
+  organizationAllowedEmailDomains,
   organizationMembers,
   organizations,
   users,
@@ -55,16 +57,23 @@ export class InvitationsService {
       if (existingMember) throw new ConflictException("User is already a member");
     }
 
-    const org = await this.db.query.organizations.findFirst({
-      where: eq(organizations.id, orgId),
-    });
+    const [org, allowedDomainRows] = await Promise.all([
+      this.db.query.organizations.findFirst({
+        where: eq(organizations.id, orgId),
+        columns: { name: true },
+      }),
+      this.db
+        .select({ domain: organizationAllowedEmailDomains.domain })
+        .from(organizationAllowedEmailDomains)
+        .where(eq(organizationAllowedEmailDomains.orgId, orgId)),
+    ]);
 
-    if (org?.allowedEmailDomains && org.allowedEmailDomains.length > 0) {
+    if (allowedDomainRows.length > 0) {
       const emailDomain = email.split("@")[1]?.toLowerCase();
-      const allowed = org.allowedEmailDomains.map((d) => d.toLowerCase());
+      const allowed = allowedDomainRows.map((r) => r.domain);
       if (!emailDomain || !allowed.includes(emailDomain)) {
         throw new BadRequestException(
-          `Email domain not allowed. Permitted: ${org.allowedEmailDomains.join(", ")}`,
+          `Email domain not allowed. Permitted: ${allowed.join(", ")}`,
         );
       }
     }
@@ -93,8 +102,15 @@ export class InvitationsService {
 
       await tx
         .update(invitations)
-        .set({ token: hashToken(rawToken), expiresAt: newExpiresAt, role, invitedBy: actorUserId })
+        .set({ tokenHash: hashToken(rawToken), expiresAt: newExpiresAt, role, invitedBy: actorUserId })
         .where(eq(invitations.id, pendingInvitation.id));
+
+      await tx.insert(invitationEvents).values({
+        orgId,
+        invitationId: pendingInvitation.id,
+        event: "RESENT",
+        actorMembershipId: null,
+      });
 
       return { pendingInvitation, rawToken };
     });
@@ -138,11 +154,18 @@ export class InvitationsService {
         await tx.insert(invitations).values({
           id: invitationId,
           email,
-          token: hashToken(rawToken),
+          tokenHash: hashToken(rawToken),
           orgId,
           role,
           invitedBy: actorUserId,
           expiresAt,
+        });
+
+        await tx.insert(invitationEvents).values({
+          orgId,
+          invitationId,
+          event: "CREATED",
+          actorMembershipId: null,
         });
       });
     } catch (err) {
@@ -270,7 +293,7 @@ export class InvitationsService {
   ): Promise<{ email: string; organizationName: string; role: string; userExists: boolean }> {
     const invitation = await this.db.query.invitations.findFirst({
       where: and(
-        eq(invitations.token, hashToken(token)),
+        eq(invitations.tokenHash, hashToken(token)),
         gt(invitations.expiresAt, new Date()),
         isNull(invitations.acceptedAt),
       ),
@@ -299,7 +322,7 @@ export class InvitationsService {
   async accept(input: AcceptInvitationInput): Promise<{ ok: boolean; autoLoginToken?: string }> {
     const invitation = await this.db.query.invitations.findFirst({
       where: and(
-        eq(invitations.token, hashToken(input.token)),
+        eq(invitations.tokenHash, hashToken(input.token)),
         gt(invitations.expiresAt, new Date()),
         isNull(invitations.acceptedAt),
       ),
@@ -339,6 +362,12 @@ export class InvitationsService {
             ...(membershipId !== null ? { acceptedMembershipId: membershipId } : {}),
           })
           .where(eq(invitations.id, invitation.id));
+        await tx.insert(invitationEvents).values({
+          orgId: invitation.orgId,
+          invitationId: invitation.id,
+          event: "ACCEPTED",
+          actorMembershipId: membershipId,
+        });
       });
 
       const autoLoginToken = randomBytes(32).toString("hex");
@@ -386,6 +415,12 @@ export class InvitationsService {
           ...(membershipId !== null ? { acceptedMembershipId: membershipId } : {}),
         })
         .where(eq(invitations.id, invitation.id));
+      await tx.insert(invitationEvents).values({
+        orgId: invitation.orgId,
+        invitationId: invitation.id,
+        event: "ACCEPTED",
+        actorMembershipId: membershipId,
+      });
     });
 
     const autoLoginToken = randomBytes(32).toString("hex");
@@ -417,10 +452,23 @@ export class InvitationsService {
     const rawToken = randomBytes(32).toString("hex");
     const newExpiresAt = addDays(new Date(), 7);
 
-    await this.db
-      .update(invitations)
-      .set({ token: hashToken(rawToken), expiresAt: newExpiresAt })
-      .where(eq(invitations.id, invitationId));
+    const actorMembership = await this.db.query.organizationMembers.findFirst({
+      where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, actorUserId)),
+      columns: { id: true },
+    });
+
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(invitations)
+        .set({ tokenHash: hashToken(rawToken), expiresAt: newExpiresAt })
+        .where(eq(invitations.id, invitationId));
+      await tx.insert(invitationEvents).values({
+        orgId,
+        invitationId,
+        event: "RESENT",
+        actorMembershipId: actorMembership?.id ?? null,
+      });
+    });
 
     const [org, inviter] = await Promise.all([
       this.db.query.organizations.findFirst({
@@ -482,14 +530,22 @@ export class InvitationsService {
       columns: { id: true },
     });
 
-    await this.db
-      .update(invitations)
-      .set({
-        status: "REVOKED",
-        revokedAt: new Date(),
-        revokedBy: actorMembership?.id ?? null,
-      })
-      .where(eq(invitations.id, invitationId));
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(invitations)
+        .set({
+          status: "REVOKED",
+          revokedAt: new Date(),
+          revokedByMembershipId: actorMembership?.id ?? null,
+        })
+        .where(eq(invitations.id, invitationId));
+      await tx.insert(invitationEvents).values({
+        orgId,
+        invitationId,
+        event: "REVOKED",
+        actorMembershipId: actorMembership?.id ?? null,
+      });
+    });
 
     this.audit.log({
       action: "user.invitation.cancelled",
@@ -505,16 +561,29 @@ export class InvitationsService {
 
   async expireStaleInvitations(): Promise<{ expired: number }> {
     const now = new Date();
-    const result = await this.db
-      .update(invitations)
-      .set({ status: "EXPIRED" })
-      .where(
-        and(
-          eq(invitations.status, "PENDING"),
-          lt(invitations.expiresAt, now),
-        ),
-      )
-      .returning({ id: invitations.id });
-    return { expired: result.length };
+    const updated = await this.db.transaction(async (tx) => {
+      const rows = await tx
+        .update(invitations)
+        .set({ status: "EXPIRED" })
+        .where(
+          and(
+            eq(invitations.status, "PENDING"),
+            lt(invitations.expiresAt, now),
+          ),
+        )
+        .returning({ id: invitations.id, orgId: invitations.orgId });
+      if (rows.length > 0) {
+        await tx.insert(invitationEvents).values(
+          rows.map((r) => ({
+            orgId: r.orgId,
+            invitationId: r.id,
+            event: "EXPIRED" as const,
+            actorMembershipId: null,
+          })),
+        );
+      }
+      return rows;
+    });
+    return { expired: updated.length };
   }
 }

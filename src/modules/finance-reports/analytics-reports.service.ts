@@ -8,8 +8,8 @@ import {
   journalEntries,
   journalLines,
   expenses,
+  orgUnits,
   projects,
-  departments,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -202,16 +202,16 @@ export class AnalyticsReportsService {
         .groupBy(journalLines.departmentId),
     ]);
 
-    const allDeptIds = new Set<number>();
+    const allDeptIds = new Set<string>();
     for (const r of revenueRows) if (r.departmentId !== null) allDeptIds.add(r.departmentId);
     for (const r of costRows) if (r.departmentId !== null) allDeptIds.add(r.departmentId);
 
     if (allDeptIds.size === 0) return [];
 
     const deptRows = await this.db
-      .select({ id: departments.id, name: departments.name })
-      .from(departments)
-      .where(inArray(departments.id, Array.from(allDeptIds)));
+      .select({ id: orgUnits.id, name: orgUnits.name })
+      .from(orgUnits)
+      .where(inArray(orgUnits.id, Array.from(allDeptIds)));
     const deptMap = new Map(deptRows.map((d) => [d.id, d.name]));
 
     const revMap = new Map(revenueRows.map((r) => [r.departmentId, r]));

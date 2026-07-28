@@ -1,22 +1,27 @@
 import { pgTable, text, serial, integer, timestamp, index, uniqueIndex, pgEnum, uuid, varchar, boolean, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizationMembers, organizations, users, roles, permissions } from "./auth";
+import { orgUnits } from "./organization";
+import { modulesCatalog } from "./modules";
 
 export const dataScopeEnum = pgEnum("data_scope", ["all", "team", "own", "none"]);
-export const principalGroupTypeEnum = pgEnum("principal_group_type", ["department", "team", "custom"]);
 
-export const userRoles = pgTable("user_roles", {
-  id: serial("id").primaryKey(),
+export const roleAssignments = pgTable("role_assignments", {
+  id: uuid("id").defaultRandom().primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  organizationMembershipId: integer("organization_membership_id").notNull(),
   roleId: integer("role_id").references(() => roles.id, { onDelete: "cascade" }).notNull(),
-  assignedBy: text("assigned_by").references(() => users.id, { onDelete: "set null" }),
-  expiresAt: timestamp("expires_at"),
+  assignedByMembershipId: integer("assigned_by_membership_id"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
   reason: text("reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
-  uniqueIndex("uniq_user_roles_org_user_role").on(table.orgId, table.userId, table.roleId),
-  index("idx_user_roles_org_user").on(table.orgId, table.userId),
+  uniqueIndex("uniq_role_assignments_org_membership_role").on(table.orgId, table.organizationMembershipId, table.roleId),
+  index("idx_role_assignments_org_membership").on(table.orgId, table.organizationMembershipId),
+  foreignKey({
+    columns: [table.orgId, table.organizationMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+  }).onDelete("cascade"),
 ]);
 
 export const rolePermissionGrants = pgTable("role_permission_grants", {
@@ -31,17 +36,6 @@ export const rolePermissionGrants = pgTable("role_permission_grants", {
   index("idx_role_permission_grants_org_role").on(table.orgId, table.roleId),
 ]);
 
-export const groupRoles = pgTable("group_roles", {
-  id: serial("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  groupType: principalGroupTypeEnum("group_type").notNull(),
-  groupId: integer("group_id").notNull(),
-  roleId: integer("role_id").references(() => roles.id, { onDelete: "cascade" }).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  uniqueIndex("uniq_group_roles_org_group_role").on(table.orgId, table.groupType, table.groupId, table.roleId),
-  index("idx_group_roles_org_group").on(table.orgId, table.groupType, table.groupId),
-]);
 
 export const accessVersions = pgTable("access_versions", {
   orgId: text("org_id").primaryKey().references(() => organizations.id, { onDelete: "cascade" }),
@@ -67,7 +61,7 @@ export const orgModules = pgTable(
   {
     id: uuid("id").defaultRandom().primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    moduleKey: varchar("module_key", { length: 64 }).notNull(),
+    moduleKey: text("module_key").notNull().references(() => modulesCatalog.moduleKey),
     enabled: boolean("enabled").default(true).notNull(),
     enabledAt: timestamp("enabled_at").defaultNow().notNull(),
     enabledBy: varchar("enabled_by", { length: 36 }),
@@ -78,22 +72,18 @@ export const orgModules = pgTable(
   ],
 );
 
-export const userRolesRelations = relations(userRoles, ({ one }) => ({
+export const roleAssignmentsRelations = relations(roleAssignments, ({ one }) => ({
   organization: one(organizations, {
-    fields: [userRoles.orgId],
+    fields: [roleAssignments.orgId],
     references: [organizations.id],
   }),
-  user: one(users, {
-    fields: [userRoles.userId],
-    references: [users.id],
+  membership: one(organizationMembers, {
+    fields: [roleAssignments.orgId, roleAssignments.organizationMembershipId],
+    references: [organizationMembers.orgId, organizationMembers.id],
   }),
   role: one(roles, {
-    fields: [userRoles.roleId],
+    fields: [roleAssignments.roleId],
     references: [roles.id],
-  }),
-  assigner: one(users, {
-    fields: [userRoles.assignedBy],
-    references: [users.id],
   }),
 }));
 
@@ -112,17 +102,6 @@ export const rolePermissionGrantsRelations = relations(rolePermissionGrants, ({ 
   }),
 }));
 
-export const groupRolesRelations = relations(groupRoles, ({ one }) => ({
-  organization: one(organizations, {
-    fields: [groupRoles.orgId],
-    references: [organizations.id],
-  }),
-  role: one(roles, {
-    fields: [groupRoles.roleId],
-    references: [roles.id],
-  }),
-}));
-
 export const accessVersionsRelations = relations(accessVersions, ({ one }) => ({
   organization: one(organizations, {
     fields: [accessVersions.orgId],
@@ -130,74 +109,201 @@ export const accessVersionsRelations = relations(accessVersions, ({ one }) => ({
   }),
 }));
 
-export const membershipRoleAssignments = pgTable("membership_role_assignments", {
-  id: serial("id").primaryKey(),
-  organizationId: text("organization_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  organizationMembershipId: integer("organization_membership_id").notNull(),
-  roleId: integer("role_id").references(() => roles.id, { onDelete: "cascade" }).notNull(),
-  assignedBy: text("assigned_by").references(() => users.id, { onDelete: "set null" }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  uniqueIndex("uniq_mra_org_membership_role").on(table.organizationId, table.organizationMembershipId, table.roleId),
-  index("idx_mra_org_membership").on(table.organizationId, table.organizationMembershipId),
-  foreignKey({
-    columns: [table.organizationId, table.organizationMembershipId],
-    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
-  }).onDelete("cascade"),
-]);
+export type PrincipalGroupKind = "ORG_UNIT" | "CUSTOM";
 
-export const membershipRoleAssignmentsRelations = relations(membershipRoleAssignments, ({ one }) => ({
+export const principalGroups = pgTable(
+  "principal_groups",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+    kind: text("kind").$type<PrincipalGroupKind>().notNull(),
+    orgUnitId: text("org_unit_id").references(() => orgUnits.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+  },
+  (table) => [
+    uniqueIndex("uniq_principal_groups_org_name").on(table.orgId, table.name),
+    index("idx_principal_groups_org").on(table.orgId),
+    index("idx_principal_groups_org_unit").on(table.orgUnitId),
+  ],
+);
+
+export const principalGroupMembers = pgTable(
+  "principal_group_members",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+    principalGroupId: uuid("principal_group_id").references(() => principalGroups.id, { onDelete: "cascade" }).notNull(),
+    organizationMembershipId: integer("organization_membership_id").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("uniq_principal_group_members_group_member").on(table.principalGroupId, table.organizationMembershipId),
+    index("idx_principal_group_members_org_member").on(table.orgId, table.organizationMembershipId),
+    index("idx_principal_group_members_group").on(table.principalGroupId),
+    foreignKey({
+      columns: [table.orgId, table.organizationMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    }).onDelete("cascade"),
+  ],
+);
+
+export const groupRoleAssignments = pgTable(
+  "group_role_assignments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+    principalGroupId: uuid("principal_group_id").references(() => principalGroups.id, { onDelete: "cascade" }).notNull(),
+    roleId: integer("role_id").references(() => roles.id, { onDelete: "cascade" }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("uniq_group_role_assignments_group_role").on(table.orgId, table.principalGroupId, table.roleId),
+    index("idx_group_role_assignments_org_group").on(table.orgId, table.principalGroupId),
+  ],
+);
+
+export const principalGroupsRelations = relations(principalGroups, ({ one, many }) => ({
   organization: one(organizations, {
-    fields: [membershipRoleAssignments.organizationId],
+    fields: [principalGroups.orgId],
     references: [organizations.id],
   }),
+  orgUnit: one(orgUnits, {
+    fields: [principalGroups.orgUnitId],
+    references: [orgUnits.id],
+  }),
+  members: many(principalGroupMembers),
+  roleAssignments: many(groupRoleAssignments),
+}));
+
+export const principalGroupMembersRelations = relations(principalGroupMembers, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [principalGroupMembers.orgId],
+    references: [organizations.id],
+  }),
+  principalGroup: one(principalGroups, {
+    fields: [principalGroupMembers.principalGroupId],
+    references: [principalGroups.id],
+  }),
   membership: one(organizationMembers, {
-    fields: [membershipRoleAssignments.organizationMembershipId],
-    references: [organizationMembers.id],
+    fields: [principalGroupMembers.orgId, principalGroupMembers.organizationMembershipId],
+    references: [organizationMembers.orgId, organizationMembers.id],
+  }),
+}));
+
+export const groupRoleAssignmentsRelations = relations(groupRoleAssignments, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [groupRoleAssignments.orgId],
+    references: [organizations.id],
+  }),
+  principalGroup: one(principalGroups, {
+    fields: [groupRoleAssignments.principalGroupId],
+    references: [principalGroups.id],
   }),
   role: one(roles, {
-    fields: [membershipRoleAssignments.roleId],
+    fields: [groupRoleAssignments.roleId],
     references: [roles.id],
   }),
-  assigner: one(users, {
-    fields: [membershipRoleAssignments.assignedBy],
+}));
+
+export const pmProjectGrants = pgTable(
+  "pm_project_grants",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+    projectId: integer("project_id").notNull(),
+    principalType: text("principal_type").notNull().default("user"),
+    principalId: text("principal_id").notNull(),
+    permissionKey: text("permission_key").notNull(),
+    grantedBy: text("granted_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("uniq_pm_project_grants").on(table.orgId, table.projectId, table.principalType, table.principalId, table.permissionKey),
+    index("idx_pm_project_grants_org_project").on(table.orgId, table.projectId),
+    index("idx_pm_project_grants_principal").on(table.orgId, table.principalType, table.principalId),
+  ],
+);
+
+export const pmWorkspaceGrants = pgTable(
+  "pm_workspace_grants",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+    pmWorkspaceId: text("pm_workspace_id").notNull(),
+    principalType: text("principal_type").notNull().default("user"),
+    principalId: text("principal_id").notNull(),
+    permissionKey: text("permission_key").notNull(),
+    grantedBy: text("granted_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("uniq_pm_workspace_grants").on(table.orgId, table.pmWorkspaceId, table.principalType, table.principalId, table.permissionKey),
+    index("idx_pm_workspace_grants_org_workspace").on(table.orgId, table.pmWorkspaceId),
+    index("idx_pm_workspace_grants_principal").on(table.orgId, table.principalType, table.principalId),
+  ],
+);
+
+export const pmProjectGrantsRelations = relations(pmProjectGrants, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [pmProjectGrants.orgId],
+    references: [organizations.id],
+  }),
+  grantedByUser: one(users, {
+    fields: [pmProjectGrants.grantedBy],
     references: [users.id],
   }),
 }));
 
-export const resourceGrants = pgTable(
-  "resource_grants",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    orgId: varchar("org_id", { length: 36 }).notNull(),
-    resourceType: varchar("resource_type", { length: 64 }).notNull(),
-    resourceId: varchar("resource_id", { length: 36 }).notNull(),
-    principalType: varchar("principal_type", { length: 16 }).notNull().default("user"),
-    principalId: varchar("principal_id", { length: 36 }).notNull(),
-    permissionKey: varchar("permission_key", { length: 128 }).notNull(),
-    grantedBy: varchar("granted_by", { length: 36 }),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-  },
-  (t) => [
-    uniqueIndex("resource_grants_unique_idx").on(
-      t.orgId, t.resourceType, t.resourceId, t.principalType, t.principalId, t.permissionKey,
-    ),
-    index("resource_grants_org_resource_idx").on(t.orgId, t.resourceType, t.resourceId),
-    index("resource_grants_principal_idx").on(t.orgId, t.principalType, t.principalId),
-  ],
-);
-
-export const resourceGrantsRelations = relations(resourceGrants, ({ one }) => ({
+export const pmWorkspaceGrantsRelations = relations(pmWorkspaceGrants, ({ one }) => ({
   organization: one(organizations, {
-    fields: [resourceGrants.orgId],
+    fields: [pmWorkspaceGrants.orgId],
     references: [organizations.id],
+  }),
+  grantedByUser: one(users, {
+    fields: [pmWorkspaceGrants.grantedBy],
+    references: [users.id],
   }),
 }));
 
-export type UserRole = typeof userRoles.$inferSelect;
+export const kbSpaceGrants = pgTable(
+  "kb_space_grants",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+    spaceId: integer("space_id").notNull(),
+    principalType: text("principal_type").notNull().default("user"),
+    principalId: text("principal_id").notNull(),
+    permissionKey: text("permission_key").notNull(),
+    grantedBy: text("granted_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("uniq_kb_space_grants").on(t.orgId, t.spaceId, t.principalType, t.principalId, t.permissionKey),
+    index("idx_kb_space_grants_org_space").on(t.orgId, t.spaceId),
+    index("idx_kb_space_grants_principal").on(t.orgId, t.principalType, t.principalId),
+  ],
+);
+
+export const kbSpaceGrantsRelations = relations(kbSpaceGrants, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [kbSpaceGrants.orgId],
+    references: [organizations.id],
+  }),
+  grantedByUser: one(users, {
+    fields: [kbSpaceGrants.grantedBy],
+    references: [users.id],
+  }),
+}));
+
+export type RoleAssignment = typeof roleAssignments.$inferSelect;
 export type RolePermissionGrant = typeof rolePermissionGrants.$inferSelect;
-export type GroupRole = typeof groupRoles.$inferSelect;
 export type AccessVersion = typeof accessVersions.$inferSelect;
-export type ResourceGrant = typeof resourceGrants.$inferSelect;
 export type OrgModule = typeof orgModules.$inferSelect;
-export type MembershipRoleAssignment = typeof membershipRoleAssignments.$inferSelect;
+export type PrincipalGroup = typeof principalGroups.$inferSelect;
+export type PrincipalGroupMember = typeof principalGroupMembers.$inferSelect;
+export type GroupRoleAssignment = typeof groupRoleAssignments.$inferSelect;
+export type PmProjectGrant = typeof pmProjectGrants.$inferSelect;
+export type PmWorkspaceGrant = typeof pmWorkspaceGrants.$inferSelect;
+export type KbSpaceGrant = typeof kbSpaceGrants.$inferSelect;

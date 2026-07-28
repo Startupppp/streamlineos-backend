@@ -6,23 +6,16 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import {
-  timesheets,
-  timesheetPeriods,
-  timesheetSettings,
-  projects,
-  tickets,
-} from "../../db/schema";
+import { timesheets, projects, tickets } from "../../db/schema";
 import { AccessService } from "../access/access.service";
-import { applyScope } from "../access/apply-scope";
-import { resolveEntriesScope } from "./timesheets-core-scope";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
-import { weekRange, formatDateOnly } from "./lib/period.helpers";
+import { EntriesReadService } from "./entries-read.service";
+import { EntriesPeriodService } from "./entries-period.service";
 import { roundHours } from "./lib/rounding";
+import { formatDateOnly } from "./lib/period.helpers";
 import type {
   CreateEntryInput,
   UpdateEntryInput,
@@ -31,292 +24,33 @@ import type {
 } from "./dto/entries.schemas";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
-function buildEntryShape(r: {
-  id: number;
-  orgId: string;
-  userId: string;
-  ticketId: number | null;
-  projectId: number | null;
-  date: string;
-  hours: string;
-  description: string | null;
-  isBillable: boolean;
-  billingType: string;
-  status: string;
-  submittedAt: Date | null;
-  approvedBy: string | null;
-  approvedAt: Date | null;
-  rejectionReason: string | null;
-  lockedAt: Date | null;
-  voidedAt: Date | null;
-  invoicingStatus: string;
-  billRate: string | null;
-  currency: string | null;
-  rateSource: string | null;
-  source: string;
-  workLink: string | null;
-  timesheetPeriodId: number | null;
-  createdAt: Date;
-  updatedAt: Date;
-  directProjectId: number | null;
-  directProjectName: string | null;
-  ticketRowId: number | null;
-  ticketTitle: string | null;
-  ticketTicketNumber: number | null;
-  ticketProjectId: number | null;
-  ticketProjectName: string | null;
-}) {
-  return {
-    id: r.id,
-    orgId: r.orgId,
-    userId: r.userId,
-    ticketId: r.ticketId,
-    projectId: r.projectId,
-    date: r.date,
-    hours: r.hours,
-    description: r.description,
-    isBillable: r.isBillable,
-    billingType: r.billingType,
-    status: r.status,
-    submittedAt: r.submittedAt,
-    approvedBy: r.approvedBy,
-    approvedAt: r.approvedAt,
-    rejectionReason: r.rejectionReason,
-    lockedAt: r.lockedAt,
-    voidedAt: r.voidedAt,
-    invoicingStatus: r.invoicingStatus,
-    billRate: r.billRate,
-    currency: r.currency,
-    rateSource: r.rateSource,
-    source: r.source,
-    workLink: r.workLink,
-    timesheetPeriodId: r.timesheetPeriodId,
-    createdAt: r.createdAt,
-    updatedAt: r.updatedAt,
-    project: r.directProjectId
-      ? { id: r.directProjectId, name: r.directProjectName ?? "" }
-      : null,
-    ticket: r.ticketRowId
-      ? {
-          id: r.ticketRowId,
-          title: r.ticketTitle ?? "",
-          ticketNumber: r.ticketTicketNumber ?? 0,
-          project: r.ticketProjectId
-            ? { id: r.ticketProjectId, name: r.ticketProjectName ?? "" }
-            : null,
-        }
-      : null,
-  };
-}
-
 @Injectable()
 export class EntriesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
     private readonly audit: TimesheetsAuditService,
+    private readonly reader: EntriesReadService,
+    private readonly periodService: EntriesPeriodService,
   ) {}
 
-  async listEntries(u: CurrentUserContext, query: EntriesQuery) {
-    const scope = await resolveEntriesScope(this.access, u);
-    const limit = Math.min(query.limit, 100);
-    const offset = (query.page - 1) * limit;
-
-    const conditions = [
-      eq(timesheets.orgId, u.orgId),
-      isNull(timesheets.voidedAt),
-      applyScope(scope, u.userId, { ownerColumn: timesheets.userId }),
-    ];
-
-    if (query.userId && scope === "all")
-      conditions.push(eq(timesheets.userId, query.userId));
-    if (query.projectId)
-      conditions.push(eq(timesheets.projectId, query.projectId));
-    if (query.ticketId)
-      conditions.push(eq(timesheets.ticketId, query.ticketId));
-    if (query.status) conditions.push(eq(timesheets.status, query.status));
-    if (query.startDate) conditions.push(gte(timesheets.date, query.startDate));
-    if (query.endDate) conditions.push(lte(timesheets.date, query.endDate));
-    if (query.billable === "true")
-      conditions.push(eq(timesheets.isBillable, true));
-    if (query.billable === "false")
-      conditions.push(eq(timesheets.isBillable, false));
-
-    const dp = alias(projects, "dp");
-    const tp = alias(projects, "tp");
-
-    const rows = await this.db
-      .select({
-        id: timesheets.id,
-        orgId: timesheets.orgId,
-        userId: timesheets.userId,
-        ticketId: timesheets.ticketId,
-        projectId: timesheets.projectId,
-        date: timesheets.date,
-        hours: timesheets.hours,
-        description: timesheets.description,
-        isBillable: timesheets.isBillable,
-        billingType: timesheets.billingType,
-        status: timesheets.status,
-        submittedAt: timesheets.submittedAt,
-        approvedBy: timesheets.approvedBy,
-        approvedAt: timesheets.approvedAt,
-        rejectionReason: timesheets.rejectionReason,
-        lockedAt: timesheets.lockedAt,
-        voidedAt: timesheets.voidedAt,
-        invoicingStatus: timesheets.invoicingStatus,
-        billRate: timesheets.billRate,
-        currency: timesheets.currency,
-        rateSource: timesheets.rateSource,
-        source: timesheets.source,
-        workLink: timesheets.workLink,
-        timesheetPeriodId: timesheets.timesheetPeriodId,
-        createdAt: timesheets.createdAt,
-        updatedAt: timesheets.updatedAt,
-        directProjectId: dp.id,
-        directProjectName: dp.name,
-        ticketRowId: tickets.id,
-        ticketTitle: tickets.title,
-        ticketTicketNumber: tickets.ticketNumber,
-        ticketProjectId: tp.id,
-        ticketProjectName: tp.name,
-      })
-      .from(timesheets)
-      .leftJoin(dp, eq(timesheets.projectId, dp.id))
-      .leftJoin(tickets, eq(timesheets.ticketId, tickets.id))
-      .leftJoin(tp, eq(tickets.projectId, tp.id))
-      .where(and(...conditions))
-      .orderBy(desc(timesheets.date))
-      .limit(limit)
-      .offset(offset);
-
-    return rows.map(buildEntryShape);
+  listEntries(u: CurrentUserContext, query: EntriesQuery) {
+    return this.reader.listEntries(u, query);
   }
 
-  private async loadSettings(orgId: string) {
-    const [settings] = await this.db
-      .select()
-      .from(timesheetSettings)
-      .where(eq(timesheetSettings.orgId, orgId))
-      .limit(1);
-    return settings;
+  getEntryById(orgId: string, entryId: number) {
+    return this.reader.getEntryById(orgId, entryId);
   }
 
-  private async getOrCreatePeriod(
-    orgId: string,
-    userId: string,
-    date: string,
-    workWeekStart: number,
-    dbOrTx: Pick<Db, "select" | "insert"> = this.db,
-  ): Promise<number> {
-    const range = weekRange(new Date(date + "T12:00:00"), workWeekStart);
-    const matchesRange = and(
-      eq(timesheetPeriods.orgId, orgId),
-      eq(timesheetPeriods.userId, userId),
-      eq(timesheetPeriods.periodStart, range.start),
-      eq(timesheetPeriods.periodEnd, range.end),
-    );
-
-    const [existing] = await dbOrTx
-      .select({ id: timesheetPeriods.id })
-      .from(timesheetPeriods)
-      .where(matchesRange)
-      .limit(1);
-
-    if (existing) return existing.id;
-
-    const inserted = await dbOrTx
-      .insert(timesheetPeriods)
-      .values({
-        orgId,
-        userId,
-        periodStart: range.start,
-        periodEnd: range.end,
-        status: "OPEN",
-        totalHours: "0",
-        billableHours: "0",
-        nonBillableHours: "0",
-      })
-      .onConflictDoNothing()
-      .returning({ id: timesheetPeriods.id });
-
-    if (inserted[0]) return inserted[0].id;
-
-    const [refetch] = await dbOrTx
-      .select({ id: timesheetPeriods.id })
-      .from(timesheetPeriods)
-      .where(matchesRange)
-      .limit(1);
-
-    if (!refetch) {
-      throw new ConflictException(
-        "Could not resolve the timesheet period for this date",
-      );
-    }
-    return refetch.id;
-  }
-
-  async recomputePeriodTotals(
+  recomputePeriodTotals(
     orgId: string,
     periodId: number,
-    dbOrTx: Pick<Db, "select" | "update"> = this.db,
+    dbOrTx?: Pick<Db, "select" | "update">,
   ): Promise<void> {
-    const [sums] = await dbOrTx
-      .select({
-        total: sql<string>`COALESCE(SUM(hours::numeric), 0)::text`,
-        billable: sql<string>`COALESCE(SUM(CASE WHEN is_billable THEN hours::numeric ELSE 0 END), 0)::text`,
-        nonBillable: sql<string>`COALESCE(SUM(CASE WHEN NOT is_billable THEN hours::numeric ELSE 0 END), 0)::text`,
-      })
-      .from(timesheets)
-      .where(
-        and(
-          eq(timesheets.timesheetPeriodId, periodId),
-          eq(timesheets.orgId, orgId),
-          isNull(timesheets.voidedAt),
-        ),
-      );
-
-    await dbOrTx
-      .update(timesheetPeriods)
-      .set({
-        totalHours: sums?.total ?? "0",
-        billableHours: sums?.billable ?? "0",
-        nonBillableHours: sums?.nonBillable ?? "0",
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(timesheetPeriods.id, periodId),
-          eq(timesheetPeriods.orgId, orgId),
-        ),
-      );
+    return this.periodService.recomputePeriodTotals(orgId, periodId, dbOrTx);
   }
 
-  private async syncTicketTimeSpent(
-    dbOrTx: Pick<Db, "select" | "update">,
-    orgId: string,
-    ticketId: number,
-  ): Promise<void> {
-    const [ticketHours] = await dbOrTx
-      .select({ total: sql<number>`COALESCE(SUM(hours::numeric), 0)` })
-      .from(timesheets)
-      .where(
-        and(
-          eq(timesheets.ticketId, ticketId),
-          eq(timesheets.orgId, orgId),
-          isNull(timesheets.voidedAt),
-        ),
-      );
-    await dbOrTx
-      .update(tickets)
-      .set({ timeSpent: (ticketHours?.total ?? 0).toString() })
-      .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)));
-  }
-
-  private async assertTicketInOrg(
-    orgId: string,
-    ticketId: number,
-  ): Promise<void> {
+  private async assertTicketInOrg(orgId: string, ticketId: number): Promise<void> {
     const [row] = await this.db
       .select({ id: tickets.id })
       .from(tickets)
@@ -325,10 +59,7 @@ export class EntriesService {
     if (!row) throw new NotFoundException("Ticket not found");
   }
 
-  private async assertProjectInOrg(
-    orgId: string,
-    projectId: number,
-  ): Promise<void> {
+  private async assertProjectInOrg(orgId: string, projectId: number): Promise<void> {
     const [row] = await this.db
       .select({ id: projects.id })
       .from(projects)
@@ -337,58 +68,8 @@ export class EntriesService {
     if (!row) throw new NotFoundException("Project not found");
   }
 
-  async getEntryById(orgId: string, entryId: number) {
-    const dp = alias(projects, "dp");
-    const tp = alias(projects, "tp");
-
-    const [row] = await this.db
-      .select({
-        id: timesheets.id,
-        orgId: timesheets.orgId,
-        userId: timesheets.userId,
-        ticketId: timesheets.ticketId,
-        projectId: timesheets.projectId,
-        date: timesheets.date,
-        hours: timesheets.hours,
-        description: timesheets.description,
-        isBillable: timesheets.isBillable,
-        billingType: timesheets.billingType,
-        status: timesheets.status,
-        submittedAt: timesheets.submittedAt,
-        approvedBy: timesheets.approvedBy,
-        approvedAt: timesheets.approvedAt,
-        rejectionReason: timesheets.rejectionReason,
-        lockedAt: timesheets.lockedAt,
-        voidedAt: timesheets.voidedAt,
-        invoicingStatus: timesheets.invoicingStatus,
-        billRate: timesheets.billRate,
-        currency: timesheets.currency,
-        rateSource: timesheets.rateSource,
-        source: timesheets.source,
-        workLink: timesheets.workLink,
-        timesheetPeriodId: timesheets.timesheetPeriodId,
-        createdAt: timesheets.createdAt,
-        updatedAt: timesheets.updatedAt,
-        directProjectId: dp.id,
-        directProjectName: dp.name,
-        ticketRowId: tickets.id,
-        ticketTitle: tickets.title,
-        ticketTicketNumber: tickets.ticketNumber,
-        ticketProjectId: tp.id,
-        ticketProjectName: tp.name,
-      })
-      .from(timesheets)
-      .leftJoin(dp, eq(timesheets.projectId, dp.id))
-      .leftJoin(tickets, eq(timesheets.ticketId, tickets.id))
-      .leftJoin(tp, eq(tickets.projectId, tp.id))
-      .where(and(eq(timesheets.id, entryId), eq(timesheets.orgId, orgId)));
-
-    if (!row) throw new NotFoundException("Time entry not found");
-    return buildEntryShape(row);
-  }
-
   async createEntry(u: CurrentUserContext, input: CreateEntryInput) {
-    const settings = await this.loadSettings(u.orgId);
+    const settings = await this.periodService.loadSettings(u.orgId);
     const workWeekStart = settings?.workWeekStart ?? 1;
     const maxHoursPerDay = parseFloat(settings?.maxHoursPerDay ?? "24");
     const allowBackdated = settings?.allowBackdatedEntries ?? true;
@@ -416,7 +97,8 @@ export class EntriesService {
       }
     }
 
-    const requiredFields = (settings?.requiredFields as string[] | null) ?? [];
+    const requiredFields =
+      (settings?.requiredFields as string[] | null) ?? [];
     if (
       requiredFields.includes("project") &&
       !input.projectId &&
@@ -432,7 +114,9 @@ export class EntriesService {
     }
 
     const [dailyHours] = await this.db
-      .select({ total: sql<string>`COALESCE(SUM(hours::numeric), 0)::text` })
+      .select({
+        total: sql<string>`COALESCE(SUM(hours::numeric), 0)::text`,
+      })
       .from(timesheets)
       .where(
         and(
@@ -466,7 +150,7 @@ export class EntriesService {
     }
 
     const entry = await this.db.transaction(async (tx) => {
-      const periodId = await this.getOrCreatePeriod(
+      const periodId = await this.periodService.getOrCreatePeriod(
         u.orgId,
         u.userId,
         input.date,
@@ -499,10 +183,10 @@ export class EntriesService {
         throw new ConflictException("Could not create the time entry");
 
       if (input.ticketId) {
-        await this.syncTicketTimeSpent(tx, u.orgId, input.ticketId);
+        await this.periodService.syncTicketTimeSpent(tx, u.orgId, input.ticketId);
       }
 
-      await this.recomputePeriodTotals(u.orgId, periodId, tx);
+      await this.periodService.recomputePeriodTotals(u.orgId, periodId, tx);
 
       await this.audit.record(tx, {
         orgId: u.orgId,
@@ -522,7 +206,7 @@ export class EntriesService {
       return inserted;
     });
 
-    return this.getEntryById(u.orgId, entry.id);
+    return this.reader.getEntryById(u.orgId, entry.id);
   }
 
   async updateEntry(
@@ -556,12 +240,14 @@ export class EntriesService {
       u.isOrgOwner ||
       u.isPlatformAdmin;
     if (!canManage && entry.userId !== u.userId) {
-      throw new ForbiddenException("You can only edit your own time entries");
+      throw new ForbiddenException(
+        "You can only edit your own time entries",
+      );
     }
 
     const updateData: Record<string, unknown> = { updatedAt: new Date() };
     if (input.hours !== undefined) {
-      const settings = await this.loadSettings(u.orgId);
+      const settings = await this.periodService.loadSettings(u.orgId);
       updateData.hours = roundHours(
         input.hours,
         settings?.roundingRule,
@@ -588,14 +274,20 @@ export class EntriesService {
       await tx
         .update(timesheets)
         .set(updateData)
-        .where(and(eq(timesheets.id, entryId), eq(timesheets.orgId, u.orgId)));
+        .where(
+          and(eq(timesheets.id, entryId), eq(timesheets.orgId, u.orgId)),
+        );
 
       if (input.hours !== undefined && entry.ticketId) {
-        await this.syncTicketTimeSpent(tx, u.orgId, entry.ticketId);
+        await this.periodService.syncTicketTimeSpent(tx, u.orgId, entry.ticketId);
       }
 
       if (entry.timesheetPeriodId) {
-        await this.recomputePeriodTotals(u.orgId, entry.timesheetPeriodId, tx);
+        await this.periodService.recomputePeriodTotals(
+          u.orgId,
+          entry.timesheetPeriodId,
+          tx,
+        );
       }
 
       await this.audit.record(tx, {
@@ -609,7 +301,7 @@ export class EntriesService {
       });
     });
 
-    return this.getEntryById(u.orgId, entryId);
+    return this.reader.getEntryById(u.orgId, entryId);
   }
 
   async voidEntry(
@@ -635,7 +327,9 @@ export class EntriesService {
       u.isOrgOwner ||
       u.isPlatformAdmin;
     if (!canManage && entry.userId !== u.userId) {
-      throw new ForbiddenException("You can only void your own time entries");
+      throw new ForbiddenException(
+        "You can only void your own time entries",
+      );
     }
 
     await this.db.transaction(async (tx) => {
@@ -646,14 +340,20 @@ export class EntriesService {
           voidReason: input.reason,
           updatedAt: new Date(),
         })
-        .where(and(eq(timesheets.id, entryId), eq(timesheets.orgId, u.orgId)));
+        .where(
+          and(eq(timesheets.id, entryId), eq(timesheets.orgId, u.orgId)),
+        );
 
       if (entry.ticketId) {
-        await this.syncTicketTimeSpent(tx, u.orgId, entry.ticketId);
+        await this.periodService.syncTicketTimeSpent(tx, u.orgId, entry.ticketId);
       }
 
       if (entry.timesheetPeriodId) {
-        await this.recomputePeriodTotals(u.orgId, entry.timesheetPeriodId, tx);
+        await this.periodService.recomputePeriodTotals(
+          u.orgId,
+          entry.timesheetPeriodId,
+          tx,
+        );
       }
 
       await this.audit.record(tx, {

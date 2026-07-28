@@ -4,9 +4,9 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import {
   hrPolicies,
+  orgUnitMembers,
+  orgUnits,
   organizationMembers,
-  departmentMembers,
-  departments,
   users,
 } from "../../db/schema";
 import type { PolicyType } from "./hr-policy-types";
@@ -51,7 +51,7 @@ export interface PolicyEvaluationResult {
 
 interface EmployeeAttributes {
   userId: string;
-  departmentId: number | null;
+  departmentId: string | null;
   teamIds: string[];
   role: string;
   designation: string | null;
@@ -131,13 +131,14 @@ export class HrPolicyEvaluationService {
 
     const [deptMemberships, u] = await Promise.all([
       this.db
-        .select({ departmentId: departmentMembers.departmentId })
-        .from(departmentMembers)
-        .innerJoin(departments, eq(departments.id, departmentMembers.departmentId))
+        .select({ orgUnitId: orgUnitMembers.orgUnitId })
+        .from(orgUnitMembers)
+        .innerJoin(orgUnits, eq(orgUnits.id, orgUnitMembers.orgUnitId))
         .where(
           and(
-            eq(departmentMembers.userId, employeeId),
-            eq(departments.orgId, orgId),
+            eq(orgUnitMembers.userId, employeeId),
+            eq(orgUnits.orgId, orgId),
+            eq(orgUnits.kind, "DEPARTMENT"),
           ),
         )
         .limit(10),
@@ -148,12 +149,12 @@ export class HrPolicyEvaluationService {
 
     return {
       userId: employeeId,
-      departmentId: deptMemberships[0]?.departmentId ?? null,
+      departmentId: deptMemberships[0]?.orgUnitId ?? null,
       teamIds: [],
       role: u?.role ?? "",
       designation: u?.designation ?? null,
       employmentType: null,
-      locationId: u?.branchId != null ? String(u.branchId) : null,
+      locationId: u?.branchId ?? null,
       countryCode: null,
       stateCode: null,
       jobLevel: null,
@@ -222,7 +223,7 @@ export class HrPolicyEvaluationService {
       case "employee":
         return scope.scopeValue === attrs.userId;
       case "department":
-        return attrs.departmentId != null && scope.scopeValue === String(attrs.departmentId);
+        return attrs.departmentId != null && scope.scopeValue === attrs.departmentId;
       case "team":
         return attrs.teamIds.includes(scope.scopeValue);
       case "role":

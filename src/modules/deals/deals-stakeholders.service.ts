@@ -53,7 +53,8 @@ export class DealsStakeholdersService {
       })
       .from(crmDealStakeholders)
       .innerJoin(contacts, eq(contacts.id, crmDealStakeholders.contactId))
-      .where(and(eq(crmDealStakeholders.orgId, orgId), eq(crmDealStakeholders.dealId, dealId)));
+      .where(and(eq(crmDealStakeholders.orgId, orgId), eq(crmDealStakeholders.dealId, dealId)))
+      .limit(100);
   }
 
   async createStakeholder(orgId: string, dealId: number, input: CreateStakeholderInput) {

@@ -4,12 +4,7 @@ import {
 } from "@nestjs/common";
 import { and, eq, isNull } from "drizzle-orm";
 import {
-  orgBusinessUnits,
-  orgBranches,
-  orgDepartments,
-  orgTeams,
-  orgLocations,
-  orgCostCenters,
+  orgUnits,
 } from "../../db/schema/common/organization";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -184,51 +179,65 @@ export class OrgHierarchyService {
   }
 
   async getHierarchy(orgId: string) {
-    const [bus, branches, depts, teams, locs, costCenterRows] = await Promise.all([
-      this.db.select().from(orgBusinessUnits).where(and(eq(orgBusinessUnits.orgId, orgId), isNull(orgBusinessUnits.deletedAt))),
-      this.db.select().from(orgBranches).where(and(eq(orgBranches.orgId, orgId), isNull(orgBranches.deletedAt))),
-      this.db.select().from(orgDepartments).where(and(eq(orgDepartments.orgId, orgId), isNull(orgDepartments.deletedAt))),
-      this.db.select().from(orgTeams).where(and(eq(orgTeams.orgId, orgId), isNull(orgTeams.deletedAt))),
-      this.db.select().from(orgLocations).where(eq(orgLocations.orgId, orgId)),
-      this.db.select().from(orgCostCenters).where(eq(orgCostCenters.orgId, orgId)),
-    ]);
+    const rows = await this.db
+      .select({ kind: orgUnits.kind })
+      .from(orgUnits)
+      .where(and(eq(orgUnits.orgId, orgId), isNull(orgUnits.deletedAt)));
+
+    const counts: Record<string, number> = {};
+    for (const row of rows) {
+      counts[row.kind] = (counts[row.kind] ?? 0) + 1;
+    }
 
     return {
-      businessUnits: bus.length,
-      branches: branches.length,
-      departments: depts.length,
-      teams: teams.length,
-      locations: locs.length,
-      costCenters: costCenterRows.length,
+      businessUnits: counts["BUSINESS_UNIT"] ?? 0,
+      branches: counts["BRANCH"] ?? 0,
+      departments: counts["DEPARTMENT"] ?? 0,
+      teams: counts["TEAM"] ?? 0,
+      locations: counts["LOCATION"] ?? 0,
+      costCenters: counts["COST_CENTER"] ?? 0,
     };
   }
 
   async getTree(orgId: string) {
-    const [bus, branches, depts, teams] = await Promise.all([
-      this.db.select().from(orgBusinessUnits).where(and(eq(orgBusinessUnits.orgId, orgId), isNull(orgBusinessUnits.deletedAt))),
-      this.db.select().from(orgBranches).where(and(eq(orgBranches.orgId, orgId), isNull(orgBranches.deletedAt))),
-      this.db.select().from(orgDepartments).where(and(eq(orgDepartments.orgId, orgId), isNull(orgDepartments.deletedAt))),
-      this.db.select().from(orgTeams).where(and(eq(orgTeams.orgId, orgId), isNull(orgTeams.deletedAt))),
-    ]);
+    const allUnits = await this.db
+      .select()
+      .from(orgUnits)
+      .where(and(eq(orgUnits.orgId, orgId), isNull(orgUnits.deletedAt)));
 
-    return bus.map((bu) => ({
-      ...bu,
-      type: "business_unit",
-      children: branches
-        .filter((b) => b.businessUnitId === bu.id)
-        .map((branch) => ({
-          ...branch,
-          type: "branch",
-          children: depts
-            .filter((d) => d.branchId === branch.id)
-            .map((dept) => ({
-              ...dept,
-              type: "department",
-              children: teams
-                .filter((t) => t.departmentId === dept.id)
-                .map((team) => ({ ...team, type: "team", children: [] })),
-            })),
-        })),
-    }));
+    const bus = allUnits.filter((u) => u.kind === "BUSINESS_UNIT");
+
+    return bus.map((bu) => {
+      const buBranches = allUnits.filter(
+        (u) => u.kind === "BRANCH" && u.parentId === bu.id,
+      );
+      return {
+        ...bu,
+        type: "business_unit",
+        children: buBranches.map((branch) => {
+          const depts = allUnits.filter(
+            (u) => u.kind === "DEPARTMENT" && u.parentId === branch.id,
+          );
+          return {
+            ...branch,
+            type: "branch",
+            children: depts.map((dept) => {
+              const teamsForDept = allUnits.filter(
+                (u) => u.kind === "TEAM" && u.parentId === dept.id,
+              );
+              return {
+                ...dept,
+                type: "department",
+                children: teamsForDept.map((team) => ({
+                  ...team,
+                  type: "team",
+                  children: [],
+                })),
+              };
+            }),
+          };
+        }),
+      };
+    });
   }
 }

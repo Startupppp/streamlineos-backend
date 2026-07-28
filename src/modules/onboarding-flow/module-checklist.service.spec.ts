@@ -38,7 +38,7 @@ describe("ModuleChecklistService — lazy checklist self-heal on read", () => {
 
   beforeEach(() => {
     findMany = jest.fn().mockResolvedValue([]);
-    findFirst = jest.fn().mockResolvedValue({ id: 1, orgId: ORG_ID, moduleKey: "CRM", items: [] });
+    findFirst = jest.fn().mockResolvedValue({ id: 1, orgId: ORG_ID, moduleKey: "crm", items: [] });
     updateSetCalls = [];
     updateMock = jest.fn(() => ({
       set: jest.fn((values: Record<string, unknown>) => {
@@ -66,22 +66,22 @@ describe("ModuleChecklistService — lazy checklist self-heal on read", () => {
   });
 
   it("listChecklists: calls ensureChecklistsForModules with every visible module key before querying", async () => {
-    await service.listChecklists(ORG_ID, ["CRM", "HR"], true);
-    expect(ensureSpy).toHaveBeenCalledWith(ORG_ID, ["CRM", "HR"]);
+    await service.listChecklists(ORG_ID, ["crm", "hr"], true);
+    expect(ensureSpy).toHaveBeenCalledWith(ORG_ID, ["crm", "hr"]);
     expect(ensureSpy.mock.invocationCallOrder[0]).toBeLessThan(findMany.mock.invocationCallOrder[0]);
   });
 
   it("listChecklists: still returns results correctly after the self-heal call (no regression)", async () => {
-    findMany.mockResolvedValue([{ id: 1, orgId: ORG_ID, moduleKey: "CRM", items: [] }]);
-    const result = await service.listChecklists(ORG_ID, ["CRM"], false);
+    findMany.mockResolvedValue([{ id: 1, orgId: ORG_ID, moduleKey: "crm", items: [] }]);
+    const result = await service.listChecklists(ORG_ID, ["crm"], false);
     expect(result).toHaveLength(1);
-    expect(result[0].moduleKey).toBe("CRM");
+    expect(result[0].moduleKey).toBe("crm");
   });
 
   it("getChecklist: calls ensureChecklistsForModules scoped to just the requested module key", async () => {
-    findFirst.mockResolvedValue({ id: 1, orgId: ORG_ID, moduleKey: "CRM", items: [] });
-    await service.getChecklist(ORG_ID, "CRM", ["CRM", "HR"]);
-    expect(ensureSpy).toHaveBeenCalledWith(ORG_ID, ["CRM"]);
+    findFirst.mockResolvedValue({ id: 1, orgId: ORG_ID, moduleKey: "crm", items: [] });
+    await service.getChecklist(ORG_ID, "crm", ["crm", "hr"]);
+    expect(ensureSpy).toHaveBeenCalledWith(ORG_ID, ["crm"]);
     expect(ensureSpy.mock.invocationCallOrder[0]).toBeLessThan(findFirst.mock.invocationCallOrder[0]);
   });
 
@@ -89,23 +89,23 @@ describe("ModuleChecklistService — lazy checklist self-heal on read", () => {
     // Simulates the real self-heal path: the DB starts with no row, but
     // ensureChecklistsForModules (run unconditionally before the single findFirst below)
     // is what would have inserted it — so by the time findFirst runs, the row exists.
-    findFirst.mockResolvedValue({ id: 2, orgId: ORG_ID, moduleKey: "CRM", items: [] });
-    const result = await service.getChecklist(ORG_ID, "CRM", ["CRM"]);
-    expect(ensureSpy).toHaveBeenCalledWith(ORG_ID, ["CRM"]);
+    findFirst.mockResolvedValue({ id: 2, orgId: ORG_ID, moduleKey: "crm", items: [] });
+    const result = await service.getChecklist(ORG_ID, "crm", ["crm"]);
+    expect(ensureSpy).toHaveBeenCalledWith(ORG_ID, ["crm"]);
     expect(result.id).toBe(2);
   });
 
   it("getChecklist: still throws NotFoundException if no row exists even after the self-heal call runs", async () => {
     findFirst.mockResolvedValue(undefined);
-    await expect(service.getChecklist(ORG_ID, "CRM", ["CRM"])).rejects.toThrow(
-      "Module setup checklist not found: CRM",
+    await expect(service.getChecklist(ORG_ID, "crm", ["crm"])).rejects.toThrow(
+      "Module setup checklist not found: crm",
     );
-    expect(ensureSpy).toHaveBeenCalledWith(ORG_ID, ["CRM"]);
+    expect(ensureSpy).toHaveBeenCalledWith(ORG_ID, ["crm"]);
   });
 
   it("getChecklist: still 404s for a module key the caller can't see, without calling ensure", async () => {
-    await expect(service.getChecklist(ORG_ID, "PAYMENTS", ["CRM"])).rejects.toThrow(
-      "Module setup checklist not found: PAYMENTS",
+    await expect(service.getChecklist(ORG_ID, "payments", ["crm"])).rejects.toThrow(
+      "Module setup checklist not found: payments",
     );
     expect(ensureSpy).not.toHaveBeenCalled();
   });
@@ -154,10 +154,10 @@ describe("ModuleChecklistService — syncItemMetadataFromSeed (fixes stale actio
     // now-404ing actionHref baked into its item row.
     const staleItem = baseItem({ itemKey: "create_pipeline", actionHref: "/crm/old-deals-route" });
     findFirst
-      .mockResolvedValueOnce({ id: 1, orgId: ORG_ID, moduleKey: "CRM", items: [staleItem] })
-      .mockResolvedValueOnce({ id: 1, orgId: ORG_ID, moduleKey: "CRM", items: [{ ...staleItem, actionHref: "/crm/deals" }] });
+      .mockResolvedValueOnce({ id: 1, orgId: ORG_ID, moduleKey: "crm", items: [staleItem] })
+      .mockResolvedValueOnce({ id: 1, orgId: ORG_ID, moduleKey: "crm", items: [{ ...staleItem, actionHref: "/crm/deals" }] });
 
-    const result = await service.getChecklist(ORG_ID, "CRM", ["CRM"]);
+    const result = await service.getChecklist(ORG_ID, "crm", ["crm"]);
 
     expect(updateSetCalls).toHaveLength(1);
     expect(updateSetCalls[0]).toMatchObject({ actionHref: "/crm/deals" });
@@ -166,18 +166,18 @@ describe("ModuleChecklistService — syncItemMetadataFromSeed (fixes stale actio
 
   it("does not write anything when the item's metadata already matches the current seed", async () => {
     const upToDateItem = baseItem({ itemKey: "create_pipeline", actionHref: "/crm/deals" });
-    findFirst.mockResolvedValue({ id: 1, orgId: ORG_ID, moduleKey: "CRM", items: [upToDateItem] });
+    findFirst.mockResolvedValue({ id: 1, orgId: ORG_ID, moduleKey: "crm", items: [upToDateItem] });
 
-    await service.getChecklist(ORG_ID, "CRM", ["CRM"]);
+    await service.getChecklist(ORG_ID, "crm", ["crm"]);
 
     expect(updateSetCalls).toHaveLength(0);
   });
 
   it("ignores item rows whose itemKey no longer has a matching seed entry (nothing to sync against)", async () => {
     const orphanedItem = baseItem({ itemKey: "some_removed_step", actionHref: "/crm/whatever" });
-    findFirst.mockResolvedValue({ id: 1, orgId: ORG_ID, moduleKey: "CRM", items: [orphanedItem] });
+    findFirst.mockResolvedValue({ id: 1, orgId: ORG_ID, moduleKey: "crm", items: [orphanedItem] });
 
-    await service.getChecklist(ORG_ID, "CRM", ["CRM"]);
+    await service.getChecklist(ORG_ID, "crm", ["crm"]);
 
     expect(updateSetCalls).toHaveLength(0);
   });
@@ -185,10 +185,10 @@ describe("ModuleChecklistService — syncItemMetadataFromSeed (fixes stale actio
   it("always reloads after reconciling HR, even when the reconciliation service itself reports no status change (otherwise a metadata-only sync would be silently discarded)", async () => {
     const staleItem = baseItem({ itemKey: "org_profile", actionHref: "/old/org/profile/route", status: "done" });
     findFirst
-      .mockResolvedValueOnce({ id: 1, orgId: ORG_ID, moduleKey: "HR", items: [staleItem] })
-      .mockResolvedValueOnce({ id: 1, orgId: ORG_ID, moduleKey: "HR", items: [{ ...staleItem, actionHref: "/settings/organization" }] });
+      .mockResolvedValueOnce({ id: 1, orgId: ORG_ID, moduleKey: "hr", items: [staleItem] })
+      .mockResolvedValueOnce({ id: 1, orgId: ORG_ID, moduleKey: "hr", items: [{ ...staleItem, actionHref: "/settings/organization" }] });
 
-    const result = await service.getChecklist(ORG_ID, "HR", ["HR"]);
+    const result = await service.getChecklist(ORG_ID, "hr", ["hr"]);
 
     expect(updateSetCalls.some((c) => c.actionHref === "/settings/organization")).toBe(true);
     expect(result.items[0].actionHref).toBe("/settings/organization");

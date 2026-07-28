@@ -115,7 +115,7 @@ export class HrOrgCatalogController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   updateLocation(
-    @Param("locationId", ParseIntPipe) locationId: number,
+    @Param("locationId") locationId: string,
     @Body(new ZodValidationPipe(updateLocationSchema)) body: UpdateLocationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
@@ -127,7 +127,7 @@ export class HrOrgCatalogController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   deleteLocation(
-    @Param("locationId", ParseIntPipe) locationId: number,
+    @Param("locationId") locationId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.catalog.deleteLocation(u.orgId, locationId);
@@ -235,7 +235,7 @@ export class HrOrgCatalogController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   updateTeam(
-    @Param("teamId", ParseIntPipe) teamId: number,
+    @Param("teamId") teamId: string,
     @Body(new ZodValidationPipe(updateCatalogSchema)) body: UpdateCatalogInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
@@ -247,7 +247,7 @@ export class HrOrgCatalogController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   deleteTeam(
-    @Param("teamId", ParseIntPipe) teamId: number,
+    @Param("teamId") teamId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.catalog.deleteTeam(u.orgId, teamId);

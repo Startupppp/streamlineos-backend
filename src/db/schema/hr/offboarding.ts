@@ -1,11 +1,11 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, unique, uniqueIndex, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
   resignationStatusEnum, terminationStatusEnum, exitChecklistStatusEnum,
   onboardingDocumentStatusEnum, docAuditActionEnum,
 } from "../common/enums";
 import { organizations, users } from "../common/auth";
-import { orgDepartments } from "../common/organization";
+import { orgUnits } from "../common/organization";
 import { candidates } from "./hiring";
 
 export const documentTemplates = pgTable("document_templates", {
@@ -69,7 +69,7 @@ export const onboardingTemplates = pgTable("onboarding_templates", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),
-  departmentId: text("department_id").references(() => orgDepartments.id, { onDelete: "set null" }),
+  departmentId: text("department_id").references(() => orgUnits.id, { onDelete: "set null" }),
   description: text("description"),
   isActive: boolean("is_active").notNull().default(true),
   createdBy: text("created_by").notNull().references(() => users.id),
@@ -122,13 +122,28 @@ export const documentTypes = pgTable("document_types", {
   isMandatory: boolean("is_mandatory").default(true).notNull(),
   isActive: boolean("is_active").default(true).notNull(),
   sortOrder: integer("sort_order").default(0).notNull(),
-  applicableRoles: text("applicable_roles").array().default([]),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_document_types_org_id").on(table.orgId, table.id),
   index("idx_doc_types_org").on(table.orgId),
   index("idx_doc_types_org_country").on(table.orgId, table.countryCode),
+]);
+
+export const documentTypeRoles = pgTable("document_type_roles", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  documentTypeId: integer("document_type_id").notNull(),
+  roleSlug: text("role_slug").notNull(),
+}, (table) => [
+  uniqueIndex("uniq_document_type_roles_type_slug").on(table.documentTypeId, table.roleSlug),
+  index("idx_document_type_roles_org").on(table.orgId),
+  index("idx_document_type_roles_type").on(table.documentTypeId),
+  foreignKey({
+    columns: [table.orgId, table.documentTypeId],
+    foreignColumns: [documentTypes.orgId, documentTypes.id],
+  }).onDelete("cascade"),
+  unique("uniq_document_type_roles_org_id").on(table.orgId, table.id),
 ]);
 
 export const onboardingDocuments = pgTable("onboarding_documents", {
@@ -354,4 +369,16 @@ export const backgroundVerificationsRelations = relations(backgroundVerification
 
 export const certificationsRelations = relations(certifications, ({ one }) => ({
   user: one(users, { fields: [certifications.userId], references: [users.id] }),
+}));
+
+export const documentTypesRelations = relations(documentTypes, ({ one, many }) => ({
+  organization: one(organizations, { fields: [documentTypes.orgId], references: [organizations.id] }),
+  roles: many(documentTypeRoles),
+}));
+
+export const documentTypeRolesRelations = relations(documentTypeRoles, ({ one }) => ({
+  documentType: one(documentTypes, {
+    fields: [documentTypeRoles.orgId, documentTypeRoles.documentTypeId],
+    references: [documentTypes.orgId, documentTypes.id],
+  }),
 }));

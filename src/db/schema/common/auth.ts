@@ -1,5 +1,5 @@
 
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, foreignKey, index, uniqueIndex, unique, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, foreignKey, index, uniqueIndex, unique, primaryKey, uuid } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { genderEnum, onboardingStatusEnum, onboardingDocStatusEnum, membershipStatusEnum, organizationStatusEnum, invitationStatusEnum } from "./enums";
 
@@ -18,15 +18,13 @@ export const organizations = pgTable("organizations", {
   billingEmail: text("billing_email"),
   address: jsonb("address").$type<{ line1?: string; line2?: string; city?: string; state?: string; country?: string; postalCode?: string }>(),
   mfaEnforced: boolean("mfa_enforced").default(false).notNull(),
-  allowedEmailDomains: text("allowed_email_domains").array().default([]),
   maxConcurrentSessions: integer("max_concurrent_sessions"),
-  enabledModules: text("enabled_modules").array(),
   ownerMembershipId: integer("owner_membership_id"),
   onboardingCompletedAt: timestamp("onboarding_completed_at"),
   status: text("status").default("ACTIVE").notNull(),
   statusV2: organizationStatusEnum("status_v2"),
   purgeScheduledAt: timestamp("purge_scheduled_at", { withTimezone: true }),
-  purgeScheduledBy: integer("purge_scheduled_by"),
+  purgeScheduledBy: text("purge_scheduled_by"),
   purgeJobId: text("purge_job_id"),
   purgedAt: timestamp("purged_at", { withTimezone: true }),
   purgeReason: text("purge_reason"),
@@ -69,6 +67,16 @@ export const orgHolidays = pgTable("org_holidays", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_org_holidays_org_date").on(table.orgId, table.date),
+]);
+
+export const organizationAllowedEmailDomains = pgTable("organization_allowed_email_domains", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  domain: text("domain").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uniq_org_allowed_domains_org_domain").on(table.orgId, table.domain),
+  index("idx_org_allowed_domains_org").on(table.orgId),
 ]);
 
 export const organizationMembers = pgTable("organization_members", {
@@ -114,8 +122,6 @@ export const users = pgTable("users", {
   monthlySalary: decimal("monthly_salary", { precision: 15, scale: 2 }),
   employeeId: text("employee_id"),
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
-  loginAttempts: integer("login_attempts").default(0).notNull(),
-  lockedUntil: timestamp("locked_until"),
   isActive: boolean("is_active").default(true).notNull(),
   userStatus: text("user_status").default("active").notNull(),
   invitedAt: timestamp("invited_at"),
@@ -125,7 +131,7 @@ export const users = pgTable("users", {
   hasDashboardAccess: boolean("has_dashboard_access").default(false).notNull(),
   reportingTo: text("reporting_to"),
   team: text("team"),
-  branchId: integer("branch_id"),
+  branchId: text("branch_id"),
   emergencyContact: jsonb("emergency_contact").$type<{
     name: string;
     relation: string;
@@ -134,8 +140,6 @@ export const users = pgTable("users", {
   }>(),
   totpSecret: text("totp_secret"),
   totpEnabled: boolean("totp_enabled").default(false).notNull(),
-  googleRefreshToken: text("google_refresh_token"),
-  googleEmail: text("google_email"),
   isPlatformAdmin: boolean("is_platform_admin").notNull().default(false),
   isProfilePictureRequired: boolean("is_profile_picture_required").default(false).notNull(),
   bio: text("bio"),
@@ -191,18 +195,18 @@ export const verificationTokens = pgTable("verification_tokens", {
 export const invitations = pgTable("invitations", {
   id: text("id").primaryKey(),
   email: text("email").notNull(),
-  token: text("token").notNull().unique(),
+  tokenHash: text("token_hash").notNull().unique(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   role: text("role").default("ENGINEERING").notNull(),
   invitedBy: text("invited_by").references(() => users.id).notNull(),
   expiresAt: timestamp("expires_at").notNull(),
   acceptedAt: timestamp("accepted_at"),
   status: invitationStatusEnum("status").default("PENDING").notNull(),
-  inviterMembershipId: integer("inviter_membership_id"),
-  acceptedMembershipId: integer("accepted_membership_id"),
+  inviterMembershipId: integer("inviter_membership_id").references(() => organizationMembers.id, { onDelete: "set null" }),
+  acceptedMembershipId: integer("accepted_membership_id").references(() => organizationMembers.id, { onDelete: "set null" }),
   declinedAt: timestamp("declined_at", { withTimezone: true }),
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
-  revokedBy: integer("revoked_by"),
+  revokedByMembershipId: integer("revoked_by_membership_id").references(() => organizationMembers.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_invitations_org_email").on(table.orgId, table.email),
@@ -284,10 +288,13 @@ export const roles = pgTable("roles", {
   slug: text("slug").notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   isSystem: boolean("is_system").default(false).notNull(),
+  moduleKey: text("module_key"),
+  rank: integer("rank").notNull().default(40),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_role_slug_org").on(table.slug, table.orgId),
+  index("idx_roles_org_module").on(table.orgId, table.moduleKey),
 ]);
 
 export const permissions = pgTable("permissions", {
@@ -296,21 +303,11 @@ export const permissions = pgTable("permissions", {
   resource: text("resource").notNull(),
   action: text("action").notNull(),
   description: text("description"),
+  moduleKey: text("module_key"),
+  riskClass: text("risk_class"),
+  isDelegable: boolean("is_delegable").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
-
-export const rolePermissions = pgTable("role_permissions", {
-  id: serial("id").primaryKey(),
-  role: text("role").notNull(),
-  permissionId: integer("permission_id").references(() => permissions.id, { onDelete: "cascade" }).notNull(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  uniqueIndex("uniq_role_permissions_role_perm_org").on(table.role, table.permissionId, table.orgId),
-  index("idx_role_permissions_org").on(table.orgId),
-  index("idx_role_permissions_role").on(table.role),
-  index("idx_role_permissions_org_role").on(table.orgId, table.role),
-]);
 
 export const userPermissions = pgTable("user_permissions", {
   id: serial("id").primaryKey(),
@@ -387,15 +384,7 @@ export const rolesRelations = relations(roles, ({ one }) => ({
 }));
 
 export const permissionsRelations = relations(permissions, ({ many }) => ({
-  rolePermissions: many(rolePermissions),
   userPermissions: many(userPermissions),
-}));
-
-export const rolePermissionsRelations = relations(rolePermissions, ({ one }) => ({
-  permission: one(permissions, {
-    fields: [rolePermissions.permissionId],
-    references: [permissions.id],
-  }),
 }));
 
 export const userPermissionsRelations = relations(userPermissions, ({ one }) => ({

@@ -1,17 +1,8 @@
 import { relations } from "drizzle-orm";
-import { organizations, users } from "./common/auth";
-import { departments } from "./hr/employees";
+import { users } from "./common/auth";
 import { tickets } from "./build/tasks";
 
-export const organizationsHrRelations = relations(organizations, ({ many }) => ({
-  departments: many(departments),
-}));
-
-export const usersHrBuildRelations = relations(users, ({ one, many }) => ({
-  department: one(departments, {
-    fields: [users.departmentId],
-    references: [departments.id],
-  }),
+export const usersHrBuildRelations = relations(users, ({ many }) => ({
   assignedTickets: many(tickets, { relationName: "assignee" }),
   reportedTickets: many(tickets, { relationName: "reporter" }),
 }));

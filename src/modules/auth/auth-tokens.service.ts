@@ -60,7 +60,6 @@ export class AuthTokensService {
     orgId: string;
     isOwner: boolean;
     mfaEnforced: boolean;
-    enabledModules: string[] | null;
     orgOnboardingCompletedAt: Date | null;
   } | null> {
     const rows = await this.db
@@ -68,7 +67,6 @@ export class AuthTokensService {
         orgId: organizationMembers.orgId,
         isOwner: organizationMembers.isOwner,
         mfaEnforced: organizations.mfaEnforced,
-        enabledModules: organizations.enabledModules,
         orgOnboardingCompletedAt: organizations.onboardingCompletedAt,
       })
       .from(organizationMembers)

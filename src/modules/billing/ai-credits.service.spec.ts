@@ -330,6 +330,90 @@ describe("AiCreditsService.hasSameDayPurchaseForPack", () => {
   });
 });
 
+describe("AiCreditsService.purchaseCreditsDirectly — DB backstop (23505)", () => {
+  const mockPackRow = {
+    id: 2,
+    name: "Growth Pack",
+    credits: 1000,
+    bonusCredits: 100,
+    priceInPaise: 99900,
+    isActive: true,
+    sortOrder: 2,
+    createdAt: new Date(),
+  };
+
+  const existingWallet = {
+    id: 1,
+    orgId: "org1",
+    balance: 5000,
+    lifetimeGranted: 5000,
+    lifetimeConsumed: 0,
+    autoTopUpEnabled: false,
+    autoTopUpPackId: null,
+    autoTopUpThreshold: null,
+    updatedAt: new Date(),
+  };
+
+  it("non-automatic path: 23505 on PURCHASE insert returns existing wallet balance — exactly one credit grant committed", async () => {
+    const packChain = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockResolvedValue([mockPackRow]),
+    };
+
+    const walletChain = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockResolvedValue([existingWallet]),
+    };
+
+    let selectCallCount = 0;
+
+    const dbWithConflict = {
+      select: jest.fn().mockImplementation(() => {
+        selectCallCount++;
+        return selectCallCount === 1 ? packChain : walletChain;
+      }),
+      transaction: jest.fn().mockRejectedValue({ code: "23505" }),
+    };
+
+    const module = await Test.createTestingModule({
+      providers: [AiCreditsService, { provide: DRIZZLE, useValue: dbWithConflict }],
+    }).compile();
+    const svc = module.get(AiCreditsService);
+
+    const result = await svc.purchaseCreditsDirectly("org1", "user1", 2, false, "pay_dup_ref");
+
+    expect(dbWithConflict.transaction).toHaveBeenCalledTimes(1);
+    expect(result.creditsAdded).toBe(mockPackRow.credits + mockPackRow.bonusCredits);
+    expect(typeof result.balance).toBe("number");
+  });
+
+  it("non-automatic path: a non-23505 error propagates — wallet not modified by the second call", async () => {
+    const packChain2 = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockResolvedValue([mockPackRow]),
+    };
+
+    let selectCount2 = 0;
+
+    const dbPropagates = {
+      select: jest.fn().mockImplementation(() => {
+        selectCount2++;
+        return selectCount2 === 1 ? packChain2 : { from: jest.fn().mockReturnThis(), where: jest.fn() };
+      }),
+      transaction: jest.fn().mockRejectedValue(new Error("connection lost")),
+    };
+
+    const module = await Test.createTestingModule({
+      providers: [AiCreditsService, { provide: DRIZZLE, useValue: dbPropagates }],
+    }).compile();
+    const svc = module.get(AiCreditsService);
+
+    await expect(
+      svc.purchaseCreditsDirectly("org1", "user1", 2, false, "pay_other"),
+    ).rejects.toThrow("connection lost");
+  });
+});
+
 describe("AiCreditsService.getWallet — trial grant on creation", () => {
   let service: AiCreditsService;
 

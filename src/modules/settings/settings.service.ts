@@ -228,7 +228,7 @@ export class SettingsService {
       .select()
       .from(customFieldDefinitions)
       .where(where)
-      .orderBy(asc(customFieldDefinitions.sortOrder), asc(customFieldDefinitions.createdAt));
+      .orderBy(asc(customFieldDefinitions.displayOrder), asc(customFieldDefinitions.createdAt));
 
     return { fields };
   }
@@ -241,7 +241,7 @@ export class SettingsService {
         and(
           eq(customFieldDefinitions.orgId, orgId),
           eq(customFieldDefinitions.entityType, input.entityType),
-          eq(customFieldDefinitions.name, input.name),
+          eq(customFieldDefinitions.key, input.name),
         ),
       )
       .limit(1);
@@ -257,14 +257,13 @@ export class SettingsService {
       .values({
         orgId,
         entityType: input.entityType,
-        name: input.name,
+        key: input.name,
         label: input.label,
         fieldType: input.fieldType,
         options: input.options ?? null,
         isRequired: input.isRequired ?? false,
         isActive: true,
-        sortOrder: input.sortOrder ?? 0,
-        createdBy: userId,
+        displayOrder: input.sortOrder ?? 0,
       })
       .returning();
 

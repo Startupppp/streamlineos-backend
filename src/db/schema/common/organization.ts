@@ -3,9 +3,9 @@ import {
   text,
   timestamp,
   index,
-  unique,
-  integer,
-  decimal,
+  uniqueIndex,
+  jsonb,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "./auth";
@@ -13,8 +13,30 @@ import { organizations, users } from "./auth";
 const nodeStatusEnum = ["ACTIVE", "DISABLED", "ARCHIVED"] as const;
 type NodeStatus = (typeof nodeStatusEnum)[number];
 
-export const orgBusinessUnits = pgTable(
-  "org_business_units",
+export type OrgUnitKind =
+  | "BUSINESS_UNIT"
+  | "BRANCH"
+  | "DEPARTMENT"
+  | "TEAM"
+  | "LOCATION"
+  | "COST_CENTER";
+
+export type OrgUnitMetadata = {
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  postalCode?: string;
+  phone?: string;
+  email?: string;
+  locationType?: "OFFICE" | "WAREHOUSE" | "STORE" | "FACTORY" | "REMOTE";
+  latitude?: number;
+  longitude?: number;
+  capacity?: number;
+};
+
+export const orgUnits = pgTable(
+  "org_units",
   {
     id: text("id")
       .primaryKey()
@@ -22,82 +44,18 @@ export const orgBusinessUnits = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
+    kind: text("kind").$type<OrgUnitKind>().notNull(),
+    parentId: text("parent_id").references((): AnyPgColumn => orgUnits.id, {
+      onDelete: "set null",
+    }),
     name: text("name").notNull(),
     code: text("code").notNull(),
     description: text("description"),
-    status: text("status").$type<NodeStatus>().default("ACTIVE").notNull(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at")
-      .defaultNow()
-      .notNull()
-      .$onUpdate(() => new Date()),
-    deletedAt: timestamp("deleted_at"),
-  },
-  (table) => [
-    index("idx_org_bus_org").on(table.orgId),
-    unique("uniq_org_bus_org_code").on(table.orgId, table.code),
-  ],
-);
-
-export const orgBranches = pgTable(
-  "org_branches",
-  {
-    id: text("id")
-      .primaryKey()
-      .$defaultFn(() => crypto.randomUUID()),
-    orgId: text("org_id")
-      .references(() => organizations.id, { onDelete: "cascade" })
-      .notNull(),
-    businessUnitId: text("business_unit_id").references(
-      () => orgBusinessUnits.id,
-      { onDelete: "set null" },
-    ),
-    managerUserId: text("manager_user_id").references(() => users.id, {
-      onDelete: "set null",
-    }),
-    name: text("name").notNull(),
-    code: text("code").notNull(),
-    address: text("address"),
-    city: text("city"),
-    state: text("state"),
-    country: text("country"),
-    postalCode: text("postal_code"),
-    phone: text("phone"),
-    email: text("email"),
-    status: text("status").$type<NodeStatus>().default("ACTIVE").notNull(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at")
-      .defaultNow()
-      .notNull()
-      .$onUpdate(() => new Date()),
-    deletedAt: timestamp("deleted_at"),
-  },
-  (table) => [
-    index("idx_org_branches_org").on(table.orgId),
-    index("idx_org_branches_bu").on(table.businessUnitId),
-    unique("uniq_org_branches_org_code").on(table.orgId, table.code),
-  ],
-);
-
-export const orgDepartments = pgTable(
-  "org_departments",
-  {
-    id: text("id")
-      .primaryKey()
-      .$defaultFn(() => crypto.randomUUID()),
-    orgId: text("org_id")
-      .references(() => organizations.id, { onDelete: "cascade" })
-      .notNull(),
-    branchId: text("branch_id").references(() => orgBranches.id, {
-      onDelete: "set null",
-    }),
     headUserId: text("head_user_id").references(() => users.id, {
       onDelete: "set null",
     }),
-    name: text("name").notNull(),
-    code: text("code").notNull(),
-    description: text("description"),
     status: text("status").$type<NodeStatus>().default("ACTIVE").notNull(),
+    metadata: jsonb("metadata").$type<OrgUnitMetadata>(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -106,14 +64,18 @@ export const orgDepartments = pgTable(
     deletedAt: timestamp("deleted_at"),
   },
   (table) => [
-    index("idx_org_depts_org").on(table.orgId),
-    index("idx_org_depts_branch").on(table.branchId),
-    unique("uniq_org_depts_org_code").on(table.orgId, table.code),
+    index("idx_org_units_org_kind").on(table.orgId, table.kind),
+    index("idx_org_units_parent").on(table.parentId),
+    uniqueIndex("uniq_org_units_org_kind_code").on(
+      table.orgId,
+      table.kind,
+      table.code,
+    ),
   ],
 );
 
-export const orgTeams = pgTable(
-  "org_teams",
+export const orgUnitMembers = pgTable(
+  "org_unit_members",
   {
     id: text("id")
       .primaryKey()
@@ -121,142 +83,55 @@ export const orgTeams = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    departmentId: text("department_id").references(() => orgDepartments.id, {
-      onDelete: "set null",
-    }),
-    leadUserId: text("lead_user_id").references(() => users.id, {
-      onDelete: "set null",
-    }),
-    name: text("name").notNull(),
-    code: text("code").notNull(),
-    description: text("description"),
-    capacity: integer("capacity"),
-    status: text("status").$type<NodeStatus>().default("ACTIVE").notNull(),
+    orgUnitId: text("org_unit_id")
+      .references(() => orgUnits.id, { onDelete: "cascade" })
+      .notNull(),
+    userId: text("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    role: text("role").default("member").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at")
-      .defaultNow()
-      .notNull()
-      .$onUpdate(() => new Date()),
-    deletedAt: timestamp("deleted_at"),
   },
   (table) => [
-    index("idx_org_teams_org").on(table.orgId),
-    index("idx_org_teams_dept").on(table.departmentId),
-    unique("uniq_org_teams_org_code").on(table.orgId, table.code),
+    uniqueIndex("uniq_org_unit_members_unit_user").on(
+      table.orgUnitId,
+      table.userId,
+    ),
+    index("idx_org_unit_members_org_user").on(table.orgId, table.userId),
+    index("idx_org_unit_members_unit").on(table.orgUnitId),
   ],
 );
 
-export const orgLocations = pgTable(
-  "org_locations",
-  {
-    id: text("id")
-      .primaryKey()
-      .$defaultFn(() => crypto.randomUUID()),
-    orgId: text("org_id")
-      .references(() => organizations.id, { onDelete: "cascade" })
-      .notNull(),
-    name: text("name").notNull(),
-    type: text("type")
-      .$type<"OFFICE" | "WAREHOUSE" | "STORE" | "FACTORY" | "REMOTE">()
-      .default("OFFICE")
-      .notNull(),
-    address: text("address"),
-    latitude: decimal("latitude", { precision: 10, scale: 7 }),
-    longitude: decimal("longitude", { precision: 10, scale: 7 }),
-    status: text("status").$type<NodeStatus>().default("ACTIVE").notNull(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at")
-      .defaultNow()
-      .notNull()
-      .$onUpdate(() => new Date()),
-    deletedAt: timestamp("deleted_at"),
-  },
-  (table) => [index("idx_org_locations_org").on(table.orgId)],
-);
-
-export const orgCostCenters = pgTable(
-  "org_cost_centers",
-  {
-    id: text("id")
-      .primaryKey()
-      .$defaultFn(() => crypto.randomUUID()),
-    orgId: text("org_id")
-      .references(() => organizations.id, { onDelete: "cascade" })
-      .notNull(),
-    code: text("code").notNull(),
-    name: text("name").notNull(),
-    description: text("description"),
-    status: text("status").$type<NodeStatus>().default("ACTIVE").notNull(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at")
-      .defaultNow()
-      .notNull()
-      .$onUpdate(() => new Date()),
-    deletedAt: timestamp("deleted_at"),
-  },
-  (table) => [
-    index("idx_org_cc_org").on(table.orgId),
-    unique("uniq_org_cc_org_code").on(table.orgId, table.code),
-  ],
-);
-
-export const orgBusinessUnitsRelations = relations(
-  orgBusinessUnits,
-  ({ one, many }) => ({
-    organization: one(organizations, {
-      fields: [orgBusinessUnits.orgId],
-      references: [organizations.id],
-    }),
-    branches: many(orgBranches),
-  }),
-);
-
-export const orgBranchesRelations = relations(orgBranches, ({ one, many }) => ({
+export const orgUnitsRelations = relations(orgUnits, ({ one, many }) => ({
   organization: one(organizations, {
-    fields: [orgBranches.orgId],
+    fields: [orgUnits.orgId],
     references: [organizations.id],
   }),
-  businessUnit: one(orgBusinessUnits, {
-    fields: [orgBranches.businessUnitId],
-    references: [orgBusinessUnits.id],
+  parent: one(orgUnits, {
+    fields: [orgUnits.parentId],
+    references: [orgUnits.id],
+    relationName: "childUnits",
   }),
-  manager: one(users, {
-    fields: [orgBranches.managerUserId],
+  children: many(orgUnits, { relationName: "childUnits" }),
+  head: one(users, {
+    fields: [orgUnits.headUserId],
     references: [users.id],
   }),
-  departments: many(orgDepartments),
+  members: many(orgUnitMembers),
 }));
 
-export const orgDepartmentsRelations = relations(
-  orgDepartments,
-  ({ one, many }) => ({
-    organization: one(organizations, {
-      fields: [orgDepartments.orgId],
-      references: [organizations.id],
-    }),
-    branch: one(orgBranches, {
-      fields: [orgDepartments.branchId],
-      references: [orgBranches.id],
-    }),
-    head: one(users, {
-      fields: [orgDepartments.headUserId],
-      references: [users.id],
-    }),
-    teams: many(orgTeams),
+export const orgUnitMembersRelations = relations(orgUnitMembers, ({ one }) => ({
+  orgUnit: one(orgUnits, {
+    fields: [orgUnitMembers.orgUnitId],
+    references: [orgUnits.id],
   }),
-);
-
-export const orgTeamsRelations = relations(orgTeams, ({ one }) => ({
+  user: one(users, {
+    fields: [orgUnitMembers.userId],
+    references: [users.id],
+  }),
   organization: one(organizations, {
-    fields: [orgTeams.orgId],
+    fields: [orgUnitMembers.orgId],
     references: [organizations.id],
   }),
-  department: one(orgDepartments, {
-    fields: [orgTeams.departmentId],
-    references: [orgDepartments.id],
-  }),
-  lead: one(users, {
-    fields: [orgTeams.leadUserId],
-    references: [users.id],
-  }),
 }));
+

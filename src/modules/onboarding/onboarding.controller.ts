@@ -141,7 +141,7 @@ export class OnboardingController {
     @Param("moduleKey") moduleKey: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (moduleKey === "HR") await this.assertHrChecklistAccess(u, "view");
+    if (moduleKey === "hr") await this.assertHrChecklistAccess(u, "view");
     return this.checklists.getChecklist(u.orgId, moduleKey, u.enabledModules);
   }
 
@@ -153,7 +153,7 @@ export class OnboardingController {
     @Param("itemKey") itemKey: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (moduleKey === "HR") await this.assertHrChecklistAccess(u, "manage");
+    if (moduleKey === "hr") await this.assertHrChecklistAccess(u, "manage");
     return this.checklists.completeItem(
       u.orgId,
       moduleKey,
@@ -173,7 +173,7 @@ export class OnboardingController {
     body: ChecklistItemSkipInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (moduleKey === "HR") await this.assertHrChecklistAccess(u, "manage");
+    if (moduleKey === "hr") await this.assertHrChecklistAccess(u, "manage");
     return this.checklists.skipItem(
       u.orgId,
       moduleKey,
@@ -191,7 +191,7 @@ export class OnboardingController {
     @Param("moduleKey") moduleKey: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (moduleKey === "HR") await this.assertHrChecklistAccess(u, "manage");
+    if (moduleKey === "hr") await this.assertHrChecklistAccess(u, "manage");
     return this.checklists.dismissChecklist(
       u.orgId,
       moduleKey,
@@ -207,7 +207,7 @@ export class OnboardingController {
     @Param("moduleKey") moduleKey: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (moduleKey === "HR") await this.assertHrChecklistAccess(u, "manage");
+    if (moduleKey === "hr") await this.assertHrChecklistAccess(u, "manage");
     return this.checklists.restartChecklist(
       u.orgId,
       moduleKey,

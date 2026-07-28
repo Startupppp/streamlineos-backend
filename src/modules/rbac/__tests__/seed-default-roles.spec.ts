@@ -2,27 +2,53 @@ import { RolesService } from "../roles.service";
 
 const actor = { orgId: "org-1", userId: "user-1" };
 
+function makeInsertChain(returnValue: unknown = []) {
+  const chain: Record<string, jest.Mock> = {};
+  chain.values = jest.fn().mockReturnValue(chain);
+  chain.onConflictDoNothing = jest.fn().mockReturnValue(chain);
+  chain.onConflictDoUpdate = jest.fn().mockReturnValue(chain);
+  chain.returning = jest.fn().mockResolvedValue(returnValue);
+  return chain;
+}
+
+function makeSelectChain(returnValue: unknown = []) {
+  const chain: Record<string, jest.Mock> = {};
+  chain.from = jest.fn().mockReturnValue(chain);
+  chain.limit = jest.fn().mockResolvedValue(returnValue);
+  return chain;
+}
+
 function createService(existingSlugs: string[]) {
   const service = Object.create(RolesService.prototype) as RolesService;
-  const findFirst = jest.fn().mockImplementation(({ where: _where }: { where: unknown }) =>
-    Promise.resolve(undefined),
-  );
-  Reflect.set(service, "db", { query: { roles: { findFirst } } });
 
-  const seen: string[] = [];
-  findFirst.mockImplementation(() => {
-    const slugOrder = [
-      "ENGINEERING",
-      "SALES_REP",
-      "CUSTOMER_SUPPORT",
-      "DIGITAL_MARKETING",
-      "HR_ADMIN",
-      "ACCOUNTANT",
-    ];
-    const slug = slugOrder[seen.length] ?? "";
-    seen.push(slug);
+  const txMock = {
+    insert: jest.fn().mockReturnValue(makeInsertChain()),
+    query: { roles: { findFirst: jest.fn().mockResolvedValue(undefined) } },
+  };
+  const dbMock = {
+    select: jest.fn().mockReturnValue(makeSelectChain([])),
+    transaction: jest.fn().mockImplementation((fn: (tx: unknown) => Promise<unknown>) =>
+      fn(txMock),
+    ),
+    query: { roles: { findFirst: jest.fn() } },
+  };
+
+  const slugOrder = [
+    "ENGINEERING",
+    "SALES_REP",
+    "CUSTOMER_SUPPORT",
+    "DIGITAL_MARKETING",
+    "HR_ADMIN",
+    "ACCOUNTANT",
+  ];
+  let callCount = 0;
+  dbMock.query.roles.findFirst.mockImplementation(() => {
+    const slug = slugOrder[callCount] ?? "";
+    callCount++;
     return Promise.resolve(existingSlugs.includes(slug) ? { id: 1 } : undefined);
   });
+
+  Reflect.set(service, "db", dbMock);
 
   const cloneTemplate = jest.fn().mockResolvedValue({ id: 2 });
   Reflect.set(service, "cloneTemplate", cloneTemplate);

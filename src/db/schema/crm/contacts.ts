@@ -1,33 +1,11 @@
 import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, foreignKey, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
-  clientAccountStatusEnum, branchStatusEnum, orgSizeEnum, crmHealthEnum,
+  clientAccountStatusEnum, orgSizeEnum, crmHealthEnum,
 } from "../common/enums";
 import { organizations, users } from "../common/auth";
+import { orgUnits } from "../common/organization";
 import { leads } from "./leads";
-
-export const branches = pgTable("branches", {
-  id: serial("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  name: text("name").notNull(),
-  code: text("code").notNull(),
-  city: text("city"),
-  state: text("state"),
-  country: text("country").default("India").notNull(),
-  pincode: text("pincode"),
-  address: text("address"),
-  phone: text("phone"),
-  email: text("email"),
-  branchManagerId: text("branch_manager_id").references(() => users.id),
-  branchHrId: text("branch_hr_id").references(() => users.id),
-  status: branchStatusEnum("status").notNull().default("ACTIVE"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
-}, (table) => [
-  index("idx_branches_org").on(table.orgId),
-  uniqueIndex("uniq_branch_code_org").on(table.orgId, table.code),
-  unique("uniq_branches_org_id").on(table.orgId, table.id),
-]);
 
 export const clients = pgTable("clients", {
   id: serial("id").primaryKey(),
@@ -63,7 +41,7 @@ export const clients = pgTable("clients", {
 export const clientAccounts = pgTable("client_accounts", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  branchId: integer("branch_id").references(() => branches.id),
+  branchId: text("branch_id").references(() => orgUnits.id, { onDelete: "set null" }),
   leadId: integer("lead_id").notNull().references(() => leads.id),
   salesRepId: text("sales_rep_id").notNull().references(() => users.id),
   assignedCrmId: text("assigned_crm_id").references(() => users.id),
@@ -247,12 +225,6 @@ export const csatResponses = pgTable("csat_responses", {
   unique("uniq_csat_responses_org_id").on(table.orgId, table.id),
 ]);
 
-export const branchesRelations = relations(branches, ({ one }) => ({
-  organization: one(organizations, { fields: [branches.orgId], references: [organizations.id] }),
-  branchManager: one(users, { fields: [branches.branchManagerId], references: [users.id], relationName: "branchManager" }),
-  branchHr: one(users, { fields: [branches.branchHrId], references: [users.id], relationName: "branchHr" }),
-}));
-
 export const clientsRelations = relations(clients, ({ one }) => ({
   lead: one(leads, { fields: [clients.leadId], references: [leads.id] }),
   accountManager: one(users, { fields: [clients.accountManagerId], references: [users.id] }),
@@ -260,7 +232,7 @@ export const clientsRelations = relations(clients, ({ one }) => ({
 
 export const clientAccountsRelations = relations(clientAccounts, ({ one, many }) => ({
   organization: one(organizations, { fields: [clientAccounts.orgId], references: [organizations.id] }),
-  branch: one(branches, { fields: [clientAccounts.branchId], references: [branches.id] }),
+  branch: one(orgUnits, { fields: [clientAccounts.branchId], references: [orgUnits.id] }),
   lead: one(leads, { fields: [clientAccounts.leadId], references: [leads.id] }),
   salesRep: one(users, { fields: [clientAccounts.salesRepId], references: [users.id], relationName: "clientAccountSalesRep" }),
   assignedCrm: one(users, { fields: [clientAccounts.assignedCrmId], references: [users.id], relationName: "clientAccountCrm" }),

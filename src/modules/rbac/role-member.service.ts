@@ -7,13 +7,12 @@ import {
 } from "@nestjs/common";
 import { and, eq, inArray } from "drizzle-orm";
 import {
-  departmentMembers,
-  departments,
-  groupRoles,
-  membershipRoleAssignments,
+  groupRoleAssignments,
   organizationMembers,
+  principalGroupMembers,
+  principalGroups,
+  roleAssignments,
   roles,
-  userRoles,
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -50,59 +49,71 @@ export class RoleMemberService {
 
     const direct = await this.db
       .select({
-        userId: userRoles.userId,
+        userId: organizationMembers.userId,
         name: users.name,
         email: users.email,
         image: users.image,
       })
-      .from(userRoles)
-      .innerJoin(users, eq(userRoles.userId, users.id))
-      .where(and(eq(userRoles.orgId, orgId), eq(userRoles.roleId, roleId)))
+      .from(roleAssignments)
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, roleAssignments.orgId),
+          eq(organizationMembers.id, roleAssignments.organizationMembershipId),
+        ),
+      )
+      .innerJoin(users, eq(organizationMembers.userId, users.id))
+      .where(and(eq(roleAssignments.orgId, orgId), eq(roleAssignments.roleId, roleId)))
       .limit(100);
 
-    const departmentRows = await this.db
-      .select({ departmentId: groupRoles.groupId, name: departments.name })
-      .from(groupRoles)
-      .innerJoin(departments, eq(groupRoles.groupId, departments.id))
+    const groupRows = await this.db
+      .select({ groupId: groupRoleAssignments.principalGroupId, groupName: principalGroups.name, groupKind: principalGroups.kind })
+      .from(groupRoleAssignments)
+      .innerJoin(principalGroups, eq(groupRoleAssignments.principalGroupId, principalGroups.id))
       .where(
         and(
-          eq(groupRoles.orgId, orgId),
-          eq(groupRoles.groupType, "department"),
-          eq(groupRoles.roleId, roleId),
+          eq(groupRoleAssignments.orgId, orgId),
+          eq(groupRoleAssignments.roleId, roleId),
         ),
       )
       .limit(100);
 
-    const departmentIds = departmentRows.map((row) => row.departmentId);
-    const departmentNameById = new Map(
-      departmentRows.map((row) => [row.departmentId, row.name] as const),
-    );
-    const viaDepartment =
-      departmentIds.length > 0
+    const groupIds = groupRows.map((row) => row.groupId);
+    const groupNameById = new Map(groupRows.map((row) => [row.groupId, row.groupName] as const));
+
+    const viaGroup =
+      groupIds.length > 0
         ? await this.db
             .select({
-              userId: departmentMembers.userId,
+              userId: organizationMembers.userId,
               name: users.name,
               email: users.email,
               image: users.image,
-              departmentId: departmentMembers.departmentId,
+              groupId: principalGroupMembers.principalGroupId,
             })
-            .from(departmentMembers)
-            .innerJoin(users, eq(departmentMembers.userId, users.id))
-            .where(inArray(departmentMembers.departmentId, departmentIds))
+            .from(principalGroupMembers)
+            .innerJoin(
+              organizationMembers,
+              and(
+                eq(organizationMembers.orgId, principalGroupMembers.orgId),
+                eq(organizationMembers.id, principalGroupMembers.organizationMembershipId),
+              ),
+            )
+            .innerJoin(users, eq(organizationMembers.userId, users.id))
+            .where(inArray(principalGroupMembers.principalGroupId, groupIds))
             .limit(500)
         : [];
 
     const members: Array<{
       id: string;
-      principalType: "user" | "department";
+      principalType: "user" | "group";
       principalId: string;
       name: string | null;
       email: string | null;
       image: string | null;
-      via: "direct" | "department";
-      departmentId: number | null;
-      departmentName: string | null;
+      via: "direct" | "group";
+      groupId: string | null;
+      groupName: string | null;
     }> = [];
 
     for (const member of direct) {
@@ -114,36 +125,36 @@ export class RoleMemberService {
         email: member.email,
         image: member.image,
         via: "direct",
-        departmentId: null,
-        departmentName: null,
+        groupId: null,
+        groupName: null,
       });
     }
 
-    for (const row of departmentRows) {
+    for (const row of groupRows) {
       members.push({
-        id: `department:${row.departmentId}`,
-        principalType: "department",
-        principalId: String(row.departmentId),
-        name: row.name,
+        id: `group:${row.groupId}`,
+        principalType: "group",
+        principalId: row.groupId,
+        name: row.groupName,
         email: null,
         image: null,
         via: "direct",
-        departmentId: row.departmentId,
-        departmentName: row.name,
+        groupId: row.groupId,
+        groupName: row.groupName,
       });
     }
 
-    for (const member of viaDepartment) {
+    for (const member of viaGroup) {
       members.push({
-        id: `user:${member.userId}:dept:${member.departmentId}`,
+        id: `user:${member.userId}:group:${member.groupId}`,
         principalType: "user",
         principalId: member.userId,
         name: member.name,
         email: member.email,
         image: member.image,
-        via: "department",
-        departmentId: member.departmentId,
-        departmentName: departmentNameById.get(member.departmentId) ?? null,
+        via: "group",
+        groupId: member.groupId,
+        groupName: groupNameById.get(member.groupId) ?? null,
       });
     }
 
@@ -172,45 +183,35 @@ export class RoleMemberService {
 
       await this.db.transaction(async (tx): Promise<void> => {
         await tx
-          .insert(userRoles)
+          .insert(roleAssignments)
           .values({
             orgId: actor.orgId,
-            userId: input.principalId,
-            roleId,
-            assignedBy: actor.userId,
-          })
-          .onConflictDoNothing();
-        await tx
-          .insert(membershipRoleAssignments)
-          .values({
-            organizationId: actor.orgId,
             organizationMembershipId: member.id,
             roleId,
-            assignedBy: actor.userId,
+            assignedByMembershipId: null,
           })
           .onConflictDoNothing();
         await bumpPermissionsVersion(tx, actor.orgId);
       });
     } else {
-      const department = await this.db.query.departments.findFirst({
+      const group = await this.db.query.principalGroups.findFirst({
         where: and(
-          eq(departments.id, input.principalId),
-          eq(departments.orgId, actor.orgId),
+          eq(principalGroups.id, input.principalId),
+          eq(principalGroups.orgId, actor.orgId),
         ),
         columns: { id: true },
       });
-      if (!department)
+      if (!group)
         throw new BadRequestException(
-          "Department not found in this organization",
+          "Group not found in this organization",
         );
 
       await this.db.transaction(async (tx): Promise<void> => {
         await tx
-          .insert(groupRoles)
+          .insert(groupRoleAssignments)
           .values({
             orgId: actor.orgId,
-            groupType: "department",
-            groupId: input.principalId,
+            principalGroupId: input.principalId,
             roleId,
           })
           .onConflictDoNothing();
@@ -277,35 +278,25 @@ export class RoleMemberService {
 
     await this.db.transaction(async (tx): Promise<void> => {
       if (input.principalType === "user") {
-        await tx
-          .delete(userRoles)
-          .where(
-            and(
-              eq(userRoles.orgId, actor.orgId),
-              eq(userRoles.roleId, roleId),
-              eq(userRoles.userId, input.principalId),
-            ),
-          );
         if (membershipForRemoval !== undefined) {
           await tx
-            .delete(membershipRoleAssignments)
+            .delete(roleAssignments)
             .where(
               and(
-                eq(membershipRoleAssignments.organizationId, actor.orgId),
-                eq(membershipRoleAssignments.organizationMembershipId, membershipForRemoval.id),
-                eq(membershipRoleAssignments.roleId, roleId),
+                eq(roleAssignments.orgId, actor.orgId),
+                eq(roleAssignments.roleId, roleId),
+                eq(roleAssignments.organizationMembershipId, membershipForRemoval.id),
               ),
             );
         }
       } else {
         await tx
-          .delete(groupRoles)
+          .delete(groupRoleAssignments)
           .where(
             and(
-              eq(groupRoles.orgId, actor.orgId),
-              eq(groupRoles.roleId, roleId),
-              eq(groupRoles.groupType, "department"),
-              eq(groupRoles.groupId, input.principalId),
+              eq(groupRoleAssignments.orgId, actor.orgId),
+              eq(groupRoleAssignments.roleId, roleId),
+              eq(groupRoleAssignments.principalGroupId, input.principalId),
             ),
           );
       }

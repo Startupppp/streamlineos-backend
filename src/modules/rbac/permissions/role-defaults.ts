@@ -2,6 +2,7 @@ import { ALL_PERMISSION_NAMES, moduleScopedPermissions } from "./catalog";
 
 const EMPLOYEE_SELF_SERVICE = [
   "branch:view",
+  "ownership:transfer:respond",
   "self:attendance",
   "self:leaves",
   "self:expenses",

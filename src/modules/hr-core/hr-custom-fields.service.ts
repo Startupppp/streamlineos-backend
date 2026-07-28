@@ -8,47 +8,84 @@ import {
 import { and, asc, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
-import { hrCustomFieldDefinitions, hrCustomFieldValues } from "../../db/schema/hr/core-org";
+import { customFieldDefinitions } from "../../db/schema/custom-field-engine";
+import { hrEmploymentCustomFieldValues } from "../../db/schema/hr/core-org";
 import type { CreateCustomFieldInput, UpdateCustomFieldInput, UpsertCustomFieldValuesInput } from "./dto/hr-custom-fields.schemas";
 
-type FieldDef = typeof hrCustomFieldDefinitions.$inferSelect;
+type HrFieldDef = {
+  id: number;
+  orgId: string;
+  entityType: string;
+  name: string;
+  key: string;
+  fieldType: string;
+  options: Array<{ label: string; value: string }> | null | undefined;
+  settings: typeof customFieldDefinitions.$inferSelect["settings"];
+  isSensitive: boolean;
+  isRequired: boolean;
+  isActive: boolean;
+  displayOrder: number;
+  createdAt: Date;
+  updatedAt: Date;
+};
 
 @Injectable()
 export class HrCustomFieldsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  private async loadDefinition(orgId: string, id: number): Promise<FieldDef> {
+  private toHrFieldDef(row: typeof customFieldDefinitions.$inferSelect): HrFieldDef {
+    return {
+      id: row.id,
+      orgId: row.orgId,
+      entityType: row.entityType,
+      name: row.label,
+      key: row.key,
+      fieldType: row.fieldType,
+      options: row.options,
+      settings: row.settings,
+      isSensitive: row.isSensitive,
+      isRequired: row.isRequired,
+      isActive: row.isActive,
+      displayOrder: row.displayOrder,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  }
+
+  private async loadDefinition(orgId: string, id: number): Promise<HrFieldDef> {
     const [row] = await this.db
       .select()
-      .from(hrCustomFieldDefinitions)
-      .where(and(eq(hrCustomFieldDefinitions.id, id), eq(hrCustomFieldDefinitions.orgId, orgId)))
+      .from(customFieldDefinitions)
+      .where(and(eq(customFieldDefinitions.id, id), eq(customFieldDefinitions.orgId, orgId)))
       .limit(1);
     if (!row) throw new NotFoundException("Custom field definition not found");
-    return row;
+    return this.toHrFieldDef(row);
   }
 
   async listDefinitions(orgId: string, entityType: string) {
-    return this.db
+    const rows = await this.db
       .select()
-      .from(hrCustomFieldDefinitions)
+      .from(customFieldDefinitions)
       .where(
         and(
-          eq(hrCustomFieldDefinitions.orgId, orgId),
-          eq(hrCustomFieldDefinitions.entityType, entityType),
-          eq(hrCustomFieldDefinitions.isActive, true),
+          eq(customFieldDefinitions.orgId, orgId),
+          eq(customFieldDefinitions.entityType, entityType),
+          eq(customFieldDefinitions.isActive, true),
         ),
       )
-      .orderBy(asc(hrCustomFieldDefinitions.displayOrder), asc(hrCustomFieldDefinitions.id));
+      .orderBy(asc(customFieldDefinitions.displayOrder), asc(customFieldDefinitions.id));
+    return rows.map((r) => this.toHrFieldDef(r));
   }
 
   async createDefinition(orgId: string, input: CreateCustomFieldInput) {
     const [row] = await this.db
-      .insert(hrCustomFieldDefinitions)
+      .insert(customFieldDefinitions)
       .values({
         orgId,
         entityType: input.entityType,
-        name: input.name,
+        projectId: 0,
         key: input.key,
+        label: input.name,
         fieldType: input.fieldType,
         options: input.options ?? null,
         settings: input.settings ?? null,
@@ -59,15 +96,15 @@ export class HrCustomFieldsService {
       })
       .returning();
     if (!row) throw new BadRequestException("Failed to create custom field");
-    return row;
+    return this.toHrFieldDef(row);
   }
 
   async updateDefinition(orgId: string, id: number, input: UpdateCustomFieldInput) {
     await this.loadDefinition(orgId, id);
     const [row] = await this.db
-      .update(hrCustomFieldDefinitions)
+      .update(customFieldDefinitions)
       .set({
-        name: input.name,
+        label: input.name,
         options: input.options,
         settings: input.settings,
         isSensitive: input.isSensitive,
@@ -75,18 +112,18 @@ export class HrCustomFieldsService {
         isActive: input.isActive,
         displayOrder: input.displayOrder,
       })
-      .where(and(eq(hrCustomFieldDefinitions.id, id), eq(hrCustomFieldDefinitions.orgId, orgId)))
+      .where(and(eq(customFieldDefinitions.id, id), eq(customFieldDefinitions.orgId, orgId)))
       .returning();
     if (!row) throw new NotFoundException("Custom field definition not found");
-    return row;
+    return this.toHrFieldDef(row);
   }
 
   async deleteDefinition(orgId: string, id: number) {
     await this.loadDefinition(orgId, id);
     await this.db
-      .update(hrCustomFieldDefinitions)
+      .update(customFieldDefinitions)
       .set({ isActive: false })
-      .where(and(eq(hrCustomFieldDefinitions.id, id), eq(hrCustomFieldDefinitions.orgId, orgId)));
+      .where(and(eq(customFieldDefinitions.id, id), eq(customFieldDefinitions.orgId, orgId)));
   }
 
   async getEntityValues(
@@ -95,18 +132,22 @@ export class HrCustomFieldsService {
     entityId: string,
     canViewSensitive: boolean,
   ) {
+    const empId = Number(entityId);
+    if (!Number.isInteger(empId) || empId <= 0) {
+      throw new BadRequestException("Invalid entity ID — must be a positive integer");
+    }
+
     const defs = await this.listDefinitions(orgId, entityType);
     const values = await this.db
       .select({
-        fieldDefinitionId: hrCustomFieldValues.fieldDefinitionId,
-        value: hrCustomFieldValues.value,
+        fieldDefinitionId: hrEmploymentCustomFieldValues.fieldDefinitionId,
+        value: hrEmploymentCustomFieldValues.value,
       })
-      .from(hrCustomFieldValues)
+      .from(hrEmploymentCustomFieldValues)
       .where(
         and(
-          eq(hrCustomFieldValues.orgId, orgId),
-          eq(hrCustomFieldValues.entityType, entityType),
-          eq(hrCustomFieldValues.entityId, entityId),
+          eq(hrEmploymentCustomFieldValues.orgId, orgId),
+          eq(hrEmploymentCustomFieldValues.employmentId, empId),
         ),
       );
 
@@ -128,6 +169,11 @@ export class HrCustomFieldsService {
     input: UpsertCustomFieldValuesInput,
     canManageSensitive: boolean,
   ) {
+    const empId = Number(entityId);
+    if (!Number.isInteger(empId) || empId <= 0) {
+      throw new BadRequestException("Invalid entity ID — must be a positive integer");
+    }
+
     const defs = await this.listDefinitions(orgId, entityType);
     const defMap = new Map(defs.map((d) => [d.id, d]));
 
@@ -143,23 +189,21 @@ export class HrCustomFieldsService {
 
     const rows = input.values.map((item) => ({
       orgId,
+      employmentId: empId,
       fieldDefinitionId: item.fieldDefinitionId,
-      entityType,
-      entityId,
       value: item.value,
     }));
 
     await this.db
-      .insert(hrCustomFieldValues)
+      .insert(hrEmploymentCustomFieldValues)
       .values(rows)
       .onConflictDoUpdate({
         target: [
-          hrCustomFieldValues.fieldDefinitionId,
-          hrCustomFieldValues.entityType,
-          hrCustomFieldValues.entityId,
+          hrEmploymentCustomFieldValues.employmentId,
+          hrEmploymentCustomFieldValues.fieldDefinitionId,
         ],
         set: {
-          value: sql`excluded.${sql.raw(hrCustomFieldValues.value.name)}`,
+          value: sql`excluded.value`,
           updatedAt: new Date(),
         },
       });

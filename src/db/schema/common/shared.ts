@@ -1,6 +1,6 @@
 
-import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, unique, numeric, date, varchar } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, unique, uniqueIndex, numeric, date, varchar } from "drizzle-orm/pg-core";
+import { relations, sql } from "drizzle-orm";
 import {
   notificationTypeEnum,
   notificationPriorityEnum,
@@ -106,7 +106,7 @@ export const broadcasts = pgTable("broadcasts", {
 export const notificationAuditLogs = pgTable("notification_audit_logs", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  notificationId: integer("notification_id"),
+  notificationId: integer("notification_id").references(() => notifications.id, { onDelete: "set null" }),
   broadcastId: integer("broadcast_id"),
   actorId: text("actor_id").references(() => users.id),
   action: text("action").notNull(),
@@ -338,6 +338,7 @@ export const subscriptionPayments = pgTable("subscription_payments", {
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  uniqueIndex("uniq_subscription_payments_razorpay_payment").on(table.razorpayPaymentId).where(sql`razorpay_payment_id IS NOT NULL`),
   index("idx_sub_payments_org").on(table.orgId),
   index("idx_sub_payments_sub").on(table.subscriptionId),
   unique("uniq_subscription_payments_org_id").on(table.orgId, table.id),

@@ -69,7 +69,6 @@ export const kbArticles = pgTable(
     views: integer("views").default(0).notNull(),
     helpfulCount: integer("helpful_count").default(0).notNull(),
     notHelpfulCount: integer("not_helpful_count").default(0).notNull(),
-    tags: text("tags").array(),
     fts: tsvector("fts").generatedAlwaysAs(
       sql`setweight(to_tsvector('english', coalesce(title, '')), 'A') || setweight(to_tsvector('english', coalesce(excerpt, '')), 'B') || setweight(to_tsvector('english', coalesce(content_text, '')), 'C')`,
     ),

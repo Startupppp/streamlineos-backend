@@ -1,24 +1,19 @@
 import { z } from "zod";
 
-// Uppercase org-module vocabulary accepted from clients. Both BUILD and the legacy PROJECTS are
-// allowed: the module was renamed to Build, older clients still send PROJECTS, and both resolve to
-// the canonical lowercase key `build` via moduleKeysFromOrgModuleValues in common/rbac/module-vocabulary.
 export const ORG_MODULE_KEYS = [
-  "HR",
-  "CRM",
-  "BUILD",
-  "PROJECTS",
-  "FINANCE",
-  "INVENTORY",
-  "HELPDESK",
-  "SURVEYS",
-  "PAYROLL",
-  "SIGN",
-  "CHAT",
-  "KNOWLEDGE",
+  "hr",
+  "crm",
+  "build",
+  "accounting",
+  "inventory",
+  "kb",
+  "chat",
+  "support",
+  "surveys",
+  "payroll",
+  "sign",
 ] as const;
 
-// Completing requires the user's real setup data — only skip creates a default workspace.
 export const setupSchema = z.object({
   companyName: z.string().max(200).optional(),
   industry: z.string().min(1, "Industry is required").max(100),

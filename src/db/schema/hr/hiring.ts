@@ -5,8 +5,7 @@ import {
   interviewResultEnum, applicationStatusEnum,
 } from "../common/enums";
 import { organizations, users } from "../common/auth";
-import { departments } from "./employees";
-import { orgDepartments } from "../common/organization";
+import { orgUnits } from "../common/organization";
 
 export interface ScreeningQuestion {
   id: string;
@@ -55,8 +54,7 @@ export const jobPostings = pgTable("job_postings", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   title: text("title").notNull(),
-  departmentId: integer("department_id").references(() => departments.id),
-  orgDepartmentId: text("org_department_id").references(() => orgDepartments.id, {
+  orgDepartmentId: text("org_department_id").references(() => orgUnits.id, {
     onDelete: "set null",
   }),
   hiringFlowId: integer("hiring_flow_id").references(() => hiringFlows.id),
@@ -523,8 +521,7 @@ export const hiringFlowRoundsRelations = relations(hiringFlowRounds, ({ one }) =
 
 export const jobPostingsRelations = relations(jobPostings, ({ one, many }) => ({
   organization: one(organizations, { fields: [jobPostings.orgId], references: [organizations.id] }),
-  department: one(departments, { fields: [jobPostings.departmentId], references: [departments.id] }),
-  orgDepartment: one(orgDepartments, { fields: [jobPostings.orgDepartmentId], references: [orgDepartments.id] }),
+  orgDepartment: one(orgUnits, { fields: [jobPostings.orgDepartmentId], references: [orgUnits.id] }),
   hiringFlow: one(hiringFlows, { fields: [jobPostings.hiringFlowId], references: [hiringFlows.id] }),
   postedByUser: one(users, { fields: [jobPostings.postedBy], references: [users.id] }),
   applications: many(candidateApplications),
@@ -797,8 +794,7 @@ export type HeadcountRequestStatus = "DRAFT" | "SUBMITTED" | "APPROVED" | "REJEC
 export const headcountRequests = pgTable("headcount_requests", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  departmentId: integer("department_id").references((): AnyPgColumn => departments.id),
-  orgDepartmentId: text("org_department_id").references(() => orgDepartments.id, {
+  orgDepartmentId: text("org_department_id").references(() => orgUnits.id, {
     onDelete: "set null",
   }),
   requestedBy: text("requested_by").references(() => users.id).notNull(),
@@ -817,7 +813,6 @@ export const headcountRequests = pgTable("headcount_requests", {
   unique("uniq_headcount_requests_org_id").on(table.orgId, table.id),
   index("idx_headcount_requests_org").on(table.orgId),
   index("idx_headcount_requests_status").on(table.status),
-  index("idx_headcount_requests_dept").on(table.departmentId),
   index("idx_headcount_requests_org_dept").on(table.orgDepartmentId),
 ]);
 
@@ -825,8 +820,7 @@ export const headcountRequestsRelations = relations(headcountRequests, ({ one })
   organization: one(organizations, { fields: [headcountRequests.orgId], references: [organizations.id] }),
   requestedByUser: one(users, { fields: [headcountRequests.requestedBy], references: [users.id] }),
   approvedByUser: one(users, { fields: [headcountRequests.approvedBy], references: [users.id] }),
-  department: one(departments, { fields: [headcountRequests.departmentId], references: [departments.id] }),
-  orgDepartment: one(orgDepartments, { fields: [headcountRequests.orgDepartmentId], references: [orgDepartments.id] }),
+  orgDepartment: one(orgUnits, { fields: [headcountRequests.orgDepartmentId], references: [orgUnits.id] }),
   linkedJob: one(jobPostings, { fields: [headcountRequests.linkedJobPostingId], references: [jobPostings.id] }),
 }));
 
@@ -909,7 +903,7 @@ export interface ReportConfig {
     status?: string;
     dateFrom?: string;
     dateTo?: string;
-    departmentId?: number;
+    departmentId?: string;
   };
 }
 

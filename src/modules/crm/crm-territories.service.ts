@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
-import { territories } from "../../db/schema";
+import { and, desc, eq, inArray } from "drizzle-orm";
+import { territories, territoryReps, territoryLocations } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -21,54 +21,67 @@ export class CrmTerritoriesService {
     return this.cache.cached(
       `crm:territories:${orgId}:${limit}`,
       () =>
-        this.db
-          .select({
-            id: territories.id,
-            name: territories.name,
-            states: territories.states,
-            cities: territories.cities,
-            assignedReps: territories.assignedReps,
-            description: territories.description,
-            isActive: territories.isActive,
-            criteria: territories.criteria,
-            priority: territories.priority,
-            createdAt: territories.createdAt,
-          })
-          .from(territories)
-          .where(eq(territories.orgId, orgId))
-          .orderBy(desc(territories.priority), territories.name)
-          .limit(limit),
+        this.db.query.territories.findMany({
+          where: eq(territories.orgId, orgId),
+          with: {
+            reps: { columns: { id: true, crmPersonId: true, assignedAt: true } },
+            locations: { columns: { id: true, kind: true, value: true } },
+          },
+          orderBy: [desc(territories.priority), territories.name],
+          limit,
+        }),
       CACHE_TTL.MEDIUM,
     );
   }
 
   async create(orgId: string, userId: string, input: TerritoryCreateInput) {
-    const [created] = await this.db
-      .insert(territories)
-      .values({
-        orgId,
-        name: input.name,
-        states: input.states,
-        cities: input.cities,
-        assignedReps: input.assignedReps,
-        description: input.description ?? null,
-        isActive: input.isActive,
-        criteria: input.criteria ?? {},
-        priority: input.priority ?? 0,
-        createdBy: userId,
-      })
-      .returning();
+    return this.db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(territories)
+        .values({
+          orgId,
+          name: input.name,
+          description: input.description ?? null,
+          isActive: input.isActive,
+          criteria: input.criteria ?? {},
+          priority: input.priority ?? 0,
+          createdBy: userId,
+        })
+        .returning();
 
-    await this.cache.invalidatePattern(`crm:territories:${orgId}:*`);
-    return created;
+      if (!created) throw new Error("Failed to create territory");
+
+      if (input.states && input.states.length > 0) {
+        await tx.insert(territoryLocations).values(
+          input.states.map((value) => ({ orgId, territoryId: created.id, kind: "STATE", value })),
+        );
+      }
+
+      if (input.cities && input.cities.length > 0) {
+        await tx.insert(territoryLocations).values(
+          input.cities.map((value) => ({ orgId, territoryId: created.id, kind: "CITY", value })),
+        );
+      }
+
+      if (input.assignedReps && input.assignedReps.length > 0) {
+        await tx.insert(territoryReps).values(
+          input.assignedReps.map((crmPersonId) => ({ orgId, territoryId: created.id, crmPersonId })),
+        );
+      }
+
+      await this.cache.invalidatePattern(`crm:territories:${orgId}:*`);
+      return created;
+    });
   }
 
   getOne(orgId: string, id: number) {
-    return this.db
-      .select()
-      .from(territories)
-      .where(and(eq(territories.id, id), eq(territories.orgId, orgId)))
-      .then((rows) => rows[0] ?? null);
+    return this.db.query.territories.findFirst({
+      where: and(eq(territories.id, id), eq(territories.orgId, orgId)),
+      with: {
+        reps: { columns: { id: true, crmPersonId: true, assignedAt: true } },
+        locations: { columns: { id: true, kind: true, value: true } },
+      },
+    }).then((row) => row ?? null);
   }
 
   async exists(orgId: string, id: number): Promise<boolean> {
@@ -80,13 +93,68 @@ export class CrmTerritoriesService {
   }
 
   async update(orgId: string, id: number, input: TerritoryUpdateInput) {
-    const [updated] = await this.db
-      .update(territories)
-      .set({ ...input, updatedAt: new Date() })
-      .where(and(eq(territories.id, id), eq(territories.orgId, orgId)))
-      .returning();
-    await this.cache.invalidatePattern(`crm:territories:${orgId}:*`);
-    return updated;
+    return this.db.transaction(async (tx) => {
+      const scalarUpdate: Partial<typeof territories.$inferInsert> = { updatedAt: new Date() };
+      if (input.name !== undefined) scalarUpdate.name = input.name;
+      if (input.description !== undefined) scalarUpdate.description = input.description ?? null;
+      if (input.isActive !== undefined) scalarUpdate.isActive = input.isActive;
+      if (input.criteria !== undefined) scalarUpdate.criteria = input.criteria as typeof territories.$inferInsert["criteria"];
+      if (input.priority !== undefined) scalarUpdate.priority = input.priority;
+
+      const [updated] = await tx
+        .update(territories)
+        .set(scalarUpdate)
+        .where(and(eq(territories.id, id), eq(territories.orgId, orgId)))
+        .returning();
+
+      if (input.states !== undefined) {
+        await tx
+          .delete(territoryLocations)
+          .where(
+            and(
+              eq(territoryLocations.territoryId, id),
+              eq(territoryLocations.orgId, orgId),
+              eq(territoryLocations.kind, "STATE"),
+            ),
+          );
+        if (input.states.length > 0) {
+          await tx.insert(territoryLocations).values(
+            input.states.map((value) => ({ orgId, territoryId: id, kind: "STATE", value })),
+          );
+        }
+      }
+
+      if (input.cities !== undefined) {
+        await tx
+          .delete(territoryLocations)
+          .where(
+            and(
+              eq(territoryLocations.territoryId, id),
+              eq(territoryLocations.orgId, orgId),
+              eq(territoryLocations.kind, "CITY"),
+            ),
+          );
+        if (input.cities.length > 0) {
+          await tx.insert(territoryLocations).values(
+            input.cities.map((value) => ({ orgId, territoryId: id, kind: "CITY", value })),
+          );
+        }
+      }
+
+      if (input.assignedReps !== undefined) {
+        await tx
+          .delete(territoryReps)
+          .where(and(eq(territoryReps.territoryId, id), eq(territoryReps.orgId, orgId)));
+        if (input.assignedReps.length > 0) {
+          await tx.insert(territoryReps).values(
+            input.assignedReps.map((crmPersonId) => ({ orgId, territoryId: id, crmPersonId })),
+          );
+        }
+      }
+
+      await this.cache.invalidatePattern(`crm:territories:${orgId}:*`);
+      return updated;
+    });
   }
 
   async remove(orgId: string, id: number) {

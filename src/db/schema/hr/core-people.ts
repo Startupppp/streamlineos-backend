@@ -11,10 +11,11 @@ import {
   uniqueIndex,
   date,
   unique,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
-import { departments } from "./employees";
+import { orgUnits } from "../common/organization";
 
 export const hrEmploymentLifecycleStatusEnum = pgEnum("hr_employment_lifecycle_status", [
   "CANDIDATE",
@@ -120,11 +121,11 @@ export const hrEmployments = pgTable("hr_employments", {
   employeeNumber: text("employee_number").notNull(),
   lifecycleStatus: hrEmploymentLifecycleStatusEnum("lifecycle_status").default("ACTIVE").notNull(),
   workerType: hrWorkerTypeEnum("worker_type").default("FULL_TIME").notNull(),
-  departmentId: integer("department_id").references(() => departments.id, { onDelete: "set null" }),
+  departmentId: text("department_id").references(() => orgUnits.id, { onDelete: "set null" }),
   jobRoleId: integer("job_role_id"),
   jobLevelId: integer("job_level_id"),
   employmentTypeId: integer("employment_type_id"),
-  locationId: integer("location_id"),
+  locationId: text("location_id").references(() => orgUnits.id, { onDelete: "set null" }),
   designation: text("designation"),
   joiningDate: date("joining_date"),
   probationEndDate: date("probation_end_date"),
@@ -156,21 +157,7 @@ export const hrEmployeeProfiles = pgTable("hr_employee_profiles", {
   twitterUrl: text("twitter_url"),
   githubUrl: text("github_url"),
   websiteUrl: text("website_url"),
-  skills: text("skills").array().default([]),
   languages: text("languages").array().default([]),
-  education: jsonb("education").$type<Array<{
-    institution: string;
-    degree?: string;
-    field?: string;
-    startYear?: number;
-    endYear?: number;
-  }>>(),
-  certifications: jsonb("certifications").$type<Array<{
-    name: string;
-    issuer?: string;
-    issuedAt?: string;
-    expiresAt?: string;
-  }>>(),
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
@@ -178,6 +165,46 @@ export const hrEmployeeProfiles = pgTable("hr_employee_profiles", {
   unique("uniq_hr_employee_profiles_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_hr_emp_profiles_employment").on(table.employmentId),
   index("idx_hr_emp_profiles_org").on(table.orgId),
+]);
+
+export const hrEmployeeEducation = pgTable("hr_employee_education", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  employeeProfileId: integer("employee_profile_id").notNull(),
+  institution: text("institution").notNull(),
+  degree: text("degree"),
+  field: text("field"),
+  startYear: integer("start_year"),
+  endYear: integer("end_year"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_hr_employee_education_org").on(table.orgId),
+  index("idx_hr_employee_education_profile").on(table.employeeProfileId),
+  foreignKey({
+    columns: [table.orgId, table.employeeProfileId],
+    foreignColumns: [hrEmployeeProfiles.orgId, hrEmployeeProfiles.id],
+  }).onDelete("cascade"),
+  unique("uniq_hr_employee_education_org_id").on(table.orgId, table.id),
+]);
+
+export const hrEmployeeCertifications = pgTable("hr_employee_certifications", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  employeeProfileId: integer("employee_profile_id").notNull(),
+  name: text("name").notNull(),
+  issuer: text("issuer"),
+  issuedAt: date("issued_at"),
+  expiresAt: date("expires_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_hr_employee_certifications_org").on(table.orgId),
+  index("idx_hr_employee_certifications_profile").on(table.employeeProfileId),
+  index("idx_hr_employee_certifications_expires_at").on(table.expiresAt),
+  foreignKey({
+    columns: [table.orgId, table.employeeProfileId],
+    foreignColumns: [hrEmployeeProfiles.orgId, hrEmployeeProfiles.id],
+  }).onDelete("cascade"),
+  unique("uniq_hr_employee_certifications_org_id").on(table.orgId, table.id),
 ]);
 
 export const hrEmployeeSensitiveFields = pgTable("hr_employee_sensitive_fields", {
@@ -288,11 +315,35 @@ export const hrPeopleRelations = relations(hrPeople, ({ one, many }) => ({
 export const hrEmploymentsRelations = relations(hrEmployments, ({ one, many }) => ({
   org: one(organizations, { fields: [hrEmployments.orgId], references: [organizations.id] }),
   person: one(hrPeople, { fields: [hrEmployments.personId], references: [hrPeople.id] }),
-  department: one(departments, { fields: [hrEmployments.departmentId], references: [departments.id] }),
+  department: one(orgUnits, { fields: [hrEmployments.departmentId], references: [orgUnits.id] }),
+  location: one(orgUnits, { fields: [hrEmployments.locationId], references: [orgUnits.id] }),
   profile: one(hrEmployeeProfiles, { fields: [hrEmployments.id], references: [hrEmployeeProfiles.employmentId] }),
   sensitiveFields: one(hrEmployeeSensitiveFields, { fields: [hrEmployments.id], references: [hrEmployeeSensitiveFields.employmentId] }),
   history: many(hrEmploymentHistory),
   effectiveDatedChanges: many(hrEffectiveDatedChanges),
   reportingLines: many(hrReportingLines, { relationName: "reportee_lines" }),
   managedLines: many(hrReportingLines, { relationName: "manager_lines" }),
+}));
+
+export const hrEmployeeProfilesRelations = relations(hrEmployeeProfiles, ({ one, many }) => ({
+  employment: one(hrEmployments, {
+    fields: [hrEmployeeProfiles.employmentId],
+    references: [hrEmployments.id],
+  }),
+  education: many(hrEmployeeEducation),
+  certifications: many(hrEmployeeCertifications),
+}));
+
+export const hrEmployeeEducationRelations = relations(hrEmployeeEducation, ({ one }) => ({
+  profile: one(hrEmployeeProfiles, {
+    fields: [hrEmployeeEducation.orgId, hrEmployeeEducation.employeeProfileId],
+    references: [hrEmployeeProfiles.orgId, hrEmployeeProfiles.id],
+  }),
+}));
+
+export const hrEmployeeCertificationsRelations = relations(hrEmployeeCertifications, ({ one }) => ({
+  profile: one(hrEmployeeProfiles, {
+    fields: [hrEmployeeCertifications.orgId, hrEmployeeCertifications.employeeProfileId],
+    references: [hrEmployeeProfiles.orgId, hrEmployeeProfiles.id],
+  }),
 }));

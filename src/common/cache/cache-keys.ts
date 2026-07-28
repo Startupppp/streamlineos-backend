@@ -128,12 +128,8 @@ export const CACHE_KEYS = {
 
   featureFlags: () => "feature-flags:all",
 
-  orgBusinessUnits: (orgId: string) => `org:bu:${orgId}`,
-  orgBranches: (orgId: string) => `org:branches:${orgId}`,
-  orgDepartments: (orgId: string) => `org:depts:${orgId}`,
-  orgTeams: (orgId: string) => `org:teams:${orgId}`,
-  orgLocations: (orgId: string) => `org:locations:${orgId}`,
-  orgCostCenters: (orgId: string) => `org:cost-centers:${orgId}`,
+  orgUnits: (orgId: string, kind?: string) =>
+    kind ? `org:units:${orgId}:${kind}` : `org:units:${orgId}`,
 
   supportReportsOverview: (orgId: string) => `support:reports:overview:${orgId}`,
 

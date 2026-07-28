@@ -1,11 +1,12 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
 import { and, asc, eq } from "drizzle-orm";
-import { rolePermissionGrants, roles } from "../../db/schema";
+import { organizationMembers, roleAssignments, rolePermissionGrants, roles } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -14,7 +15,10 @@ import { AuditService } from "../../common/audit/audit.service";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import {
   assertPermissionsGrantable,
+  buildPermissionModuleMap,
+  ROLE_RANK,
   toGrantableSet,
+  type RoleGrantTarget,
 } from "../../common/rbac/grantability";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
@@ -34,18 +38,72 @@ export class RolePermissionService {
     private readonly access: AccessService,
   ) {}
 
+  private async resolveActorRankContext(
+    orgId: string,
+    userId: string,
+  ): Promise<{ bestRank: number; allowedModules: Set<string> | null }> {
+    const rows = await this.db
+      .select({ rank: roles.rank, moduleKey: roles.moduleKey })
+      .from(roleAssignments)
+      .innerJoin(
+        roles,
+        and(eq(roleAssignments.roleId, roles.id), eq(roles.orgId, orgId)),
+      )
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, roleAssignments.orgId),
+          eq(organizationMembers.id, roleAssignments.organizationMembershipId),
+        ),
+      )
+      .where(and(eq(roleAssignments.orgId, orgId), eq(organizationMembers.userId, userId)))
+      .limit(100);
+
+    if (rows.length === 0) {
+      return { bestRank: ROLE_RANK.FUNCTIONAL, allowedModules: null };
+    }
+
+    let bestRank: number = ROLE_RANK.FUNCTIONAL;
+    for (const row of rows) {
+      if (row.rank < bestRank) bestRank = row.rank;
+    }
+
+    const topRankRoles = rows.filter((r) => r.rank === bestRank);
+    const hasOrgWideRole = topRankRoles.some((r) => r.moduleKey === null);
+    if (hasOrgWideRole) {
+      return { bestRank, allowedModules: null };
+    }
+
+    const modules = new Set(
+      topRankRoles
+        .map((r) => r.moduleKey)
+        .filter((m): m is string => m !== null),
+    );
+    return { bestRank, allowedModules: modules };
+  }
+
   private async assertGrantable(
     actor: CurrentUserContext,
     requestedKeys: readonly string[],
+    target?: RoleGrantTarget,
   ): Promise<void> {
     if (actor.isOrgOwner || actor.isPlatformAdmin) return;
-    const resolved = await this.access.resolveUserPermissions(
-      actor.orgId,
-      actor.userId,
-    );
+    const [resolved, { bestRank, allowedModules }] = await Promise.all([
+      this.access.resolveUserPermissions(actor.orgId, actor.userId),
+      this.resolveActorRankContext(actor.orgId, actor.userId),
+    ]);
+    const permMeta = buildPermissionModuleMap(requestedKeys);
     assertPermissionsGrantable(
-      { isOrgOwner: false, isPlatformAdmin: false, grantable: toGrantableSet(resolved) },
+      {
+        isOrgOwner: false,
+        isPlatformAdmin: false,
+        grantable: toGrantableSet(resolved),
+        bestRank,
+        allowedModules,
+      },
       requestedKeys,
+      target,
+      permMeta,
     );
   }
 
@@ -89,7 +147,11 @@ export class RolePermissionService {
     roleId: number,
     input: SetRolePermissionsInput,
   ): Promise<{ success: true }> {
-    await this.getRole(actor.orgId, roleId);
+    const existingRole = await this.getRole(actor.orgId, roleId);
+
+    if (existingRole.isSystem) {
+      throw new ForbiddenException("System roles cannot be modified");
+    }
 
     const deduped = new Map<string, DataScope>();
     for (const item of input.items) {
@@ -101,7 +163,11 @@ export class RolePermissionService {
       deduped.set(item.permissionKey, item.scope);
     }
 
-    await this.assertGrantable(actor, Array.from(deduped.keys()));
+    const target: RoleGrantTarget = {
+      rank: existingRole.rank,
+      moduleKey: existingRole.moduleKey,
+    };
+    await this.assertGrantable(actor, Array.from(deduped.keys()), target);
 
     await this.db.transaction(async (tx): Promise<void> => {
       await tx

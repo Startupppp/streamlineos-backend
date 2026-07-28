@@ -3,6 +3,7 @@ import {
   broadest,
   evaluateMembershipGate,
   isActiveDelegation,
+  isActiveAssignment,
   isInternalModule,
   moduleOf,
   type DelegationRow,
@@ -175,6 +176,28 @@ describe("isActiveDelegation", () => {
   });
 });
 
+describe("isActiveAssignment", () => {
+  const now = new Date("2026-07-28T12:00:00Z");
+
+  it("grants when expiresAt is null (permanent assignment)", () => {
+    expect(isActiveAssignment({ expiresAt: null }, now)).toBe(true);
+  });
+
+  it("grants when expiresAt is one millisecond in the future", () => {
+    const future = new Date(now.getTime() + 1);
+    expect(isActiveAssignment({ expiresAt: future }, now)).toBe(true);
+  });
+
+  it("does not grant when expiresAt is in the past (expired assignment)", () => {
+    const past = new Date(now.getTime() - 1000);
+    expect(isActiveAssignment({ expiresAt: past }, now)).toBe(false);
+  });
+
+  it("does not grant when expiresAt equals now (boundary — strict greater-than)", () => {
+    expect(isActiveAssignment({ expiresAt: now }, now)).toBe(false);
+  });
+});
+
 describe("AccessService.resolveUserPermissions", () => {
   function makeSelectChain(result: unknown[]): Record<string, jest.Mock> {
     const chain: Record<string, jest.Mock> = {
@@ -215,8 +238,6 @@ describe("AccessService.resolveUserPermissions", () => {
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
-        .mockReturnValueOnce(makeSelectChain([]))
-        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([])),
     };
 
@@ -225,7 +246,7 @@ describe("AccessService.resolveUserPermissions", () => {
     expect(result.size).toBe(0);
   });
 
-  it("resolves role grants for an active member with a membership_role_assignments row", async () => {
+  it("resolves role grants for an active member with a role_assignments row", async () => {
     const db = {
       query: {
         accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
@@ -239,7 +260,6 @@ describe("AccessService.resolveUserPermissions", () => {
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([{ id: 10, slug: "HR_ADMIN" }]))
         .mockReturnValueOnce(makeSelectChain([{ roleId: 10, permissionKey: "hr:employees:view", scope: "all" }]))
-        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([])),
     };
 
@@ -247,5 +267,118 @@ describe("AccessService.resolveUserPermissions", () => {
 
     expect(result.get("hr:employees:view")).toBe("all");
     expect(result.size).toBeGreaterThan(0);
+  });
+
+  it("resolves role grants inherited via a principal group membership", async () => {
+    const db = {
+      query: {
+        accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
+        organizationMembers: {
+          findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 5 }),
+        },
+        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
+      },
+      select: jest.fn()
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([{ principalGroupId: "group-uuid-1" }]))
+        .mockReturnValueOnce(makeSelectChain([{ roleId: 20 }]))
+        .mockReturnValueOnce(makeSelectChain([{ id: 20, slug: "HR_VIEWER" }]))
+        .mockReturnValueOnce(makeSelectChain([{ roleId: 20, permissionKey: "hr:employees:view", scope: "own" }]))
+        .mockReturnValueOnce(makeSelectChain([])),
+    };
+
+    const result = await buildService(db).resolveUserPermissions("org-1", "user-5");
+
+    expect(result.get("hr:employees:view")).toBe("own");
+  });
+
+  it("group membership with no group_role_assignments contributes no permissions", async () => {
+    const db = {
+      query: {
+        accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
+        organizationMembers: {
+          findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 6 }),
+        },
+        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
+      },
+      select: jest.fn()
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([{ principalGroupId: "group-uuid-2" }]))
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([])),
+    };
+
+    const result = await buildService(db).resolveUserPermissions("org-1", "user-6");
+
+    expect(result.size).toBe(0);
+  });
+
+  it("merges group-inherited role grants with direct role grants (broadest scope wins)", async () => {
+    const db = {
+      query: {
+        accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
+        organizationMembers: {
+          findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 7 }),
+        },
+        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
+      },
+      select: jest.fn()
+        .mockReturnValueOnce(makeSelectChain([{ roleId: 30 }]))
+        .mockReturnValueOnce(makeSelectChain([{ principalGroupId: "group-uuid-3" }]))
+        .mockReturnValueOnce(makeSelectChain([{ roleId: 31 }]))
+        .mockReturnValueOnce(makeSelectChain([
+          { id: 30, slug: "ROLE_A" },
+          { id: 31, slug: "ROLE_B" },
+        ]))
+        .mockReturnValueOnce(makeSelectChain([
+          { roleId: 30, permissionKey: "hr:employees:view", scope: "own" },
+          { roleId: 31, permissionKey: "hr:employees:view", scope: "all" },
+        ]))
+        .mockReturnValueOnce(makeSelectChain([])),
+    };
+
+    const result = await buildService(db).resolveUserPermissions("org-1", "user-7");
+
+    expect(result.get("hr:employees:view")).toBe("all");
+  });
+
+  it("returns empty permissions when all role assignments are revoked (single-source revocation is complete)", async () => {
+    const db = {
+      query: {
+        accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
+        organizationMembers: {
+          findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 3 }),
+        },
+        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
+      },
+      select: jest.fn()
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([])),
+    };
+
+    const result = await buildService(db).resolveUserPermissions("org-1", "user-3");
+
+    expect(result.size).toBe(0);
+  });
+
+  it("returns empty permissions when the DB returns no rows after filtering expired assignments", async () => {
+    const db = {
+      query: {
+        accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
+        organizationMembers: {
+          findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 4 }),
+        },
+        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
+      },
+      select: jest.fn()
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([])),
+    };
+
+    const result = await buildService(db).resolveUserPermissions("org-1", "user-4");
+
+    expect(result.size).toBe(0);
   });
 });

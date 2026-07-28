@@ -7,7 +7,7 @@ const BRANCH_SCOPED_ROLES = new Set(["BRANCH_MANAGER", "BRANCH_HR"]);
 
 export interface BranchContext {
   role: string;
-  branchId: number | null;
+  branchId: string | null;
   userId: string;
 }
 

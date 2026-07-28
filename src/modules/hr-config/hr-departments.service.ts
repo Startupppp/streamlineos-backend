@@ -1,6 +1,4 @@
 import { ConflictException, Inject, Injectable } from "@nestjs/common";
-import { eq } from "drizzle-orm";
-import { departments } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { OrgHierarchyService } from "../org-hierarchy/org-hierarchy.service";
@@ -12,13 +10,6 @@ export class HrDepartmentsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly orgHierarchy: OrgHierarchyService,
   ) {}
-
-  listLegacy(orgId: string) {
-    return this.db.query.departments.findMany({
-      where: eq(departments.orgId, orgId),
-      columns: { id: true, name: true },
-    });
-  }
 
   async list(orgId: string) {
     const { data } = await this.orgHierarchy.listDepartments(orgId, {

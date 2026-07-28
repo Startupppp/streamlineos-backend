@@ -41,6 +41,7 @@ import { AccessModule } from "./modules/access/access.module";
 import { DealsModule } from "./modules/deals/deals.module";
 import { OrgModule } from "./modules/org/org.module";
 import { OrganizationModule } from "./modules/organization/organization.module";
+import { OwnershipModule } from "./modules/ownership/ownership.module";
 import { BranchesModule } from "./modules/branches/branches.module";
 import { ProjectsExecutionModule } from "./modules/build-execution/projects-execution.module";
 import { ProjectsQaModule } from "./modules/build-qa/projects-qa.module";
@@ -212,6 +213,7 @@ import { MeService } from "./me/me.service";
     DealsModule,
     OrgModule,
     OrganizationModule,
+    OwnershipModule,
     BranchesModule,
     ProjectsPortfoliosModule,
     ProjectsManagedProductsModule,

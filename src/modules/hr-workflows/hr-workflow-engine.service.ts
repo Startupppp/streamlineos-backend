@@ -7,11 +7,12 @@ import {
   hrWorkflowSteps,
   hrWorkflowInstances,
   hrWorkflowStepActions,
+  hrWorkflowInstanceAttachments,
   hrWorkflowDelegations,
   type hrWorkflowObjectTypeEnum,
 } from "../../db/schema/hr/workflow-engine";
 import { users, organizationMembers } from "../../db/schema/common/auth";
-import { departments } from "../../db/schema/hr/employees";
+import { orgUnits } from "../../db/schema/common/organization";
 
 type HrWorkflowObjectType = typeof hrWorkflowObjectTypeEnum.enumValues[number];
 
@@ -245,12 +246,12 @@ export class HrWorkflowEngineService {
       }
 
       case "department_head": {
-        const [employee] = await this.db.select({ departmentId: users.departmentId })
+        const [employee] = await this.db.select({ orgDepartmentId: users.orgDepartmentId })
           .from(users).where(eq(users.id, subjectEmployeeId)).limit(1);
-        if (!employee?.departmentId) return [];
-        const [dept] = await this.db.select({ managerId: departments.managerId })
-          .from(departments).where(eq(departments.id, employee.departmentId)).limit(1);
-        return dept?.managerId ? [dept.managerId] : [];
+        if (!employee?.orgDepartmentId) return [];
+        const [dept] = await this.db.select({ headUserId: orgUnits.headUserId })
+          .from(orgUnits).where(eq(orgUnits.id, employee.orgDepartmentId)).limit(1);
+        return dept?.headUserId ? [dept.headUserId] : [];
       }
 
       case "hr_role": {
@@ -386,7 +387,6 @@ export class HrWorkflowEngineService {
         actedByUserId: currentStep.escalationApproverValue,
         action: "escalated",
         comment: "Auto-escalated due to SLA breach",
-        attachments: null,
       });
       escalatedIds.push(instance.id);
     }
@@ -401,6 +401,7 @@ export class HrWorkflowEngineService {
       });
     }
 
+
     return { swept: overdueInstances.length };
   }
 
@@ -414,15 +415,24 @@ export class HrWorkflowEngineService {
     comment?: string,
     attachments?: { url: string; name: string }[],
   ) {
-    await this.db.insert(hrWorkflowStepActions).values({
-      orgId,
-      instanceId,
-      stepOrder,
-      approverUserId,
-      actedByUserId,
-      action,
-      comment: comment ?? null,
-      attachments: attachments ?? null,
+    await this.db.transaction(async (tx) => {
+      const [inserted] = await tx.insert(hrWorkflowStepActions).values({
+        orgId,
+        instanceId,
+        stepOrder,
+        approverUserId,
+        actedByUserId,
+        action,
+        comment: comment ?? null,
+      }).returning({ id: hrWorkflowStepActions.id });
+
+      if (!inserted) throw new Error("Failed to record workflow action");
+
+      if (attachments && attachments.length > 0) {
+        await tx.insert(hrWorkflowInstanceAttachments).values(
+          attachments.map((a) => ({ orgId, actionId: inserted.id, url: a.url, name: a.name })),
+        );
+      }
     });
   }
 
@@ -460,13 +470,14 @@ export class HrWorkflowEngineService {
 
   async getInstanceTimeline(orgId: string, instanceId: number) {
     const instance = await this.getInstanceOrThrow(orgId, instanceId);
-    const actions = await this.db.select()
-      .from(hrWorkflowStepActions)
-      .where(and(
+    const actions = await this.db.query.hrWorkflowStepActions.findMany({
+      where: and(
         eq(hrWorkflowStepActions.orgId, orgId),
         eq(hrWorkflowStepActions.instanceId, instanceId),
-      ))
-      .orderBy(desc(hrWorkflowStepActions.actedAt));
+      ),
+      with: { attachments: { columns: { id: true, url: true, name: true } } },
+      orderBy: [desc(hrWorkflowStepActions.actedAt)],
+    });
 
     return { instance, actions };
   }

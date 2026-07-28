@@ -6,7 +6,7 @@ import { and, eq, sql } from "drizzle-orm";
 import {
   automationRules,
   automationRuns,
-  automationTriggerEnum,
+  AUTOMATION_TRIGGERS,
   organizationMembers,
   tasks,
   webhookEndpoints,
@@ -26,10 +26,10 @@ import { PlanLimitsService } from "../billing/plan-limits.service";
 import { evaluateConditions, type EventPayload } from "./automation.evaluator";
 import type { CreateAutomationRuleInput, UpdateAutomationRuleInput } from "./dto/automation.schemas";
 
-export type AutomationTrigger = (typeof automationTriggerEnum.enumValues)[number];
+export type AutomationTrigger = (typeof AUTOMATION_TRIGGERS)[number];
 
 function isValidTrigger(value: string): value is AutomationTrigger {
-  return (automationTriggerEnum.enumValues as readonly string[]).includes(value);
+  return (AUTOMATION_TRIGGERS as readonly string[]).includes(value);
 }
 
 interface RuleDefinition {

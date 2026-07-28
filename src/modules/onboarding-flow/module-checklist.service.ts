@@ -20,17 +20,13 @@ interface ChecklistItemSeed {
 
 // Default checklist items per module, per PRD 03 "Module Setup Checklist Examples".
 const CHECKLIST_SEEDS: Record<string, ChecklistItemSeed[]> = {
-  CRM: [
+  crm: [
     { itemKey: "import_contacts", title: "Import contacts/leads", actionHref: "/crm/contacts", required: false },
     { itemKey: "create_pipeline", title: "Create first pipeline", actionHref: "/crm/deals", required: true },
     { itemKey: "invite_sales_team", title: "Invite sales team", actionHref: "/users", required: false },
     { itemKey: "connect_email", title: "Connect email", actionHref: "/settings/integrations", required: false },
   ],
-  // HR setup checklist — PRD "HR-only guided setup tour". Item status is auto-derived from
-  // real HR data by HrChecklistReconciliationService (see getChecklist/listChecklists below),
-  // not by manual complete-click alone; itemKey values are load-bearing (matched by that
-  // service and by the frontend's step-detail copy) — do not rename without updating both.
-  HR: [
+  hr: [
     {
       itemKey: "org_profile",
       title: "Organization profile",
@@ -116,40 +112,33 @@ const CHECKLIST_SEEDS: Record<string, ChecklistItemSeed[]> = {
       required: true,
     },
   ],
-  INVENTORY: [
+  inventory: [
     { itemKey: "create_warehouse", title: "Create warehouse", actionHref: "/inventory/warehouses", required: true },
     { itemKey: "import_products", title: "Import products", actionHref: "/inventory/products", required: false },
     { itemKey: "set_opening_stock", title: "Set opening stock", actionHref: "/inventory/stock", required: false },
     { itemKey: "configure_reorder_rules", title: "Configure reorder rules", actionHref: "/inventory/products", required: false },
   ],
-  FINANCE: [
+  accounting: [
     { itemKey: "set_fiscal_year", title: "Set fiscal year", actionHref: "/accounting", required: true },
     { itemKey: "configure_taxes", title: "Configure taxes", actionHref: "/accounting", required: true },
     { itemKey: "add_payment_provider", title: "Add bank/payment provider", actionHref: "/settings/payments", required: false },
     { itemKey: "create_first_invoice", title: "Create first invoice", actionHref: "/billing/invoices/new", required: false },
   ],
-  PROJECTS: [
-    { itemKey: "create_first_project", title: "Create first project", actionHref: "/projects", required: true },
+  build: [
+    { itemKey: "create_first_project", title: "Create first project", actionHref: "/build", required: true },
     { itemKey: "invite_team", title: "Invite project team", actionHref: "/users", required: false },
   ],
-  HELPDESK: [
+  support: [
     { itemKey: "configure_sla", title: "Configure SLA policy", actionHref: "/support/routing", required: false },
     { itemKey: "create_first_ticket_view", title: "Create first ticket view", actionHref: "/support", required: false },
   ],
-  KNOWLEDGE: [
+  kb: [
     { itemKey: "create_team_space", title: "Create team space", actionHref: "/knowledge", required: true },
     { itemKey: "add_first_sop", title: "Add first SOP", actionHref: "/knowledge", required: false },
     { itemKey: "invite_collaborators", title: "Invite collaborators", actionHref: "/users", required: false },
   ],
-  CHAT: [
+  chat: [
     { itemKey: "create_first_channel", title: "Create first channel", actionHref: "/chat", required: false },
-  ],
-  PAYMENTS: [
-    { itemKey: "choose_provider", title: "Choose payment provider", actionHref: "/settings/payments", required: true },
-    { itemKey: "add_test_credentials", title: "Add test credentials", actionHref: "/settings/payments", required: true },
-    { itemKey: "verify_webhook", title: "Verify webhook", actionHref: "/settings/payments", required: true },
-    { itemKey: "run_test_payment", title: "Run test payment", actionHref: "/settings/payments", required: true },
-    { itemKey: "activate_live", title: "Activate live payments", actionHref: "/settings/payments", required: false },
   ],
 };
 
@@ -244,10 +233,10 @@ export class ModuleChecklistService {
       with: { items: true },
     });
     const visible = checklists.filter(
-      (c) => visibleModuleKeys.includes(c.moduleKey) && (c.moduleKey !== "HR" || includeHr),
+      (c) => visibleModuleKeys.includes(c.moduleKey) && (c.moduleKey !== "hr" || includeHr),
     );
     await Promise.all(visible.map((c) => this.syncItemMetadataFromSeed(c.moduleKey, c.items)));
-    return Promise.all(visible.map((c) => (c.moduleKey === "HR" ? this.reconcileAndReload(orgId, c) : this.reload(c))));
+    return Promise.all(visible.map((c) => (c.moduleKey === "hr" ? this.reconcileAndReload(orgId, c) : this.reload(c))));
   }
 
   async getChecklist(orgId: string, moduleKey: string, visibleModuleKeys: string[]) {
@@ -261,7 +250,7 @@ export class ModuleChecklistService {
     });
     if (!checklist) throw new NotFoundException(`Module setup checklist not found: ${moduleKey}`);
     await this.syncItemMetadataFromSeed(moduleKey, checklist.items);
-    if (moduleKey === "HR") return this.reconcileAndReload(orgId, checklist);
+    if (moduleKey === "hr") return this.reconcileAndReload(orgId, checklist);
     return this.reload(checklist);
   }
 

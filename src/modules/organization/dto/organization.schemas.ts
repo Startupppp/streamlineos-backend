@@ -82,7 +82,6 @@ export const updateOrgSettingsSchema = z.object({
     .optional(),
   companySize: z.string().min(1).nullable().optional(),
   country: z.string().min(1).nullable().optional(),
-  enabledModules: z.array(z.string().min(1)).optional(),
 });
 
 export const securitySettingsSchema = z.object({

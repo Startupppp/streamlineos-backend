@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, isNull, sql } from "drizzle-orm";
-import { orgDepartments } from "../../db/schema";
+import { orgUnits } from "../../db/schema";
 import { nextDepartmentCode, toDepartmentCode } from "../org-hierarchy/lib/department-code";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -20,16 +20,17 @@ export class EmployeeBulkOnboardingService {
   async onboardEmployeesBulk(actor: CurrentUserContext, rows: BulkOnboardEmployeeRow[]) {
     const orgDeptRows = await this.db
       .select({
-        id: orgDepartments.id,
-        name: orgDepartments.name,
-        code: orgDepartments.code,
+        id: orgUnits.id,
+        name: orgUnits.name,
+        code: orgUnits.code,
       })
-      .from(orgDepartments)
+      .from(orgUnits)
       .where(
         and(
-          eq(orgDepartments.orgId, actor.orgId),
-          isNull(orgDepartments.deletedAt),
-          sql`${orgDepartments.status} <> 'ARCHIVED'`,
+          eq(orgUnits.orgId, actor.orgId),
+          eq(orgUnits.kind, "DEPARTMENT"),
+          isNull(orgUnits.deletedAt),
+          sql`${orgUnits.status} <> 'ARCHIVED'`,
         ),
       );
 
@@ -38,7 +39,7 @@ export class EmployeeBulkOnboardingService {
     for (const d of orgDeptRows) {
       orgDeptByKey.set(d.name.trim().toLowerCase(), d.id);
       if (d.code?.trim()) orgDeptByKey.set(d.code.trim().toLowerCase(), d.id);
-      usedCodes.add(d.code);
+      if (d.code?.trim()) usedCodes.add(d.code);
     }
 
     const resolveDepartmentId = async (raw: string): Promise<string | undefined> => {
@@ -58,21 +59,22 @@ export class EmployeeBulkOnboardingService {
       }
 
       const inserted = await this.db
-        .insert(orgDepartments)
-        .values({ orgId: actor.orgId, name, code, status: "ACTIVE" })
-        .onConflictDoNothing({ target: [orgDepartments.orgId, orgDepartments.code] })
-        .returning({ id: orgDepartments.id, name: orgDepartments.name });
+        .insert(orgUnits)
+        .values({ orgId: actor.orgId, kind: "DEPARTMENT", name, code, status: "ACTIVE" })
+        .onConflictDoNothing({ target: [orgUnits.orgId, orgUnits.kind, orgUnits.code] })
+        .returning({ id: orgUnits.id, name: orgUnits.name });
 
       let row = inserted[0];
       if (!row) {
         const [found] = await this.db
-          .select({ id: orgDepartments.id, name: orgDepartments.name })
-          .from(orgDepartments)
+          .select({ id: orgUnits.id, name: orgUnits.name })
+          .from(orgUnits)
           .where(
             and(
-              eq(orgDepartments.orgId, actor.orgId),
-              isNull(orgDepartments.deletedAt),
-              sql`lower(${orgDepartments.name}) = ${key}`,
+              eq(orgUnits.orgId, actor.orgId),
+              eq(orgUnits.kind, "DEPARTMENT"),
+              isNull(orgUnits.deletedAt),
+              sql`lower(${orgUnits.name}) = ${key}`,
             ),
           )
           .limit(1);

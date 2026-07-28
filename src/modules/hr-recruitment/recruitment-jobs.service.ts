@@ -201,7 +201,6 @@ export class RecruitmentJobsService {
       .values({
         orgId,
         title,
-        departmentId: source.departmentId,
         orgDepartmentId: source.orgDepartmentId,
         hiringFlowId: source.hiringFlowId,
         location: source.location,
@@ -341,14 +340,12 @@ export class RecruitmentJobsService {
     return this.db.query.jobPostings.findMany({
       where: and(eq(jobPostings.orgId, orgId), eq(jobPostings.isInternal, true), eq(jobPostings.status, "OPEN")),
       with: {
-        department: { columns: { id: true, name: true } },
         orgDepartment: { columns: { id: true, name: true } },
         postedByUser: { columns: { id: true, name: true } },
       },
       columns: {
         id: true,
         title: true,
-        departmentId: true,
         orgDepartmentId: true,
         location: true,
         type: true,

@@ -8,19 +8,13 @@ import {
   integer,
   index,
   uniqueIndex,
-  pgEnum,
   unique,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 
-export const hrAutomationRunStatusEnum = pgEnum("hr_automation_run_status", [
-  "success",
-  "partial",
-  "failed",
-  "skipped",
-]);
+export const HR_AUTOMATION_RUN_STATUSES = ["success", "partial", "failed", "skipped"] as const;
 
 export const hrAutomationRules = pgTable(
   "hr_automation_rules",
@@ -61,7 +55,7 @@ export const hrAutomationRuns = pgTable(
     ruleId: integer("rule_id").references(() => hrAutomationRules.id, { onDelete: "cascade" }).notNull(),
     triggerEvent: text("trigger_event").notNull(),
     eventPayload: jsonb("event_payload").$type<Record<string, unknown>>(),
-    status: hrAutomationRunStatusEnum("status").notNull(),
+    status: text("status").notNull(),
     actionResults: jsonb("action_results").$type<HrActionResult[]>(),
     error: text("error"),
     durationMs: integer("duration_ms"),
