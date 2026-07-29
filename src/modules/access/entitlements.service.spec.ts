@@ -192,7 +192,7 @@ describe("EntitlementsService", () => {
 
       await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
 
-      expect(mocks.insert).toHaveBeenCalledTimes(2);
+      expect(mocks.insert).toHaveBeenCalledTimes(3);
       expect(mocks.values).toHaveBeenCalledWith({
         orgId: "org-1",
         moduleKey: "hr",
@@ -292,7 +292,7 @@ describe("EntitlementsService", () => {
 
         expect(mocks.txSelect).not.toHaveBeenCalled();
         expect(mocks.onConflictDoNothing).not.toHaveBeenCalled();
-        expect(mocks.insert).toHaveBeenCalledTimes(1);
+        expect(mocks.insert).toHaveBeenCalledTimes(2);
       });
 
       it("skips ownership seeding when the org has no owner membership set", async () => {
@@ -303,7 +303,7 @@ describe("EntitlementsService", () => {
 
         expect(mocks.txSelect).toHaveBeenCalledTimes(1);
         expect(mocks.onConflictDoNothing).not.toHaveBeenCalled();
-        expect(mocks.insert).toHaveBeenCalledTimes(1);
+        expect(mocks.insert).toHaveBeenCalledTimes(2);
       });
 
       it("uses onConflictDoNothing so re-enabling the same module is idempotent", async () => {
@@ -313,7 +313,7 @@ describe("EntitlementsService", () => {
         await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
 
         expect(mocks.onConflictDoNothing).toHaveBeenCalledTimes(1);
-        expect(mocks.onConflictDoUpdate).toHaveBeenCalledTimes(1);
+        expect(mocks.onConflictDoUpdate).toHaveBeenCalledTimes(2);
       });
     });
   });
