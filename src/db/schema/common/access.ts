@@ -207,66 +207,6 @@ export const groupRoleAssignmentsRelations = relations(groupRoleAssignments, ({ 
   }),
 }));
 
-export const pmProjectGrants = pgTable(
-  "pm_project_grants",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    projectId: integer("project_id").notNull(),
-    principalType: text("principal_type").notNull().default("user"),
-    principalId: text("principal_id").notNull(),
-    permissionKey: text("permission_key").notNull(),
-    grantedBy: text("granted_by").references(() => users.id, { onDelete: "set null" }),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-  },
-  (table) => [
-    uniqueIndex("uniq_pm_project_grants").on(table.orgId, table.projectId, table.principalType, table.principalId, table.permissionKey),
-    index("idx_pm_project_grants_org_project").on(table.orgId, table.projectId),
-    index("idx_pm_project_grants_principal").on(table.orgId, table.principalType, table.principalId),
-  ],
-);
-
-export const pmWorkspaceGrants = pgTable(
-  "pm_workspace_grants",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    pmWorkspaceId: text("pm_workspace_id").notNull(),
-    principalType: text("principal_type").notNull().default("user"),
-    principalId: text("principal_id").notNull(),
-    permissionKey: text("permission_key").notNull(),
-    grantedBy: text("granted_by").references(() => users.id, { onDelete: "set null" }),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-  },
-  (table) => [
-    uniqueIndex("uniq_pm_workspace_grants").on(table.orgId, table.pmWorkspaceId, table.principalType, table.principalId, table.permissionKey),
-    index("idx_pm_workspace_grants_org_workspace").on(table.orgId, table.pmWorkspaceId),
-    index("idx_pm_workspace_grants_principal").on(table.orgId, table.principalType, table.principalId),
-  ],
-);
-
-export const pmProjectGrantsRelations = relations(pmProjectGrants, ({ one }) => ({
-  organization: one(organizations, {
-    fields: [pmProjectGrants.orgId],
-    references: [organizations.id],
-  }),
-  grantedByUser: one(users, {
-    fields: [pmProjectGrants.grantedBy],
-    references: [users.id],
-  }),
-}));
-
-export const pmWorkspaceGrantsRelations = relations(pmWorkspaceGrants, ({ one }) => ({
-  organization: one(organizations, {
-    fields: [pmWorkspaceGrants.orgId],
-    references: [organizations.id],
-  }),
-  grantedByUser: one(users, {
-    fields: [pmWorkspaceGrants.grantedBy],
-    references: [users.id],
-  }),
-}));
-
 export const kbSpaceGrants = pgTable(
   "kb_space_grants",
   {

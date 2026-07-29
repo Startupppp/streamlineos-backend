@@ -11,7 +11,6 @@ import {
   uniqueIndex,
   date,
   unique,
-  foreignKey,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
@@ -135,65 +134,6 @@ export const hrEmployments = pgTable("hr_employments", {
   index("idx_hr_employments_dept").on(table.departmentId),
 ]);
 
-export const hrEmployeeProfiles = pgTable("hr_employee_profiles", {
-  id: serial("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  employmentId: integer("employment_id").references(() => hrEmployments.id, { onDelete: "cascade" }).notNull(),
-  bio: text("bio"),
-  linkedinUrl: text("linkedin_url"),
-  twitterUrl: text("twitter_url"),
-  githubUrl: text("github_url"),
-  websiteUrl: text("website_url"),
-  languages: text("languages").array().default([]),
-  metadata: jsonb("metadata").$type<Record<string, unknown>>(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
-}, (table) => [
-  unique("uniq_hr_employee_profiles_org_id").on(table.orgId, table.id),
-  uniqueIndex("uniq_hr_emp_profiles_employment").on(table.employmentId),
-  index("idx_hr_emp_profiles_org").on(table.orgId),
-]);
-
-export const hrEmployeeEducation = pgTable("hr_employee_education", {
-  id: serial("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  employeeProfileId: integer("employee_profile_id").notNull(),
-  institution: text("institution").notNull(),
-  degree: text("degree"),
-  field: text("field"),
-  startYear: integer("start_year"),
-  endYear: integer("end_year"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_hr_employee_education_org").on(table.orgId),
-  index("idx_hr_employee_education_profile").on(table.employeeProfileId),
-  foreignKey({
-    columns: [table.orgId, table.employeeProfileId],
-    foreignColumns: [hrEmployeeProfiles.orgId, hrEmployeeProfiles.id],
-  }).onDelete("cascade"),
-  unique("uniq_hr_employee_education_org_id").on(table.orgId, table.id),
-]);
-
-export const hrEmployeeCertifications = pgTable("hr_employee_certifications", {
-  id: serial("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  employeeProfileId: integer("employee_profile_id").notNull(),
-  name: text("name").notNull(),
-  issuer: text("issuer"),
-  issuedAt: date("issued_at"),
-  expiresAt: date("expires_at"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_hr_employee_certifications_org").on(table.orgId),
-  index("idx_hr_employee_certifications_profile").on(table.employeeProfileId),
-  index("idx_hr_employee_certifications_expires_at").on(table.expiresAt),
-  foreignKey({
-    columns: [table.orgId, table.employeeProfileId],
-    foreignColumns: [hrEmployeeProfiles.orgId, hrEmployeeProfiles.id],
-  }).onDelete("cascade"),
-  unique("uniq_hr_employee_certifications_org_id").on(table.orgId, table.id),
-]);
-
 export const hrEmployeeSensitiveFields = pgTable("hr_employee_sensitive_fields", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
@@ -304,7 +244,6 @@ export const hrEmploymentsRelations = relations(hrEmployments, ({ one, many }) =
   person: one(hrPeople, { fields: [hrEmployments.personId], references: [hrPeople.id] }),
   department: one(orgUnits, { fields: [hrEmployments.departmentId], references: [orgUnits.id] }),
   location: one(orgUnits, { fields: [hrEmployments.locationId], references: [orgUnits.id] }),
-  profile: one(hrEmployeeProfiles, { fields: [hrEmployments.id], references: [hrEmployeeProfiles.employmentId] }),
   sensitiveFields: one(hrEmployeeSensitiveFields, { fields: [hrEmployments.id], references: [hrEmployeeSensitiveFields.employmentId] }),
   history: many(hrEmploymentHistory),
   effectiveDatedChanges: many(hrEffectiveDatedChanges),
@@ -312,25 +251,3 @@ export const hrEmploymentsRelations = relations(hrEmployments, ({ one, many }) =
   managedLines: many(hrReportingLines, { relationName: "manager_lines" }),
 }));
 
-export const hrEmployeeProfilesRelations = relations(hrEmployeeProfiles, ({ one, many }) => ({
-  employment: one(hrEmployments, {
-    fields: [hrEmployeeProfiles.employmentId],
-    references: [hrEmployments.id],
-  }),
-  education: many(hrEmployeeEducation),
-  certifications: many(hrEmployeeCertifications),
-}));
-
-export const hrEmployeeEducationRelations = relations(hrEmployeeEducation, ({ one }) => ({
-  profile: one(hrEmployeeProfiles, {
-    fields: [hrEmployeeEducation.orgId, hrEmployeeEducation.employeeProfileId],
-    references: [hrEmployeeProfiles.orgId, hrEmployeeProfiles.id],
-  }),
-}));
-
-export const hrEmployeeCertificationsRelations = relations(hrEmployeeCertifications, ({ one }) => ({
-  profile: one(hrEmployeeProfiles, {
-    fields: [hrEmployeeCertifications.orgId, hrEmployeeCertifications.employeeProfileId],
-    references: [hrEmployeeProfiles.orgId, hrEmployeeProfiles.id],
-  }),
-}));

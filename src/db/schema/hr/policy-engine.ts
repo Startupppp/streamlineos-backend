@@ -118,39 +118,8 @@ export const hrPolicyScopes = pgTable(
   ],
 );
 
-export const hrPolicyAssignments = pgTable(
-  "hr_policy_assignments",
-  {
-    id: serial("id").primaryKey(),
-    orgId: text("org_id")
-      .references(() => organizations.id, { onDelete: "cascade" })
-      .notNull(),
-    policyId: integer("policy_id")
-      .references(() => hrPolicies.id, { onDelete: "cascade" })
-      .notNull(),
-    employeeId: text("employee_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
-    effectiveFrom: date("effective_from").notNull(),
-    effectiveTo: date("effective_to"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-  },
-  (table) => [
-    unique("uniq_hr_policy_assignments_org_id").on(table.orgId, table.id),
-    index("idx_hr_policy_assignments_org_policy").on(
-      table.orgId,
-      table.policyId,
-    ),
-    index("idx_hr_policy_assignments_org_employee").on(
-      table.orgId,
-      table.employeeId,
-    ),
-  ],
-);
-
 export const hrPoliciesRelations = relations(hrPolicies, ({ many }) => ({
   scopes: many(hrPolicyScopes),
-  assignments: many(hrPolicyAssignments),
 }));
 
 export const hrPolicyScopesRelations = relations(hrPolicyScopes, ({ one }) => ({
@@ -160,12 +129,3 @@ export const hrPolicyScopesRelations = relations(hrPolicyScopes, ({ one }) => ({
   }),
 }));
 
-export const hrPolicyAssignmentsRelations = relations(
-  hrPolicyAssignments,
-  ({ one }) => ({
-    policy: one(hrPolicies, {
-      fields: [hrPolicyAssignments.policyId],
-      references: [hrPolicies.id],
-    }),
-  }),
-);

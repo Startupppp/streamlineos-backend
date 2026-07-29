@@ -29,7 +29,6 @@ export * from "./leave-policies";
 export * from "./announcements";
 export * from "./salary-structure-templates";
 export * from "./tax";
-export * from "./bank-transfers";
 export * from "./payroll-policies";
 export * from "./payroll-runs";
 export * from "./payroll-payout";
