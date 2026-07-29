@@ -6,8 +6,6 @@ export const ACCESS_MANAGED_MODULES = [
   "build",
   "accounting",
   "inventory",
-  "kb",
-  "chat",
   "support",
   "surveys",
   "payroll",

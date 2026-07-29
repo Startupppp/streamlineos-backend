@@ -14,6 +14,7 @@ import type { CacheService } from "../../common/cache/cache.service";
 import type { EntitlementsService } from "./entitlements.service";
 import { bumpPermissionsVersion, type DbOrTx } from "../../common/rbac/access-invalidate";
 import { ALL_PERMISSION_NAMES } from "../rbac/permissions";
+import { logger } from "../../common/logger/logger.service";
 
 describe("broadest", () => {
   it("ranks none < own < team < all", () => {
@@ -609,11 +610,7 @@ describe("AccessService.resolveUserPermissions — unknown permission keys are o
       isModuleEnabled: jest.fn().mockResolvedValue(true),
       getModuleMap: jest.fn().mockResolvedValue({}),
     };
-    const logWarnSpy = jest.spyOn(
-      require("../../common/logger/logger.service").logger,
-      "warn",
-    );
-    logWarnSpy.mockImplementation(() => undefined);
+    const logWarnSpy = jest.spyOn(logger, "warn").mockImplementation(() => undefined);
 
     const db1 = makeDb();
     const svc = new AccessService(
