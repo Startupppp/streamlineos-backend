@@ -6,7 +6,7 @@ import {
   OnModuleInit,
 } from "@nestjs/common";
 import { and, eq, isNull } from "drizzle-orm";
-import { orgModules, pmWorkspaces, modulesCatalog } from "../../db/schema";
+import { moduleOwnerships, modulesCatalog, orgModules, organizations, pmWorkspaces } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -15,8 +15,12 @@ import { PlanLimitsService } from "../billing/plan-limits.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
 import { MODULE_CATALOG } from "../../common/rbac/module-vocabulary";
+import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { ACCESS_MANAGED_MODULES } from "../rbac/permissions";
 
 export { MODULE_CATALOG };
+
+const OWNERSHIP_MANAGED_MODULES = new Set<string>(ACCESS_MANAGED_MODULES);
 
 export interface ModuleStatus {
   moduleKey: string;
@@ -181,6 +185,24 @@ export class EntitlementsService implements OnModuleInit {
             .onConflictDoNothing();
         }
       }
+
+      if (enabled && OWNERSHIP_MANAGED_MODULES.has(moduleKey)) {
+        const [orgRow] = await tx
+          .select({ ownerMembershipId: organizations.ownerMembershipId })
+          .from(organizations)
+          .where(eq(organizations.id, orgId))
+          .limit(1);
+
+        const ownerMembershipId = orgRow?.ownerMembershipId;
+        if (ownerMembershipId !== null && ownerMembershipId !== undefined) {
+          await tx
+            .insert(moduleOwnerships)
+            .values({ orgId, moduleKey, ownerMembershipId })
+            .onConflictDoNothing();
+        }
+      }
+
+      await bumpPermissionsVersion(tx, orgId);
     });
 
     this.moduleMapCache.delete(orgId);

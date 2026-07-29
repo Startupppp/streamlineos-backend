@@ -8,16 +8,24 @@ type DeepPartial<T> = {
   [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K];
 };
 
-function buildMockDb() {
+function buildMockDb(ownerMembershipId: number | null = 42) {
   const onConflictDoUpdate = jest.fn().mockResolvedValue(undefined);
-  const values = jest.fn().mockReturnValue({ onConflictDoUpdate });
+  const onConflictDoNothing = jest.fn().mockResolvedValue(undefined);
+  const values = jest.fn().mockReturnValue({ onConflictDoUpdate, onConflictDoNothing });
   const insert = jest.fn().mockReturnValue({ values });
   const execute = jest.fn().mockResolvedValue({ rows: [] });
   const findFirst = jest.fn();
   const findMany = jest.fn().mockResolvedValue([]);
   const orgFindFirst = jest.fn();
 
-  const txDb = { insert, execute };
+  const limit = jest.fn().mockResolvedValue(
+    ownerMembershipId !== null ? [{ ownerMembershipId }] : [],
+  );
+  const txWhere = jest.fn().mockReturnValue({ limit });
+  const txFrom = jest.fn().mockReturnValue({ where: txWhere });
+  const txSelect = jest.fn().mockReturnValue({ from: txFrom });
+
+  const txDb = { insert, execute, select: txSelect };
   const transaction = jest.fn().mockImplementation(
     async (fn: (tx: typeof txDb) => Promise<unknown>) => fn(txDb),
   );
@@ -34,7 +42,21 @@ function buildMockDb() {
 
   return {
     db: db as unknown as Db,
-    mocks: { findFirst, findMany, orgFindFirst, insert, values, onConflictDoUpdate, execute, transaction },
+    mocks: {
+      findFirst,
+      findMany,
+      orgFindFirst,
+      insert,
+      values,
+      onConflictDoUpdate,
+      onConflictDoNothing,
+      execute,
+      transaction,
+      txSelect,
+      txFrom,
+      txWhere,
+      limit,
+    },
   };
 }
 
@@ -170,7 +192,7 @@ describe("EntitlementsService", () => {
 
       await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
 
-      expect(mocks.insert).toHaveBeenCalledTimes(1);
+      expect(mocks.insert).toHaveBeenCalledTimes(2);
       expect(mocks.values).toHaveBeenCalledWith({
         orgId: "org-1",
         moduleKey: "hr",
@@ -245,6 +267,54 @@ describe("EntitlementsService", () => {
       expect(cacheMocks.invalidate).toHaveBeenCalledWith("entitlements:modules:org-1");
       expect(cacheMocks.invalidate).toHaveBeenCalledWith("user:session:user-1");
       expect(cacheMocks.invalidate).toHaveBeenCalledTimes(3);
+    });
+
+    describe("ownership seeding", () => {
+      it("seeds an ownership row pointing at the org owner when enabling an access-managed module", async () => {
+        const { db, mocks } = buildMockDb(42);
+        const { cache } = buildMockCache();
+
+        await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
+
+        expect(mocks.values).toHaveBeenCalledWith({
+          orgId: "org-1",
+          moduleKey: "hr",
+          ownerMembershipId: 42,
+        });
+        expect(mocks.onConflictDoNothing).toHaveBeenCalledTimes(1);
+      });
+
+      it("does not seed ownership when disabling a module", async () => {
+        const { db, mocks } = buildMockDb(42);
+        const { cache } = buildMockCache();
+
+        await buildService(db, cache).setModuleEnabled("org-1", "hr", false, "user-1");
+
+        expect(mocks.txSelect).not.toHaveBeenCalled();
+        expect(mocks.onConflictDoNothing).not.toHaveBeenCalled();
+        expect(mocks.insert).toHaveBeenCalledTimes(1);
+      });
+
+      it("skips ownership seeding when the org has no owner membership set", async () => {
+        const { db, mocks } = buildMockDb(null);
+        const { cache } = buildMockCache();
+
+        await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
+
+        expect(mocks.txSelect).toHaveBeenCalledTimes(1);
+        expect(mocks.onConflictDoNothing).not.toHaveBeenCalled();
+        expect(mocks.insert).toHaveBeenCalledTimes(1);
+      });
+
+      it("uses onConflictDoNothing so re-enabling the same module is idempotent", async () => {
+        const { db, mocks } = buildMockDb(42);
+        const { cache } = buildMockCache();
+
+        await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
+
+        expect(mocks.onConflictDoNothing).toHaveBeenCalledTimes(1);
+        expect(mocks.onConflictDoUpdate).toHaveBeenCalledTimes(1);
+      });
     });
   });
 

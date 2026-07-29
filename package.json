@@ -19,6 +19,7 @@
     "db:studio": "drizzle-kit studio --config drizzle.config.ts",
     "setup:r2": "node --env-file=.env -r ts-node/register src/scripts/setup-r2-buckets.ts",
     "backfill:rbac": "node --env-file=.env -r ts-node/register src/scripts/backfill-rbac-access.ts",
+    "backfill:module-ownership": "node --env-file=.env -r ts-node/register src/scripts/backfill-module-ownership.ts",
     "backfill:crm-metadata": "node --env-file=.env -r ts-node/register src/scripts/backfill-crm-metadata.ts",
     "backfill:org-departments": "node --env-file=.env -r ts-node/register src/scripts/backfill-org-departments.ts",
     "backfill:person-employment": "node --env-file=.env -r ts-node/register src/scripts/backfill-person-employment.ts",

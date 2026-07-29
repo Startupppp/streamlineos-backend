@@ -4,6 +4,7 @@ import {
   roles,
   users,
   orgModules,
+  moduleOwnerships,
   subscriptions,
   organizations,
   magicLinkTokens,
@@ -18,7 +19,7 @@ import { OnboardingSessionService } from "../onboarding-flow/onboarding-session.
 import { EmailService } from "../email/email.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
-import { PERMISSIONS } from "../rbac/permissions";
+import { ACCESS_MANAGED_MODULES, PERMISSIONS } from "../rbac/permissions";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { randomUUID, randomBytes, createHash } from "node:crypto";
@@ -31,6 +32,7 @@ import {
 } from "../billing/plan-entitlements.constants";
 
 const DEFAULT_SKIP_MODULES = ["hr", "crm", "build"];
+const OWNERSHIP_MANAGED_MODULES = new Set<string>(ACCESS_MANAGED_MODULES);
 
 @Injectable()
 export class OrgSetupService {
@@ -195,6 +197,29 @@ export class OrgSetupService {
         target: [orgModules.orgId, orgModules.moduleKey],
         set: { enabled: true, enabledBy },
       });
+
+    const eligibleKeys = moduleKeys.filter((key) => OWNERSHIP_MANAGED_MODULES.has(key));
+    if (eligibleKeys.length === 0) return;
+
+    const [orgRow] = await tx
+      .select({ ownerMembershipId: organizations.ownerMembershipId })
+      .from(organizations)
+      .where(eq(organizations.id, orgId))
+      .limit(1);
+
+    const ownerMembershipId = orgRow?.ownerMembershipId;
+    if (ownerMembershipId === null || ownerMembershipId === undefined) return;
+
+    await tx
+      .insert(moduleOwnerships)
+      .values(
+        eligibleKeys.map((moduleKey) => ({
+          orgId,
+          moduleKey,
+          ownerMembershipId,
+        })),
+      )
+      .onConflictDoNothing();
   }
 
   async completeSetup(u: CurrentUserContext, input: SetupInput) {
