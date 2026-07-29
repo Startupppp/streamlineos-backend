@@ -429,7 +429,7 @@ export class WorkflowsService {
         eq(workflowVariables.workflowVersionId, workflowVersions.id),
       )
       .innerJoin(workflows, eq(workflowVersions.workflowId, workflows.id))
-      .where(eq(workflows.orgId, orgId))
+      .where(eq(workflowVariables.orgId, orgId))
       .orderBy(desc(workflowVariables.createdAt));
   }
 
@@ -437,21 +437,21 @@ export class WorkflowsService {
     const existing = await this.db
       .select({ id: workflowVariables.id })
       .from(workflowVariables)
-      .innerJoin(
-        workflowVersions,
-        eq(workflowVariables.workflowVersionId, workflowVersions.id),
-      )
-      .innerJoin(workflows, eq(workflowVersions.workflowId, workflows.id))
       .where(
         and(
           eq(workflowVariables.id, variableId),
-          eq(workflows.orgId, orgId),
+          eq(workflowVariables.orgId, orgId),
         ),
       )
       .limit(1);
     if (!existing.length) throw new NotFoundException("Variable not found");
     await this.db
       .delete(workflowVariables)
-      .where(eq(workflowVariables.id, variableId));
+      .where(
+        and(
+          eq(workflowVariables.id, variableId),
+          eq(workflowVariables.orgId, orgId),
+        ),
+      );
   }
 }

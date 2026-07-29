@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   NotFoundException,
 } from "@nestjs/common";
@@ -7,8 +8,13 @@ import { Test } from "@nestjs/testing";
 import { ModuleAccessService } from "./module-access.service";
 import { AccessService } from "../access/access.service";
 import { CacheService } from "../../common/cache/cache.service";
+import { AuditService } from "../../common/audit/audit.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+
+jest.mock("../../common/rbac/access-invalidate", () => ({
+  bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
+}));
 
 function actor(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {
   return {
@@ -49,6 +55,7 @@ describe("ModuleAccessService", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AccessService, useValue: { resolveUserPermissions } },
         { provide: CacheService, useValue: { invalidate: jest.fn() } },
+        { provide: AuditService, useValue: { log: jest.fn() } },
       ],
     }).compile();
     svc = moduleRef.get(ModuleAccessService);
@@ -109,6 +116,7 @@ describe("ModuleAccessService", () => {
     it("rejects a permission key outside the module namespace", async () => {
       await expect(
         svc.setRolePermissions(actor({ isOrgOwner: true }), "hr", 5, {
+          version: 1,
           items: [{ permissionKey: "crm:leads:view", scope: "all" }],
         }),
       ).rejects.toBeInstanceOf(BadRequestException);
@@ -116,10 +124,11 @@ describe("ModuleAccessService", () => {
 
     it("refuses to edit a system role", async () => {
       (mockDb.query as { roles: { findFirst: jest.Mock } }).roles.findFirst.mockResolvedValue(
-        { id: 5, slug: "HR_ADMIN", isSystem: true },
+        { id: 5, slug: "HR_ADMIN", isSystem: true, version: 1 },
       );
       await expect(
         svc.setRolePermissions(actor({ isOrgOwner: true }), "hr", 5, {
+          version: 1,
           items: [{ permissionKey: "hr:employees:view", scope: "all" }],
         }),
       ).rejects.toBeInstanceOf(ForbiddenException);
@@ -131,9 +140,73 @@ describe("ModuleAccessService", () => {
       );
       await expect(
         svc.setRolePermissions(actor({ isOrgOwner: true }), "hr", 999, {
+          version: 1,
           items: [{ permissionKey: "hr:employees:view", scope: "all" }],
         }),
       ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it("throws ConflictException when the CAS version is stale", async () => {
+      (mockDb.query as { roles: { findFirst: jest.Mock } }).roles.findFirst.mockResolvedValue(
+        { id: 5, slug: "CUSTOM_ROLE", isSystem: false, version: 2, rank: 40, moduleKey: "hr", orgId: "org-1" },
+      );
+      const txMock = {
+        update: jest.fn().mockReturnValue({
+          set: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({
+              returning: jest.fn().mockResolvedValue([]),
+            }),
+          }),
+        }),
+        delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
+        select: jest.fn().mockReturnValue({
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+          }),
+        }),
+        insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue([]) }),
+      };
+      (mockDb as { transaction: jest.Mock }).transaction.mockImplementation(
+        (fn: (tx: unknown) => Promise<unknown>) => fn(txMock),
+      );
+      await expect(
+        svc.setRolePermissions(actor({ isOrgOwner: true }), "hr", 5, {
+          version: 1,
+          items: [{ permissionKey: "hr:employees:view", scope: "all" }],
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it("returns { success: true, version: N+1 } when the CAS version matches", async () => {
+      (mockDb.query as { roles: { findFirst: jest.Mock } }).roles.findFirst.mockResolvedValue(
+        { id: 5, slug: "CUSTOM_ROLE", isSystem: false, version: 1, rank: 40, moduleKey: "hr", orgId: "org-1" },
+      );
+      const txMock = {
+        update: jest.fn().mockReturnValue({
+          set: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({
+              returning: jest.fn().mockResolvedValue([{ id: 5 }]),
+            }),
+          }),
+        }),
+        delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
+        select: jest.fn().mockReturnValue({
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+          }),
+        }),
+        insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue([]) }),
+      };
+      (mockDb as { transaction: jest.Mock }).transaction.mockImplementation(
+        (fn: (tx: unknown) => Promise<unknown>) => fn(txMock),
+      );
+      (mockDb as { invalidate?: jest.Mock }).invalidate = jest.fn().mockResolvedValue(undefined);
+
+      const result = await svc.setRolePermissions(actor({ isOrgOwner: true }), "hr", 5, {
+        version: 1,
+        items: [{ permissionKey: "hr:employees:view", scope: "all" }],
+      });
+      expect(result).toEqual({ success: true, version: 2 });
     });
   });
 });

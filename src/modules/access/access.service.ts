@@ -1,8 +1,9 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import { and, eq, gt, inArray, isNull, or } from "drizzle-orm";
 import {
   accessVersions,
   groupRoleAssignments,
+  moduleOwnerships,
   organizationMembers,
   principalGroupMembers,
   roleAssignments,
@@ -18,11 +19,14 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { PERMISSIONS, ROLE_DEFAULT_PERMISSIONS } from "../rbac/permissions";
+import { ALL_PERMISSION_NAMES, PERMISSIONS, ROLE_DEFAULT_PERMISSIONS, moduleScopedPermissions } from "../rbac/permissions";
+import { subscribeVersionBump } from "../../common/rbac/access-invalidate";
 import type { AccessSnapshot, DataScope } from "./access.types";
 import { EntitlementsService, MODULE_CATALOG } from "./entitlements.service";
 
 const MANAGEABLE_MODULE_SET: ReadonlySet<string> = new Set(MODULE_CATALOG);
+
+const CATALOG_KEY_SET: ReadonlySet<string> = new Set(ALL_PERMISSION_NAMES);
 
 export const SCOPE_RANK: Record<DataScope, number> = { none: 0, own: 1, team: 2, all: 3 };
 
@@ -101,7 +105,7 @@ function allCatalogScopes(): Record<string, DataScope> {
 }
 
 @Injectable()
-export class AccessService {
+export class AccessService implements OnModuleInit, OnModuleDestroy {
   private missingAccessTablesLogged = false;
   private readonly versionCache = new Map<string, VersionEntry>();
   private readonly permsCache = new Map<string, PermsEntry>();
@@ -110,12 +114,25 @@ export class AccessService {
     { modules: Set<string>; expiresAt: number }
   >();
   private static readonly DENIED_MODULES_TTL_MS = 15_000;
+  private unsubscribeVersionBump: (() => void) | null = null;
+  private readonly warnedUnknownKeys = new Set<string>();
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly entitlements: EntitlementsService,
   ) {}
+
+  onModuleInit(): void {
+    this.unsubscribeVersionBump = subscribeVersionBump((orgId) => {
+      this.versionCache.delete(orgId);
+    });
+  }
+
+  onModuleDestroy(): void {
+    this.unsubscribeVersionBump?.();
+    this.unsubscribeVersionBump = null;
+  }
 
   private noteMissingAccessTables(error: unknown): void {
     if (this.missingAccessTablesLogged) return;
@@ -320,39 +337,54 @@ export class AccessService {
     const membershipId = member?.id ?? 0;
     const now = new Date();
 
-    const assignmentRows = await this.safeAccessTableRead(
-      () =>
-        this.db
-          .select({ roleId: roleAssignments.roleId })
-          .from(roleAssignments)
-          .where(
-            and(
-              eq(roleAssignments.orgId, orgId),
-              eq(roleAssignments.organizationMembershipId, membershipId),
-              or(
-                isNull(roleAssignments.expiresAt),
-                gt(roleAssignments.expiresAt, now),
+    const [assignmentRows, groupMemberRows, ownershipRows] = await Promise.all([
+      this.safeAccessTableRead(
+        () =>
+          this.db
+            .select({ roleId: roleAssignments.roleId })
+            .from(roleAssignments)
+            .where(
+              and(
+                eq(roleAssignments.orgId, orgId),
+                eq(roleAssignments.organizationMembershipId, membershipId),
+                or(
+                  isNull(roleAssignments.expiresAt),
+                  gt(roleAssignments.expiresAt, now),
+                ),
               ),
             ),
-          ),
-      [] as { roleId: number }[],
-    );
+        [] as { roleId: number }[],
+      ),
+      this.safeAccessTableRead(
+        () =>
+          this.db
+            .select({ principalGroupId: principalGroupMembers.principalGroupId })
+            .from(principalGroupMembers)
+            .where(
+              and(
+                eq(principalGroupMembers.orgId, orgId),
+                eq(principalGroupMembers.organizationMembershipId, membershipId),
+              ),
+            ),
+        [] as { principalGroupId: string }[],
+      ),
+      this.safeAccessTableRead(
+        () =>
+          this.db
+            .select({ moduleKey: moduleOwnerships.moduleKey })
+            .from(moduleOwnerships)
+            .where(
+              and(
+                eq(moduleOwnerships.orgId, orgId),
+                eq(moduleOwnerships.ownerMembershipId, membershipId),
+              ),
+            ),
+        [] as { moduleKey: string }[],
+      ),
+    ]);
 
     const roleIds = new Set<number>(assignmentRows.map((row) => row.roleId));
 
-    const groupMemberRows = await this.safeAccessTableRead(
-      () =>
-        this.db
-          .select({ principalGroupId: principalGroupMembers.principalGroupId })
-          .from(principalGroupMembers)
-          .where(
-            and(
-              eq(principalGroupMembers.orgId, orgId),
-              eq(principalGroupMembers.organizationMembershipId, membershipId),
-            ),
-          ),
-      [] as { principalGroupId: string }[],
-    );
     const groupIds = groupMemberRows.map((row) => row.principalGroupId);
 
     if (groupIds.length > 0) {
@@ -376,6 +408,18 @@ export class AccessService {
     const merge = (key: string, scope: DataScope): void => {
       const existing = result[key];
       result[key] = existing ? broadest(existing, scope) : scope;
+    };
+    const mergeIfKnown = (key: string, scope: DataScope, source: string): void => {
+      if (CATALOG_KEY_SET.has(key)) {
+        merge(key, scope);
+        return;
+      }
+      if (!this.warnedUnknownKeys.has(key)) {
+        this.warnedUnknownKeys.add(key);
+        logger.warn("access: unknown permission key in grant — absent from catalog, omitted from resolved permissions", {
+          orgId, key, source,
+        });
+      }
     };
 
     const roleIdList = Array.from(roleIds);
@@ -413,7 +457,7 @@ export class AccessService {
       for (const roleId of roleIdList) {
         const grants = grantsByRole.get(roleId);
         if (grants && grants.length > 0) {
-          for (const grant of grants) merge(grant.permissionKey, grant.scope);
+          for (const grant of grants) mergeIfKnown(grant.permissionKey, grant.scope, "role-grant");
           continue;
         }
         const record = roleById.get(roleId);
@@ -431,7 +475,7 @@ export class AccessService {
       with: { permission: { columns: { name: true } } },
     });
     for (const userPerm of grantedUserPerms) {
-      if (userPerm.permission?.name) merge(userPerm.permission.name, "all");
+      if (userPerm.permission?.name) mergeIfKnown(userPerm.permission.name, "all", "user-permission");
     }
 
     const delegationRows = await this.safeAccessTableRead(
@@ -451,6 +495,12 @@ export class AccessService {
     );
     for (const row of delegationRows) {
       for (const key of row.permissions) {
+        mergeIfKnown(key, "all", "delegation");
+      }
+    }
+
+    for (const { moduleKey } of ownershipRows) {
+      for (const key of moduleScopedPermissions(moduleKey)) {
         merge(key, "all");
       }
     }

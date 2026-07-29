@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, uuid, timestamp, jsonb, integer, index, boolean, unique } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, uuid, timestamp, jsonb, integer, index, boolean, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "./auth";
 
@@ -26,6 +26,7 @@ export const workflows = pgTable("workflows", {
 
 export const workflowVersions = pgTable("workflow_versions", {
   id: uuid("id").defaultRandom().primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   workflowId: uuid("workflow_id").references(() => workflows.id, { onDelete: "cascade" }).notNull(),
   version: integer("version").notNull(),
   definitionJson: jsonb("definition_json").$type<Record<string, unknown>>().notNull(),
@@ -35,6 +36,12 @@ export const workflowVersions = pgTable("workflow_versions", {
 }, (table) => [
   index("idx_workflow_versions_workflow").on(table.workflowId),
   index("idx_workflow_versions_workflow_version").on(table.workflowId, table.version),
+  index("idx_workflow_versions_org").on(table.orgId, table.workflowId),
+  unique("uniq_workflow_versions_org_id").on(table.orgId, table.id),
+  foreignKey({
+    columns: [table.orgId, table.workflowId],
+    foreignColumns: [workflows.orgId, workflows.id],
+  }).onDelete("cascade"),
 ]);
 
 export const workflowExecutions = pgTable("workflow_executions", {
@@ -113,6 +120,7 @@ export const workflowSchedules = pgTable("workflow_schedules", {
 
 export const workflowVariables = pgTable("workflow_variables", {
   id: uuid("id").defaultRandom().primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   workflowVersionId: uuid("workflow_version_id").references(() => workflowVersions.id, { onDelete: "cascade" }).notNull(),
   key: text("key").notNull(),
   valueType: text("value_type").notNull(),
@@ -121,6 +129,12 @@ export const workflowVariables = pgTable("workflow_variables", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_workflow_variables_version").on(table.workflowVersionId),
+  index("idx_workflow_variables_org").on(table.orgId, table.workflowVersionId),
+  unique("uniq_workflow_variables_org_id").on(table.orgId, table.id),
+  foreignKey({
+    columns: [table.orgId, table.workflowVersionId],
+    foreignColumns: [workflowVersions.orgId, workflowVersions.id],
+  }).onDelete("cascade"),
 ]);
 
 export const workflowSecrets = pgTable("workflow_secrets", {
@@ -161,6 +175,7 @@ export const workflowsRelations = relations(workflows, ({ one, many }) => ({
 }));
 
 export const workflowVersionsRelations = relations(workflowVersions, ({ one, many }) => ({
+  organization: one(organizations, { fields: [workflowVersions.orgId], references: [organizations.id] }),
   workflow: one(workflows, { fields: [workflowVersions.workflowId], references: [workflows.id] }),
   variables: many(workflowVariables),
   executions: many(workflowExecutions),
@@ -191,6 +206,7 @@ export const workflowSchedulesRelations = relations(workflowSchedules, ({ one })
 }));
 
 export const workflowVariablesRelations = relations(workflowVariables, ({ one }) => ({
+  organization: one(organizations, { fields: [workflowVariables.orgId], references: [organizations.id] }),
   version: one(workflowVersions, { fields: [workflowVariables.workflowVersionId], references: [workflowVersions.id] }),
 }));
 

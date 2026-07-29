@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
-import { incidentUpdates, projectIncidents, projects } from "../../db/schema";
+import { incidentUpdates, projectIncidents, projects, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
@@ -72,8 +72,19 @@ export class IncidentsService {
   async getIncident(orgId: string, projectId: number, incidentId: number) {
     const incident = await this.loadIncident(orgId, projectId, incidentId);
     const updates = await this.db
-      .select()
+      .select({
+        id: incidentUpdates.id,
+        orgId: incidentUpdates.orgId,
+        incidentId: incidentUpdates.incidentId,
+        message: incidentUpdates.message,
+        newStatus: incidentUpdates.newStatus,
+        createdBy: incidentUpdates.createdBy,
+        createdAt: incidentUpdates.createdAt,
+        createdByName: users.name,
+        createdByEmail: users.email,
+      })
       .from(incidentUpdates)
+      .leftJoin(users, eq(users.id, incidentUpdates.createdBy))
       .where(and(eq(incidentUpdates.incidentId, incidentId), eq(incidentUpdates.orgId, orgId)))
       .orderBy(desc(incidentUpdates.createdAt));
     return { ...incident, updates };

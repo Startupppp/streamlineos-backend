@@ -46,6 +46,7 @@ export const cloneTemplateSchema = z.object({
 });
 
 export const setRolePermissionsSchema = z.object({
+  version: z.number().int().positive(),
   items: z
     .array(
       z.object({

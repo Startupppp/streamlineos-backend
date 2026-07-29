@@ -561,6 +561,27 @@
       "when": 1784993499601,
       "tag": "0359_exit_checklists_org_id",
       "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1784993499602,
+      "tag": "0360_workflow_variables_org_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1784993499603,
+      "tag": "0361_roles_durability_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1784993499604,
+      "tag": "0362_org_owner_uniqueness",
+      "breakpoints": true
     }
   ]
 }

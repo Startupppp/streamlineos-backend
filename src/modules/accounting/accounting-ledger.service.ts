@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, asc, count, desc, eq, gte, ilike, isNull, lte } from "drizzle-orm";
-import { ledgerAccounts, journalEntries, journalLines, finApprovalPolicies, finApprovalRequests } from "../../db/schema";
+import { ledgerAccounts, journalEntries, journalLines, finApprovalPolicies, finApprovalRequests, users } from "../../db/schema";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -234,8 +234,32 @@ export class AccountingLedgerService {
 
   async getJournalEntry(orgId: string, entryId: number) {
     const headerRows = await this.db
-      .select()
+      .select({
+        id: journalEntries.id,
+        orgId: journalEntries.orgId,
+        entryNumber: journalEntries.entryNumber,
+        entryDate: journalEntries.entryDate,
+        postingDate: journalEntries.postingDate,
+        description: journalEntries.description,
+        periodId: journalEntries.periodId,
+        currency: journalEntries.currency,
+        sourceType: journalEntries.sourceType,
+        sourceId: journalEntries.sourceId,
+        sourceEvent: journalEntries.sourceEvent,
+        status: journalEntries.status,
+        createdBy: journalEntries.createdBy,
+        approvedBy: journalEntries.approvedBy,
+        approvedAt: journalEntries.approvedAt,
+        postedBy: journalEntries.postedBy,
+        postedAt: journalEntries.postedAt,
+        reversedEntryId: journalEntries.reversedEntryId,
+        createdAt: journalEntries.createdAt,
+        updatedAt: journalEntries.updatedAt,
+        createdByName: users.name,
+        createdByEmail: users.email,
+      })
       .from(journalEntries)
+      .leftJoin(users, eq(users.id, journalEntries.createdBy))
       .where(and(eq(journalEntries.id, entryId), eq(journalEntries.orgId, orgId)))
       .limit(1);
     const header = headerRows[0];

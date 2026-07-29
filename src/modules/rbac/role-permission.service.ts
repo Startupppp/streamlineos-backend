@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -146,7 +147,7 @@ export class RolePermissionService {
     actor: CurrentUserContext,
     roleId: number,
     input: SetRolePermissionsInput,
-  ): Promise<{ success: true }> {
+  ): Promise<{ success: true; version: number }> {
     const existingRole = await this.getRole(actor.orgId, roleId);
 
     if (existingRole.isSystem) {
@@ -169,7 +170,27 @@ export class RolePermissionService {
     };
     await this.assertGrantable(actor, Array.from(deduped.keys()), target);
 
+    const nextVersion = existingRole.version + 1;
+
     await this.db.transaction(async (tx): Promise<void> => {
+      const updated = await tx
+        .update(roles)
+        .set({ version: nextVersion })
+        .where(
+          and(
+            eq(roles.id, roleId),
+            eq(roles.orgId, actor.orgId),
+            eq(roles.version, input.version),
+          ),
+        )
+        .returning({ id: roles.id });
+
+      if (updated.length === 0) {
+        throw new ConflictException(
+          "This role was changed by someone else. Reload and try again.",
+        );
+      }
+
       await tx
         .delete(rolePermissionGrants)
         .where(
@@ -204,7 +225,7 @@ export class RolePermissionService {
       metadata: { count: deduped.size },
     });
 
-    return { success: true };
+    return { success: true, version: nextVersion };
   }
 
   async getPermissionsMatrix(orgId: string): Promise<

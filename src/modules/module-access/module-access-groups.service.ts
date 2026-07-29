@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, count, eq, inArray } from "drizzle-orm";
+import { and, asc, count, countDistinct, eq, ilike, inArray, ne } from "drizzle-orm";
 import {
   moduleOwnerships,
   organizationMembers,
@@ -20,6 +20,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
+import { AuditService } from "../../common/audit/audit.service";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import {
   assertPermissionsGrantable,
@@ -32,10 +33,13 @@ import type { DataScope } from "../access/access.types";
 import { AccessService } from "../access/access.service";
 import { ACCESS_MANAGED_MODULES, PERMISSIONS, ROLE_DEFAULT_PERMISSIONS } from "../rbac/permissions";
 import type {
+  AddFlatMemberInput,
   AddModuleGroupMemberInput,
   CreateModuleGroupInput,
   InitiateOwnershipTransferInput,
+  ListMembersQuery,
   RenameModuleGroupInput,
+  UpdateMemberGroupsInput,
 } from "./dto/module-access.schemas";
 
 const MANAGED_MODULES = new Set<string>(ACCESS_MANAGED_MODULES);
@@ -49,6 +53,7 @@ export interface ModuleRoleGroup {
   id: number;
   name: string;
   isSystem: boolean;
+  version: number;
   memberCount: number;
   permissions: { permissionKey: string; scope: DataScope }[];
 }
@@ -81,12 +86,28 @@ export interface ModuleOwnership {
   } | null;
 }
 
+export interface FlatModuleMember {
+  userId: string;
+  displayName: string;
+  email: string;
+  avatarUrl: string | null;
+  groups: { id: number; name: string }[];
+}
+
+interface Pagination {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+}
+
 @Injectable()
 export class ModuleAccessGroupsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
     private readonly cache: CacheService,
+    private readonly audit: AuditService,
   ) {}
 
   private assertKnownModule(moduleKey: string): void {
@@ -131,12 +152,28 @@ export class ModuleAccessGroupsService {
     if (!role) throw new NotFoundException("Group not found");
   }
 
+  private async resolveModuleOwnerUserId(orgId: string, moduleKey: string): Promise<string | null> {
+    const [row] = await this.db
+      .select({ userId: organizationMembers.userId })
+      .from(moduleOwnerships)
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(moduleOwnerships.orgId, organizationMembers.orgId),
+          eq(moduleOwnerships.ownerMembershipId, organizationMembers.id),
+        ),
+      )
+      .where(and(eq(moduleOwnerships.orgId, orgId), eq(moduleOwnerships.moduleKey, moduleKey)))
+      .limit(1);
+    return row?.userId ?? null;
+  }
+
   async listGroups(actor: CurrentUserContext, moduleKey: string): Promise<ModuleRoleGroup[]> {
     await this.assertAccess(actor, moduleKey, "view");
     const catalog = this.modulePermissionKeys(moduleKey);
 
     const orgRoles = await this.db
-      .select({ id: roles.id, name: roles.name, slug: roles.slug, isSystem: roles.isSystem })
+      .select({ id: roles.id, name: roles.name, slug: roles.slug, isSystem: roles.isSystem, version: roles.version })
       .from(roles)
       .where(and(eq(roles.orgId, actor.orgId), eq(roles.moduleKey, moduleKey)))
       .orderBy(asc(roles.name))
@@ -196,6 +233,7 @@ export class ModuleAccessGroupsService {
         id: role.id,
         name: role.name,
         isSystem: role.isSystem,
+        version: role.version,
         memberCount: memberCountById.get(role.id) ?? 0,
         permissions: permissions ?? [],
       };
@@ -228,20 +266,50 @@ export class ModuleAccessGroupsService {
       }
     }
 
+    const [existingWithName] = await this.db
+      .select({ id: roles.id })
+      .from(roles)
+      .where(
+        and(
+          eq(roles.orgId, actor.orgId),
+          eq(roles.moduleKey, moduleKey),
+          ilike(roles.name, input.name),
+        ),
+      )
+      .limit(1);
+    if (existingWithName) {
+      throw new ConflictException(`A group named "${input.name}" already exists in this module`);
+    }
+
     const slug = `${moduleKey.toUpperCase()}_${input.name.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_${Date.now()}`;
 
-    const row = await this.db.transaction(async (tx) => {
-      const [created] = await tx
-        .insert(roles)
-        .values({ name: input.name, slug, orgId: actor.orgId, isSystem: false, moduleKey, rank: ROLE_RANK.MODULE_CUSTOM })
-        .returning({ id: roles.id, name: roles.name, isSystem: roles.isSystem });
-      if (!created) throw new BadRequestException("Failed to create group");
-      await bumpPermissionsVersion(tx, actor.orgId);
-      return created;
-    });
+    const row = await this.db
+      .transaction(async (tx) => {
+        const [created] = await tx
+          .insert(roles)
+          .values({ name: input.name, slug, orgId: actor.orgId, isSystem: false, moduleKey, rank: ROLE_RANK.MODULE_CUSTOM })
+          .returning({ id: roles.id, name: roles.name, isSystem: roles.isSystem, version: roles.version });
+        if (!created) throw new BadRequestException("Failed to create group");
+        await bumpPermissionsVersion(tx, actor.orgId);
+        return created;
+      })
+      .catch((err: unknown) => {
+        if (typeof err === "object" && err !== null && "code" in err && err.code === "23505") {
+          throw new ConflictException(`A group named "${input.name}" already exists in this module`);
+        }
+        throw err;
+      });
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
-    return { id: row.id, name: row.name, isSystem: row.isSystem, memberCount: 0, permissions: [] };
+    this.audit.log({
+      action: "module_access.group_created",
+      userId: actor.userId,
+      orgId: actor.orgId,
+      targetId: String(row.id),
+      targetType: "role",
+      metadata: { moduleKey, name: row.name },
+    });
+    return { id: row.id, name: row.name, isSystem: row.isSystem, version: row.version, memberCount: 0, permissions: [] };
   }
 
   async renameGroup(
@@ -258,16 +326,46 @@ export class ModuleAccessGroupsService {
     if (!existing) throw new NotFoundException("Group not found");
     if (existing.isSystem) throw new ForbiddenException("System groups cannot be renamed");
 
+    const [nameConflict] = await this.db
+      .select({ id: roles.id })
+      .from(roles)
+      .where(
+        and(
+          eq(roles.orgId, actor.orgId),
+          eq(roles.moduleKey, moduleKey),
+          ilike(roles.name, input.name),
+          ne(roles.id, groupId),
+        ),
+      )
+      .limit(1);
+    if (nameConflict) {
+      throw new ConflictException(`A group named "${input.name}" already exists in this module`);
+    }
+
     const [row] = await this.db
       .update(roles)
       .set({ name: input.name, updatedAt: new Date() })
       .where(and(eq(roles.id, groupId), eq(roles.orgId, actor.orgId)))
-      .returning({ id: roles.id, name: roles.name, isSystem: roles.isSystem });
+      .returning({ id: roles.id, name: roles.name, isSystem: roles.isSystem, version: roles.version })
+      .catch((err: unknown) => {
+        if (typeof err === "object" && err !== null && "code" in err && err.code === "23505") {
+          throw new ConflictException(`A group named "${input.name}" already exists in this module`);
+        }
+        throw err;
+      });
 
     if (!row) throw new BadRequestException("Failed to rename group");
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
-    return { id: row.id, name: row.name, isSystem: row.isSystem, memberCount: 0, permissions: [] };
+    this.audit.log({
+      action: "module_access.group_renamed",
+      userId: actor.userId,
+      orgId: actor.orgId,
+      targetId: String(groupId),
+      targetType: "role",
+      metadata: { moduleKey, oldName: existing.name, newName: row.name },
+    });
+    return { id: row.id, name: row.name, isSystem: row.isSystem, version: row.version, memberCount: 0, permissions: [] };
   }
 
   async deleteGroup(
@@ -308,6 +406,14 @@ export class ModuleAccessGroupsService {
     });
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
+    this.audit.log({
+      action: "module_access.group_deleted",
+      userId: actor.userId,
+      orgId: actor.orgId,
+      targetId: String(groupId),
+      targetType: "role",
+      metadata: { moduleKey, name: existing.name },
+    });
     return { success: true };
   }
 
@@ -355,6 +461,19 @@ export class ModuleAccessGroupsService {
     await this.assertAccess(actor, moduleKey, "manage");
     await this.assertGroupBelongsToModule(actor.orgId, moduleKey, groupId);
 
+    if (!actor.isOrgOwner && !actor.isPlatformAdmin && input.userId === actor.userId) {
+      throw new ForbiddenException("You cannot add yourself to a module group");
+    }
+
+    const ownerUserId = await this.resolveModuleOwnerUserId(actor.orgId, moduleKey);
+    if (ownerUserId !== null && input.userId === ownerUserId) {
+      if (!actor.isOrgOwner && !actor.isPlatformAdmin && actor.userId !== ownerUserId) {
+        throw new ForbiddenException(
+          "Only the module owner, an org owner, or a platform admin may modify the module owner's group memberships",
+        );
+      }
+    }
+
     const member = await this.db.query.organizationMembers.findFirst({
       where: and(
         eq(organizationMembers.orgId, actor.orgId),
@@ -378,6 +497,14 @@ export class ModuleAccessGroupsService {
     });
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
+    this.audit.log({
+      action: "module_access.group_member_added",
+      userId: actor.userId,
+      orgId: actor.orgId,
+      targetId: String(groupId),
+      targetType: "role",
+      metadata: { moduleKey, targetUserId: input.userId },
+    });
     return { success: true };
   }
 
@@ -389,6 +516,15 @@ export class ModuleAccessGroupsService {
   ): Promise<{ success: true }> {
     await this.assertAccess(actor, moduleKey, "manage");
     await this.assertGroupBelongsToModule(actor.orgId, moduleKey, groupId);
+
+    const ownerUserId = await this.resolveModuleOwnerUserId(actor.orgId, moduleKey);
+    if (ownerUserId !== null && userId === ownerUserId) {
+      if (!actor.isOrgOwner && !actor.isPlatformAdmin && actor.userId !== ownerUserId) {
+        throw new ForbiddenException(
+          "Only the module owner, an org owner, or a platform admin may modify the module owner's group memberships",
+        );
+      }
+    }
 
     const member = await this.db.query.organizationMembers.findFirst({
       where: and(
@@ -412,6 +548,14 @@ export class ModuleAccessGroupsService {
         await bumpPermissionsVersion(tx, actor.orgId);
       });
       await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
+      this.audit.log({
+        action: "module_access.group_member_removed",
+        userId: actor.userId,
+        orgId: actor.orgId,
+        targetId: String(groupId),
+        targetType: "role",
+        metadata: { moduleKey, targetUserId: userId },
+      });
     }
 
     return { success: true };
@@ -573,6 +717,329 @@ export class ModuleAccessGroupsService {
       throw err;
     }
 
+    return { success: true };
+  }
+
+  async listMembers(
+    actor: CurrentUserContext,
+    moduleKey: string,
+    { page, pageSize }: ListMembersQuery,
+  ): Promise<{ data: FlatModuleMember[]; pagination: Pagination }> {
+    await this.assertAccess(actor, moduleKey, "view");
+
+    const limit = Math.min(pageSize, 100);
+    const offset = (page - 1) * limit;
+
+    const moduleRoleRows = await this.db
+      .select({ id: roles.id })
+      .from(roles)
+      .where(and(eq(roles.orgId, actor.orgId), eq(roles.moduleKey, moduleKey)))
+      .limit(200);
+
+    if (moduleRoleRows.length === 0) {
+      return { data: [], pagination: { page, pageSize: limit, total: 0, totalPages: 0 } };
+    }
+
+    const moduleRoleIds = moduleRoleRows.map((r) => r.id);
+    const baseWhere = and(
+      eq(roleAssignments.orgId, actor.orgId),
+      inArray(roleAssignments.roleId, moduleRoleIds),
+    );
+
+    const [totalResult, memberRows] = await Promise.all([
+      this.db
+        .select({ total: countDistinct(roleAssignments.organizationMembershipId) })
+        .from(roleAssignments)
+        .where(baseWhere),
+      this.db
+        .selectDistinct({
+          membershipId: roleAssignments.organizationMembershipId,
+          userId: organizationMembers.userId,
+          name: users.name,
+          email: users.email,
+          image: users.image,
+        })
+        .from(roleAssignments)
+        .innerJoin(
+          organizationMembers,
+          and(
+            eq(organizationMembers.orgId, roleAssignments.orgId),
+            eq(organizationMembers.id, roleAssignments.organizationMembershipId),
+          ),
+        )
+        .innerJoin(users, eq(organizationMembers.userId, users.id))
+        .where(baseWhere)
+        .orderBy(asc(users.name))
+        .limit(limit)
+        .offset(offset),
+    ]);
+
+    const total = Number(totalResult[0]?.total ?? 0);
+
+    if (memberRows.length === 0) {
+      return { data: [], pagination: { page, pageSize: limit, total, totalPages: Math.ceil(total / limit) } };
+    }
+
+    const membershipIds = memberRows.map((r) => r.membershipId);
+
+    const groupRows = await this.db
+      .select({
+        membershipId: roleAssignments.organizationMembershipId,
+        groupId: roles.id,
+        groupName: roles.name,
+      })
+      .from(roleAssignments)
+      .innerJoin(roles, and(eq(roles.id, roleAssignments.roleId), eq(roles.orgId, actor.orgId)))
+      .where(
+        and(
+          eq(roleAssignments.orgId, actor.orgId),
+          inArray(roleAssignments.organizationMembershipId, membershipIds),
+          inArray(roleAssignments.roleId, moduleRoleIds),
+        ),
+      )
+      .limit(500);
+
+    const groupsByMembership = new Map<number, { id: number; name: string }[]>();
+    for (const gr of groupRows) {
+      const list = groupsByMembership.get(gr.membershipId) ?? [];
+      list.push({ id: gr.groupId, name: gr.groupName });
+      groupsByMembership.set(gr.membershipId, list);
+    }
+
+    const data: FlatModuleMember[] = memberRows.map((r) => ({
+      userId: r.userId,
+      displayName: r.name ?? r.email ?? r.userId,
+      email: r.email ?? "",
+      avatarUrl: r.image,
+      groups: groupsByMembership.get(r.membershipId) ?? [],
+    }));
+
+    return {
+      data,
+      pagination: { page, pageSize: limit, total, totalPages: total > 0 ? Math.ceil(total / limit) : 0 },
+    };
+  }
+
+  async addMember(
+    actor: CurrentUserContext,
+    moduleKey: string,
+    input: AddFlatMemberInput,
+  ): Promise<{ success: true }> {
+    await this.assertAccess(actor, moduleKey, "manage");
+
+    if (!actor.isOrgOwner && !actor.isPlatformAdmin && input.userId === actor.userId) {
+      throw new ForbiddenException("You cannot add yourself to a module group");
+    }
+
+    const ownerUserId = await this.resolveModuleOwnerUserId(actor.orgId, moduleKey);
+    if (ownerUserId !== null && input.userId === ownerUserId) {
+      if (!actor.isOrgOwner && !actor.isPlatformAdmin && actor.userId !== ownerUserId) {
+        throw new ForbiddenException(
+          "Only the module owner, an org owner, or a platform admin may modify the module owner's group memberships",
+        );
+      }
+    }
+
+    const member = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, actor.orgId),
+        eq(organizationMembers.userId, input.userId),
+      ),
+      columns: { id: true },
+    });
+    if (!member) throw new BadRequestException("User is not a member of this organization");
+
+    if (!input.groupIds || input.groupIds.length === 0) {
+      return { success: true };
+    }
+
+    const validGroups = await this.db
+      .select({ id: roles.id })
+      .from(roles)
+      .where(
+        and(
+          eq(roles.orgId, actor.orgId),
+          eq(roles.moduleKey, moduleKey),
+          inArray(roles.id, input.groupIds),
+        ),
+      );
+
+    if (validGroups.length !== input.groupIds.length) {
+      throw new BadRequestException("One or more group IDs do not belong to this module");
+    }
+
+    await this.db.transaction(async (tx): Promise<void> => {
+      for (const groupId of input.groupIds!) {
+        await tx
+          .insert(roleAssignments)
+          .values({
+            orgId: actor.orgId,
+            organizationMembershipId: member.id,
+            roleId: groupId,
+            assignedByMembershipId: null,
+          })
+          .onConflictDoNothing();
+      }
+      await bumpPermissionsVersion(tx, actor.orgId);
+    });
+
+    await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
+    this.audit.log({
+      action: "module_access.member_added",
+      userId: actor.userId,
+      orgId: actor.orgId,
+      targetId: input.userId,
+      targetType: "user",
+      metadata: { moduleKey, groupIds: input.groupIds },
+    });
+    return { success: true };
+  }
+
+  async updateMemberGroups(
+    actor: CurrentUserContext,
+    moduleKey: string,
+    userId: string,
+    input: UpdateMemberGroupsInput,
+  ): Promise<{ success: true }> {
+    await this.assertAccess(actor, moduleKey, "manage");
+
+    if (!actor.isOrgOwner && !actor.isPlatformAdmin && userId === actor.userId) {
+      throw new ForbiddenException("You cannot modify your own module group memberships");
+    }
+
+    const ownerUserId = await this.resolveModuleOwnerUserId(actor.orgId, moduleKey);
+    if (ownerUserId !== null && userId === ownerUserId) {
+      if (!actor.isOrgOwner && !actor.isPlatformAdmin && actor.userId !== ownerUserId) {
+        throw new ForbiddenException(
+          "Only the module owner, an org owner, or a platform admin may modify the module owner's group memberships",
+        );
+      }
+    }
+
+    const member = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, actor.orgId),
+        eq(organizationMembers.userId, userId),
+      ),
+      columns: { id: true },
+    });
+    if (!member) throw new NotFoundException("User is not a member of this organization");
+
+    const allModuleRoles = await this.db
+      .select({ id: roles.id })
+      .from(roles)
+      .where(and(eq(roles.orgId, actor.orgId), eq(roles.moduleKey, moduleKey)))
+      .limit(200);
+
+    const allModuleRoleIds = allModuleRoles.map((r) => r.id);
+
+    if (input.groupIds.length > 0) {
+      const validIds = new Set(allModuleRoleIds);
+      for (const id of input.groupIds) {
+        if (!validIds.has(id)) {
+          throw new BadRequestException(`Group ${id} does not belong to this module`);
+        }
+      }
+    }
+
+    await this.db.transaction(async (tx): Promise<void> => {
+      if (allModuleRoleIds.length > 0) {
+        await tx
+          .delete(roleAssignments)
+          .where(
+            and(
+              eq(roleAssignments.orgId, actor.orgId),
+              eq(roleAssignments.organizationMembershipId, member.id),
+              inArray(roleAssignments.roleId, allModuleRoleIds),
+            ),
+          );
+      }
+
+      if (input.groupIds.length > 0) {
+        await tx
+          .insert(roleAssignments)
+          .values(
+            input.groupIds.map((groupId) => ({
+              orgId: actor.orgId,
+              organizationMembershipId: member.id,
+              roleId: groupId,
+              assignedByMembershipId: null,
+            })),
+          )
+          .onConflictDoNothing();
+      }
+
+      await bumpPermissionsVersion(tx, actor.orgId);
+    });
+
+    await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
+    this.audit.log({
+      action: "module_access.member_groups_updated",
+      userId: actor.userId,
+      orgId: actor.orgId,
+      targetId: userId,
+      targetType: "user",
+      metadata: { moduleKey, groupIds: input.groupIds },
+    });
+    return { success: true };
+  }
+
+  async removeMember(
+    actor: CurrentUserContext,
+    moduleKey: string,
+    userId: string,
+  ): Promise<{ success: true }> {
+    await this.assertAccess(actor, moduleKey, "manage");
+
+    const ownerUserId = await this.resolveModuleOwnerUserId(actor.orgId, moduleKey);
+    if (ownerUserId !== null && userId === ownerUserId) {
+      throw new ForbiddenException(
+        "Cannot remove the module owner from the module. Transfer ownership first.",
+      );
+    }
+
+    const member = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, actor.orgId),
+        eq(organizationMembers.userId, userId),
+      ),
+      columns: { id: true },
+    });
+
+    if (!member) return { success: true };
+
+    const allModuleRoles = await this.db
+      .select({ id: roles.id })
+      .from(roles)
+      .where(and(eq(roles.orgId, actor.orgId), eq(roles.moduleKey, moduleKey)))
+      .limit(200);
+
+    if (allModuleRoles.length === 0) return { success: true };
+
+    const allModuleRoleIds = allModuleRoles.map((r) => r.id);
+
+    await this.db.transaction(async (tx): Promise<void> => {
+      await tx
+        .delete(roleAssignments)
+        .where(
+          and(
+            eq(roleAssignments.orgId, actor.orgId),
+            eq(roleAssignments.organizationMembershipId, member.id),
+            inArray(roleAssignments.roleId, allModuleRoleIds),
+          ),
+        );
+      await bumpPermissionsVersion(tx, actor.orgId);
+    });
+
+    await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
+    this.audit.log({
+      action: "module_access.member_removed",
+      userId: actor.userId,
+      orgId: actor.orgId,
+      targetId: userId,
+      targetType: "user",
+      metadata: { moduleKey },
+    });
     return { success: true };
   }
 

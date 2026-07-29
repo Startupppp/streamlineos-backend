@@ -168,6 +168,15 @@ export class RoleMemberService {
   ): Promise<{ success: true }> {
     await this.getRole(actor.orgId, roleId);
 
+    if (
+      !actor.isOrgOwner &&
+      !actor.isPlatformAdmin &&
+      input.principalType === "user" &&
+      input.principalId === actor.userId
+    ) {
+      throw new ForbiddenException("You cannot assign a role to yourself");
+    }
+
     if (input.principalType === "user") {
       const member = await this.db.query.organizationMembers.findFirst({
         where: and(

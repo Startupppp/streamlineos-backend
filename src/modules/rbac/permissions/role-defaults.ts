@@ -525,8 +525,6 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     ...EMPLOYEE_SELF_SERVICE,
     "tasks:read",
     "tasks:write",
-    "blog:posts:manage",
-    "blog:categories:manage",
     "kb:articles:view",
     "kb:spaces:view",
     "build:view",
@@ -569,8 +567,6 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     ...EMPLOYEE_SELF_SERVICE,
     "tasks:read",
     "tasks:write",
-    "blog:posts:manage",
-    "blog:categories:manage",
   ],
 
   BRANCH_MANAGER: [

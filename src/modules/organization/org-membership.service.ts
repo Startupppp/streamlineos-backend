@@ -7,6 +7,7 @@ import {
 } from "@nestjs/common";
 import { and, count, desc, eq, ilike, inArray, or } from "drizzle-orm";
 import {
+  moduleOwnerships,
   orgUnitMembers,
   orgUnits,
   organizationMembers,
@@ -18,10 +19,12 @@ import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
-import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { bumpPermissionsVersion, type DbOrTx } from "../../common/rbac/access-invalidate";
 import { bustMembershipStatusCache } from "../../common/auth/jwt-auth.guard";
 import { SessionsService } from "../sessions/sessions.service";
 import type { ListMembersInput } from "./dto/organization.schemas";
+
+const PG_FK_VIOLATION = "23503";
 
 @Injectable()
 export class OrgMembershipService {
@@ -36,6 +39,24 @@ export class OrgMembershipService {
     await this.cache.invalidate(CACHE_KEYS.userSession(memberUserId));
     bustMembershipStatusCache(memberUserId, orgId);
     await this.sessions.revokeAllForUser(memberUserId);
+  }
+
+  private async queryOwnedModuleKeys(
+    db: DbOrTx,
+    orgId: string,
+    membershipId: number,
+  ): Promise<string[]> {
+    const rows = await db
+      .select({ moduleKey: moduleOwnerships.moduleKey })
+      .from(moduleOwnerships)
+      .where(
+        and(
+          eq(moduleOwnerships.orgId, orgId),
+          eq(moduleOwnerships.ownerMembershipId, membershipId),
+        ),
+      )
+      .for("update");
+    return rows.map((r) => r.moduleKey);
   }
 
   async listMembers(orgId: string, { page, limit, search, userIds }: ListMembersInput) {
@@ -93,50 +114,67 @@ export class OrgMembershipService {
   }
 
   async removeMember(orgId: string, actorUserId: string, memberUserId: string) {
-    await this.db.transaction(async (tx) => {
-      const [member] = await tx
-        .select({ isOwner: organizationMembers.isOwner })
-        .from(organizationMembers)
-        .where(
-          and(
-            eq(organizationMembers.userId, memberUserId),
-            eq(organizationMembers.orgId, orgId),
-          ),
-        )
-        .for("update")
-        .limit(1);
+    try {
+      await this.db.transaction(async (tx) => {
+        const [member] = await tx
+          .select({ isOwner: organizationMembers.isOwner, id: organizationMembers.id })
+          .from(organizationMembers)
+          .where(
+            and(
+              eq(organizationMembers.userId, memberUserId),
+              eq(organizationMembers.orgId, orgId),
+            ),
+          )
+          .for("update")
+          .limit(1);
 
-      if (!member) throw new NotFoundException("Member not found");
-      if (member.isOwner) {
+        if (!member) throw new NotFoundException("Member not found");
+        if (member.isOwner) {
+          throw new BadRequestException(
+            "Cannot remove the organization owner. Transfer ownership first.",
+          );
+        }
+
+        const ownedModuleKeys = await this.queryOwnedModuleKeys(tx, orgId, member.id);
+        if (ownedModuleKeys.length > 0) {
+          throw new BadRequestException(
+            `Transfer module ownership before removing this member. Owned modules: ${ownedModuleKeys.join(", ")}.`,
+          );
+        }
+
+        await tx
+          .delete(organizationMembers)
+          .where(
+            and(
+              eq(organizationMembers.userId, memberUserId),
+              eq(organizationMembers.orgId, orgId),
+            ),
+          );
+
+        await tx
+          .delete(userPermissions)
+          .where(and(eq(userPermissions.orgId, orgId), eq(userPermissions.userId, memberUserId)));
+        await tx.delete(orgUnitMembers).where(
+          and(
+            eq(orgUnitMembers.userId, memberUserId),
+            inArray(
+              orgUnitMembers.orgUnitId,
+              tx.select({ id: orgUnits.id }).from(orgUnits).where(eq(orgUnits.orgId, orgId)),
+            ),
+          ),
+        );
+
+        await bumpPermissionsVersion(tx, orgId);
+      });
+    } catch (err) {
+      if (err instanceof BadRequestException || err instanceof NotFoundException) throw err;
+      if ((err as { code?: string }).code === PG_FK_VIOLATION) {
         throw new BadRequestException(
-          "Cannot remove the organization owner. Transfer ownership first.",
+          "Cannot remove a member who owns a module. Transfer module ownership first.",
         );
       }
-
-      await tx
-        .delete(organizationMembers)
-        .where(
-          and(
-            eq(organizationMembers.userId, memberUserId),
-            eq(organizationMembers.orgId, orgId),
-          ),
-        );
-
-      await tx
-        .delete(userPermissions)
-        .where(and(eq(userPermissions.orgId, orgId), eq(userPermissions.userId, memberUserId)));
-      await tx.delete(orgUnitMembers).where(
-        and(
-          eq(orgUnitMembers.userId, memberUserId),
-          inArray(
-            orgUnitMembers.orgUnitId,
-            tx.select({ id: orgUnits.id }).from(orgUnits).where(eq(orgUnits.orgId, orgId)),
-          ),
-        ),
-      );
-
-      await bumpPermissionsVersion(tx, orgId);
-    });
+      throw err;
+    }
 
     await this.revokeMemberAccess(orgId, memberUserId);
 
@@ -157,7 +195,7 @@ export class OrgMembershipService {
         eq(organizationMembers.userId, memberUserId),
         eq(organizationMembers.orgId, orgId),
       ),
-      columns: { isOwner: true, status: true },
+      columns: { isOwner: true, status: true, id: true },
     });
     if (!member) throw new NotFoundException("Member not found");
     if (member.isOwner) {
@@ -168,6 +206,13 @@ export class OrgMembershipService {
     }
 
     await this.db.transaction(async (tx) => {
+      const ownedModuleKeys = await this.queryOwnedModuleKeys(tx, orgId, member.id);
+      if (ownedModuleKeys.length > 0) {
+        throw new BadRequestException(
+          `Transfer module ownership before suspending this member. Owned modules: ${ownedModuleKeys.join(", ")}.`,
+        );
+      }
+
       await tx
         .update(organizationMembers)
         .set({ status: "SUSPENDED", suspendedAt: new Date() })
@@ -240,6 +285,27 @@ export class OrgMembershipService {
     role: string,
   ) {
     await this.db.transaction(async (tx) => {
+      const [member] = await tx
+        .select({ id: organizationMembers.id })
+        .from(organizationMembers)
+        .where(
+          and(
+            eq(organizationMembers.userId, memberUserId),
+            eq(organizationMembers.orgId, orgId),
+          ),
+        )
+        .for("update")
+        .limit(1);
+
+      if (!member) throw new NotFoundException("Member not found");
+
+      const ownedModuleKeys = await this.queryOwnedModuleKeys(tx, orgId, member.id);
+      if (ownedModuleKeys.length > 0) {
+        throw new BadRequestException(
+          `Transfer module ownership before changing this member's role. Owned modules: ${ownedModuleKeys.join(", ")}.`,
+        );
+      }
+
       await tx
         .update(organizationMembers)
         .set({ role })
@@ -269,7 +335,7 @@ export class OrgMembershipService {
         eq(organizationMembers.orgId, orgId),
         eq(organizationMembers.userId, userId),
       ),
-      columns: { isOwner: true },
+      columns: { isOwner: true, id: true },
     });
     if (!membership) {
       throw new BadRequestException(
@@ -282,37 +348,54 @@ export class OrgMembershipService {
       );
     }
 
-    const nextOrgId = await this.db.transaction(async (tx) => {
-      await tx
-        .delete(organizationMembers)
-        .where(
-          and(
-            eq(organizationMembers.orgId, orgId),
-            eq(organizationMembers.userId, userId),
-          ),
-        );
-      const [remaining] = await tx
-        .select({ orgId: organizationMembers.orgId })
-        .from(organizationMembers)
-        .where(eq(organizationMembers.userId, userId))
-        .orderBy(desc(organizationMembers.joinedAt))
-        .limit(1);
-      const fallbackOrgId = remaining?.orgId ?? null;
-      await tx
-        .update(users)
-        .set({ lastActiveOrgId: fallbackOrgId })
-        .where(and(eq(users.id, userId), eq(users.lastActiveOrgId, orgId)));
-      return fallbackOrgId;
-    });
+    try {
+      const nextOrgId = await this.db.transaction(async (tx) => {
+        const ownedModuleKeys = await this.queryOwnedModuleKeys(tx, orgId, membership.id);
+        if (ownedModuleKeys.length > 0) {
+          throw new BadRequestException(
+            `Transfer module ownership before leaving this organization. Owned modules: ${ownedModuleKeys.join(", ")}.`,
+          );
+        }
 
-    await this.cache.invalidate(CACHE_KEYS.userSession(userId));
-    this.audit.log({
-      action: "org.member_left",
-      userId,
-      orgId,
-      targetId: userId,
-      targetType: "user",
-    });
-    return { success: true, nextOrgId };
+        await tx
+          .delete(organizationMembers)
+          .where(
+            and(
+              eq(organizationMembers.orgId, orgId),
+              eq(organizationMembers.userId, userId),
+            ),
+          );
+        const [remaining] = await tx
+          .select({ orgId: organizationMembers.orgId })
+          .from(organizationMembers)
+          .where(eq(organizationMembers.userId, userId))
+          .orderBy(desc(organizationMembers.joinedAt))
+          .limit(1);
+        const fallbackOrgId = remaining?.orgId ?? null;
+        await tx
+          .update(users)
+          .set({ lastActiveOrgId: fallbackOrgId })
+          .where(and(eq(users.id, userId), eq(users.lastActiveOrgId, orgId)));
+        return fallbackOrgId;
+      });
+
+      await this.cache.invalidate(CACHE_KEYS.userSession(userId));
+      this.audit.log({
+        action: "org.member_left",
+        userId,
+        orgId,
+        targetId: userId,
+        targetType: "user",
+      });
+      return { success: true, nextOrgId };
+    } catch (err) {
+      if (err instanceof BadRequestException) throw err;
+      if ((err as { code?: string }).code === PG_FK_VIOLATION) {
+        throw new BadRequestException(
+          "Cannot leave an organization while owning a module. Transfer module ownership first.",
+        );
+      }
+      throw err;
+    }
   }
 }

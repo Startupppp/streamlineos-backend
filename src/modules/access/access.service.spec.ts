@@ -12,6 +12,8 @@ import type { DataScope } from "./access.types";
 import type { Db } from "../../db/drizzle.module";
 import type { CacheService } from "../../common/cache/cache.service";
 import type { EntitlementsService } from "./entitlements.service";
+import { bumpPermissionsVersion, type DbOrTx } from "../../common/rbac/access-invalidate";
+import { ALL_PERMISSION_NAMES } from "../rbac/permissions";
 
 describe("broadest", () => {
   it("ranks none < own < team < all", () => {
@@ -198,34 +200,34 @@ describe("isActiveAssignment", () => {
   });
 });
 
+function makeSelectChain(result: unknown[]): Record<string, jest.Mock> {
+  const chain: Record<string, jest.Mock> = {
+    from: jest.fn(),
+    where: jest.fn().mockResolvedValue(result),
+    innerJoin: jest.fn(),
+  };
+  chain.from.mockReturnValue(chain);
+  chain.innerJoin.mockReturnValue(chain);
+  return chain;
+}
+
+function buildService(db: unknown): AccessService {
+  const cache = {
+    cached: jest.fn().mockImplementation(async (_key: string, fn: () => Promise<unknown>) => fn()),
+    invalidate: jest.fn().mockResolvedValue(undefined),
+  };
+  const entitlements = {
+    isModuleEnabled: jest.fn().mockResolvedValue(true),
+    getModuleMap: jest.fn().mockResolvedValue({}),
+  };
+  return new AccessService(
+    db as unknown as Db,
+    cache as unknown as CacheService,
+    entitlements as unknown as EntitlementsService,
+  );
+}
+
 describe("AccessService.resolveUserPermissions", () => {
-  function makeSelectChain(result: unknown[]): Record<string, jest.Mock> {
-    const chain: Record<string, jest.Mock> = {
-      from: jest.fn(),
-      where: jest.fn().mockResolvedValue(result),
-      innerJoin: jest.fn(),
-    };
-    chain.from.mockReturnValue(chain);
-    chain.innerJoin.mockReturnValue(chain);
-    return chain;
-  }
-
-  function buildService(db: unknown): AccessService {
-    const cache = {
-      cached: jest.fn().mockImplementation(async (_key: string, fn: () => Promise<unknown>) => fn()),
-      invalidate: jest.fn().mockResolvedValue(undefined),
-    };
-    const entitlements = {
-      isModuleEnabled: jest.fn().mockResolvedValue(true),
-      getModuleMap: jest.fn().mockResolvedValue({}),
-    };
-    return new AccessService(
-      db as unknown as Db,
-      cache as unknown as CacheService,
-      entitlements as unknown as EntitlementsService,
-    );
-  }
-
   it("resolves to an empty map for an active member with no role assignments (deny-by-default)", async () => {
     const db = {
       query: {
@@ -236,6 +238,7 @@ describe("AccessService.resolveUserPermissions", () => {
         userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
       },
       select: jest.fn()
+        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
@@ -258,6 +261,7 @@ describe("AccessService.resolveUserPermissions", () => {
       },
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([{ roleId: 10 }]))
+        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([{ id: 10, slug: "HR_ADMIN" }]))
         .mockReturnValueOnce(makeSelectChain([{ roleId: 10, permissionKey: "hr:employees:view", scope: "all" }]))
@@ -283,6 +287,7 @@ describe("AccessService.resolveUserPermissions", () => {
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([{ principalGroupId: "group-uuid-1" }]))
+        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([{ roleId: 20 }]))
         .mockReturnValueOnce(makeSelectChain([{ id: 20, slug: "HR_VIEWER" }]))
         .mockReturnValueOnce(makeSelectChain([{ roleId: 20, permissionKey: "hr:employees:view", scope: "own" }]))
@@ -309,6 +314,7 @@ describe("AccessService.resolveUserPermissions", () => {
         .mockReturnValueOnce(makeSelectChain([{ principalGroupId: "group-uuid-2" }]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([])),
     };
 
@@ -329,6 +335,7 @@ describe("AccessService.resolveUserPermissions", () => {
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([{ roleId: 30 }]))
         .mockReturnValueOnce(makeSelectChain([{ principalGroupId: "group-uuid-3" }]))
+        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([{ roleId: 31 }]))
         .mockReturnValueOnce(makeSelectChain([
           { id: 30, slug: "ROLE_A" },
@@ -360,6 +367,7 @@ describe("AccessService.resolveUserPermissions", () => {
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([])),
     };
 
@@ -381,11 +389,257 @@ describe("AccessService.resolveUserPermissions", () => {
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([])),
     };
 
     const result = await buildService(db).resolveUserPermissions("org-1", "user-4");
 
     expect(result.size).toBe(0);
+  });
+});
+
+describe("AccessService.resolveUserPermissions — module ownership grants", () => {
+  it("a module owner gets 'all'-scoped grants for every permission in that module and none for other modules", async () => {
+    const db = {
+      query: {
+        accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
+        organizationMembers: {
+          findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 1 }),
+        },
+        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
+      },
+      select: jest.fn()
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([{ moduleKey: "hr" }]))
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([])),
+    };
+
+    const result = await buildService(db).resolveUserPermissions("org-owner", "user-owner");
+
+    expect(result.size).toBeGreaterThan(0);
+    expect(result.get("hr:employees:view")).toBe("all");
+    for (const [key] of result) {
+      expect(key.startsWith("hr:")).toBe(true);
+    }
+  });
+
+  it("a user-denied module yields no permissions for its module owner (strip step still runs post-ownership-grant)", async () => {
+    const db = {
+      query: {
+        accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
+        organizationMembers: {
+          findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 1 }),
+        },
+        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
+      },
+      select: jest.fn()
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([{ moduleKey: "hr" }]))
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([{ moduleKey: "hr" }])),
+    };
+
+    const result = await buildService(db).resolveUserPermissions("org-owner", "user-owner");
+
+    expect(result.size).toBe(0);
+  });
+});
+
+describe("AccessService.resolveUserPermissions — version bump invalidates local version cache", () => {
+  it("a permission version bump is observed by the next resolve call in the same process", async () => {
+    let currentVersion = 1;
+    const selectChain = makeSelectChain([]);
+    const db = {
+      query: {
+        accessVersions: {
+          findFirst: jest.fn().mockImplementation(() =>
+            Promise.resolve({ permissionsVersion: currentVersion }),
+          ),
+        },
+        organizationMembers: {
+          findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 1 }),
+        },
+        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
+      },
+      select: jest.fn().mockReturnValue(selectChain),
+      insert: jest.fn().mockReturnValue({
+        values: jest.fn().mockReturnValue({
+          onConflictDoUpdate: jest.fn().mockResolvedValue(undefined),
+        }),
+      }),
+    };
+
+    const cache = {
+      cached: jest.fn().mockImplementation(async (_key: string, fn: () => Promise<unknown>) => fn()),
+      invalidate: jest.fn().mockResolvedValue(undefined),
+    };
+    const entitlements = {
+      isModuleEnabled: jest.fn().mockResolvedValue(true),
+      getModuleMap: jest.fn().mockResolvedValue({}),
+    };
+    const svc = new AccessService(
+      db as unknown as Db,
+      cache as unknown as CacheService,
+      entitlements as unknown as EntitlementsService,
+    );
+    svc.onModuleInit();
+
+    await svc.resolveUserPermissions("org-bump", "user-bump");
+    expect(db.query.accessVersions.findFirst).toHaveBeenCalledTimes(1);
+
+    currentVersion = 2;
+    await bumpPermissionsVersion(db as unknown as DbOrTx, "org-bump");
+
+    await svc.resolveUserPermissions("org-bump", "user-bump");
+    expect(db.query.accessVersions.findFirst).toHaveBeenCalledTimes(2);
+
+    svc.onModuleDestroy();
+  });
+});
+
+describe("AccessService.resolveUserPermissions — unknown permission keys are omitted from the resolved map", () => {
+  const STALE_KEY = "deleted:legacy:key";
+  const KNOWN_KEY = ALL_PERMISSION_NAMES[0] ?? "hr:employees:view";
+
+  it("a stale role-grant key absent from the catalog is silently dropped and does not appear in the resolved map", async () => {
+    const db = {
+      query: {
+        accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
+        organizationMembers: {
+          findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 10 }),
+        },
+        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
+      },
+      select: jest.fn()
+        .mockReturnValueOnce(makeSelectChain([{ roleId: 50 }]))
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([{ id: 50, slug: "STALE_ROLE" }]))
+        .mockReturnValueOnce(makeSelectChain([{ roleId: 50, permissionKey: STALE_KEY, scope: "all" }]))
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([])),
+    };
+
+    const result = await buildService(db).resolveUserPermissions("org-stale", "user-stale");
+
+    expect(result.has(STALE_KEY)).toBe(false);
+    expect(result.size).toBe(0);
+  });
+
+  it("a known role-grant key still resolves normally when accompanied by a stale key", async () => {
+    const db = {
+      query: {
+        accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
+        organizationMembers: {
+          findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 11 }),
+        },
+        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
+      },
+      select: jest.fn()
+        .mockReturnValueOnce(makeSelectChain([{ roleId: 51 }]))
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([{ id: 51, slug: "MIXED_ROLE" }]))
+        .mockReturnValueOnce(makeSelectChain([
+          { roleId: 51, permissionKey: KNOWN_KEY, scope: "all" },
+          { roleId: 51, permissionKey: STALE_KEY, scope: "all" },
+        ]))
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([])),
+    };
+
+    const result = await buildService(db).resolveUserPermissions("org-mixed", "user-mixed");
+
+    expect(result.has(STALE_KEY)).toBe(false);
+    expect(result.get(KNOWN_KEY)).toBe("all");
+    expect(result.size).toBe(1);
+  });
+
+  it("a stale key in a delegation row is dropped and does not appear in the resolved map", async () => {
+    const db = {
+      query: {
+        accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
+        organizationMembers: {
+          findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 12 }),
+        },
+        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
+      },
+      select: jest.fn()
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([{ permissions: [STALE_KEY] }]))
+        .mockReturnValueOnce(makeSelectChain([])),
+    };
+
+    const result = await buildService(db).resolveUserPermissions("org-del", "user-del");
+
+    expect(result.has(STALE_KEY)).toBe(false);
+    expect(result.size).toBe(0);
+  });
+
+  it("the same stale key triggers the warning log only once across multiple resolve calls (per-instance dedup)", async () => {
+    const makeDb = () => ({
+      query: {
+        accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
+        organizationMembers: {
+          findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 13 }),
+        },
+        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
+      },
+      select: jest.fn()
+        .mockReturnValueOnce(makeSelectChain([{ roleId: 52 }]))
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([{ id: 52, slug: "STALE_R2" }]))
+        .mockReturnValueOnce(makeSelectChain([{ roleId: 52, permissionKey: STALE_KEY, scope: "all" }]))
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([])),
+    });
+
+    const cache = {
+      cached: jest.fn().mockImplementation(async (_key: string, fn: () => Promise<unknown>) => fn()),
+      invalidate: jest.fn().mockResolvedValue(undefined),
+    };
+    const entitlements = {
+      isModuleEnabled: jest.fn().mockResolvedValue(true),
+      getModuleMap: jest.fn().mockResolvedValue({}),
+    };
+    const logWarnSpy = jest.spyOn(
+      require("../../common/logger/logger.service").logger,
+      "warn",
+    );
+    logWarnSpy.mockImplementation(() => undefined);
+
+    const db1 = makeDb();
+    const svc = new AccessService(
+      db1 as unknown as Db,
+      cache as unknown as CacheService,
+      entitlements as unknown as EntitlementsService,
+    );
+
+    await svc.resolveUserPermissions("org-dedup", "user-dedup");
+
+    const db2 = makeDb();
+    (svc as unknown as { db: unknown }).db = db2;
+    cache.cached.mockImplementation(async (_key: string, fn: () => Promise<unknown>) => fn());
+    svc["versionCache"].clear();
+    svc["permsCache"].clear();
+
+    await svc.resolveUserPermissions("org-dedup", "user-dedup2");
+
+    const unknownKeyWarnings = logWarnSpy.mock.calls.filter(
+      (call) =>
+        typeof call[0] === "string" &&
+        call[0].includes("unknown permission key") &&
+        (call[1] as Record<string, unknown>)?.["key"] === STALE_KEY,
+    );
+    expect(unknownKeyWarnings.length).toBe(1);
+
+    logWarnSpy.mockRestore();
   });
 });

@@ -94,6 +94,7 @@ export const organizationMembers = pgTable("organization_members", {
 }, (table) => [
   uniqueIndex("uniq_org_members_user_org").on(table.userId, table.orgId),
   unique("uniq_org_members_org_id").on(table.orgId, table.id),
+  uniqueIndex("uniq_org_members_single_owner").on(table.orgId).where(sql`is_owner = true`),
   index("idx_org_members_org_role").on(table.orgId, table.role),
   index("idx_org_members_owner").on(table.orgId, table.isOwner),
   index("idx_org_members_org_status").on(table.orgId, table.status),
@@ -290,11 +291,19 @@ export const roles = pgTable("roles", {
   isSystem: boolean("is_system").default(false).notNull(),
   moduleKey: text("module_key"),
   rank: integer("rank").notNull().default(40),
+  description: text("description"),
+  version: integer("version").notNull().default(1),
+  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_role_slug_org").on(table.slug, table.orgId),
   index("idx_roles_org_module").on(table.orgId, table.moduleKey),
+  uniqueIndex("uniq_roles_org_module_name_ci").on(
+    table.orgId,
+    sql`COALESCE(${table.moduleKey}, '')`,
+    sql`LOWER(${table.name})`,
+  ),
 ]);
 
 export const permissions = pgTable("permissions", {

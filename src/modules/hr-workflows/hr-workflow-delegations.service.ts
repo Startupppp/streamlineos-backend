@@ -3,6 +3,7 @@ import { and, eq, desc } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { hrWorkflowDelegations } from "../../db/schema/hr/workflow-engine";
+import { users } from "../../db/schema";
 import type { CreateDelegationDto, UpdateDelegationDto } from "./dto/workflow.schemas";
 
 @Injectable()
@@ -10,19 +11,51 @@ export class HrWorkflowDelegationsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async myDelegations(orgId: string, userId: string) {
-    return this.db.select()
+    return this.db
+      .select({
+        id: hrWorkflowDelegations.id,
+        orgId: hrWorkflowDelegations.orgId,
+        delegatorUserId: hrWorkflowDelegations.delegatorUserId,
+        delegateUserId: hrWorkflowDelegations.delegateUserId,
+        objectType: hrWorkflowDelegations.objectType,
+        startsAt: hrWorkflowDelegations.startsAt,
+        endsAt: hrWorkflowDelegations.endsAt,
+        reason: hrWorkflowDelegations.reason,
+        active: hrWorkflowDelegations.active,
+        createdAt: hrWorkflowDelegations.createdAt,
+        delegateName: users.name,
+        delegateEmail: users.email,
+      })
       .from(hrWorkflowDelegations)
-      .where(and(
-        eq(hrWorkflowDelegations.orgId, orgId),
-        eq(hrWorkflowDelegations.delegatorUserId, userId),
-      ))
+      .leftJoin(users, eq(users.id, hrWorkflowDelegations.delegateUserId))
+      .where(
+        and(
+          eq(hrWorkflowDelegations.orgId, orgId),
+          eq(hrWorkflowDelegations.delegatorUserId, userId),
+        ),
+      )
       .orderBy(desc(hrWorkflowDelegations.createdAt))
       .limit(50);
   }
 
   async orgDelegations(orgId: string) {
-    return this.db.select()
+    return this.db
+      .select({
+        id: hrWorkflowDelegations.id,
+        orgId: hrWorkflowDelegations.orgId,
+        delegatorUserId: hrWorkflowDelegations.delegatorUserId,
+        delegateUserId: hrWorkflowDelegations.delegateUserId,
+        objectType: hrWorkflowDelegations.objectType,
+        startsAt: hrWorkflowDelegations.startsAt,
+        endsAt: hrWorkflowDelegations.endsAt,
+        reason: hrWorkflowDelegations.reason,
+        active: hrWorkflowDelegations.active,
+        createdAt: hrWorkflowDelegations.createdAt,
+        delegateName: users.name,
+        delegateEmail: users.email,
+      })
       .from(hrWorkflowDelegations)
+      .leftJoin(users, eq(users.id, hrWorkflowDelegations.delegateUserId))
       .where(eq(hrWorkflowDelegations.orgId, orgId))
       .orderBy(desc(hrWorkflowDelegations.createdAt))
       .limit(100);

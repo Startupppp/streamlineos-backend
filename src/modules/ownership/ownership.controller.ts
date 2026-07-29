@@ -18,6 +18,8 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
+import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { OwnershipService } from "./ownership.service";
 import {
   declineTransferSchema,
@@ -57,8 +59,9 @@ export class OwnershipController {
   }
 
   @Put("modules/:moduleKey/owner")
-  @UseGuards(PermissionGuard)
+  @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("ownership:modules:manage")
+  @UseRateLimit("ownership:force-set")
   forceSetModuleOwner(
     @Param("moduleKey") moduleKey: string,
     @Body(new ZodValidationPipe(setModuleOwnerSchema)) body: SetModuleOwnerInput,
@@ -72,8 +75,9 @@ export class OwnershipController {
 
   @Post("org/transfer")
   @HttpCode(HttpStatus.CREATED)
-  @UseGuards(PermissionGuard)
+  @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("ownership:org:transfer")
+  @UseRateLimit("ownership:transfer")
   initiateOrgTransfer(
     @Body(new ZodValidationPipe(initiateOrgTransferSchema)) body: InitiateOrgTransferInput,
     @CurrentUser() u: CurrentUserContext,
@@ -86,8 +90,9 @@ export class OwnershipController {
 
   @Put("org/owner")
   @HttpCode(HttpStatus.OK)
-  @UseGuards(PermissionGuard)
+  @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("ownership:org:transfer")
+  @UseRateLimit("ownership:force-set")
   forceTransferOrgOwnership(
     @Body(new ZodValidationPipe(forceTransferOrgSchema)) body: ForceTransferOrgInput,
     @CurrentUser() u: CurrentUserContext,
@@ -100,8 +105,9 @@ export class OwnershipController {
 
   @Post("modules/:moduleKey/transfer")
   @HttpCode(HttpStatus.CREATED)
-  @UseGuards(PermissionGuard)
+  @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("ownership:modules:manage")
+  @UseRateLimit("ownership:transfer")
   initiateModuleTransfer(
     @Param("moduleKey") moduleKey: string,
     @Body(new ZodValidationPipe(initiateModuleTransferSchema)) body: InitiateModuleTransferInput,
@@ -135,8 +141,9 @@ export class OwnershipController {
 
   @Post("transfers/:transferId/accept")
   @HttpCode(HttpStatus.OK)
-  @UseGuards(PermissionGuard)
+  @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("ownership:transfer:respond")
+  @UseRateLimit("ownership:transfer")
   acceptTransfer(
     @Param("transferId") transferId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -146,8 +153,9 @@ export class OwnershipController {
 
   @Post("transfers/:transferId/decline")
   @HttpCode(HttpStatus.OK)
-  @UseGuards(PermissionGuard)
+  @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("ownership:transfer:respond")
+  @UseRateLimit("ownership:transfer")
   declineTransfer(
     @Param("transferId") transferId: string,
     @Body(new ZodValidationPipe(declineTransferSchema)) body: DeclineTransferInput,
@@ -158,8 +166,9 @@ export class OwnershipController {
 
   @Delete("transfers/:transferId")
   @HttpCode(HttpStatus.OK)
-  @UseGuards(PermissionGuard)
+  @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("ownership:modules:manage")
+  @UseRateLimit("ownership:transfer")
   cancelTransfer(
     @Param("transferId") transferId: string,
     @CurrentUser() u: CurrentUserContext,

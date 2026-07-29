@@ -52,6 +52,10 @@ const TIERS: Record<string, Tier> = {
   "ai:vision": { limit: 10, windowSecs: 60 },
   "ai:public-kb-ask": { limit: 10, windowSecs: 60 },
   "kb:ask": { limit: 20, windowSecs: 60 },
+  "module-access:ownership-transfer": { limit: 5, windowSecs: 3600 },
+  "module-access:group-mutate": { limit: 30, windowSecs: 60 },
+  "ownership:transfer": { limit: 5, windowSecs: 3600 },
+  "ownership:force-set": { limit: 10, windowSecs: 3600 },
 };
 
 const DEV_LIMIT_MULTIPLIER = process.env.NODE_ENV === "production" ? 1 : 10;

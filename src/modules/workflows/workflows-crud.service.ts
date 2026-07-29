@@ -4,6 +4,7 @@ import {
   workflows,
   workflowVersions,
   workflowAuditLogs,
+  users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -43,17 +44,35 @@ export class WorkflowsCrudService {
   }
 
   async getWorkflow(orgId: string, workflowId: string) {
-    const workflow = await this.db.query.workflows.findFirst({
-      where: and(eq(workflows.id, workflowId), eq(workflows.orgId, orgId)),
-      with: {
-        versions: {
-          orderBy: [desc(workflowVersions.version)],
-          limit: 1,
-        },
-      },
-    });
-    if (!workflow) throw new NotFoundException("Workflow not found");
-    return workflow;
+    const [row] = await this.db
+      .select({
+        id: workflows.id,
+        orgId: workflows.orgId,
+        name: workflows.name,
+        description: workflows.description,
+        status: workflows.status,
+        version: workflows.version,
+        createdBy: workflows.createdBy,
+        createdAt: workflows.createdAt,
+        updatedAt: workflows.updatedAt,
+        createdByName: users.name,
+        createdByEmail: users.email,
+      })
+      .from(workflows)
+      .leftJoin(users, eq(users.id, workflows.createdBy))
+      .where(and(eq(workflows.id, workflowId), eq(workflows.orgId, orgId)))
+      .limit(1);
+
+    if (!row) throw new NotFoundException("Workflow not found");
+
+    const versions = await this.db
+      .select()
+      .from(workflowVersions)
+      .where(and(eq(workflowVersions.workflowId, workflowId), eq(workflowVersions.orgId, orgId)))
+      .orderBy(desc(workflowVersions.version))
+      .limit(1);
+
+    return { ...row, versions };
   }
 
   async createWorkflow(
@@ -148,6 +167,7 @@ export class WorkflowsCrudService {
       const [version] = await tx
         .insert(workflowVersions)
         .values({
+          orgId,
           workflowId,
           version: nextVersion,
           definitionJson: dto.definitionJson,

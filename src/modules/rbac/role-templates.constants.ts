@@ -386,8 +386,6 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
     name: "Digital Marketing",
     slug: "DIGITAL_MARKETING",
     permissions: [
-      "blog:posts:manage",
-      "blog:categories:manage",
       "kb:articles:view",
       "kb:spaces:view",
       "kb:pages:view",

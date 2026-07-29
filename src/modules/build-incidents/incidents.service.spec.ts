@@ -181,6 +181,7 @@ describe("IncidentsService.getIncident — flat response structure", () => {
     ];
     const selectChain = {
       from: jest.fn().mockReturnThis(),
+      leftJoin: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockResolvedValue(updates),
     };
@@ -206,6 +207,7 @@ describe("IncidentsService.getIncident — flat response structure", () => {
   it("returns an empty updates array when no updates exist", async () => {
     const selectChain = {
       from: jest.fn().mockReturnThis(),
+      leftJoin: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockResolvedValue([]),
     };

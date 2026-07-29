@@ -1,16 +1,18 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, eq } from "drizzle-orm";
-import { rolePermissionGrants, roles } from "../../db/schema";
+import { and, asc, count, desc, eq, sql } from "drizzle-orm";
+import { auditLogs, moduleOwnerships, organizationMembers, rolePermissionGrants, roles, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
+import { AuditService } from "../../common/audit/audit.service";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import {
   assertPermissionsGrantable,
@@ -27,10 +29,11 @@ import {
   ROLE_DEFAULT_PERMISSIONS,
   type Permission,
 } from "../rbac/permissions";
-import type { SetModuleRolePermissionsInput } from "./dto/module-access.schemas";
+import type { AuditLogQuery, SetModuleRolePermissionsInput } from "./dto/module-access.schemas";
 
 const MANAGED_MODULES = new Set<string>(ACCESS_MANAGED_MODULES);
 const ORG_ADMIN_KEY = "settings:rbac:manage";
+const PERM_DIFF_CAP = 50;
 
 function moduleOf(permissionKey: string): string {
   return permissionKey.split(":")[0] ?? permissionKey;
@@ -58,6 +61,7 @@ export class ModuleAccessService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
     private readonly cache: CacheService,
+    private readonly audit: AuditService,
   ) {}
 
   private assertKnownModule(moduleKey: string): void {
@@ -175,7 +179,7 @@ export class ModuleAccessService {
     moduleKey: string,
     roleId: number,
     input: SetModuleRolePermissionsInput,
-  ): Promise<{ success: true }> {
+  ): Promise<{ success: true; version: number }> {
     await this.assertModuleAccess(actor, moduleKey, "manage");
     const catalog = this.moduleCatalogKeys(moduleKey);
 
@@ -220,8 +224,30 @@ export class ModuleAccessService {
       }
     }
 
+    const nextVersion = role.version + 1;
+
+    let permDiff: { added: string[]; removed: string[]; truncated: boolean } = { added: [], removed: [], truncated: false };
+
     await this.db.transaction(async (tx): Promise<void> => {
-      const existing = await tx
+      const updated = await tx
+        .update(roles)
+        .set({ version: nextVersion })
+        .where(
+          and(
+            eq(roles.id, roleId),
+            eq(roles.orgId, actor.orgId),
+            eq(roles.version, input.version),
+          ),
+        )
+        .returning({ id: roles.id });
+
+      if (updated.length === 0) {
+        throw new ConflictException(
+          "This role was changed by someone else. Reload and try again.",
+        );
+      }
+
+      const existingGrants = await tx
         .select({
           permissionKey: rolePermissionGrants.permissionKey,
           scope: rolePermissionGrants.scope,
@@ -235,20 +261,38 @@ export class ModuleAccessService {
         )
         .limit(2000);
 
-      // Materialize the role's current effective grants (explicit rows, else its slug
-      // defaults), then replace ONLY this module's slice — non-module permissions are preserved.
       const base = new Map<string, DataScope>();
-      if (existing.length > 0) {
-        for (const grant of existing) base.set(grant.permissionKey, grant.scope);
+      if (existingGrants.length > 0) {
+        for (const grant of existingGrants) base.set(grant.permissionKey, grant.scope);
       } else {
         for (const key of ROLE_DEFAULT_PERMISSIONS[role.slug] ?? []) {
           base.set(key, "all");
         }
       }
+
+      const oldModuleKeys = new Set<string>(
+        Array.from(base.keys()).filter((k) => moduleOf(k) === moduleKey),
+      );
+
       for (const key of Array.from(base.keys())) {
         if (moduleOf(key) === moduleKey) base.delete(key);
       }
       for (const [key, scope] of deduped) base.set(key, scope);
+
+      const addedKeys: string[] = [];
+      const removedKeys: string[] = [];
+      for (const key of deduped.keys()) {
+        if (!oldModuleKeys.has(key)) addedKeys.push(key);
+      }
+      for (const key of oldModuleKeys) {
+        if (!deduped.has(key)) removedKeys.push(key);
+      }
+      const rawTruncated = addedKeys.length > PERM_DIFF_CAP || removedKeys.length > PERM_DIFF_CAP;
+      permDiff = {
+        added: addedKeys.slice(0, PERM_DIFF_CAP),
+        removed: removedKeys.slice(0, PERM_DIFF_CAP),
+        truncated: rawTruncated,
+      };
 
       await tx
         .delete(rolePermissionGrants)
@@ -272,6 +316,152 @@ export class ModuleAccessService {
     });
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
-    return { success: true };
+    this.audit.log({
+      action: "module_access.role_permissions_set",
+      userId: actor.userId,
+      orgId: actor.orgId,
+      targetId: String(roleId),
+      targetType: "role",
+      metadata: {
+        moduleKey,
+        roleName: role.name,
+        added: permDiff.added,
+        removed: permDiff.removed,
+        truncated: permDiff.truncated,
+      },
+    });
+    return { success: true, version: nextVersion };
+  }
+
+  async getCallerPermissions(
+    actor: CurrentUserContext,
+    moduleKey: string,
+  ): Promise<{
+    permissions: { key: string; scope: DataScope }[];
+    isOrgOwner: boolean;
+    isPlatformAdmin: boolean;
+    isModuleOwner: boolean;
+    isModuleAdmin: boolean;
+  }> {
+    this.assertKnownModule(moduleKey);
+
+    const membership = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, actor.orgId),
+        eq(organizationMembers.userId, actor.userId),
+        eq(organizationMembers.status, "ACTIVE"),
+      ),
+      columns: { id: true },
+    });
+    if (!membership) throw new ForbiddenException("Not an active member of this organization");
+
+    const [resolved, ownerRow] = await Promise.all([
+      this.access.resolveUserPermissions(actor.orgId, actor.userId),
+      this.db
+        .select({ userId: organizationMembers.userId })
+        .from(moduleOwnerships)
+        .innerJoin(
+          organizationMembers,
+          and(
+            eq(moduleOwnerships.orgId, organizationMembers.orgId),
+            eq(moduleOwnerships.ownerMembershipId, organizationMembers.id),
+          ),
+        )
+        .where(
+          and(
+            eq(moduleOwnerships.orgId, actor.orgId),
+            eq(moduleOwnerships.moduleKey, moduleKey),
+          ),
+        )
+        .limit(1),
+    ]);
+
+    const permissions = Array.from(resolved.entries())
+      .filter(([key]) => key.startsWith(`${moduleKey}:`))
+      .map(([key, scope]) => ({ key, scope }));
+
+    const isModuleAdmin = (resolved.get(`${moduleKey}:access:manage`) ?? "none") !== "none"
+      || (resolved.get(`${moduleKey}:access:view`) ?? "none") !== "none";
+
+    return {
+      permissions,
+      isOrgOwner: actor.isOrgOwner,
+      isPlatformAdmin: actor.isPlatformAdmin,
+      isModuleOwner: ownerRow[0]?.userId === actor.userId,
+      isModuleAdmin,
+    };
+  }
+
+  async getAuditLog(
+    actor: CurrentUserContext,
+    moduleKey: string,
+    { page, pageSize }: AuditLogQuery,
+  ): Promise<{
+    data: {
+      id: number;
+      action: string;
+      actorUserId: string;
+      actorName: string;
+      actorEmail: string;
+      targetId: string | null;
+      targetType: string | null;
+      metadata: Record<string, unknown> | null;
+      ipAddress: string | null;
+      createdAt: string;
+    }[];
+    pagination: { page: number; pageSize: number; total: number; totalPages: number };
+  }> {
+    await this.assertModuleAccess(actor, moduleKey, "view");
+
+    const limit = Math.min(pageSize, 100);
+    const offset = (page - 1) * limit;
+
+    const where = and(
+      eq(auditLogs.orgId, actor.orgId),
+      sql`${auditLogs.metadata}->>'moduleKey' = ${moduleKey}`,
+    );
+
+    const [totalResult, rows] = await Promise.all([
+      this.db.select({ total: count() }).from(auditLogs).where(where),
+      this.db
+        .select({
+          id: auditLogs.id,
+          action: auditLogs.action,
+          actorUserId: auditLogs.userId,
+          actorName: users.name,
+          actorEmail: users.email,
+          targetId: auditLogs.targetId,
+          targetType: auditLogs.targetType,
+          metadata: auditLogs.metadata,
+          ipAddress: auditLogs.ipAddress,
+          createdAt: auditLogs.createdAt,
+        })
+        .from(auditLogs)
+        .leftJoin(users, eq(auditLogs.userId, users.id))
+        .where(where)
+        .orderBy(desc(auditLogs.createdAt))
+        .limit(limit)
+        .offset(offset),
+    ]);
+
+    const total = Number(totalResult[0]?.total ?? 0);
+
+    const data = rows.map((r) => ({
+      id: r.id,
+      action: r.action,
+      actorUserId: r.actorUserId,
+      actorName: r.actorName ?? r.actorEmail ?? r.actorUserId,
+      actorEmail: r.actorEmail ?? "",
+      targetId: r.targetId,
+      targetType: r.targetType,
+      metadata: r.metadata,
+      ipAddress: r.ipAddress,
+      createdAt: r.createdAt.toISOString(),
+    }));
+
+    return {
+      data,
+      pagination: { page, pageSize: limit, total, totalPages: total > 0 ? Math.ceil(total / limit) : 0 },
+    };
   }
 }

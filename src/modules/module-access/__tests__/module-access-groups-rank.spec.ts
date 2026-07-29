@@ -3,6 +3,7 @@ import { Test } from "@nestjs/testing";
 import { ModuleAccessGroupsService } from "../module-access-groups.service";
 import { AccessService } from "../../access/access.service";
 import { CacheService } from "../../../common/cache/cache.service";
+import { AuditService } from "../../../common/audit/audit.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { ROLE_RANK } from "../../../common/rbac/grantability";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -23,13 +24,20 @@ function actor(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext 
   };
 }
 
-function buildSelectChain(resolvedRows: { rank: number; moduleKey: string | null }[]) {
-  const limitMock = jest.fn().mockResolvedValue(resolvedRows);
+function makeChain(rows: unknown[]) {
+  const limitMock = jest.fn().mockResolvedValue(rows);
   const whereMock = jest.fn().mockReturnValue({ limit: limitMock });
   const innerJoin2 = jest.fn().mockReturnValue({ where: whereMock });
   const innerJoin1 = jest.fn().mockReturnValue({ innerJoin: innerJoin2, where: whereMock });
-  const fromMock = jest.fn().mockReturnValue({ innerJoin: innerJoin1 });
-  return jest.fn().mockReturnValue({ from: fromMock });
+  const fromMock = jest.fn().mockReturnValue({ innerJoin: innerJoin1, where: whereMock });
+  return { from: fromMock };
+}
+
+function buildSelectChain(resolvedRows: { rank: number; moduleKey: string | null }[]) {
+  const selectFn = jest.fn();
+  selectFn.mockImplementationOnce(() => makeChain(resolvedRows));
+  selectFn.mockImplementation(() => makeChain([]));
+  return selectFn;
 }
 
 function buildTxMock(createdRow: { id: number; name: string; isSystem: boolean }) {
@@ -67,6 +75,7 @@ async function buildSvc(
       { provide: DRIZZLE, useValue: mockDb },
       { provide: AccessService, useValue: { resolveUserPermissions } },
       { provide: CacheService, useValue: { invalidate: jest.fn() } },
+      { provide: AuditService, useValue: { log: jest.fn() } },
     ],
   }).compile();
 
@@ -137,6 +146,6 @@ describe("ModuleAccessGroupsService.createGroup — rank check", () => {
     const result = await svc.createGroup(actor(), "hr", { name: "Org Admin Group" });
 
     expect(result).toBeDefined();
-    expect(mockDb.select).not.toHaveBeenCalled();
+    expect(mockDb.select).toHaveBeenCalledTimes(1);
   });
 });

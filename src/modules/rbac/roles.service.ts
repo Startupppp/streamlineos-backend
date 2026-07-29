@@ -353,7 +353,7 @@ export class RolesService {
     actor: CurrentUserContext,
     roleId: number,
     input: SetRolePermissionsInput,
-  ): Promise<{ success: true }> {
+  ): Promise<{ success: true; version: number }> {
     return this.rolePermission.setRolePermissions(actor, roleId, input);
   }
 
