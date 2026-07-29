@@ -18,7 +18,6 @@ interface RoleSelectChain {
 interface GrantSelectChain {
   from: jest.Mock;
   where: jest.Mock;
-  limit: jest.Mock;
 }
 
 function buildRoleChain(resolvedValue: RoleRow[]): RoleSelectChain {
@@ -37,11 +36,9 @@ function buildRoleChain(resolvedValue: RoleRow[]): RoleSelectChain {
 function buildGrantChain(resolvedValue: GrantRow[]): GrantSelectChain {
   const chain: GrantSelectChain = {
     from: jest.fn(),
-    where: jest.fn(),
-    limit: jest.fn().mockResolvedValue(resolvedValue),
+    where: jest.fn().mockResolvedValue(resolvedValue),
   };
   chain.from.mockReturnValue(chain);
-  chain.where.mockReturnValue(chain);
   return chain;
 }
 
@@ -112,6 +109,31 @@ describe("RolePermissionService.getPermissionsMatrix", () => {
       roleSlug: "SALES",
       permissions: ["crm:leads:view"],
     });
+  });
+
+  it("returns grants for every requested role with no silent truncation", async () => {
+    const roles: RoleRow[] = [
+      { id: 1, name: "Admin", slug: "ADMIN" },
+      { id: 2, name: "Manager", slug: "MANAGER" },
+      { id: 3, name: "Employee", slug: "EMPLOYEE" },
+    ];
+    const grants: GrantRow[] = [
+      { roleId: 1, permissionKey: "hr:employees:view" },
+      { roleId: 1, permissionKey: "hr:employees:create" },
+      { roleId: 2, permissionKey: "hr:employees:view" },
+      { roleId: 3, permissionKey: "hr:employees:view" },
+    ];
+
+    const { db } = buildMockDb(roles, grants);
+    const result = await makeService(db).getPermissionsMatrix("org-1");
+
+    expect(result).toHaveLength(3);
+    expect(result.map((r) => r.roleId)).toEqual(expect.arrayContaining([1, 2, 3]));
+    expect(result.find((r) => r.roleId === 1)?.permissions).toEqual(
+      expect.arrayContaining(["hr:employees:view", "hr:employees:create"]),
+    );
+    expect(result.find((r) => r.roleId === 2)?.permissions).toEqual(["hr:employees:view"]);
+    expect(result.find((r) => r.roleId === 3)?.permissions).toEqual(["hr:employees:view"]);
   });
 
   it("falls back to ROLE_DEFAULT_PERMISSIONS when no grants exist for a custom slug with no default", async () => {

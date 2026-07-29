@@ -640,3 +640,303 @@ describe("AccessService.resolveUserPermissions — unknown permission keys are o
     logWarnSpy.mockRestore();
   });
 });
+
+describe("AccessService.membersWithPermission", () => {
+  function makeQueryChain(result: unknown[]): Record<string, jest.Mock> {
+    const p = Promise.resolve(result);
+    const chain: Record<string, jest.Mock> = {
+      from: jest.fn(),
+      where: jest.fn(),
+      innerJoin: jest.fn(),
+      limit: jest.fn(),
+      then: jest.fn().mockImplementation(
+        (res: (v: unknown[]) => unknown, rej?: (e: unknown) => unknown) => p.then(res, rej),
+      ),
+    };
+    chain.from.mockReturnValue(chain);
+    chain.innerJoin.mockReturnValue(chain);
+    chain.where.mockReturnValue(chain);
+    chain.limit.mockReturnValue(chain);
+    return chain;
+  }
+
+  function buildSvc(opts: {
+    selectResults?: unknown[][];
+    distinctResults?: unknown[][];
+    isModuleEnabled?: boolean;
+  }): AccessService {
+    let sIdx = 0;
+    let dIdx = 0;
+    const sr = opts.selectResults ?? [];
+    const dr = opts.distinctResults ?? [];
+
+    const db = {
+      query: {
+        accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
+      },
+      select: jest.fn().mockImplementation(() => makeQueryChain(sr[sIdx++] ?? [])),
+      selectDistinct: jest.fn().mockImplementation(() => makeQueryChain(dr[dIdx++] ?? [])),
+    };
+
+    const cache = {
+      cached: jest.fn().mockImplementation(async (_k: string, fn: () => Promise<unknown>) => fn()),
+      invalidate: jest.fn().mockResolvedValue(undefined),
+    };
+
+    const entitlements = {
+      isModuleEnabled: jest.fn().mockResolvedValue(opts.isModuleEnabled ?? true),
+      getModuleMap: jest.fn().mockResolvedValue({}),
+    };
+
+    return new AccessService(
+      db as unknown as Db,
+      cache as unknown as CacheService,
+      entitlements as unknown as EntitlementsService,
+    );
+  }
+
+  const PERM = "hr:leaves:approve";
+
+  it("returns [] immediately when the module is disabled", async () => {
+    const svc = buildSvc({ isModuleEnabled: false });
+    const result = await svc.membersWithPermission("org-1", PERM);
+    expect(result).toEqual([]);
+  });
+
+  it("returns [] when no member holds the permission", async () => {
+    const svc = buildSvc({
+      selectResults: [
+        [],
+        [],
+      ],
+      distinctResults: [
+        [],
+        [],
+        [],
+        [],
+      ],
+    });
+    const result = await svc.membersWithPermission("org-1", PERM);
+    expect(result).toEqual([]);
+  });
+
+  it("includes org owners regardless of role grants", async () => {
+    const svc = buildSvc({
+      selectResults: [
+        [{ userId: "owner-1", membershipId: 10 }],
+        [],
+      ],
+      distinctResults: [
+        [],
+        [],
+        [],
+        [],
+      ],
+    });
+    const result = await svc.membersWithPermission("org-1", PERM);
+    expect(result).toEqual([{ userId: "owner-1", membershipId: 10 }]);
+  });
+
+  it("includes members with an explicit role grant via direct role assignment", async () => {
+    const svc = buildSvc({
+      selectResults: [
+        [],
+        [],
+      ],
+      distinctResults: [
+        [{ roleId: 42 }],
+        [{ roleId: 42 }],
+        [],
+        [],
+        [{ userId: "u-direct", membershipId: 20 }],
+        [],
+      ],
+    });
+    const result = await svc.membersWithPermission("org-1", PERM);
+    expect(result).toEqual([{ userId: "u-direct", membershipId: 20 }]);
+  });
+
+  it("includes members who inherit the role via a principal group", async () => {
+    const svc = buildSvc({
+      selectResults: [
+        [],
+        [],
+      ],
+      distinctResults: [
+        [{ roleId: 55 }],
+        [{ roleId: 55 }],
+        [],
+        [],
+        [],
+        [{ userId: "u-group", membershipId: 30 }],
+      ],
+    });
+    const result = await svc.membersWithPermission("org-1", PERM);
+    expect(result).toEqual([{ userId: "u-group", membershipId: 30 }]);
+  });
+
+  it("includes module owners", async () => {
+    const svc = buildSvc({
+      selectResults: [
+        [],
+        [],
+      ],
+      distinctResults: [
+        [],
+        [],
+        [],
+        [{ userId: "u-modowner", membershipId: 40 }],
+      ],
+    });
+    const result = await svc.membersWithPermission("org-1", PERM);
+    expect(result).toEqual([{ userId: "u-modowner", membershipId: 40 }]);
+  });
+
+  it("excludes users explicitly denied the module", async () => {
+    const svc = buildSvc({
+      selectResults: [
+        [{ userId: "owner-1", membershipId: 10 }],
+        [],
+        [{ userId: "owner-1" }],
+      ],
+      distinctResults: [
+        [],
+        [],
+        [],
+        [],
+      ],
+    });
+    const result = await svc.membersWithPermission("org-1", PERM);
+    expect(result).toEqual([]);
+  });
+
+  it("includes a member whose role uses the ROLE_DEFAULT_PERMISSIONS fallback", async () => {
+    const svc = buildSvc({
+      selectResults: [
+        [],
+        [{ id: 77 }],
+      ],
+      distinctResults: [
+        [],
+        [],
+        [],
+        [],
+        [{ userId: "u-default", membershipId: 50 }],
+        [],
+      ],
+    });
+    const result = await svc.membersWithPermission("org-1", PERM);
+    expect(result).toEqual([{ userId: "u-default", membershipId: 50 }]);
+  });
+
+  it("deduplicates a user who appears in both owner rows and role assignment rows", async () => {
+    const svc = buildSvc({
+      selectResults: [
+        [{ userId: "u-dup", membershipId: 60 }],
+        [],
+      ],
+      distinctResults: [
+        [{ roleId: 88 }],
+        [{ roleId: 88 }],
+        [],
+        [],
+        [{ userId: "u-dup", membershipId: 60 }],
+        [],
+      ],
+    });
+    const result = await svc.membersWithPermission("org-1", PERM);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.userId).toBe("u-dup");
+  });
+});
+
+describe("AccessService.membersWithPermission — distribution cap", () => {
+  interface CapSvc {
+    svc: AccessService;
+    cachedMock: jest.Mock;
+  }
+
+  function buildCapSvc(results: { userId: string; membershipId: number }[]): CapSvc {
+    const db = {
+      query: {
+        accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
+      },
+    };
+
+    const cachedMock = jest.fn().mockImplementation(
+      async (key: string, _fn: () => Promise<unknown>) => {
+        void key;
+        return results;
+      },
+    );
+
+    const cache = {
+      cached: cachedMock,
+      invalidate: jest.fn().mockResolvedValue(undefined),
+    };
+
+    const entitlements = {
+      isModuleEnabled: jest.fn().mockResolvedValue(true),
+      getModuleMap: jest.fn().mockResolvedValue({}),
+    };
+
+    return {
+      svc: new AccessService(
+        db as unknown as Db,
+        cache as unknown as CacheService,
+        entitlements as unknown as EntitlementsService,
+      ),
+      cachedMock,
+    };
+  }
+
+  it("embeds the default cap (50) in the cache key when no limit option is supplied", async () => {
+    const { svc, cachedMock } = buildCapSvc([]);
+    await svc.membersWithPermission("org-1", "settings:manage");
+    const key = String(cachedMock.mock.calls[0]?.[0]);
+    expect(key).toContain(":l50");
+  });
+
+  it("embeds the custom limit in the cache key when options.limit is supplied", async () => {
+    const { svc, cachedMock } = buildCapSvc([]);
+    await svc.membersWithPermission("org-1", "settings:manage", { limit: 500 });
+    const key = String(cachedMock.mock.calls[0]?.[0]);
+    expect(key).toContain(":l500");
+  });
+
+  it("logs a warning when the result set length equals the limit", async () => {
+    const fiftyResults = Array.from({ length: 50 }, (_, i) => ({
+      userId: `u-${i}`,
+      membershipId: i,
+    }));
+    const { svc } = buildCapSvc(fiftyResults);
+    const warnSpy = jest.spyOn(logger, "warn").mockImplementation(() => undefined);
+
+    await svc.membersWithPermission("org-1", "settings:manage");
+
+    const truncationWarnings = warnSpy.mock.calls.filter(
+      (call) => typeof call[0] === "string" && call[0].includes("may be truncated"),
+    );
+    expect(truncationWarnings.length).toBeGreaterThan(0);
+
+    warnSpy.mockRestore();
+  });
+
+  it("does not log a truncation warning when the result set is smaller than the limit", async () => {
+    const thirtyResults = Array.from({ length: 30 }, (_, i) => ({
+      userId: `u-${i}`,
+      membershipId: i,
+    }));
+    const { svc } = buildCapSvc(thirtyResults);
+    const warnSpy = jest.spyOn(logger, "warn").mockImplementation(() => undefined);
+
+    await svc.membersWithPermission("org-1", "settings:manage", { limit: 500 });
+
+    const truncationWarnings = warnSpy.mock.calls.filter(
+      (call) => typeof call[0] === "string" && call[0].includes("may be truncated"),
+    );
+    expect(truncationWarnings.length).toBe(0);
+
+    warnSpy.mockRestore();
+  });
+});

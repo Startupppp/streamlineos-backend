@@ -1,15 +1,14 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { HR_ROLE_SLUGS } from "../../common/rbac/role-slugs";
 import {
   candidateOffers,
   candidates,
   interviews,
   notifications,
-  organizationMembers,
   organizations,
   tasks,
 } from "../../db/schema";
+import { AccessService } from "../access/access.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
@@ -50,6 +49,7 @@ export class CronRecruitmentService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly email: EmailService,
+    private readonly access: AccessService,
   ) {}
 
   async sendOfferDeadlineReminders(): Promise<{ remindedCount: number }> {
@@ -226,12 +226,8 @@ export class CronRecruitmentService {
     const cached = cache.get(orgId);
     if (cached) return cached;
 
-    const rows = await this.db
-      .select({ userId: organizationMembers.userId })
-      .from(organizationMembers)
-      .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.role, [...HR_ROLE_SLUGS])));
-
-    const members = rows.map((row) => row.userId);
+    const members = (await this.access.membersWithPermission(orgId, "hr:interviews:manage"))
+      .map((m) => m.userId);
     cache.set(orgId, members);
     return members;
   }

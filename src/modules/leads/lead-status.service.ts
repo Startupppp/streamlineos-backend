@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { eq, and, count, sql, inArray } from "drizzle-orm";
-import { ROLE_SLUG } from "../../common/rbac/role-slugs";
+import { AccessService } from "../access/access.service";
 import {
   leads,
   deals,
@@ -8,7 +8,6 @@ import {
   tickets,
   clients,
   clientAccounts,
-  organizationMembers,
   users,
   crmPipelines,
 } from "../../db/schema";
@@ -44,6 +43,7 @@ export class LeadStatusService {
     private readonly crmMetadata: CrmMetadataService,
     private readonly blueprints: CrmBlueprintsService,
     private readonly planLimits: PlanLimitsService,
+    private readonly access: AccessService,
   ) {}
 
   private async getSemantics(orgId: string) {
@@ -59,15 +59,7 @@ export class LeadStatusService {
   }
 
   private async getNextCrmAssignee(orgId: string): Promise<string | null> {
-    const csMembers = await this.db
-      .select({ userId: organizationMembers.userId })
-      .from(organizationMembers)
-      .where(
-        and(
-          eq(organizationMembers.orgId, orgId),
-          eq(organizationMembers.role, ROLE_SLUG.CUSTOMER_SUPPORT),
-        ),
-      );
+    const csMembers = await this.access.membersWithPermission(orgId, "support:tickets:manage");
 
     if (csMembers.length === 0) return null;
 

@@ -22,7 +22,7 @@ import {
 import { orgUnits } from "../../db/schema/common/organization";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { RECRUITMENT_MANAGER_ROLES } from "./recruitment-roles";
+import { AccessService } from "../access/access.service";
 import type {
   CreateHeadcountInput,
   CreateReferralSubmissionInput,
@@ -39,12 +39,14 @@ import type {
 
 @Injectable()
 export class RecruitmentSourcingService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly access: AccessService,
+  ) {}
 
-  listReferrals(orgId: string, userId: string, role: string) {
-    const isHR = RECRUITMENT_MANAGER_ROLES.includes(role);
+  listReferrals(orgId: string, userId: string, canManage: boolean) {
     return this.db.query.candidateReferrals.findMany({
-      where: isHR ? eq(candidateReferrals.orgId, orgId) : eq(candidateReferrals.referredBy, userId),
+      where: canManage ? eq(candidateReferrals.orgId, orgId) : eq(candidateReferrals.referredBy, userId),
       with: {
         candidate: { columns: { id: true, firstName: true, lastName: true, email: true } },
         referrer: { columns: { id: true, name: true, email: true } },
@@ -290,8 +292,8 @@ export class RecruitmentSourcingService {
     return updated;
   }
 
-  listHeadcount(orgId: string, userId: string, role: string, input: HeadcountListInput) {
-    const isHr = RECRUITMENT_MANAGER_ROLES.includes(role);
+  listHeadcount(orgId: string, userId: string, canManage: boolean, input: HeadcountListInput) {
+    const isHr = canManage;
     const conditions = [eq(headcountRequests.orgId, orgId)];
     if (!isHr) conditions.push(eq(headcountRequests.requestedBy, userId));
     if (input.status) conditions.push(sql`${headcountRequests.status} = ${input.status}`);

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -344,6 +345,16 @@ export class InvitationsService {
         throw new ConflictException("You are already a member of this organization");
 
       await this.db.transaction(async (tx) => {
+        try {
+          await this.planLimits.assertWithinLimit(invitation.orgId, "members", 0);
+        } catch (err) {
+          if (err instanceof ForbiddenException) {
+            throw new ForbiddenException(
+              "This workspace has reached its member limit. Ask an admin to upgrade the plan or free a seat.",
+            );
+          }
+          throw err;
+        }
         const inserted = await tx
           .insert(organizationMembers)
           .values({ userId: existingUser.id, orgId: invitation.orgId, role: invitation.role })
@@ -390,6 +401,16 @@ export class InvitationsService {
     const fullName = fromNames ?? emailLocal;
 
     await this.db.transaction(async (tx) => {
+      try {
+        await this.planLimits.assertWithinLimit(invitation.orgId, "members", 0);
+      } catch (err) {
+        if (err instanceof ForbiddenException) {
+          throw new ForbiddenException(
+            "This workspace has reached its member limit. Ask an admin to upgrade the plan or free a seat.",
+          );
+        }
+        throw err;
+      }
       await tx.insert(users).values({
         id: userId,
         email: invitation.email,

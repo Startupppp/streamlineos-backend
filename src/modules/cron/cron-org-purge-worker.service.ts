@@ -77,7 +77,7 @@ export class CronOrgPurgeWorkerService {
 
       await tx
         .update(organizations)
-        .set({ statusV2: "PURGED", purgedAt: new Date() })
+        .set({ statusV2: "PURGED", status: "PURGED", purgedAt: new Date() })
         .where(
           and(
             eq(organizations.id, orgId),

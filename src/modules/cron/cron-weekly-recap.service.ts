@@ -16,7 +16,6 @@ import { EmailService } from "../email/email.service";
 import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
 import { getWeeklyRecapEmailTemplate } from "../email/templates/reports";
 import { logger } from "../../common/logger/logger.service";
-import { WEEKLY_RECAP_RECIPIENT_ROLES } from "../hr-lifecycle/hr-role-constants";
 
 interface RecapData {
   orgId: string;
@@ -61,7 +60,8 @@ export class CronWeeklyRecapService {
           .where(
             and(
               eq(organizationMembers.orgId, org.id),
-              eq(organizationMembers.role, WEEKLY_RECAP_RECIPIENT_ROLES[0]),
+              eq(organizationMembers.isOwner, true),
+              eq(organizationMembers.status, "ACTIVE"),
               eq(users.isActive, true),
             ),
           );

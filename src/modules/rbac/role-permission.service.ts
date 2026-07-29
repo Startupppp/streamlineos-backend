@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { organizationMembers, roleAssignments, rolePermissionGrants, roles } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -247,14 +247,22 @@ export class RolePermissionService {
       .orderBy(asc(roles.name))
       .limit(ROLES_PAGE_LIMIT);
 
+    if (orgRoles.length === 0) return [];
+
+    const roleIds = orgRoles.map((r) => r.id);
+
     const allGrants = await this.db
       .select({
         roleId: rolePermissionGrants.roleId,
         permissionKey: rolePermissionGrants.permissionKey,
       })
       .from(rolePermissionGrants)
-      .where(eq(rolePermissionGrants.orgId, orgId))
-      .limit(10000);
+      .where(
+        and(
+          eq(rolePermissionGrants.orgId, orgId),
+          inArray(rolePermissionGrants.roleId, roleIds),
+        ),
+      );
 
     const grantsByRole = new Map<number, string[]>();
     for (const grant of allGrants) {

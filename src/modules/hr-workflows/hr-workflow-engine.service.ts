@@ -13,7 +13,7 @@ import {
 } from "../../db/schema/hr/workflow-engine";
 import { users, organizationMembers } from "../../db/schema/common/auth";
 import { orgUnits } from "../../db/schema/common/organization";
-import { HR_ROLE_SLUGS, FINANCE_ROLE_SLUGS } from "../../common/rbac/role-slugs";
+import { AccessService } from "../access/access.service";
 
 type HrWorkflowObjectType = typeof hrWorkflowObjectTypeEnum.enumValues[number];
 
@@ -50,7 +50,10 @@ interface ActParams {
 
 @Injectable()
 export class HrWorkflowEngineService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly access: AccessService,
+  ) {}
 
   async startWorkflow({ orgId, objectType, objectId, requestedByUserId, subjectEmployeeId, context = {}, tx }: StartWorkflowParams) {
     const db = tx ?? this.db;
@@ -256,35 +259,30 @@ export class HrWorkflowEngineService {
       }
 
       case "hr_role": {
-        const hrMembers = await this.db.select({ userId: organizationMembers.userId })
-          .from(organizationMembers)
-          .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.role, [...HR_ROLE_SLUGS])))
-          .limit(10);
-        return hrMembers.map((m) => m.userId);
+        const hrApprovers = await this.access.membersWithPermission(orgId, "hr:leaves:approve");
+        return hrApprovers.map((m) => m.userId);
       }
 
       case "finance_role": {
-        const financeMembers = await this.db.select({ userId: organizationMembers.userId })
-          .from(organizationMembers)
-          .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.role, [...FINANCE_ROLE_SLUGS])))
-          .limit(10);
-        return financeMembers.map((m) => m.userId);
+        const financeApprovers = await this.access.membersWithPermission(orgId, "accounting:approvals:decide");
+        return financeApprovers.map((m) => m.userId);
       }
 
       case "location_hr": {
         const [employee] = await this.db.select({ branchId: users.branchId })
           .from(users).where(eq(users.id, subjectEmployeeId)).limit(1);
         if (!employee?.branchId) return [];
-        const locationHr = await this.db.select({ id: users.id })
+        const hrApprovers = await this.access.membersWithPermission(orgId, "hr:leaves:approve");
+        if (hrApprovers.length === 0) return [];
+        const branchHr = await this.db
+          .select({ id: users.id })
           .from(users)
-          .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
           .where(and(
-            eq(organizationMembers.orgId, orgId),
+            inArray(users.id, hrApprovers.map((m) => m.userId)),
             eq(users.branchId, employee.branchId),
-            inArray(organizationMembers.role, [...HR_ROLE_SLUGS]),
           ))
           .limit(10);
-        return locationHr.map((u) => u.id);
+        return branchHr.map((u) => u.id);
       }
 
       case "dynamic_expression": {

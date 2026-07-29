@@ -60,8 +60,10 @@ export class RecruitmentSourcingController {
 
   @Get("referrals")
   @RequirePermission("hr:employees:view")
-  listReferrals(@CurrentUser() u: CurrentUserContext) {
-    return this.sourcing.listReferrals(u.orgId, u.userId, u.role);
+  async listReferrals(@CurrentUser() u: CurrentUserContext) {
+    const canManage = u.isOrgOwner || u.isPlatformAdmin
+      || (await this.access.resolveUserPermissions(u.orgId, u.userId)).has("hr:requisitions:manage");
+    return this.sourcing.listReferrals(u.orgId, u.userId, canManage);
   }
 
   @Post("referrals")
@@ -153,11 +155,13 @@ export class RecruitmentSourcingController {
 
   @Get("headcount")
   @RequirePermission("hr:employees:view")
-  listHeadcount(
+  async listHeadcount(
     @Query(new ZodValidationPipe(headcountListSchema)) query: HeadcountListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.sourcing.listHeadcount(u.orgId, u.userId, u.role, query);
+    const canManage = u.isOrgOwner || u.isPlatformAdmin
+      || (await this.access.resolveUserPermissions(u.orgId, u.userId)).has("hr:requisitions:manage");
+    return this.sourcing.listHeadcount(u.orgId, u.userId, canManage, query);
   }
 
   @Post("headcount")

@@ -1,19 +1,21 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import {
   leaveBalances,
   leaveRequests,
   leaveTypes,
-  organizationMembers,
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { ROLE_SLUG, HR_ROLE_SLUGS, HR_ROLE_SET } from "../../common/rbac/role-slugs";
+import { AccessService } from "../access/access.service";
 
 @Injectable()
 export class LeavesPageService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly access: AccessService,
+  ) {}
 
   async pageData(orgId: string, userId: string) {
     const year = new Date().getFullYear();
@@ -37,7 +39,7 @@ export class LeavesPageService {
           ),
         );
 
-    const [existingBalances, allTypes, requests, user, member] = await Promise.all([
+    const [existingBalances, allTypes, requests, user] = await Promise.all([
       balanceQuery(),
       this.db.query.leaveTypes.findMany({ where: eq(leaveTypes.orgId, orgId) }),
       this.db.query.leaveRequests.findMany({
@@ -52,10 +54,6 @@ export class LeavesPageService {
       this.db.query.users.findFirst({
         where: eq(users.id, userId),
         columns: { joiningDate: true },
-      }),
-      this.db.query.organizationMembers.findFirst({
-        where: and(eq(organizationMembers.userId, userId), eq(organizationMembers.orgId, orgId)),
-        columns: { role: true },
       }),
     ]);
 
@@ -91,7 +89,7 @@ export class LeavesPageService {
       return true;
     });
 
-    const approvers = await this.resolveApprovers(orgId, userId, member?.role ?? null);
+    const approvers = await this.resolveApprovers(orgId, userId);
 
     return {
       balances,
@@ -111,39 +109,16 @@ export class LeavesPageService {
     return Math.round((daysPerYear / 12) * monthsRemaining * 10) / 10;
   }
 
-  private async resolveApprovers(orgId: string, userId: string, role: string | null) {
-    if (!role) return [];
+  private async resolveApprovers(orgId: string, userId: string) {
+    const approvers = await this.access.membersWithPermission(orgId, "hr:leaves:approve");
+    const otherApprovers = approvers.filter((m) => m.userId !== userId);
+    if (otherApprovers.length === 0) return [];
 
-    const targetRoles =
-      role === ROLE_SLUG.CEO
-        ? [...HR_ROLE_SLUGS]
-        : HR_ROLE_SET.has(role)
-          ? [ROLE_SLUG.CEO]
-          : [...HR_ROLE_SLUGS, ROLE_SLUG.CEO];
-
-    const approverMembers = await this.db.query.organizationMembers.findMany({
-      where: and(
-        eq(organizationMembers.orgId, orgId),
-        inArray(organizationMembers.role, targetRoles),
-      ),
-      with: {
-        user: {
-          columns: {
-            id: true,
-            name: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            image: true,
-            designation: true,
-          },
-        },
-      },
+    const userRows = await this.db.query.users.findMany({
+      where: (u, { inArray: inArr }) => inArr(u.id, otherApprovers.map((m) => m.userId)),
+      columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true, designation: true },
     });
 
-    return approverMembers
-      .filter((m) => m.userId !== userId)
-      .map((m) => m.user)
-      .filter((u): u is NonNullable<typeof u> => u !== null);
+    return userRows;
   }
 }

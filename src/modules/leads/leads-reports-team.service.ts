@@ -1,11 +1,10 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { eq, and, inArray, notInArray, sql, lte, isNotNull } from "drizzle-orm";
-import { SALES_ROLE_SET } from "../../common/rbac/role-slugs";
+import { AccessService } from "../access/access.service";
 import {
   leads,
   leadActivities,
   users,
-  organizationMembers,
   crmOptions,
 } from "../../db/schema";
 import { resolveLeadStatusSemantics } from "./lead-status-semantics";
@@ -19,6 +18,7 @@ export class LeadsReportsTeamService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly access: AccessService,
   ) {}
 
   async getSalesLeaderboard(orgId: string) {
@@ -155,13 +155,8 @@ export class LeadsReportsTeamService {
     return this.cache.cached(
       `leads:team-capacity:${orgId}`,
       async () => {
-        const [salesMembers, statusOptions] = await Promise.all([
-          this.db.query.organizationMembers.findMany({
-            where: eq(organizationMembers.orgId, orgId),
-            with: {
-              user: { columns: { id: true, name: true, image: true, role: true } },
-            },
-          }),
+        const [permittedMembers, statusOptions] = await Promise.all([
+          this.access.membersWithPermission(orgId, "crm:leads:view"),
           this.db
             .select()
             .from(crmOptions)
@@ -173,9 +168,14 @@ export class LeadsReportsTeamService {
             ),
         ]);
 
-        const salesUsers = salesMembers
-          .filter((m) => SALES_ROLE_SET.has(m.user.role))
-          .map((m) => m.user);
+        const permittedUserIds = new Set(permittedMembers.map((m) => m.userId));
+        const salesUsersData = permittedUserIds.size > 0
+          ? await this.db.query.users.findMany({
+              where: inArray(users.id, [...permittedUserIds]),
+              columns: { id: true, name: true, image: true },
+            })
+          : [];
+        const salesUsers = salesUsersData;
 
         const semantics = resolveLeadStatusSemantics(statusOptions);
         const terminalKeys = [...semantics.convertedKeys, ...semantics.lostKeys];
@@ -216,7 +216,7 @@ export class LeadsReportsTeamService {
 
   async getLeadSlaAlerts(
     orgId: string,
-    opts: { role?: string; userId?: string },
+    opts: { ownScope?: boolean; userId?: string },
   ) {
     const now = new Date();
     const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -234,7 +234,7 @@ export class LeadsReportsTeamService {
       inArray(leads.status, semantics.slaOpenKeys),
       lte(leads.updatedAt, twentyFourHoursAgo),
     ];
-    if (opts.role !== undefined && SALES_ROLE_SET.has(opts.role) && opts.userId) {
+    if (opts.ownScope && opts.userId) {
       slaFilters.push(eq(leads.assignedToId, opts.userId));
     }
 

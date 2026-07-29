@@ -125,8 +125,8 @@ export class TerminationService {
     });
     if (!targetUser) throw new NotFoundException("Employee not found.");
 
-    if (membership.role === "CEO" || membership.isOwner) {
-      throw new BadRequestException("CEO cannot be terminated through this workflow.");
+    if (membership.isOwner) {
+      throw new BadRequestException("The organization owner cannot be terminated through this workflow.");
     }
 
     if (!targetUser.isActive) {

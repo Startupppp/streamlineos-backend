@@ -6,15 +6,14 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
-import { HR_ROLE_SLUGS } from "../../common/rbac/role-slugs";
 import {
   helpdeskTickets,
   hrHelpdeskComments,
   hrHelpdeskRouting,
   kbArticles,
-  organizationMembers,
   users,
 } from "../../db/schema";
+import { AccessService } from "../access/access.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { EmailService } from "../email/email.service";
@@ -32,6 +31,7 @@ export class HrHelpdeskService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly email: EmailService,
+    private readonly access: AccessService,
   ) {}
 
   async list(orgId: string, userId: string, isAdmin: boolean, filters: ListInput) {
@@ -316,11 +316,8 @@ export class HrHelpdeskService {
     category: string,
     priority: string,
   ) {
-    const [hrMemberIds, [creator]] = await Promise.all([
-      this.db
-        .select({ userId: organizationMembers.userId })
-        .from(organizationMembers)
-        .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.role, [...HR_ROLE_SLUGS]))),
+    const [hrMemberRows, [creator]] = await Promise.all([
+      this.access.membersWithPermission(orgId, "hr:employees:manage"),
       this.db
         .select({ name: users.name })
         .from(users)
@@ -328,12 +325,12 @@ export class HrHelpdeskService {
         .limit(1),
     ]);
 
-    if (hrMemberIds.length === 0) return;
+    if (hrMemberRows.length === 0) return;
 
     const hrUsers = await this.db
       .select({ email: users.email, name: users.name })
       .from(users)
-      .where(inArray(users.id, hrMemberIds.map((m) => m.userId)));
+      .where(inArray(users.id, hrMemberRows.map((m) => m.userId)));
 
     const creatorName = creator?.name ?? "Employee";
 

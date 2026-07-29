@@ -455,7 +455,7 @@ export class SettingsService {
 
   async updateUserRole(u: CurrentUserContext, targetUserId: string, role: string) {
     if (!(u.isOrgOwner || u.isPlatformAdmin)) {
-      throw new ForbiddenException("Only Owner, CEO, or CTO can change user roles");
+      throw new ForbiddenException("Only the Org Owner or a Platform Admin can change member roles");
     }
 
     const member = await this.db.query.organizationMembers.findFirst({

@@ -5,20 +5,22 @@ import {
   candidates,
   jobPostings,
   jobRecruiters,
-  organizationMembers,
   recruiterActivityLog,
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { RECRUITMENT_RECRUITER_ROLES } from "./recruitment-roles";
+import { AccessService } from "../access/access.service";
 import type { RecruiterActivityInput, RecruiterActivityQueryInput, UpsertPortalInput } from "./dto/jobs.schemas";
 
 const SYNC_PLATFORMS = ["LINKEDIN", "NAUKRI", "INDEED"];
 
 @Injectable()
 export class RecruitmentRecruitersService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly access: AccessService,
+  ) {}
 
   listPortals(orgId: string) {
     return this.db
@@ -101,20 +103,20 @@ export class RecruitmentRecruitersService {
   }
 
   async recruiterDirectory(orgId: string) {
+    const permitted = await this.access.membersWithPermission(orgId, "hr:interviews:manage");
+    const recruiterIds = permitted.map((m) => m.userId);
+
+    if (recruiterIds.length === 0) return [];
+
     const members = await this.db
       .select({
-        userId: organizationMembers.userId,
-        role: organizationMembers.role,
+        userId: users.id,
         name: users.name,
         email: users.email,
         image: users.image,
       })
-      .from(organizationMembers)
-      .innerJoin(users, eq(organizationMembers.userId, users.id))
-      .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.role, [...RECRUITMENT_RECRUITER_ROLES])));
-
-    const recruiterIds = members.map((m) => m.userId);
-    if (recruiterIds.length === 0) return [];
+      .from(users)
+      .where(inArray(users.id, recruiterIds));
 
     const assignmentCounts = await this.db
       .select({ userId: jobRecruiters.userId, jobCount: count(jobRecruiters.id) })
@@ -145,7 +147,6 @@ export class RecruitmentRecruitersService {
       name: m.name,
       email: m.email,
       image: m.image,
-      role: m.role,
       assignedJobsCount: jobCountMap.get(m.userId) ?? 0,
       activitySummary: activityMap.get(m.userId) ?? {},
     }));

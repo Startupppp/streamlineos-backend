@@ -6,13 +6,11 @@ import {
   InternalServerErrorException,
 } from "@nestjs/common";
 import { and, eq, gte, inArray, lte, or } from "drizzle-orm";
-import { HR_ROLE_SLUGS } from "../../common/rbac/role-slugs";
 import {
   leaveBalances,
   leaveBlackoutDates,
   leaveRequests,
   leaveTypes,
-  organizationMembers,
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -24,6 +22,7 @@ import { AutomationService } from "../automation/automation.service";
 import { formatDateOnly } from "../../common/date";
 import { HrWorkflowEngineService } from "../hr-workflows/hr-workflow-engine.service";
 import { CacheService } from "../../common/cache/cache.service";
+import { AccessService } from "../access/access.service";
 import type { CreateLeaveInput } from "./dto/leaves.schemas";
 
 interface LeaveRow {
@@ -42,6 +41,7 @@ export class LeavesWriteService {
     private readonly automation: AutomationService,
     private readonly workflowEngine: HrWorkflowEngineService,
     private readonly cache: CacheService,
+    private readonly access: AccessService,
   ) {}
 
   private async invalidateLeaveAnalytics(orgId: string): Promise<void> {
@@ -336,22 +336,13 @@ export class LeavesWriteService {
   }
 
   private async hrRecipients(orgId: string): Promise<{ email: string; name: string | null }[]> {
-    const hrMembers = await this.db
-      .select({ userId: organizationMembers.userId })
-      .from(organizationMembers)
-      .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.role, [...HR_ROLE_SLUGS])));
-
-    if (hrMembers.length === 0) return [];
+    const approvers = await this.access.membersWithPermission(orgId, "hr:leaves:approve");
+    if (approvers.length === 0) return [];
 
     const hrUsers = await this.db
       .select({ email: users.email, name: users.name })
       .from(users)
-      .where(
-        inArray(
-          users.id,
-          hrMembers.map((m) => m.userId),
-        ),
-      );
+      .where(inArray(users.id, approvers.map((m) => m.userId)));
 
     return hrUsers.filter((hr) => hr.email);
   }

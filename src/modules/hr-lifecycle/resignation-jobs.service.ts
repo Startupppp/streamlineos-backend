@@ -1,12 +1,12 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, inArray, ne } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { organizationMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { NotificationsService } from "../notifications/notifications.service";
 import { AuditService } from "../../common/audit/audit.service";
+import { AccessService } from "../access/access.service";
 import { logger } from "../../common/logger/logger.service";
-import { HR_NOTIFY_ROLES, CEO_ROLES } from "./hr-role-constants";
 import {
   resignationSubmittedTitle,
   resignationSubmittedMessage,
@@ -32,12 +32,16 @@ export class ResignationJobsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly notifications: NotificationsService,
     private readonly audit: AuditService,
+    private readonly access: AccessService,
   ) {}
 
   notifyResignationSubmitted(orgId: string, employeeId: string): void {
     this.run("resignation.submitted", async () => {
       const employeeName = await this.resolveEmployeeName(employeeId);
-      const recipientIds = await this.findOrgUserIdsByRoles(orgId, [...HR_NOTIFY_ROLES], employeeId);
+      const holders = await this.access.membersWithPermission(orgId, "hr:exit:manage");
+      const recipientIds = [...new Set(
+        holders.filter((m) => m.userId !== employeeId).map((m) => m.userId),
+      )];
       await this.fanOut(orgId, recipientIds, {
         type: "INFO",
         title: resignationSubmittedTitle(),
@@ -56,7 +60,17 @@ export class ResignationJobsService {
   notifyHrApproved(orgId: string, employeeId: string): void {
     this.run("resignation.hr_approved", async () => {
       const employeeName = await this.resolveEmployeeName(employeeId);
-      const recipientIds = await this.findOrgUserIdsByRoles(orgId, [...CEO_ROLES], null);
+      const orgAdminRows = await this.db
+        .select({ userId: organizationMembers.userId })
+        .from(organizationMembers)
+        .where(
+          and(
+            eq(organizationMembers.orgId, orgId),
+            eq(organizationMembers.isOwner, true),
+            eq(organizationMembers.status, "ACTIVE"),
+          ),
+        );
+      const recipientIds = orgAdminRows.map((m) => m.userId);
       await this.fanOut(orgId, recipientIds, {
         type: "INFO",
         title: resignationHrApprovedTitle(),
@@ -99,23 +113,6 @@ export class ResignationJobsService {
         }),
       ),
     );
-  }
-
-  private async findOrgUserIdsByRoles(
-    orgId: string,
-    roles: string[],
-    excludeUserId: string | null,
-  ): Promise<string[]> {
-    const conditions = [
-      eq(organizationMembers.orgId, orgId),
-      inArray(organizationMembers.role, roles),
-    ];
-    if (excludeUserId) conditions.push(ne(organizationMembers.userId, excludeUserId));
-    const members = await this.db
-      .select({ userId: organizationMembers.userId })
-      .from(organizationMembers)
-      .where(and(...conditions));
-    return [...new Set(members.map((member) => member.userId))];
   }
 
   private async resolveEmployeeName(employeeId: string): Promise<string> {

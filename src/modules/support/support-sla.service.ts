@@ -1,11 +1,11 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, inArray, isNull, notInArray, or } from "drizzle-orm";
+import { and, eq, isNull, notInArray, or } from "drizzle-orm";
 import {
   supportBusinessHours,
   supportSlaPolicies,
   supportTickets,
-  organizationMembers,
 } from "../../db/schema";
+import { AccessService } from "../access/access.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
@@ -13,7 +13,6 @@ import { addWorkingMinutes, type BusinessHoursConfig } from "./support-business-
 import { SupportNotificationsService } from "./support-notifications.service";
 import { SupportMacrosService } from "./support-macros.service";
 
-const MANAGER_ROLES = ["OWNER", "CEO", "ADMIN"];
 import type {
   CreateBusinessHoursInput,
   CreateSlaPolicyInput,
@@ -51,6 +50,7 @@ export class SupportSlaService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly notifications: SupportNotificationsService,
     private readonly macros: SupportMacrosService,
+    private readonly access: AccessService,
   ) {}
 
   listBusinessHours(orgId: string) {
@@ -416,10 +416,7 @@ export class SupportSlaService {
   ): Promise<void> {
     if (risk !== "first_response_breached" && risk !== "resolution_breached") return;
 
-    const managers = await this.db
-      .select({ userId: organizationMembers.userId })
-      .from(organizationMembers)
-      .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.role, MANAGER_ROLES)));
+    const managers = await this.access.membersWithPermission(orgId, "settings:manage");
 
     for (const manager of managers) {
       if (manager.userId === reassignedTo) continue;

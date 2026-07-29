@@ -54,6 +54,7 @@ describe("ExitWriteService.ceoReview — approving a resignation via the real UI
       undefined as never,
       undefined as never,
       undefined as never,
+      undefined as never,
     );
 
     const result = await service.ceoReview("org-1", "actor-1", 42, { decision: "approve", remarks: "ok" });
@@ -81,6 +82,7 @@ describe("ExitWriteService.ceoReview — approving a resignation via the real UI
       undefined as never,
       resignationJobs as never,
       exitChecklist as never,
+      undefined as never,
       undefined as never,
       undefined as never,
       undefined as never,

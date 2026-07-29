@@ -5,6 +5,7 @@ import {
   groupRoleAssignments,
   moduleOwnerships,
   organizationMembers,
+  permissions,
   principalGroupMembers,
   roleAssignments,
   rolePermissionGrants,
@@ -20,9 +21,12 @@ import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ALL_PERMISSION_NAMES, PERMISSIONS, ROLE_DEFAULT_PERMISSIONS, moduleScopedPermissions } from "../rbac/permissions";
+
 import { subscribeVersionBump } from "../../common/rbac/access-invalidate";
 import type { AccessSnapshot, DataScope } from "./access.types";
 import { EntitlementsService, MODULE_CATALOG } from "./entitlements.service";
+
+const MEMBERS_WITH_PERM_DEFAULT_CAP = 50;
 
 const MANAGEABLE_MODULE_SET: ReadonlySet<string> = new Set(MODULE_CATALOG);
 
@@ -506,5 +510,260 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     }
 
     return result;
+  }
+
+  async membersWithPermission(
+    orgId: string,
+    permissionKey: string,
+    options?: { limit?: number },
+  ): Promise<{ userId: string; membershipId: number }[]> {
+    const permModule = moduleOf(permissionKey);
+
+    if (!isInternalModule(permModule)) {
+      const enabled = await this.isModuleEnabled(orgId, permModule);
+      if (!enabled) return [];
+    }
+
+    const limit = Math.max(1, options?.limit ?? MEMBERS_WITH_PERM_DEFAULT_CAP);
+    const version = await this.getPermissionsVersion(orgId);
+    const cacheKey = CACHE_KEYS.accessMembersWithPerm(orgId, permissionKey, version, limit);
+
+    const result = await this.cache.cached<{ userId: string; membershipId: number }[]>(
+      cacheKey,
+      () => this.computeMembersWithPermission(orgId, permissionKey, limit),
+      CACHE_TTL.SHORT,
+    );
+
+    if (result.length >= limit) {
+      logger.warn("access: membersWithPermission result may be truncated — raise limit or investigate org size", {
+        orgId,
+        permissionKey,
+        limit,
+      });
+    }
+
+    return result;
+  }
+
+  private async computeMembersWithPermission(
+    orgId: string,
+    permissionKey: string,
+    limit: number,
+  ): Promise<{ userId: string; membershipId: number }[]> {
+    const permModule = moduleOf(permissionKey);
+    const now = new Date();
+
+    const slugsWithPermInDefaults = Object.entries(ROLE_DEFAULT_PERMISSIONS)
+      .filter(([, keys]) => (keys as string[]).includes(permissionKey))
+      .map(([slug]) => slug);
+
+    const [
+      ownerRows,
+      explicitGrantRoleIdRows,
+      allExplicitRoleIdRows,
+      slugMatchingRoleRows,
+      userPermRows,
+      ownershipRows,
+    ] = await Promise.all([
+      this.safeAccessTableRead(
+        () =>
+          this.db
+            .select({ userId: organizationMembers.userId, membershipId: organizationMembers.id })
+            .from(organizationMembers)
+            .where(
+              and(
+                eq(organizationMembers.orgId, orgId),
+                eq(organizationMembers.isOwner, true),
+                eq(organizationMembers.status, "ACTIVE"),
+              ),
+            )
+            .limit(limit),
+        [] as { userId: string; membershipId: number }[],
+      ),
+
+      this.safeAccessTableRead(
+        () =>
+          this.db
+            .selectDistinct({ roleId: rolePermissionGrants.roleId })
+            .from(rolePermissionGrants)
+            .where(
+              and(
+                eq(rolePermissionGrants.orgId, orgId),
+                eq(rolePermissionGrants.permissionKey, permissionKey),
+              ),
+            ),
+        [] as { roleId: number }[],
+      ),
+
+      this.safeAccessTableRead(
+        () =>
+          this.db
+            .selectDistinct({ roleId: rolePermissionGrants.roleId })
+            .from(rolePermissionGrants)
+            .where(eq(rolePermissionGrants.orgId, orgId)),
+        [] as { roleId: number }[],
+      ),
+
+      slugsWithPermInDefaults.length > 0
+        ? this.safeAccessTableRead(
+            () =>
+              this.db
+                .select({ id: roles.id })
+                .from(roles)
+                .where(and(eq(roles.orgId, orgId), inArray(roles.slug, slugsWithPermInDefaults))),
+            [] as { id: number }[],
+          )
+        : Promise.resolve([] as { id: number }[]),
+
+      this.safeAccessTableRead(
+        () =>
+          this.db
+            .selectDistinct({ userId: organizationMembers.userId, membershipId: organizationMembers.id })
+            .from(organizationMembers)
+            .innerJoin(
+              userPermissions,
+              and(
+                eq(userPermissions.userId, organizationMembers.userId),
+                eq(userPermissions.orgId, orgId),
+                eq(userPermissions.granted, true),
+              ),
+            )
+            .innerJoin(
+              permissions,
+              and(
+                eq(permissions.id, userPermissions.permissionId),
+                eq(permissions.name, permissionKey),
+              ),
+            )
+            .where(
+              and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.status, "ACTIVE")),
+            )
+            .limit(limit),
+        [] as { userId: string; membershipId: number }[],
+      ),
+
+      this.safeAccessTableRead(
+        () =>
+          this.db
+            .selectDistinct({ userId: organizationMembers.userId, membershipId: organizationMembers.id })
+            .from(organizationMembers)
+            .innerJoin(
+              moduleOwnerships,
+              and(
+                eq(moduleOwnerships.orgId, orgId),
+                eq(moduleOwnerships.ownerMembershipId, organizationMembers.id),
+                eq(moduleOwnerships.moduleKey, permModule),
+              ),
+            )
+            .where(
+              and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.status, "ACTIVE")),
+            )
+            .limit(limit),
+        [] as { userId: string; membershipId: number }[],
+      ),
+    ]);
+
+    const orgExplicitRoleIds = new Set(allExplicitRoleIdRows.map((r) => r.roleId));
+    const defaultFallbackRoleIds = slugMatchingRoleRows
+      .filter((r) => !orgExplicitRoleIds.has(r.id))
+      .map((r) => r.id);
+    const allGrantingRoleIds = [
+      ...explicitGrantRoleIdRows.map((r) => r.roleId),
+      ...defaultFallbackRoleIds,
+    ];
+
+    const [directRoleRows, groupRoleRows] = allGrantingRoleIds.length > 0
+      ? await Promise.all([
+          this.safeAccessTableRead(
+            () =>
+              this.db
+                .selectDistinct({ userId: organizationMembers.userId, membershipId: organizationMembers.id })
+                .from(organizationMembers)
+                .innerJoin(
+                  roleAssignments,
+                  and(
+                    eq(roleAssignments.orgId, orgId),
+                    eq(roleAssignments.organizationMembershipId, organizationMembers.id),
+                    inArray(roleAssignments.roleId, allGrantingRoleIds),
+                    or(isNull(roleAssignments.expiresAt), gt(roleAssignments.expiresAt, now)),
+                  ),
+                )
+                .where(
+                  and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.status, "ACTIVE")),
+                )
+                .limit(limit),
+            [] as { userId: string; membershipId: number }[],
+          ),
+
+          this.safeAccessTableRead(
+            () =>
+              this.db
+                .selectDistinct({ userId: organizationMembers.userId, membershipId: organizationMembers.id })
+                .from(organizationMembers)
+                .innerJoin(
+                  principalGroupMembers,
+                  and(
+                    eq(principalGroupMembers.orgId, orgId),
+                    eq(principalGroupMembers.organizationMembershipId, organizationMembers.id),
+                  ),
+                )
+                .innerJoin(
+                  groupRoleAssignments,
+                  and(
+                    eq(groupRoleAssignments.orgId, orgId),
+                    eq(groupRoleAssignments.principalGroupId, principalGroupMembers.principalGroupId),
+                    inArray(groupRoleAssignments.roleId, allGrantingRoleIds),
+                  ),
+                )
+                .where(
+                  and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.status, "ACTIVE")),
+                )
+                .limit(limit),
+            [] as { userId: string; membershipId: number }[],
+          ),
+        ])
+      : [[], []];
+
+    const seen = new Set<string>();
+    const candidates: { userId: string; membershipId: number }[] = [];
+    for (const row of [
+      ...ownerRows,
+      ...directRoleRows,
+      ...groupRoleRows,
+      ...userPermRows,
+      ...ownershipRows,
+    ]) {
+      if (!seen.has(row.userId)) {
+        seen.add(row.userId);
+        candidates.push(row);
+        if (candidates.length >= limit) break;
+      }
+    }
+
+    if (candidates.length === 0 || isInternalModule(permModule)) return candidates;
+
+    const deniedRows = await this.safeAccessTableRead(
+      () =>
+        this.db
+          .select({ userId: userModuleAccess.userId })
+          .from(userModuleAccess)
+          .where(
+            and(
+              eq(userModuleAccess.orgId, orgId),
+              inArray(
+                userModuleAccess.userId,
+                candidates.map((c) => c.userId),
+              ),
+              eq(userModuleAccess.moduleKey, permModule),
+              eq(userModuleAccess.enabled, false),
+            ),
+          ),
+      [] as { userId: string }[],
+    );
+
+    if (deniedRows.length === 0) return candidates;
+
+    const deniedUserIds = new Set(deniedRows.map((r) => r.userId));
+    return candidates.filter((c) => !deniedUserIds.has(c.userId));
   }
 }

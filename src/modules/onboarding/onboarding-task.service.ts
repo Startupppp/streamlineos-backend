@@ -7,7 +7,6 @@ import {
 import { and, eq, inArray } from "drizzle-orm";
 import {
   onboardingTasks,
-  organizationMembers,
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -18,7 +17,6 @@ import { HrAutomationEngineService } from "../hr-automations/hr-automation-engin
 import { OnboardingProbationService } from "./onboarding-probation.service";
 import { EmailService } from "../email/email.service";
 import { logger } from "../../common/logger/logger.service";
-import { HR_NOTIFY_ROLES } from "../hr-lifecycle/hr-role-constants";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { UpdateTaskInput } from "./dto/onboarding.schemas";
 
@@ -135,26 +133,13 @@ export class OnboardingTaskService {
         );
       }
 
-      const hrMembers = await this.db
-        .select({ userId: organizationMembers.userId })
-        .from(organizationMembers)
-        .where(
-          and(
-            eq(organizationMembers.orgId, orgId),
-            inArray(organizationMembers.role, [...HR_NOTIFY_ROLES]),
-          ),
-        );
+      const hrMembers = await this.access.membersWithPermission(orgId, "hr:onboarding:manage");
       if (hrMembers.length === 0) return;
 
       const hrUsers = await this.db
         .select({ email: users.email, name: users.name })
         .from(users)
-        .where(
-          inArray(
-            users.id,
-            hrMembers.map((m) => m.userId),
-          ),
-        );
+        .where(inArray(users.id, hrMembers.map((m) => m.userId)));
 
       const recipients = hrUsers.filter(
         (m): m is { email: string; name: string | null } => Boolean(m.email),

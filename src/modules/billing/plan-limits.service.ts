@@ -225,9 +225,16 @@ export class PlanLimitsService {
   private async fetchCount(orgId: string, key: LimitKey): Promise<number> {
     switch (key) {
       case "members": {
-        const rows = await this.db.execute(
-          sql`SELECT COUNT(*)::int AS count FROM organization_members WHERE org_id = ${orgId}`,
-        );
+        const rows = await this.db.execute(sql`
+          SELECT (
+            (SELECT COUNT(*)::int FROM organization_members WHERE org_id = ${orgId}) +
+            (SELECT COUNT(*)::int FROM invitations
+             WHERE org_id = ${orgId}
+               AND status = 'PENDING'
+               AND accepted_at IS NULL
+               AND expires_at > NOW())
+          )::int AS count
+        `);
         return Number(rows[0]?.["count"] ?? 0);
       }
       case "projects": {

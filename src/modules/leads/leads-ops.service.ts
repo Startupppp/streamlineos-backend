@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { eq, and, or, inArray, lte, gte, type SQL } from "drizzle-orm";
-import { SALES_ROLE_SLUGS } from "../../common/rbac/role-slugs";
+import { AccessService } from "../access/access.service";
 import {
   leads,
   leadActivities,
@@ -52,6 +52,7 @@ export class LeadsOpsService {
     private readonly email: EmailService,
     private readonly crmValidation: CrmValidationService,
     private readonly planLimits: PlanLimitsService,
+    private readonly access: AccessService,
   ) {}
 
   private async sendDistributionEmails(
@@ -401,21 +402,18 @@ export class LeadsOpsService {
 
     if (input.autoDistribute && importedLeadIds.length > 0) {
       try {
-        const salesPeople = await this.db
-          .select({ id: users.id, name: users.name })
-          .from(users)
-          .innerJoin(
-            organizationMembers,
-            eq(organizationMembers.userId, users.id),
-          )
-          .where(
-            and(
-              eq(organizationMembers.orgId, orgId),
-              eq(users.isActive, true),
-              eq(users.hasDashboardAccess, true),
-              inArray(organizationMembers.role, [...SALES_ROLE_SLUGS]),
-            ),
-          );
+        const permittedMembers = await this.access.membersWithPermission(orgId, "crm:leads:assign", { limit: 500 });
+        const permittedUserIds = permittedMembers.map((m) => m.userId);
+        const salesPeople = permittedUserIds.length > 0
+          ? await this.db
+              .select({ id: users.id, name: users.name })
+              .from(users)
+              .where(and(
+                inArray(users.id, permittedUserIds),
+                eq(users.isActive, true),
+                eq(users.hasDashboardAccess, true),
+              ))
+          : [];
 
         if (salesPeople.length > 0) {
           salesPeopleCount = salesPeople.length;
@@ -472,18 +470,18 @@ export class LeadsOpsService {
 
     if (!firstMember) return { ok: false, reason: "no_members" };
 
-    const salesPeople = await this.db
-      .select({ id: users.id, name: users.name, email: users.email })
-      .from(users)
-      .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
-      .where(
-        and(
-          eq(organizationMembers.orgId, orgId),
-          eq(users.isActive, true),
-          eq(users.hasDashboardAccess, true),
-          inArray(organizationMembers.role, [...SALES_ROLE_SLUGS]),
-        ),
-      );
+    const permittedForDistribute = await this.access.membersWithPermission(orgId, "crm:leads:assign", { limit: 500 });
+    const permittedDistributeIds = permittedForDistribute.map((m) => m.userId);
+    const salesPeople = permittedDistributeIds.length > 0
+      ? await this.db
+          .select({ id: users.id, name: users.name, email: users.email })
+          .from(users)
+          .where(and(
+            inArray(users.id, permittedDistributeIds),
+            eq(users.isActive, true),
+            eq(users.hasDashboardAccess, true),
+          ))
+      : [];
 
     if (salesPeople.length === 0) {
       return { ok: false, reason: "no_sales" };

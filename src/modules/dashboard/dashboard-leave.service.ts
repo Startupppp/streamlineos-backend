@@ -1,6 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, asc, eq, gte, inArray, lte, sql } from "drizzle-orm";
-import { HR_ROLE_SET } from "../../common/rbac/role-slugs";
 import {
   holidays,
   leaveBalances,
@@ -84,8 +83,9 @@ export class DashboardLeaveService {
       return { error: "forbidden", message: "Forbidden" } as DashboardForbidden;
     }
 
-    const role = u.role ?? "";
-    const key = `dashboard:pending-approvals:${orgId}:${role}`;
+    const isApprover =
+      u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:leaves:approve");
+    const key = `dashboard:pending-approvals:${orgId}:${isApprover ? "approver" : "self"}`;
 
     return this.cache.cached(
       key,
@@ -95,8 +95,7 @@ export class DashboardLeaveService {
           .from(leaveRequests)
           .where(and(eq(leaveRequests.orgId, orgId), eq(leaveRequests.status, "PENDING")));
 
-        const resignationStatuses =
-          HR_ROLE_SET.has(role) ? ["SUBMITTED", "PENDING_HR"] : ["HR_APPROVED"];
+        const resignationStatuses = isApprover ? ["SUBMITTED", "PENDING_HR"] : ["HR_APPROVED"];
 
         const [resignationCount] = await this.db
           .select({ count: sql<number>`count(*)::int` })

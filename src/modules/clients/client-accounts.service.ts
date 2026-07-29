@@ -8,7 +8,6 @@ import {
   incentives,
   incentiveConfig,
   notifications,
-  organizationMembers,
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -22,7 +21,7 @@ import type {
   UpdateClientStatusInput,
   UpdateRenewalInput,
 } from "./dto/clients.schemas";
-import { ROLE_SLUG, HR_ROLE_SLUGS } from "../../common/rbac/role-slugs";
+import { AccessService } from "../access/access.service";
 
 @Injectable()
 export class ClientAccountsService {
@@ -32,6 +31,7 @@ export class ClientAccountsService {
     @Inject(REDIS) private readonly redis: Redis | null,
     private readonly audit: AuditService,
     private readonly clientsEmail: ClientsEmailService,
+    private readonly access: AccessService,
   ) {}
 
   async getClientAccounts(
@@ -204,10 +204,7 @@ export class ClientAccountsService {
       : "";
 
     const hrMemberRows = recordInvestment
-      ? await this.db
-          .select({ userId: organizationMembers.userId })
-          .from(organizationMembers)
-          .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.role, [...HR_ROLE_SLUGS])))
+      ? await this.access.membersWithPermission(orgId, "hr:employees:manage")
       : [];
 
     const updated = await this.db.transaction(async (tx) => {
@@ -300,15 +297,16 @@ export class ClientAccountsService {
   }
 
   async getCrmAssignmentStats(orgId: string) {
-    const csMembers = await this.db
-      .select({ userId: organizationMembers.userId, name: users.name, image: users.image })
-      .from(organizationMembers)
-      .innerJoin(users, eq(users.id, organizationMembers.userId))
-      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.role, ROLE_SLUG.CUSTOMER_SUPPORT)));
+    const csMemberIds = (await this.access.membersWithPermission(orgId, "support:tickets:manage", { limit: 500 })).map((m) => m.userId);
 
-    if (csMembers.length === 0) {
+    if (csMemberIds.length === 0) {
       return { members: [], unassignedCount: 0 };
     }
+
+    const csMembers = await this.db
+      .select({ userId: users.id, name: users.name, image: users.image })
+      .from(users)
+      .where(inArray(users.id, csMemberIds));
 
     const memberIds = csMembers.map((m) => m.userId);
 
@@ -397,10 +395,7 @@ export class ClientAccountsService {
   }
 
   private async backfillCrmAssignments(orgId: string): Promise<void> {
-    const csMembers = await this.db
-      .select({ userId: organizationMembers.userId })
-      .from(organizationMembers)
-      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.role, ROLE_SLUG.CUSTOMER_SUPPORT)));
+    const csMembers = await this.access.membersWithPermission(orgId, "support:tickets:manage", { limit: 500 });
 
     if (csMembers.length === 0) return;
 

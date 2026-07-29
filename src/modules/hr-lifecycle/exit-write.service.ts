@@ -13,7 +13,6 @@ import {
   exitChecklists,
   fnfSettlements,
   users,
-  organizationMembers,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -26,8 +25,8 @@ import { HrPolicyEvaluationService } from "../hr-policies/hr-policy-evaluation.s
 import { AssetsRecoveryService } from "../hr-directory/assets-recovery.service";
 import { HrAuditService } from "../hr-core/hr-audit.service";
 import { IdentityService } from "../hr-enterprise-ops/identity/identity.service";
+import { AccessService } from "../access/access.service";
 import { formatDdMmmYyyy } from "../../common/date";
-import { HR_NOTIFY_ROLES } from "./hr-role-constants";
 import type {
   ResignationCreateInput,
   ResignationUpdateInput,
@@ -55,6 +54,7 @@ export class ExitWriteService {
     private readonly assetsRecovery: AssetsRecoveryService,
     private readonly hrAudit: HrAuditService,
     private readonly identity: IdentityService,
+    private readonly access: AccessService,
   ) {}
 
   private async resolveNoticePeriod(orgId: string, userId: string, fallbackDays: number): Promise<number> {
@@ -348,10 +348,7 @@ export class ExitWriteService {
     noticePeriodDays: number,
   ): void {
     void (async () => {
-      const adminMembers = await this.db
-        .select({ userId: organizationMembers.userId })
-        .from(organizationMembers)
-        .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.role, [...HR_NOTIFY_ROLES])));
+      const adminMembers = await this.access.membersWithPermission(orgId, "hr:exit:manage");
 
       const submittingUser = await this.db.query.users.findFirst({
         where: eq(users.id, actorUserId),

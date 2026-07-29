@@ -11,7 +11,7 @@ import { users, organizationMembers } from "../../db/schema/common/auth";
 import { orgUnits } from "../../db/schema/common/organization";
 import type { WorkflowInstanceQueryDto } from "./dto/workflow.schemas";
 import { HrWorkflowEngineService } from "./hr-workflow-engine.service";
-import { HR_ROLE_SLUGS, FINANCE_ROLE_SLUGS } from "../../common/rbac/role-slugs";
+import { AccessService } from "../access/access.service";
 
 interface ResolvedStep {
   stepOrder: number;
@@ -24,6 +24,7 @@ export class HrWorkflowInstancesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly engine: HrWorkflowEngineService,
+    private readonly access: AccessService,
   ) {}
 
   async listForDefinition(
@@ -269,7 +270,8 @@ export class HrWorkflowInstancesService {
 
   private async buildApproverCache(orgId: string, subjectIds: string[]) {
     const uniqueSubjectIds = [...new Set(subjectIds)];
-    const [subjectRows, hrMembers, financeMembers] = await Promise.all([
+
+    const [subjectRows, hrApprovers, financeApprovers] = await Promise.all([
       uniqueSubjectIds.length > 0
         ? this.db
             .select({
@@ -277,7 +279,6 @@ export class HrWorkflowInstancesService {
               reportingTo: users.reportingTo,
               orgDepartmentId: users.orgDepartmentId,
               branchId: users.branchId,
-              role: organizationMembers.role,
             })
             .from(users)
             .innerJoin(
@@ -289,27 +290,11 @@ export class HrWorkflowInstancesService {
             )
             .where(inArray(users.id, uniqueSubjectIds))
         : Promise.resolve([]),
-      this.db
-        .select({ userId: organizationMembers.userId })
-        .from(organizationMembers)
-        .where(
-          and(
-            eq(organizationMembers.orgId, orgId),
-            inArray(organizationMembers.role, [...HR_ROLE_SLUGS]),
-          ),
-        )
-        .limit(10),
-      this.db
-        .select({ userId: organizationMembers.userId })
-        .from(organizationMembers)
-        .where(
-          and(
-            eq(organizationMembers.orgId, orgId),
-            inArray(organizationMembers.role, [...FINANCE_ROLE_SLUGS]),
-          ),
-        )
-        .limit(10),
+      this.access.membersWithPermission(orgId, "hr:leaves:approve"),
+      this.access.membersWithPermission(orgId, "accounting:approvals:decide"),
     ]);
+
+    const hrUserIds = hrApprovers.map((m) => m.userId);
 
     const subjectMap = new Map(subjectRows.map((u) => [u.id, u]));
     const managerIds = [
@@ -347,19 +332,14 @@ export class HrWorkflowInstancesService {
             .from(orgUnits)
             .where(inArray(orgUnits.id, deptIds))
         : Promise.resolve([]),
-      branchIds.length > 0
+      branchIds.length > 0 && hrUserIds.length > 0
         ? this.db
             .select({ id: users.id, branchId: users.branchId })
             .from(users)
-            .innerJoin(
-              organizationMembers,
-              eq(organizationMembers.userId, users.id),
-            )
             .where(
               and(
-                eq(organizationMembers.orgId, orgId),
+                inArray(users.id, hrUserIds),
                 inArray(users.branchId, branchIds),
-                inArray(organizationMembers.role, [...HR_ROLE_SLUGS]),
               ),
             )
             .limit(branchIds.length * 10)
@@ -382,8 +362,8 @@ export class HrWorkflowInstancesService {
       managerMap: new Map(managerRows.map((u) => [u.id, u])),
       deptMap: new Map(deptRows.map((d) => [d.id, d])),
       locationHrMap,
-      hrUserIds: hrMembers.map((m) => m.userId),
-      financeUserIds: financeMembers.map((m) => m.userId),
+      hrUserIds,
+      financeUserIds: financeApprovers.map((m) => m.userId),
     };
   }
 

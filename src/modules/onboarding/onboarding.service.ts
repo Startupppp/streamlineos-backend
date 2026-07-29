@@ -27,7 +27,12 @@ import { OnboardingTemplateService } from "./onboarding-template.service";
 import { OnboardingDetailsService } from "./onboarding-details.service";
 import { OnboardingTaskService } from "./onboarding-task.service";
 import { OnboardingAdminService } from "./onboarding-admin.service";
-import { hrEmploymentHistory, hrEmployments, hrPeople } from "../../db/schema/hr/core-people";
+import { AccessService } from "../access/access.service";
+import {
+  hrEmploymentHistory,
+  hrEmployments,
+  hrPeople,
+} from "../../db/schema/hr/core-people";
 
 type DefaultTask = {
   title: string;
@@ -115,16 +120,20 @@ export class OnboardingService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly email: EmailService,
-    private readonly hrAutomation: HrAutomationEngineService,
-    private readonly sessions: OnboardingSessionService,
-    private readonly personEmploymentSync: PersonEmploymentSyncService,
-    private readonly templates: OnboardingTemplateService,
-    private readonly details: OnboardingDetailsService,
+    private readonly access: AccessService,
     private readonly tasks: OnboardingTaskService,
     private readonly admin: OnboardingAdminService,
+    private readonly details: OnboardingDetailsService,
+    private readonly sessions: OnboardingSessionService,
+    private readonly templates: OnboardingTemplateService,
+    private readonly hrAutomation: HrAutomationEngineService,
+    private readonly personEmploymentSync: PersonEmploymentSyncService,
   ) {}
 
-  private async markEmploymentOnboarding(orgId: string, userId: string): Promise<void> {
+  private async markEmploymentOnboarding(
+    orgId: string,
+    userId: string,
+  ): Promise<void> {
     await this.personEmploymentSync.ensureFromUserId(orgId, userId, userId);
 
     const [row] = await this.db
@@ -169,7 +178,12 @@ export class OnboardingService {
       await tx
         .update(hrEmployments)
         .set({ lifecycleStatus: "ONBOARDING" })
-        .where(and(eq(hrEmployments.id, row.employmentId), eq(hrEmployments.orgId, orgId)));
+        .where(
+          and(
+            eq(hrEmployments.id, row.employmentId),
+            eq(hrEmployments.orgId, orgId),
+          ),
+        );
     });
   }
 
@@ -385,52 +399,73 @@ export class OnboardingService {
       );
     }
 
-    const ASSIGNABLE_TASK_ROLES = ["HR", "MANAGER"] as const;
-    const assignableRoles = ownerRoles.filter(
-      (r): r is (typeof ASSIGNABLE_TASK_ROLES)[number] =>
-        (ASSIGNABLE_TASK_ROLES as readonly string[]).includes(r),
-    );
-    if (assignableRoles.length === 0) return;
-
-    const tasksByRole = new Map<string, number>();
-    for (const role of assignableRoles) {
-      tasksByRole.set(role, ownerRoles.filter((r) => r === role).length);
-    }
-
-    const membersRaw = await this.db
-      .select({
-        userId: organizationMembers.userId,
-        role: organizationMembers.role,
-        email: users.email,
-        name: users.name,
-      })
-      .from(organizationMembers)
-      .innerJoin(users, eq(users.id, organizationMembers.userId))
-      .where(
-        and(
-          eq(organizationMembers.orgId, orgId),
-          inArray(organizationMembers.role, assignableRoles),
-        ),
-      );
+    const hrTaskCount = ownerRoles.filter((r) => r === "HR").length;
+    const managerTaskCount = ownerRoles.filter((r) => r === "MANAGER").length;
+    if (hrTaskCount === 0 && managerTaskCount === 0) return;
 
     const employeeName = targetUser?.name ?? "the new joiner";
-    const seen = new Set<string>();
-    for (const member of membersRaw) {
-      if (
-        !member.email ||
-        member.userId === employeeUserId ||
-        seen.has(member.userId)
-      )
-        continue;
-      seen.add(member.userId);
-      const taskCount = tasksByRole.get(member.role) ?? 1;
-      await this.email.sendOnboardingTaskEmail(
-        member.email,
-        member.name ?? "there",
-        employeeName,
-        member.role,
-        taskCount,
+
+    if (hrTaskCount > 0) {
+      const hrHolders = await this.access.membersWithPermission(
+        orgId,
+        "hr:onboarding:manage",
       );
+      const hrUserIds = hrHolders
+        .map((m) => m.userId)
+        .filter((id) => id !== employeeUserId);
+      if (hrUserIds.length > 0) {
+        const hrUsers = await this.db
+          .select({ userId: users.id, email: users.email, name: users.name })
+          .from(users)
+          .where(inArray(users.id, hrUserIds));
+        const seen = new Set<string>();
+        for (const member of hrUsers) {
+          if (!member.email || seen.has(member.userId)) continue;
+          seen.add(member.userId);
+          await this.email.sendOnboardingTaskEmail(
+            member.email,
+            member.name ?? "there",
+            employeeName,
+            "HR",
+            hrTaskCount,
+          );
+        }
+      }
+    }
+
+    if (managerTaskCount > 0) {
+      const orgAdminRows = await this.db
+        .select({
+          userId: organizationMembers.userId,
+          email: users.email,
+          name: users.name,
+        })
+        .from(organizationMembers)
+        .innerJoin(users, eq(users.id, organizationMembers.userId))
+        .where(
+          and(
+            eq(organizationMembers.orgId, orgId),
+            eq(organizationMembers.isOwner, true),
+            eq(organizationMembers.status, "ACTIVE"),
+          ),
+        );
+      const seen = new Set<string>();
+      for (const member of orgAdminRows) {
+        if (
+          !member.email ||
+          member.userId === employeeUserId ||
+          seen.has(member.userId)
+        )
+          continue;
+        seen.add(member.userId);
+        await this.email.sendOnboardingTaskEmail(
+          member.email,
+          member.name ?? "there",
+          employeeName,
+          "Manager",
+          managerTaskCount,
+        );
+      }
     }
   }
 
@@ -495,7 +530,11 @@ export class OnboardingService {
     return this.templates.createTemplate(orgId, userId, input);
   }
 
-  savePersonalDetails(orgId: string, userId: string, input: PersonalDetailsInput) {
+  savePersonalDetails(
+    orgId: string,
+    userId: string,
+    input: PersonalDetailsInput,
+  ) {
     return this.details.savePersonalDetails(orgId, userId, input);
   }
 

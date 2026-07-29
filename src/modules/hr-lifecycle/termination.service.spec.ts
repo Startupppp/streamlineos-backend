@@ -1,6 +1,68 @@
 process.env.APP_URL ??= "http://localhost:1000";
 
+import { BadRequestException } from "@nestjs/common";
 import { TerminationService } from "./termination.service";
+
+describe("TerminationService.create — structural owner block", () => {
+  function buildService(membershipRow: Record<string, unknown>, targetUserRow?: Record<string, unknown>) {
+    const db = {
+      query: {
+        organizationMembers: {
+          findFirst: jest.fn().mockResolvedValue(membershipRow),
+        },
+        users: {
+          findFirst: jest.fn().mockResolvedValue(targetUserRow ?? { id: "target-1", isActive: true }),
+        },
+        terminations: {
+          findFirst: jest.fn().mockResolvedValue(null),
+        },
+      },
+      insert: jest.fn().mockReturnValue({
+        values: jest.fn().mockReturnValue({
+          returning: jest.fn().mockResolvedValue([{ id: 1, orgId: "org-1", userId: "target-1" }]),
+        }),
+      }),
+    };
+    return new TerminationService(
+      db as never,
+      { log: jest.fn() } as never,
+      { invalidate: jest.fn() } as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+    );
+  }
+
+  it("blocks terminating the org owner regardless of their role slug", async () => {
+    const service = buildService({ role: "MEMBER", isOwner: true });
+
+    await expect(
+      service.create("org-1", "actor-1", "HR_ADMIN", {
+        userId: "target-1",
+        reasons: ["misconduct"],
+        detailedExplanation: "Details here",
+        effectiveDate: "2026-08-01",
+        noticePeriodWaived: false,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it("allows terminating a CEO-role user who is not the org owner", async () => {
+    const service = buildService({ role: "CEO", isOwner: false });
+
+    await expect(
+      service.create("org-1", "actor-1", "HR_ADMIN", {
+        userId: "target-1",
+        reasons: ["misconduct"],
+        detailedExplanation: "Details here",
+        effectiveDate: "2026-08-01",
+        noticePeriodWaived: false,
+      }),
+    ).resolves.toBeDefined();
+  });
+});
 
 describe("TerminationService.list — paginated envelope + status counts", () => {
   function buildService(rows: unknown[], statusRows: { status: string; count: string }[]) {

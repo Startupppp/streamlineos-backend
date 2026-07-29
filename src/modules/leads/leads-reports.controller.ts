@@ -75,9 +75,10 @@ export class LeadsReportsController {
 
   @Get("sla-alerts")
   @RequirePermission("crm:leads:view")
-  getSlaAlerts(@CurrentUser() u: CurrentUserContext) {
+  async getSlaAlerts(@CurrentUser() u: CurrentUserContext) {
+    const scope = await resolveLeadsViewScope(this.access, u);
     return this.reports.getLeadSlaAlerts(u.orgId, {
-      role: u.role || undefined,
+      ownScope: scope === "own" || scope === "none",
       userId: u.userId,
     });
   }

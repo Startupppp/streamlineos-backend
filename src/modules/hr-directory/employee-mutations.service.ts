@@ -5,7 +5,6 @@ import {
   Injectable,
 } from "@nestjs/common";
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
-import { ROLE_SLUG, HR_ROLE_SET } from "../../common/rbac/role-slugs";
 import {
   employeeSkills,
   onboardingTasks,
@@ -173,8 +172,7 @@ export class EmployeeMutationsService {
 
     const isSelf = actor.userId === targetUserId;
     const isOwnerOrAdmin = userCan(actor, "manage", "hr:employees");
-    const canManageEmployees = isOwnerOrAdmin || HR_ROLE_SET.has(actor.role) || actor.role === ROLE_SLUG.CEO;
-    if (!isSelf && !canManageEmployees) {
+    if (!isSelf && !isOwnerOrAdmin) {
       throw new ForbiddenException("You can only update your own profile.");
     }
 

@@ -6,7 +6,6 @@ import {
   UnprocessableEntityException,
 } from "@nestjs/common";
 import { and, count, desc, eq, ilike, ne, or, sql } from "drizzle-orm";
-import { ROLE_SLUG, HR_ROLE_SLUGS } from "../../common/rbac/role-slugs";
 import { buildListResponse } from "../../common/pagination/pagination";
 import {
   candidateApplications,
@@ -25,6 +24,7 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { EmailService } from "../email/email.service";
 import { AutomationService } from "../automation/automation.service";
 import { PlanLimitsService } from "../billing/plan-limits.service";
+import { AccessService } from "../access/access.service";
 import { getCandidateRejectionEmail } from "../email/templates/recruitment";
 import type {
   CandidateListInput,
@@ -71,6 +71,7 @@ export class RecruitmentCandidatesService {
     private readonly email: EmailService,
     private readonly automation: AutomationService,
     private readonly planLimits: PlanLimitsService,
+    private readonly access: AccessService,
   ) {}
 
   async list(orgId: string, input: CandidateListInput) {
@@ -300,7 +301,7 @@ export class RecruitmentCandidatesService {
     await this.db.update(candidates).set(updateFields).where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)));
 
     if (input.status === "REJECTED" && existing.status !== "REJECTED") {
-      await this.notifyByRoles(orgId, [...HR_ROLE_SLUGS, ROLE_SLUG.CEO], {
+      await this.notifyPermissionHolders(orgId, "hr:interviews:manage", {
         type: "INFO",
         title: "Candidate Rejected",
         message: `${existing.firstName} ${existing.lastName} has been moved to Rejected.`,
@@ -402,7 +403,7 @@ export class RecruitmentCandidatesService {
     });
 
     if (newStage === "REJECTED") {
-      await this.notifyByRoles(orgId, [...HR_ROLE_SLUGS, ROLE_SLUG.CEO], {
+      await this.notifyPermissionHolders(orgId, "hr:interviews:manage", {
         type: "INFO",
         title: "Candidate Rejected",
         message: `${existing.firstName} ${existing.lastName} has been moved to Rejected.`,
@@ -460,13 +461,12 @@ export class RecruitmentCandidatesService {
     await this.email.sendEmail({ to: email, subject, html });
   }
 
-  private async notifyByRoles(orgId: string, roles: string[], opts: RoleNotification) {
-    const members = await this.db
-      .select({ userId: organizationMembers.userId, role: organizationMembers.role })
-      .from(organizationMembers)
-      .where(eq(organizationMembers.orgId, orgId));
-
-    const targets = members.filter((m) => roles.includes(m.role));
+  private async notifyPermissionHolders(
+    orgId: string,
+    permissionKey: string,
+    opts: RoleNotification,
+  ) {
+    const targets = await this.access.membersWithPermission(orgId, permissionKey);
     await Promise.all(
       targets.map((m) =>
         this.notifications.create({

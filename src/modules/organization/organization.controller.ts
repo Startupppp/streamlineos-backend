@@ -352,7 +352,13 @@ export class OrganizationController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (!u.isOrgOwner && !u.isPlatformAdmin) throw new ForbiddenException("Forbidden");
-    return this.organization.schedulePurge(orgId, u.userId, body.scheduledForDays, body.reason);
+    const targetOrgId = u.isPlatformAdmin ? orgId : u.orgId;
+    return this.organization.schedulePurge(
+      targetOrgId,
+      u.userId,
+      body.scheduledForDays,
+      body.reason,
+    );
   }
 
   @Delete(":orgId/purge")
@@ -364,6 +370,7 @@ export class OrganizationController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (!u.isOrgOwner && !u.isPlatformAdmin) throw new ForbiddenException("Forbidden");
-    return this.organization.cancelPurge(orgId, u.userId);
+    const targetOrgId = u.isPlatformAdmin ? orgId : u.orgId;
+    return this.organization.cancelPurge(targetOrgId, u.userId);
   }
 }

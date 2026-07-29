@@ -13,13 +13,12 @@ import {
   notInArray,
   isNotNull,
 } from "drizzle-orm";
-import { SALES_ROLE_SLUGS } from "../../common/rbac/role-slugs";
+import { AccessService } from "../access/access.service";
 import {
   leads,
   leadActivities,
   deals,
   users,
-  organizationMembers,
   crmOptions,
   crmPipelineStages,
 } from "../../db/schema";
@@ -42,6 +41,7 @@ export class LeadsReportsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly teamReports: LeadsReportsTeamService,
+    private readonly access: AccessService,
   ) {}
 
   async getLeadAnalytics(
@@ -79,7 +79,7 @@ export class LeadsReportsService {
           )}])`
         : sql`false`;
 
-    const [totalsRows, prevPeriodRows, wonStages, sourceRows, assignRows, salesUsers] =
+    const [totalsRows, prevPeriodRows, wonStages, sourceRows, assignRows, permittedMembers] =
       await Promise.all([
         this.db
           .select({
@@ -127,12 +127,16 @@ export class LeadsReportsService {
           .from(leads)
           .where(and(...f, isNotNull(leads.assignedToId)))
           .groupBy(leads.assignedToId),
-        this.db
+        this.access.membersWithPermission(orgId, "crm:leads:view"),
+      ]);
+
+    const permittedUserIds = permittedMembers.map((m) => m.userId);
+    const salesUsers = permittedUserIds.length > 0
+      ? await this.db
           .select({ id: users.id, name: users.name })
           .from(users)
-          .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
-          .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.role, [...SALES_ROLE_SLUGS]))),
-      ]);
+          .where(inArray(users.id, permittedUserIds))
+      : [];
 
     const totalLeads = totalsRows[0]?.total ?? 0;
     const converted = totalsRows[0]?.converted ?? 0;
@@ -334,7 +338,7 @@ export class LeadsReportsService {
     return this.teamReports.getSalesTeamCapacity(orgId);
   }
 
-  getLeadSlaAlerts(orgId: string, opts: { role?: string; userId?: string }) {
+  getLeadSlaAlerts(orgId: string, opts: { ownScope?: boolean; userId?: string }) {
     return this.teamReports.getLeadSlaAlerts(orgId, opts);
   }
 

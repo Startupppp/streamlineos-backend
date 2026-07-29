@@ -300,16 +300,6 @@ export class RolesService {
       if (existing.isSystem)
         throw new ForbiddenException("System roles cannot be deleted");
 
-      const [{ value: legacyCount }] = await tx
-        .select({ value: count() })
-        .from(organizationMembers)
-        .where(
-          and(
-            eq(organizationMembers.orgId, actor.orgId),
-            eq(organizationMembers.role, existing.slug),
-          ),
-        );
-
       const [{ value: directCount }] = await tx
         .select({ value: count() })
         .from(roleAssignments)
@@ -324,8 +314,7 @@ export class RolesService {
           and(eq(groupRoleAssignments.orgId, actor.orgId), eq(groupRoleAssignments.roleId, roleId)),
         );
 
-      const total =
-        Number(legacyCount) + Number(directCount) + Number(groupCount);
+      const total = Number(directCount) + Number(groupCount);
       if (total > 0) {
         throw new ConflictException(
           `Cannot delete role — ${total} member assignment${total !== 1 ? "s are" : " is"} attached to it. Reassign them first.`,

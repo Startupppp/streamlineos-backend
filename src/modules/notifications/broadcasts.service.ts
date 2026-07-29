@@ -275,13 +275,13 @@ export class BroadcastsService {
     }
 
     if (audience.type === "departments") {
-      const deptIds = (audience.departmentIds ?? []).map(Number).filter((n) => Number.isInteger(n));
+      const deptIds = dedupe(audience.departmentIds ?? []);
       if (deptIds.length === 0) return [];
       const rows = await this.db
         .select({ userId: organizationMembers.userId })
         .from(organizationMembers)
         .innerJoin(users, eq(users.id, organizationMembers.userId))
-        .where(and(eq(organizationMembers.orgId, orgId), inArray(users.departmentId, deptIds)));
+        .where(and(eq(organizationMembers.orgId, orgId), inArray(users.orgDepartmentId, deptIds)));
       return dedupe(rows.map((r) => r.userId));
     }
 

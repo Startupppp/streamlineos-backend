@@ -3,6 +3,7 @@ import { NotificationsModule } from "../notifications/notifications.module";
 import { AutomationModule } from "../automation/automation.module";
 import { AiModule } from "../ai/ai.module";
 import { BillingModule } from "../billing/billing.module";
+import { AccessModule } from "../access/access.module";
 import { RecruitmentCandidatesController } from "./recruitment-candidates.controller";
 import { RecruitmentPipelineController } from "./recruitment-pipeline.controller";
 import { RecruitmentCandidateRecordsController } from "./recruitment-candidate-records.controller";
@@ -35,7 +36,7 @@ import { RecruitmentTalentPoolsService } from "./recruitment-talent-pools.servic
 import { RecruitmentHandoffService } from "./recruitment-handoff.service";
 
 @Module({
-  imports: [NotificationsModule, AutomationModule, AiModule, BillingModule],
+  imports: [NotificationsModule, AutomationModule, AiModule, BillingModule, AccessModule],
   controllers: [
     RecruitmentCandidatesController,
     RecruitmentPipelineController,

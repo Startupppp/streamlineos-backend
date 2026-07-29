@@ -189,8 +189,40 @@ describe("PlanLimitsService", () => {
           .mockResolvedValueOnce([{ count: 500 }]),
       });
       service = await build(mockDb);
-      // Default ENTERPRISE catalog is 500; negotiated 1200 should allow 501st member
       await expect(service.assertWithinLimit("org1", "members", 1)).resolves.toBeUndefined();
+    });
+
+    it("blocks when combined members + pending invitations count reaches the limit", async () => {
+      mockDb = makeDb({
+        execute: jest
+          .fn()
+          .mockResolvedValueOnce([{ plan: "FREE", status: "ACTIVE", trial_ends_at: null }])
+          .mockResolvedValueOnce([{ count: 5 }]),
+      });
+      service = await build(mockDb);
+      await expect(service.assertWithinLimit("org1", "members", 1)).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it("allows accept (increment 0) when invitation's slot is within the limit", async () => {
+      mockDb = makeDb({
+        execute: jest
+          .fn()
+          .mockResolvedValueOnce([{ plan: "FREE", status: "ACTIVE", trial_ends_at: null }])
+          .mockResolvedValueOnce([{ count: 5 }]),
+      });
+      service = await build(mockDb);
+      await expect(service.assertWithinLimit("org1", "members", 0)).resolves.toBeUndefined();
+    });
+
+    it("blocks accept (increment 0) when combined count strictly exceeds the limit", async () => {
+      mockDb = makeDb({
+        execute: jest
+          .fn()
+          .mockResolvedValueOnce([{ plan: "FREE", status: "ACTIVE", trial_ends_at: null }])
+          .mockResolvedValueOnce([{ count: 6 }]),
+      });
+      service = await build(mockDb);
+      await expect(service.assertWithinLimit("org1", "members", 0)).rejects.toBeInstanceOf(ForbiddenException);
     });
   });
 });
