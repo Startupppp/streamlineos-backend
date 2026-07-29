@@ -19,7 +19,6 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
-import type { BranchContext } from "../leads/branch-filter";
 import { EmployeesService } from "./employees.service";
 import { EmployeeMutationsService } from "./employee-mutations.service";
 import { EmployeeOnboardingService } from "./employee-onboarding.service";
@@ -85,14 +84,9 @@ export class EmployeesController {
     @Query(new ZodValidationPipe(listEmployeesSchema)) query: ListEmployeesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const branch: BranchContext = {
-      role: u.role ?? "",
-      branchId: u.branchId ?? null,
-      userId: u.userId,
-    };
     const scope = await resolveEmployeesScope(this.access, u);
     const search = query.search ?? query.q;
-    return this.employees.listEmployees(u.orgId, branch, {
+    return this.employees.listEmployees(u.orgId, u.userId, {
       page: query.page,
       limit: query.limit,
       search,

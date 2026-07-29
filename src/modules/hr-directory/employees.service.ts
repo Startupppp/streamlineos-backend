@@ -15,7 +15,6 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
-import { branchIdFilter, type BranchContext } from "../leads/branch-filter";
 import { formatDateOnly, subDays } from "../../common/date";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
@@ -29,7 +28,7 @@ export class EmployeesService {
 
   listEmployees(
     orgId: string,
-    branch: BranchContext,
+    userId: string,
     opts: {
       page?: number;
       limit?: number;
@@ -40,7 +39,6 @@ export class EmployeesService {
     },
     scope: DataScope,
   ) {
-    const branchKey = `${branch.role}:${branch.branchId ?? ""}:${branch.userId}`;
     const search = opts.search;
     const pageN = opts.page ?? 1;
     const limitN = opts.limit ?? 20;
@@ -48,8 +46,7 @@ export class EmployeesService {
     const departmentId = opts.departmentId;
     const role = opts.role?.trim() || undefined;
 
-    // Always paginate the directory listing so large orgs don't load unbounded lists.
-    const key = `hr:employees:paginated:${orgId}:${branchKey}:${scope}:${pageN}:${limitN}:${search ?? ""}:${departmentId ?? ""}:${isActive}:${role ?? ""}`;
+    const key = `hr:employees:paginated:${orgId}:${userId}:${scope}:${pageN}:${limitN}:${search ?? ""}:${departmentId ?? ""}:${isActive}:${role ?? ""}`;
     return this.cache.cached(
       key,
       () =>
@@ -58,7 +55,7 @@ export class EmployeesService {
           pageN,
           limitN,
           search,
-          branch,
+          userId,
           scope,
           departmentId,
           isActive,
@@ -73,7 +70,7 @@ export class EmployeesService {
     page: number,
     limit: number,
     search: string | undefined,
-    branch: BranchContext,
+    userId: string,
     scope: DataScope,
     departmentId?: string,
     isActive: "true" | "false" | "all" = "true",
@@ -83,15 +80,12 @@ export class EmployeesService {
 
     const baseConditions: SQL[] = [
       eq(organizationMembers.orgId, orgId),
-      applyScope(scope, branch.userId, { ownerColumn: organizationMembers.userId }),
+      applyScope(scope, userId, { ownerColumn: organizationMembers.userId }),
     ];
     if (isActive === "true") baseConditions.push(eq(users.isActive, true));
     else if (isActive === "false") baseConditions.push(eq(users.isActive, false));
     if (departmentId != null) baseConditions.push(eq(users.orgDepartmentId, departmentId));
     if (role) baseConditions.push(eq(organizationMembers.role, role));
-
-    const branchCond = branchIdFilter(users.branchId, branch);
-    if (branchCond) baseConditions.push(branchCond);
 
     const searchCondition = search
       ? or(

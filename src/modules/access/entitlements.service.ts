@@ -17,6 +17,7 @@ import { logger } from "../../common/logger/logger.service";
 import { MODULE_CATALOG } from "../../common/rbac/module-vocabulary";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { ACCESS_MANAGED_MODULES } from "../rbac/permissions";
+import { assignModuleOwnerRole } from "../ownership/module-owner-role.helper";
 
 export { MODULE_CATALOG };
 
@@ -199,6 +200,8 @@ export class EntitlementsService implements OnModuleInit {
             .insert(moduleOwnerships)
             .values({ orgId, moduleKey, ownerMembershipId })
             .onConflictDoNothing();
+
+          await assignModuleOwnerRole(tx, orgId, moduleKey, ownerMembershipId);
         }
       }
 

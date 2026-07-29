@@ -3,15 +3,14 @@ import { eq, and, desc, asc, sql, count, gte, lte, inArray, type SQL } from "dri
 import { leads, users, crmOptions, crmPipelines, crmPipelineStages } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { pushBranchAssigneeFilter, type BranchContext } from "./branch-filter";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
 import { resolveLeadStatusSemantics } from "./lead-status-semantics";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 
-export type BoardOpts = { userId?: string; branch?: BranchContext; limitPerStatus?: number; scope?: DataScope };
-export type StatsFilters = { dateFrom?: string; dateTo?: string; userId?: string; branch?: BranchContext; scope?: DataScope };
+export type BoardOpts = { userId?: string; limitPerStatus?: number; scope?: DataScope };
+export type StatsFilters = { dateFrom?: string; dateTo?: string; userId?: string; scope?: DataScope };
 
 function pushLeadsViewScope(
   where: SQL[],
@@ -73,10 +72,6 @@ export class LeadsBoardService {
 
     return this.cache.cached(CACHE_KEYS.leadBoard(orgId, hash), async () => {
       const baseFilters = [eq(leads.orgId, orgId)];
-
-      if (opts?.branch) {
-        await pushBranchAssigneeFilter(this.db, baseFilters, leads.assignedToId, opts.branch);
-      }
 
       pushLeadsViewScope(baseFilters, opts?.scope, opts?.userId);
 
@@ -149,9 +144,6 @@ export class LeadsBoardService {
 
   async getStats(orgId: string, filters?: StatsFilters) {
     const statsFilters = [eq(leads.orgId, orgId)];
-    if (filters?.branch) {
-      await pushBranchAssigneeFilter(this.db, statsFilters, leads.assignedToId, filters.branch);
-    }
     pushLeadsViewScope(statsFilters, filters?.scope, filters?.userId);
 
     if (filters?.dateFrom) {

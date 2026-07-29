@@ -12,7 +12,6 @@ import {
   candidateSlaTracking,
   candidates,
   interviews,
-  organizationMembers,
   organizations,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";

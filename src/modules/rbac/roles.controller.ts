@@ -105,7 +105,7 @@ export class RolesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   seedDefaults(@CurrentUser() u: CurrentUserContext) {
-    return this.roles.seedDefaultRoles(u);
+    return this.roles.seedDefaultRoles(u.orgId);
   }
 
   @Get("templates")

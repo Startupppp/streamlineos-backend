@@ -20,6 +20,7 @@ import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { bumpPermissionsVersion, type DbOrTx } from "../../common/rbac/access-invalidate";
+import { assignModuleOwnerRole, revokeModuleOwnerRole } from "./module-owner-role.helper";
 import { bustMembershipStatusCache } from "../../common/auth/jwt-auth.guard";
 import type {
   DeclineTransferInput,
@@ -158,6 +159,17 @@ export class OwnershipService {
     }
 
     await this.db.transaction(async (tx) => {
+      const [prevOwnership] = await tx
+        .select({ ownerMembershipId: moduleOwnerships.ownerMembershipId })
+        .from(moduleOwnerships)
+        .where(
+          and(
+            eq(moduleOwnerships.orgId, orgId),
+            eq(moduleOwnerships.moduleKey, moduleKey),
+          ),
+        )
+        .limit(1);
+
       await tx
         .insert(moduleOwnerships)
         .values({
@@ -184,6 +196,14 @@ export class OwnershipService {
             eq(ownershipTransfers.status, "PENDING"),
           ),
         );
+
+      if (
+        prevOwnership !== undefined &&
+        prevOwnership.ownerMembershipId !== input.ownerMembershipId
+      ) {
+        await revokeModuleOwnerRole(tx, orgId, moduleKey, prevOwnership.ownerMembershipId);
+      }
+      await assignModuleOwnerRole(tx, orgId, moduleKey, input.ownerMembershipId);
 
       await bumpPermissionsVersion(tx, orgId);
     });
@@ -510,6 +530,9 @@ export class OwnershipService {
               updatedAt: new Date(),
             },
           });
+
+        await revokeModuleOwnerRole(tx, orgId, moduleKey, fromMember.id);
+        await assignModuleOwnerRole(tx, orgId, moduleKey, toMember.id);
 
         await tx
           .update(ownershipTransfers)

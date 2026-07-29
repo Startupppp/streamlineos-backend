@@ -6,18 +6,22 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, notInArray, sql } from "drizzle-orm";
+import { and, desc, eq, lte, notInArray, sql } from "drizzle-orm";
 import {
   terminations,
   users,
   organizations,
   organizationMembers,
+  moduleOwnerships,
+  roleAssignments,
+  roles,
   fnfSettlements,
   assetReturns,
   assets,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { ROLE_RANK } from "../../common/rbac/grantability";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { EmailService } from "../email/email.service";
@@ -111,7 +115,7 @@ export class TerminationService {
     };
   }
 
-  async create(orgId: string, actorUserId: string, actorRole: string, input: TerminationCreateInput) {
+  async create(orgId: string, actorUserId: string, isOrgAdmin: boolean, input: TerminationCreateInput) {
     if (input.userId === actorUserId) throw new BadRequestException("You cannot terminate yourself.");
 
     const membership = await this.db.query.organizationMembers.findFirst({
@@ -126,7 +130,44 @@ export class TerminationService {
     if (!targetUser) throw new NotFoundException("Employee not found.");
 
     if (membership.isOwner) {
-      throw new BadRequestException("The organization owner cannot be terminated through this workflow.");
+      throw new BadRequestException(
+        "The organization owner cannot be terminated. Transfer organization ownership first.",
+      );
+    }
+
+    const [ownedModules, privilegedRoles] = await Promise.all([
+      this.db
+        .select({ moduleKey: moduleOwnerships.moduleKey })
+        .from(moduleOwnerships)
+        .where(
+          and(
+            eq(moduleOwnerships.orgId, orgId),
+            eq(moduleOwnerships.ownerMembershipId, membership.id),
+          ),
+        ),
+      this.db
+        .select({ name: roles.name, rank: roles.rank })
+        .from(roleAssignments)
+        .innerJoin(roles, eq(roleAssignments.roleId, roles.id))
+        .where(
+          and(
+            eq(roleAssignments.orgId, orgId),
+            eq(roleAssignments.organizationMembershipId, membership.id),
+            lte(roles.rank, ROLE_RANK.MODULE_ADMIN),
+          ),
+        ),
+    ]);
+
+    if (ownedModules.length > 0) {
+      throw new BadRequestException(
+        `This employee owns the following module(s): ${ownedModules.map((m) => m.moduleKey).join(", ")}. Transfer module ownership before terminating them.`,
+      );
+    }
+
+    if (privilegedRoles.length > 0) {
+      throw new BadRequestException(
+        `This employee holds administrative role(s): ${privilegedRoles.map((r) => r.name).join(", ")}. Remove those roles before terminating them.`,
+      );
     }
 
     if (!targetUser.isActive) {
@@ -157,7 +198,7 @@ export class TerminationService {
       );
     }
 
-    const isCeoInitiator = actorRole === "CEO";
+    const isCeoInitiator = isOrgAdmin;
     const now = new Date();
     const [record] = await this.db
       .insert(terminations)

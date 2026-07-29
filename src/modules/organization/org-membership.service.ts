@@ -5,9 +5,11 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq, ilike, inArray, or } from "drizzle-orm";
+import { and, count, desc, eq, ilike, inArray, lte, or } from "drizzle-orm";
 import {
   moduleOwnerships,
+  roleAssignments,
+  roles,
   orgUnitMembers,
   orgUnits,
   organizationMembers,
@@ -20,6 +22,7 @@ import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { bumpPermissionsVersion, type DbOrTx } from "../../common/rbac/access-invalidate";
+import { ROLE_RANK } from "../../common/rbac/grantability";
 import { bustMembershipStatusCache } from "../../common/auth/jwt-auth.guard";
 import { SessionsService } from "../sessions/sessions.service";
 import type { ListMembersInput } from "./dto/organization.schemas";
@@ -57,6 +60,25 @@ export class OrgMembershipService {
       )
       .for("update");
     return rows.map((r) => r.moduleKey);
+  }
+
+  private async queryPrivilegedRoleNames(
+    db: DbOrTx,
+    orgId: string,
+    membershipId: number,
+  ): Promise<string[]> {
+    const rows = await db
+      .select({ name: roles.name })
+      .from(roleAssignments)
+      .innerJoin(roles, eq(roleAssignments.roleId, roles.id))
+      .where(
+        and(
+          eq(roleAssignments.orgId, orgId),
+          eq(roleAssignments.organizationMembershipId, membershipId),
+          lte(roles.rank, ROLE_RANK.MODULE_ADMIN),
+        ),
+      );
+    return rows.map((r) => r.name);
   }
 
   async listMembers(orgId: string, { page, limit, search, userIds }: ListMembersInput) {
@@ -142,6 +164,13 @@ export class OrgMembershipService {
           );
         }
 
+        const privilegedRoles = await this.queryPrivilegedRoleNames(tx, orgId, member.id);
+        if (privilegedRoles.length > 0) {
+          throw new BadRequestException(
+            `Remove administrative role(s) before removing this member: ${privilegedRoles.join(", ")}.`,
+          );
+        }
+
         await tx
           .delete(organizationMembers)
           .where(
@@ -210,6 +239,13 @@ export class OrgMembershipService {
       if (ownedModuleKeys.length > 0) {
         throw new BadRequestException(
           `Transfer module ownership before suspending this member. Owned modules: ${ownedModuleKeys.join(", ")}.`,
+        );
+      }
+
+      const privilegedRoles = await this.queryPrivilegedRoleNames(tx, orgId, member.id);
+      if (privilegedRoles.length > 0) {
+        throw new BadRequestException(
+          `Remove administrative role(s) before suspending this member: ${privilegedRoles.join(", ")}.`,
         );
       }
 

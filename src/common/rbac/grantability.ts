@@ -3,6 +3,7 @@ import { BadRequestException, ForbiddenException } from "@nestjs/common";
 export const ROLE_RANK = {
   ORG_OWNER: 0,
   ORG_ADMIN: 10,
+  MODULE_OWNER: 15,
   MODULE_ADMIN: 20,
   MODULE_CUSTOM: 30,
   FUNCTIONAL: 40,

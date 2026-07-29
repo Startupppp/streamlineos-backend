@@ -10,7 +10,6 @@ import {
   auditLogs,
   groupRoleAssignments,
   organizationMembers,
-  permissions,
   principalGroups,
   roleAssignments,
   rolePermissionGrants,
@@ -30,15 +29,13 @@ import {
   toGrantableSet,
   type RoleGrantTarget,
 } from "../../common/rbac/grantability";
-import { MODULE_CATALOG } from "../../common/rbac/module-vocabulary";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { seedSystemRolesForOrg } from "./seed-system-roles";
 import type { DataScope } from "../access/access.types";
 import { AccessService } from "../access/access.service";
 import { ROLE_TEMPLATES, type RoleTemplate } from "./role-templates.constants";
 import {
-  MODULE_ACCESS_PERMISSIONS,
   PERMISSIONS,
-  moduleScopedPermissions,
 } from "./permissions";
 import { RoleLockoutService } from "./role-lockout.service";
 import { RolePermissionService } from "./role-permission.service";
@@ -410,95 +407,21 @@ export class RolesService {
     };
   }
 
-  private async resolveDbPermissionSet(): Promise<Set<string>> {
-    const rows = await this.db
-      .select({ name: permissions.name })
-      .from(permissions)
-      .limit(2000);
-    return new Set(rows.map((r) => r.name));
-  }
+  async seedDefaultRoles(orgId: string) {
+    await seedSystemRolesForOrg(this.db, orgId);
 
-  private buildOrgAdminPermissionKeys(dbCatalog: Set<string>): string[] {
-    const accessKeys = MODULE_ACCESS_PERMISSIONS.map((p) => p.name);
-    const candidates = [
-      ...new Set([
-        ...moduleScopedPermissions("settings"),
-        "audit-log:read",
-        "reports:view",
-        "reports:export",
-        "ownership:modules:view",
-        "ownership:modules:manage",
-        ...accessKeys,
-      ]),
-    ];
-    return candidates.filter((key) => dbCatalog.has(key));
-  }
-
-  private buildModuleAdminPermissionKeys(
-    moduleKey: string,
-    dbCatalog: Set<string>,
-  ): string[] {
-    return moduleScopedPermissions(moduleKey).filter((key) => dbCatalog.has(key));
-  }
-
-  async seedDefaultRoles(actor: CurrentUserContext) {
-    const dbCatalog = await this.resolveDbPermissionSet();
-
-    const systemRoleSpecs: Array<{
-      slug: string;
-      name: string;
-      rank: number;
-      moduleKey: string | null;
-      permissionKeys: string[];
-    }> = [
-      {
-        slug: "ORG_ADMIN",
-        name: "Org Admin",
-        rank: ROLE_RANK.ORG_ADMIN,
-        moduleKey: null,
-        permissionKeys: this.buildOrgAdminPermissionKeys(dbCatalog),
-      },
-      ...MODULE_CATALOG.map((mod) => ({
-        slug: `${mod.toUpperCase()}_MODULE_ADMIN`,
-        name: `${mod.charAt(0).toUpperCase() + mod.slice(1)} Module Admin`,
-        rank: ROLE_RANK.MODULE_ADMIN,
-        moduleKey: mod,
-        permissionKeys: this.buildModuleAdminPermissionKeys(mod, dbCatalog),
-      })),
-    ];
-
-    for (const spec of systemRoleSpecs) {
-      await this.db.transaction(async (tx) => {
-        const created = await tx
-          .insert(roles)
-          .values({
-            name: spec.name,
-            slug: spec.slug,
-            orgId: actor.orgId,
-            isSystem: true,
-            rank: spec.rank,
-            moduleKey: spec.moduleKey,
-          })
-          .onConflictDoNothing({ target: [roles.slug, roles.orgId] })
-          .returning({ id: roles.id });
-
-        if (created.length > 0 && spec.permissionKeys.length > 0) {
-          const row = created[0];
-          if (row) {
-            await tx.insert(rolePermissionGrants).values(
-              spec.permissionKeys.map((permissionKey) => ({
-                orgId: actor.orgId,
-                roleId: row.id,
-                permissionKey,
-                scope: "all" as const,
-              })),
-            ).onConflictDoNothing();
-          }
-        }
-
-        await bumpPermissionsVersion(tx, actor.orgId);
-      });
-    }
+    const privilegedActor: CurrentUserContext = {
+      userId: "",
+      orgId,
+      branchId: null,
+      role: "ORG_ADMIN",
+      permissions: [],
+      enabledModules: [],
+      plan: null,
+      isPlatformAdmin: false,
+      isOrgOwner: true,
+      sessionId: "",
+    };
 
     const starterTemplateIds = [
       "engineering",
@@ -515,14 +438,14 @@ export class RolesService {
       const template = ROLE_TEMPLATES.find((t) => t.id === templateId);
       if (!template) continue;
       const existing = await this.db.query.roles.findFirst({
-        where: and(eq(roles.slug, template.slug), eq(roles.orgId, actor.orgId)),
+        where: and(eq(roles.slug, template.slug), eq(roles.orgId, orgId)),
         columns: { id: true },
       });
       if (existing) {
         skipped.push(template.slug);
         continue;
       }
-      await this.cloneTemplate(actor, { templateId });
+      await this.cloneTemplate(privilegedActor, { templateId });
       created.push(template.slug);
     }
     return { created, skipped };

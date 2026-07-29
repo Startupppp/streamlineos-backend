@@ -32,7 +32,6 @@ import { CrmValidationService } from "../crm-metadata/crm-validation.service";
 import { CrmAttributionReportService } from "../crm/crm-attribution-report.service";
 import { TerritoryMatchService } from "../crm/territory-match.service";
 import { PlanLimitsService } from "../billing/plan-limits.service";
-import { pushBranchAssigneeFilter, type BranchContext } from "./branch-filter";
 import { LeadsBoardService, type BoardOpts, type StatsFilters } from "./leads-board.service";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
@@ -48,7 +47,7 @@ import type {
   IngestInput,
 } from "./dto/lead.schemas";
 
-type ListFilters = ListInput & { userId?: string; branch?: BranchContext; scope?: DataScope };
+type ListFilters = ListInput & { userId?: string; scope?: DataScope };
 
 function pushLeadsViewScope(
   where: SQL[],
@@ -118,10 +117,6 @@ export class LeadsService {
 
   async listLeads(orgId: string, filters?: ListFilters) {
     const where = [eq(leads.orgId, orgId)];
-
-    if (filters?.branch) {
-      await pushBranchAssigneeFilter(this.db, where, leads.assignedToId, filters.branch);
-    }
 
     pushLeadsViewScope(where, filters?.scope, filters?.userId);
     if (filters?.status) where.push(eq(leads.status, filters.status));

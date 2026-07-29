@@ -53,7 +53,6 @@ export class LeadsController {
       ...filters,
       scope,
       userId: u.userId,
-      branch: { role: u.role, branchId: u.branchId, userId: u.userId },
     });
   }
 
@@ -79,7 +78,6 @@ export class LeadsController {
     return this.leads.getBoard(u.orgId, {
       scope,
       userId: u.userId,
-      branch: { role: u.role, branchId: u.branchId, userId: u.userId },
     });
   }
 
@@ -96,7 +94,6 @@ export class LeadsController {
       dateTo,
       scope,
       userId: u.userId,
-      branch: { role: u.role, branchId: u.branchId, userId: u.userId },
     });
   }
 

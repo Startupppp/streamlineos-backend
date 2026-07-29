@@ -49,7 +49,12 @@ export class TerminationController {
     @Body(new ZodValidationPipe(terminationCreateSchema)) body: TerminationCreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.termination.create(u.orgId, u.userId, u.role, body);
+    return this.termination.create(
+      u.orgId,
+      u.userId,
+      u.isOrgOwner || u.isPlatformAdmin,
+      body,
+    );
   }
 
   @Post(":terminationId/send-email")

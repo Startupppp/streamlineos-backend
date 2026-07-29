@@ -2,7 +2,6 @@ import { Body, Controller, Get, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import type { BranchContext } from "../leads/branch-filter";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { OrgMembersService } from "./org-members.service";
 import { OrgSetupService } from "./org-setup.service";
@@ -27,9 +26,8 @@ export class OrgController {
     @Query("search") search?: string,
     @Query("limit") limit?: string,
   ) {
-    const ctx: BranchContext = { role: u.role, branchId: u.branchId, userId: u.userId };
     const parsedLimit = limit ? Number.parseInt(limit, 10) : undefined;
-    return this.members.listMembers(u.orgId, ctx, {
+    return this.members.listMembers(u.orgId, {
       search: typeof search === "string" ? search : undefined,
       limit: parsedLimit !== undefined && Number.isFinite(parsedLimit) ? parsedLimit : undefined,
     });

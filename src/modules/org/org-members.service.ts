@@ -3,8 +3,6 @@ import { eq, and, asc, or, ilike, sql, type SQL } from "drizzle-orm";
 import { organizationMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { pushBranchAssigneeFilter, type BranchContext } from "../leads/branch-filter";
-
 const MAX_MEMBER_RESULTS = 100;
 
 export interface ListMembersOptions {
@@ -16,13 +14,11 @@ export interface ListMembersOptions {
 export class OrgMembersService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async listMembers(orgId: string, ctx: BranchContext, options: ListMembersOptions = {}) {
+  async listMembers(orgId: string, options: ListMembersOptions = {}) {
     const conditions: SQL[] = [
       eq(organizationMembers.orgId, orgId),
       eq(users.isActive, true),
     ];
-
-    await pushBranchAssigneeFilter(this.db, conditions, users.id, ctx);
 
     const term = options.search?.trim();
     if (term) {
