@@ -25,6 +25,7 @@ import { bumpPermissionsVersion, type DbOrTx } from "../../common/rbac/access-in
 import { ROLE_RANK } from "../../common/rbac/grantability";
 import { bustMembershipStatusCache } from "../../common/auth/jwt-auth.guard";
 import { SessionsService } from "../sessions/sessions.service";
+import { stableHash } from "../../common/cache/cache-hash";
 import type { ListMembersInput } from "./dto/organization.schemas";
 
 const PG_FK_VIOLATION = "23503";
@@ -42,6 +43,15 @@ export class OrgMembershipService {
     await this.cache.invalidate(CACHE_KEYS.userSession(memberUserId));
     bustMembershipStatusCache(memberUserId, orgId);
     await this.sessions.revokeAllForUser(memberUserId);
+  }
+
+  private async invalidateMemberListCaches(orgId: string): Promise<void> {
+    await Promise.all([
+      this.cache.invalidatePattern(CACHE_KEYS.orgMembersListPattern(orgId)),
+      this.cache.invalidatePattern(CACHE_KEYS.orgMembersSimplePattern(orgId)),
+      this.cache.invalidate(CACHE_KEYS.rbacDiscoveryMembers(orgId)),
+      this.cache.invalidate(CACHE_KEYS.moduleAccessCandidates(orgId)),
+    ]);
   }
 
   private async queryOwnedModuleKeys(
@@ -81,7 +91,28 @@ export class OrgMembershipService {
     return rows.map((r) => r.name);
   }
 
-  async listMembers(orgId: string, { page, limit, search, userIds }: ListMembersInput) {
+  async listMembers(orgId: string, input: ListMembersInput) {
+    const { page, limit, search, userIds } = input;
+    const hash = stableHash({
+      page,
+      limit,
+      search: search ?? null,
+      userIds: userIds ? [...userIds].sort() : null,
+    });
+    return this.cache.cached(
+      CACHE_KEYS.orgMembersList(orgId, hash),
+      () => this.fetchMembers(orgId, page, limit, search, userIds),
+      60,
+    );
+  }
+
+  private async fetchMembers(
+    orgId: string,
+    page: number,
+    limit: number,
+    search: string | undefined,
+    userIds: string[] | undefined,
+  ) {
     const offset = (page - 1) * limit;
     const baseConditions = [eq(organizationMembers.orgId, orgId)];
     if (userIds && userIds.length > 0) {
@@ -206,6 +237,7 @@ export class OrgMembershipService {
     }
 
     await this.revokeMemberAccess(orgId, memberUserId);
+    await this.invalidateMemberListCaches(orgId);
 
     this.audit.log({
       action: "org.member_removed",
@@ -262,6 +294,7 @@ export class OrgMembershipService {
     });
 
     await this.revokeMemberAccess(orgId, memberUserId);
+    await this.invalidateMemberListCaches(orgId);
 
     this.audit.log({
       action: "org.member_suspended",
@@ -302,6 +335,7 @@ export class OrgMembershipService {
 
     await this.cache.invalidate(CACHE_KEYS.userSession(memberUserId));
     bustMembershipStatusCache(memberUserId, orgId);
+    await this.invalidateMemberListCaches(orgId);
 
     this.audit.log({
       action: "org.member_reactivated",
@@ -352,6 +386,11 @@ export class OrgMembershipService {
           ),
         );
     });
+
+    await Promise.all([
+      this.invalidateMemberListCaches(orgId),
+      this.cache.invalidate(CACHE_KEYS.orgProfile(orgId, memberUserId)),
+    ]);
 
     this.audit.log({
       action: "org.member_role_changed",
@@ -416,6 +455,7 @@ export class OrgMembershipService {
       });
 
       await this.cache.invalidate(CACHE_KEYS.userSession(userId));
+      await this.invalidateMemberListCaches(orgId);
       this.audit.log({
         action: "org.member_left",
         userId,

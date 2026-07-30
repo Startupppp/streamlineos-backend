@@ -582,6 +582,27 @@
       "when": 1784993499604,
       "tag": "0362_org_owner_uniqueness",
       "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1784993499605,
+      "tag": "0363_collapse_role_zoo",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1784993499606,
+      "tag": "0364_drop_dead_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1784993499607,
+      "tag": "0365_drop_orphan_enum",
+      "breakpoints": true
     }
   ]
 }

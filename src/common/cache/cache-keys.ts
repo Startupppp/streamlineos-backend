@@ -244,6 +244,50 @@ export const CACHE_KEYS = {
   finInsightsDigest: (orgId: string) => `fin:insights:digest:${orgId}`,
   finCategorizeSuggest: (orgId: string, merchant: string) =>
     `fin:cat-suggest:${orgId}:${merchant}`,
+
+  orgSettings: (orgId: string) => `org:settings:${orgId}`,
+  orgProfile: (orgId: string, userId: string) => `org:profile:${orgId}:${userId}`,
+  orgProfilePattern: (orgId: string) => `org:profile:${orgId}:*`,
+  orgMembersList: (orgId: string, hash: string) => `org:members:list:${orgId}:${hash}`,
+  orgMembersListPattern: (orgId: string) => `org:members:list:${orgId}:*`,
+  orgMembersSimple: (orgId: string, hash: string) => `org:members-simple:${orgId}:${hash}`,
+  orgMembersSimplePattern: (orgId: string) => `org:members-simple:${orgId}:*`,
+
+  permissionsMatrix: (orgId: string, version: number) => `rbac:matrix:${orgId}:v${version}`,
+  rolePerms: (orgId: string, roleId: number, version: number) =>
+    `rbac:role-perms:${orgId}:${roleId}:v${version}`,
+  rbacDiscoveryMembers: (orgId: string) => `rbac:members:${orgId}`,
+
+  moduleRolesList: (orgId: string, moduleKey: string, version: number) =>
+    `module-access:roles:${orgId}:${moduleKey}:v${version}`,
+  moduleGroupsList: (orgId: string, moduleKey: string, version: number) =>
+    `module-access:groups:${orgId}:${moduleKey}:v${version}`,
+  moduleGroupMembers: (
+    orgId: string,
+    moduleKey: string,
+    groupId: number,
+    version: number,
+  ) => `module-access:group-members:${orgId}:${moduleKey}:${groupId}:v${version}`,
+  moduleAccessCandidates: (orgId: string) => `module-access:candidates:${orgId}`,
+  moduleAccessMembers: (
+    orgId: string,
+    moduleKey: string,
+    page: number,
+    pageSize: number,
+    version: number,
+  ) => `module-access:members:${orgId}:${moduleKey}:v${version}:${page}:${pageSize}`,
+  moduleAccessOwnership: (orgId: string, moduleKey: string) =>
+    `module-access:ownership:${orgId}:${moduleKey}`,
+
+  moduleOwnershipsList: (orgId: string) => `ownership:modules:${orgId}`,
+  moduleOwnershipDetail: (orgId: string, moduleKey: string) =>
+    `ownership:module:${orgId}:${moduleKey}`,
+  ownershipTransfersList: (orgId: string, hash: string) =>
+    `ownership:transfers:${orgId}:${hash}`,
+  ownershipTransfersPattern: (orgId: string) => `ownership:transfers:${orgId}:*`,
+  incomingTransfers: (orgId: string, userId: string) =>
+    `ownership:incoming:${orgId}:${userId}`,
+  incomingTransfersPattern: (orgId: string) => `ownership:incoming:${orgId}:*`,
 } as const;
 
 export const CACHE_TTL = {
@@ -251,4 +295,5 @@ export const CACHE_TTL = {
   MEDIUM: 300,
   LONG: 600,
   HOUR: 3600,
+  VERY_LONG: 1800,
 } as const;

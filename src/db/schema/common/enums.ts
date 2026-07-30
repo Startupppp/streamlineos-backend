@@ -79,9 +79,6 @@ export const notificationCategoryEnum = pgEnum("notification_category", [
 export const broadcastStatusEnum = pgEnum("broadcast_status", [
   "DRAFT", "SCHEDULED", "QUEUED", "SENDING", "SENT", "CANCELLED", "FAILED",
 ]);
-export const deliveryStatusEnum = pgEnum("delivery_status", [
-  "QUEUED", "PROCESSING", "DELIVERED", "FAILED", "EXPIRED",
-]);
 export const notificationChannelEnum = pgEnum("notification_channel", [
   "IN_APP", "EMAIL", "PUSH", "SMS", "WHATSAPP", "WEBHOOK",
 ]);

@@ -11,7 +11,7 @@ import { auditLogs, moduleOwnerships, organizationMembers, rolePermissionGrants,
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../common/cache/cache-keys";
+import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import {
@@ -117,6 +117,15 @@ export class ModuleAccessService {
     moduleKey: string,
   ): Promise<ModuleRoleView[]> {
     await this.assertModuleAccess(actor, moduleKey, "view");
+    const version = await this.access.getPermissionsVersion(actor.orgId);
+    return this.cache.cached(
+      CACHE_KEYS.moduleRolesList(actor.orgId, moduleKey, version),
+      () => this.fetchRoles(actor.orgId, moduleKey),
+      CACHE_TTL.VERY_LONG,
+    );
+  }
+
+  private async fetchRoles(orgId: string, moduleKey: string): Promise<ModuleRoleView[]> {
     const catalog = this.moduleCatalogKeys(moduleKey);
 
     const orgRoles = await this.db
@@ -127,7 +136,7 @@ export class ModuleAccessService {
         isSystem: roles.isSystem,
       })
       .from(roles)
-      .where(eq(roles.orgId, actor.orgId))
+      .where(eq(roles.orgId, orgId))
       .orderBy(asc(roles.name))
       .limit(100);
 
@@ -138,7 +147,7 @@ export class ModuleAccessService {
         scope: rolePermissionGrants.scope,
       })
       .from(rolePermissionGrants)
-      .where(eq(rolePermissionGrants.orgId, actor.orgId))
+      .where(eq(rolePermissionGrants.orgId, orgId))
       .limit(10000);
 
     const moduleGrantsByRole = new Map<

@@ -26,14 +26,13 @@ function makeSelectChain(result: unknown[]): SelectChain {
     where: jest.fn(),
     limit: jest.fn().mockResolvedValue(result),
     orderBy: jest.fn(),
-    for: jest.fn(),
+    for: jest.fn().mockResolvedValue(result),
     returning: jest.fn().mockResolvedValue(result),
   };
   chain.from.mockReturnValue(chain);
   chain.innerJoin.mockReturnValue(chain);
   chain.where.mockReturnValue(chain);
   chain.orderBy.mockReturnValue(chain);
-  chain.for.mockReturnValue(chain);
   return chain;
 }
 
@@ -52,16 +51,19 @@ type InsertChain = {
   values: jest.Mock;
   returning: jest.Mock;
   onConflictDoUpdate: jest.Mock;
+  onConflictDoNothing: jest.Mock;
 };
 
 function makeInsertChain(result: unknown[]): InsertChain {
   const chain: InsertChain = {
     values: jest.fn(),
     returning: jest.fn().mockResolvedValue(result),
-    onConflictDoUpdate: jest.fn(),
+    onConflictDoUpdate: jest.fn().mockResolvedValue([]),
+    onConflictDoNothing: jest.fn().mockResolvedValue([]),
   };
   chain.values.mockReturnValue(chain);
   chain.onConflictDoUpdate.mockReturnValue(chain);
+  chain.onConflictDoNothing.mockReturnValue(chain);
   return chain;
 }
 
@@ -97,7 +99,7 @@ describe("OwnershipService — access / business-rule logic", () => {
         OwnershipService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AuditService, useValue: { log: jest.fn() } },
-        { provide: CacheService, useValue: { invalidate: jest.fn() } },
+        { provide: CacheService, useValue: { invalidate: jest.fn(), invalidatePattern: jest.fn().mockResolvedValue(undefined), cached: jest.fn() } },
       ],
     }).compile();
     svc = moduleRef.get(OwnershipService);
@@ -167,9 +169,16 @@ describe("OwnershipService — access / business-rule logic", () => {
 
     it("returns { success: true } and runs inside a transaction when target is ACTIVE", async () => {
       const targetMembership = { id: 5, userId: TARGET_USER, isOwner: false, status: "ACTIVE" };
-      mockDb.select.mockReturnValue(makeSelectChain([targetMembership]));
+      const prevOwnership = { ownerMembershipId: 3 };
+      const ownerRole = { id: 777 };
+      mockDb.select
+        .mockReturnValueOnce(makeSelectChain([targetMembership]))
+        .mockReturnValueOnce(makeSelectChain([prevOwnership]))
+        .mockReturnValueOnce(makeSelectChain([ownerRole]))
+        .mockReturnValueOnce(makeSelectChain([ownerRole]));
       mockDb.insert.mockReturnValue(makeInsertChain([]));
       mockDb.update.mockReturnValue(makeUpdateChain());
+      mockDb.delete.mockReturnValue({ where: jest.fn().mockResolvedValue([]) });
 
       const result = await svc.forceSetModuleOwner(ORG, ACTOR_USER, "hr", { ownerMembershipId: 5 });
 
@@ -340,6 +349,148 @@ describe("OwnershipService — access / business-rule logic", () => {
       await expect(
         svc.declineTransfer(ORG, ACTOR_USER, TRANSFER_ID, {}),
       ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+  });
+
+  describe("acceptTransfer — MODULE scope role swap", () => {
+    const TRANSFER_ID = "tfr-module-role-swap";
+    const MODULE_KEY = "hr";
+    const FROM_MEMBERSHIP_ID = 10;
+    const TO_MEMBERSHIP_ID = 20;
+    const OWNER_ROLE_ID = 888;
+
+    function buildModuleTransfer() {
+      return {
+        id: TRANSFER_ID,
+        scope: "MODULE" as const,
+        moduleKey: MODULE_KEY,
+        fromMembershipId: FROM_MEMBERSHIP_ID,
+        toMembershipId: TO_MEMBERSHIP_ID,
+        status: "PENDING" as const,
+        expiresAt: new Date(Date.now() + 3_600_000),
+      };
+    }
+
+    it("assigns MODULE_OWNER role to new owner and revokes it from old owner when transfer is accepted", async () => {
+      const transfer = buildModuleTransfer();
+      const recipientMembership = { id: TO_MEMBERSHIP_ID, userId: TARGET_USER, isOwner: false, status: "ACTIVE" };
+      const currentOwnership = { ownerMembershipId: FROM_MEMBERSHIP_ID };
+      const memberships = [
+        { id: FROM_MEMBERSHIP_ID, userId: ACTOR_USER, status: "ACTIVE" },
+        { id: TO_MEMBERSHIP_ID, userId: TARGET_USER, status: "ACTIVE" },
+      ];
+      const ownerRole = { id: OWNER_ROLE_ID };
+
+      mockDb.select
+        .mockReturnValueOnce(makeSelectChain([transfer]))
+        .mockReturnValueOnce(makeSelectChain([recipientMembership]))
+        .mockReturnValueOnce(makeSelectChain([currentOwnership]))
+        .mockReturnValueOnce(makeSelectChain(memberships))
+        .mockReturnValueOnce(makeSelectChain([ownerRole]))
+        .mockReturnValueOnce(makeSelectChain([ownerRole]));
+
+      const deleteWhere = jest.fn().mockResolvedValue([]);
+      mockDb.delete.mockReturnValue({ where: deleteWhere });
+      mockDb.insert.mockReturnValue(makeInsertChain([]));
+      mockDb.update.mockReturnValue(makeUpdateChain());
+
+      const result = await svc.acceptTransfer(ORG, TARGET_USER, TRANSFER_ID);
+
+      expect(result).toMatchObject({ success: true });
+      expect(mockDb.delete).toHaveBeenCalledTimes(1);
+      expect(mockDb.insert).toHaveBeenCalledTimes(3);
+    });
+
+    it("does not revoke when the MODULE_OWNER role is not seeded", async () => {
+      const transfer = buildModuleTransfer();
+      const recipientMembership = { id: TO_MEMBERSHIP_ID, userId: TARGET_USER, isOwner: false, status: "ACTIVE" };
+      const currentOwnership = { ownerMembershipId: FROM_MEMBERSHIP_ID };
+      const memberships = [
+        { id: FROM_MEMBERSHIP_ID, userId: ACTOR_USER, status: "ACTIVE" },
+        { id: TO_MEMBERSHIP_ID, userId: TARGET_USER, status: "ACTIVE" },
+      ];
+
+      mockDb.select
+        .mockReturnValueOnce(makeSelectChain([transfer]))
+        .mockReturnValueOnce(makeSelectChain([recipientMembership]))
+        .mockReturnValueOnce(makeSelectChain([currentOwnership]))
+        .mockReturnValueOnce(makeSelectChain(memberships))
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([]));
+
+      mockDb.delete.mockReturnValue({ where: jest.fn().mockResolvedValue([]) });
+      mockDb.insert.mockReturnValue(makeInsertChain([]));
+      mockDb.update.mockReturnValue(makeUpdateChain());
+
+      const result = await svc.acceptTransfer(ORG, TARGET_USER, TRANSFER_ID);
+
+      expect(result).toMatchObject({ success: true });
+      expect(mockDb.delete).not.toHaveBeenCalled();
+    });
+
+    it("does not remove other role assignments from the previous owner during revoke", async () => {
+      const transfer = buildModuleTransfer();
+      const recipientMembership = { id: TO_MEMBERSHIP_ID, userId: TARGET_USER, isOwner: false, status: "ACTIVE" };
+      const currentOwnership = { ownerMembershipId: FROM_MEMBERSHIP_ID };
+      const memberships = [
+        { id: FROM_MEMBERSHIP_ID, userId: ACTOR_USER, status: "ACTIVE" },
+        { id: TO_MEMBERSHIP_ID, userId: TARGET_USER, status: "ACTIVE" },
+      ];
+      const ownerRole = { id: OWNER_ROLE_ID };
+
+      mockDb.select
+        .mockReturnValueOnce(makeSelectChain([transfer]))
+        .mockReturnValueOnce(makeSelectChain([recipientMembership]))
+        .mockReturnValueOnce(makeSelectChain([currentOwnership]))
+        .mockReturnValueOnce(makeSelectChain(memberships))
+        .mockReturnValueOnce(makeSelectChain([ownerRole]))
+        .mockReturnValueOnce(makeSelectChain([ownerRole]));
+
+      const deleteWhere = jest.fn().mockResolvedValue([]);
+      mockDb.delete.mockReturnValue({ where: deleteWhere });
+      mockDb.insert.mockReturnValue(makeInsertChain([]));
+      mockDb.update.mockReturnValue(makeUpdateChain());
+
+      await svc.acceptTransfer(ORG, TARGET_USER, TRANSFER_ID);
+
+      expect(mockDb.delete).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("forceSetModuleOwner — role swap", () => {
+    it("assigns MODULE_OWNER role to new owner when no previous ownership exists", async () => {
+      const targetMembership = { id: 5, userId: TARGET_USER, isOwner: false, status: "ACTIVE" };
+      const ownerRole = { id: 777 };
+      mockDb.select
+        .mockReturnValueOnce(makeSelectChain([targetMembership]))
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([ownerRole]));
+      mockDb.insert.mockReturnValue(makeInsertChain([]));
+      mockDb.update.mockReturnValue(makeUpdateChain());
+      mockDb.delete.mockReturnValue({ where: jest.fn().mockResolvedValue([]) });
+
+      const result = await svc.forceSetModuleOwner(ORG, ACTOR_USER, "hr", { ownerMembershipId: 5 });
+
+      expect(result).toMatchObject({ success: true });
+      expect(mockDb.delete).not.toHaveBeenCalled();
+    });
+
+    it("does not revoke when previous owner is the same as the new owner", async () => {
+      const targetMembership = { id: 5, userId: TARGET_USER, isOwner: false, status: "ACTIVE" };
+      const prevOwnership = { ownerMembershipId: 5 };
+      const ownerRole = { id: 777 };
+      mockDb.select
+        .mockReturnValueOnce(makeSelectChain([targetMembership]))
+        .mockReturnValueOnce(makeSelectChain([prevOwnership]))
+        .mockReturnValueOnce(makeSelectChain([ownerRole]));
+      mockDb.insert.mockReturnValue(makeInsertChain([]));
+      mockDb.update.mockReturnValue(makeUpdateChain());
+      mockDb.delete.mockReturnValue({ where: jest.fn().mockResolvedValue([]) });
+
+      const result = await svc.forceSetModuleOwner(ORG, ACTOR_USER, "hr", { ownerMembershipId: 5 });
+
+      expect(result).toMatchObject({ success: true });
+      expect(mockDb.delete).not.toHaveBeenCalled();
     });
   });
 });

@@ -2,6 +2,7 @@ import { Test, type TestingModule } from "@nestjs/testing";
 import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { HrWorkflowEngineService } from "../hr-workflow-engine.service";
+import { AccessService } from "../../access/access.service";
 
 function makeSelectChain(results: unknown[][] = []) {
   let callIndex = 0;
@@ -73,11 +74,18 @@ function buildInstance(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function makeAccessService() {
+  return {
+    membersWithPermission: jest.fn().mockResolvedValue([]),
+  } as unknown as AccessService;
+}
+
 async function makeService(db: ReturnType<typeof makeDb>): Promise<HrWorkflowEngineService> {
   const module: TestingModule = await Test.createTestingModule({
     providers: [
       HrWorkflowEngineService,
       { provide: DRIZZLE, useValue: db },
+      { provide: AccessService, useValue: makeAccessService() },
     ],
   }).compile();
   return module.get(HrWorkflowEngineService);

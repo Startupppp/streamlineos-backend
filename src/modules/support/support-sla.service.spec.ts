@@ -3,6 +3,7 @@ import { SupportSlaService } from "./support-sla.service";
 import { SupportNotificationsService } from "./support-notifications.service";
 import { SupportMacrosService } from "./support-macros.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
+import { AccessService } from "../access/access.service";
 
 const mockDb = {
   query: {
@@ -35,7 +36,9 @@ describe("SupportSlaService", () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockDb.where.mockReset();
     mockDb.where.mockReturnThis();
+    mockDb.query.supportTickets.findMany.mockReset();
     mockMacros.applyRoutingRules.mockResolvedValue({});
 
     const module: TestingModule = await Test.createTestingModule({
@@ -44,6 +47,17 @@ describe("SupportSlaService", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: SupportNotificationsService, useValue: mockNotifications },
         { provide: SupportMacrosService, useValue: mockMacros },
+        {
+          provide: AccessService,
+          useValue: {
+            membersWithPermission: jest
+              .fn()
+              .mockResolvedValue([
+                { userId: "owner1", membershipId: 1 },
+                { userId: "admin1", membershipId: 2 },
+              ]),
+          },
+        },
       ],
     }).compile();
     service = module.get(SupportSlaService);

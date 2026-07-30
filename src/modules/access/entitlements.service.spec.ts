@@ -8,7 +8,7 @@ type DeepPartial<T> = {
   [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K];
 };
 
-function buildMockDb(ownerMembershipId: number | null = 42) {
+function buildMockDb(ownerMembershipId: number | null = 42, mockRoleId: number | null = 999) {
   const onConflictDoUpdate = jest.fn().mockResolvedValue(undefined);
   const onConflictDoNothing = jest.fn().mockResolvedValue(undefined);
   const values = jest.fn().mockReturnValue({ onConflictDoUpdate, onConflictDoNothing });
@@ -18,9 +18,9 @@ function buildMockDb(ownerMembershipId: number | null = 42) {
   const findMany = jest.fn().mockResolvedValue([]);
   const orgFindFirst = jest.fn();
 
-  const limit = jest.fn().mockResolvedValue(
-    ownerMembershipId !== null ? [{ ownerMembershipId }] : [],
-  );
+  const limit = jest.fn()
+    .mockResolvedValueOnce(ownerMembershipId !== null ? [{ ownerMembershipId }] : [])
+    .mockResolvedValue(mockRoleId !== null ? [{ id: mockRoleId }] : []);
   const txWhere = jest.fn().mockReturnValue({ limit });
   const txFrom = jest.fn().mockReturnValue({ where: txWhere });
   const txSelect = jest.fn().mockReturnValue({ from: txFrom });
@@ -192,7 +192,7 @@ describe("EntitlementsService", () => {
 
       await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
 
-      expect(mocks.insert).toHaveBeenCalledTimes(3);
+      expect(mocks.insert).toHaveBeenCalledTimes(4);
       expect(mocks.values).toHaveBeenCalledWith({
         orgId: "org-1",
         moduleKey: "hr",
@@ -281,7 +281,7 @@ describe("EntitlementsService", () => {
           moduleKey: "hr",
           ownerMembershipId: 42,
         });
-        expect(mocks.onConflictDoNothing).toHaveBeenCalledTimes(1);
+        expect(mocks.onConflictDoNothing).toHaveBeenCalledTimes(2);
       });
 
       it("does not seed ownership when disabling a module", async () => {
@@ -312,8 +312,34 @@ describe("EntitlementsService", () => {
 
         await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
 
-        expect(mocks.onConflictDoNothing).toHaveBeenCalledTimes(1);
+        expect(mocks.onConflictDoNothing).toHaveBeenCalledTimes(2);
         expect(mocks.onConflictDoUpdate).toHaveBeenCalledTimes(2);
+      });
+
+      it("assigns the MODULE_OWNER role to the org owner when the role is seeded", async () => {
+        const { db, mocks } = buildMockDb(42, 777);
+        const { cache } = buildMockCache();
+
+        await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
+
+        expect(mocks.values).toHaveBeenCalledWith(
+          expect.objectContaining({
+            orgId: "org-1",
+            organizationMembershipId: 42,
+            roleId: 777,
+            assignedByMembershipId: null,
+          }),
+        );
+      });
+
+      it("skips the MODULE_OWNER role assignment when the role is not yet seeded", async () => {
+        const { db, mocks } = buildMockDb(42, null);
+        const { cache } = buildMockCache();
+
+        await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
+
+        expect(mocks.onConflictDoNothing).toHaveBeenCalledTimes(1);
+        expect(mocks.insert).toHaveBeenCalledTimes(3);
       });
     });
   });

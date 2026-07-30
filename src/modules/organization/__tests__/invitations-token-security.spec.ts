@@ -118,7 +118,7 @@ async function buildService(db: unknown): Promise<InvitationsService> {
       { provide: AuditService, useValue: { log: jest.fn() } },
       {
         provide: CacheService,
-        useValue: { invalidate: jest.fn().mockResolvedValue(undefined) },
+        useValue: { invalidate: jest.fn().mockResolvedValue(undefined), invalidatePattern: jest.fn().mockResolvedValue(undefined) },
       },
       {
         provide: EmailService,

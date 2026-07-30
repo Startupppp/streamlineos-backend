@@ -11,7 +11,7 @@ import { organizationMembers, roleAssignments, rolePermissionGrants, roles } fro
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../common/cache/cache-keys";
+import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import {
@@ -117,6 +117,18 @@ export class RolePermissionService {
   }
 
   async getRolePermissions(
+    orgId: string,
+    roleId: number,
+  ): Promise<{ permissionKey: string; scope: DataScope }[]> {
+    const version = await this.access.getPermissionsVersion(orgId);
+    return this.cache.cached(
+      CACHE_KEYS.rolePerms(orgId, roleId, version),
+      () => this.fetchRolePermissions(orgId, roleId),
+      CACHE_TTL.VERY_LONG,
+    );
+  }
+
+  private async fetchRolePermissions(
     orgId: string,
     roleId: number,
   ): Promise<{ permissionKey: string; scope: DataScope }[]> {
@@ -229,6 +241,22 @@ export class RolePermissionService {
   }
 
   async getPermissionsMatrix(orgId: string): Promise<
+    {
+      roleId: number;
+      roleName: string;
+      roleSlug: string;
+      permissions: string[];
+    }[]
+  > {
+    const version = await this.access.getPermissionsVersion(orgId);
+    return this.cache.cached(
+      CACHE_KEYS.permissionsMatrix(orgId, version),
+      () => this.fetchPermissionsMatrix(orgId),
+      CACHE_TTL.VERY_LONG,
+    );
+  }
+
+  private async fetchPermissionsMatrix(orgId: string): Promise<
     {
       roleId: number;
       roleName: string;

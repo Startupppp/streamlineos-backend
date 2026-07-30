@@ -19,7 +19,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../common/cache/cache-keys";
+import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import {
@@ -170,12 +170,21 @@ export class ModuleAccessGroupsService {
 
   async listGroups(actor: CurrentUserContext, moduleKey: string): Promise<ModuleRoleGroup[]> {
     await this.assertAccess(actor, moduleKey, "view");
+    const version = await this.access.getPermissionsVersion(actor.orgId);
+    return this.cache.cached(
+      CACHE_KEYS.moduleGroupsList(actor.orgId, moduleKey, version),
+      () => this.fetchGroups(actor.orgId, moduleKey),
+      CACHE_TTL.VERY_LONG,
+    );
+  }
+
+  private async fetchGroups(orgId: string, moduleKey: string): Promise<ModuleRoleGroup[]> {
     const catalog = this.modulePermissionKeys(moduleKey);
 
     const orgRoles = await this.db
       .select({ id: roles.id, name: roles.name, slug: roles.slug, isSystem: roles.isSystem, version: roles.version })
       .from(roles)
-      .where(and(eq(roles.orgId, actor.orgId), eq(roles.moduleKey, moduleKey)))
+      .where(and(eq(roles.orgId, orgId), eq(roles.moduleKey, moduleKey)))
       .orderBy(asc(roles.name))
       .limit(100);
 
@@ -188,7 +197,7 @@ export class ModuleAccessGroupsService {
         .select({ roleId: roleAssignments.roleId, cnt: count() })
         .from(roleAssignments)
         .where(
-          and(eq(roleAssignments.orgId, actor.orgId), inArray(roleAssignments.roleId, roleIds)),
+          and(eq(roleAssignments.orgId, orgId), inArray(roleAssignments.roleId, roleIds)),
         )
         .groupBy(roleAssignments.roleId),
       this.db
@@ -200,7 +209,7 @@ export class ModuleAccessGroupsService {
         .from(rolePermissionGrants)
         .where(
           and(
-            eq(rolePermissionGrants.orgId, actor.orgId),
+            eq(rolePermissionGrants.orgId, orgId),
             inArray(rolePermissionGrants.roleId, roleIds),
           ),
         )
@@ -424,7 +433,15 @@ export class ModuleAccessGroupsService {
   ): Promise<ModuleGroupMember[]> {
     await this.assertAccess(actor, moduleKey, "view");
     await this.assertGroupBelongsToModule(actor.orgId, moduleKey, groupId);
+    const version = await this.access.getPermissionsVersion(actor.orgId);
+    return this.cache.cached(
+      CACHE_KEYS.moduleGroupMembers(actor.orgId, moduleKey, groupId, version),
+      () => this.fetchGroupMembers(actor.orgId, groupId),
+      CACHE_TTL.VERY_LONG,
+    );
+  }
 
+  private async fetchGroupMembers(orgId: string, groupId: number): Promise<ModuleGroupMember[]> {
     const rows = await this.db
       .select({
         userId: organizationMembers.userId,
@@ -441,7 +458,7 @@ export class ModuleAccessGroupsService {
         ),
       )
       .innerJoin(users, eq(organizationMembers.userId, users.id))
-      .where(and(eq(roleAssignments.orgId, actor.orgId), eq(roleAssignments.roleId, groupId)))
+      .where(and(eq(roleAssignments.orgId, orgId), eq(roleAssignments.roleId, groupId)))
       .limit(100);
 
     return rows.map((r) => ({
@@ -566,7 +583,14 @@ export class ModuleAccessGroupsService {
     moduleKey: string,
   ): Promise<ModuleMemberCandidate[]> {
     await this.assertAccess(actor, moduleKey, "view");
+    return this.cache.cached(
+      CACHE_KEYS.moduleAccessCandidates(actor.orgId),
+      () => this.fetchMemberCandidates(actor.orgId),
+      CACHE_TTL.MEDIUM,
+    );
+  }
 
+  private async fetchMemberCandidates(orgId: string): Promise<ModuleMemberCandidate[]> {
     const rows = await this.db
       .select({
         userId: organizationMembers.userId,
@@ -577,7 +601,7 @@ export class ModuleAccessGroupsService {
       .from(organizationMembers)
       .innerJoin(users, eq(organizationMembers.userId, users.id))
       .where(
-        and(eq(organizationMembers.orgId, actor.orgId), eq(organizationMembers.status, "ACTIVE")),
+        and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.status, "ACTIVE")),
       )
       .orderBy(asc(users.name))
       .limit(200);
@@ -592,7 +616,14 @@ export class ModuleAccessGroupsService {
 
   async getOwnership(actor: CurrentUserContext, moduleKey: string): Promise<ModuleOwnership> {
     await this.assertAccess(actor, moduleKey, "view");
+    return this.cache.cached(
+      CACHE_KEYS.moduleAccessOwnership(actor.orgId, moduleKey),
+      () => this.fetchOwnership(actor.orgId, moduleKey),
+      60,
+    );
+  }
 
+  private async fetchOwnership(orgId: string, moduleKey: string): Promise<ModuleOwnership> {
     const [ownerRow] = await this.db
       .select({
         ownerUserId: organizationMembers.userId,
@@ -610,7 +641,7 @@ export class ModuleAccessGroupsService {
       )
       .innerJoin(users, eq(organizationMembers.userId, users.id))
       .where(
-        and(eq(moduleOwnerships.orgId, actor.orgId), eq(moduleOwnerships.moduleKey, moduleKey)),
+        and(eq(moduleOwnerships.orgId, orgId), eq(moduleOwnerships.moduleKey, moduleKey)),
       )
       .limit(1);
 
@@ -625,7 +656,7 @@ export class ModuleAccessGroupsService {
       .from(ownershipTransfers)
       .where(
         and(
-          eq(ownershipTransfers.orgId, actor.orgId),
+          eq(ownershipTransfers.orgId, orgId),
           eq(ownershipTransfers.moduleKey, moduleKey),
           eq(ownershipTransfers.scope, "MODULE"),
           eq(ownershipTransfers.status, "PENDING"),
@@ -642,7 +673,7 @@ export class ModuleAccessGroupsService {
         .innerJoin(users, eq(organizationMembers.userId, users.id))
         .where(
           and(
-            eq(organizationMembers.orgId, actor.orgId),
+            eq(organizationMembers.orgId, orgId),
             eq(organizationMembers.id, pendingRow.toMembershipId),
           ),
         )
@@ -717,6 +748,8 @@ export class ModuleAccessGroupsService {
       throw err;
     }
 
+    await this.cache.invalidate(CACHE_KEYS.moduleAccessOwnership(actor.orgId, moduleKey));
+
     return { success: true };
   }
 
@@ -726,14 +759,27 @@ export class ModuleAccessGroupsService {
     { page, pageSize }: ListMembersQuery,
   ): Promise<{ data: FlatModuleMember[]; pagination: Pagination }> {
     await this.assertAccess(actor, moduleKey, "view");
-
     const limit = Math.min(pageSize, 100);
+    const version = await this.access.getPermissionsVersion(actor.orgId);
+    return this.cache.cached(
+      CACHE_KEYS.moduleAccessMembers(actor.orgId, moduleKey, page, limit, version),
+      () => this.fetchMembers(actor.orgId, moduleKey, page, limit),
+      CACHE_TTL.VERY_LONG,
+    );
+  }
+
+  private async fetchMembers(
+    orgId: string,
+    moduleKey: string,
+    page: number,
+    limit: number,
+  ): Promise<{ data: FlatModuleMember[]; pagination: Pagination }> {
     const offset = (page - 1) * limit;
 
     const moduleRoleRows = await this.db
       .select({ id: roles.id })
       .from(roles)
-      .where(and(eq(roles.orgId, actor.orgId), eq(roles.moduleKey, moduleKey)))
+      .where(and(eq(roles.orgId, orgId), eq(roles.moduleKey, moduleKey)))
       .limit(200);
 
     if (moduleRoleRows.length === 0) {
@@ -742,7 +788,7 @@ export class ModuleAccessGroupsService {
 
     const moduleRoleIds = moduleRoleRows.map((r) => r.id);
     const baseWhere = and(
-      eq(roleAssignments.orgId, actor.orgId),
+      eq(roleAssignments.orgId, orgId),
       inArray(roleAssignments.roleId, moduleRoleIds),
     );
 
@@ -789,10 +835,10 @@ export class ModuleAccessGroupsService {
         groupName: roles.name,
       })
       .from(roleAssignments)
-      .innerJoin(roles, and(eq(roles.id, roleAssignments.roleId), eq(roles.orgId, actor.orgId)))
+      .innerJoin(roles, and(eq(roles.id, roleAssignments.roleId), eq(roles.orgId, orgId)))
       .where(
         and(
-          eq(roleAssignments.orgId, actor.orgId),
+          eq(roleAssignments.orgId, orgId),
           inArray(roleAssignments.organizationMembershipId, membershipIds),
           inArray(roleAssignments.roleId, moduleRoleIds),
         ),
@@ -1083,6 +1129,8 @@ export class ModuleAccessGroupsService {
       .update(ownershipTransfers)
       .set({ status: "CANCELLED" })
       .where(eq(ownershipTransfers.id, transfer.id));
+
+    await this.cache.invalidate(CACHE_KEYS.moduleAccessOwnership(actor.orgId, moduleKey));
 
     return { success: true };
   }

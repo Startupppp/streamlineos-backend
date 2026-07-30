@@ -5,7 +5,6 @@ import { AccessService } from "../access.service";
 import {
   ALL_PERMISSION_NAMES,
   moduleScopedPermissions,
-  ROLE_DEFAULT_PERMISSIONS,
 } from "../../rbac/permissions";
 import type { Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -148,8 +147,8 @@ describe("AccessService.getAccessSnapshot — platform admin receives every cata
   });
 });
 
-describe("AccessService.resolveUserPermissions — ADMIN role grants every catalog permission", () => {
-  it("resolves all catalog keys when the member holds the ADMIN role (defaulted from ROLE_DEFAULT_PERMISSIONS)", async () => {
+describe("AccessService.resolveUserPermissions — ORG_ADMIN role grants every catalog permission", () => {
+  it("resolves all catalog keys when the member holds the ORG_ADMIN role (defaulted from ROLE_DEFAULT_PERMISSIONS)", async () => {
     const db = {
       query: {
         accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
@@ -162,7 +161,7 @@ describe("AccessService.resolveUserPermissions — ADMIN role grants every catal
         .mockReturnValueOnce(makeSelectChain([{ roleId: 99 }]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
-        .mockReturnValueOnce(makeSelectChain([{ id: 99, slug: "ADMIN" }]))
+        .mockReturnValueOnce(makeSelectChain([{ id: 99, slug: "ORG_ADMIN" }]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([])),
@@ -335,7 +334,7 @@ describe("AccessService.resolveUserPermissions — cross-tenant isolation: org A
   });
 });
 
-describe("AccessService.resolveUserPermissions — HEADLINE: RECRUITER role grants recruitment access and is DENIED hr:leaves:approve", () => {
+describe("AccessService.resolveUserPermissions — HEADLINE: a \"Recruitment HR\" module role group grants recruitment access and is DENIED hr:leaves:approve", () => {
   it("resolves interview, requisition and offer permissions but does NOT contain hr:leaves:approve", async () => {
     const db = {
       query: {
@@ -349,8 +348,16 @@ describe("AccessService.resolveUserPermissions — HEADLINE: RECRUITER role gran
         .mockReturnValueOnce(makeSelectChain([{ roleId: 30 }]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
-        .mockReturnValueOnce(makeSelectChain([{ id: 30, slug: "RECRUITER" }]))
-        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([{ id: 30, slug: "RECRUITMENT_HR" }]))
+        .mockReturnValueOnce(makeSelectChain([
+          { roleId: 30, permissionKey: "hr:interviews:view", scope: "all" },
+          { roleId: 30, permissionKey: "hr:interviews:manage", scope: "all" },
+          { roleId: 30, permissionKey: "hr:requisitions:view", scope: "all" },
+          { roleId: 30, permissionKey: "hr:requisitions:manage", scope: "all" },
+          { roleId: 30, permissionKey: "hr:offers:view", scope: "all" },
+          { roleId: 30, permissionKey: "hr:offers:manage", scope: "all" },
+          { roleId: 30, permissionKey: "hr:employees:view", scope: "all" },
+        ]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([])),
     };
@@ -371,10 +378,7 @@ describe("AccessService.resolveUserPermissions — HEADLINE: RECRUITER role gran
     expect(result.has("hr:payroll:view")).toBe(false);
     expect(result.has("hr:salary:manage")).toBe(false);
 
-    const recruiterCatalog = new Set(ROLE_DEFAULT_PERMISSIONS["RECRUITER"] ?? []);
-    expect(recruiterCatalog.has("hr:leaves:approve")).toBe(false);
-    expect(recruiterCatalog.has("hr:interviews:view")).toBe(true);
-    expect(recruiterCatalog.has("hr:requisitions:view")).toBe(true);
+    expect(result.size).toBe(7);
   });
 });
 

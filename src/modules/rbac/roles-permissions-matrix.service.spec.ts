@@ -156,9 +156,9 @@ describe("RolePermissionService.getPermissionsMatrix", () => {
     });
   });
 
-  it("falls back to ROLE_DEFAULT_PERMISSIONS when no grants and role has no jsonb", async () => {
+  it("falls back to ROLE_DEFAULT_PERMISSIONS when no grants and role slug has a catalog entry", async () => {
     const orgRoles: RoleRow[] = [
-      { id: 5, name: "HR Manager", slug: "HR" },
+      { id: 5, name: "Member", slug: "MEMBER" },
     ];
     const grants: GrantRow[] = [];
 
@@ -170,9 +170,9 @@ describe("RolePermissionService.getPermissionsMatrix", () => {
     expect(result).toHaveLength(1);
     expect(result[0]).toEqual({
       roleId: 5,
-      roleName: "HR Manager",
-      roleSlug: "HR",
-      permissions: ROLE_DEFAULT_PERMISSIONS["HR"],
+      roleName: "Member",
+      roleSlug: "MEMBER",
+      permissions: ROLE_DEFAULT_PERMISSIONS["MEMBER"],
     });
   });
 
@@ -223,7 +223,7 @@ describe("RolePermissionService.getPermissionsMatrix", () => {
     expect(adminEntry?.permissions).toEqual(["settings:rbac:manage"]);
 
     const engineerEntry = result.find((r) => r.roleId === 2);
-    expect(engineerEntry?.permissions).toEqual(ROLE_DEFAULT_PERMISSIONS["ENGINEERING"]);
+    expect(engineerEntry?.permissions).toEqual([]);
   });
 });
 

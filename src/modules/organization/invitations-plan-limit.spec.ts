@@ -85,7 +85,7 @@ describe("InvitationsService.invite — plan limit enforcement", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: PlanLimitsService, useValue: mockPlanLimits },
         { provide: AuditService, useValue: { log: jest.fn() } },
-        { provide: CacheService, useValue: { invalidate: jest.fn() } },
+        { provide: CacheService, useValue: { invalidate: jest.fn(), invalidatePattern: jest.fn().mockResolvedValue(undefined) } },
         { provide: EmailService, useValue: { sendInvitationEmail: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
@@ -150,7 +150,7 @@ describe("InvitationsService.accept — plan limit enforcement", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: PlanLimitsService, useValue: mockPlanLimits },
         { provide: AuditService, useValue: { log: jest.fn() } },
-        { provide: CacheService, useValue: { invalidate: jest.fn().mockResolvedValue(undefined) } },
+        { provide: CacheService, useValue: { invalidate: jest.fn().mockResolvedValue(undefined), invalidatePattern: jest.fn().mockResolvedValue(undefined) } },
         { provide: EmailService, useValue: { sendInvitationEmail: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();

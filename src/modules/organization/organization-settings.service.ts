@@ -5,7 +5,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../common/cache/cache-keys";
+import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import {
   orgCustomDomains,
   orgHolidays,
@@ -56,6 +56,13 @@ export class OrganizationSettingsService {
     private readonly audit: AuditService,
     private readonly cache: CacheService,
   ) {}
+
+  private async invalidateSettingsCache(orgId: string): Promise<void> {
+    await Promise.all([
+      this.cache.invalidate(CACHE_KEYS.orgSettings(orgId)),
+      this.cache.invalidatePattern(CACHE_KEYS.orgProfilePattern(orgId)),
+    ]);
+  }
 
   async updateSettings(orgId: string, actorUserId: string, input: UpdateOrgSettingsInput) {
     if (input.slug) {
@@ -155,6 +162,8 @@ export class OrganizationSettingsService {
       await this.replaceAllowedDomains(orgId, input.allowedEmailDomains);
     }
 
+    await this.invalidateSettingsCache(orgId);
+
     this.audit.log({
       action: "settings.updated",
       userId: actorUserId,
@@ -201,6 +210,8 @@ export class OrganizationSettingsService {
       metadata: { ...updateData, ...(hasDomainsUpdate ? { allowedEmailDomains: input.allowedEmailDomains } : {}) },
     });
 
+    await this.cache.invalidate(CACHE_KEYS.orgSettings(orgId));
+
     const members = await this.db
       .select({ userId: organizationMembers.userId })
       .from(organizationMembers)
@@ -227,6 +238,14 @@ export class OrganizationSettingsService {
   }
 
   async getSettings(orgId: string) {
+    return this.cache.cached(
+      CACHE_KEYS.orgSettings(orgId),
+      () => this.fetchSettings(orgId),
+      CACHE_TTL.MEDIUM,
+    );
+  }
+
+  private async fetchSettings(orgId: string) {
     const [data, domainRows] = await Promise.all([
       this.db.query.organizations.findFirst({ where: eq(organizations.id, orgId) }),
       this.db

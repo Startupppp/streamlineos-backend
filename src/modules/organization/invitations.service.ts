@@ -388,7 +388,13 @@ export class InvitationsService {
         tokenHash: createHash("sha256").update(autoLoginToken).digest("hex"),
         expiresAt: addMinutes(new Date(), 10),
       });
-      await this.cache.invalidate(CACHE_KEYS.userSession(existingUser.id));
+      await Promise.all([
+        this.cache.invalidate(CACHE_KEYS.userSession(existingUser.id)),
+        this.cache.invalidatePattern(CACHE_KEYS.orgMembersListPattern(invitation.orgId)),
+        this.cache.invalidatePattern(CACHE_KEYS.orgMembersSimplePattern(invitation.orgId)),
+        this.cache.invalidate(CACHE_KEYS.rbacDiscoveryMembers(invitation.orgId)),
+        this.cache.invalidate(CACHE_KEYS.moduleAccessCandidates(invitation.orgId)),
+      ]);
 
       return { ok: true, autoLoginToken };
     }
@@ -451,7 +457,13 @@ export class InvitationsService {
       tokenHash: createHash("sha256").update(autoLoginToken).digest("hex"),
       expiresAt: addMinutes(new Date(), 10),
     });
-    await this.cache.invalidate(CACHE_KEYS.userSession(userId));
+    await Promise.all([
+      this.cache.invalidate(CACHE_KEYS.userSession(userId)),
+      this.cache.invalidatePattern(CACHE_KEYS.orgMembersListPattern(invitation.orgId)),
+      this.cache.invalidatePattern(CACHE_KEYS.orgMembersSimplePattern(invitation.orgId)),
+      this.cache.invalidate(CACHE_KEYS.rbacDiscoveryMembers(invitation.orgId)),
+      this.cache.invalidate(CACHE_KEYS.moduleAccessCandidates(invitation.orgId)),
+    ]);
 
     return { ok: true, autoLoginToken };
   }

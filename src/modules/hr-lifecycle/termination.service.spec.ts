@@ -4,6 +4,17 @@ import { BadRequestException } from "@nestjs/common";
 import { TerminationService } from "./termination.service";
 
 describe("TerminationService.create — structural owner block", () => {
+  function buildSelectChain(): Record<string, jest.Mock> {
+    const chain: Record<string, jest.Mock> = {
+      from: jest.fn(),
+      where: jest.fn().mockResolvedValue([]),
+      innerJoin: jest.fn(),
+    };
+    chain.from.mockReturnValue(chain);
+    chain.innerJoin.mockReturnValue(chain);
+    return chain;
+  }
+
   function buildService(membershipRow: Record<string, unknown>, targetUserRow?: Record<string, unknown>) {
     const db = {
       query: {
@@ -17,6 +28,7 @@ describe("TerminationService.create — structural owner block", () => {
           findFirst: jest.fn().mockResolvedValue(null),
         },
       },
+      select: jest.fn().mockReturnValue(buildSelectChain()),
       insert: jest.fn().mockReturnValue({
         values: jest.fn().mockReturnValue({
           returning: jest.fn().mockResolvedValue([{ id: 1, orgId: "org-1", userId: "target-1" }]),
@@ -39,7 +51,7 @@ describe("TerminationService.create — structural owner block", () => {
     const service = buildService({ role: "MEMBER", isOwner: true });
 
     await expect(
-      service.create("org-1", "actor-1", "HR_ADMIN", {
+      service.create("org-1", "actor-1", false, {
         userId: "target-1",
         reasons: ["misconduct"],
         detailedExplanation: "Details here",
@@ -53,7 +65,7 @@ describe("TerminationService.create — structural owner block", () => {
     const service = buildService({ role: "CEO", isOwner: false });
 
     await expect(
-      service.create("org-1", "actor-1", "HR_ADMIN", {
+      service.create("org-1", "actor-1", false, {
         userId: "target-1",
         reasons: ["misconduct"],
         detailedExplanation: "Details here",

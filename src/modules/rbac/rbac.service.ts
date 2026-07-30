@@ -1,5 +1,7 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
+import { CacheService } from "../../common/cache/cache.service";
+import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import {
   organizationMembers,
   roleAssignments,
@@ -40,6 +42,7 @@ export class RbacService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
     private readonly rolesService: RolesService,
+    private readonly cache: CacheService,
   ) {}
 
   getAllPermissions(): Permission[] {
@@ -325,6 +328,14 @@ export class RbacService {
   }
 
   async getDiscoveryMembers(orgId: string): Promise<DiscoveryMemberEntry[]> {
+    return this.cache.cached(
+      CACHE_KEYS.rbacDiscoveryMembers(orgId),
+      () => this.fetchDiscoveryMembers(orgId),
+      CACHE_TTL.MEDIUM,
+    );
+  }
+
+  private async fetchDiscoveryMembers(orgId: string): Promise<DiscoveryMemberEntry[]> {
     const rows = await this.db
       .select({
         userId: organizationMembers.userId,

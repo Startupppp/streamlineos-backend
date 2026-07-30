@@ -75,7 +75,9 @@ describe("LeadsOpsService — crm:leads:assign permission routing", () => {
 
     const result = await service.distribute("org-1", "user-1", { leadIds: [1, 2], skipAbsent: false });
 
-    expect(access.membersWithPermission).toHaveBeenCalledWith("org-1", "crm:leads:assign");
+    expect(access.membersWithPermission).toHaveBeenCalledWith("org-1", "crm:leads:assign", {
+      limit: 500,
+    });
     expect(result).toEqual({ ok: false, reason: "no_sales" });
   });
 
@@ -95,7 +97,9 @@ describe("LeadsOpsService — crm:leads:assign permission routing", () => {
 
     await service.distribute("org-1", "user-1", { leadIds: [1], skipAbsent: false });
 
-    expect(access.membersWithPermission).toHaveBeenCalledWith("org-1", "crm:leads:assign");
+    expect(access.membersWithPermission).toHaveBeenCalledWith("org-1", "crm:leads:assign", {
+      limit: 500,
+    });
   });
 
   it("a user without crm:leads:assign grant is not included in distribution", async () => {

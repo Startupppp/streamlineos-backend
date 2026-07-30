@@ -23,7 +23,7 @@ describe("OrgMembershipService member status guards", () => {
         OrgMembershipService,
         { provide: DRIZZLE, useValue: { query: { organizationMembers: { findFirst } } } },
         { provide: AuditService, useValue: { log: jest.fn() } },
-        { provide: CacheService, useValue: { invalidate: jest.fn() } },
+        { provide: CacheService, useValue: { invalidate: jest.fn(), invalidatePattern: jest.fn().mockResolvedValue(undefined) } },
         { provide: SessionsService, useValue: { revokeAllForUser } },
       ],
     }).compile();
@@ -75,8 +75,14 @@ describe("OrgMembershipService member status guards", () => {
 
 function makeSelectChain(result: unknown[], endWithLimit = false) {
   const chain: Record<string, unknown> = {};
-  chain.where = jest.fn().mockReturnValue(chain);
   chain.from = jest.fn().mockReturnValue(chain);
+  chain.innerJoin = jest.fn().mockReturnValue(chain);
+  chain.where = jest.fn().mockImplementation(() => {
+    const awaitable: Record<string, unknown> = Object.create(chain);
+    awaitable["then"] = (resolve: (value: unknown[]) => unknown) =>
+      Promise.resolve(result).then(resolve);
+    return awaitable;
+  });
   if (endWithLimit) {
     chain.for = jest.fn().mockReturnValue({
       limit: jest.fn().mockResolvedValue(result),
@@ -110,6 +116,7 @@ function buildTxMock(selectResults: { result: unknown[]; endWithLimit?: boolean 
 describe("OrgMembershipService — module-ownership guards", () => {
   const auditLog = jest.fn();
   const cacheInvalidate = jest.fn().mockResolvedValue(undefined);
+  const cacheInvalidatePattern = jest.fn().mockResolvedValue(undefined);
   const revokeAllForUser = jest.fn().mockResolvedValue({ revokedCount: 0 });
 
   async function buildService(dbValue: unknown): Promise<OrgMembershipService> {
@@ -118,7 +125,7 @@ describe("OrgMembershipService — module-ownership guards", () => {
         OrgMembershipService,
         { provide: DRIZZLE, useValue: dbValue },
         { provide: AuditService, useValue: { log: auditLog } },
-        { provide: CacheService, useValue: { invalidate: cacheInvalidate } },
+        { provide: CacheService, useValue: { invalidate: cacheInvalidate, invalidatePattern: cacheInvalidatePattern } },
         { provide: SessionsService, useValue: { revokeAllForUser } },
       ],
     }).compile();

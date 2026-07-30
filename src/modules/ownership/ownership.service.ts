@@ -18,7 +18,8 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../common/cache/cache-keys";
+import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
+import { stableHash } from "../../common/cache/cache-hash";
 import { bumpPermissionsVersion, type DbOrTx } from "../../common/rbac/access-invalidate";
 import { assignModuleOwnerRole, revokeModuleOwnerRole } from "./module-owner-role.helper";
 import { bustMembershipStatusCache } from "../../common/auth/jwt-auth.guard";
@@ -91,6 +92,14 @@ export class OwnershipService {
   }
 
   async listModuleOwnerships(orgId: string) {
+    return this.cache.cached(
+      CACHE_KEYS.moduleOwnershipsList(orgId),
+      () => this.fetchModuleOwnerships(orgId),
+      CACHE_TTL.MEDIUM,
+    );
+  }
+
+  private async fetchModuleOwnerships(orgId: string) {
     return this.db
       .select({
         moduleKey: moduleOwnerships.moduleKey,
@@ -115,6 +124,14 @@ export class OwnershipService {
   }
 
   async getModuleOwnership(orgId: string, moduleKey: string) {
+    return this.cache.cached(
+      CACHE_KEYS.moduleOwnershipDetail(orgId, moduleKey),
+      () => this.fetchModuleOwnership(orgId, moduleKey),
+      CACHE_TTL.MEDIUM,
+    );
+  }
+
+  private async fetchModuleOwnership(orgId: string, moduleKey: string) {
     const [row] = await this.db
       .select({
         moduleKey: moduleOwnerships.moduleKey,
@@ -208,6 +225,14 @@ export class OwnershipService {
       await bumpPermissionsVersion(tx, orgId);
     });
 
+    await Promise.all([
+      this.cache.invalidate(CACHE_KEYS.moduleOwnershipsList(orgId)),
+      this.cache.invalidate(CACHE_KEYS.moduleOwnershipDetail(orgId, moduleKey)),
+      this.cache.invalidate(CACHE_KEYS.moduleAccessOwnership(orgId, moduleKey)),
+      this.cache.invalidatePattern(CACHE_KEYS.ownershipTransfersPattern(orgId)),
+      this.cache.invalidatePattern(CACHE_KEYS.incomingTransfersPattern(orgId)),
+    ]);
+
     this.audit.log({
       action: "ownership.module_owner_forced",
       userId: actorUserId,
@@ -271,6 +296,11 @@ export class OwnershipService {
           expiresAt,
         },
       });
+
+      await Promise.all([
+        this.cache.invalidatePattern(CACHE_KEYS.ownershipTransfersPattern(orgId)),
+        this.cache.invalidatePattern(CACHE_KEYS.incomingTransfersPattern(orgId)),
+      ]);
 
       return { transferId: transfer.id, expiresAt: transfer.expiresAt };
     } catch (err: unknown) {
@@ -354,6 +384,12 @@ export class OwnershipService {
           expiresAt,
         },
       });
+
+      await Promise.all([
+        this.cache.invalidate(CACHE_KEYS.moduleAccessOwnership(orgId, moduleKey)),
+        this.cache.invalidatePattern(CACHE_KEYS.ownershipTransfersPattern(orgId)),
+        this.cache.invalidatePattern(CACHE_KEYS.incomingTransfersPattern(orgId)),
+      ]);
 
       return { transferId: transfer.id, expiresAt: transfer.expiresAt };
     } catch (err: unknown) {
@@ -547,6 +583,19 @@ export class OwnershipService {
     await this.invalidateUserAccess(orgId, actorUserId);
     await this.invalidateUserAccess(orgId, fromUserId);
 
+    const moduleKeyForAccept = transfer.scope === "MODULE" ? transfer.moduleKey : null;
+    await Promise.all([
+      ...(moduleKeyForAccept
+        ? [
+            this.cache.invalidate(CACHE_KEYS.moduleOwnershipsList(orgId)),
+            this.cache.invalidate(CACHE_KEYS.moduleOwnershipDetail(orgId, moduleKeyForAccept)),
+            this.cache.invalidate(CACHE_KEYS.moduleAccessOwnership(orgId, moduleKeyForAccept)),
+          ]
+        : []),
+      this.cache.invalidatePattern(CACHE_KEYS.ownershipTransfersPattern(orgId)),
+      this.cache.invalidatePattern(CACHE_KEYS.incomingTransfersPattern(orgId)),
+    ]);
+
     this.audit.log({
       action: "ownership.transfer_accepted",
       userId: actorUserId,
@@ -604,6 +653,15 @@ export class OwnershipService {
       .update(ownershipTransfers)
       .set({ status: "DECLINED", respondedAt: new Date(), reason: input.reason ?? null })
       .where(eq(ownershipTransfers.id, transferId));
+
+    const moduleKeyForDecline = transfer.scope === "MODULE" ? transfer.moduleKey : null;
+    await Promise.all([
+      ...(moduleKeyForDecline
+        ? [this.cache.invalidate(CACHE_KEYS.moduleAccessOwnership(orgId, moduleKeyForDecline))]
+        : []),
+      this.cache.invalidatePattern(CACHE_KEYS.ownershipTransfersPattern(orgId)),
+      this.cache.invalidate(CACHE_KEYS.incomingTransfers(orgId, actorUserId)),
+    ]);
 
     this.audit.log({
       action: "ownership.transfer_declined",
@@ -665,6 +723,15 @@ export class OwnershipService {
       .set({ status: "CANCELLED" })
       .where(eq(ownershipTransfers.id, transferId));
 
+    const moduleKeyForCancel = transfer.scope === "MODULE" ? transfer.moduleKey : null;
+    await Promise.all([
+      ...(moduleKeyForCancel
+        ? [this.cache.invalidate(CACHE_KEYS.moduleAccessOwnership(orgId, moduleKeyForCancel))]
+        : []),
+      this.cache.invalidatePattern(CACHE_KEYS.ownershipTransfersPattern(orgId)),
+      this.cache.invalidatePattern(CACHE_KEYS.incomingTransfersPattern(orgId)),
+    ]);
+
     this.audit.log({
       action: "ownership.transfer_cancelled",
       userId: actorUserId,
@@ -684,6 +751,20 @@ export class OwnershipService {
   }
 
   async listTransfers(orgId: string, filters: ListTransfersInput) {
+    const hash = stableHash({
+      page: filters.page,
+      limit: filters.limit,
+      scope: filters.scope ?? null,
+      status: filters.status ?? null,
+    });
+    return this.cache.cached(
+      CACHE_KEYS.ownershipTransfersList(orgId, hash),
+      () => this.fetchTransfers(orgId, filters),
+      60,
+    );
+  }
+
+  private async fetchTransfers(orgId: string, filters: ListTransfersInput) {
     const offset = (filters.page - 1) * filters.limit;
 
     const conditions = [eq(ownershipTransfers.orgId, orgId)];
@@ -729,6 +810,14 @@ export class OwnershipService {
   }
 
   async listIncomingTransfers(orgId: string, userId: string) {
+    return this.cache.cached(
+      CACHE_KEYS.incomingTransfers(orgId, userId),
+      () => this.fetchIncomingTransfers(orgId, userId),
+      60,
+    );
+  }
+
+  private async fetchIncomingTransfers(orgId: string, userId: string) {
     const [membership] = await this.db
       .select({ id: organizationMembers.id })
       .from(organizationMembers)
@@ -863,6 +952,10 @@ export class OwnershipService {
     if (result.previousOwnerUserId) {
       await this.invalidateUserAccess(orgId, result.previousOwnerUserId);
     }
+    await Promise.all([
+      this.cache.invalidatePattern(CACHE_KEYS.ownershipTransfersPattern(orgId)),
+      this.cache.invalidatePattern(CACHE_KEYS.incomingTransfersPattern(orgId)),
+    ]);
 
     this.audit.log({
       action: "ownership.org_ownership_forced",
@@ -890,7 +983,15 @@ export class OwnershipService {
       .update(ownershipTransfers)
       .set({ status: "EXPIRED" })
       .where(and(...conditions))
-      .returning({ id: ownershipTransfers.id });
+      .returning({ id: ownershipTransfers.id, orgId: ownershipTransfers.orgId });
+
+    const affectedOrgIds = [...new Set(rows.map((r) => r.orgId))];
+    await Promise.all(
+      affectedOrgIds.flatMap((affectedOrgId) => [
+        this.cache.invalidatePattern(CACHE_KEYS.ownershipTransfersPattern(affectedOrgId)),
+        this.cache.invalidatePattern(CACHE_KEYS.incomingTransfersPattern(affectedOrgId)),
+      ]),
+    );
 
     return { expired: rows.length };
   }

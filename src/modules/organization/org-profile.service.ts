@@ -148,6 +148,14 @@ export class OrgProfileService {
   }
 
   async getProfile(userId: string, orgId: string) {
+    return this.cache.cached(
+      CACHE_KEYS.orgProfile(orgId, userId),
+      () => this.fetchProfile(userId, orgId),
+      120,
+    );
+  }
+
+  private async fetchProfile(userId: string, orgId: string) {
     const [user] = await this.db
       .select({
         id: users.id,
