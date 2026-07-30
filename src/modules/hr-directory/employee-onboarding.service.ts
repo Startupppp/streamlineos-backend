@@ -28,6 +28,7 @@ import { encrypt, encryptBankDetails, type BankDetails } from "../onboarding/cry
 import { formatDateOnly } from "../../common/date";
 import { seedEmployeeSalaryProfile } from "./salary-profile-seed.helper";
 import type { OnboardEmployeeInput, UpdateEmployeeInput } from "./dto/hr-directory.schemas";
+import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
 
 type BankDetailsInput = NonNullable<UpdateEmployeeInput["bankDetails"]> & {
   pfUanNumber?: string;
@@ -105,7 +106,7 @@ export class EmployeeOnboardingService {
       }
     }
 
-    const role = body.role || "ENGINEERING";
+    const role = body.role || ORG_MEMBER_ROLES.MEMBER;
 
     if (existingUser) {
       const linkedUser = await this.db.transaction(async (tx) => {

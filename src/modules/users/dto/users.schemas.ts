@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ORG_MEMBER_ROLES } from "../../../common/rbac/org-roles";
 
 export const listUsersSchema = z.object({
   page: z.coerce.number().int().positive().default(1),
@@ -56,13 +57,13 @@ const inviteEmailSchema = z
 
 export const inviteUserSchema = z.object({
   email: inviteEmailSchema,
-  role: z.string().default("ENGINEERING"),
+  role: z.string().default(ORG_MEMBER_ROLES.MEMBER),
 });
 export type InviteUserInput = z.infer<typeof inviteUserSchema>;
 
 export const bulkInviteSchema = z.object({
   emails: z.array(inviteEmailSchema).min(1).max(50),
-  role: z.string().default("ENGINEERING"),
+  role: z.string().default(ORG_MEMBER_ROLES.MEMBER),
 });
 export type BulkInviteInput = z.infer<typeof bulkInviteSchema>;
 
@@ -74,11 +75,6 @@ export const updatePreferencesSchema = z.object({
   timeFormat: z.enum(["12h", "24h"]).optional(),
   numberFormat: z.string().optional(),
   weekStartDay: z.enum(["sunday", "monday", "saturday"]).optional(),
-  accentColor: z.string().optional(),
-  density: z.enum(["compact", "comfortable", "spacious"]).optional(),
-  fontSize: z.enum(["small", "medium", "large"]).optional(),
-  reducedMotion: z.boolean().optional(),
-  highContrast: z.boolean().optional(),
   notificationPreferences: z.record(z.string(), z.boolean()).optional(),
   dashboardPreferences: z.record(z.string(), z.unknown()).optional(),
 });

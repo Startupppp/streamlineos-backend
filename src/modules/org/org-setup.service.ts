@@ -4,6 +4,7 @@ import {
   roles,
   users,
   orgModules,
+  modulesCatalog,
   moduleOwnerships,
   subscriptions,
   organizations,
@@ -176,26 +177,43 @@ export class OrgSetupService {
     return orgId;
   }
 
+  /**
+   * Records the org's module choice for EVERY catalog module — the selected
+   * ones enabled, the rest explicitly disabled — so the org runs exactly what
+   * the owner picked in the wizard. Writing the `false` rows (rather than
+   * leaving them absent) keeps `org_modules` a complete, auditable record and
+   * keeps the module list, the access snapshot, and `ModuleGuard` in agreement.
+   * Core modules stay on regardless of selection.
+   */
   private async provisionOrgModules(
     tx: Parameters<Parameters<Db["transaction"]>[0]>[0],
     orgId: string,
     moduleKeys: readonly string[],
     enabledBy: string,
   ): Promise<void> {
-    if (moduleKeys.length === 0) return;
+    const selected = new Set(moduleKeys);
+    const catalog = await tx
+      .select({ moduleKey: modulesCatalog.moduleKey, isCore: modulesCatalog.isCore })
+      .from(modulesCatalog);
+
+    const rows =
+      catalog.length > 0
+        ? catalog.map((entry) => ({
+            orgId,
+            moduleKey: entry.moduleKey,
+            enabled: entry.isCore === true || selected.has(entry.moduleKey),
+            enabledBy,
+          }))
+        : moduleKeys.map((moduleKey) => ({ orgId, moduleKey, enabled: true, enabledBy }));
+
+    if (rows.length === 0) return;
+
     await tx
       .insert(orgModules)
-      .values(
-        moduleKeys.map((moduleKey) => ({
-          orgId,
-          moduleKey,
-          enabled: true,
-          enabledBy,
-        })),
-      )
+      .values(rows)
       .onConflictDoUpdate({
         target: [orgModules.orgId, orgModules.moduleKey],
-        set: { enabled: true, enabledBy },
+        set: { enabled: sql`excluded.enabled`, enabledBy: sql`excluded.enabled_by` },
       });
 
     const eligibleKeys = moduleKeys.filter((key) => OWNERSHIP_MANAGED_MODULES.has(key));

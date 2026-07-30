@@ -69,7 +69,9 @@ export class ExitController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (u.isOrgOwner || u.isPlatformAdmin) {
-      throw new ForbiddenException("CEO users cannot submit a resignation through this system.");
+      throw new ForbiddenException(
+        "The organization owner cannot submit a resignation through this system.",
+      );
     }
     return this.exitWrite.create(u.orgId, u.userId, body);
   }

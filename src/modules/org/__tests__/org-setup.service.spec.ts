@@ -34,6 +34,16 @@ type TxMock = {
   select: jest.Mock;
 };
 
+const CATALOG_ROWS = [
+  { moduleKey: "hr", isCore: false },
+  { moduleKey: "crm", isCore: false },
+  { moduleKey: "build", isCore: false },
+  { moduleKey: "payroll", isCore: false },
+  { moduleKey: "inventory", isCore: false },
+  { moduleKey: "kb", isCore: true },
+  { moduleKey: "chat", isCore: true },
+];
+
 function buildTxMock(ownerMembershipId: number | null) {
   const onConflictDoUpdate = jest.fn().mockResolvedValue(undefined);
   const onConflictDoNothing = jest.fn().mockResolvedValue(undefined);
@@ -48,7 +58,13 @@ function buildTxMock(ownerMembershipId: number | null) {
     ownerMembershipId !== null ? [{ ownerMembershipId }] : [],
   );
   const where = jest.fn().mockReturnValue({ limit });
-  const from = jest.fn().mockReturnValue({ where });
+  // `.from(modulesCatalog)` is awaited directly (no `.where`), so the builder has
+  // to be thenable as well as chainable.
+  const from = jest.fn().mockReturnValue({
+    where,
+    then: (resolve: (rows: { moduleKey: string; isCore: boolean }[]) => unknown) =>
+      resolve(CATALOG_ROWS),
+  });
   const select = jest.fn().mockReturnValue({ from });
 
   const tx: TxMock = { insert, update, select };
@@ -148,8 +164,33 @@ describe("OrgSetupService — provisionOrgModules ownership seeding", () => {
 
     await svc.skipSetup(ownerActor());
 
-    expect(txMocks.select).toHaveBeenCalledTimes(1);
+    expect(txMocks.limit).toHaveBeenCalledTimes(1);
     expect(txMocks.onConflictDoNothing).not.toHaveBeenCalled();
+  });
+
+  it("records unselected catalog modules as disabled so the org runs only what was chosen", async () => {
+    const { db, txMocks } = buildDb(99);
+    const svc = await buildService(db);
+
+    await svc.skipSetup(ownerActor());
+
+    const moduleCall = txMocks.values.mock.calls.find(
+      (args: unknown[]) =>
+        Array.isArray(args[0]) &&
+        (args[0] as Record<string, unknown>[])[0]?.enabled !== undefined,
+    );
+    expect(moduleCall).toBeDefined();
+
+    const rows = moduleCall?.[0] as { moduleKey: string; enabled: boolean }[];
+    const state = new Map(rows.map((r) => [r.moduleKey, r.enabled]));
+
+    expect(state.get("hr")).toBe(true);
+    expect(state.get("crm")).toBe(true);
+    expect(state.get("build")).toBe(true);
+    expect(state.get("payroll")).toBe(false);
+    expect(state.get("inventory")).toBe(false);
+    expect(state.get("kb")).toBe(true);
+    expect(state.get("chat")).toBe(true);
   });
 
   it("uses onConflictDoNothing so re-provisioning the same modules does not cause duplicate-key errors", async () => {

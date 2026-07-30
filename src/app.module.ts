@@ -2,8 +2,6 @@ import { Module } from "@nestjs/common";
 import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
 import { Reflector } from "@nestjs/core";
 import { DeprecationInterceptor } from "./common/deprecation/deprecation.interceptor";
-import { TenantModule } from "./common/tenant/tenant.module";
-import { TenantContextInterceptor } from "./common/tenant/tenant-context.interceptor";
 import { ConfigModule } from "./config/config.module";
 import { JwtAuthGuard } from "./common/auth/jwt-auth.guard";
 import { DrizzleModule } from "./db/drizzle.module";
@@ -258,7 +256,6 @@ import { MeService } from "./me/me.service";
     DirectoryModule,
     PartyModule,
     PortalAccessModule,
-    TenantModule,
 
     PortalAuthModule,
     PortalClientModule,
@@ -341,7 +338,6 @@ import { MeService } from "./me/me.service";
     MeService,
     Reflector,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
-    { provide: APP_INTERCEPTOR, useClass: TenantContextInterceptor },
     { provide: APP_INTERCEPTOR, useClass: DeprecationInterceptor },
   ],
 })

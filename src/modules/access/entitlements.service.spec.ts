@@ -345,7 +345,7 @@ describe("EntitlementsService", () => {
   });
 
   describe("listModules", () => {
-    it("returns all modules enabled when enabledModules is null (new org, array never set)", async () => {
+    it("enables only core modules when the org has no org_modules rows (deny by default)", async () => {
       const { db, mocks } = buildMockDb();
       mocks.orgFindFirst.mockResolvedValue({ enabledModules: null });
       const { cache } = buildMockCache();
@@ -353,9 +353,30 @@ describe("EntitlementsService", () => {
       const result = await buildService(db, cache).listModules("org-1");
 
       expect(result).toHaveLength(11);
-      expect(result.every((r) => r.enabled)).toBe(true);
+      expect(
+        result
+          .filter((r) => r.enabled)
+          .map((r) => r.moduleKey)
+          .sort(),
+      ).toEqual(["chat", "kb"]);
       expect(result.find((r) => r.moduleKey === "kb")).toMatchObject({ enabled: true, core: true });
       expect(result.find((r) => r.moduleKey === "blog")).toBeUndefined();
+    });
+
+    it("never reports a module the org did not enable as enabled", async () => {
+      const { db, mocks } = buildMockDb();
+      mocks.findMany.mockResolvedValue([{ moduleKey: "hr", enabled: true }]);
+      const { cache } = buildMockCache();
+
+      const service = buildService(db, cache);
+      const [result, guarded] = await Promise.all([
+        service.listModules("org-1"),
+        service.isModuleEnabled("org-1", "payroll"),
+      ]);
+
+      expect(result.find((r) => r.moduleKey === "hr")?.enabled).toBe(true);
+      expect(result.find((r) => r.moduleKey === "payroll")?.enabled).toBe(false);
+      expect(guarded).toBe(false);
     });
 
     it("derives enabled from the org_modules rows", async () => {

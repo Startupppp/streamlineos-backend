@@ -214,16 +214,31 @@ export class EntitlementsService implements OnModuleInit {
     await this.cache.invalidate(CACHE_KEYS.userSession(enabledBy));
   }
 
-  async listModules(orgId: string): Promise<ModuleStatus[]> {
+  /**
+   * Effective on/off state of every toggleable catalog module for an org.
+   *
+   * Deny-by-default: a module with no `org_modules` row is NOT enabled, so an
+   * org runs exactly what it turned on during setup or in Settings → Modules.
+   * This mirrors `isModuleEnabled` (the guard) so the modules a user is shown
+   * and the modules the API actually serves can never disagree.
+   */
+  async getEffectiveModuleMap(orgId: string): Promise<Record<string, boolean>> {
     const map = await this.getModuleMap(orgId);
-    const hasConfig = Object.keys(map).length > 0;
-    return MODULE_CATALOG.map((moduleKey): ModuleStatus => {
-      if (this.coreModuleKeys.has(moduleKey))
-        return { moduleKey, enabled: true, core: true };
+    const effective: Record<string, boolean> = {};
+    for (const moduleKey of MODULE_CATALOG) {
+      effective[moduleKey] = this.coreModuleKeys.has(moduleKey)
+        ? true
+        : (map[moduleKey] ?? this.moduleTableUnavailable);
+    }
+    return effective;
+  }
 
-      if (!hasConfig) return { moduleKey, enabled: true };
-
-      return { moduleKey, enabled: map[moduleKey] ?? true };
-    });
+  async listModules(orgId: string): Promise<ModuleStatus[]> {
+    const effective = await this.getEffectiveModuleMap(orgId);
+    return MODULE_CATALOG.map((moduleKey): ModuleStatus =>
+      this.coreModuleKeys.has(moduleKey)
+        ? { moduleKey, enabled: true, core: true }
+        : { moduleKey, enabled: effective[moduleKey] ?? false },
+    );
   }
 }

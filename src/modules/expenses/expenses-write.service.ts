@@ -17,6 +17,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { EmailService } from "../email/email.service";
 import { AutomationService } from "../automation/automation.service";
 import { AccessService } from "../access/access.service";
+import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
 import {
   updateExpenseDetailsSchema,
   updateExpenseStatusSchema,
@@ -442,7 +443,10 @@ export class ExpensesWriteService {
     const admins = await this.db.query.organizationMembers.findMany({
       where: and(
         eq(organizationMembers.orgId, orgId),
-        or(eq(organizationMembers.isOwner, true), eq(organizationMembers.role, "ADMIN")),
+        or(
+          eq(organizationMembers.isOwner, true),
+          eq(organizationMembers.role, ORG_MEMBER_ROLES.ORG_ADMIN),
+        ),
       ),
       with: { user: { columns: { email: true } } },
     });

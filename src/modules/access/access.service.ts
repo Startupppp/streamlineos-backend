@@ -102,6 +102,8 @@ export function evaluateMembershipGate(
 
 const CATALOG_MODULES = Array.from(new Set(PERMISSIONS.map((permission) => moduleOf(permission.name))));
 
+const EMPTY_DENIED_MODULES: ReadonlySet<string> = new Set<string>();
+
 function allCatalogScopes(): Record<string, DataScope> {
   const scopes: Record<string, DataScope> = {};
   for (const permission of PERMISSIONS) scopes[permission.name] = "all";
@@ -294,12 +296,10 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
 
     if (ctx.isPlatformAdmin || ctx.isOrgOwner) {
       const scopes = allCatalogScopes();
-      const modules: Record<string, boolean> = {};
-      for (const moduleKey of CATALOG_MODULES) modules[moduleKey] = true;
       return {
         permissions: Object.keys(scopes),
         scopes,
-        modules,
+        modules: await this.resolveModuleFlags(orgId, EMPTY_DENIED_MODULES),
         isOrgOwner: ctx.isOrgOwner,
         version,
       };
@@ -314,16 +314,37 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       permissions.push(key);
     }
 
-    const moduleMap = await this.entitlements.getModuleMap(orgId);
     const denied = await this.getUserDeniedModules(orgId, userId);
-    const modules: Record<string, boolean> = {};
-    for (const moduleKey of CATALOG_MODULES) {
-      modules[moduleKey] = isInternalModule(moduleKey)
-        ? true
-        : (moduleMap[moduleKey] ?? true) && !denied.has(moduleKey);
-    }
+    const modules = await this.resolveModuleFlags(orgId, denied);
 
     return { permissions, scopes, modules, isOrgOwner: ctx.isOrgOwner, version };
+  }
+
+  /**
+   * Module on/off flags for the access snapshot.
+   *
+   * Only the toggleable catalog modules are subject to org enablement — the
+   * remaining permission namespaces (billing, notifications, calendar, …) have
+   * no `org_modules` row and are always available. Org enablement is a tenant
+   * configuration, not a permission, so owners and platform admins are NOT
+   * exempt: they see the modules the org actually turned on and can enable more
+   * from Settings → Modules.
+   */
+  private async resolveModuleFlags(
+    orgId: string,
+    denied: ReadonlySet<string>,
+  ): Promise<Record<string, boolean>> {
+    const effective = await this.entitlements.getEffectiveModuleMap(orgId);
+    const modules: Record<string, boolean> = {};
+    for (const moduleKey of CATALOG_MODULES) {
+      if (isInternalModule(moduleKey)) {
+        modules[moduleKey] = true;
+        continue;
+      }
+      const orgEnabled = moduleKey in effective ? effective[moduleKey] === true : true;
+      modules[moduleKey] = orgEnabled && !denied.has(moduleKey);
+    }
+    return modules;
   }
 
   private async computeUserPermissions(

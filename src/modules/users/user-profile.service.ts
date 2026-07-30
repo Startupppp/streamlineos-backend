@@ -193,11 +193,6 @@ export class UserProfileService {
     if (data.timeFormat !== undefined) updateData.timeFormat = data.timeFormat;
     if (data.numberFormat !== undefined) updateData.numberFormat = data.numberFormat;
     if (data.weekStartDay !== undefined) updateData.weekStartDay = data.weekStartDay;
-    if (data.accentColor !== undefined) updateData.accentColor = data.accentColor;
-    if (data.density !== undefined) updateData.density = data.density;
-    if (data.fontSize !== undefined) updateData.fontSize = data.fontSize;
-    if (data.reducedMotion !== undefined) updateData.reducedMotion = data.reducedMotion;
-    if (data.highContrast !== undefined) updateData.highContrast = data.highContrast;
     if (data.notificationPreferences !== undefined)
       updateData.notificationPreferences = data.notificationPreferences;
     if (data.dashboardPreferences !== undefined)

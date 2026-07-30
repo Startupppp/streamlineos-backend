@@ -8,6 +8,7 @@ import { AuditService } from "../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { EmployeeOnboardingService } from "./employee-onboarding.service";
 import type { BulkOnboardEmployeeRow, OnboardEmployeeInput } from "./dto/hr-directory.schemas";
+import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
 
 @Injectable()
 export class EmployeeBulkOnboardingService {
@@ -141,7 +142,7 @@ export class EmployeeBulkOnboardingService {
         gender: row.gender,
         designation: row.designation.trim(),
         departmentId,
-        role: row.role || "ENGINEERING",
+        role: row.role || ORG_MEMBER_ROLES.MEMBER,
         employeeId: row.employeeId,
         joiningDate: row.joiningDate,
         dateOfBirth: row.dateOfBirth,
