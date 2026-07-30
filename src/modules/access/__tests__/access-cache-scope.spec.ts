@@ -79,6 +79,7 @@ function buildService(
   const entitlements = {
     isModuleEnabled: jest.fn().mockResolvedValue(true),
     getModuleMap: jest.fn().mockResolvedValue({}),
+    getEffectiveModuleMap: jest.fn().mockResolvedValue({}),
   } as unknown as EntitlementsService;
 
   return new AccessService(
@@ -119,6 +120,7 @@ describe("AccessService.resolveUserPermissions — org-scoped Redis cache key", 
     const entitlements = {
       isModuleEnabled: jest.fn().mockResolvedValue(true),
       getModuleMap: jest.fn().mockResolvedValue({}),
+      getEffectiveModuleMap: jest.fn().mockResolvedValue({}),
     } as unknown as EntitlementsService;
 
     const svc = new AccessService(
@@ -166,6 +168,7 @@ describe("AccessService.resolveUserPermissions — org-scoped Redis cache key", 
     const entitlements = {
       isModuleEnabled: jest.fn().mockResolvedValue(true),
       getModuleMap: jest.fn().mockResolvedValue({}),
+      getEffectiveModuleMap: jest.fn().mockResolvedValue({}),
     } as unknown as EntitlementsService;
 
     const svcA = new AccessService(

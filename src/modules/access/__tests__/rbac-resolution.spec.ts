@@ -70,6 +70,7 @@ function buildService(db: unknown): AccessService {
   const entitlements = {
     isModuleEnabled: jest.fn().mockResolvedValue(true),
     getModuleMap: jest.fn().mockResolvedValue({}),
+    getEffectiveModuleMap: jest.fn().mockResolvedValue({}),
   };
   return new AccessService(
     db as unknown as Db,
@@ -142,6 +143,8 @@ describe("AccessService.getAccessSnapshot — platform admin receives every cata
     expect(snapshot.scopes["hr:leaves:approve"]).toBe("all");
     expect(snapshot.scopes["hr:employees:view"]).toBe("all");
     expect(snapshot.isOrgOwner).toBe(false);
+    expect(Object.keys(snapshot.modules).length).toBeGreaterThan(0);
+    expect(Object.values(snapshot.modules).every((enabled) => enabled === true)).toBe(true);
     expect(db.query.organizationMembers.findFirst).not.toHaveBeenCalled();
     expect(db.select).not.toHaveBeenCalled();
   });

@@ -220,6 +220,7 @@ function buildService(db: unknown): AccessService {
   const entitlements = {
     isModuleEnabled: jest.fn().mockResolvedValue(true),
     getModuleMap: jest.fn().mockResolvedValue({}),
+    getEffectiveModuleMap: jest.fn().mockResolvedValue({}),
   };
   return new AccessService(
     db as unknown as Db,
@@ -481,6 +482,7 @@ describe("AccessService.resolveUserPermissions — version bump invalidates loca
     const entitlements = {
       isModuleEnabled: jest.fn().mockResolvedValue(true),
       getModuleMap: jest.fn().mockResolvedValue({}),
+      getEffectiveModuleMap: jest.fn().mockResolvedValue({}),
     };
     const svc = new AccessService(
       db as unknown as Db,
@@ -609,6 +611,7 @@ describe("AccessService.resolveUserPermissions — unknown permission keys are o
     const entitlements = {
       isModuleEnabled: jest.fn().mockResolvedValue(true),
       getModuleMap: jest.fn().mockResolvedValue({}),
+      getEffectiveModuleMap: jest.fn().mockResolvedValue({}),
     };
     const logWarnSpy = jest.spyOn(logger, "warn").mockImplementation(() => undefined);
 
@@ -686,6 +689,7 @@ describe("AccessService.membersWithPermission", () => {
     const entitlements = {
       isModuleEnabled: jest.fn().mockResolvedValue(opts.isModuleEnabled ?? true),
       getModuleMap: jest.fn().mockResolvedValue({}),
+      getEffectiveModuleMap: jest.fn().mockResolvedValue({}),
     };
 
     return new AccessService(
@@ -878,6 +882,7 @@ describe("AccessService.membersWithPermission — distribution cap", () => {
     const entitlements = {
       isModuleEnabled: jest.fn().mockResolvedValue(true),
       getModuleMap: jest.fn().mockResolvedValue({}),
+      getEffectiveModuleMap: jest.fn().mockResolvedValue({}),
     };
 
     return {
