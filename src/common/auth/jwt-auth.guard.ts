@@ -48,9 +48,6 @@ const ORG_CTX_TTL_MS = 60_000;
 const REVOCATION_CACHE_TTL_MS = 5_000;
 
 
-export function bustPlatformAdminCache(userId: string): void {
-  platformAdminCache.delete(userId);
-}
 
 interface MembershipStatusEntry {
   active: boolean;

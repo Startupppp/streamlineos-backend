@@ -2,7 +2,6 @@ import { BadRequestException, Injectable } from "@nestjs/common";
 import { AiGatewayService } from "../../ai/gateway/ai-gateway.service";
 import { throwOnAiFailure } from "../../ai/services/gateway-result.util";
 import { AiConfirmationService } from "../../ai-confirmation/ai-confirmation.service";
-import { FeatureFlagsService } from "../../feature-flags/feature-flags.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import {
   classifyNodeConfigSchema,
@@ -15,12 +14,6 @@ import {
   type AiNodeType,
 } from "./ai-node-types";
 
-const FEATURE_MAP: Record<AiNodeType, string> = {
-  classify: "workflow.classify",
-  summarize: "workflow.summarize",
-  extract: "workflow.extract",
-  routing_suggestion: "workflow.routing_suggestion",
-};
 
 export interface AiNodeResult {
   ok: boolean;
@@ -34,7 +27,6 @@ export class AiNodeExecutorService {
   constructor(
     private readonly gateway: AiGatewayService,
     private readonly confirmation: AiConfirmationService,
-    private readonly featureFlags: FeatureFlagsService,
     private readonly audit: AuditService,
   ) {}
 
@@ -45,13 +37,6 @@ export class AiNodeExecutorService {
     nodeConfig: unknown,
     payload: Record<string, unknown>,
   ): Promise<AiNodeResult> {
-    const feature = FEATURE_MAP[nodeType];
-
-    const flagEnabled = await this.featureFlags.evaluate(feature, orgId);
-    if (!flagEnabled) {
-      return { ok: false, error: "Feature flag disabled" };
-    }
-
     const actor = { orgId, userId };
 
     if (nodeType === "classify") {

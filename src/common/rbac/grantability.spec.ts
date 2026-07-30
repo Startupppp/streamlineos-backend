@@ -91,14 +91,6 @@ describe("assertPermissionsGrantable — existing rules", () => {
     ).not.toThrow();
   });
 
-  it("lets a platform admin grant anything (bypass)", () => {
-    expect(() =>
-      assertPermissionsGrantable(
-        { isOrgOwner: false, grantable: new Set() },
-        ["settings:manage"],
-      ),
-    ).not.toThrow();
-  });
 
   it("allows granting a subset of the caller's own permissions", () => {
     expect(() =>

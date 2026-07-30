@@ -1,6 +1,6 @@
 import { ExecutionContext, ForbiddenException, UnauthorizedException } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
-import { JwtAuthGuard, bustPlatformAdminCache } from "./jwt-auth.guard";
+import { JwtAuthGuard } from "./jwt-auth.guard";
 import { signToken } from "../../../test/helpers/sign-token";
 
 function ctxWith(headers: Record<string, string>): ExecutionContext {
@@ -33,9 +33,6 @@ describe("JwtAuthGuard", () => {
   beforeEach(() => {
     reflector.getAllAndOverride.mockReturnValue(false);
     mockDb.query.users.findFirst.mockResolvedValue(undefined);
-    bustPlatformAdminCache("user_1");
-    bustPlatformAdminCache("user_42");
-    bustPlatformAdminCache("u");
   });
 
   it("rejects a missing token with 401", async () => {

@@ -18,7 +18,6 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import type { Request, Response } from "express";
 import { Public } from "../../common/auth/public.decorator";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
-import { bustPlatformAdminCache } from "../../common/auth/jwt-auth.guard";
 import { PlatformService } from "./platform.service";
 import {
   visitSchema,
