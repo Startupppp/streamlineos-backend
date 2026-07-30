@@ -45,10 +45,8 @@ interface PlatformAdminEntry {
 }
 
 const ORG_CTX_TTL_MS = 60_000;
-const PLATFORM_ADMIN_TTL_MS = 30_000;
 const REVOCATION_CACHE_TTL_MS = 5_000;
 
-const platformAdminCache = new Map<string, PlatformAdminEntry>();
 
 export function bustPlatformAdminCache(userId: string): void {
   platformAdminCache.delete(userId);
@@ -92,7 +90,6 @@ function extractClaims(payload: JWTPayload): BackendClaims {
         )
       : [],
     plan: typeof payload["plan"] === "string" ? payload["plan"] : null,
-    isPlatformAdmin: false,
     isOrgOwner: payload["isOrgOwner"] === true,
     sessionId:
       typeof payload["sessionId"] === "string" ? payload["sessionId"] : "",
@@ -104,7 +101,6 @@ export class JwtAuthGuard implements CanActivate {
   private readonly orgCtxCache = new Map<string, OrgContextEntry>();
   private readonly revocationCache = new Map<string, number>();
   private readonly jwtSecretKey: Uint8Array | null;
-  private readonly db_resolvePlatformAdmin: (userId: string) => Promise<boolean>;
 
   constructor(
     private readonly reflector: Reflector,
@@ -113,27 +109,6 @@ export class JwtAuthGuard implements CanActivate {
   ) {
     const raw = process.env.BACKEND_JWT_SECRET;
     this.jwtSecretKey = raw ? new TextEncoder().encode(raw) : null;
-    this.db_resolvePlatformAdmin = async (userId: string): Promise<boolean> => {
-      const cached = platformAdminCache.get(userId);
-      if (cached && cached.expiresAt > Date.now()) return cached.value;
-      try {
-        const row = await this.db.query.users.findFirst({
-          where: eq(users.id, userId),
-          columns: { isPlatformAdmin: true },
-        });
-        const value = row?.isPlatformAdmin ?? false;
-        platformAdminCache.set(userId, { value, expiresAt: Date.now() + PLATFORM_ADMIN_TTL_MS });
-        if (platformAdminCache.size > 5000) {
-          const now = Date.now();
-          for (const [key, entry] of platformAdminCache) {
-            if (entry.expiresAt <= now) platformAdminCache.delete(key);
-          }
-        }
-        return value;
-      } catch {
-        return false;
-      }
-    };
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -210,14 +185,12 @@ export class JwtAuthGuard implements CanActivate {
       const path = req.path ?? req.url?.split("?")[0] ?? "";
       const isOrgSetup = req.method === "PATCH" && path === "/org/setup";
 
-      const isPlatformAdmin = await this.db_resolvePlatformAdmin(claims.sub);
-
       let orgId = claims.orgId;
       let isOrgOwner = claims.isOrgOwner;
       let role = claims.role;
       let plan = claims.plan;
 
-      if (!orgId && !isPlatformAdmin) {
+      if (!orgId) {
         const resolved = await this.resolveOrgContext(claims.sub);
         if (resolved) {
           orgId = resolved.orgId;
@@ -228,13 +201,13 @@ export class JwtAuthGuard implements CanActivate {
       }
 
       // 403, not 401: the session is valid — a 401 would make the api-client force a sign-out loop for users who haven't created their org yet.
-      if (!orgId && !isPlatformAdmin && !allowNoOrg && !isOrgSetup) {
+      if (!orgId && !allowNoOrg && !isOrgSetup) {
         throw new ForbiddenException("Organization not found");
       }
 
       // Re-check membership every request so a suspended/left member loses access within the
-      // cache TTL rather than only at JWT expiry (platform admins are exempt).
-      if (orgId && !isPlatformAdmin) {
+      // cache TTL rather than only at JWT expiry.
+      if (orgId) {
         const membershipActive = await this.isMembershipActive(claims.sub, orgId);
         if (!membershipActive) {
           throw new ForbiddenException(
@@ -251,7 +224,6 @@ export class JwtAuthGuard implements CanActivate {
         permissions: claims.permissions,
         enabledModules: [],
         plan,
-        isPlatformAdmin,
         isOrgOwner,
         sessionId: claims.sessionId,
       };
@@ -414,7 +386,6 @@ export class JwtAuthGuard implements CanActivate {
       permissions: [],
       enabledModules: [],
       plan: resolved.plan,
-      isPlatformAdmin: false,
       isOrgOwner: resolved.isOwner,
       sessionId: `pat:${matchedTokenId}`,
     };

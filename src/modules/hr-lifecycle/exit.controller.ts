@@ -47,7 +47,7 @@ export class ExitController {
   ) {}
 
   private async isExitAdmin(u: CurrentUserContext): Promise<boolean> {
-    if (u.isOrgOwner || u.isPlatformAdmin) return true;
+    if (u.isOrgOwner) return true;
     const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
     return perms.has("hr:exit:manage");
   }
@@ -68,7 +68,7 @@ export class ExitController {
     @Body(new ZodValidationPipe(resignationCreateSchema)) body: ResignationCreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (u.isOrgOwner || u.isPlatformAdmin) {
+    if (u.isOrgOwner) {
       throw new ForbiddenException(
         "The organization owner cannot submit a resignation through this system.",
       );

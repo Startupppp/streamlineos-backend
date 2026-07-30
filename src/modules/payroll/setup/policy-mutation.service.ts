@@ -79,7 +79,7 @@ export class PolicyMutationService {
 
   async update(u: CurrentUserContext, policyId: number, input: UpdatePolicyInput) {
     const policy = await assertBelongsToOrg(this.db, u.orgId, policyId);
-    if (policy.status !== "DRAFT" && !u.isOrgOwner && !u.isPlatformAdmin) {
+    if (policy.status !== "DRAFT" && !u.isOrgOwner) {
       throw new BadRequestException(
         "Only the org owner can update an active policy profile",
       );

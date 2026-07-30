@@ -15,7 +15,6 @@ function ctx(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {
     permissions: [],
     enabledModules: ["HR", "CRM"],
     plan: "PROFESSIONAL",
-    isPlatformAdmin: false,
     isOrgOwner: false,
     sessionId: "sess-1",
     ...overrides,
@@ -105,11 +104,6 @@ describe("OnboardingController — HR-only module-checklist gating", () => {
       expect(checklists.getChecklist).toHaveBeenCalled();
     });
 
-    it("bypasses the DB permission check entirely for a platform admin", async () => {
-      await controller.getModuleChecklist("HR", ctx({ isPlatformAdmin: true }));
-      expect(access.resolveUserPermissions).not.toHaveBeenCalled();
-      expect(checklists.getChecklist).toHaveBeenCalled();
-    });
 
     it("does not run the HR check at all for other modules (no regression)", async () => {
       await controller.getModuleChecklist("CRM", ctx());
@@ -230,10 +224,5 @@ describe("OnboardingController — HR-only module-checklist gating", () => {
       expect(tours.dismissTour).toHaveBeenCalledWith("org-1", "user-1", "hr_setup");
     });
 
-    it("dismissTour: bypasses the DB permission check for a platform admin", async () => {
-      await controller.dismissTour("hr_setup", ctx({ isPlatformAdmin: true }));
-      expect(access.resolveUserPermissions).not.toHaveBeenCalled();
-      expect(tours.dismissTour).toHaveBeenCalled();
-    });
   });
 });

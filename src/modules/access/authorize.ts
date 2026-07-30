@@ -14,7 +14,7 @@ export async function authorize(
 ): Promise<AuthResult> {
   if (!ctx) return { allow: false, scope: "none", reason: "UNAUTHENTICATED" };
 
-  if (ctx.isPlatformAdmin || ctx.isOrgOwner) return { allow: true, scope: "all" };
+  if (ctx.isOrgOwner) return { allow: true, scope: "all" };
 
   const moduleKey = moduleOf(permissionKey);
   if (!isInternalModule(moduleKey) && !(await access.isModuleEnabled(ctx.orgId, moduleKey))) {

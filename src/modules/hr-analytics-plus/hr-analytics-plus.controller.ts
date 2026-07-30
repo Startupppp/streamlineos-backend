@@ -68,7 +68,7 @@ export class HrAnalyticsPlusController {
 
   @Get("payroll-cost")
   async getPayrollCost(@CurrentUser() u: CurrentUserContext) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+    if (!u.isOrgOwner) {
       const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
       if (!perms.has("hr:salary:view") && !perms.has("hr:payroll:view")) {
         throw new ForbiddenException("hr:salary:view or hr:payroll:view required");

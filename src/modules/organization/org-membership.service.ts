@@ -17,6 +17,7 @@ import {
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
+import { syncStructuralRoleAssignment } from "../../common/rbac/sync-structural-role";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
@@ -385,6 +386,8 @@ export class OrgMembershipService {
             eq(organizationMembers.orgId, orgId),
           ),
         );
+
+      await syncStructuralRoleAssignment(tx, orgId, member.id, role);
     });
 
     await Promise.all([

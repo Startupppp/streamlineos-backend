@@ -67,7 +67,7 @@ export class OwnershipController {
     @Body(new ZodValidationPipe(setModuleOwnerSchema)) body: SetModuleOwnerInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+    if (!u.isOrgOwner) {
       throw new ForbiddenException("Only the org owner may force-set a module owner");
     }
     return this.ownership.forceSetModuleOwner(u.orgId, u.userId, moduleKey, body);
@@ -82,26 +82,13 @@ export class OwnershipController {
     @Body(new ZodValidationPipe(initiateOrgTransferSchema)) body: InitiateOrgTransferInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+    if (!u.isOrgOwner) {
       throw new ForbiddenException("Only the org owner may initiate an org ownership transfer");
     }
     return this.ownership.initiateOrgTransfer(u.orgId, u.userId, body);
   }
 
   @Put("org/owner")
-  @HttpCode(HttpStatus.OK)
-  @UseGuards(PermissionGuard, RateLimitGuard)
-  @RequirePermission("ownership:org:transfer")
-  @UseRateLimit("ownership:force-set")
-  forceTransferOrgOwnership(
-    @Body(new ZodValidationPipe(forceTransferOrgSchema)) body: ForceTransferOrgInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    if (!u.isPlatformAdmin) {
-      throw new ForbiddenException("Platform administrator access required");
-    }
-    return this.ownership.forceTransferOrgOwnership(u.orgId, u.userId, body);
-  }
 
   @Post("modules/:moduleKey/transfer")
   @HttpCode(HttpStatus.CREATED)
@@ -118,7 +105,7 @@ export class OwnershipController {
       u.userId,
       moduleKey,
       body,
-      u.isOrgOwner || u.isPlatformAdmin,
+      u.isOrgOwner,
     );
   }
 
@@ -177,7 +164,7 @@ export class OwnershipController {
       u.orgId,
       u.userId,
       transferId,
-      u.isOrgOwner || u.isPlatformAdmin,
+      u.isOrgOwner,
     );
   }
 }

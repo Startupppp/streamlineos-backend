@@ -22,7 +22,6 @@ function ownerActor(orgId = "org-1"): CurrentUserContext {
     permissions: [],
     enabledModules: [],
     plan: null,
-    isPlatformAdmin: false,
     isOrgOwner: true,
     sessionId: "s1",
   };

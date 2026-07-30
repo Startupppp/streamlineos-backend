@@ -85,7 +85,7 @@ describe("assertPermissionsGrantable — existing rules", () => {
   it("lets an org owner grant anything (bypass)", () => {
     expect(() =>
       assertPermissionsGrantable(
-        { isOrgOwner: true, isPlatformAdmin: false, grantable: new Set() },
+        { isOrgOwner: true, grantable: new Set() },
         ["settings:rbac:manage", "billing:analytics:view"],
       ),
     ).not.toThrow();
@@ -94,7 +94,7 @@ describe("assertPermissionsGrantable — existing rules", () => {
   it("lets a platform admin grant anything (bypass)", () => {
     expect(() =>
       assertPermissionsGrantable(
-        { isOrgOwner: false, isPlatformAdmin: true, grantable: new Set() },
+        { isOrgOwner: false, grantable: new Set() },
         ["settings:manage"],
       ),
     ).not.toThrow();
@@ -103,7 +103,7 @@ describe("assertPermissionsGrantable — existing rules", () => {
   it("allows granting a subset of the caller's own permissions", () => {
     expect(() =>
       assertPermissionsGrantable(
-        { isOrgOwner: false, isPlatformAdmin: false, grantable },
+        { isOrgOwner: false, grantable },
         ["crm:leads:view"],
       ),
     ).not.toThrow();
@@ -112,7 +112,7 @@ describe("assertPermissionsGrantable — existing rules", () => {
   it("rejects granting a permission the caller does not hold", () => {
     expect(() =>
       assertPermissionsGrantable(
-        { isOrgOwner: false, isPlatformAdmin: false, grantable },
+        { isOrgOwner: false, grantable },
         ["crm:leads:view", "hr:employees:view"],
       ),
     ).toThrow(ForbiddenException);
@@ -122,7 +122,7 @@ describe("assertPermissionsGrantable — existing rules", () => {
     const roleManager = new Set(["settings:rbac:manage", "crm:leads:view"]);
     expect(() =>
       assertPermissionsGrantable(
-        { isOrgOwner: false, isPlatformAdmin: false, grantable: roleManager },
+        { isOrgOwner: false, grantable: roleManager },
         ["settings:rbac:manage"],
       ),
     ).toThrow(ForbiddenException);
@@ -132,7 +132,7 @@ describe("assertPermissionsGrantable — existing rules", () => {
     const orgAdmin = new Set(["settings:manage", "settings:rbac:manage"]);
     expect(() =>
       assertPermissionsGrantable(
-        { isOrgOwner: false, isPlatformAdmin: false, grantable: orgAdmin },
+        { isOrgOwner: false, grantable: orgAdmin },
         ["settings:rbac:manage"],
       ),
     ).not.toThrow();
@@ -141,7 +141,7 @@ describe("assertPermissionsGrantable — existing rules", () => {
   it("passes for an empty requested list", () => {
     expect(() =>
       assertPermissionsGrantable(
-        { isOrgOwner: false, isPlatformAdmin: false, grantable },
+        { isOrgOwner: false, grantable },
         [],
       ),
     ).not.toThrow();
@@ -156,7 +156,6 @@ describe("assertPermissionsGrantable — rank enforcement (rule 2)", () => {
       assertPermissionsGrantable(
         {
           isOrgOwner: false,
-          isPlatformAdmin: false,
           grantable: crmGrant,
           bestRank: ROLE_RANK.MODULE_ADMIN,
           allowedModules: new Set(["crm"]),
@@ -173,7 +172,6 @@ describe("assertPermissionsGrantable — rank enforcement (rule 2)", () => {
       assertPermissionsGrantable(
         {
           isOrgOwner: false,
-          isPlatformAdmin: false,
           grantable: crmGrant,
           bestRank: ROLE_RANK.MODULE_ADMIN,
           allowedModules: new Set(["crm"]),
@@ -190,7 +188,6 @@ describe("assertPermissionsGrantable — rank enforcement (rule 2)", () => {
       assertPermissionsGrantable(
         {
           isOrgOwner: false,
-          isPlatformAdmin: false,
           grantable: crmGrant,
           bestRank: ROLE_RANK.MODULE_ADMIN,
           allowedModules: new Set(["crm"]),
@@ -207,7 +204,6 @@ describe("assertPermissionsGrantable — rank enforcement (rule 2)", () => {
       assertPermissionsGrantable(
         {
           isOrgOwner: false,
-          isPlatformAdmin: false,
           grantable: new Set(["settings:manage"]),
           bestRank: ROLE_RANK.MODULE_ADMIN,
           allowedModules: null,
@@ -223,7 +219,6 @@ describe("assertPermissionsGrantable — rank enforcement (rule 2)", () => {
       assertPermissionsGrantable(
         {
           isOrgOwner: false,
-          isPlatformAdmin: false,
           grantable: crmGrant,
           bestRank: ROLE_RANK.FUNCTIONAL,
           allowedModules: null,
@@ -240,7 +235,6 @@ describe("assertPermissionsGrantable — rank enforcement (rule 2)", () => {
       assertPermissionsGrantable(
         {
           isOrgOwner: true,
-          isPlatformAdmin: false,
           grantable: new Set(),
           bestRank: ROLE_RANK.FUNCTIONAL,
           allowedModules: null,
@@ -254,7 +248,7 @@ describe("assertPermissionsGrantable — rank enforcement (rule 2)", () => {
   it("skips rank check when bestRank is absent (backward compat)", () => {
     expect(() =>
       assertPermissionsGrantable(
-        { isOrgOwner: false, isPlatformAdmin: false, grantable: crmGrant },
+        { isOrgOwner: false, grantable: crmGrant },
         ["crm:leads:view"],
         { rank: ROLE_RANK.ORG_ADMIN, moduleKey: null },
         CRM_META,
@@ -271,7 +265,6 @@ describe("assertPermissionsGrantable — peer Module Admin exception (rule 4)", 
       assertPermissionsGrantable(
         {
           isOrgOwner: false,
-          isPlatformAdmin: false,
           grantable: hrGrant,
           bestRank: ROLE_RANK.MODULE_ADMIN,
           allowedModules: new Set(["hr"]),
@@ -288,7 +281,6 @@ describe("assertPermissionsGrantable — peer Module Admin exception (rule 4)", 
       assertPermissionsGrantable(
         {
           isOrgOwner: false,
-          isPlatformAdmin: false,
           grantable: hrGrant,
           bestRank: ROLE_RANK.MODULE_ADMIN,
           allowedModules: new Set(["hr"]),
@@ -305,7 +297,6 @@ describe("assertPermissionsGrantable — peer Module Admin exception (rule 4)", 
       assertPermissionsGrantable(
         {
           isOrgOwner: false,
-          isPlatformAdmin: false,
           grantable: hrGrant,
           bestRank: ROLE_RANK.MODULE_ADMIN,
           allowedModules: null,
@@ -326,7 +317,6 @@ describe("assertPermissionsGrantable — module-boundary enforcement (rule 3)", 
       assertPermissionsGrantable(
         {
           isOrgOwner: false,
-          isPlatformAdmin: false,
           grantable: hrGrant,
           bestRank: ROLE_RANK.MODULE_ADMIN,
           allowedModules: new Set(["hr"]),
@@ -343,7 +333,6 @@ describe("assertPermissionsGrantable — module-boundary enforcement (rule 3)", 
       assertPermissionsGrantable(
         {
           isOrgOwner: false,
-          isPlatformAdmin: false,
           grantable: hrGrant,
           bestRank: ROLE_RANK.MODULE_ADMIN,
           allowedModules: new Set(["hr"]),
@@ -360,7 +349,6 @@ describe("assertPermissionsGrantable — module-boundary enforcement (rule 3)", 
       assertPermissionsGrantable(
         {
           isOrgOwner: false,
-          isPlatformAdmin: false,
           grantable: hrGrant,
           bestRank: ROLE_RANK.MODULE_ADMIN,
           allowedModules: new Set(["hr"]),
@@ -375,7 +363,7 @@ describe("assertPermissionsGrantable — module-boundary enforcement (rule 3)", 
   it("skips module-boundary check when allowedModules is undefined (backward compat)", () => {
     expect(() =>
       assertPermissionsGrantable(
-        { isOrgOwner: false, isPlatformAdmin: false, grantable: hrGrant },
+        { isOrgOwner: false, grantable: hrGrant },
         ["crm:leads:view", "hr:employees:view"],
         { rank: ROLE_RANK.MODULE_CUSTOM, moduleKey: null },
         MIXED_META,
@@ -388,7 +376,6 @@ describe("assertPermissionsGrantable — module-boundary enforcement (rule 3)", 
       assertPermissionsGrantable(
         {
           isOrgOwner: false,
-          isPlatformAdmin: false,
           grantable: hrGrant,
           bestRank: ROLE_RANK.ORG_ADMIN,
           allowedModules: null,
@@ -405,7 +392,6 @@ describe("assertPermissionsGrantable — module-boundary enforcement (rule 3)", 
       assertPermissionsGrantable(
         {
           isOrgOwner: false,
-          isPlatformAdmin: false,
           grantable: hrGrant,
           bestRank: ROLE_RANK.MODULE_ADMIN,
           allowedModules: new Set(["hr", "crm"]),

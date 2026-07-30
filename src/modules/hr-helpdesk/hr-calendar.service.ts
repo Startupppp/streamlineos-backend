@@ -68,7 +68,7 @@ export class HrCalendarService {
       "INTERVIEW",
     ];
 
-    const isAdmin = user.isOrgOwner || user.isPlatformAdmin || user.permissions.includes("hr:helpdesk:manage");
+    const isAdmin = user.isOrgOwner || user.permissions.includes("hr:helpdesk:manage");
     const canSeeTravel = isAdmin || user.permissions.includes("hr:travel:view");
     const canSeeInterviews = isAdmin || user.permissions.includes("hr:interviews:view");
 

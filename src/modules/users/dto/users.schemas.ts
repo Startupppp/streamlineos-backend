@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ORG_MEMBER_ROLES } from "../../../common/rbac/org-roles";
+import { ORG_MEMBER_ROLES, ORG_MEMBER_ROLE_VALUES} from "../../../common/rbac/org-roles";
 
 export const listUsersSchema = z.object({
   page: z.coerce.number().int().positive().default(1),
@@ -57,7 +57,7 @@ const inviteEmailSchema = z
 
 export const inviteUserSchema = z.object({
   email: inviteEmailSchema,
-  role: z.string().default(ORG_MEMBER_ROLES.MEMBER),
+  role: z.enum(ORG_MEMBER_ROLE_VALUES).default(ORG_MEMBER_ROLES.MEMBER),
 });
 export type InviteUserInput = z.infer<typeof inviteUserSchema>;
 

@@ -106,7 +106,12 @@ export class UsersController {
     @Body(new ZodValidationPipe(inviteUserSchema)) body: InviteUserInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.invitations.invite(u.orgId, u.userId, body.email, body.role);
+    return this.invitations.invite(
+      u.orgId,
+      { userId: u.userId, isOrgOwner: u.isOrgOwner, },
+      body.email,
+      body.role,
+    );
   }
 
   @RequirePermission("hr:employees:create")

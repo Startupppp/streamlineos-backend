@@ -231,11 +231,11 @@ export class SalesService {
 
   async createQuota(
     orgId: string,
-    actor: { isOrgOwner: boolean; isPlatformAdmin: boolean; permissions: string[] },
+    actor: { isOrgOwner: boolean; permissions: string[] },
     setById: string,
     input: QuotaCreateInput,
   ) {
-    if (!actor.isOrgOwner && !actor.isPlatformAdmin && !actor.permissions.includes("crm:targets:manage")) {
+    if (!actor.isOrgOwner && !actor.permissions.includes("crm:targets:manage")) {
       return { error: "forbidden", message: "Only managers can set quotas" } as SalesForbidden;
     }
 

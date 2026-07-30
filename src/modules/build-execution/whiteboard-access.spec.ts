@@ -9,7 +9,7 @@ const projectBoardByOther = { createdBy: ADMIN_ID, visibility: "project" as cons
 const privateBoard = { createdBy: ADMIN_ID, visibility: "private" as const };
 const publicBoard = { createdBy: ADMIN_ID, visibility: "public" as const };
 
-const regularUser = { userId: MEMBER_ID, isOrgOwner: false, isPlatformAdmin: false };
+const regularUser = { userId: MEMBER_ID, isOrgOwner: false};
 
 describe("resolveWhiteboardAccess", () => {
   describe("admin/owner bypass", () => {
@@ -18,7 +18,7 @@ describe("resolveWhiteboardAccess", () => {
         resolveWhiteboardAccess({
           board: privateBoard,
           shareRole: null,
-          user: { userId: MEMBER_ID, isOrgOwner: true, isPlatformAdmin: false },
+          user: { userId: MEMBER_ID, isOrgOwner: true},
           hasManagePermission: false,
         }),
       ).toBe("manage");
@@ -29,7 +29,7 @@ describe("resolveWhiteboardAccess", () => {
         resolveWhiteboardAccess({
           board: privateBoard,
           shareRole: null,
-          user: { userId: MEMBER_ID, isOrgOwner: false, isPlatformAdmin: true },
+          user: { userId: MEMBER_ID, isOrgOwner: false},
           hasManagePermission: false,
         }),
       ).toBe("manage");
@@ -40,7 +40,7 @@ describe("resolveWhiteboardAccess", () => {
         resolveWhiteboardAccess({
           board: projectBoardByCreator,
           shareRole: null,
-          user: { userId: CREATOR_ID, isOrgOwner: false, isPlatformAdmin: false },
+          user: { userId: CREATOR_ID, isOrgOwner: false},
           hasManagePermission: false,
         }),
       ).toBe("manage");
@@ -51,7 +51,7 @@ describe("resolveWhiteboardAccess", () => {
         resolveWhiteboardAccess({
           board: { createdBy: MEMBER_ID, visibility: "private" },
           shareRole: null,
-          user: { userId: MEMBER_ID, isOrgOwner: false, isPlatformAdmin: false },
+          user: { userId: MEMBER_ID, isOrgOwner: false},
           hasManagePermission: false,
         }),
       ).toBe("manage");

@@ -7,7 +7,6 @@ function makeUser(over: Partial<CurrentUserContext>): CurrentUserContext {
     orgId: "o1",
     role: "member",
     isOrgOwner: false,
-    isPlatformAdmin: false,
     permissions: [],
     enabledModules: ["kb"],
     ...over,
@@ -19,10 +18,6 @@ describe("reviewerCanSeeAllReviews", () => {
     expect(reviewerCanSeeAllReviews(makeUser({ permissions: ["kb:reviews:manage"] }))).toBe(true);
   });
 
-  it("is true for org owners and platform admins", () => {
-    expect(reviewerCanSeeAllReviews(makeUser({ isOrgOwner: true }))).toBe(true);
-    expect(reviewerCanSeeAllReviews(makeUser({ isPlatformAdmin: true }))).toBe(true);
-  });
 
   it("is false for a plain kb:reviews:view holder", () => {
     expect(reviewerCanSeeAllReviews(makeUser({ permissions: ["kb:reviews:view"] }))).toBe(false);

@@ -54,14 +54,14 @@ export class SettingsService {
   }
 
   getAiUsage(u: CurrentUserContext) {
-    if (!(u.isOrgOwner || u.isPlatformAdmin)) {
+    if (!u.isOrgOwner) {
       throw new ForbiddenException("Forbidden");
     }
     return queryAiUsage(this.db, u.orgId);
   }
 
   async listApiKeys(u: CurrentUserContext) {
-    if (!(u.isOrgOwner || u.isPlatformAdmin)) {
+    if (!u.isOrgOwner) {
       throw new ForbiddenException("Only admins can manage API keys.");
     }
     return this.db.query.apiKeys.findMany({
@@ -73,7 +73,7 @@ export class SettingsService {
   }
 
   async createApiKey(u: CurrentUserContext, input: CreateApiKeyInput) {
-    if (!(u.isOrgOwner || u.isPlatformAdmin)) {
+    if (!u.isOrgOwner) {
       throw new ForbiddenException("Only admins can create API keys.");
     }
 
@@ -104,7 +104,7 @@ export class SettingsService {
   }
 
   async revokeApiKey(u: CurrentUserContext, keyId: string) {
-    if (!(u.isOrgOwner || u.isPlatformAdmin)) {
+    if (!u.isOrgOwner) {
       throw new ForbiddenException("Only admins can revoke API keys.");
     }
 
@@ -332,7 +332,7 @@ export class SettingsService {
   }
 
   async updateFeatureFlag(u: CurrentUserContext, input: FeatureFlagInput) {
-    if (!(u.isOrgOwner || u.isPlatformAdmin)) {
+    if (!u.isOrgOwner) {
       throw new ForbiddenException("Forbidden");
     }
 
@@ -454,7 +454,7 @@ export class SettingsService {
   }
 
   async updateUserRole(u: CurrentUserContext, targetUserId: string, role: string) {
-    if (!(u.isOrgOwner || u.isPlatformAdmin)) {
+    if (!u.isOrgOwner) {
       throw new ForbiddenException("Only the Org Owner or a Platform Admin can change member roles");
     }
 

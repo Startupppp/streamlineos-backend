@@ -9,7 +9,6 @@ type ResolveInput = {
   user: {
     userId: string;
     isOrgOwner: boolean;
-    isPlatformAdmin: boolean;
   };
   hasManagePermission: boolean;
 };
@@ -17,7 +16,7 @@ type ResolveInput = {
 export function resolveWhiteboardAccess(input: ResolveInput): WhiteboardAccessLevel {
   const { board, shareRole, user, hasManagePermission } = input;
 
-  if (user.isOrgOwner || user.isPlatformAdmin || board.createdBy === user.userId) {
+  if (user.isOrgOwner || board.createdBy === user.userId) {
     return "manage";
   }
 

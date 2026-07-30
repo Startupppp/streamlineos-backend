@@ -550,7 +550,6 @@ export class PaymentRunsService {
         permissions,
         enabledModules,
         plan: null,
-        isPlatformAdmin: false,
         isOrgOwner: false,
         sessionId: "",
       };

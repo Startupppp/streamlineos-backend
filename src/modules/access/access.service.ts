@@ -294,7 +294,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
   ): Promise<AccessSnapshot> {
     const version = await this.getPermissionsVersion(orgId);
 
-    if (ctx.isPlatformAdmin || ctx.isOrgOwner) {
+    if (ctx.isOrgOwner) {
       const scopes = allCatalogScopes();
       return {
         permissions: Object.keys(scopes),

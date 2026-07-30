@@ -108,7 +108,7 @@ export class OrganizationController {
     @Body(new ZodValidationPipe(createOrganizationSchema)) body: CreateOrganizationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+    if (!u.isOrgOwner) {
       throw new ForbiddenException("Forbidden");
     }
     return this.organization.createOrganization(u.userId, body);
@@ -141,7 +141,12 @@ export class OrganizationController {
     @Body(new ZodValidationPipe(inviteMemberSchema)) body: InviteMemberInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.invitations.invite(u.orgId, u.userId, body.email, body.role);
+    return this.invitations.invite(
+      u.orgId,
+      { userId: u.userId, isOrgOwner: u.isOrgOwner},
+      body.email,
+      body.role,
+    );
   }
 
   @UseGuards(PermissionGuard)
@@ -152,7 +157,7 @@ export class OrganizationController {
     @Body(new ZodValidationPipe(updateMemberRoleSchema)) body: UpdateMemberRoleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+    if (!u.isOrgOwner) {
       throw new ForbiddenException("Forbidden");
     }
     return this.organization.updateMemberRole(u.orgId, u.userId, memberId, body.role);
@@ -312,7 +317,7 @@ export class OrganizationController {
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   archiveOrg(@CurrentUser() u: CurrentUserContext) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner) throw new ForbiddenException("Forbidden");
     return this.organization.archiveOrg(u.orgId, u.userId);
   }
 
@@ -320,7 +325,7 @@ export class OrganizationController {
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   restoreOrg(@CurrentUser() u: CurrentUserContext) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner) throw new ForbiddenException("Forbidden");
     return this.organization.restoreOrg(u.orgId, u.userId);
   }
 
@@ -338,7 +343,7 @@ export class OrganizationController {
     @Body(new ZodValidationPipe(deleteOrgSchema)) body: DeleteOrgInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner) throw new ForbiddenException("Forbidden");
     return this.organization.deleteOrg(u.orgId, u.userId, body.confirmation);
   }
 
@@ -351,8 +356,8 @@ export class OrganizationController {
     @Body(new ZodValidationPipe(schedulePurgeSchema)) body: SchedulePurgeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) throw new ForbiddenException("Forbidden");
-    const targetOrgId = u.isPlatformAdmin ? orgId : u.orgId;
+    if (!u.isOrgOwner) throw new ForbiddenException("Forbidden");
+    const targetOrgId = u.orgId;
     return this.organization.schedulePurge(
       targetOrgId,
       u.userId,
@@ -369,8 +374,8 @@ export class OrganizationController {
     @Param("orgId") orgId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) throw new ForbiddenException("Forbidden");
-    const targetOrgId = u.isPlatformAdmin ? orgId : u.orgId;
+    if (!u.isOrgOwner) throw new ForbiddenException("Forbidden");
+    const targetOrgId = u.orgId;
     return this.organization.cancelPurge(targetOrgId, u.userId);
   }
 }

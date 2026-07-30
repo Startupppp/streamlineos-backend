@@ -20,7 +20,6 @@ function makeActor(overrides: Partial<CurrentUserContext> = {}): CurrentUserCont
     permissions: [],
     enabledModules: [],
     plan: null,
-    isPlatformAdmin: false,
     isOrgOwner: true,
     sessionId: "s-1",
     ...overrides,

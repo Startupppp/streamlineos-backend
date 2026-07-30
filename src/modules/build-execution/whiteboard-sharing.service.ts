@@ -79,7 +79,7 @@ export class WhiteboardSharingService {
     const access = resolveWhiteboardAccess({
       board: { createdBy: row.board.createdBy, visibility: row.board.visibility },
       shareRole: row.shareRole ?? null,
-      user: { userId: u.userId, isOrgOwner: u.isOrgOwner, isPlatformAdmin: u.isPlatformAdmin },
+      user: { userId: u.userId, isOrgOwner: u.isOrgOwner},
       hasManagePermission,
     });
 

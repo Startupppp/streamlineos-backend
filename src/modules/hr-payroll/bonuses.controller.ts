@@ -46,7 +46,7 @@ export class BonusesController {
     @CurrentUser() u: CurrentUserContext,
     @Query(new ZodValidationPipe(listPageQuerySchema)) query: ListPageQueryInput,
   ) {
-    let isAdmin = u.isOrgOwner || u.isPlatformAdmin;
+    let isAdmin = u.isOrgOwner;
     if (!isAdmin) {
       const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
       isAdmin = perms.has("hr:payroll:approve");

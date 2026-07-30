@@ -41,7 +41,7 @@ export class LoansController {
   ) {}
 
   private async isLoanAdmin(u: CurrentUserContext): Promise<boolean> {
-    if (u.isOrgOwner || u.isPlatformAdmin) return true;
+    if (u.isOrgOwner) return true;
     const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
     return perms.has("hr:expenses:approve");
   }

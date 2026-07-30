@@ -237,8 +237,7 @@ export class EntriesService {
     const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
     const canManage =
       perms.has("timesheets:approvals:manage") ||
-      u.isOrgOwner ||
-      u.isPlatformAdmin;
+      u.isOrgOwner;
     if (!canManage && entry.userId !== u.userId) {
       throw new ForbiddenException(
         "You can only edit your own time entries",
@@ -324,8 +323,7 @@ export class EntriesService {
     const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
     const canManage =
       perms.has("timesheets:approvals:manage") ||
-      u.isOrgOwner ||
-      u.isPlatformAdmin;
+      u.isOrgOwner;
     if (!canManage && entry.userId !== u.userId) {
       throw new ForbiddenException(
         "You can only void your own time entries",

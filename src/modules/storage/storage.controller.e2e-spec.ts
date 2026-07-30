@@ -57,7 +57,7 @@ describe("Storage auth/RBAC (e2e)", () => {
   ];
 
   it.each(vaultRoutes)("403 on %s %s for a non-privileged role", async (method, path) => {
-    const token = await signToken({ role: "SALES", isOrgOwner: false, isPlatformAdmin: false });
+    const token = await signToken({ role: "SALES", isOrgOwner: false});
     const res = await callRoute(method, path).set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toEqual({ error: "Forbidden" });

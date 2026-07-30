@@ -23,7 +23,6 @@ const SYSTEM_ACTOR: Omit<CurrentUserContext, "orgId"> = {
   permissions: [],
   enabledModules: [],
   plan: null,
-  isPlatformAdmin: true,
   isOrgOwner: true,
   sessionId: "git-webhook",
 };

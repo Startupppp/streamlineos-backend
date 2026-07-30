@@ -9,7 +9,7 @@ export async function resolveTicketsScope(
   access: AccessService,
   u: CurrentUserContext,
 ): Promise<DataScope> {
-  if (u.isPlatformAdmin || u.isOrgOwner) return "all";
+  if (u.isOrgOwner) return "all";
   if (!isScopable(TICKETS_PERMISSION)) return "all";
   const resolved = await access.resolveUserPermissions(u.orgId, u.userId);
   return resolved.get(TICKETS_PERMISSION) ?? "none";

@@ -17,7 +17,6 @@ function actor(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext 
     permissions: [],
     enabledModules: [],
     plan: null,
-    isPlatformAdmin: false,
     isOrgOwner: false,
     sessionId: "s1",
     ...overrides,
@@ -131,14 +130,6 @@ describe("ModuleAccessGroupsService.createGroup — rank check", () => {
     expect(resolveUserPermissions).not.toHaveBeenCalled();
   });
 
-  it("allows a platform admin to create a group, bypassing rank check entirely", async () => {
-    const { svc, resolveUserPermissions } = await buildSvc([], MODULE_PERM_MAP);
-
-    const result = await svc.createGroup(actor({ isPlatformAdmin: true }), "hr", { name: "Admins" });
-
-    expect(result).toBeDefined();
-    expect(resolveUserPermissions).not.toHaveBeenCalled();
-  });
 
   it("allows an org admin (holds settings:rbac:manage) to create a group without querying rank", async () => {
     const { svc, mockDb } = await buildSvc([], ORG_ADMIN_PERM_MAP);

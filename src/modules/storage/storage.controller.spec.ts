@@ -11,7 +11,6 @@ function ctx(orgId: string): CurrentUserContext {
     permissions: [],
     enabledModules: ["HR"],
     plan: "PROFESSIONAL",
-    isPlatformAdmin: false,
     isOrgOwner: false,
     sessionId: "sess-1",
   };

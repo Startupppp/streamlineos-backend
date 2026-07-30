@@ -127,7 +127,7 @@ export class WhiteboardsService {
     const access = resolveWhiteboardAccess({
       board: { createdBy: row.board.createdBy, visibility: row.board.visibility },
       shareRole: row.shareRole ?? null,
-      user: { userId: u.userId, isOrgOwner: u.isOrgOwner, isPlatformAdmin: u.isPlatformAdmin },
+      user: { userId: u.userId, isOrgOwner: u.isOrgOwner},
       hasManagePermission: hasManage,
     });
 
@@ -138,7 +138,7 @@ export class WhiteboardsService {
     await assertProject(this.db, u.orgId, projectId);
 
     const visibilityFilter =
-      u.isOrgOwner || u.isPlatformAdmin
+      u.isOrgOwner
         ? undefined
         : or(
             ne(projectWhiteboards.visibility, "private"),
@@ -184,7 +184,7 @@ export class WhiteboardsService {
 
   async listAllWhiteboards(u: CurrentUserContext) {
     const visibilityFilter =
-      u.isOrgOwner || u.isPlatformAdmin
+      u.isOrgOwner
         ? undefined
         : or(
             ne(projectWhiteboards.visibility, "private"),

@@ -1,3 +1,4 @@
+import { ORG_MEMBER_ROLE_VALUES } from "../../../common/rbac/org-roles";
 import { z } from "zod";
 
 export const createOrganizationSchema = z.object({
@@ -92,11 +93,11 @@ export const securitySettingsSchema = z.object({
 
 export const inviteMemberSchema = z.object({
   email: z.string().email(),
-  role: z.string().min(1),
+  role: z.enum(ORG_MEMBER_ROLE_VALUES),
 });
 
 export const updateMemberRoleSchema = z.object({
-  role: z.string().min(1),
+  role: z.enum(ORG_MEMBER_ROLE_VALUES),
 });
 
 export const acceptInvitationSchema = z.object({

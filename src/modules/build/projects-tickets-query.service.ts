@@ -67,7 +67,6 @@ export class ProjectsTicketsQueryService {
       userId: string;
       userProjectRole: string | null;
       isOrgOwner: boolean;
-      isPlatformAdmin: boolean;
       ticketId: number;
     },
     prefetched?: {
@@ -101,7 +100,7 @@ export class ProjectsTicketsQueryService {
       throw new BadRequestException(`Transition from '${fromText}' to '${toText}' is not allowed by this project's workflow.`);
     }
 
-    const bypassPrivilege = context.isOrgOwner || context.isPlatformAdmin;
+    const bypassPrivilege = context.isOrgOwner;
 
     for (const transition of matchingTransitions) {
       if (transition.requiresApproval && !bypassPrivilege) {
@@ -197,7 +196,7 @@ export class ProjectsTicketsQueryService {
   }
 
   async bulkUpdate(u: CurrentUserContext, projectId: number, body: BulkUpdateInput) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+    if (!u.isOrgOwner) {
       const member = await this.db.query.projectMembers.findFirst({
         where: and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, u.userId)),
       });
@@ -270,7 +269,7 @@ export class ProjectsTicketsQueryService {
     orgId: string,
     projectId: number,
     body: ReorderInput,
-    context: { userId: string; isOrgOwner: boolean; isPlatformAdmin: boolean },
+    context: { userId: string; isOrgOwner: boolean },
   ) {
     if (body.items.length === 0) return { success: true };
 
@@ -310,7 +309,6 @@ export class ProjectsTicketsQueryService {
           userId: context.userId,
           userProjectRole,
           isOrgOwner: context.isOrgOwner,
-          isPlatformAdmin: context.isPlatformAdmin,
           ticketId: item.id,
         }, prefetched);
       }

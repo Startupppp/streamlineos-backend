@@ -50,7 +50,7 @@ export class OnboardingViewsController {
     @Query(new ZodValidationPipe(listOnboardingDocsQuerySchema)) query: ListOnboardingDocsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const canManage = u.isOrgOwner || u.isPlatformAdmin || (u.permissions ?? []).includes("hr:onboarding:manage");
+    const canManage = u.isOrgOwner || (u.permissions ?? []).includes("hr:onboarding:manage");
     return this.onboardingViews.list(u.orgId, u.userId, canManage, query);
   }
 
@@ -61,7 +61,7 @@ export class OnboardingViewsController {
     @Body(new ZodValidationPipe(createOnboardingDocSchema)) body: CreateOnboardingDocInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const canManage = u.isOrgOwner || u.isPlatformAdmin || (u.permissions ?? []).includes("hr:onboarding:manage");
+    const canManage = u.isOrgOwner || (u.permissions ?? []).includes("hr:onboarding:manage");
     return this.onboardingViews.create(u.orgId, u.userId, canManage, body);
   }
 

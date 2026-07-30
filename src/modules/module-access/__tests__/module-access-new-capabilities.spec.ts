@@ -21,7 +21,6 @@ function makeActor(overrides: Partial<CurrentUserContext> = {}): CurrentUserCont
     permissions: [],
     enabledModules: [],
     plan: null,
-    isPlatformAdmin: false,
     isOrgOwner: false,
     sessionId: "s-1",
     ...overrides,
@@ -169,7 +168,7 @@ describe("ModuleAccessGroupsService.listMembers — access guard", () => {
     const groupsSvc = m.get(ModuleAccessGroupsService);
 
     await expect(
-      groupsSvc.listMembers(makeActor({ isOrgOwner: false, isPlatformAdmin: false }), "hr", {
+      groupsSvc.listMembers(makeActor({ isOrgOwner: false}), "hr", {
         page: 1,
         pageSize: 20,
       }),
@@ -237,7 +236,7 @@ describe("ModuleAccessGroupsService.addMember — self-assignment block", () => 
 
     await expect(
       groupsSvc.addMember(
-        makeActor({ userId: "u-actor", isOrgOwner: false, isPlatformAdmin: false }),
+        makeActor({ userId: "u-actor", isOrgOwner: false}),
         "hr",
         { userId: "u-actor", groupIds: [] },
       ),

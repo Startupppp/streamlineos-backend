@@ -97,7 +97,6 @@ function makeUser(orgId = ORG_A, plan = "PROFESSIONAL") {
     permissions: [],
     enabledModules: [],
     plan,
-    isPlatformAdmin: false,
     isOrgOwner: false,
     sessionId: "sess_1",
   };

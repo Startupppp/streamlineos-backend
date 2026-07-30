@@ -124,7 +124,7 @@ export class ModuleAccessGroupsService {
     action: "view" | "manage",
   ): Promise<void> {
     this.assertKnownModule(moduleKey);
-    if (actor.isOrgOwner || actor.isPlatformAdmin) return;
+    if (actor.isOrgOwner) return;
     const resolved = await this.access.resolveUserPermissions(actor.orgId, actor.userId);
     const isOrgAdmin = (resolved.get(ORG_ADMIN_KEY) ?? "none") !== "none";
     if (isOrgAdmin) return;
@@ -256,7 +256,7 @@ export class ModuleAccessGroupsService {
   ): Promise<ModuleRoleGroup> {
     await this.assertAccess(actor, moduleKey, "manage");
 
-    if (!actor.isOrgOwner && !actor.isPlatformAdmin) {
+    if (!actor.isOrgOwner) {
       const resolved = await this.access.resolveUserPermissions(actor.orgId, actor.userId);
       const isOrgAdmin = (resolved.get(ORG_ADMIN_KEY) ?? "none") !== "none";
       if (!isOrgAdmin) {
@@ -264,7 +264,6 @@ export class ModuleAccessGroupsService {
         assertPermissionsGrantable(
           {
             isOrgOwner: false,
-            isPlatformAdmin: false,
             grantable: toGrantableSet(resolved),
             bestRank,
             allowedModules,
@@ -478,13 +477,13 @@ export class ModuleAccessGroupsService {
     await this.assertAccess(actor, moduleKey, "manage");
     await this.assertGroupBelongsToModule(actor.orgId, moduleKey, groupId);
 
-    if (!actor.isOrgOwner && !actor.isPlatformAdmin && input.userId === actor.userId) {
+    if (!actor.isOrgOwner && input.userId === actor.userId) {
       throw new ForbiddenException("You cannot add yourself to a module group");
     }
 
     const ownerUserId = await this.resolveModuleOwnerUserId(actor.orgId, moduleKey);
     if (ownerUserId !== null && input.userId === ownerUserId) {
-      if (!actor.isOrgOwner && !actor.isPlatformAdmin && actor.userId !== ownerUserId) {
+      if (!actor.isOrgOwner && actor.userId !== ownerUserId) {
         throw new ForbiddenException(
           "Only the module owner, an org owner, or a platform admin may modify the module owner's group memberships",
         );
@@ -536,7 +535,7 @@ export class ModuleAccessGroupsService {
 
     const ownerUserId = await this.resolveModuleOwnerUserId(actor.orgId, moduleKey);
     if (ownerUserId !== null && userId === ownerUserId) {
-      if (!actor.isOrgOwner && !actor.isPlatformAdmin && actor.userId !== ownerUserId) {
+      if (!actor.isOrgOwner && actor.userId !== ownerUserId) {
         throw new ForbiddenException(
           "Only the module owner, an org owner, or a platform admin may modify the module owner's group memberships",
         );
@@ -873,13 +872,13 @@ export class ModuleAccessGroupsService {
   ): Promise<{ success: true }> {
     await this.assertAccess(actor, moduleKey, "manage");
 
-    if (!actor.isOrgOwner && !actor.isPlatformAdmin && input.userId === actor.userId) {
+    if (!actor.isOrgOwner && input.userId === actor.userId) {
       throw new ForbiddenException("You cannot add yourself to a module group");
     }
 
     const ownerUserId = await this.resolveModuleOwnerUserId(actor.orgId, moduleKey);
     if (ownerUserId !== null && input.userId === ownerUserId) {
-      if (!actor.isOrgOwner && !actor.isPlatformAdmin && actor.userId !== ownerUserId) {
+      if (!actor.isOrgOwner && actor.userId !== ownerUserId) {
         throw new ForbiddenException(
           "Only the module owner, an org owner, or a platform admin may modify the module owner's group memberships",
         );
@@ -949,13 +948,13 @@ export class ModuleAccessGroupsService {
   ): Promise<{ success: true }> {
     await this.assertAccess(actor, moduleKey, "manage");
 
-    if (!actor.isOrgOwner && !actor.isPlatformAdmin && userId === actor.userId) {
+    if (!actor.isOrgOwner && userId === actor.userId) {
       throw new ForbiddenException("You cannot modify your own module group memberships");
     }
 
     const ownerUserId = await this.resolveModuleOwnerUserId(actor.orgId, moduleKey);
     if (ownerUserId !== null && userId === ownerUserId) {
-      if (!actor.isOrgOwner && !actor.isPlatformAdmin && actor.userId !== ownerUserId) {
+      if (!actor.isOrgOwner && actor.userId !== ownerUserId) {
         throw new ForbiddenException(
           "Only the module owner, an org owner, or a platform admin may modify the module owner's group memberships",
         );
@@ -1110,7 +1109,7 @@ export class ModuleAccessGroupsService {
 
     if (!transfer) throw new NotFoundException("No pending transfer found for this module");
 
-    if (!actor.isOrgOwner && !actor.isPlatformAdmin) {
+    if (!actor.isOrgOwner) {
       const actorMembership = await this.db.query.organizationMembers.findFirst({
         where: and(
           eq(organizationMembers.orgId, actor.orgId),

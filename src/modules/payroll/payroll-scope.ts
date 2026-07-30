@@ -9,7 +9,7 @@ export async function resolvePayrollRunsViewScope(
   access: AccessService,
   u: CurrentUserContext,
 ): Promise<DataScope> {
-  if (u.isPlatformAdmin || u.isOrgOwner) return "all";
+  if (u.isOrgOwner) return "all";
   if (!isScopable(PAYROLL_RUNS_VIEW_PERMISSION)) return "all";
   const resolved = await access.resolveUserPermissions(u.orgId, u.userId);
   return resolved.get(PAYROLL_RUNS_VIEW_PERMISSION) ?? "none";

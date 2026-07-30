@@ -213,7 +213,7 @@ export class ProjectsTicketCommentsService {
     if (!comment) throw new ProjectsCommentNotFoundException();
 
     const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    const canManage = u.isOrgOwner || u.isPlatformAdmin || perms.has("build:manage");
+    const canManage = u.isOrgOwner || perms.has("build:manage");
     if (comment.userId !== u.userId && !canManage) {
       throw new ForbiddenException("Only the comment author or a project manager can delete this comment");
     }

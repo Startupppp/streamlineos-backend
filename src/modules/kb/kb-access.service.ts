@@ -24,7 +24,7 @@ export class KbAccessService {
 
   isAdmin(user: CurrentUserContext): boolean {
     return (
-      user.isPlatformAdmin || user.isOrgOwner || user.permissions.includes(KB_MANAGE_SPACES)
+      user.isOrgOwner || user.permissions.includes(KB_MANAGE_SPACES)
     );
   }
 

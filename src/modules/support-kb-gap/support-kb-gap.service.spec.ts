@@ -341,7 +341,6 @@ describe("SupportKbGapService", () => {
         permissions: ["kb:articles:create"],
         enabledModules: ["kb"],
         plan: "PAID",
-        isPlatformAdmin: false,
         isOrgOwner: false,
         sessionId: "sess-abc",
       };

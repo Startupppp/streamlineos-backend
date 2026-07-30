@@ -124,7 +124,7 @@ export class HrTemplatesController {
   ) {
     if (body.includeSensitive) {
       const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!u.isOrgOwner && !u.isPlatformAdmin && !perms.has("hr:sensitive:view")) {
+      if (!u.isOrgOwner && !perms.has("hr:sensitive:view")) {
         throw new ForbiddenException("hr:sensitive:view permission required to include sensitive fields");
       }
     }

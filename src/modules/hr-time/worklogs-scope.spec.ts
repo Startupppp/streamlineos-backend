@@ -23,7 +23,6 @@ function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
     permissions: [],
     enabledModules: [],
     plan: null,
-    isPlatformAdmin: false,
     isOrgOwner: false,
     sessionId: "s1",
     ...overrides,
@@ -36,11 +35,6 @@ describe("resolveWorkLogsScope", () => {
     (isScopable as jest.Mock).mockReturnValue(true);
   });
 
-  it("returns all when isPlatformAdmin is true", async () => {
-    const result = await resolveWorkLogsScope(mockAccess, makeUser({ isPlatformAdmin: true }));
-    expect(result).toBe("all");
-    expect(mockAccess.resolveUserPermissions).not.toHaveBeenCalled();
-  });
 
   it("returns all when isOrgOwner is true", async () => {
     const result = await resolveWorkLogsScope(mockAccess, makeUser({ isOrgOwner: true }));

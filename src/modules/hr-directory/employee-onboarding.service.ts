@@ -29,6 +29,7 @@ import { formatDateOnly } from "../../common/date";
 import { seedEmployeeSalaryProfile } from "./salary-profile-seed.helper";
 import type { OnboardEmployeeInput, UpdateEmployeeInput } from "./dto/hr-directory.schemas";
 import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
+import { syncStructuralRoleAssignment } from "../../common/rbac/sync-structural-role";
 
 type BankDetailsInput = NonNullable<UpdateEmployeeInput["bankDetails"]> & {
   pfUanNumber?: string;
@@ -127,7 +128,13 @@ export class EmployeeOnboardingService {
         }
 
         await tx.update(users).set(updateData).where(eq(users.id, existingUser.id));
-        await tx.insert(organizationMembers).values({ orgId: actor.orgId, userId: existingUser.id, role });
+        const insertedMembership = await tx
+          .insert(organizationMembers)
+          .values({ orgId: actor.orgId, userId: existingUser.id, role })
+          .returning({ id: organizationMembers.id });
+        if (insertedMembership[0]) {
+          await syncStructuralRoleAssignment(tx, actor.orgId, insertedMembership[0].id, role);
+        }
 
         if (body.monthlySalary && body.monthlySalary > 0) {
           const effectiveFrom = body.joiningDate
@@ -227,7 +234,13 @@ export class EmployeeOnboardingService {
 
       if (!created) throw new InternalServerErrorException("Failed to create user record.");
 
-      await tx.insert(organizationMembers).values({ orgId: actor.orgId, userId: created.id, role });
+      const createdMembership = await tx
+        .insert(organizationMembers)
+        .values({ orgId: actor.orgId, userId: created.id, role })
+        .returning({ id: organizationMembers.id });
+      if (createdMembership[0]) 
+        await syncStructuralRoleAssignment(tx, actor.orgId, createdMembership[0].id, role);
+      
 
       if (body.monthlySalary && body.monthlySalary > 0) {
         const effectiveFrom = body.joiningDate

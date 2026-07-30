@@ -59,7 +59,6 @@ const makeUser = (overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
   permissions: [],
   enabledModules: [],
   plan: null,
-  isPlatformAdmin: false,
   isOrgOwner: false,
   sessionId: "sess-1",
   ...overrides,

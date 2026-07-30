@@ -83,7 +83,7 @@ export class DelegationsController {
     @Param("proxyId", ParseIntPipe) proxyId: number,
     @Req() req: Request,
   ) {
-    const isAdmin = user.isOrgOwner || user.isPlatformAdmin;
+    const isAdmin = user.isOrgOwner;
     await this.service.revoke(user.orgId, proxyId, user.userId, isAdmin, req.ip);
   }
 }

@@ -95,7 +95,7 @@ export class RolePermissionService {
     requestedKeys: readonly string[],
     target?: RoleGrantTarget,
   ): Promise<void> {
-    if (actor.isOrgOwner || actor.isPlatformAdmin) return;
+    if (actor.isOrgOwner) return;
     const [resolved, { bestRank, allowedModules }] = await Promise.all([
       this.access.resolveUserPermissions(actor.orgId, actor.userId),
       this.resolveActorRankContext(actor.orgId, actor.userId),
@@ -104,7 +104,6 @@ export class RolePermissionService {
     assertPermissionsGrantable(
       {
         isOrgOwner: false,
-        isPlatformAdmin: false,
         grantable: toGrantableSet(resolved),
         bestRank,
         allowedModules,

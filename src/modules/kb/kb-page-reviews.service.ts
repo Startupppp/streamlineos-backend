@@ -26,7 +26,6 @@ type ReviewWithContext = ReviewRow & {
 export function reviewerCanSeeAllReviews(user: CurrentUserContext): boolean {
   return (
     user.isOrgOwner ||
-    user.isPlatformAdmin ||
     user.permissions.includes("kb:reviews:manage")
   );
 }

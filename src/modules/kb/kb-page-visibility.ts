@@ -7,7 +7,7 @@ export function pageVisibleTo(
   user: CurrentUserContext,
   accessibleProjectIds?: number[],
 ): SQL<unknown> {
-  if (user.isOrgOwner || user.isPlatformAdmin) {
+  if (user.isOrgOwner) {
     return eq(kbPages.orgId, user.orgId);
   }
   const userId = user.userId;

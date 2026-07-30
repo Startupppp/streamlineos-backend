@@ -62,7 +62,7 @@ export class ProjectsMembersService {
     u: CurrentUserContext,
     projectId: number,
   ): Promise<void> {
-    if (u.isOrgOwner || u.isPlatformAdmin) return;
+    if (u.isOrgOwner) return;
     const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
     if (perms.has("build:manage")) return;
     const project = await this.db.query.projects.findFirst({
@@ -91,7 +91,7 @@ export class ProjectsMembersService {
     u: CurrentUserContext,
     projectId: number,
   ): Promise<void> {
-    if (u.isOrgOwner || u.isPlatformAdmin) return;
+    if (u.isOrgOwner) return;
     const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
     if (perms.has("build:manage")) return;
     const project = await this.db.query.projects.findFirst({

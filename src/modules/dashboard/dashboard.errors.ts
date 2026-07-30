@@ -3,7 +3,6 @@ export interface DashboardActor {
   role: string;
   permissions: string[];
   enabledModules: string[];
-  isPlatformAdmin: boolean;
   isOrgOwner: boolean;
 }
 

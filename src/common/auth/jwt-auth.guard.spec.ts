@@ -88,7 +88,7 @@ describe("JwtAuthGuard", () => {
   it("rejects a token with an empty-string orgId for a non-platform-admin with 403", async () => {
     const { SignJWT } = await import("jose");
     const secret = process.env.BACKEND_JWT_SECRET ?? "x".repeat(44);
-    const token = await new SignJWT({ sub: "u", orgId: "", sessionId: "sess_1", isPlatformAdmin: false })
+    const token = await new SignJWT({ sub: "u", orgId: "", sessionId: "sess_1"})
       .setProtectedHeader({ alg: "HS256" })
       .setExpirationTime("10m")
       .sign(new TextEncoder().encode(secret));
@@ -97,13 +97,4 @@ describe("JwtAuthGuard", () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it("accepts a platform-admin token with no orgId when DB confirms platform admin", async () => {
-    mockDb.query.users.findFirst.mockResolvedValueOnce({ isPlatformAdmin: true });
-    const token = await signToken({ sub: "user_1", orgId: null, sessionId: "sess_admin" });
-    const ctx = ctxWith({ authorization: `Bearer ${token}` });
-    await expect(guard.canActivate(ctx)).resolves.toBe(true);
-    const req = ctx.switchToHttp().getRequest<{ user: { isPlatformAdmin: boolean; orgId: string } }>();
-    expect(req.user.isPlatformAdmin).toBe(true);
-    expect(req.user.orgId).toBe("");
-  });
 });

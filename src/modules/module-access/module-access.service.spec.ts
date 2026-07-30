@@ -25,7 +25,6 @@ function actor(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext 
     permissions: [],
     enabledModules: [],
     plan: null,
-    isPlatformAdmin: false,
     isOrgOwner: false,
     sessionId: "s1",
     ...overrides,

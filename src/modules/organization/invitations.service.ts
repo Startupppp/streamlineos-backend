@@ -5,12 +5,17 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Logger,
 } from "@nestjs/common";
 import { randomUUID, randomBytes, createHash } from "node:crypto";
-import { and, count, desc, eq, gt, isNull, lt } from "drizzle-orm";
+import { and, count, desc, eq, gt, isNull, lt, inArray} from "drizzle-orm";
 import { addDays, addMinutes } from "date-fns";
 import { hashToken } from "../../common/security/token.util";
 import { DRIZZLE } from "../../db/drizzle.constants";
+import { AccessService } from "../access/access.service";
+import { assertInvitableRole } from "../../common/rbac/assert-invitable-role";
+import { ORG_ADMIN_PERMISSION_KEY } from "../../common/rbac/grantability";
+import { syncStructuralRoleAssignment } from "../../common/rbac/sync-structural-role";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
@@ -28,6 +33,11 @@ import {
 } from "../../db/schema";
 import type { AcceptInvitationInput } from "./dto/organization.schemas";
 
+export interface InviteActor {
+  userId: string;
+  isOrgOwner: boolean;
+}
+
 @Injectable()
 export class InvitationsService {
   constructor(
@@ -36,14 +46,39 @@ export class InvitationsService {
     private readonly cache: CacheService,
     private readonly email: EmailService,
     private readonly planLimits: PlanLimitsService,
+    private readonly access: AccessService,
   ) {}
+
+  private readonly logger = new Logger(InvitationsService.name);
+
+  private async assertMayInviteWithRole(
+    orgId: string,
+    actor: InviteActor,
+    role: string,
+  ): Promise<void> {
+    let isOrgAdmin = false;
+    if (!actor.isOrgOwner) {
+      const resolved = await this.access.resolveUserPermissions(orgId, actor.userId);
+      isOrgAdmin = (resolved.get(ORG_ADMIN_PERMISSION_KEY) ?? "none") !== "none";
+    }
+    assertInvitableRole(
+      {
+        isOrgOwner: actor.isOrgOwner,
+        isOrgAdmin,
+      },
+      role,
+    );
+  }
 
   async invite(
     orgId: string,
-    actorUserId: string,
+    actor: InviteActor,
     email: string,
     role: string,
   ): Promise<{ success: true; invitationId: string; organizationName: string; resent: boolean }> {
+    const actorUserId = actor.userId;
+    await this.assertMayInviteWithRole(orgId, actor, role);
+
     const existingUser = await this.db.query.users.findFirst({
       where: eq(users.email, email),
     });
@@ -120,7 +155,11 @@ export class InvitationsService {
       const { pendingInvitation, rawToken } = pendingResult;
       void this.email
         .sendInvitationEmail(email, rawToken, org?.name ?? "Your Organization")
-        .catch(() => {});
+        .catch((err: unknown) => {
+        this.logger.error(
+          `Invitation email delivery failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
 
       this.audit.log({
         action: "user.invitation.resent",
@@ -179,7 +218,11 @@ export class InvitationsService {
 
     void this.email
       .sendInvitationEmail(email, rawToken, org?.name ?? "Your Organization")
-      .catch(() => {});
+      .catch((err: unknown) => {
+        this.logger.error(
+          `Invitation email delivery failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
 
     this.audit.log({
       action: "user.invited",
@@ -361,6 +404,9 @@ export class InvitationsService {
           .onConflictDoNothing()
           .returning({ id: organizationMembers.id });
         const membershipId = inserted[0]?.id ?? null;
+        if (membershipId !== null) 
+          await syncStructuralRoleAssignment(tx, invitation.orgId, membershipId, invitation.role);
+        
         await tx
           .update(users)
           .set({ lastActiveOrgId: invitation.orgId })
@@ -434,6 +480,9 @@ export class InvitationsService {
         .onConflictDoNothing()
         .returning({ id: organizationMembers.id });
       const membershipId = inserted[0]?.id ?? null;
+      if (membershipId !== null) 
+        await syncStructuralRoleAssignment(tx, invitation.orgId, membershipId, invitation.role);
+      
       await tx
         .update(invitations)
         .set({
@@ -526,7 +575,11 @@ export class InvitationsService {
         org?.name ?? "Your Organization",
         inviterName,
       )
-      .catch(() => {});
+      .catch((err: unknown) => {
+        this.logger.error(
+          `Invitation email delivery failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
 
     this.audit.log({
       action: "user.invitation.resent",
@@ -549,7 +602,7 @@ export class InvitationsService {
       where: and(
         eq(invitations.id, invitationId),
         eq(invitations.orgId, orgId),
-        eq(invitations.status, "PENDING"),
+        inArray(invitations.status, ["PENDING", "EXPIRED"]),
         isNull(invitations.acceptedAt),
       ),
     });

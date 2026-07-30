@@ -141,7 +141,6 @@ export const users = pgTable("users", {
   }>(),
   totpSecret: text("totp_secret"),
   totpEnabled: boolean("totp_enabled").default(false).notNull(),
-  isPlatformAdmin: boolean("is_platform_admin").notNull().default(false),
   isProfilePictureRequired: boolean("is_profile_picture_required").default(false).notNull(),
   bio: text("bio"),
   linkedinUrl: text("linkedin_url"),

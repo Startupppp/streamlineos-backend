@@ -49,7 +49,6 @@ export class DashboardController {
       role: u.role,
       permissions: u.permissions,
       enabledModules: u.enabledModules,
-      isPlatformAdmin: u.isPlatformAdmin,
       isOrgOwner: u.isOrgOwner,
     };
   }

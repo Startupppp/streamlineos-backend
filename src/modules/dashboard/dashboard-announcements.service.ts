@@ -9,7 +9,7 @@ import { type DashboardActor, type DashboardForbidden } from "./dashboard.errors
 import { type CreateAnnouncementInput } from "./dto/dashboard.schemas";
 
 function canManageAnnouncements(actor: DashboardActor): boolean {
-  return actor.isOrgOwner || actor.isPlatformAdmin || actor.permissions.includes("settings:manage");
+  return actor.isOrgOwner || actor.permissions.includes("settings:manage");
 }
 
 @Injectable()

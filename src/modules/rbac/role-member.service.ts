@@ -170,7 +170,6 @@ export class RoleMemberService {
 
     if (
       !actor.isOrgOwner &&
-      !actor.isPlatformAdmin &&
       input.principalType === "user" &&
       input.principalId === actor.userId
     ) {

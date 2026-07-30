@@ -23,7 +23,6 @@ function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
     permissions: [],
     enabledModules: [],
     plan: null,
-    isPlatformAdmin: false,
     isOrgOwner: false,
     sessionId: "session-1",
     ...overrides,
@@ -41,15 +40,6 @@ describe("resolveAssetsScope", () => {
     jest.clearAllMocks();
   });
 
-  it("returns all when user is platform admin", async () => {
-    const access = makeAccess();
-    const result = await resolveAssetsScope(
-      access,
-      makeUser({ isPlatformAdmin: true }),
-    );
-    expect(result).toBe("all");
-    expect(access.resolveUserPermissions).not.toHaveBeenCalled();
-  });
 
   it("returns all when user is org owner", async () => {
     const access = makeAccess();

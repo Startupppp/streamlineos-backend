@@ -87,7 +87,7 @@ export class EngagementController {
     @Body() body: unknown,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const isManager = u.isOrgOwner || u.isPlatformAdmin;
+    const isManager = u.isOrgOwner;
     return this.engagement.createOrSubmitAssessment(
       u.orgId,
       u.userId,
@@ -143,7 +143,7 @@ export class EngagementController {
     @Body() body: unknown,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const isManager = u.isOrgOwner || u.isPlatformAdmin;
+    const isManager = u.isOrgOwner;
     return this.engagement.createOrRespondSurvey(
       u.orgId,
       u.userId,

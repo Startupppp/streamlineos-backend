@@ -140,7 +140,7 @@ export class ProjectsTicketsUpdateService {
     }
 
     const accessResult =
-      u.isOrgOwner || u.isPlatformAdmin
+      u.isOrgOwner
         ? { hasAccess: true, role: "OWNER" as string | null }
         : await this.read.checkProjectAccess(
             orgId,
@@ -184,7 +184,6 @@ export class ProjectsTicketsUpdateService {
             userId: actingUserId,
             userProjectRole: accessResult.role,
             isOrgOwner: u.isOrgOwner,
-            isPlatformAdmin: u.isPlatformAdmin,
             ticketId,
           },
         );

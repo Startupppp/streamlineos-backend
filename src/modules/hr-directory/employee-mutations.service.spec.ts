@@ -13,7 +13,6 @@ function ctx(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {
     permissions: ["hr:employees:manage"],
     enabledModules: ["HR"],
     plan: "PROFESSIONAL",
-    isPlatformAdmin: false,
     isOrgOwner: false,
     sessionId: "sess-1",
     ...overrides,

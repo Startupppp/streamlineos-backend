@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Inject, Injectable, NotFoundExc
 import { and, asc, count, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { DRIZZLE } from "../../db/drizzle.constants";
+import { syncStructuralRoleAssignment } from "../../common/rbac/sync-structural-role";
 import { type Db } from "../../db/drizzle.module";
 import {
   auditLogs,
@@ -40,7 +41,17 @@ export class UsersService {
         where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, existing.id)),
       });
       if (membership) throw new ConflictException("User is already a member of this organization");
-      await this.db.insert(organizationMembers).values({ userId: existing.id, orgId, role }).onConflictDoNothing();
+      await this.db.transaction(async (tx) => {
+        const inserted = await tx
+          .insert(organizationMembers)
+          .values({ userId: existing.id, orgId, role })
+          .onConflictDoNothing()
+          .returning({ id: organizationMembers.id });
+        const membershipId = inserted[0]?.id;
+        if (membershipId !== undefined) {
+          await syncStructuralRoleAssignment(tx, orgId, membershipId, role);
+        }
+      });
       return { userId: existing.id, created: false };
     }
 
@@ -67,7 +78,15 @@ export class UsersService {
         activatedAt: new Date(),
         isActive: true,
       });
-      await tx.insert(organizationMembers).values({ userId, orgId, role }).onConflictDoNothing();
+      const inserted = await tx
+        .insert(organizationMembers)
+        .values({ userId, orgId, role })
+        .onConflictDoNothing()
+        .returning({ id: organizationMembers.id });
+      const membershipId = inserted[0]?.id;
+      if (membershipId !== undefined) {
+        await syncStructuralRoleAssignment(tx, orgId, membershipId, role);
+      }
     });
 
     this.audit.log({
@@ -230,7 +249,6 @@ export class UsersService {
         archivedAt: users.archivedAt,
         createdAt: users.createdAt,
         updatedAt: users.updatedAt,
-        isPlatformAdmin: users.isPlatformAdmin,
         isProfilePictureRequired: users.isProfilePictureRequired,
         memberRole: organizationMembers.role,
         joinedAt: organizationMembers.joinedAt,

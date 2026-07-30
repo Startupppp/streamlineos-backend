@@ -67,7 +67,6 @@ const user = {
   permissions: [],
   enabledModules: [],
   plan: null,
-  isPlatformAdmin: false,
   isOrgOwner: false,
   sessionId: "sess-1",
 };

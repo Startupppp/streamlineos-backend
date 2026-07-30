@@ -10,7 +10,6 @@ const TEST_CONTEXT = {
   userId: "user-1",
   userProjectRole: null,
   isOrgOwner: false,
-  isPlatformAdmin: false,
   ticketId: 1,
 };
 

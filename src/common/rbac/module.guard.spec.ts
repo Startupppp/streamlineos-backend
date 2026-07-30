@@ -6,7 +6,7 @@ import type { CurrentUserContext } from "../auth/backend-claims";
 import type { EntitlementsService } from "../../modules/access/entitlements.service";
 
 function ctx(user: Partial<CurrentUserContext>): ExecutionContext {
-  const req = { user: { enabledModules: [], isPlatformAdmin: false, isOrgOwner: false, orgId: "org-1", ...user } };
+  const req = { user: { enabledModules: [], isOrgOwner: false, orgId: "org-1", ...user } };
   return {
     switchToHttp: () => ({ getRequest: () => req }),
     getHandler: () => ({}),
@@ -45,11 +45,6 @@ describe("ModuleGuard", () => {
     expect(entitlements.isModuleEnabled).toHaveBeenCalledWith("org-1", "crm");
   });
 
-  it("allows platform admins regardless of module state", async () => {
-    reflector.getAllAndOverride.mockReturnValue("crm");
-    expect(await guard.canActivate(ctx({ isPlatformAdmin: true }))).toBe(true);
-    expect(entitlements.isModuleEnabled).not.toHaveBeenCalled();
-  });
 
   it("throws ModuleDisabledException when module not enabled and not admin", async () => {
     reflector.getAllAndOverride.mockReturnValue("crm");

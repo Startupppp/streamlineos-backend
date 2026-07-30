@@ -19,7 +19,6 @@ function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
     permissions: [],
     enabledModules: [],
     plan: null,
-    isPlatformAdmin: false,
     isOrgOwner: false,
     sessionId: "sess-1",
     ...overrides,
@@ -31,11 +30,7 @@ beforeEach(() => {
 });
 
 describe("resolvePerformanceScope", () => {
-  it("returns all when isPlatformAdmin is true", async () => {
-    const result = await resolvePerformanceScope(mockAccess, makeUser({ isPlatformAdmin: true }));
-    expect(result).toBe("all");
-    expect(mockAccess.resolveUserPermissions).not.toHaveBeenCalled();
-  });
+
 
   it("returns all when isOrgOwner is true", async () => {
     const result = await resolvePerformanceScope(mockAccess, makeUser({ isOrgOwner: true }));
@@ -77,11 +72,7 @@ describe("resolvePerformanceScope", () => {
 });
 
 describe("resolveDocumentsScope", () => {
-  it("returns all when isPlatformAdmin is true", async () => {
-    const result = await resolveDocumentsScope(mockAccess, makeUser({ isPlatformAdmin: true }));
-    expect(result).toBe("all");
-    expect(mockAccess.resolveUserPermissions).not.toHaveBeenCalled();
-  });
+
 
   it("returns all when isOrgOwner is true", async () => {
     const result = await resolveDocumentsScope(mockAccess, makeUser({ isOrgOwner: true }));

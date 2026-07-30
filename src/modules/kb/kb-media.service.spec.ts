@@ -35,7 +35,6 @@ function makeUser(orgId = "org-42"): CurrentUserContext {
     userId: "user-1",
     orgId,
     isOrgOwner: false,
-    isPlatformAdmin: false,
     branchId: null,
     role: "member",
     permissions: [],

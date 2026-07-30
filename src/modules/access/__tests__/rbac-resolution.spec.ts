@@ -128,7 +128,6 @@ describe("AccessService.getAccessSnapshot — platform admin receives every cata
       permissions: [],
       enabledModules: [],
       plan: null,
-      isPlatformAdmin: true,
       isOrgOwner: false,
       sessionId: "session-platform",
     };

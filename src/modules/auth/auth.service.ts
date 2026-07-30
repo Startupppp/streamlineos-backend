@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { AccessService } from "../access/access.service";
+import { seedSystemRolesForOrg } from "../rbac/seed-system-roles";
 import { EntitlementsService } from "../access/entitlements.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { eq, sql } from "drizzle-orm";
@@ -13,7 +14,6 @@ import { randomUUID } from "node:crypto";
 import {
   organizationMembers,
   organizations,
-  roles,
   subscriptions,
   users,
 } from "../../db/schema";
@@ -117,10 +117,9 @@ export class AuthService {
         currentPeriodStart: new Date(),
         currentPeriodEnd: addDays(new Date(), trialDays),
       });
-
-      const adminRole = { name: "Administrator", slug: "ADMIN", isSystem: false };
-      await tx.insert(roles).values({ ...adminRole, orgId });
     });
+
+    await seedSystemRolesForOrg(this.db, orgId);
 
     this.audit.log({
       action: "user.registered",
@@ -156,7 +155,6 @@ export class AuthService {
     totpEnabled: boolean;
     orgId: string | null;
     isOrgOwner: boolean;
-    isPlatformAdmin: boolean;
     mfaEnforced: boolean;
     enabledModules: string[];
     orgOnboardingCompletedAt: string | null;
@@ -184,7 +182,6 @@ export class AuthService {
               totpEnabled: true,
               onboardingCompletedAt: true,
               lastActiveOrgId: true,
-              isPlatformAdmin: true,
             },
           })
           .catch(() => {
@@ -243,7 +240,6 @@ export class AuthService {
           totpEnabled: user.totpEnabled,
           orgId: resolvedOrgId,
           isOrgOwner,
-          isPlatformAdmin: user.isPlatformAdmin,
           mfaEnforced,
           enabledModules,
           orgOnboardingCompletedAt,

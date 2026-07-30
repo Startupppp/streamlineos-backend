@@ -38,7 +38,7 @@ export class StorageVaultController {
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<typeof candidateDocumentsVault.$inferSelect & { signedUrl: string | null }> {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+    if (!u.isOrgOwner) {
       const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
       if (!perms.has("hr:documents:manage")) {
         throw new ForbiddenException("Forbidden");
@@ -78,7 +78,7 @@ export class StorageVaultController {
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<{ success: boolean }> {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+    if (!u.isOrgOwner) {
       const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
       if (!perms.has("hr:documents:manage")) {
         throw new ForbiddenException("Forbidden");

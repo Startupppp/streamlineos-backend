@@ -1,7 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { desc, eq, inArray, sql } from "drizzle-orm";
 import {
-  roles,
   users,
   orgModules,
   modulesCatalog,
@@ -10,7 +9,6 @@ import {
   organizations,
   magicLinkTokens,
   organizationMembers,
-  rolePermissionGrants,
 } from "../../db/schema";
 import { addDays, addMinutes } from "date-fns";
 import { type Db } from "../../db/drizzle.module";
@@ -20,12 +18,13 @@ import { OnboardingSessionService } from "../onboarding-flow/onboarding-session.
 import { EmailService } from "../email/email.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
-import { ACCESS_MANAGED_MODULES, PERMISSIONS } from "../rbac/permissions";
+import { ACCESS_MANAGED_MODULES } from "../rbac/permissions";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { randomUUID, randomBytes, createHash } from "node:crypto";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { seedSystemRolesForOrg } from "../rbac/seed-system-roles";
 import { ModuleChecklistService } from "../onboarding-flow/module-checklist.service";
 import {
   getTrialDays,
@@ -145,27 +144,10 @@ export class OrgSetupService {
         currentPeriodStart: new Date(),
         currentPeriodEnd: addDays(new Date(), trialDays),
       });
-      const [adminRole] = await tx
-        .insert(roles)
-        .values({
-          name: "Administrator",
-          slug: "ADMIN",
-          isSystem: false,
-          orgId,
-        })
-        .returning();
-
-      await tx.insert(rolePermissionGrants).values(
-        PERMISSIONS.map((permission) => ({
-          orgId,
-          roleId: adminRole.id,
-          permissionKey: permission.name,
-          scope: "all" as const,
-        })),
-      );
-
       await bumpPermissionsVersion(tx, orgId);
     });
+
+    await seedSystemRolesForOrg(this.db, orgId);
 
     this.audit.log({
       action: "org.created",

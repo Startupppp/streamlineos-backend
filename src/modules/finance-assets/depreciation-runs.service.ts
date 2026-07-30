@@ -355,7 +355,6 @@ export class DepreciationRunsService {
           permissions: [],
           enabledModules: [],
           plan: null,
-          isPlatformAdmin: false,
           isOrgOwner: false,
           sessionId: "cron",
         };

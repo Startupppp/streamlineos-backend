@@ -16,7 +16,6 @@ function makeActor(overrides: Partial<CurrentUserContext> = {}): CurrentUserCont
     permissions: [],
     enabledModules: [],
     plan: null,
-    isPlatformAdmin: false,
     isOrgOwner: false,
     sessionId: "s-1",
     ...overrides,
@@ -145,7 +144,7 @@ describe("ModuleAccessGroupsService — P0-1: self-assignment guard", () => {
     });
 
     const result = await svc.addGroupMember(
-      makeActor({ userId: "u-actor", isPlatformAdmin: true }),
+      makeActor({ userId: "u-actor"}),
       "hr",
       9,
       { userId: "u-actor" },

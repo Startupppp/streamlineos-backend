@@ -13,7 +13,7 @@ async function resolveInventoryScope(
   access: AccessService,
   u: CurrentUserContext,
 ): Promise<DataScope> {
-  if (u.isPlatformAdmin || u.isOrgOwner) return "all";
+  if (u.isOrgOwner) return "all";
   if (!isScopable(permission)) return "all";
   const resolved = await access.resolveUserPermissions(u.orgId, u.userId);
   return resolved.get(permission) ?? "none";

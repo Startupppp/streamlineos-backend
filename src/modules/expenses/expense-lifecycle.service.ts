@@ -269,7 +269,7 @@ export class ExpenseLifecycleService {
     });
 
     if (openApprovalRequest) {
-      if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      if (!u.isOrgOwner) {
         throw new BadRequestException("This expense requires a pending approval to be granted first");
       }
       await this.db

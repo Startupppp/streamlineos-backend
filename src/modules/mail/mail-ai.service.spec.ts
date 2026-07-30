@@ -15,7 +15,6 @@ const ACTOR: CurrentUserContext = {
   permissions: [],
   enabledModules: [],
   plan: "PROFESSIONAL",
-  isPlatformAdmin: false,
   isOrgOwner: false,
   sessionId: "sess-1",
 };

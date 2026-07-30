@@ -243,7 +243,6 @@ export class InvoicesPaymentService {
         permissions,
         enabledModules,
         plan: null,
-        isPlatformAdmin: false,
         isOrgOwner: false,
         sessionId: "",
       };

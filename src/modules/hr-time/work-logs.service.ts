@@ -113,7 +113,6 @@ export class WorkLogsService {
 
     if (alreadySaved) {
       const canManage =
-        actor?.isPlatformAdmin ||
         actor?.isOrgOwner ||
         (actor
           ? ((await this.access.resolveUserPermissions(orgId, actor.userId)).get(

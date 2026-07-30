@@ -125,7 +125,7 @@ export class KbPagesService {
       columns: { id: true },
     });
 
-    const canShare = user.isOrgOwner || user.isPlatformAdmin || canManage || page.createdById === user.userId;
+    const canShare = user.isOrgOwner || canManage || page.createdById === user.userId;
 
     return {
       ...page,

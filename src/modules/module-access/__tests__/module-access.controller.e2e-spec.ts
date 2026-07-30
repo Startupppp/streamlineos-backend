@@ -162,7 +162,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
     });
 
     it("platform admin can read catalog without any explicit permission grant", async () => {
-      const token = await signToken({ isOrgOwner: false, isPlatformAdmin: true });
+      const token = await signToken({ isOrgOwner: false});
       const res = await request(app.getHttpServer())
         .get("/module-access/hr/catalog")
         .set("Authorization", `Bearer ${token}`);
@@ -171,7 +171,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
 
     it("org admin (settings:rbac:manage) can read catalog", async () => {
       mockModuleAccessService.listCatalog.mockResolvedValue(stubCatalog);
-      const token = await signToken({ isOrgOwner: false, isPlatformAdmin: false });
+      const token = await signToken({ isOrgOwner: false});
       const res = await request(app.getHttpServer())
         .get("/module-access/hr/catalog")
         .set("Authorization", `Bearer ${token}`);
@@ -180,7 +180,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
 
     it("module admin (hr:access:view) can read catalog", async () => {
       mockModuleAccessService.listCatalog.mockResolvedValue(stubCatalog);
-      const token = await signToken({ isOrgOwner: false, isPlatformAdmin: false });
+      const token = await signToken({ isOrgOwner: false});
       const res = await request(app.getHttpServer())
         .get("/module-access/hr/catalog")
         .set("Authorization", `Bearer ${token}`);
@@ -191,7 +191,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
       mockModuleAccessService.listCatalog.mockRejectedValue(
         new ForbiddenException("You do not have access to manage this module's roles"),
       );
-      const token = await signToken({ isOrgOwner: false, isPlatformAdmin: false });
+      const token = await signToken({ isOrgOwner: false});
       const res = await request(app.getHttpServer())
         .get("/module-access/hr/catalog")
         .set("Authorization", `Bearer ${token}`);
@@ -202,7 +202,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
       mockModuleAccessGroupsService.listGroups.mockRejectedValue(
         new ForbiddenException("You do not have access to manage this module's roles"),
       );
-      const token = await signToken({ isOrgOwner: false, isPlatformAdmin: false });
+      const token = await signToken({ isOrgOwner: false});
       const res = await request(app.getHttpServer())
         .get("/module-access/hr/groups")
         .set("Authorization", `Bearer ${token}`);
@@ -215,7 +215,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
       mockModuleAccessGroupsService.listGroups.mockRejectedValue(
         new ForbiddenException("You do not have access to manage this module's roles"),
       );
-      const token = await signToken({ isOrgOwner: false, isPlatformAdmin: false });
+      const token = await signToken({ isOrgOwner: false});
       const res = await request(app.getHttpServer())
         .get("/module-access/crm/groups")
         .set("Authorization", `Bearer ${token}`);
@@ -226,7 +226,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
       mockModuleAccessGroupsService.addGroupMember.mockRejectedValue(
         new ForbiddenException("You do not have access to manage this module's roles"),
       );
-      const token = await signToken({ isOrgOwner: false, isPlatformAdmin: false });
+      const token = await signToken({ isOrgOwner: false});
       const res = await request(app.getHttpServer())
         .post(`/module-access/crm/groups/${GROUP_ID}/members`)
         .set("Authorization", `Bearer ${token}`)
@@ -238,7 +238,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
       mockModuleAccessService.setRolePermissions.mockRejectedValue(
         new ForbiddenException("You do not have access to manage this module's roles"),
       );
-      const token = await signToken({ isOrgOwner: false, isPlatformAdmin: false });
+      const token = await signToken({ isOrgOwner: false});
       const res = await request(app.getHttpServer())
         .put(`/module-access/crm/roles/${ROLE_ID}/permissions`)
         .set("Authorization", `Bearer ${token}`)
@@ -284,7 +284,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
           "You cannot grant permissions you do not hold: hr:employees:delete",
         ),
       );
-      const token = await signToken({ isOrgOwner: false, isPlatformAdmin: false });
+      const token = await signToken({ isOrgOwner: false});
       const res = await request(app.getHttpServer())
         .put(`/module-access/hr/roles/${ROLE_ID}/permissions`)
         .set("Authorization", `Bearer ${token}`)
@@ -342,7 +342,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
       mockModuleAccessGroupsService.listGroups.mockRejectedValue(
         new ForbiddenException("You do not have access to manage this module's roles"),
       );
-      const token = await signToken({ orgId: "org-beta", isOrgOwner: false, isPlatformAdmin: false });
+      const token = await signToken({ orgId: "org-beta", isOrgOwner: false});
       const res = await request(app.getHttpServer())
         .get("/module-access/hr/groups")
         .set("Authorization", `Bearer ${token}`);

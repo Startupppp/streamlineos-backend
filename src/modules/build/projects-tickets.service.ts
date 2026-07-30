@@ -194,7 +194,6 @@ export class ProjectsTicketsService {
     return this.query.reorder(u.orgId, projectId, body, {
       userId: u.userId,
       isOrgOwner: u.isOrgOwner,
-      isPlatformAdmin: u.isPlatformAdmin,
     });
   }
 

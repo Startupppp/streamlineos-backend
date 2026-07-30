@@ -40,7 +40,7 @@ export class HrSalaryStructuresController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || perms.has("hr:salary:manage");
+    const isAdmin = u.isOrgOwner || perms.has("hr:salary:manage");
     if (query.userId && query.userId !== u.userId && !isAdmin) {
       throw new ForbiddenException("Not authorized.");
     }

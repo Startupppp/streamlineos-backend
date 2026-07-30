@@ -42,7 +42,6 @@ describe("getDiscoveryGrantable — Module Admin scoping", () => {
       orgId: "org-1",
       userId: "user-hr",
       isOrgOwner: false,
-      isPlatformAdmin: false,
     };
 
     const svc = makeRbacService({
@@ -70,7 +69,6 @@ describe("getDiscoveryGrantable — Module Admin scoping", () => {
       orgId: "org-1",
       userId: "user-owner",
       isOrgOwner: true,
-      isPlatformAdmin: false,
     };
 
     const svc = makeRbacService({});
@@ -88,7 +86,6 @@ describe("getDiscoveryGrantable — Module Admin scoping", () => {
       orgId: "org-1",
       userId: "user-hr",
       isOrgOwner: false,
-      isPlatformAdmin: false,
     };
 
     const svc = makeRbacService({
@@ -115,7 +112,6 @@ describe("assertPermissionsGrantable — Module Admin rank boundary", () => {
     const hrGrantable = new Set(HR_KEYS);
     const actor = {
       isOrgOwner: false,
-      isPlatformAdmin: false,
       grantable: hrGrantable,
       bestRank: ROLE_RANK.MODULE_ADMIN,
       allowedModules: new Set(["hr"]),
@@ -134,7 +130,6 @@ describe("assertPermissionsGrantable — Module Admin rank boundary", () => {
     const hrGrantable = new Set(HR_KEYS);
     const actor = {
       isOrgOwner: false,
-      isPlatformAdmin: false,
       grantable: hrGrantable,
       bestRank: ROLE_RANK.MODULE_ADMIN,
       allowedModules: new Set(["hr"]),
@@ -153,7 +148,6 @@ describe("assertPermissionsGrantable — Module Admin rank boundary", () => {
     const hrGrantable = new Set(HR_KEYS);
     const actor = {
       isOrgOwner: false,
-      isPlatformAdmin: false,
       grantable: hrGrantable,
       bestRank: ROLE_RANK.MODULE_ADMIN,
       allowedModules: new Set(["hr"]),
@@ -173,7 +167,6 @@ describe("assertPermissionsGrantable — Module Admin rank boundary", () => {
     const grantable = toGrantableSet(resolved);
     const actor = {
       isOrgOwner: false,
-      isPlatformAdmin: false,
       grantable,
       bestRank: ROLE_RANK.MODULE_ADMIN,
       allowedModules: new Set(["hr"]),

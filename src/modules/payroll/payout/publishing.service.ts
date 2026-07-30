@@ -412,7 +412,7 @@ export class PublishingService {
         columns: { isOwner: true },
       });
       const isOwner = memberRow?.isOwner === true;
-      if (!isOwner && !caller.isPlatformAdmin && !perms.has("payroll:payslips:view")) {
+      if (!isOwner && !perms.has("payroll:payslips:view")) {
         throw new ForbiddenException("Missing permission: payroll:payslips:view");
       }
     }

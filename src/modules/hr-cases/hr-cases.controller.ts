@@ -174,7 +174,7 @@ export class HrCasesController {
   }
 
   private async canConfidential(user: CurrentUserContext): Promise<boolean> {
-    if (user.isOrgOwner || user.isPlatformAdmin) return true;
+    if (user.isOrgOwner) return true;
     const perms = await this.access.resolveUserPermissions(user.orgId, user.userId);
     return perms.has("hr:cases:confidential");
   }

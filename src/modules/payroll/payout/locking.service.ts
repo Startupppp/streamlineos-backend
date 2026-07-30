@@ -90,7 +90,7 @@ export class LockingService {
     });
 
     void this.payrollPosting.postFinalized(
-      { userId, orgId, branchId: null, role: "system", permissions: [], enabledModules: [], plan: null, isPlatformAdmin: false, isOrgOwner: true, sessionId: "system" },
+      { userId, orgId, branchId: null, role: "system", permissions: [], enabledModules: [], plan: null, isOrgOwner: true, sessionId: "system" },
       runId,
       run.month,
       run.grossTotal ?? "0",

@@ -495,39 +495,8 @@ export class PlatformService {
     return { byDay, topPaths, topReferrers, recent };
   }
 
-  async listPlatformAdmins(): Promise<{ id: string; email: string; name: string | null }[]> {
-    return this.db
-      .select({ id: users.id, email: users.email, name: users.name })
-      .from(users)
-      .where(eq(users.isPlatformAdmin, true))
-      .orderBy(users.email);
-  }
 
-  async grantPlatformAdmin(email: string): Promise<{ id: string; email: string; name: string | null }> {
-    const user = await this.db.query.users.findFirst({
-      where: sql`lower(${users.email}) = ${email.toLowerCase().trim()}`,
-      columns: { id: true, email: true, name: true, isPlatformAdmin: true },
-    });
-    if (!user) throw new NotFoundException("No user found with that email");
-    if (user.isPlatformAdmin) throw new ConflictException("User is already a platform admin");
 
-    await this.db.update(users).set({ isPlatformAdmin: true }).where(eq(users.id, user.id));
-
-    return { id: user.id, email: user.email, name: user.name ?? null };
-  }
-
-  async revokePlatformAdmin(userId: string): Promise<{ ok: true }> {
-    const [countRow] = await this.db
-      .select({ n: count() })
-      .from(users)
-      .where(eq(users.isPlatformAdmin, true));
-    const total = Number(countRow?.n ?? 0);
-    if (total <= 1) throw new ConflictException("Cannot remove the last platform admin");
-
-    await this.db.update(users).set({ isPlatformAdmin: false }).where(eq(users.id, userId));
-
-    return { ok: true };
-  }
 
   async getLayoutData(userId: string) {
     const [unreadRow, ownerRow] = await Promise.all([

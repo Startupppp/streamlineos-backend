@@ -1,7 +1,6 @@
 export interface ApprovalActor {
   userId: string;
   isOrgOwner: boolean;
-  isPlatformAdmin: boolean;
 }
 
 export interface ApprovalPeriodInfo {
@@ -31,7 +30,7 @@ export function canActOnPeriod(
   period: ApprovalPeriodInfo,
   opts: { delegateeOfApprover?: boolean } = {},
 ): ApprovalDecision {
-  const privileged = actor.isOrgOwner || actor.isPlatformAdmin;
+  const privileged = actor.isOrgOwner;
 
   if (period.userId === actor.userId && !privileged) {
     return { allowed: false, reason: "You cannot approve or reject your own timesheet" };

@@ -131,7 +131,6 @@ describe("SignOS auth/RBAC (e2e)", () => {
         sub: USER_ID,
         orgId: ORG_ID,
         isOrgOwner: false,
-        isPlatformAdmin: false,
         permissions: [],
         enabledModules: ["sign"],
       });

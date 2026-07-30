@@ -11,7 +11,7 @@ export async function resolveEntriesScope(
   access: AccessService,
   u: CurrentUserContext,
 ): Promise<DataScope> {
-  if (u.isPlatformAdmin || u.isOrgOwner) return "all";
+  if (u.isOrgOwner) return "all";
   if (!isScopable(TS_TEAM_VIEW_PERMISSION)) return "own";
   const resolved = await access.resolveUserPermissions(u.orgId, u.userId);
   const teamScope = resolved.get(TS_TEAM_VIEW_PERMISSION);
@@ -23,7 +23,7 @@ export async function resolveApprovalScope(
   access: AccessService,
   u: CurrentUserContext,
 ): Promise<DataScope> {
-  if (u.isPlatformAdmin || u.isOrgOwner) return "all";
+  if (u.isOrgOwner) return "all";
   if (!isScopable(TS_APPROVALS_VIEW_PERMISSION)) return "all";
   const resolved = await access.resolveUserPermissions(u.orgId, u.userId);
   return resolved.get(TS_APPROVALS_VIEW_PERMISSION) ?? "none";
@@ -33,7 +33,7 @@ export async function resolveReportsScope(
   access: AccessService,
   u: CurrentUserContext,
 ): Promise<DataScope> {
-  if (u.isPlatformAdmin || u.isOrgOwner) return "all";
+  if (u.isOrgOwner) return "all";
   if (!isScopable(TS_REPORTS_VIEW_PERMISSION)) return "all";
   const resolved = await access.resolveUserPermissions(u.orgId, u.userId);
   return resolved.get(TS_REPORTS_VIEW_PERMISSION) ?? "own";

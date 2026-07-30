@@ -24,7 +24,6 @@ const ACTOR = {
   permissions: [],
   enabledModules: [],
   plan: "PROFESSIONAL",
-  isPlatformAdmin: false,
   isOrgOwner: false,
   sessionId: "sess_1",
 };

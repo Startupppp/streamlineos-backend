@@ -111,7 +111,7 @@ export class ChatMessagesController {
     @Param("messageId", ParseIntPipe) messageId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.messages.remove(messageId, u.userId, u.isOrgOwner || u.isPlatformAdmin, u.orgId);
+    return this.messages.remove(messageId, u.userId, u.isOrgOwner, u.orgId);
   }
 
   @ApiOperation({ summary: "Toggle an emoji reaction on a message" })

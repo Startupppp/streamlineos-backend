@@ -6,7 +6,6 @@
   permissions: string[];
   enabledModules: string[];
   plan: string | null;
-  isPlatformAdmin: boolean;
   isOrgOwner: boolean;
   sessionId: string;
 }
@@ -19,7 +18,6 @@ export interface CurrentUserContext {
   permissions: string[];
   enabledModules: string[];
   plan: string | null;
-  isPlatformAdmin: boolean;
   isOrgOwner: boolean;
   sessionId: string;
 }

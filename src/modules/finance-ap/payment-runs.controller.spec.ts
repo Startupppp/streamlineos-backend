@@ -24,7 +24,6 @@ const USER_CTX: CurrentUserContext = {
   permissions: [],
   enabledModules: [],
   plan: null,
-  isPlatformAdmin: false,
   isOrgOwner: false,
   sessionId: "sess2",
 };

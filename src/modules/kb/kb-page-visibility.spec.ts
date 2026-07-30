@@ -8,7 +8,6 @@ function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
     userId: "user-1",
     orgId: "org-1",
     isOrgOwner: false,
-    isPlatformAdmin: false,
     branchId: null,
     role: "member",
     permissions: [],
@@ -27,12 +26,6 @@ describe("pageVisibleTo", () => {
     expect(result).toStrictEqual(expected);
   });
 
-  it("returns same condition as eq(orgId) for platform admin", () => {
-    const user = makeUser({ isPlatformAdmin: true });
-    const result = pageVisibleTo(user);
-    const expected = eq(kbPages.orgId, user.orgId);
-    expect(result).toStrictEqual(expected);
-  });
 
   it("returns a different (SQL) condition for regular user", () => {
     const user = makeUser();

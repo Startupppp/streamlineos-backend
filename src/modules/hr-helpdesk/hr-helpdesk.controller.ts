@@ -45,7 +45,7 @@ export class HrHelpdeskController {
   ) {}
 
   private async resolveIsAdmin(u: CurrentUserContext): Promise<boolean> {
-    if (u.isOrgOwner || u.isPlatformAdmin) return true;
+    if (u.isOrgOwner) return true;
     const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
     return perms.has("hr:helpdesk:manage");
   }

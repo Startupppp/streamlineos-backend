@@ -51,7 +51,7 @@ export class SignEnvelopesController {
   @Get()
   @RequirePermission("sign:envelope:view")
   list(@Query(new ZodValidationPipe(listEnvelopesSchema)) query: ListEnvelopesInput, @CurrentUser() u: CurrentUserContext) {
-    const viewAll = u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("sign:envelope:view_all");
+    const viewAll = u.isOrgOwner || u.permissions.includes("sign:envelope:view_all");
     return this.envelopes.list(u.orgId, query, { userId: u.userId, viewAll });
   }
 

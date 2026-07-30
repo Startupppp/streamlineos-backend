@@ -122,7 +122,6 @@ import { AutomationModule } from "./modules/automation/automation.module";
 import { SessionsModule } from "./modules/sessions/sessions.module";
 import { MfaModule } from "./modules/mfa/mfa.module";
 import { AuthModule } from "./modules/auth/auth.module";
-import { FeatureFlagsModule } from "./modules/feature-flags/feature-flags.module";
 import { AiJobsModule } from "./modules/ai-jobs/ai-jobs.module";
 import { AiConfirmationModule } from "./modules/ai-confirmation";
 import { OrgHierarchyModule } from "./modules/org-hierarchy/org-hierarchy.module";
@@ -303,7 +302,6 @@ import { MeService } from "./me/me.service";
     SessionsModule,
     MfaModule,
     AuthModule,
-    FeatureFlagsModule,
     AiJobsModule,
     AiConfirmationModule,
     OrgHierarchyModule,

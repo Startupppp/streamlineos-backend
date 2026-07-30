@@ -87,7 +87,7 @@ export class ModuleAccessService {
     action: "view" | "manage",
   ): Promise<void> {
     this.assertKnownModule(moduleKey);
-    if (actor.isOrgOwner || actor.isPlatformAdmin) return;
+    if (actor.isOrgOwner) return;
 
     const resolved = await this.access.resolveUserPermissions(
       actor.orgId,
@@ -210,7 +210,7 @@ export class ModuleAccessService {
       throw new ForbiddenException("System roles cannot be edited");
     }
 
-    if (!actor.isOrgOwner && !actor.isPlatformAdmin) {
+    if (!actor.isOrgOwner) {
       const [resolved, { bestRank, allowedModules }] = await Promise.all([
         this.access.resolveUserPermissions(actor.orgId, actor.userId),
         resolveActorRankContext(this.db, actor.orgId, actor.userId),
@@ -221,7 +221,6 @@ export class ModuleAccessService {
         assertPermissionsGrantable(
           {
             isOrgOwner: false,
-            isPlatformAdmin: false,
             grantable: toGrantableSet(resolved),
             bestRank,
             allowedModules,
@@ -348,7 +347,6 @@ export class ModuleAccessService {
   ): Promise<{
     permissions: { key: string; scope: DataScope }[];
     isOrgOwner: boolean;
-    isPlatformAdmin: boolean;
     isModuleOwner: boolean;
     isModuleAdmin: boolean;
   }> {
@@ -395,7 +393,6 @@ export class ModuleAccessService {
     return {
       permissions,
       isOrgOwner: actor.isOrgOwner,
-      isPlatformAdmin: actor.isPlatformAdmin,
       isModuleOwner: ownerRow[0]?.userId === actor.userId,
       isModuleAdmin,
     };

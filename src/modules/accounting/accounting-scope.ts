@@ -9,7 +9,7 @@ export async function resolveAccountingJournalViewScope(
   access: AccessService,
   u: CurrentUserContext,
 ): Promise<DataScope> {
-  if (u.isPlatformAdmin || u.isOrgOwner) return "all";
+  if (u.isOrgOwner) return "all";
   if (!isScopable(ACCOUNTING_JOURNAL_VIEW_PERMISSION)) return "all";
   const resolved = await access.resolveUserPermissions(u.orgId, u.userId);
   return resolved.get(ACCOUNTING_JOURNAL_VIEW_PERMISSION) ?? "none";

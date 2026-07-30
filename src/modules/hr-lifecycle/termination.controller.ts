@@ -52,7 +52,7 @@ export class TerminationController {
     return this.termination.create(
       u.orgId,
       u.userId,
-      u.isOrgOwner || u.isPlatformAdmin,
+      u.isOrgOwner,
       body,
     );
   }

@@ -18,7 +18,6 @@ const ownerActor: CurrentUserContext = {
   permissions: [],
   enabledModules: [],
   plan: null,
-  isPlatformAdmin: false,
   isOrgOwner: true,
   sessionId: "s1",
 };

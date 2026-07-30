@@ -84,7 +84,7 @@ export class OnboardingController {
     u: CurrentUserContext,
     mode: "view" | "manage",
   ) {
-    if (u.isOrgOwner || u.isPlatformAdmin) return;
+    if (u.isOrgOwner) return;
     const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
     if (perms.has("hr:employees:manage")) return;
     if (mode === "view" && perms.has("hr:employees:view")) return;
@@ -92,7 +92,7 @@ export class OnboardingController {
   }
 
   private async hasHrChecklistAccess(u: CurrentUserContext): Promise<boolean> {
-    if (u.isOrgOwner || u.isPlatformAdmin) return true;
+    if (u.isOrgOwner) return true;
     const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
     return perms.has("hr:employees:view") || perms.has("hr:employees:manage");
   }

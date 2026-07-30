@@ -43,7 +43,7 @@ export class ReportsService {
       applyScope(scope, u.userId, { ownerColumn: timesheets.userId }),
     ];
 
-    if (query.userId && (scope === "all" || u.isPlatformAdmin || u.isOrgOwner)) {
+    if (query.userId && (scope === "all" || u.isOrgOwner)) {
       conditions.push(eq(timesheets.userId, query.userId));
     }
     if (query.startDate) conditions.push(gte(timesheets.date, query.startDate));

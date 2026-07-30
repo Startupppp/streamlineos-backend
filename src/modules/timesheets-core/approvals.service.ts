@@ -98,7 +98,6 @@ export class ApprovalsService {
     const actor = {
       userId: u.userId,
       isOrgOwner: !!u.isOrgOwner,
-      isPlatformAdmin: !!u.isPlatformAdmin,
     };
 
     let delegateeOfApprover = false;
@@ -132,7 +131,7 @@ export class ApprovalsService {
 
     if (
       query.userId &&
-      (scope === "all" || u.isPlatformAdmin || u.isOrgOwner)
+      (scope === "all" || u.isOrgOwner)
     ) {
       conditions.push(eq(timesheetPeriods.userId, query.userId));
     }

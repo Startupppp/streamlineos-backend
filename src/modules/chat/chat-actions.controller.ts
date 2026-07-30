@@ -45,7 +45,7 @@ export class ChatActionsController {
     @Body(new ZodValidationPipe(ticketStatusActionSchema)) body: TicketStatusActionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+    if (!u.isOrgOwner) {
       const membership = await this.db.query.projectMembers.findFirst({
         where: and(eq(projectMembers.projectId, body.projectId), eq(projectMembers.userId, u.userId)),
         columns: { projectId: true },
@@ -108,7 +108,7 @@ export class ChatActionsController {
     @Body(new ZodValidationPipe(createTaskFromMessageSchema)) body: CreateTaskFromMessageInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+    if (!u.isOrgOwner) {
       const membership = await this.db.query.projectMembers.findFirst({
         where: and(eq(projectMembers.projectId, body.projectId), eq(projectMembers.userId, u.userId)),
         columns: { projectId: true },
@@ -210,7 +210,7 @@ export class ChatActionsController {
     @Body(new ZodValidationPipe(assignTicketFromChatSchema)) body: AssignTicketFromChatInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+    if (!u.isOrgOwner) {
       const membership = await this.db.query.projectMembers.findFirst({
         where: and(eq(projectMembers.projectId, body.projectId), eq(projectMembers.userId, u.userId)),
         columns: { projectId: true },
@@ -266,7 +266,7 @@ export class ChatActionsController {
     @Body(new ZodValidationPipe(setDueDateFromChatSchema)) body: SetDueDateFromChatInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+    if (!u.isOrgOwner) {
       const membership = await this.db.query.projectMembers.findFirst({
         where: and(eq(projectMembers.projectId, body.projectId), eq(projectMembers.userId, u.userId)),
         columns: { projectId: true },

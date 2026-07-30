@@ -22,7 +22,7 @@ export class ModuleGuard implements CanActivate {
 
     const req = context.switchToHttp().getRequest<Request & { user: CurrentUserContext }>();
     const user = req.user;
-    if (user.isPlatformAdmin || user.isOrgOwner) return true;
+    if (user.isOrgOwner) return true;
 
     const moduleKey = required.toLowerCase();
     const enabled = await this.entitlements.isModuleEnabled(user.orgId, moduleKey);

@@ -1,8 +1,8 @@
 import { canActOnPeriod } from "./approval-guard";
 
-const worker = { userId: "worker-1", isOrgOwner: false, isPlatformAdmin: false };
-const manager = { userId: "mgr-1", isOrgOwner: false, isPlatformAdmin: false };
-const owner = { userId: "owner-1", isOrgOwner: true, isPlatformAdmin: false };
+const worker = { userId: "worker-1", isOrgOwner: false};
+const manager = { userId: "mgr-1", isOrgOwner: false};
+const owner = { userId: "owner-1", isOrgOwner: true};
 
 describe("canActOnPeriod", () => {
   it("blocks self-approval for non-privileged users", () => {
@@ -22,14 +22,14 @@ describe("canActOnPeriod", () => {
   });
 
   it("blocks a non-assigned user even with the permission", () => {
-    const other = { userId: "other-1", isOrgOwner: false, isPlatformAdmin: false };
+    const other = { userId: "other-1", isOrgOwner: false};
     const d = canActOnPeriod(other, { userId: "worker-1", currentApproverId: "mgr-1" });
     expect(d.allowed).toBe(false);
     expect(d.reason).toMatch(/assigned approver/i);
   });
 
   it("allows a delegate of the assigned approver", () => {
-    const delegate = { userId: "delegate-1", isOrgOwner: false, isPlatformAdmin: false };
+    const delegate = { userId: "delegate-1", isOrgOwner: false};
     const d = canActOnPeriod(
       delegate,
       { userId: "worker-1", currentApproverId: "mgr-1" },

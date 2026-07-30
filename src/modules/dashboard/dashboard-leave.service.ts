@@ -84,7 +84,7 @@ export class DashboardLeaveService {
     }
 
     const isApprover =
-      u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:leaves:approve");
+      u.isOrgOwner || u.permissions.includes("hr:leaves:approve");
     const key = `dashboard:pending-approvals:${orgId}:${isApprover ? "approver" : "self"}`;
 
     return this.cache.cached(

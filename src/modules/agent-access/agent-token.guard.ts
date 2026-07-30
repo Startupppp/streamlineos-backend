@@ -94,7 +94,6 @@ export class AgentTokenGuard implements CanActivate {
       permissions: [],
       enabledModules: moduleStatuses.filter((m) => m.enabled).map((m) => m.moduleKey),
       plan: subRows[0]?.plan ?? null,
-      isPlatformAdmin: false,
       isOrgOwner: member.isOwner,
       sessionId: `agent-token:${row.id}`,
     };

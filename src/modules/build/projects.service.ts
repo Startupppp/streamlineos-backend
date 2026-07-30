@@ -389,7 +389,7 @@ export class ProjectsService {
   ) {
     const orgId = u.orgId;
 
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+    if (!u.isOrgOwner) {
       const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
       const hasManage = perms.has("build:manage");
 
@@ -553,7 +553,7 @@ export class ProjectsService {
   }
 
   async deleteProject(u: CurrentUserContext, projectId: number) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+    if (!u.isOrgOwner) {
       const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
       if (!perms.has("build:delete")) {
         throw new ForbiddenException(

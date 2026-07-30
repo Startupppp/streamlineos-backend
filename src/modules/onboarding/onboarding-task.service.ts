@@ -32,7 +32,7 @@ export class OnboardingTaskService {
   ) {}
 
   async getUserTasks(u: CurrentUserContext, userId: string) {
-    let isAdmin = u.isOrgOwner || u.isPlatformAdmin;
+    let isAdmin = u.isOrgOwner;
     if (!isAdmin) {
       const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
       isAdmin = perms.has("hr:employees:manage");
@@ -68,7 +68,7 @@ export class OnboardingTaskService {
 
     if (!task) throw new NotFoundException("Task not found");
 
-    let isAdmin = u.isOrgOwner || u.isPlatformAdmin;
+    let isAdmin = u.isOrgOwner;
     if (!isAdmin) {
       const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
       isAdmin = perms.has("hr:employees:manage");

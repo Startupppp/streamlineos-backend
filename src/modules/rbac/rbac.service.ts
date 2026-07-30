@@ -115,13 +115,13 @@ export class RbacService {
       throw new BadRequestException(`Unknown permission key: ${input.permissionKey}`);
     }
 
-    if (!actor.isOrgOwner && !actor.isPlatformAdmin) {
+    if (!actor.isOrgOwner) {
       const resolved = await this.access.resolveUserPermissions(
         actor.orgId,
         actor.userId,
       );
       assertPermissionsGrantable(
-        { isOrgOwner: false, isPlatformAdmin: false, grantable: toGrantableSet(resolved) },
+        { isOrgOwner: false, grantable: toGrantableSet(resolved) },
         [input.permissionKey],
       );
     }
@@ -183,7 +183,7 @@ export class RbacService {
   }
 
   private async checkActorAccess(actor: CurrentUserContext): Promise<boolean> {
-    if (actor.isPlatformAdmin || actor.isOrgOwner) return true;
+    if (actor.isOrgOwner) return true;
     const resolved = await this.access.resolveUserPermissions(actor.orgId, actor.userId);
     const scope = resolved.get(RBAC_MANAGE_KEY);
     return !!scope && scope !== "none";
@@ -241,7 +241,7 @@ export class RbacService {
   async getDiscoveryPermissions(
     actor: CurrentUserContext,
   ): Promise<DiscoveryPermissionEntry[]> {
-    if (actor.isOrgOwner || actor.isPlatformAdmin) {
+    if (actor.isOrgOwner) {
       return PERMISSIONS.map((p) => ({
         name: p.name,
         resource: p.resource,
@@ -272,7 +272,7 @@ export class RbacService {
   async getDiscoveryGrantable(
     actor: CurrentUserContext,
   ): Promise<DiscoveryGrantableResult> {
-    if (actor.isOrgOwner || actor.isPlatformAdmin) {
+    if (actor.isOrgOwner) {
       return {
         grantableKeys: PERMISSIONS.map((p) => p.name),
         assignableRanks: [ROLE_RANK.MODULE_ADMIN, ROLE_RANK.MODULE_CUSTOM, ROLE_RANK.FUNCTIONAL],
@@ -310,7 +310,7 @@ export class RbacService {
   }
 
   getDiscoveryTemplates(actor: CurrentUserContext): DiscoveryTemplateEntry[] {
-    if (actor.isOrgOwner || actor.isPlatformAdmin) {
+    if (actor.isOrgOwner) {
       return ROLE_TEMPLATES.map((t) => ({
         id: t.id,
         name: t.name,

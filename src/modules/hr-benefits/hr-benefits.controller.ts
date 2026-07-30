@@ -61,7 +61,7 @@ export class HrBenefitsController {
   ) {}
 
   private async isAdmin(u: CurrentUserContext) {
-    if (u.isOrgOwner || u.isPlatformAdmin) return true;
+    if (u.isOrgOwner) return true;
     const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
     return perms.has("hr:benefits:manage");
   }

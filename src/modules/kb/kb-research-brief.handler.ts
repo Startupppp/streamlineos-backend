@@ -88,7 +88,6 @@ export class KbResearchBriefHandler implements AiJobHandler, OnModuleInit {
       permissions: [],
       enabledModules: [],
       plan: null,
-      isPlatformAdmin: false,
       isOrgOwner: member?.isOwner ?? false,
       sessionId: "",
     };

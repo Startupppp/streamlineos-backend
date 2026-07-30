@@ -9,7 +9,7 @@ export async function resolveLeadsViewScope(
   access: AccessService,
   u: CurrentUserContext,
 ): Promise<DataScope> {
-  if (u.isPlatformAdmin || u.isOrgOwner) return "all";
+  if (u.isOrgOwner) return "all";
   if (!isScopable(LEADS_VIEW_PERMISSION)) return "all";
   const resolved = await access.resolveUserPermissions(u.orgId, u.userId);
   return resolved.get(LEADS_VIEW_PERMISSION) ?? "none";

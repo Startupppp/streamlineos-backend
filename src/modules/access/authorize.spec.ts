@@ -11,7 +11,6 @@ function makeCtx(partial: Partial<CurrentUserContext> = {}): CurrentUserContext 
     permissions: [],
     enabledModules: ["hr", "crm"],
     plan: null,
-    isPlatformAdmin: false,
     isOrgOwner: false,
     sessionId: "session-1",
     ...partial,
@@ -32,13 +31,6 @@ describe("authorize", () => {
     expect(result).toEqual({ allow: false, scope: "none", reason: "UNAUTHENTICATED" });
   });
 
-  it("allows owners and platform admins everything at scope all", async () => {
-    const resolver = makeResolver(new Map(), []);
-    const owner = await authorize(resolver, makeCtx({ isOrgOwner: true }), "hr:employees:view");
-    expect(owner).toEqual({ allow: true, scope: "all" });
-    const admin = await authorize(resolver, makeCtx({ isPlatformAdmin: true }), "hr:employees:view");
-    expect(admin).toEqual({ allow: true, scope: "all" });
-  });
 
   it("allows when the resolved map grants the permission and returns its scope", async () => {
     const resolver = makeResolver(new Map([["hr:employees:view", "team"]]), ["hr"]);

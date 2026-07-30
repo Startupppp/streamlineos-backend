@@ -68,7 +68,7 @@ export class ReimbursementsController {
     @Body(new ZodValidationPipe(patchReimbursementSchema)) body: PatchReimbursementInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+    if (!u.isOrgOwner) {
       const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
       if (!perms.has("hr:expenses:approve")) {
         throw new ForbiddenException("Only admins can process reimbursements.");

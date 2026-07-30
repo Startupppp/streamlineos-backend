@@ -46,7 +46,7 @@ export class HrDocumentTypesController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || perms.has("hr:documents:manage");
+    const isAdmin = u.isOrgOwner || perms.has("hr:documents:manage");
     if (!isAdmin && !perms.has("hr:documents:view") && !perms.has("self:onboarding-docs")) {
       throw new ForbiddenException("Permission denied");
     }
@@ -70,7 +70,7 @@ export class HrDocumentTypesController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || perms.has("hr:documents:manage");
+    const isAdmin = u.isOrgOwner || perms.has("hr:documents:manage");
     if (!isAdmin && !perms.has("hr:documents:view") && !perms.has("self:onboarding-docs")) {
       throw new ForbiddenException("Permission denied");
     }

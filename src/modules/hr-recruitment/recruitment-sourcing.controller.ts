@@ -61,7 +61,7 @@ export class RecruitmentSourcingController {
   @Get("referrals")
   @RequirePermission("hr:employees:view")
   async listReferrals(@CurrentUser() u: CurrentUserContext) {
-    const canManage = u.isOrgOwner || u.isPlatformAdmin
+    const canManage = u.isOrgOwner
       || (await this.access.resolveUserPermissions(u.orgId, u.userId)).has("hr:requisitions:manage");
     return this.sourcing.listReferrals(u.orgId, u.userId, canManage);
   }
@@ -127,7 +127,7 @@ export class RecruitmentSourcingController {
   @RequirePermission("hr:employees:view")
   async listSubmissions(@Param("vendorId", ParseIntPipe) vendorId: number, @CurrentUser() u: CurrentUserContext) {
     const canViewFinancials =
-      u.isOrgOwner || u.isPlatformAdmin || (await this.access.resolveUserPermissions(u.orgId, u.userId)).has("hr:employees:manage");
+      u.isOrgOwner || (await this.access.resolveUserPermissions(u.orgId, u.userId)).has("hr:employees:manage");
     return this.sourcing.listSubmissions(u.orgId, vendorId, canViewFinancials);
   }
 
@@ -159,7 +159,7 @@ export class RecruitmentSourcingController {
     @Query(new ZodValidationPipe(headcountListSchema)) query: HeadcountListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const canManage = u.isOrgOwner || u.isPlatformAdmin
+    const canManage = u.isOrgOwner
       || (await this.access.resolveUserPermissions(u.orgId, u.userId)).has("hr:requisitions:manage");
     return this.sourcing.listHeadcount(u.orgId, u.userId, canManage, query);
   }

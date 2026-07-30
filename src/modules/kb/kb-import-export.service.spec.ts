@@ -12,7 +12,6 @@ function makeUser(): CurrentUserContext {
     orgId: "org-A",
     role: "member",
     isOrgOwner: false,
-    isPlatformAdmin: false,
     permissions: ["kb:pages:import"],
     enabledModules: ["kb"],
   } as unknown as CurrentUserContext;

@@ -15,7 +15,6 @@ const makeUser = (overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
   permissions: [],
   enabledModules: [],
   plan: null,
-  isPlatformAdmin: false,
   isOrgOwner: false,
   sessionId: "session-1",
   ...overrides,
@@ -26,11 +25,7 @@ beforeEach(() => {
 });
 
 describe("resolveTicketsScope", () => {
-  it("returns all when isPlatformAdmin is true", async () => {
-    const result = await resolveTicketsScope(mockAccess, makeUser({ isPlatformAdmin: true }));
-    expect(result).toBe("all");
-    expect(mockAccess.resolveUserPermissions).not.toHaveBeenCalled();
-  });
+
 
   it("returns all when isOrgOwner is true", async () => {
     const result = await resolveTicketsScope(mockAccess, makeUser({ isOrgOwner: true }));

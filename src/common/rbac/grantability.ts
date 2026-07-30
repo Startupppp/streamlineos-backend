@@ -15,11 +15,11 @@ export const RESERVED_PROPAGATION_KEYS: ReadonlySet<string> = new Set([
   "settings:rbac:manage",
 ]);
 
-const ORG_ADMIN_KEY = "settings:manage";
+export const ORG_ADMIN_PERMISSION_KEY = "settings:manage";
+
 
 export interface GrantabilityActor {
   isOrgOwner: boolean;
-  isPlatformAdmin: boolean;
   grantable: ReadonlySet<string>;
   bestRank?: number;
   allowedModules?: ReadonlySet<string> | null;
@@ -70,7 +70,7 @@ export function assertPermissionsGrantable(
   target?: RoleGrantTarget,
   permissionMeta?: PermissionModuleMap,
 ): void {
-  if (actor.isOrgOwner || actor.isPlatformAdmin) return;
+  if (actor.isOrgOwner) return;
 
   const notHeld = requestedKeys.filter((key) => !actor.grantable.has(key));
   if (notHeld.length > 0) {
@@ -82,7 +82,7 @@ export function assertPermissionsGrantable(
     );
   }
 
-  if (!actor.grantable.has(ORG_ADMIN_KEY)) {
+  if (!actor.grantable.has(ORG_ADMIN_PERMISSION_KEY)) {
     const reserved = requestedKeys.filter((key) => RESERVED_PROPAGATION_KEYS.has(key));
     if (reserved.length > 0) {
       throw new ForbiddenException(

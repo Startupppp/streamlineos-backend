@@ -76,7 +76,7 @@ export class DocumentsController {
     @Body(new ZodValidationPipe(createDocumentSchema)) body: CreateDocumentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const isAdmin = u.isOrgOwner || u.isPlatformAdmin;
+    const isAdmin = u.isOrgOwner;
     return this.documents.createDocument(u.orgId, u.userId, isAdmin, body);
   }
 
@@ -94,7 +94,7 @@ export class DocumentsController {
     @Body(new ZodValidationPipe(updateDocumentSchema)) body: UpdateDocumentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const isAdmin = u.isOrgOwner || u.isPlatformAdmin;
+    const isAdmin = u.isOrgOwner;
     return this.documents.updateDocument(
       u.orgId,
       u.userId,
@@ -111,7 +111,7 @@ export class DocumentsController {
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const isAdmin = u.isOrgOwner || u.isPlatformAdmin;
+    const isAdmin = u.isOrgOwner;
     await this.documents.deleteDocument(u.orgId, u.userId, isAdmin, documentId);
   }
 

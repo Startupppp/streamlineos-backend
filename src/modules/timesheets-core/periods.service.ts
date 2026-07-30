@@ -229,7 +229,6 @@ export class PeriodsService {
 
     const scope = await resolveEntriesScope(this.access, u);
     const canSeeOthers =
-      u.isPlatformAdmin ||
       u.isOrgOwner ||
       scope === "all" ||
       scope === "team";
