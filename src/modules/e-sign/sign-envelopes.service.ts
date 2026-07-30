@@ -18,10 +18,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { SignAuditService } from "./sign-audit.service";
-import {
-  SignRecipientsService,
-  type SignActorContext,
-} from "./sign-recipients.service";
+import { SignRecipientsService } from "./sign-recipients.service";
 import { SignIntegrationsService } from "./sign-integrations.service";
 import { SignNotificationsService } from "./sign-notifications.service";
 import { PlanLimitsService } from "../billing/plan-limits.service";
@@ -45,6 +42,7 @@ import type {
   CorrectEnvelopeInput,
   ExtendExpirationInput,
 } from "./dto/e-sign.schemas";
+import type { RequestActorContext } from "../../common/audit/actor-context";
 
 export type { EnvelopeValidationResult };
 
@@ -105,7 +103,7 @@ export class SignEnvelopesService {
     orgId: string,
     envelopeId: number,
     input: UpdateEnvelopeInput,
-    actor: SignActorContext,
+    actor: RequestActorContext,
   ) {
     const envelope = await this.mustGet(orgId, envelopeId);
     if (!isEnvelopeEditable(envelope.status)) {
@@ -137,7 +135,7 @@ export class SignEnvelopesService {
     return updated;
   }
 
-  async delete(orgId: string, envelopeId: number, actor: SignActorContext) {
+  async delete(orgId: string, envelopeId: number, actor: RequestActorContext) {
     const envelope = await this.mustGet(orgId, envelopeId);
     if (!isEnvelopeEditable(envelope.status)) {
       throw new ForbiddenException("Only draft envelopes can be deleted. Void sent envelopes instead.");
@@ -236,7 +234,7 @@ export class SignEnvelopesService {
     return this.validation.validate(orgId, envelopeId);
   }
 
-  send(orgId: string, envelopeId: number, actor: SignActorContext) {
+  send(orgId: string, envelopeId: number, actor: RequestActorContext) {
     return this.dispatch.send(orgId, envelopeId, actor);
   }
 
@@ -244,7 +242,7 @@ export class SignEnvelopesService {
     orgId: string,
     envelopeId: number,
     input: VoidEnvelopeInput,
-    actor: SignActorContext,
+    actor: RequestActorContext,
   ) {
     const envelope = await this.mustGet(orgId, envelopeId);
     if (!canTransitionEnvelope(envelope.status, "voided")) {
@@ -333,7 +331,7 @@ export class SignEnvelopesService {
     orgId: string,
     envelopeId: number,
     input: CorrectEnvelopeInput,
-    actor: SignActorContext,
+    actor: RequestActorContext,
   ) {
     const envelope = await this.mustGet(orgId, envelopeId);
     if (isEnvelopeTerminal(envelope.status)) {
@@ -365,7 +363,7 @@ export class SignEnvelopesService {
     return this.mustGet(orgId, envelopeId);
   }
 
-  resend(orgId: string, envelopeId: number, actor: SignActorContext) {
+  resend(orgId: string, envelopeId: number, actor: RequestActorContext) {
     return this.dispatch.resend(orgId, envelopeId, actor);
   }
 
@@ -373,7 +371,7 @@ export class SignEnvelopesService {
     orgId: string,
     envelopeId: number,
     input: ExtendExpirationInput,
-    actor: SignActorContext,
+    actor: RequestActorContext,
   ) {
     const envelope = await this.mustGet(orgId, envelopeId);
     const newExpiresAt = new Date(input.expiresAt);
@@ -421,7 +419,7 @@ export class SignEnvelopesService {
   sendManualReminder(
     orgId: string,
     envelopeId: number,
-    actor: SignActorContext,
+    actor: RequestActorContext,
   ) {
     return this.sweeps.sendManualReminder(orgId, envelopeId, actor);
   }

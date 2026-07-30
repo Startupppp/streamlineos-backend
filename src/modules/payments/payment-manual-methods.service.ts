@@ -4,8 +4,8 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { paymentManualMethods } from "../../db/schema";
 import { PaymentAuditService } from "./payment-audit.service";
-import type { ActorContext } from "./payment-provider-setup.service";
 import type { CreateManualMethodInput, UpdateManualMethodInput } from "./dto/manual-methods.schemas";
+import type { RequestActorContext } from "../../common/audit/actor-context";
 
 type ManualMethodStatus = "enabled" | "missing_instructions" | "disabled";
 
@@ -37,7 +37,7 @@ export class PaymentManualMethodsService {
     });
   }
 
-  async create(orgId: string, input: CreateManualMethodInput, actor: ActorContext) {
+  async create(orgId: string, input: CreateManualMethodInput, actor: RequestActorContext) {
     const existing = await this.db.query.paymentManualMethods.findFirst({
       where: and(eq(paymentManualMethods.orgId, orgId), eq(paymentManualMethods.methodType, input.methodType)),
     });
@@ -65,7 +65,7 @@ export class PaymentManualMethodsService {
     return saved;
   }
 
-  async update(orgId: string, id: number, input: UpdateManualMethodInput, actor: ActorContext) {
+  async update(orgId: string, id: number, input: UpdateManualMethodInput, actor: RequestActorContext) {
     const existing = await this.db.query.paymentManualMethods.findFirst({
       where: and(eq(paymentManualMethods.id, id), eq(paymentManualMethods.orgId, orgId)),
     });
@@ -92,7 +92,7 @@ export class PaymentManualMethodsService {
     return updated;
   }
 
-  async disable(orgId: string, id: number, actor: ActorContext) {
+  async disable(orgId: string, id: number, actor: RequestActorContext) {
     const existing = await this.db.query.paymentManualMethods.findFirst({
       where: and(eq(paymentManualMethods.id, id), eq(paymentManualMethods.orgId, orgId)),
     });

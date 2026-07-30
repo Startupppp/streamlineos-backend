@@ -30,6 +30,13 @@ import type { SetRolePermissionsInput } from "./dto/rbac.schemas";
 const CATALOG_KEYS = new Set(PERMISSIONS.map((permission) => permission.name));
 const ROLES_PAGE_LIMIT = 100;
 
+export interface RolePermissionMatrixEntry {
+  roleId: number;
+  roleName: string;
+  roleSlug: string;
+  permissions: string[];
+}
+
 @Injectable()
 export class RolePermissionService {
   constructor(
@@ -241,13 +248,7 @@ export class RolePermissionService {
   }
 
   async getPermissionsMatrix(orgId: string): Promise<
-    {
-      roleId: number;
-      roleName: string;
-      roleSlug: string;
-      permissions: string[];
-    }[]
-  > {
+RolePermissionMatrixEntry[]> {
     const version = await this.access.getPermissionsVersion(orgId);
     return this.cache.cached(
       CACHE_KEYS.permissionsMatrix(orgId, version),
@@ -257,13 +258,7 @@ export class RolePermissionService {
   }
 
   private async fetchPermissionsMatrix(orgId: string): Promise<
-    {
-      roleId: number;
-      roleName: string;
-      roleSlug: string;
-      permissions: string[];
-    }[]
-  > {
+RolePermissionMatrixEntry[]> {
     const orgRoles = await this.db
       .select({
         id: roles.id,

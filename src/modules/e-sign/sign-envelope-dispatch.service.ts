@@ -17,10 +17,7 @@ import { SignAuditService } from "./sign-audit.service";
 import { SignTokensService } from "./sign-tokens.service";
 import { SignSettingsService } from "./sign-settings.service";
 import { SignNotificationsService } from "./sign-notifications.service";
-import {
-  SignRecipientsService,
-  type SignActorContext,
-} from "./sign-recipients.service";
+import { SignRecipientsService } from "./sign-recipients.service";
 import { SignIntegrationsService } from "./sign-integrations.service";
 import {
   SignEnvelopeValidationService,
@@ -34,6 +31,7 @@ import {
   nextEligibleRecipientIds,
   type SignEnvelopeStatus,
 } from "./sign-state";
+import type { RequestActorContext } from "../../common/audit/actor-context";
 
 @Injectable()
 export class SignEnvelopeDispatchService {
@@ -63,7 +61,7 @@ export class SignEnvelopeDispatchService {
     return user?.name ?? "A StreamlineOS user";
   }
 
-  async send(orgId: string, envelopeId: number, actor: SignActorContext) {
+  async send(orgId: string, envelopeId: number, actor: RequestActorContext) {
     const envelope = await this.findEnvelope(orgId, envelopeId);
     if (!isEnvelopeEditable(envelope.status)) {
       throw new ForbiddenException("Only draft envelopes can be sent");
@@ -195,7 +193,7 @@ export class SignEnvelopeDispatchService {
     return updated;
   }
 
-  async resend(orgId: string, envelopeId: number, actor: SignActorContext) {
+  async resend(orgId: string, envelopeId: number, actor: RequestActorContext) {
     const envelope = await this.findEnvelope(orgId, envelopeId);
     if (!isEnvelopeSignable(envelope.status)) {
       throw new ForbiddenException("Only sent envelopes can be resent");

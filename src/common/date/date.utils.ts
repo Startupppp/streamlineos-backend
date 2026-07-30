@@ -124,13 +124,6 @@ export function startOfMonth(date: Date): Date {
   return result;
 }
 
-export function endOfMonth(date: Date): Date {
-  const result = new Date(date.getTime());
-  result.setMonth(result.getMonth() + 1, 0);
-  result.setHours(23, 59, 59, 999);
-  return result;
-}
-
 // ─── Difference helpers ────────────────────────────────────────────────────────
 
 export function differenceInCalendarDays(later: Date, earlier: Date): number {

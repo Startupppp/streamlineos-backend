@@ -12,13 +12,11 @@ import { type Db } from "../../db/drizzle.module";
 import { SignAuditService } from "./sign-audit.service";
 import { SignTokensService } from "./sign-tokens.service";
 import { SignNotificationsService } from "./sign-notifications.service";
-import {
-  SignRecipientsService,
-  type SignActorContext,
-} from "./sign-recipients.service";
+import { SignRecipientsService } from "./sign-recipients.service";
 import { SignIntegrationsService } from "./sign-integrations.service";
 import { isSigningType } from "./sign-envelope-validation.service";
 import { isEnvelopeSignable } from "./sign-state";
+import type { RequestActorContext } from "../../common/audit/actor-context";
 
 @Injectable()
 export class SignEnvelopeSweepsService {
@@ -118,7 +116,7 @@ export class SignEnvelopeSweepsService {
   async sendManualReminder(
     orgId: string,
     envelopeId: number,
-    actor: SignActorContext,
+    actor: RequestActorContext,
   ): Promise<{ remindedCount: number }> {
     const envelope = await this.findEnvelope(orgId, envelopeId);
     if (!isEnvelopeSignable(envelope.status)) {

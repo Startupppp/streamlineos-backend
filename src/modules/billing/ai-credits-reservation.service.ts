@@ -15,19 +15,14 @@ import {
   orgAiCredits,
 } from "../../db/schema";
 import { TRIAL_GRANT_MILLI } from "./ai-credit-units";
+import type { AiCreditReserveInput, AiCreditSettleInput } from "../ai/gateway/credit-ledger.interface";
 
 @Injectable()
 export class AiCreditsReservationService {
   private readonly logger = new Logger(AiCreditsReservationService.name);
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async reserve(input: {
-    orgId: string;
-    userId: string | null;
-    feature: string;
-    credits: number;
-    idempotencyKey?: string;
-  }): Promise<{ reservationId: number }> {
+  async reserve(input: AiCreditReserveInput): Promise<{ reservationId: number }> {
     const { orgId, userId, feature, credits, idempotencyKey } = input;
 
     if (idempotencyKey) {
@@ -114,15 +109,7 @@ export class AiCreditsReservationService {
 
   async settle(
     reservationId: number,
-    input: {
-      actualMilli?: number;
-      model?: string;
-      metadata?: Record<string, unknown>;
-      promptTokens?: number;
-      completionTokens?: number;
-      totalTokens?: number;
-      costUsd?: number;
-    },
+    input: AiCreditSettleInput,
   ): Promise<void> {
     await this.db.transaction(async (tx) => {
       const [reservation] = await tx

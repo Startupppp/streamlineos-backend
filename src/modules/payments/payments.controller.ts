@@ -17,7 +17,7 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
-import { PaymentProviderSetupService, type ActorContext } from "./payment-provider-setup.service";
+import { PaymentProviderSetupService } from "./payment-provider-setup.service";
 import { PaymentTestTransactionService } from "./payment-test-transaction.service";
 import { PaymentWebhookHealthService } from "./payment-webhook-health.service";
 import { PaymentReadinessService } from "./payment-readiness.service";
@@ -51,6 +51,7 @@ import {
   type GenerateWebhookInput,
   type VerifyWebhookInput,
 } from "./dto/webhook.schemas";
+import type { RequestActorContext } from "../../common/audit/actor-context";
 
 @Controller("payments")
 @UseGuards(JwtAuthGuard)
@@ -70,7 +71,7 @@ export class PaymentsController {
     return host ? `${String(protocol)}://${String(host)}` : (process.env.APP_URL ?? "").replace(/\/$/, "");
   }
 
-  private actorContext(u: CurrentUserContext, req: Request): ActorContext {
+  private actorContext(u: CurrentUserContext, req: Request): RequestActorContext {
     return {
       orgId: u.orgId,
       userId: u.userId,

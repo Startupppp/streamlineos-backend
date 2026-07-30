@@ -38,7 +38,10 @@ import {
   PERMISSIONS,
 } from "./permissions";
 import { RoleLockoutService } from "./role-lockout.service";
-import { RolePermissionService } from "./role-permission.service";
+import {
+  RolePermissionService,
+  type RolePermissionMatrixEntry,
+} from "./role-permission.service";
 import { RoleMemberService } from "./role-member.service";
 import type {
   CloneTemplateInput,
@@ -343,14 +346,7 @@ export class RolesService {
     return this.rolePermission.setRolePermissions(actor, roleId, input);
   }
 
-  getPermissionsMatrix(orgId: string): Promise<
-    {
-      roleId: number;
-      roleName: string;
-      roleSlug: string;
-      permissions: string[];
-    }[]
-  > {
+  getPermissionsMatrix(orgId: string): Promise<RolePermissionMatrixEntry[]> {
     return this.rolePermission.getPermissionsMatrix(orgId);
   }
 

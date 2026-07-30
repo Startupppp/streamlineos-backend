@@ -12,7 +12,7 @@ import {
 import { PaymentProviderAdapterRegistry } from "./payment-provider-adapter.interface";
 import { PaymentAuditService } from "./payment-audit.service";
 import { PaymentAnalyticsService } from "./payment-analytics.service";
-import type { ActorContext } from "./payment-provider-setup.service";
+import type { RequestActorContext } from "../../common/audit/actor-context";
 
 export interface ReadinessResult {
   completedChecks: string[];
@@ -105,7 +105,7 @@ export class PaymentReadinessService {
     return { completedChecks, blockers, warnings, readyForLive: blockers.length === 0 };
   }
 
-  async activateLive(orgId: string, providerKey: string, actor: ActorContext) {
+  async activateLive(orgId: string, providerKey: string, actor: RequestActorContext) {
     const provider = await this.findProvider(orgId, providerKey);
     const readiness = await this.getReadiness(orgId, providerKey);
 

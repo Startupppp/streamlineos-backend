@@ -4,10 +4,11 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { paymentProviders, paymentTestTransactions } from "../../db/schema";
 import { PaymentProviderAdapterRegistry } from "./payment-provider-adapter.interface";
-import { PaymentProviderSetupService, type ActorContext } from "./payment-provider-setup.service";
+import { PaymentProviderSetupService } from "./payment-provider-setup.service";
 import { PaymentAuditService } from "./payment-audit.service";
 import { PaymentAnalyticsService } from "./payment-analytics.service";
 import type { CreateTestTransactionInput, VerifyTestTransactionInput } from "./dto/test-transaction.schemas";
+import type { RequestActorContext } from "../../common/audit/actor-context";
 
 @Injectable()
 export class PaymentTestTransactionService {
@@ -29,7 +30,7 @@ export class PaymentTestTransactionService {
 
   // Test payments always run against TEST credentials — never live, regardless of the
   // provider's current environment — per "test mode is a first-class state" (11_...md).
-  async createTestTransaction(orgId: string, providerKey: string, input: CreateTestTransactionInput, actor: ActorContext) {
+  async createTestTransaction(orgId: string, providerKey: string, input: CreateTestTransactionInput, actor: RequestActorContext) {
     const provider = await this.findProvider(orgId, providerKey);
     const adapter = this.registry.get(providerKey);
     if (!adapter) throw new BadRequestException(`No backend integration available for provider: ${providerKey}`);
@@ -90,7 +91,7 @@ export class PaymentTestTransactionService {
     }
   }
 
-  async verifyTestTransaction(orgId: string, providerKey: string, id: number, input: VerifyTestTransactionInput, actor: ActorContext) {
+  async verifyTestTransaction(orgId: string, providerKey: string, id: number, input: VerifyTestTransactionInput, actor: RequestActorContext) {
     const provider = await this.findProvider(orgId, providerKey);
     const adapter = this.registry.get(providerKey);
     if (!adapter) throw new BadRequestException(`No backend integration available for provider: ${providerKey}`);

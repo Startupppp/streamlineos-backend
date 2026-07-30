@@ -9,7 +9,6 @@ export const ROLE_RANK = {
   FUNCTIONAL: 40,
 } as const satisfies Record<string, number>;
 
-export type RoleRank = (typeof ROLE_RANK)[keyof typeof ROLE_RANK];
 
 export const RESERVED_PROPAGATION_KEYS: ReadonlySet<string> = new Set([
   "settings:manage",

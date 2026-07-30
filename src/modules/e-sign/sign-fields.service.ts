@@ -6,7 +6,7 @@ import { type Db } from "../../db/drizzle.module";
 import { SignAuditService } from "./sign-audit.service";
 import { isEnvelopeEditable } from "./sign-state";
 import type { CreateFieldInput, UpdateFieldInput } from "./dto/e-sign.schemas";
-import type { SignActorContext } from "./sign-recipients.service";
+import type { RequestActorContext } from "../../common/audit/actor-context";
 
 @Injectable()
 export class SignFieldsService {
@@ -40,7 +40,7 @@ export class SignFieldsService {
     if (input.height !== undefined && input.height <= 0) throw new BadRequestException("Field height must be positive");
   }
 
-  async add(orgId: string, envelopeId: number, input: CreateFieldInput, actor: SignActorContext) {
+  async add(orgId: string, envelopeId: number, input: CreateFieldInput, actor: RequestActorContext) {
     await this.loadEditableEnvelope(orgId, envelopeId);
     this.validateFieldRules(input);
 
@@ -100,7 +100,7 @@ export class SignFieldsService {
     return field;
   }
 
-  async update(orgId: string, fieldId: number, input: UpdateFieldInput, actor: SignActorContext) {
+  async update(orgId: string, fieldId: number, input: UpdateFieldInput, actor: RequestActorContext) {
     const field = await this.get(orgId, fieldId);
     await this.loadEditableEnvelope(orgId, field.envelopeId);
     if (Object.keys(input).length > 0) this.validateFieldRules({ ...field, ...input } as CreateFieldInput);
@@ -126,7 +126,7 @@ export class SignFieldsService {
     return updated;
   }
 
-  async remove(orgId: string, fieldId: number, actor: SignActorContext) {
+  async remove(orgId: string, fieldId: number, actor: RequestActorContext) {
     const field = await this.get(orgId, fieldId);
     await this.loadEditableEnvelope(orgId, field.envelopeId);
 

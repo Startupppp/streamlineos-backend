@@ -15,4 +15,3 @@ export const portalJwtPayloadSchema = z.object({
   sessionEpoch: z.number().int().nonnegative(),
 });
 
-export type PortalJwtPayload = z.infer<typeof portalJwtPayloadSchema>;

@@ -16,7 +16,7 @@ export function subscribeVersionBump(fn: VersionBumpListener): () => void {
   };
 }
 
-export function notifyVersionBump(orgId: string): void {
+function notifyVersionBump(orgId: string): void {
   for (const fn of versionBumpListeners) fn(orgId);
 }
 

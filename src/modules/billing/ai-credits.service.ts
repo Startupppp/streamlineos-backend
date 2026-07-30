@@ -11,6 +11,7 @@ import { creditsToMilli, milliToCredits } from "../ai/billing/ai-model-pricing.c
 import { TRIAL_GRANT_MILLI, planGrantMilli } from "./ai-credit-units";
 import { AiCreditsReservationService } from "./ai-credits-reservation.service";
 import { AiCreditsPacksService } from "./ai-credits-packs.service";
+import type { AiCreditReserveInput, AiCreditSettleInput } from "../ai/gateway/credit-ledger.interface";
 
 @Injectable()
 export class AiCreditsService {
@@ -378,27 +379,13 @@ export class AiCreditsService {
     }
   }
 
-  async reserve(input: {
-    orgId: string;
-    userId: string | null;
-    feature: string;
-    credits: number;
-    idempotencyKey?: string;
-  }): Promise<{ reservationId: number }> {
+  async reserve(input: AiCreditReserveInput): Promise<{ reservationId: number }> {
     return this.reservation.reserve(input);
   }
 
   async settle(
     reservationId: number,
-    input: {
-      actualMilli?: number;
-      model?: string;
-      metadata?: Record<string, unknown>;
-      promptTokens?: number;
-      completionTokens?: number;
-      totalTokens?: number;
-      costUsd?: number;
-    },
+    input: AiCreditSettleInput,
   ): Promise<void> {
     return this.reservation.settle(reservationId, input);
   }

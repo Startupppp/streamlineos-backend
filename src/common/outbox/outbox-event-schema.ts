@@ -17,7 +17,6 @@ export const outboxEventInputSchema = z.object({
 });
 
 export type OutboxEventInput = z.input<typeof outboxEventInputSchema>;
-export type OutboxEventParsed = z.output<typeof outboxEventInputSchema>;
 
 export const dealClosedPayloadSchema = z.object({
   dealId: z.number().int().positive(),
@@ -28,4 +27,3 @@ export const dealClosedPayloadSchema = z.object({
   actorUserId: z.string().min(1),
 });
 
-export type DealClosedPayload = z.infer<typeof dealClosedPayloadSchema>;

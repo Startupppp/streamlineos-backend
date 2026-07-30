@@ -9,6 +9,7 @@ import { SignPdfService } from "./sign-pdf.service";
 import { SignSettingsService } from "./sign-settings.service";
 import { SignAuditService } from "./sign-audit.service";
 import { isEnvelopeEditable } from "./sign-state";
+import type { RequestActorContext } from "../../common/audit/actor-context";
 
 const SIGNED_URL_EXPIRY_SECONDS = 900;
 
@@ -19,12 +20,6 @@ export interface UploadedFileInput {
   size: number;
 }
 
-export interface UploadDocumentActor {
-  orgId: string;
-  userId: string;
-  ipAddress?: string;
-  userAgent?: string;
-}
 
 @Injectable()
 export class SignDocumentsService {
@@ -47,7 +42,7 @@ export class SignDocumentsService {
     return envelope;
   }
 
-  async upload(envelopeId: number, file: UploadedFileInput, orderIndex: number, actor: UploadDocumentActor) {
+  async upload(envelopeId: number, file: UploadedFileInput, orderIndex: number, actor: RequestActorContext) {
     if (!this.storage.isConfigured()) {
       throw new BadRequestException("File storage is not configured for this environment");
     }

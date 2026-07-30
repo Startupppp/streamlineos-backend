@@ -68,6 +68,7 @@ function makeAudit(): AuditService {
 function makeAccess(): AccessService {
   return {
     resolveUserPermissions: jest.fn().mockResolvedValue(new Map()),
+    getPermissionsVersion: jest.fn().mockResolvedValue(1),
   } as unknown as AccessService;
 }
 

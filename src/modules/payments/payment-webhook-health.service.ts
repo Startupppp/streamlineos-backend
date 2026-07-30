@@ -6,11 +6,12 @@ import type { Db } from "../../db/drizzle.module";
 import { paymentProviders, paymentWebhookEndpoints, paymentWebhookEvents } from "../../db/schema";
 import { getCatalogEntry } from "./payment-provider-catalog";
 import { PaymentProviderAdapterRegistry } from "./payment-provider-adapter.interface";
-import { PaymentProviderSetupService, type ActorContext } from "./payment-provider-setup.service";
+import { PaymentProviderSetupService } from "./payment-provider-setup.service";
 import { PaymentAuditService } from "./payment-audit.service";
 import { PaymentAnalyticsService } from "./payment-analytics.service";
 import { webhookEnvelopeSchema } from "./dto/webhook.schemas";
 import { ProviderBridgeService } from "../finance-controls/provider-bridge.service";
+import type { RequestActorContext } from "../../common/audit/actor-context";
 
 // Only an allow-listed summary is ever persisted in payload_redacted — never the full webhook
 // body, which can carry card/bank/contact details depending on event type.
@@ -50,7 +51,7 @@ export class PaymentWebhookHealthService {
     return provider;
   }
 
-  async generateEndpoint(orgId: string, providerKey: string, environment: "test" | "live", apiBaseUrl: string, actor: ActorContext) {
+  async generateEndpoint(orgId: string, providerKey: string, environment: "test" | "live", apiBaseUrl: string, actor: RequestActorContext) {
     const provider = await this.findProvider(orgId, providerKey);
     const catalogEntry = getCatalogEntry(providerKey);
     const url = `${apiBaseUrl.replace(/\/$/, "")}/webhooks/payments/${providerKey}/${environment}/${orgId}`;
@@ -96,7 +97,7 @@ export class PaymentWebhookHealthService {
     providerKey: string,
     environment: "test" | "live",
     sample: { rawBody: string; signature: string } | undefined,
-    actor: ActorContext,
+    actor: RequestActorContext,
   ) {
     const provider = await this.findProvider(orgId, providerKey);
     const endpoint = await this.db.query.paymentWebhookEndpoints.findFirst({
@@ -272,7 +273,7 @@ export class PaymentWebhookHealthService {
     return { status: 200, body: { ok: true } };
   }
 
-  async retryEvent(orgId: string, providerKey: string, eventId: number, actor: ActorContext) {
+  async retryEvent(orgId: string, providerKey: string, eventId: number, actor: RequestActorContext) {
     const provider = await this.findProvider(orgId, providerKey);
     const event = await this.db.query.paymentWebhookEvents.findFirst({
       where: and(eq(paymentWebhookEvents.id, eventId), eq(paymentWebhookEvents.orgId, orgId), eq(paymentWebhookEvents.providerId, provider.id)),

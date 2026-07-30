@@ -7,13 +7,8 @@ import { SignAuditService } from "./sign-audit.service";
 import { SignTokensService } from "./sign-tokens.service";
 import { isEnvelopeEditable, isEnvelopeTerminal } from "./sign-state";
 import type { CreateRecipientInput, UpdateRecipientInput } from "./dto/e-sign.schemas";
+import type { RequestActorContext } from "../../common/audit/actor-context";
 
-export interface SignActorContext {
-  orgId: string;
-  userId: string;
-  ipAddress?: string;
-  userAgent?: string;
-}
 
 @Injectable()
 export class SignRecipientsService {
@@ -43,7 +38,7 @@ export class SignRecipientsService {
     }
   }
 
-  async add(orgId: string, envelopeId: number, input: CreateRecipientInput, actor: SignActorContext) {
+  async add(orgId: string, envelopeId: number, input: CreateRecipientInput, actor: RequestActorContext) {
     const envelope = await this.loadEnvelope(orgId, envelopeId);
     if (!isEnvelopeEditable(envelope.status)) {
       throw new ForbiddenException("Recipients can only be added to a draft envelope");
@@ -82,7 +77,7 @@ export class SignRecipientsService {
     return recipient;
   }
 
-  async update(orgId: string, recipientId: number, input: UpdateRecipientInput, actor: SignActorContext) {
+  async update(orgId: string, recipientId: number, input: UpdateRecipientInput, actor: RequestActorContext) {
     const recipient = await this.get(orgId, recipientId);
     const envelope = await this.loadEnvelope(orgId, recipient.envelopeId);
 
@@ -123,7 +118,7 @@ export class SignRecipientsService {
     return updated;
   }
 
-  async remove(orgId: string, recipientId: number, actor: SignActorContext) {
+  async remove(orgId: string, recipientId: number, actor: RequestActorContext) {
     const recipient = await this.get(orgId, recipientId);
     const envelope = await this.loadEnvelope(orgId, recipient.envelopeId);
     if (!isEnvelopeEditable(envelope.status)) {

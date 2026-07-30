@@ -16,7 +16,7 @@ import { SignAuditService } from "../sign-audit.service";
 import { SignTokensService } from "../sign-tokens.service";
 import { SignWatermarkService } from "../sign-watermark.service";
 import { SignNotificationsService } from "../sign-notifications.service";
-import type { SignActorContext } from "../sign-recipients.service";
+import type { RequestActorContext } from "../../../common/audit/actor-context";
 
 const P = "e2e-signos-flow-";
 const ORG_ID = `${P}org`;
@@ -55,7 +55,7 @@ describe("SignOS signing flow integration (e2e)", () => {
   let tokensSvc: SignTokensService;
   let watermarkSvc: SignWatermarkService;
 
-  const actor: SignActorContext = { orgId: ORG_ID, userId: USER_ID };
+  const actor: RequestActorContext = { orgId: ORG_ID, userId: USER_ID };
 
   async function cleanup(): Promise<void> {
     await db.delete(organizations).where(eq(organizations.id, ORG_ID));
@@ -98,7 +98,7 @@ describe("SignOS signing flow integration (e2e)", () => {
   async function createEnvelopeWithSigner(opts?: { watermarkPolicyId?: number; orgId?: string; userId?: string }) {
     const orgId = opts?.orgId ?? ORG_ID;
     const userId = opts?.userId ?? USER_ID;
-    const localActor: SignActorContext = { orgId, userId };
+    const localActor: RequestActorContext = { orgId, userId };
 
     const envelope = await envelopesSvc.create(orgId, userId, {
       title: "Test agreement",

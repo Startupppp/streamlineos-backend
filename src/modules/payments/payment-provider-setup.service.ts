@@ -9,13 +9,8 @@ import { PaymentProviderAdapterRegistry, type PaymentCredentialWarning } from ".
 import { PaymentAuditService } from "./payment-audit.service";
 import { PaymentAnalyticsService } from "./payment-analytics.service";
 import type { SaveCredentialsInput, UpdateProviderInput } from "./dto/payments.schemas";
+import type { RequestActorContext } from "../../common/audit/actor-context";
 
-export interface ActorContext {
-  orgId: string;
-  userId: string;
-  ipAddress?: string;
-  userAgent?: string;
-}
 
 @Injectable()
 export class PaymentProviderSetupService {
@@ -73,7 +68,7 @@ export class PaymentProviderSetupService {
     return { ...provider, credentials: creds.map((c) => this.toPublicCredential(c)) };
   }
 
-  async createProvider(orgId: string, providerKey: string, actor: ActorContext) {
+  async createProvider(orgId: string, providerKey: string, actor: RequestActorContext) {
     const catalogEntry = getCatalogEntry(providerKey);
     if (!catalogEntry) throw new BadRequestException(`Unknown payment provider: ${providerKey}`);
 
@@ -110,7 +105,7 @@ export class PaymentProviderSetupService {
     return created;
   }
 
-  async updateProvider(orgId: string, providerKey: string, patch: UpdateProviderInput, actor: ActorContext) {
+  async updateProvider(orgId: string, providerKey: string, patch: UpdateProviderInput, actor: RequestActorContext) {
     const provider = await this.findProvider(orgId, providerKey);
     const [updated] = await this.db
       .update(paymentProviders)
@@ -132,7 +127,7 @@ export class PaymentProviderSetupService {
     return updated;
   }
 
-  async disableProvider(orgId: string, providerKey: string, actor: ActorContext) {
+  async disableProvider(orgId: string, providerKey: string, actor: RequestActorContext) {
     const provider = await this.findProvider(orgId, providerKey);
     const [updated] = await this.db
       .update(paymentProviders)
@@ -154,7 +149,7 @@ export class PaymentProviderSetupService {
     return updated;
   }
 
-  async saveCredentials(orgId: string, providerKey: string, input: SaveCredentialsInput, actor: ActorContext) {
+  async saveCredentials(orgId: string, providerKey: string, input: SaveCredentialsInput, actor: RequestActorContext) {
     const provider = await this.findProvider(orgId, providerKey);
     const adapter = this.registry.get(providerKey);
 
@@ -219,7 +214,7 @@ export class PaymentProviderSetupService {
     return { credential: this.toPublicCredential(saved), warning };
   }
 
-  async disconnectCredentials(orgId: string, providerKey: string, environment: "test" | "live", actor: ActorContext) {
+  async disconnectCredentials(orgId: string, providerKey: string, environment: "test" | "live", actor: RequestActorContext) {
     const provider = await this.findProvider(orgId, providerKey);
     const existing = await this.db.query.paymentProviderCredentials.findFirst({
       where: and(

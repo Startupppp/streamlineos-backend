@@ -13,13 +13,13 @@ import { type Db } from "../../db/drizzle.module";
 import { SignAuditService } from "./sign-audit.service";
 import { SignTokensService } from "./sign-tokens.service";
 import { PlanLimitsService } from "../billing/plan-limits.service";
-import type { SignActorContext } from "./sign-recipients.service";
 import type {
   CreateTemplateInput,
   UpdateTemplateInput,
   CreateEnvelopeFromTemplateInput,
   PublishPublicFormInput,
 } from "./dto/e-sign.schemas";
+import type { RequestActorContext } from "../../common/audit/actor-context";
 
 export interface TemplateRole {
   roleName: string;
@@ -241,7 +241,7 @@ export class SignTemplatesService {
     return this.create(orgId, userId, { name, templateJson, restrictedToRoles: [], restrictedToTeams: [] });
   }
 
-  async update(orgId: string, templateId: number, input: UpdateTemplateInput, actor: SignActorContext) {
+  async update(orgId: string, templateId: number, input: UpdateTemplateInput, actor: RequestActorContext) {
     const template = await this.get(orgId, templateId);
     const [updated] = await this.db
       .update(signTemplates)
@@ -258,7 +258,7 @@ export class SignTemplatesService {
     return updated;
   }
 
-  async duplicate(orgId: string, templateId: number, actor: SignActorContext) {
+  async duplicate(orgId: string, templateId: number, actor: RequestActorContext) {
     const template = await this.get(orgId, templateId);
     const [copy] = await this.db
       .insert(signTemplates)
