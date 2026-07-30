@@ -12,8 +12,8 @@ import {
   resignationSubmittedMessage,
   resignationHrApprovedTitle,
   resignationHrApprovedMessage,
-  resignationCeoApprovedMessage,
-  resignationCeoRejectedMessage,
+  resignationFinalApprovedMessage,
+  resignationFinalRejectedMessage,
 } from "./hr-notification-texts";
 
 type ResignationNotificationType = "INFO" | "SUCCESS" | "WARNING" | "ERROR";
@@ -79,15 +79,15 @@ export class ResignationJobsService {
     });
   }
 
-  notifyCeoDecision(orgId: string, employeeId: string, approved: boolean): void {
-    this.run("resignation.ceo_decision", async () => {
+  notifyFinalDecision(orgId: string, employeeId: string, approved: boolean): void {
+    this.run("resignation.final_decision", async () => {
       await this.fanOut(orgId, [employeeId], {
         type: approved ? "SUCCESS" : "WARNING",
         title: approved ? "Resignation Approved" : "Resignation Rejected",
-        message: approved ? resignationCeoApprovedMessage() : resignationCeoRejectedMessage(),
+        message: approved ? resignationFinalApprovedMessage() : resignationFinalRejectedMessage(),
       });
       this.audit.log({
-        action: approved ? "hr.resignation.ceo_approved.notified" : "hr.resignation.ceo_rejected.notified",
+        action: approved ? "hr.resignation.final_approved.notified" : "hr.resignation.final_rejected.notified",
         userId: employeeId,
         orgId,
         targetType: "resignation",

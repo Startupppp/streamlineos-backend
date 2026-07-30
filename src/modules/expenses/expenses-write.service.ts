@@ -282,8 +282,8 @@ export class ExpensesWriteService {
     }
 
     const [adminEmails, hrEmails] = await Promise.all([
-      body.sendTo !== "HR" ? this.fetchAdminEmails(orgId) : Promise.resolve<string[]>([]),
-      body.sendTo !== "CEO" ? this.fetchExpenseApproverEmails(orgId) : Promise.resolve<string[]>([]),
+      body.sendTo !== "APPROVERS" ? this.fetchAdminEmails(orgId) : Promise.resolve<string[]>([]),
+      body.sendTo !== "ADMINS" ? this.fetchExpenseApproverEmails(orgId) : Promise.resolve<string[]>([]),
     ]);
 
     const recipientEmails = [...new Set([...adminEmails, ...hrEmails])];

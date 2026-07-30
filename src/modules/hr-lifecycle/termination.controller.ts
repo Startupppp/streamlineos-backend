@@ -94,14 +94,14 @@ export class TerminationController {
     return this.termination.submit(u.orgId, u.userId, terminationId);
   }
 
-  @Patch(":terminationId/ceo-review")
+  @Patch(":terminationId/final-review")
   @RequirePermission("hr:exit:approve")
-  ceoReview(
+  finalReview(
     @Param("terminationId", ParseIntPipe) terminationId: number,
     @Body(new ZodValidationPipe(terminationReviewSchema)) body: TerminationReviewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.termination.ceoReview(u.orgId, u.userId, terminationId, body);
+    return this.termination.finalReview(u.orgId, u.userId, terminationId, body);
   }
 
   @Get(":terminationId")

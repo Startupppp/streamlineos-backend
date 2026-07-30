@@ -30,10 +30,10 @@ interface TimelineRecord {
   createdAt: Date | null;
   hrReviewedAt: Date | null;
   hrRemarks: string | null;
-  ceoReviewedAt: Date | null;
-  ceoRemarks: string | null;
+  finalReviewedAt: Date | null;
+  finalRemarks: string | null;
   hrReviewer?: { name: string | null } | null;
-  ceoReviewer?: { name: string | null } | null;
+  finalReviewer?: { name: string | null } | null;
 }
 
 export interface TimelineStep {
@@ -66,7 +66,7 @@ export class ExitService {
           user: { columns: { id: true, name: true, email: true, image: true, designation: true, joiningDate: true } },
           checklists: true,
           hrReviewer: { columns: { id: true, name: true } },
-          ceoReviewer: { columns: { id: true, name: true } },
+          finalReviewer: { columns: { id: true, name: true } },
         },
         orderBy: [desc(resignations.createdAt)],
         limit,
@@ -93,7 +93,7 @@ export class ExitService {
         user: { columns: { id: true, name: true, email: true, image: true, designation: true, joiningDate: true } },
         checklists: true,
         hrReviewer: { columns: { id: true, name: true } },
-        ceoReviewer: { columns: { id: true, name: true } },
+        finalReviewer: { columns: { id: true, name: true } },
       },
     });
     if (!data) throw new NotFoundException("Resignation not found.");
@@ -116,11 +116,11 @@ export class ExitService {
         remarks: record.hrRemarks,
       },
       {
-        label: "CEO Review",
-        status: this.stepStatus(record, "CEO"),
-        actor: record.ceoReviewer?.name ?? null,
-        timestamp: record.ceoReviewedAt,
-        remarks: record.ceoRemarks,
+        label: "Final Review",
+        status: this.stepStatus(record, "FINAL"),
+        actor: record.finalReviewer?.name ?? null,
+        timestamp: record.finalReviewedAt,
+        remarks: record.finalRemarks,
       },
       {
         label: "Exit Process",
@@ -139,18 +139,18 @@ export class ExitService {
     ];
   }
 
-  private stepStatus(record: TimelineRecord, reviewer: "HR" | "CEO"): StepStatus {
+  private stepStatus(record: TimelineRecord, reviewer: "HR" | "FINAL"): StepStatus {
     const status = record.status ?? "";
     if (status === "REJECTED") {
-      if (reviewer === "HR" && record.hrReviewedAt && !record.ceoReviewedAt) return "rejected";
-      if (reviewer === "CEO" && record.ceoReviewedAt) return "rejected";
+      if (reviewer === "HR" && record.hrReviewedAt && !record.finalReviewedAt) return "rejected";
+      if (reviewer === "FINAL" && record.finalReviewedAt) return "rejected";
     }
     if (reviewer === "HR") {
-      if (["HR_APPROVED", "CEO_APPROVED", "IN_PROGRESS", "COMPLETED"].includes(status)) return "completed";
+      if (["HR_APPROVED", "FINAL_APPROVED", "IN_PROGRESS", "COMPLETED"].includes(status)) return "completed";
       if (["PENDING_HR", "SUBMITTED"].includes(status)) return "active";
     }
-    if (reviewer === "CEO") {
-      if (["CEO_APPROVED", "IN_PROGRESS", "COMPLETED"].includes(status)) return "completed";
+    if (reviewer === "FINAL") {
+      if (["FINAL_APPROVED", "IN_PROGRESS", "COMPLETED"].includes(status)) return "completed";
       if (status === "HR_APPROVED") return "active";
     }
     return "pending";
@@ -192,7 +192,7 @@ export class ExitService {
       where: and(eq(resignations.id, resignationId), eq(resignations.orgId, orgId)),
       with: {
         hrReviewer: { columns: { name: true } },
-        ceoReviewer: { columns: { name: true } },
+        finalReviewer: { columns: { name: true } },
       },
     });
     if (!record) throw new NotFoundException("Not found.");
@@ -215,7 +215,7 @@ export class ExitService {
     if (record.hrReviewedAt) {
       steps.push({
         label: "HR Review",
-        status: record.status === "REJECTED" && !record.ceoReviewedAt ? "rejected" : "completed",
+        status: record.status === "REJECTED" && !record.finalReviewedAt ? "rejected" : "completed",
         actor: record.hrReviewer?.name ?? "HR",
         timestamp: formatDdMmmYyyyTime(record.hrReviewedAt),
         remarks: record.hrRemarks ?? undefined,
@@ -226,18 +226,18 @@ export class ExitService {
       steps.push({ label: "HR Review", status: "pending" });
     }
 
-    if (record.ceoReviewedAt) {
+    if (record.finalReviewedAt) {
       steps.push({
-        label: "CEO Approval",
+        label: "FINAL Approval",
         status: record.status === "REJECTED" ? "rejected" : "completed",
-        actor: record.ceoReviewer?.name ?? "CEO",
-        timestamp: formatDdMmmYyyyTime(record.ceoReviewedAt),
-        remarks: record.ceoRemarks ?? undefined,
+        actor: record.finalReviewer?.name ?? "FINAL",
+        timestamp: formatDdMmmYyyyTime(record.finalReviewedAt),
+        remarks: record.finalRemarks ?? undefined,
       });
     } else if (record.status === "HR_APPROVED") {
-      steps.push({ label: "CEO Approval", status: "active" });
+      steps.push({ label: "FINAL Approval", status: "active" });
     } else {
-      steps.push({ label: "CEO Approval", status: "pending" });
+      steps.push({ label: "FINAL Approval", status: "pending" });
     }
 
     steps.push({
@@ -271,7 +271,7 @@ export class ExitService {
       throw new ForbiddenException("You can only withdraw your own resignation.");
     }
 
-    const nonWithdrawableStatuses = ["CEO_APPROVED", "IN_PROGRESS", "COMPLETED", "WITHDRAWN"];
+    const nonWithdrawableStatuses = ["FINAL_APPROVED", "IN_PROGRESS", "COMPLETED", "WITHDRAWN"];
     if (nonWithdrawableStatuses.includes(record.status ?? "")) {
       throw new BadRequestException("Resignation cannot be withdrawn at this stage.");
     }

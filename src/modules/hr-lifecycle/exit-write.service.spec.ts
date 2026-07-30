@@ -3,7 +3,7 @@ process.env.APP_URL ??= "http://localhost:1000";
 import { ExitWriteService } from "./exit-write.service";
 import { fnfSettlements } from "../../db/schema";
 
-describe("ExitWriteService.ceoReview — approving a resignation via the real UI endpoint", () => {
+describe("ExitWriteService.finalReview — approving a resignation via the real UI endpoint", () => {
   function buildDb(record: { id: number; orgId: string; userId: string; status: string; lastWorkingDate: string | null }) {
     const insertedTables: unknown[] = [];
     const db = {
@@ -40,7 +40,7 @@ describe("ExitWriteService.ceoReview — approving a resignation via the real UI
       status: "HR_APPROVED",
       lastWorkingDate: "2026-08-01",
     });
-    const resignationJobs = { notifyCeoDecision: jest.fn() };
+    const resignationJobs = { notifyFinalDecision: jest.fn() };
     const exitChecklist = { seedChecklistFromTemplate: jest.fn().mockResolvedValue(undefined) };
 
     const service = new ExitWriteService(
@@ -57,7 +57,7 @@ describe("ExitWriteService.ceoReview — approving a resignation via the real UI
       undefined as never,
     );
 
-    const result = await service.ceoReview("org-1", "actor-1", 42, { decision: "approve", remarks: "ok" });
+    const result = await service.finalReview("org-1", "actor-1", 42, { decision: "approve", remarks: "ok" });
 
     expect(result).toEqual({ success: true });
     expect(insertedTables).toContain(fnfSettlements);
@@ -72,7 +72,7 @@ describe("ExitWriteService.ceoReview — approving a resignation via the real UI
       status: "HR_APPROVED",
       lastWorkingDate: "2026-08-01",
     });
-    const resignationJobs = { notifyCeoDecision: jest.fn() };
+    const resignationJobs = { notifyFinalDecision: jest.fn() };
     const exitChecklist = { seedChecklistFromTemplate: jest.fn() };
 
     const service = new ExitWriteService(
@@ -89,7 +89,7 @@ describe("ExitWriteService.ceoReview — approving a resignation via the real UI
       undefined as never,
     );
 
-    await service.ceoReview("org-1", "actor-1", 42, { decision: "reject", remarks: "not eligible" });
+    await service.finalReview("org-1", "actor-1", 42, { decision: "reject", remarks: "not eligible" });
 
     expect(insertedTables).not.toContain(fnfSettlements);
     expect(exitChecklist.seedChecklistFromTemplate).not.toHaveBeenCalled();

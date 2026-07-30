@@ -178,7 +178,7 @@ export class EmployeeMutationsService {
 
     if (body.isActive === false) {
       throw new BadRequestException(
-        "Employees can only be terminated through the dedicated termination workflow, which requires CEO approval and creates the required settlement and asset-return records.",
+        "Employees can only be terminated through the dedicated termination workflow, which requires final approval and creates the required settlement and asset-return records.",
       );
     }
 

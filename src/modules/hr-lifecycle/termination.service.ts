@@ -72,9 +72,9 @@ export class TerminationService {
           internalNotes: terminations.internalNotes,
           createdAt: terminations.createdAt,
           updatedAt: terminations.updatedAt,
-          ceoRemarks: terminations.ceoRemarks,
-          ceoReviewedBy: terminations.ceoReviewedBy,
-          ceoReviewedAt: terminations.ceoReviewedAt,
+          finalRemarks: terminations.finalRemarks,
+          finalReviewedBy: terminations.finalReviewedBy,
+          finalReviewedAt: terminations.finalReviewedAt,
           emailSentAt: terminations.emailSentAt,
           emailStatus: terminations.emailStatus,
           initiatedBy: terminations.initiatedBy,
@@ -186,8 +186,8 @@ export class TerminationService {
       const statusLabel =
         existingActive.status === "COMPLETED"
           ? "completed"
-          : existingActive.status === "PENDING_CEO"
-            ? "pending CEO review"
+          : existingActive.status === "PENDING_FINAL"
+            ? "pending FINAL review"
             : existingActive.status === "APPROVED"
               ? "approved"
               : existingActive.status === "SENT"
@@ -198,7 +198,7 @@ export class TerminationService {
       );
     }
 
-    const isCeoInitiator = isOrgAdmin;
+    const isOrgAdminInitiator = isOrgAdmin;
     const now = new Date();
     const [record] = await this.db
       .insert(terminations)
@@ -211,9 +211,9 @@ export class TerminationService {
         severanceAmount: input.severanceAmount !== undefined ? input.severanceAmount.toString() : undefined,
         noticePeriodWaived: input.noticePeriodWaived,
         internalNotes: input.internalNotes,
-        status: isCeoInitiator ? "APPROVED" : "DRAFT",
+        status: isOrgAdminInitiator ? "APPROVED" : "DRAFT",
         initiatedBy: actorUserId,
-        ...(isCeoInitiator && { ceoReviewedBy: actorUserId, ceoReviewedAt: now }),
+        ...(isOrgAdminInitiator && { finalReviewedBy: actorUserId, finalReviewedAt: now }),
       })
       .returning();
 
@@ -235,7 +235,7 @@ export class TerminationService {
       with: {
         user: { columns: { id: true, name: true, email: true, image: true, designation: true, joiningDate: true } },
         initiator: { columns: { id: true, name: true } },
-        ceoReviewer: { columns: { id: true, name: true } },
+        finalReviewer: { columns: { id: true, name: true } },
       },
     });
     if (!data) throw new NotFoundException("Termination not found.");
@@ -256,10 +256,10 @@ export class TerminationService {
     await this.db
       .update(terminations)
       .set({
-        status: "PENDING_CEO",
-        ceoRemarks: null,
-        ceoReviewedBy: null,
-        ceoReviewedAt: null,
+        status: "PENDING_FINAL",
+        finalRemarks: null,
+        finalReviewedBy: null,
+        finalReviewedAt: null,
         updatedAt: new Date(),
       })
       .where(eq(terminations.id, terminationId));
@@ -270,18 +270,18 @@ export class TerminationService {
       orgId,
       targetId: String(terminationId),
       targetType: "termination",
-      metadata: { from: previousStatus, to: "PENDING_CEO", employeeId: existing.userId },
+      metadata: { from: previousStatus, to: "PENDING_FINAL", employeeId: existing.userId },
     });
 
     return { success: true };
   }
 
-  async ceoReview(orgId: string, actorUserId: string, terminationId: number, input: TerminationReviewInput) {
+  async finalReview(orgId: string, actorUserId: string, terminationId: number, input: TerminationReviewInput) {
     const existing = await this.db.query.terminations.findFirst({
       where: and(eq(terminations.id, terminationId), eq(terminations.orgId, orgId)),
     });
     if (!existing) throw new NotFoundException("Termination not found.");
-    if (existing.status !== "PENDING_CEO") throw new BadRequestException("Termination is not pending CEO review.");
+    if (existing.status !== "PENDING_FINAL") throw new BadRequestException("Termination is not pending FINAL review.");
 
     if (input.decision === "reject" && !input.remarks) {
       throw new BadRequestException("Remarks are required when rejecting.");
@@ -293,9 +293,9 @@ export class TerminationService {
       .update(terminations)
       .set({
         status: newStatus,
-        ceoReviewedBy: actorUserId,
-        ceoReviewedAt: new Date(),
-        ceoRemarks: input.remarks || null,
+        finalReviewedBy: actorUserId,
+        finalReviewedAt: new Date(),
+        finalRemarks: input.remarks || null,
         updatedAt: new Date(),
       })
       .where(eq(terminations.id, terminationId));
@@ -364,7 +364,7 @@ export class TerminationService {
     });
     if (!existing) throw new NotFoundException("Termination not found.");
     if (existing.status !== "APPROVED") {
-      throw new BadRequestException("Termination must be CEO-approved before sending.");
+      throw new BadRequestException("Termination must be FINAL-approved before sending.");
     }
     if (existing.emailSentAt && existing.emailStatus === "sent") {
       throw new ConflictException("Termination email has already been sent.");

@@ -16,7 +16,7 @@ export const resignationCreateSchema = z.object({
 export const resignationUpdateSchema = z.object({
   status: z
     .enum([
-      "SUBMITTED", "PENDING_HR", "HR_APPROVED", "CEO_APPROVED",
+      "SUBMITTED", "PENDING_HR", "HR_APPROVED", "FINAL_APPROVED",
       "IN_PROGRESS", "APPROVED", "WITHDRAWN", "COMPLETED", "REJECTED",
     ])
     .optional(),
@@ -29,7 +29,7 @@ export const resignationUpdateSchema = z.object({
   overrideReason: z.string().min(1).max(1000).optional(),
 });
 
-export const resignationCeoReviewSchema = z.object({
+export const resignationFinalReviewSchema = z.object({
   decision: z.enum(["approve", "reject"]),
   remarks: z.string().optional(),
 });
@@ -96,7 +96,7 @@ export const terminationReviewSchema = z.object({
 export const listTerminationsQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
-  status: z.enum(["DRAFT", "PENDING_CEO", "APPROVED", "REJECTED", "SENT", "COMPLETED"]).optional(),
+  status: z.enum(["DRAFT", "PENDING_FINAL", "APPROVED", "REJECTED", "SENT", "COMPLETED"]).optional(),
 });
 
 export const terminationLetterQuerySchema = z.object({
@@ -143,7 +143,7 @@ export type ReviewOnboardingDocInput = z.infer<typeof reviewOnboardingDocSchema>
 
 export type ResignationCreateInput = z.infer<typeof resignationCreateSchema>;
 export type ResignationUpdateInput = z.infer<typeof resignationUpdateSchema>;
-export type ResignationCeoReviewInput = z.infer<typeof resignationCeoReviewSchema>;
+export type ResignationFinalReviewInput = z.infer<typeof resignationFinalReviewSchema>;
 export type ResignationHrReviewInput = z.infer<typeof resignationHrReviewSchema>;
 export type AlumniListInput = z.infer<typeof alumniListSchema>;
 export type AlumniCreateInput = z.infer<typeof alumniCreateSchema>;
@@ -159,7 +159,7 @@ export const listResignationsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   status: z
     .enum([
-      "SUBMITTED", "PENDING_HR", "HR_APPROVED", "CEO_APPROVED",
+      "SUBMITTED", "PENDING_HR", "HR_APPROVED", "FINAL_APPROVED",
       "IN_PROGRESS", "APPROVED", "WITHDRAWN", "COMPLETED", "REJECTED",
     ])
     .optional(),

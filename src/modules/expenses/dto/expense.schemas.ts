@@ -67,7 +67,7 @@ export const emailReportFiltersSchema = z.object({
 
 export const emailReportSchema = z.object({
   filters: emailReportFiltersSchema,
-  sendTo: z.enum(["CEO", "HR", "BOTH"]).default("BOTH"),
+  sendTo: z.enum(["ADMINS", "APPROVERS", "BOTH"]).default("BOTH"),
 });
 
 export const createCategorySchema = z.object({

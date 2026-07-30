@@ -69,7 +69,7 @@ describeWithDb(
       await db
         .insert(users)
         .values([
-          { id: U.owner, email: `${U.owner}@e2e.test`, name: "Owner", role: "CEO" },
+          { id: U.owner, email: `${U.owner}@e2e.test`, name: "Owner", role: "OWNER" },
           {
             id: U.teamMember,
             email: `${U.teamMember}@e2e.test`,
@@ -87,7 +87,7 @@ describeWithDb(
       await db
         .insert(organizationMembers)
         .values([
-          { userId: U.owner, orgId: ORG_ID, role: "CEO", isOwner: true },
+          { userId: U.owner, orgId: ORG_ID, role: "OWNER", isOwner: true },
           { userId: U.teamMember, orgId: ORG_ID, role: "MEMBER", isOwner: false },
           { userId: U.outsider, orgId: ORG_ID, role: "MEMBER", isOwner: false },
         ])

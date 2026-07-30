@@ -70,12 +70,12 @@ describe("EmployeeMutationsService.updateEmployee — role-slug bypass is closed
     );
   }
 
-  it("denies a CEO-role actor with no hr:employees:manage grant when editing another user", async () => {
+  it("denies an actor whose legacy role claim is not backed by an hr:employees:manage grant", async () => {
     const service = buildServiceWithTarget("ENGINEERING");
-    const ceoActor = ctx({ role: "CEO", permissions: [] });
+    const legacyClaimActor = ctx({ role: "LEGACY_ROLE_CLAIM", permissions: [] });
 
     await expect(
-      service.updateEmployee(ceoActor, "target-1", { designation: "Manager" }),
+      service.updateEmployee(legacyClaimActor, "target-1", { designation: "Manager" }),
     ).rejects.toThrow("You can only update your own profile.");
   });
 

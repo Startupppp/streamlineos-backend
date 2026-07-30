@@ -61,8 +61,8 @@ describe("TerminationService.create — structural owner block", () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it("allows terminating a CEO-role user who is not the org owner", async () => {
-    const service = buildService({ role: "CEO", isOwner: false });
+  it("allows terminating a FINAL-role user who is not the org owner", async () => {
+    const service = buildService({ role: "FINAL", isOwner: false });
 
     await expect(
       service.create("org-1", "actor-1", false, {

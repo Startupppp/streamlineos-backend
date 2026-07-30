@@ -121,15 +121,15 @@ export class CronHrController {
     return this.runOnboardingSweep(authorization);
   }
 
-  @Get("weekly-ceo-recap")
-  getWeeklyCeoRecap(@Headers("authorization") authorization?: string) {
-    return this.runWeeklyCeoRecap(authorization);
+  @Get("weekly-exec-recap")
+  getWeeklyExecRecap(@Headers("authorization") authorization?: string) {
+    return this.runWeeklyExecRecap(authorization);
   }
 
-  @Post("weekly-ceo-recap")
+  @Post("weekly-exec-recap")
   @HttpCode(200)
-  postWeeklyCeoRecap(@Headers("authorization") authorization?: string) {
-    return this.runWeeklyCeoRecap(authorization);
+  postWeeklyExecRecap(@Headers("authorization") authorization?: string) {
+    return this.runWeeklyExecRecap(authorization);
   }
 
   @Get("document-expiry")
@@ -291,13 +291,13 @@ export class CronHrController {
     }
   }
 
-  private async runWeeklyCeoRecap(authorization?: string) {
+  private async runWeeklyExecRecap(authorization?: string) {
     assertCronSecret(authorization);
     try {
-      const result = await this.weeklyRecap.sendWeeklyCeoRecaps();
+      const result = await this.weeklyRecap.sendWeeklyExecRecaps();
       return { success: true, ...result };
     } catch (error) {
-      logger.error("Weekly CEO recap cron failed", error);
+      logger.error("Weekly FINAL recap cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

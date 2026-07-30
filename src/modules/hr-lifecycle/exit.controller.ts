@@ -24,13 +24,13 @@ import {
   experienceLetterSchema,
   resignationCreateSchema,
   resignationUpdateSchema,
-  resignationCeoReviewSchema,
+  resignationFinalReviewSchema,
   resignationHrReviewSchema,
   listResignationsQuerySchema,
   type ExperienceLetterInput,
   type ResignationCreateInput,
   type ResignationUpdateInput,
-  type ResignationCeoReviewInput,
+  type ResignationFinalReviewInput,
   type ResignationHrReviewInput,
   type ListResignationsQueryInput,
 } from "./dto/hr-lifecycle.schemas";
@@ -86,14 +86,14 @@ export class ExitController {
     return this.exitWrite.hrReview(u.orgId, u.userId, resignationId, body);
   }
 
-  @Patch(":resignationId/ceo-review")
+  @Patch(":resignationId/final-review")
   @RequirePermission("hr:exit:approve")
-  ceoReview(
+  finalReview(
     @Param("resignationId", ParseIntPipe) resignationId: number,
-    @Body(new ZodValidationPipe(resignationCeoReviewSchema)) body: ResignationCeoReviewInput,
+    @Body(new ZodValidationPipe(resignationFinalReviewSchema)) body: ResignationFinalReviewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.exitWrite.ceoReview(u.orgId, u.userId, resignationId, body);
+    return this.exitWrite.finalReview(u.orgId, u.userId, resignationId, body);
   }
 
   @Patch(":resignationId")

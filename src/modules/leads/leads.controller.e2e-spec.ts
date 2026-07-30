@@ -108,7 +108,7 @@ describeWithDb(
       await db
         .insert(users)
         .values([
-          { id: U.owner, email: `${U.owner}@e2e.test`, name: "Owner", role: "CEO" },
+          { id: U.owner, email: `${U.owner}@e2e.test`, name: "Owner", role: "OWNER" },
           { id: U.own, email: `${U.own}@e2e.test`, name: "Own Scope", role: "SALES_REP" },
           { id: U.sales, email: `${U.sales}@e2e.test`, name: "Sales", role: "SALES" },
           { id: U.denied, email: `${U.denied}@e2e.test`, name: "Denied", role: "VIEWER_NONE" },
@@ -118,7 +118,7 @@ describeWithDb(
       await db
         .insert(organizationMembers)
         .values([
-          { userId: U.owner, orgId: ORG_ID, role: "CEO", isOwner: true },
+          { userId: U.owner, orgId: ORG_ID, role: "OWNER", isOwner: true },
           { userId: U.own, orgId: ORG_ID, role: "SALES_REP", isOwner: false },
           { userId: U.sales, orgId: ORG_ID, role: "SALES", isOwner: false },
           { userId: U.denied, orgId: ORG_ID, role: "VIEWER_NONE", isOwner: false },
@@ -242,7 +242,7 @@ describeWithDb(
       const token = await signToken({
         sub: U.owner,
         orgId: ORG_ID,
-        role: "CEO",
+        role: "OWNER",
         enabledModules: ["crm"],
         isOrgOwner: true,
       });

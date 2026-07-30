@@ -30,7 +30,7 @@ import { formatDdMmmYyyy } from "../../common/date";
 import type {
   ResignationCreateInput,
   ResignationUpdateInput,
-  ResignationCeoReviewInput,
+  ResignationFinalReviewInput,
   ResignationHrReviewInput,
 } from "./dto/hr-lifecycle.schemas";
 
@@ -127,7 +127,7 @@ export class ExitWriteService {
       return { success: true };
     }
 
-    if (input.status === "CEO_APPROVED") {
+    if (input.status === "FINAL_APPROVED") {
       if (!actor.isApprover) throw new ForbiddenException("Only approvers can approve at this stage.");
       if (existing.status !== "HR_APPROVED") {
         throw new BadRequestException("Resignation must be HR-approved first.");
@@ -136,10 +136,10 @@ export class ExitWriteService {
         await tx
           .update(resignations)
           .set({
-            status: "CEO_APPROVED",
-            ceoReviewedBy: actor.userId,
-            ceoReviewedAt: new Date(),
-            ceoRemarks: input.remarks || null,
+            status: "FINAL_APPROVED",
+            finalReviewedBy: actor.userId,
+            finalReviewedAt: new Date(),
+            finalRemarks: input.remarks || null,
             approvedBy: actor.userId,
             approvedAt: new Date(),
             updatedAt: new Date(),
@@ -169,7 +169,7 @@ export class ExitWriteService {
       if (!input.remarks) throw new BadRequestException("Remarks are required when rejecting.");
       const reviewFields = actor.isApprover
         ? { hrReviewedBy: actor.userId, hrReviewedAt: new Date(), hrRemarks: input.remarks }
-        : { ceoReviewedBy: actor.userId, ceoReviewedAt: new Date(), ceoRemarks: input.remarks };
+        : { finalReviewedBy: actor.userId, finalReviewedAt: new Date(), finalRemarks: input.remarks };
       await this.db
         .update(resignations)
         .set({ status: "REJECTED", updatedAt: new Date(), ...reviewFields })
@@ -179,8 +179,8 @@ export class ExitWriteService {
 
     if (input.status === "WITHDRAWN") {
       if (existing.userId !== actor.userId) throw new ForbiddenException("Only the employee can withdraw.");
-      if (existing.status === "CEO_APPROVED" || existing.status === "COMPLETED" || existing.status === "IN_PROGRESS") {
-        throw new BadRequestException("Cannot withdraw after CEO approval.");
+      if (existing.status === "FINAL_APPROVED" || existing.status === "COMPLETED" || existing.status === "IN_PROGRESS") {
+        throw new BadRequestException("Cannot withdraw after FINAL approval.");
       }
       await this.db
         .update(resignations)
@@ -300,7 +300,7 @@ export class ExitWriteService {
     return { success: true };
   }
 
-  async ceoReview(orgId: string, actorUserId: string, resignationId: number, input: ResignationCeoReviewInput) {
+  async finalReview(orgId: string, actorUserId: string, resignationId: number, input: ResignationFinalReviewInput) {
     if (input.decision === "reject" && !input.remarks) {
       throw new BadRequestException("Remarks required for rejection.");
     }
@@ -316,15 +316,15 @@ export class ExitWriteService {
     await this.db
       .update(resignations)
       .set({
-        status: approved ? "CEO_APPROVED" : "REJECTED",
-        ceoReviewedBy: actorUserId,
-        ceoReviewedAt: new Date(),
-        ceoRemarks: input.remarks,
+        status: approved ? "FINAL_APPROVED" : "REJECTED",
+        finalReviewedBy: actorUserId,
+        finalReviewedAt: new Date(),
+        finalRemarks: input.remarks,
         updatedAt: new Date(),
       })
       .where(eq(resignations.id, resignationId));
 
-    this.resignationJobs.notifyCeoDecision(orgId, record.userId, approved);
+    this.resignationJobs.notifyFinalDecision(orgId, record.userId, approved);
 
     if (approved) {
       await this.db

@@ -22,10 +22,10 @@ export function resignationHrApprovedMessage(employeeName: string): string {
   return `${employeeName}'s resignation has been approved by HR and needs your final approval.`;
 }
 
-export function resignationCeoApprovedMessage(): string {
+export function resignationFinalApprovedMessage(): string {
   return "Your resignation has been approved. Please ensure a smooth handover.";
 }
 
-export function resignationCeoRejectedMessage(): string {
+export function resignationFinalRejectedMessage(): string {
   return "Your resignation request has been reviewed and rejected.";
 }

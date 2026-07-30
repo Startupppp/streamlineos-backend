@@ -28,7 +28,7 @@ describe("HR lifecycle auth (e2e)", () => {
     ["get", "/hr/termination/1"],
     ["get", "/hr/termination/1/letter"],
     ["patch", "/hr/termination/1/submit"],
-    ["patch", "/hr/termination/1/ceo-review"],
+    ["patch", "/hr/termination/1/final-review"],
     ["get", "/hr/alumni"],
     ["post", "/hr/alumni"],
     ["get", "/hr/analytics"],

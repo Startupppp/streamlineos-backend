@@ -196,9 +196,9 @@ export const resignations = pgTable("resignations", {
   hrReviewedBy: text("hr_reviewed_by").references(() => users.id),
   hrReviewedAt: timestamp("hr_reviewed_at"),
   hrRemarks: text("hr_remarks"),
-  ceoReviewedBy: text("ceo_reviewed_by").references(() => users.id),
-  ceoReviewedAt: timestamp("ceo_reviewed_at"),
-  ceoRemarks: text("ceo_remarks"),
+  finalReviewedBy: text("final_reviewed_by").references(() => users.id),
+  finalReviewedAt: timestamp("final_reviewed_at"),
+  finalRemarks: text("final_remarks"),
   willingForExitInterview: boolean("willing_for_exit_interview").default(true).notNull(),
   companyFeedback: text("company_feedback"),
   exitInterviewNotes: text("exit_interview_notes"),
@@ -245,9 +245,9 @@ export const terminations = pgTable("terminations", {
   internalNotes: text("internal_notes"),
   status: terminationStatusEnum("status").default("DRAFT").notNull(),
   initiatedBy: text("initiated_by").references(() => users.id),
-  ceoReviewedBy: text("ceo_reviewed_by").references(() => users.id),
-  ceoReviewedAt: timestamp("ceo_reviewed_at"),
-  ceoRemarks: text("ceo_remarks"),
+  finalReviewedBy: text("final_reviewed_by").references(() => users.id),
+  finalReviewedAt: timestamp("final_reviewed_at"),
+  finalRemarks: text("final_remarks"),
   emailSentAt: timestamp("email_sent_at"),
   emailStatus: text("email_status"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -351,7 +351,7 @@ export const resignationsRelations = relations(resignations, ({ one, many }) => 
   user: one(users, { fields: [resignations.userId], references: [users.id] }),
   approver: one(users, { fields: [resignations.approvedBy], references: [users.id], relationName: "resignationApprover" }),
   hrReviewer: one(users, { fields: [resignations.hrReviewedBy], references: [users.id], relationName: "resignationHrReviewer" }),
-  ceoReviewer: one(users, { fields: [resignations.ceoReviewedBy], references: [users.id], relationName: "resignationCeoReviewer" }),
+  finalReviewer: one(users, { fields: [resignations.finalReviewedBy], references: [users.id], relationName: "resignationFinalReviewer" }),
   interviewer: one(users, { fields: [resignations.exitInterviewConductedBy], references: [users.id], relationName: "exitInterviewer" }),
   checklists: many(exitChecklists),
 }));
@@ -364,7 +364,7 @@ export const exitChecklistsRelations = relations(exitChecklists, ({ one }) => ({
 export const terminationsRelations = relations(terminations, ({ one }) => ({
   user: one(users, { fields: [terminations.userId], references: [users.id] }),
   initiator: one(users, { fields: [terminations.initiatedBy], references: [users.id], relationName: "terminationInitiator" }),
-  ceoReviewer: one(users, { fields: [terminations.ceoReviewedBy], references: [users.id], relationName: "terminationCeoReviewer" }),
+  finalReviewer: one(users, { fields: [terminations.finalReviewedBy], references: [users.id], relationName: "terminationFinalReviewer" }),
 }));
 
 export const alumniProfilesRelations = relations(alumniProfiles, ({ one }) => ({

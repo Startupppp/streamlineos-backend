@@ -52,7 +52,7 @@ describeWithDb(
       await db
         .insert(users)
         .values([
-          { id: U.admin, email: `${U.admin}@e2e.test`, name: "Admin", role: "CEO" },
+          { id: U.admin, email: `${U.admin}@e2e.test`, name: "Admin", role: "OWNER" },
           { id: U.member, email: `${U.member}@e2e.test`, name: "Member", role: "MEMBER" },
           { id: U.other, email: `${U.other}@e2e.test`, name: "Other", role: "MEMBER" },
         ])
@@ -61,7 +61,7 @@ describeWithDb(
       await db
         .insert(organizationMembers)
         .values([
-          { userId: U.admin, orgId: ORG_ID, role: "CEO", isOwner: true },
+          { userId: U.admin, orgId: ORG_ID, role: "OWNER", isOwner: true },
           { userId: U.member, orgId: ORG_ID, role: "MEMBER", isOwner: false },
           { userId: U.other, orgId: ORG_ID, role: "MEMBER", isOwner: false },
         ])
@@ -189,7 +189,7 @@ describeWithDb(
       const token = await signToken({
         sub: U.admin,
         orgId: ORG_ID,
-        role: "CEO",
+        role: "OWNER",
         enabledModules: ["build"],
         isOrgOwner: true,
       });

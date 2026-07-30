@@ -39,7 +39,7 @@ export class CronWeeklyRecapService {
     private readonly gateway: AiGatewayService,
   ) {}
 
-  async sendWeeklyCeoRecaps(): Promise<{
+  async sendWeeklyExecRecaps(): Promise<{
     results: { orgId: string; sent: boolean; error?: string }[];
     generatedAt: string;
   }> {
@@ -67,7 +67,7 @@ export class CronWeeklyRecapService {
           );
 
         if (owners.length === 0) {
-          results.push({ orgId: org.id, sent: false, error: "No active CEO" });
+          results.push({ orgId: org.id, sent: false, error: "No active FINAL" });
           continue;
         }
 
@@ -180,7 +180,7 @@ export class CronWeeklyRecapService {
 
         results.push({ orgId: org.id, sent: true });
       } catch (error) {
-        logger.error("Weekly CEO recap failed for org", { orgId: org.id, error });
+        logger.error("Weekly FINAL recap failed for org", { orgId: org.id, error });
         results.push({ orgId: org.id, sent: false, error: String(error) });
       }
     }
@@ -205,14 +205,14 @@ export class CronWeeklyRecapService {
         ? data.pipelineSummary.map((s) => `${s.status}: ${s.count}`).join(", ")
         : "No pipeline data";
 
-    const system = `You are an executive business analyst writing concise weekly performance narratives for a CEO of an Indian investment and financial services firm. Your writing style is professional, confident, and insight-driven — not just descriptive. Highlight what matters most, flag any concerns worth attention, and frame numbers in context. Write in plain text only (no markdown, no bullet points, no headers). Output exactly 3 to 4 paragraphs separated by a single blank line.`;
+    const system = `You are an executive business analyst writing concise weekly performance narratives for a FINAL of an Indian investment and financial services firm. Your writing style is professional, confident, and insight-driven — not just descriptive. Highlight what matters most, flag any concerns worth attention, and frame numbers in context. Write in plain text only (no markdown, no bullet points, no headers). Output exactly 3 to 4 paragraphs separated by a single blank line.`;
 
-    const user = `Write a weekly performance narrative for ${data.orgName} covering the week of ${weekRange}.\n\nKey metrics:\n- Total active employees: ${data.totalEmployees}\n- New leads this week: ${data.newLeads}\n- Leads converted this week: ${data.convertedLeads} (${conversionRate}% conversion rate)\n- Sales activities logged: ${data.totalActivities}\n- Open tickets: ${data.openTickets}\n- Tickets closed this week: ${data.closedTickets}\n- Pending leave requests: ${data.pendingLeaves}\n\nTop performers (by conversions): ${topPerformersList}\n\nLead pipeline breakdown: ${pipelineBreakdown}\n\nFocus on: overall business momentum, sales team effectiveness, operational health, and any areas requiring the CEO's immediate attention.`;
+    const user = `Write a weekly performance narrative for ${data.orgName} covering the week of ${weekRange}.\n\nKey metrics:\n- Total active employees: ${data.totalEmployees}\n- New leads this week: ${data.newLeads}\n- Leads converted this week: ${data.convertedLeads} (${conversionRate}% conversion rate)\n- Sales activities logged: ${data.totalActivities}\n- Open tickets: ${data.openTickets}\n- Tickets closed this week: ${data.closedTickets}\n- Pending leave requests: ${data.pendingLeaves}\n\nTop performers (by conversions): ${topPerformersList}\n\nLead pipeline breakdown: ${pipelineBreakdown}\n\nFocus on: overall business momentum, sales team effectiveness, operational health, and any areas requiring the FINAL's immediate attention.`;
 
     try {
       const result = await this.gateway.invokeText({
         actor: { orgId, userId: null },
-        feature: "ceo.weekly-recap",
+        feature: "final.weekly-recap",
         tier: "standard",
         maxTokens: 1024,
         prompt: { system, user },
