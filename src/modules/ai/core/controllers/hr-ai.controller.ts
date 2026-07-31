@@ -17,7 +17,7 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
 import { LlmService } from "../providers/llm.service";
 import { HrAiService } from "../services/hr-ai.service";
-import { requireFeature } from "../billing/feature-gates";
+import { PlanLimitsService } from "../../../billing/core/plan-limits.service";
 import {
   acceptCandidateScoreSchema,
   attritionRiskSchema,
@@ -51,6 +51,7 @@ export class HrAiController {
   constructor(
     private readonly llm: LlmService,
     private readonly hr: HrAiService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   private ensureLlm(message: string): void {
@@ -96,7 +97,7 @@ export class HrAiController {
     @Body(new ZodValidationPipe(scoreCandidateSchema)) body: ScoreCandidateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    requireFeature(u.plan, "ai.candidate-scoring");
+    await this.planLimits.assertFeature(u.orgId, "ai.candidate-scoring");
     this.ensureLlm("AI scoring is not configured. Set OPENAI_API_KEY.");
     const result = await this.hr.scoreCandidate(u.orgId, body.candidateId, body.jobId);
     if (!result) throw new NotFoundException("Candidate not found or scoring failed");
@@ -113,7 +114,7 @@ export class HrAiController {
     @Body(new ZodValidationPipe(helpdeskReplySchema)) body: HelpdeskReplyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    requireFeature(u.plan, "ai.reply-suggestion");
+    await this.planLimits.assertFeature(u.orgId, "ai.reply-suggestion");
     this.ensureLlm("AI reply suggestion is not available at this time. Please contact your administrator.");
 
     let result: HelpdeskReplyResult | null;
@@ -148,7 +149,7 @@ export class HrAiController {
     @Body(new ZodValidationPipe(interviewKitSchema)) body: InterviewKitInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    requireFeature(u.plan, "ai.review-generation");
+    await this.planLimits.assertFeature(u.orgId, "ai.review-generation");
     this.ensureLlm("AI interview kit is not configured.");
     const result = await this.hr.generateInterviewKit(u.orgId, body.jobPostingId);
     if (!result) throw new NotFoundException("Job posting not found");
@@ -161,7 +162,7 @@ export class HrAiController {
     @Body(new ZodValidationPipe(letterDraftSchema)) body: LetterDraftInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    requireFeature(u.plan, "ai.review-generation");
+    await this.planLimits.assertFeature(u.orgId, "ai.review-generation");
     this.ensureLlm("AI letter drafting is not configured.");
     const result = await this.hr.draftLetter(u.orgId, u.userId, body.userId, body.letterType, body.details ?? null);
     if (!result) throw new NotFoundException("Employee not found");
@@ -194,7 +195,7 @@ export class HrAiController {
     @Body(new ZodValidationPipe(acceptCandidateScoreSchema)) body: AcceptCandidateScoreInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    requireFeature(u.plan, "ai.candidate-scoring");
+    await this.planLimits.assertFeature(u.orgId, "ai.candidate-scoring");
     this.ensureLlm("AI scoring is not configured.");
     return this.hr.acceptCandidateScore(u.orgId, body.candidateId, body.aiScore);
   }

@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -7,13 +7,13 @@ import {
   PLAN_LIMITS,
   PLAN_FEATURE_FLAGS,
   PLAN_LOCKED_MODULES,
-  PLAN_LABELS,
-  LIMIT_HUMAN_LABELS,
   type EffectivePlan,
   type LimitKey,
   type PlanFeatureFlags,
   type PlanTier,
 } from "./plan-entitlements.constants";
+import { canUseFeature, minPlanFor, type Feature } from "../../ai/core/billing/feature-gates";
+import { PaymentRequiredException } from "../../../common/http/api-exceptions";
 
 export interface EntitlementsDto {
   tier: PlanTier;
@@ -60,8 +60,9 @@ export class PlanLimitsService {
     return value;
   }
 
-  bust(orgId: string): void {
+  async bust(orgId: string): Promise<void> {
     this.tierCache.delete(orgId);
+    await this.cache.invalidate(`billing:entitlements:${orgId}`);
   }
 
   private async queryTier(orgId: string): Promise<{ tier: PlanTier; plan: EffectivePlan }> {
@@ -148,12 +149,12 @@ export class PlanLimitsService {
           (SELECT COUNT(*)::int FROM chat_channels WHERE org_id = ${orgId})                                                               AS "chatChannels",
           (SELECT COUNT(*)::int FROM leads WHERE org_id = ${orgId} AND deleted_at IS NULL)                                                AS "crmLeads",
           (SELECT COUNT(*)::int FROM contacts WHERE org_id = ${orgId} AND deleted_at IS NULL)                                             AS "crmContacts",
-          (SELECT COUNT(*)::int FROM deals WHERE org_id = ${orgId})                                                                       AS "crmDeals",
+          (SELECT COUNT(*)::int FROM deals WHERE org_id = ${orgId} AND deleted_at IS NULL)                                               AS "crmDeals",
           (SELECT COUNT(*)::int FROM support_tickets WHERE org_id = ${orgId})                                                             AS "supportTickets",
           (SELECT COUNT(*)::int FROM automation_rules WHERE org_id = ${orgId})                                                              AS automations,
           (SELECT COUNT(*)::int FROM sign_envelopes WHERE org_id = ${orgId})                                                              AS "signEnvelopes",
           (SELECT COUNT(*)::int FROM survey_forms WHERE org_id = ${orgId})                                                                AS surveys,
-          (SELECT COUNT(*)::int FROM invoices WHERE org_id = ${orgId})                                                                    AS "acctInvoices",
+          (SELECT COUNT(*)::int FROM invoices WHERE org_id = ${orgId} AND deleted_at IS NULL)                                            AS "acctInvoices",
           (SELECT COUNT(*)::int FROM candidates WHERE org_id = ${orgId})                                                                  AS "hrCandidates",
           (SELECT COUNT(*)::int FROM job_postings WHERE org_id = ${orgId})                                                                AS "hrJobPostings"
       `);
@@ -200,11 +201,29 @@ export class PlanLimitsService {
 
     const used = await this.fetchCount(orgId, key);
     if (used + increment > limit) {
-      const planLabel = PLAN_LABELS[plan];
-      const humanLabel = LIMIT_HUMAN_LABELS[key];
-      throw new ForbiddenException(
-        `Your ${planLabel} plan allows ${limit} ${humanLabel}. Upgrade your plan to add more.`,
-      );
+      throw new PaymentRequiredException({
+        code: "QUOTA_EXCEEDED",
+        limitKey: key,
+        used,
+        limit,
+        upgradePath: "/billing",
+      });
+    }
+  }
+
+  async checkFeature(orgId: string, feature: Feature): Promise<boolean> {
+    const { plan } = await this.resolveTier(orgId);
+    return canUseFeature(plan, feature);
+  }
+
+  async assertFeature(orgId: string, feature: Feature): Promise<void> {
+    const { plan } = await this.resolveTier(orgId);
+    if (!canUseFeature(plan, feature)) {
+      throw new PaymentRequiredException({
+        code: "FEATURE_NOT_AVAILABLE",
+        feature,
+        requiredPlan: minPlanFor(feature),
+      });
     }
   }
 
@@ -269,7 +288,7 @@ export class PlanLimitsService {
       }
       case "crmDeals": {
         const rows = await this.db.execute(
-          sql`SELECT COUNT(*)::int AS count FROM deals WHERE org_id = ${orgId}`,
+          sql`SELECT COUNT(*)::int AS count FROM deals WHERE org_id = ${orgId} AND deleted_at IS NULL`,
         );
         return Number(rows[0]?.["count"] ?? 0);
       }
@@ -299,7 +318,7 @@ export class PlanLimitsService {
       }
       case "acctInvoices": {
         const rows = await this.db.execute(
-          sql`SELECT COUNT(*)::int AS count FROM invoices WHERE org_id = ${orgId}`,
+          sql`SELECT COUNT(*)::int AS count FROM invoices WHERE org_id = ${orgId} AND deleted_at IS NULL`,
         );
         return Number(rows[0]?.["count"] ?? 0);
       }

@@ -26,7 +26,7 @@ import { CrmContentService } from "../services/crm-content.service";
 import { CrmBriefService } from "../services/crm-brief.service";
 import { CrmTasksService } from "../services/crm-tasks.service";
 import { OrgFeaturesService } from "../services/org-features.service";
-import { requireFeature } from "../billing/feature-gates";
+import { PlanLimitsService } from "../../../billing/core/plan-limits.service";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { auditLogs } from "../../../../db/schema";
@@ -78,6 +78,7 @@ export class CrmAiController {
     private readonly brief: CrmBriefService,
     private readonly aiTasks: CrmTasksService,
     private readonly orgFeatures: OrgFeaturesService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   private ensureLlm(message: string): void {
@@ -105,7 +106,7 @@ export class CrmAiController {
   @Post("score-lead")
   async scoreLead(@Body() body: unknown, @CurrentUser() u: CurrentUserContext) {
     await this.requireAiFlag(u.orgId, "aiLeadScoring");
-    requireFeature(u.plan, "ai.lead-scoring");
+    await this.planLimits.assertFeature(u.orgId, "ai.lead-scoring");
     this.ensureLlm("AI scoring is not configured. Set OPENAI_API_KEY.");
 
     if (hasLeadIds(body) && Array.isArray(body.leadIds)) {
@@ -127,7 +128,7 @@ export class CrmAiController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.requireAiFlag(u.orgId, "aiLeadScoring");
-    requireFeature(u.plan, "ai.deal-prediction");
+    await this.planLimits.assertFeature(u.orgId, "ai.deal-prediction");
     this.ensureLlm("AI prediction is not configured. Set OPENAI_API_KEY.");
     const result = await this.scoring.predictDeal(u.orgId, body.dealId);
     if (!result) throw new NotFoundException("Deal not found or prediction failed");
@@ -141,7 +142,7 @@ export class CrmAiController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.requireAiFlag(u.orgId, "aiLeadScoring");
-    requireFeature(u.plan, "ai.churn-risk");
+    await this.planLimits.assertFeature(u.orgId, "ai.churn-risk");
     this.ensureLlm("AI is not configured. Set OPENAI_API_KEY.");
     const result = await this.scoring.analyzeChurnRisk(u.orgId, body.clientId, {
       openTickets: body.openTickets,
@@ -158,7 +159,7 @@ export class CrmAiController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.requireAiFlag(u.orgId, "aiLeadScoring");
-    requireFeature(u.plan, "ai.next-action");
+    await this.planLimits.assertFeature(u.orgId, "ai.next-action");
     this.ensureLlm("AI is not configured. Set OPENAI_API_KEY.");
     const result = await this.scoring.nextBestAction(u.orgId, body.leadId);
     if (!result) throw new NotFoundException("Lead not found or suggestion failed");
@@ -171,7 +172,7 @@ export class CrmAiController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.requireAiFlag(u.orgId, "aiLeadScoring");
-    requireFeature(u.plan, "ai.deal-summary");
+    await this.planLimits.assertFeature(u.orgId, "ai.deal-summary");
     this.ensureLlm("AI features are not configured. Set OPENAI_API_KEY.");
     return this.brief.accountSummary(u.orgId, body);
   }
@@ -182,7 +183,7 @@ export class CrmAiController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.requireAiFlag(u.orgId, "aiLeadScoring");
-    requireFeature(u.plan, "ai.next-action");
+    await this.planLimits.assertFeature(u.orgId, "ai.next-action");
     this.ensureLlm("AI features are not configured. Set OPENAI_API_KEY.");
     return this.brief.meetingPrep(u.orgId, body);
   }
@@ -193,7 +194,7 @@ export class CrmAiController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.requireAiFlag(u.orgId, "aiLeadScoring");
-    requireFeature(u.plan, "ai.next-action");
+    await this.planLimits.assertFeature(u.orgId, "ai.next-action");
     this.ensureLlm("AI search is not configured. Set OPENAI_API_KEY.");
     return this.brief.nlSearch(u.orgId, body);
   }
@@ -214,7 +215,7 @@ export class CrmAiController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.requireAiFlag(u.orgId, "aiEmailDraft");
-    requireFeature(u.plan, "ai.email-drafting");
+    await this.planLimits.assertFeature(u.orgId, "ai.email-drafting");
     this.ensureLlm("AI email generation is not configured. Set OPENAI_API_KEY.");
     return this.content.generateEmail(u.userId, body);
   }

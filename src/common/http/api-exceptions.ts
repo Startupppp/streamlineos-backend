@@ -1,10 +1,16 @@
 import { HttpException, HttpStatus } from "@nestjs/common";
 
+export class PaymentRequiredException extends HttpException {
+  constructor(body: Record<string, unknown>) {
+    super(body, HttpStatus.PAYMENT_REQUIRED);
+  }
+}
+
 export class ModuleDisabledException extends HttpException {
   constructor(module: string) {
     super(
-      { error: "Module not available on this plan", code: "MODULE_DISABLED", module },
-      HttpStatus.NOT_FOUND,
+      { error: "Module not available on this plan", code: "MODULE_NOT_ENABLED", module },
+      HttpStatus.PAYMENT_REQUIRED,
     );
   }
 }

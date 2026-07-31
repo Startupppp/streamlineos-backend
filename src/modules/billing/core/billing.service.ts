@@ -189,7 +189,7 @@ export class BillingService {
       throw err;
     }
 
-    this.planLimits.bust(orgId);
+    await this.planLimits.bust(orgId);
 
     this.audit.log({
       action: "settings.updated",
