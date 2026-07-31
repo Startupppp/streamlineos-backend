@@ -12,6 +12,7 @@ import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { logger } from "../../common/logger/logger.service";
 import type { CreateChannelInput } from "./dto/chat.schemas";
+import { assertUsersInOrg } from "../../common/tenant/org-membership";
 import {
   isStaleEntityChannelName,
   resolveEntityChannelName,
@@ -191,6 +192,7 @@ export class ChatChannelsService {
   async createChannel(orgId: string, userId: string, body: CreateChannelInput) {
     if (body.type === "DIRECT") {
       const { targetUserId } = body;
+      await assertUsersInOrg(this.db, orgId, [targetUserId]);
 
       const myMemberships = await this.db
         .select({ channelId: chatChannelMembers.channelId })

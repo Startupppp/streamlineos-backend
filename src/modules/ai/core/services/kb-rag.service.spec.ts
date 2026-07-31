@@ -48,7 +48,6 @@ const mockDb = {
   from: jest.fn().mockReturnThis(),
   innerJoin: jest.fn().mockReturnThis(),
   leftJoin: jest.fn().mockReturnThis(),
-  $dynamic: jest.fn().mockReturnThis(),
   where: jest.fn().mockReturnThis(),
   orderBy: jest.fn().mockReturnThis(),
   limit: jest.fn().mockResolvedValue([chunkRow]),
@@ -88,61 +87,13 @@ describe("KbRagService", () => {
     service = module.get(KbRagService);
   });
 
-  describe("answerQuestion (non-public)", () => {
-    it("charges credits via gateway for non-public asks", async () => {
-      mockGateway.invokeText.mockResolvedValueOnce(
-        makeGatewayOk("Reset via settings."),
-      );
-
-      const result = await service.answerQuestion({
-        orgId: ORG_ID,
-        question: QUESTION,
-      });
-
-      expect(result.hasContext).toBe(true);
-      const [call] = mockGateway.invokeText.mock.calls;
-      expect(call[0].feature).toBe("kb.public-ask");
-      expect(call[0].charge).toBe(true);
-      expect(call[0].actor).toEqual({ orgId: ORG_ID, userId: null });
-    });
-
-    it("returns no-context answer when no chunks found", async () => {
-      mockDb.limit.mockResolvedValueOnce([]);
-      const result = await service.answerQuestion({
-        orgId: ORG_ID,
-        question: QUESTION,
-      });
-      expect(result.hasContext).toBe(false);
-      expect(mockGateway.invokeText).not.toHaveBeenCalled();
-    });
-
-    it("throws BadRequestException on quota_exceeded", async () => {
-      mockGateway.invokeText.mockResolvedValueOnce(
-        makeGatewayFail("quota_exceeded", "Insufficient AI credits"),
-      );
-      await expect(
-        service.answerQuestion({ orgId: ORG_ID, question: QUESTION }),
-      ).rejects.toThrow(BadRequestException);
-    });
-
-    it("throws ServiceUnavailableException on provider_unavailable", async () => {
-      mockGateway.invokeText.mockResolvedValueOnce(
-        makeGatewayFail("provider_unavailable"),
-      );
-      await expect(
-        service.answerQuestion({ orgId: ORG_ID, question: QUESTION }),
-      ).rejects.toThrow(ServiceUnavailableException);
-    });
-  });
-
-  describe("answerQuestion (publicOnly)", () => {
+  describe("answerQuestion", () => {
     it("returns no-context answer when org has no published public articles", async () => {
       mockDb.limit.mockResolvedValueOnce([]).mockResolvedValue([chunkRow]);
 
       const result = await service.answerQuestion({
         orgId: ORG_ID,
         question: QUESTION,
-        publicOnly: true,
       });
 
       expect(result.hasContext).toBe(false);
@@ -160,15 +111,15 @@ describe("KbRagService", () => {
       const result = await service.answerQuestion({
         orgId: ORG_ID,
         question: QUESTION,
-        publicOnly: true,
       });
 
       expect(result.hasContext).toBe(true);
       const [call] = mockGateway.invokeText.mock.calls;
       expect(call[0].charge).toBe(true);
+      expect(call[0].actor).toEqual({ orgId: ORG_ID, userId: null });
     });
 
-    it("maps quota_exceeded to BadRequestException for public asks", async () => {
+    it("maps quota_exceeded to BadRequestException", async () => {
       mockDb.limit
         .mockResolvedValueOnce([{ id: 99 }])
         .mockResolvedValue([chunkRow]);
@@ -177,12 +128,21 @@ describe("KbRagService", () => {
       );
 
       await expect(
-        service.answerQuestion({
-          orgId: ORG_ID,
-          question: QUESTION,
-          publicOnly: true,
-        }),
+        service.answerQuestion({ orgId: ORG_ID, question: QUESTION }),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it("throws ServiceUnavailableException on provider_unavailable", async () => {
+      mockDb.limit
+        .mockResolvedValueOnce([{ id: 99 }])
+        .mockResolvedValue([chunkRow]);
+      mockGateway.invokeText.mockResolvedValueOnce(
+        makeGatewayFail("provider_unavailable"),
+      );
+
+      await expect(
+        service.answerQuestion({ orgId: ORG_ID, question: QUESTION }),
+      ).rejects.toThrow(ServiceUnavailableException);
     });
   });
 });

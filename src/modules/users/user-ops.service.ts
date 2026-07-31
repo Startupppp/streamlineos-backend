@@ -24,6 +24,7 @@ import type { BulkUpdateUsersInput, ImportUsersRow } from "./dto/users.schemas";
 import { UsersService } from "./users.service";
 import { syncStructuralRoleAssignment } from "../../common/rbac/sync-structural-role";
 import { assertMayGrantRole } from "../../common/rbac/assert-may-grant-role";
+import { assertNoOwnerAmongTargets } from "../../common/rbac/assert-target-not-owner";
 
 @Injectable()
 export class UserOpsService {
@@ -243,6 +244,7 @@ export class UserOpsService {
     if (role) {
       await this.assertMayGrantRole(orgId, actor, role);
       await this.db.transaction(async (tx) => {
+        await assertNoOwnerAmongTargets(tx, orgId, scopedIds);
         const rows = await tx
           .update(organizationMembers)
           .set({ role })

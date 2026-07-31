@@ -12,7 +12,11 @@ if (!poolerUrl) {
   process.exit(1);
 }
 
-const directUrl = poolerUrl.replace("-pooler.", ".");
+// Migrations need a direct (session-mode) connection. Neon encodes that in the host;
+// every other provider needs DIRECT_DATABASE_URL set explicitly.
+const directUrl =
+  process.env.DIRECT_DATABASE_URL ||
+  (/-pooler\..*\.neon\.tech/i.test(poolerUrl) ? poolerUrl.replace("-pooler.", ".") : poolerUrl);
 
 function sha256(content) {
   return createHash("sha256").update(content).digest("hex");

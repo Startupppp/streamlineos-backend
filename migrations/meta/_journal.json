@@ -694,6 +694,41 @@
       "when": 1784993511607,
       "tag": "0373_resource_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1784993512607,
+      "tag": "0374_tenant_guc_helper",
+      "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1784993513607,
+      "tag": "0375_rls_canary_projects",
+      "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1784993514607,
+      "tag": "0376_rls_payroll_and_pii",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1784993515607,
+      "tag": "0377_rls_financial",
+      "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1784993516607,
+      "tag": "0378_rls_remaining_tenant_tables",
+      "breakpoints": true
     }
   ]
 }

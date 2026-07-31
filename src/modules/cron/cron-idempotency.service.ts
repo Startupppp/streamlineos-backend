@@ -1,8 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, inArray, isNotNull, lt, ne } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, lt, ne } from "drizzle-orm";
 import { commandFences, invIdempotencyKeys, payrollCommandReceipts } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import { forEachOrg, type TenantTx } from "../../common/tenant";
 
 const PRUNE_BATCH_SIZE = 500;
 
@@ -17,56 +18,62 @@ export class CronIdempotencyService {
   }> {
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const [commandFencesPruned, invKeysPruned, payrollReceiptsPruned] = await Promise.all([
-      this.pruneCommandFences(now),
-      this.pruneInvIdempotencyKeys(now),
-      this.prunePayrollReceipts(thirtyDaysAgo),
-    ]);
+    let commandFencesPruned = 0;
+    let invKeysPruned = 0;
+    let payrollReceiptsPruned = 0;
+
+    await forEachOrg(this.db, "cron-idempotency", async (tx, orgId) => {
+      commandFencesPruned += await this.pruneCommandFences(tx, orgId, now);
+      invKeysPruned += await this.pruneInvIdempotencyKeys(tx, orgId, now);
+      payrollReceiptsPruned += await this.prunePayrollReceipts(tx, orgId, thirtyDaysAgo);
+    });
+
     return { commandFencesPruned, invKeysPruned, payrollReceiptsPruned };
   }
 
-  private async pruneCommandFences(now: Date): Promise<number> {
+  private async pruneCommandFences(tx: TenantTx, orgId: string, now: Date): Promise<number> {
     let total = 0;
     while (true) {
-      const rows = await this.db
+      const rows = await tx
         .select({ id: commandFences.commandFenceId })
         .from(commandFences)
-        .where(lt(commandFences.expiresAt, now))
+        .where(and(eq(commandFences.organizationId, orgId), lt(commandFences.expiresAt, now)))
         .limit(PRUNE_BATCH_SIZE);
       if (rows.length === 0) break;
       const ids = rows.map((r) => r.id);
-      await this.db.delete(commandFences).where(inArray(commandFences.commandFenceId, ids));
+      await tx.delete(commandFences).where(inArray(commandFences.commandFenceId, ids));
       total += ids.length;
       if (rows.length < PRUNE_BATCH_SIZE) break;
     }
     return total;
   }
 
-  private async pruneInvIdempotencyKeys(now: Date): Promise<number> {
+  private async pruneInvIdempotencyKeys(tx: TenantTx, orgId: string, now: Date): Promise<number> {
     let total = 0;
     while (true) {
-      const rows = await this.db
+      const rows = await tx
         .select({ id: invIdempotencyKeys.id })
         .from(invIdempotencyKeys)
-        .where(lt(invIdempotencyKeys.expiresAt, now))
+        .where(and(eq(invIdempotencyKeys.orgId, orgId), lt(invIdempotencyKeys.expiresAt, now)))
         .limit(PRUNE_BATCH_SIZE);
       if (rows.length === 0) break;
       const ids = rows.map((r) => r.id);
-      await this.db.delete(invIdempotencyKeys).where(inArray(invIdempotencyKeys.id, ids));
+      await tx.delete(invIdempotencyKeys).where(inArray(invIdempotencyKeys.id, ids));
       total += ids.length;
       if (rows.length < PRUNE_BATCH_SIZE) break;
     }
     return total;
   }
 
-  private async prunePayrollReceipts(cutoffDate: Date): Promise<number> {
+  private async prunePayrollReceipts(tx: TenantTx, orgId: string, cutoffDate: Date): Promise<number> {
     let total = 0;
     while (true) {
-      const rows = await this.db
+      const rows = await tx
         .select({ id: payrollCommandReceipts.id })
         .from(payrollCommandReceipts)
         .where(
           and(
+            eq(payrollCommandReceipts.orgId, orgId),
             ne(payrollCommandReceipts.status, "IN_FLIGHT"),
             isNotNull(payrollCommandReceipts.finishedAt),
             lt(payrollCommandReceipts.finishedAt, cutoffDate),
@@ -75,7 +82,7 @@ export class CronIdempotencyService {
         .limit(PRUNE_BATCH_SIZE);
       if (rows.length === 0) break;
       const ids = rows.map((r) => r.id);
-      await this.db.delete(payrollCommandReceipts).where(inArray(payrollCommandReceipts.id, ids));
+      await tx.delete(payrollCommandReceipts).where(inArray(payrollCommandReceipts.id, ids));
       total += ids.length;
       if (rows.length < PRUNE_BATCH_SIZE) break;
     }

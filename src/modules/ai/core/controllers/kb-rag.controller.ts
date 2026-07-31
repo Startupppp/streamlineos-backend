@@ -24,7 +24,6 @@ export class KbRagController {
     return this.kbRag.answerQuestion({
       orgId: parsed.data.org,
       question: parsed.data.question,
-      publicOnly: true,
     });
   }
 }

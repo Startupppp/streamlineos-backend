@@ -22,6 +22,7 @@ import type {
   UpdateUserInput,
 } from "./dto/users.schemas";
 import { assertMayGrantRole } from "../../common/rbac/assert-may-grant-role";
+import { assertTargetNotOwner } from "../../common/rbac/assert-target-not-owner";
 
 @Injectable()
 export class UsersService {
@@ -309,6 +310,7 @@ export class UsersService {
       const nextRole = data.role;
       await this.assertMayGrantRole(orgId, actor, nextRole);
       await this.db.transaction(async (tx) => {
+        await assertTargetNotOwner(tx, orgId, userId);
         const [member] = await tx
           .update(organizationMembers)
           .set({ role: nextRole })

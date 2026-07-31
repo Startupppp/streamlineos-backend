@@ -23,6 +23,7 @@ import { differenceInDays } from "../../../common/date";
 import { userCan } from "./ability.helpers";
 import type { UpdateEmployeeInput } from "./dto/hr-directory.schemas";
 import { hrEmployments, hrPeople } from "../../../db/schema/hr/core-people";
+import { assertUsersInOrg } from "../../../common/tenant/org-membership";
 
 type BankDetailsInput = NonNullable<UpdateEmployeeInput["bankDetails"]> & {
   pfUanNumber?: string;
@@ -185,6 +186,7 @@ export class EmployeeMutationsService {
       if (body.reportingTo === targetUserId) {
         throw new BadRequestException("An employee cannot report to themselves.");
       }
+      await assertUsersInOrg(this.db, actor.orgId, [body.reportingTo]);
       let cursor: string | null = body.reportingTo;
       const visited = new Set<string>([targetUserId]);
       while (cursor) {

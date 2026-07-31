@@ -16,6 +16,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import type { UpdateChannelInput } from "./dto/chat.schemas";
+import { assertUsersInOrg } from "../../common/tenant/org-membership";
 
 const chatUnreadKey = (userId: string, orgId: string) => `chat:unread:${userId}:${orgId}`;
 
@@ -76,6 +77,13 @@ export class ChatChannelMembersService {
 
   async addMember(channelId: number, targetUserId: string, requesterId: string) {
     await this.assertAdmin(channelId, requesterId);
+
+    const channel = await this.db.query.chatChannels.findFirst({
+      where: eq(chatChannels.id, channelId),
+      columns: { orgId: true },
+    });
+    if (!channel) throw new NotFoundException("Channel not found");
+    await assertUsersInOrg(this.db, channel.orgId, [targetUserId]);
 
     const existing = await this.db.query.chatChannelMembers.findFirst({
       where: and(

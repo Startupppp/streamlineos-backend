@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
+import { TenantContextInterceptor, TenantContextService } from "./common/tenant";
 import { Reflector } from "@nestjs/core";
 import { DeprecationInterceptor } from "./common/deprecation/deprecation.interceptor";
 import { ConfigModule } from "./config/config.module";
@@ -164,6 +165,8 @@ import { ZodValidationInterceptor } from "./common/validation/zod-validation.int
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_INTERCEPTOR, useClass: ZodValidationInterceptor },
     { provide: APP_INTERCEPTOR, useClass: DeprecationInterceptor },
+    TenantContextService,
+    { provide: APP_INTERCEPTOR, useClass: TenantContextInterceptor },
   ],
 })
 export class AppModule {}

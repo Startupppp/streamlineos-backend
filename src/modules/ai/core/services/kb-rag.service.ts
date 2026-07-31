@@ -48,7 +48,6 @@ interface AnswerOptions {
   orgId: string;
   question: string;
   articleId?: number;
-  publicOnly?: boolean;
 }
 
 @Injectable()
@@ -66,20 +65,20 @@ export class KbRagService {
   }
 
   private async searchChunks(opts: AnswerOptions): Promise<KbSearchResult[]> {
-    const { orgId, question, articleId, publicOnly = false } = opts;
+    const { orgId, question, articleId } = opts;
     const vector = this.embeddings.toVectorLiteral(await this.embeddings.embedQuery(question));
     const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
 
-    const conditions: SQL[] = [eq(kbArticleChunks.orgId, orgId)];
+    const conditions: SQL[] = [
+      eq(kbArticleChunks.orgId, orgId),
+      eq(kbArticles.status, "published"),
+      eq(kbArticles.visibility, "public"),
+      inArray(kbSpaces.audience, ["public", "mixed"]),
+      isNull(kbSpaces.deletedAt),
+    ];
     if (articleId) conditions.push(eq(kbArticleChunks.articleId, articleId));
-    if (publicOnly) {
-      conditions.push(eq(kbArticles.status, "published"));
-      conditions.push(eq(kbArticles.visibility, "public"));
-      conditions.push(inArray(kbSpaces.audience, ["public", "mixed"]));
-      conditions.push(isNull(kbSpaces.deletedAt));
-    }
 
-    let query = this.db
+    const pool = await this.db
       .select({
         id: kbArticleChunks.id,
         articleId: kbArticles.id,
@@ -93,16 +92,12 @@ export class KbRagService {
       })
       .from(kbArticleChunks)
       .innerJoin(kbArticles, eq(kbArticles.id, kbArticleChunks.articleId))
+      .innerJoin(kbSpaces, eq(kbArticles.spaceId, kbSpaces.id))
       .leftJoin(kbArticleAttachments, eq(kbArticleAttachments.id, kbArticleChunks.attachmentId))
-      .$dynamic();
-    if (publicOnly) {
-      query = query.innerJoin(kbSpaces, eq(kbArticles.spaceId, kbSpaces.id));
-    }
-
-    const pool = await query
       .where(and(...conditions))
       .orderBy(distance)
       .limit(SEARCH_POOL_K);
+
     return pool.slice(0, DEFAULT_TOP_K);
   }
 
@@ -209,8 +204,6 @@ export class KbRagService {
   }
 
   async answerQuestion(opts: AnswerOptions): Promise<KbAnswer> {
-    if (!opts.publicOnly) return this.runAnswer(opts);
-
     const hasArticles = await this.hasPublishedPublicArticles(opts.orgId);
     if (!hasArticles) {
       this.recordNoContext(opts.orgId, opts.question);
@@ -220,7 +213,6 @@ export class KbRagService {
         hasContext: false,
       };
     }
-
     return this.runAnswer(opts);
   }
 }

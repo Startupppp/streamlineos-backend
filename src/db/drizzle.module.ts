@@ -1,6 +1,7 @@
-import { Global, Inject, Module, type OnApplicationShutdown } from "@nestjs/common";
+import { Global, Inject, Logger, Module, type OnApplicationShutdown } from "@nestjs/common";
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
+import { createTenantAwareDb } from "../common/tenant/tenant-db";
 import { DRIZZLE } from "./drizzle.constants";
 import * as schema from "./schema";
 
@@ -23,8 +24,12 @@ function normalizeDatabaseUrl(url: string): string {
     {
       provide: DRIZZLE,
       useFactory: (): Db & { __client: ReturnType<typeof postgres> } => {
-        const raw = process.env.DATABASE_URL;
+        // APP_DATABASE_URL is the non-owner, non-BYPASSRLS role. Unsetting it rolls RLS back instantly.
+        const raw = process.env.APP_DATABASE_URL || process.env.DATABASE_URL;
         if (!raw) throw new Error("DATABASE_URL is required");
+        if (process.env.APP_DATABASE_URL) {
+          new Logger("Drizzle").log("Connecting as the RLS-enforced application role");
+        }
         const connectionString = normalizeDatabaseUrl(raw);
         const isNeon = /\.neon\.tech/i.test(connectionString);
         const isDev = process.env.NODE_ENV === "development";
@@ -36,8 +41,8 @@ function normalizeDatabaseUrl(url: string): string {
           max_lifetime: isNeon ? 60 * 4 : 60 * 30,
           ...(isNeon ? { ssl: "require" as const } : {}),
         });
-        const db = drizzle(client, { schema }) as Db;
-        return Object.assign(db, { __client: client });
+        const db = Object.assign(drizzle(client, { schema }) as Db, { __client: client });
+        return createTenantAwareDb(db) as Db & { __client: ReturnType<typeof postgres> };
       },
     },
   ],

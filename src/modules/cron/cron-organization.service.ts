@@ -5,6 +5,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
 import { AuditService } from "../../common/audit/audit.service";
+import { forEachOrg } from "../../common/tenant";
 
 @Injectable()
 export class CronOrganizationService {
@@ -15,17 +16,24 @@ export class CronOrganizationService {
 
   async expireStaleInvitations(): Promise<{ expired: number }> {
     const now = new Date();
-    const result = await this.db
-      .update(invitations)
-      .set({ status: "EXPIRED" })
-      .where(
-        and(
-          eq(invitations.status, "PENDING"),
-          lt(invitations.expiresAt, now),
-        ),
-      )
-      .returning({ id: invitations.id });
-    return { expired: result.length };
+    let expired = 0;
+
+    await forEachOrg(this.db, "org-expire-invitations", async (tx, orgId) => {
+      const result = await tx
+        .update(invitations)
+        .set({ status: "EXPIRED" })
+        .where(
+          and(
+            eq(invitations.orgId, orgId),
+            eq(invitations.status, "PENDING"),
+            lt(invitations.expiresAt, now),
+          ),
+        )
+        .returning({ id: invitations.id });
+      expired += result.length;
+    });
+
+    return { expired };
   }
 
   async runPurgeWorker(): Promise<{ processed: number; skipped: number }> {
@@ -66,8 +74,6 @@ export class CronOrganizationService {
   }
 
   private async executePurge(orgId: string, orgName: string): Promise<void> {
-    // TODO: cascade deletion of all tenant data (members, tickets, etc.) is a follow-up.
-    // For this first cut, mark the org as PURGED and log; data remains intact.
     await this.db
       .update(organizations)
       .set({ statusV2: "PURGED", purgedAt: new Date() })

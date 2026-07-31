@@ -18,7 +18,7 @@ import { AiUsageService } from "../ai/core/services/ai-usage.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { ProjectsTicketsService } from "../build/core/projects-tickets.service";
-import { requireFeature } from "../ai/core/billing/feature-gates";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import {
   FeedbackAnalysisSchema,
   type FeedbackAnalysis,
@@ -124,6 +124,7 @@ export class FeedbucketAiService {
     private readonly audit: AuditService,
     private readonly rateLimiter: RateLimitService,
     private readonly ticketsService: ProjectsTicketsService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   private async loadSubmission(orgId: string, submissionId: number) {
@@ -280,7 +281,7 @@ export class FeedbucketAiService {
   }
 
   async analyze(u: CurrentUserContext, submissionId: number, force = false): Promise<FeedbackAnalysis & { aiUsage?: AiUsageMeta }> {
-    requireFeature(u.plan, "ai.feedbucket");
+    await this.planLimits.assertFeature(u.orgId, "ai.feedbucket");
 
     const submission = await this.loadSubmission(u.orgId, submissionId);
     this.assertProjectAccess(submission, u.orgId);
@@ -343,7 +344,7 @@ export class FeedbucketAiService {
     u: CurrentUserContext,
     submissionId: number,
   ): Promise<{ ticketId: number; ticketType: string }> {
-    requireFeature(u.plan, "ai.feedbucket");
+    await this.planLimits.assertFeature(u.orgId, "ai.feedbucket");
 
     const submission = await this.loadSubmission(u.orgId, submissionId);
     const projectId = this.assertProjectAccess(submission, u.orgId);

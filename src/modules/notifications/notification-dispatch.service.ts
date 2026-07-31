@@ -11,6 +11,7 @@ import { NotificationEventRegistryService } from "./notification-event-registry.
 import { NotificationRoutingService } from "./notification-routing.service";
 import { NotificationsService, type NotificationCategoryValue, type AnnounceInput } from "./notifications.service";
 import type { DispatchEventInput, NotificationChannel, NotificationEventDefinition } from "./notification.types";
+import { filterOrgMemberIds } from "../../common/tenant/org-membership";
 
 type ProviderName = "INTERNAL" | "SMTP" | "WEB_PUSH" | "TWILIO" | "WEBHOOK";
 
@@ -56,7 +57,7 @@ export class NotificationDispatchService {
     const result: DispatchResult = { eventKey: input.eventKey, notified: 0, deliveriesQueued: 0, suppressed: 0, deduped: 0 };
     if (!enabled && !definition.mandatory) return result;
 
-    const targets = Array.from(new Set(input.targetUserIds)).filter(Boolean);
+    const targets = await filterOrgMemberIds(this.db, input.orgId, input.targetUserIds);
     if (targets.length === 0) return result;
 
     const priority = input.priority ?? definition.defaultPriority;

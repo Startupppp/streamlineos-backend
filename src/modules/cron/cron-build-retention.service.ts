@@ -1,8 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, inArray, lt, ne } from "drizzle-orm";
+import { and, eq, inArray, lt, ne } from "drizzle-orm";
 import { webhookDeliveries } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import { forEachOrg } from "../../common/tenant";
 
 const PRUNE_BATCH_SIZE = 500;
 const WEBHOOK_DELIVERY_RETENTION_DAYS = 90;
@@ -17,28 +18,32 @@ export class CronBuildRetentionService {
     );
 
     let total = 0;
-    for (;;) {
-      const rows = await this.db
-        .select({ id: webhookDeliveries.id })
-        .from(webhookDeliveries)
-        .where(
-          and(
-            lt(webhookDeliveries.deliveredAt, cutoff),
-            ne(webhookDeliveries.status, "pending"),
-          ),
-        )
-        .limit(PRUNE_BATCH_SIZE);
-      if (rows.length === 0) break;
 
-      await this.db.delete(webhookDeliveries).where(
-        inArray(
-          webhookDeliveries.id,
-          rows.map((r) => r.id),
-        ),
-      );
-      total += rows.length;
-      if (rows.length < PRUNE_BATCH_SIZE) break;
-    }
+    await forEachOrg(this.db, "prune-webhook-deliveries", async (tx, orgId) => {
+      for (;;) {
+        const rows = await tx
+          .select({ id: webhookDeliveries.id })
+          .from(webhookDeliveries)
+          .where(
+            and(
+              eq(webhookDeliveries.orgId, orgId),
+              lt(webhookDeliveries.deliveredAt, cutoff),
+              ne(webhookDeliveries.status, "pending"),
+            ),
+          )
+          .limit(PRUNE_BATCH_SIZE);
+        if (rows.length === 0) break;
+
+        await tx.delete(webhookDeliveries).where(
+          inArray(
+            webhookDeliveries.id,
+            rows.map((r) => r.id),
+          ),
+        );
+        total += rows.length;
+        if (rows.length < PRUNE_BATCH_SIZE) break;
+      }
+    });
 
     return { webhookDeliveriesPruned: total };
   }

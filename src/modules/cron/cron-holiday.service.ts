@@ -4,6 +4,7 @@ import { holidays } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
+import { forEachOrg } from "../../common/tenant";
 
 export type HolidayNotificationResult =
   | { success: true; count: number }
@@ -18,20 +19,31 @@ export class CronHolidayService {
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
       const tomorrowDate = tomorrow.toISOString().slice(0, 10);
+      let count = 0;
 
-      const upcomingHolidays = await this.db.query.holidays.findMany({
-        where: and(eq(holidays.date, tomorrowDate), eq(holidays.notificationSent, false)),
-        columns: { id: true },
+      await forEachOrg(this.db, "send-holiday-notifications", async (tx, orgId) => {
+        const upcomingHolidays = await tx
+          .select({ id: holidays.id })
+          .from(holidays)
+          .where(
+            and(
+              eq(holidays.orgId, orgId),
+              eq(holidays.date, tomorrowDate),
+              eq(holidays.notificationSent, false),
+            ),
+          );
+
+        for (const holiday of upcomingHolidays) {
+          await tx
+            .update(holidays)
+            .set({ notificationSent: true })
+            .where(and(eq(holidays.orgId, orgId), eq(holidays.id, holiday.id)));
+        }
+
+        count += upcomingHolidays.length;
       });
 
-      for (const holiday of upcomingHolidays) {
-        await this.db
-          .update(holidays)
-          .set({ notificationSent: true })
-          .where(eq(holidays.id, holiday.id));
-      }
-
-      return { success: true, count: upcomingHolidays.length };
+      return { success: true, count };
     } catch (error) {
       logger.error("Failed to send holiday notifications", error);
       return { error: "Failed to send notifications" };

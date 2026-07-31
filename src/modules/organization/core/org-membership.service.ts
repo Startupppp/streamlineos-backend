@@ -7,6 +7,7 @@ import {
 } from "@nestjs/common";
 import type { InviteActor } from "./invitations.service";
 import { assertMayGrantRole } from "../../../common/rbac/assert-may-grant-role";
+import { assertTargetNotOwner } from "../../../common/rbac/assert-target-not-owner";
 import { AccessService } from "../../access/access.service";
 import { and, count, desc, eq, ilike, inArray, lte, or } from "drizzle-orm";
 import {
@@ -365,6 +366,7 @@ export class OrgMembershipService {
     await assertMayGrantRole(this.access, orgId, actor, role);
 
     await this.db.transaction(async (tx) => {
+      await assertTargetNotOwner(tx, orgId, memberUserId);
       const [member] = await tx
         .select({ id: organizationMembers.id })
         .from(organizationMembers)

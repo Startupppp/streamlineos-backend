@@ -10,7 +10,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
-import { requireFeature } from "../../ai/core/billing/feature-gates";
+import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { SupportAiService } from "./support-ai.service";
 import { SupportAiSettingsService } from "./support-ai-settings.service";
 import {
@@ -46,6 +46,7 @@ export class SupportAiController {
   constructor(
     private readonly ai: SupportAiService,
     private readonly settingsSvc: SupportAiSettingsService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   @Get("settings")
@@ -77,8 +78,8 @@ export class SupportAiController {
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @HttpCode(200)
-  analyze(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
-    requireFeature(u.plan, "ai.ticket-insights");
+  async analyze(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
+    await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     return this.ai.analyzeTicket(u.orgId, ticketId);
   }
 
@@ -87,8 +88,8 @@ export class SupportAiController {
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @HttpCode(200)
-  findDuplicates(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
-    requireFeature(u.plan, "ai.ticket-insights");
+  async findDuplicates(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
+    await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     return this.ai.findDuplicates(u.orgId, ticketId);
   }
 
@@ -97,8 +98,8 @@ export class SupportAiController {
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @HttpCode(200)
-  suggestKbArticles(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
-    requireFeature(u.plan, "ai.ticket-insights");
+  async suggestKbArticles(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
+    await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     return this.ai.suggestKbArticles(u.orgId, ticketId);
   }
 
@@ -107,8 +108,8 @@ export class SupportAiController {
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @HttpCode(200)
-  suggestReply(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
-    requireFeature(u.plan, "ai.reply-suggestion");
+  async suggestReply(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
+    await this.planLimits.assertFeature(u.orgId, "ai.reply-suggestion");
     return this.ai.suggestReply(u.orgId, ticketId, u.userId);
   }
 
@@ -117,8 +118,8 @@ export class SupportAiController {
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @HttpCode(200)
-  suggestMacro(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
-    requireFeature(u.plan, "ai.reply-suggestion");
+  async suggestMacro(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
+    await this.planLimits.assertFeature(u.orgId, "ai.reply-suggestion");
     return this.ai.suggestMacro(u.orgId, u.userId, ticketId);
   }
 
@@ -127,12 +128,12 @@ export class SupportAiController {
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @HttpCode(200)
-  translateMessage(
+  async translateMessage(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Body(new ZodValidationPipe(translateMessageSchema)) body: TranslateMessageInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    requireFeature(u.plan, "ai.reply-suggestion");
+    await this.planLimits.assertFeature(u.orgId, "ai.reply-suggestion");
     return this.ai.translateMessage(u.orgId, ticketId, body.messageId, body.targetLanguage, u.userId);
   }
 
@@ -141,8 +142,8 @@ export class SupportAiController {
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @HttpCode(200)
-  generateHandoffSummary(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
-    requireFeature(u.plan, "ai.ticket-insights");
+  async generateHandoffSummary(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
+    await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     return this.ai.generateHandoffSummary(u.orgId, ticketId, u.userId);
   }
 
@@ -151,8 +152,8 @@ export class SupportAiController {
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @HttpCode(200)
-  findRootCauseCluster(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
-    requireFeature(u.plan, "ai.ticket-insights");
+  async findRootCauseCluster(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
+    await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     return this.ai.findRootCauseCluster(u.orgId, ticketId, u.userId);
   }
 

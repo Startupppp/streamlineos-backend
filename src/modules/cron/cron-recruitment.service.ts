@@ -17,6 +17,7 @@ import {
   getInterviewNoShowRescheduleEmail,
   getOfferDeadlineReminderEmail,
 } from "../email/templates/recruitment";
+import { forEachOrg } from "../../common/tenant";
 
 const PENDING_OFFER_STATUSES = ["SENT", "VIEWED"] as const;
 const NO_SHOW_FOLLOW_UP_DUE_MS = 24 * 60 * 60 * 1000;
@@ -57,68 +58,80 @@ export class CronRecruitmentService {
     tomorrow.setDate(tomorrow.getDate() + 1);
     const tomorrowDate = tomorrow.toISOString().slice(0, 10);
 
-    const dueOffers = await this.db
-      .select({
-        offerId: candidateOffers.id,
-        orgId: candidateOffers.orgId,
-        candidateId: candidateOffers.candidateId,
-        firstName: candidates.firstName,
-        lastName: candidates.lastName,
-        email: candidates.email,
-        designation: candidateOffers.offeredDesignation,
-        validUntil: candidateOffers.validUntil,
-        offerLetterUrl: candidateOffers.offerLetterUrl,
-        orgName: organizations.name,
-      })
-      .from(candidateOffers)
-      .innerJoin(candidates, eq(candidateOffers.candidateId, candidates.id))
-      .innerJoin(organizations, eq(candidateOffers.orgId, organizations.id))
-      .where(
-        and(
-          eq(candidateOffers.validUntil, tomorrowDate),
-          inArray(candidateOffers.offerStatus, [...PENDING_OFFER_STATUSES]),
-        ),
-      );
-
     let remindedCount = 0;
-    for (const offer of dueOffers) {
-      if (await this.remindOfferDeadline(offer)) remindedCount++;
-    }
 
-    logger.info("Offer deadline reminders processed", { remindedCount, due: dueOffers.length });
+    await forEachOrg(this.db, "offer-deadline-reminders", async (tx, orgId) => {
+      const dueOffers = await tx
+        .select({
+          offerId: candidateOffers.id,
+          orgId: candidateOffers.orgId,
+          candidateId: candidateOffers.candidateId,
+          firstName: candidates.firstName,
+          lastName: candidates.lastName,
+          email: candidates.email,
+          designation: candidateOffers.offeredDesignation,
+          validUntil: candidateOffers.validUntil,
+          offerLetterUrl: candidateOffers.offerLetterUrl,
+          orgName: organizations.name,
+        })
+        .from(candidateOffers)
+        .innerJoin(candidates, eq(candidateOffers.candidateId, candidates.id))
+        .innerJoin(organizations, eq(candidateOffers.orgId, organizations.id))
+        .where(
+          and(
+            eq(candidateOffers.orgId, orgId),
+            eq(candidateOffers.validUntil, tomorrowDate),
+            inArray(candidateOffers.offerStatus, [...PENDING_OFFER_STATUSES]),
+          ),
+        );
+
+      for (const offer of dueOffers) {
+        if (await this.remindOfferDeadline(offer)) remindedCount++;
+      }
+
+      logger.info("Offer deadline reminders processed for org", { orgId, due: dueOffers.length });
+    });
+
+    logger.info("Offer deadline reminder sweep complete", { remindedCount });
     return { remindedCount };
   }
 
   async processInterviewNoShows(): Promise<{ processedCount: number }> {
-    const dueInterviews = await this.db
-      .select({
-        interviewId: interviews.id,
-        orgId: interviews.orgId,
-        candidateId: interviews.candidateId,
-        firstName: candidates.firstName,
-        lastName: candidates.lastName,
-        email: candidates.email,
-        orgName: organizations.name,
-      })
-      .from(interviews)
-      .innerJoin(candidates, eq(interviews.candidateId, candidates.id))
-      .innerJoin(organizations, eq(interviews.orgId, organizations.id))
-      .where(
-        and(
-          eq(interviews.result, "PENDING"),
-          sql`${interviews.scheduledAt} + make_interval(mins => ${interviews.duration}) < now()`,
-        ),
-      );
-
-    if (dueInterviews.length === 0) return { processedCount: 0 };
-
-    const hrByOrg = new Map<string, string[]>();
     let processedCount = 0;
-    for (const interview of dueInterviews) {
-      if (await this.flagInterviewNoShow(interview, hrByOrg)) processedCount++;
-    }
 
-    logger.info("Interview no-shows processed", { processedCount, due: dueInterviews.length });
+    await forEachOrg(this.db, "interview-no-shows", async (tx, orgId) => {
+      const dueInterviews = await tx
+        .select({
+          interviewId: interviews.id,
+          orgId: interviews.orgId,
+          candidateId: interviews.candidateId,
+          firstName: candidates.firstName,
+          lastName: candidates.lastName,
+          email: candidates.email,
+          orgName: organizations.name,
+        })
+        .from(interviews)
+        .innerJoin(candidates, eq(interviews.candidateId, candidates.id))
+        .innerJoin(organizations, eq(interviews.orgId, organizations.id))
+        .where(
+          and(
+            eq(interviews.orgId, orgId),
+            eq(interviews.result, "PENDING"),
+            sql`${interviews.scheduledAt} + make_interval(mins => ${interviews.duration}) < now()`,
+          ),
+        );
+
+      if (dueInterviews.length === 0) return;
+
+      const hrByOrg = new Map<string, string[]>();
+      for (const interview of dueInterviews) {
+        if (await this.flagInterviewNoShow(interview, hrByOrg)) processedCount++;
+      }
+
+      logger.info("Interview no-shows processed for org", { orgId, due: dueInterviews.length });
+    });
+
+    logger.info("Interview no-show sweep complete", { processedCount });
     return { processedCount };
   }
 

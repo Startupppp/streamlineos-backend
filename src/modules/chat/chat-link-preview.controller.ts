@@ -4,6 +4,9 @@ import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { checkWebhookUrl } from "../../common/security/ssrf-guard";
+
+const MAX_PREVIEW_BYTES = 512 * 1024;
 
 interface LinkMeta {
   url: string;
@@ -24,13 +27,19 @@ export class ChatLinkPreviewController {
   @Get()
   @RequirePermission("chat:messages:read")
   async preview(@Query("url") url: string): Promise<LinkMeta> {
-    if (!url || !url.startsWith("http")) return { url, title: null, description: null, image: null, siteName: null };
+    const empty: LinkMeta = { url, title: null, description: null, image: null, siteName: null };
+    if (!url) return empty;
+
+    const check = await checkWebhookUrl(url);
+    if (!check.allowed) return empty;
+
     try {
       const res = await fetch(url, {
         headers: { "User-Agent": "StreamlineOS/1.0 LinkPreview" },
         signal: AbortSignal.timeout(4000),
+        redirect: "manual",
       });
-      const html = await res.text();
+      const html = (await res.text()).slice(0, MAX_PREVIEW_BYTES);
       const getMeta = (name: string) => {
         const m = html.match(new RegExp(`<meta[^>]+(?:property|name)=["']${name}["'][^>]+content=["']([^"']+)["']`, "i"))
           ?? html.match(new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${name}["']`, "i"));

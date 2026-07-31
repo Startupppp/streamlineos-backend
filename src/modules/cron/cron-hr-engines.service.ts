@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, inArray, isNotNull, isNull, lt, lte, ne, sql } from "drizzle-orm";
-import { organizations, goals, reviewCycles, hrBenefitEnrollmentWindows, assets } from "../../db/schema";
+import { and, eq, inArray, isNotNull, lte, lt, ne, sql } from "drizzle-orm";
+import { goals, reviewCycles, hrBenefitEnrollmentWindows, assets } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
@@ -12,6 +12,7 @@ import { ProbationService } from "../hr/lifecycle/probation.service";
 import { ComplianceRequirementsService } from "../hr/global/compliance-requirements.service";
 import { WorkAuthorizationsService } from "../hr/global/work-authorizations.service";
 import { ContractsService } from "../hr/global/contracts.service";
+import { forEachOrg } from "../../common/tenant";
 
 interface SweepResult {
   orgId: string;
@@ -40,14 +41,6 @@ export class CronHrEnginesService {
     private readonly workAuths: WorkAuthorizationsService,
     private readonly contracts: ContractsService,
   ) {}
-
-  private async listOrgIds(): Promise<string[]> {
-    const rows = await this.db
-      .select({ id: organizations.id })
-      .from(organizations)
-      .where(and(eq(organizations.status, "ACTIVE"), isNull(organizations.deletedAt)));
-    return rows.map((r) => r.id);
-  }
 
   async sweepWorkflowSlaEscalations(): Promise<{ swept: number }> {
     return this.workflowEngine.sweepOverdueSteps();
@@ -166,72 +159,62 @@ export class CronHrEnginesService {
   }
 
   async runAll(): Promise<RunAllResult> {
-    const orgIds = await this.listOrgIds();
     const results: SweepResult[] = [];
 
-    const sweepWorkflow = await this.runSweepAllOrgs("workflow-sla", async () => {
-      const r = await this.sweepWorkflowSlaEscalations();
-      logger.info("HR workflow SLA sweep complete", r);
-    });
-    results.push(sweepWorkflow);
+    results.push(
+      await this.runSweepAllOrgs("workflow-sla", async () => {
+        const r = await this.sweepWorkflowSlaEscalations();
+        logger.info("HR workflow SLA sweep complete", r);
+      }),
+    );
 
-    const sweepWebhooks = await this.runSweepAllOrgs("webhook-retries", async () => {
-      await this.hrWebhooks.retryPending();
-    });
-    results.push(sweepWebhooks);
+    results.push(
+      await this.runSweepAllOrgs("webhook-retries", async () => {
+        await this.hrWebhooks.retryPending();
+      }),
+    );
 
-    for (const orgId of orgIds) {
-      const effectiveResult = await this.runSweep(orgId, "effective-changes", () =>
-        this.sweepEffectiveDatedChanges(orgId),
-      );
-      results.push(effectiveResult);
-
-      const goalsResult = await this.runSweep(orgId, "overdue-goals", () =>
-        this.sweepOverdueGoals(orgId),
-      );
-      results.push(goalsResult);
-
-      const probationResult = await this.runSweep(orgId, "probation-due", () =>
-        this.probation.sweepDue(orgId),
-      );
-      results.push(probationResult);
-
-      const reviewsDueResult = await this.runSweep(orgId, "reviews-due", () =>
-        this.sweepReviewsDue(orgId),
-      );
-      results.push(reviewsDueResult);
-
-      const enrollmentWindowsResult = await this.runSweep(orgId, "enrollment-windows", () =>
-        this.sweepEnrollmentWindows(orgId),
-      );
-      results.push(enrollmentWindowsResult);
-
-      const assetReturnsDueResult = await this.runSweep(orgId, "asset-returns-due", () =>
-        this.sweepAssetReturnsDue(orgId),
-      );
-      results.push(assetReturnsDueResult);
-
-      const complianceEventsResult = await this.runSweep(orgId, "compliance-events", async () => {
-        await this.compliance.generateEvents(orgId);
-        await this.compliance.markOverdueEvents(orgId);
-      });
-      results.push(complianceEventsResult);
-
-      const workAuthResult = await this.runSweep(orgId, "work-auth-expiry", () =>
-        this.workAuths.refreshExpiredStatuses(orgId),
-      );
-      results.push(workAuthResult);
-
-      const contractsResult = await this.runSweep(orgId, "contract-expiry", () =>
-        this.contracts.refreshExpiredStatuses(orgId),
-      );
-      results.push(contractsResult);
-    }
+    const { organizations: orgsProcessed } = await forEachOrg(
+      this.db,
+      "hr-engines-per-org",
+      async (_tx, orgId) => {
+        results.push(
+          await this.runSweep(orgId, "effective-changes", () => this.sweepEffectiveDatedChanges(orgId)),
+        );
+        results.push(
+          await this.runSweep(orgId, "overdue-goals", () => this.sweepOverdueGoals(orgId)),
+        );
+        results.push(
+          await this.runSweep(orgId, "probation-due", () => this.probation.sweepDue(orgId)),
+        );
+        results.push(
+          await this.runSweep(orgId, "reviews-due", () => this.sweepReviewsDue(orgId)),
+        );
+        results.push(
+          await this.runSweep(orgId, "enrollment-windows", () => this.sweepEnrollmentWindows(orgId)),
+        );
+        results.push(
+          await this.runSweep(orgId, "asset-returns-due", () => this.sweepAssetReturnsDue(orgId)),
+        );
+        results.push(
+          await this.runSweep(orgId, "compliance-events", async () => {
+            await this.compliance.generateEvents(orgId);
+            await this.compliance.markOverdueEvents(orgId);
+          }),
+        );
+        results.push(
+          await this.runSweep(orgId, "work-auth-expiry", () => this.workAuths.refreshExpiredStatuses(orgId)),
+        );
+        results.push(
+          await this.runSweep(orgId, "contract-expiry", () => this.contracts.refreshExpiredStatuses(orgId)),
+        );
+      },
+    );
 
     const succeeded = results.filter((r) => r.ok).length;
     const failed = results.filter((r) => !r.ok).length;
 
-    return { results, orgsProcessed: orgIds.length, succeeded, failed };
+    return { results, orgsProcessed, succeeded, failed };
   }
 
   private async runSweep(
@@ -249,12 +232,16 @@ export class CronHrEnginesService {
     }
   }
 
+  // These delegates query tenant tables cross-org, so each org gets its own pass
   private async runSweepAllOrgs(
     sweep: string,
     fn: () => Promise<void>,
   ): Promise<SweepResult> {
     try {
-      await fn();
+      const { failed } = await forEachOrg(this.db, sweep, fn);
+      if (failed > 0) {
+        return { orgId: "*", sweep, ok: false, error: `${failed} organization(s) failed` };
+      }
       return { orgId: "*", sweep, ok: true };
     } catch (err: unknown) {
       const error = err instanceof Error ? err.message : String(err);

@@ -6,6 +6,7 @@ import {
   leaveRequests,
   users,
   userIntegrationConnections,
+  organizationMembers,
 } from "../../db/schema";
 import { ExternalCalendarSyncService } from "./external-calendar-sync.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -16,6 +17,7 @@ import { getCalendarInviteEmail } from "../email/templates/calendar";
 import { CalendarEventsAggregateService } from "./calendar-events-aggregate.service";
 import type { CalendarEventItem, OooConflict } from "./calendar.types";
 import { dateOnly } from "./calendar.types";
+import { assertUsersInOrg } from "../../common/tenant/org-membership";
 
 @Injectable()
 export class CalendarService {
@@ -70,6 +72,8 @@ export class CalendarService {
     const endDate = new Date(input.endDate);
     const attendeeIds = input.attendeeIds ?? [];
 
+    await assertUsersInOrg(this.db, orgId, attendeeIds);
+
     const [event, oooConflicts] = await Promise.all([
       this.db
         .insert(calendarEvents)
@@ -104,7 +108,7 @@ export class CalendarService {
     if (event && input.syncConnectionId) {
       try {
         const conn = await this.ownedActiveConnection(orgId, userId, input.syncConnectionId);
-        const attendeeEmailList = await this.attendeeEmails(attendeeIds);
+        const attendeeEmailList = await this.attendeeEmails(orgId, attendeeIds);
         const pushed = await this.sync.pushCreate(userId, conn, {
           title: input.title,
           description: input.description ?? null,
@@ -131,6 +135,7 @@ export class CalendarService {
     }
     if (event) {
       void this.dispatchInviteEmails({
+        orgId,
         organizerId: userId,
         attendeeIds,
         title: input.title,
@@ -150,6 +155,7 @@ export class CalendarService {
   }
 
   private async dispatchInviteEmails(params: {
+    orgId: string;
     organizerId: string;
     attendeeIds: string[];
     title: string;
@@ -174,7 +180,14 @@ export class CalendarService {
           lastName: users.lastName,
         })
         .from(users)
-        .where(inArray(users.id, recipientIds)),
+        .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
+        .where(
+          and(
+            inArray(users.id, recipientIds),
+            eq(organizationMembers.orgId, params.orgId),
+            eq(organizationMembers.status, "ACTIVE"),
+          ),
+        ),
       this.db
         .select({
           name: users.name,
@@ -228,7 +241,10 @@ export class CalendarService {
     if (input.category !== undefined) updateData.category = input.category;
     if (input.entityType !== undefined) updateData.entityType = input.entityType ?? null;
     if (input.entityId !== undefined) updateData.entityId = input.entityId ?? null;
-    if (input.attendeeIds !== undefined) updateData.attendeeIds = input.attendeeIds;
+    if (input.attendeeIds !== undefined) {
+      await assertUsersInOrg(this.db, orgId, input.attendeeIds);
+      updateData.attendeeIds = input.attendeeIds;
+    }
     if (input.isRecurring !== undefined) updateData.isRecurring = input.isRecurring;
     if (input.recurringRule !== undefined) updateData.recurringRule = input.recurringRule ?? null;
     if (input.agenda !== undefined) updateData.agenda = input.agenda ?? null;
@@ -334,9 +350,19 @@ export class CalendarService {
     return { id: row.id, toolkit: row.toolkit, composioConnectedAccountId: row.composioConnectedAccountId };
   }
 
-  private async attendeeEmails(attendeeIds: string[]): Promise<string[]> {
+  private async attendeeEmails(orgId: string, attendeeIds: string[]): Promise<string[]> {
     if (attendeeIds.length === 0) return [];
-    const rows = await this.db.select({ email: users.email }).from(users).where(inArray(users.id, attendeeIds));
+    const rows = await this.db
+      .select({ email: users.email })
+      .from(users)
+      .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
+      .where(
+        and(
+          inArray(users.id, attendeeIds),
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.status, "ACTIVE"),
+        ),
+      );
     return rows.map((r) => r.email);
   }
 

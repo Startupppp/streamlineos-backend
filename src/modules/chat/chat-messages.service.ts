@@ -397,6 +397,14 @@ export class ChatMessagesService {
     metadata: Record<string, unknown>,
   ): Promise<void> {
     const [message] = await this.db.transaction(async (tx) => {
+      const [channel] = await tx
+        .select({ id: chatChannels.id })
+        .from(chatChannels)
+        .where(and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, orgId)))
+        .limit(1);
+
+      if (!channel) throw new NotFoundException("Channel not found");
+
       const [created] = await tx
         .insert(chatMessages)
         .values({

@@ -22,6 +22,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { NotificationsService } from "./notifications.service";
 import { NotificationEventService } from "./notification-event.service";
+import { NoTenantTransaction } from "../../common/tenant";
 import {
   listSchema,
   snoozeSchema,
@@ -62,6 +63,7 @@ export class NotificationsController {
   @Get("events")
   @Sse()
   @Public()
+  @NoTenantTransaction()
   stream(@Query("token") token: string): Observable<MessageEvent> {
     const user = this.notifEvents.consumeToken(token);
     if (!user) throw new UnauthorizedException("Invalid or expired stream token");
