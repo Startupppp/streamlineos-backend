@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { FinancePostingService } from "../accounting/core/finance-posting.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { toPaise } from "./runs/lib/money";
 
 @Injectable()
 export class PayrollPostingService {
@@ -18,20 +19,20 @@ export class PayrollPostingService {
     employerCost: string,
   ): Promise<void> {
     const entryDate = `${month}-01`;
-    const grossNum = parseFloat(gross ?? "0");
-    const deductionsNum = parseFloat(deductions ?? "0");
-    const netNum = parseFloat(net ?? "0");
-    const employerCostNum = parseFloat(employerCost ?? "0");
+    const grossPaise = toPaise(gross ?? "0");
+    const deductionsPaise = toPaise(deductions ?? "0");
+    const netPaise = toPaise(net ?? "0");
+    const employerCostPaise = toPaise(employerCost ?? "0");
 
-    if (grossNum <= 0 && netNum <= 0) return;
+    if (grossPaise <= 0 && netPaise <= 0) return;
 
-    const totalExpense = (grossNum + employerCostNum).toFixed(4);
-    const netStr = netNum.toFixed(4);
-    const taxStr = deductionsNum.toFixed(4);
-    const employerStr = employerCostNum.toFixed(4);
+    const totalExpense = ((grossPaise + employerCostPaise) / 100).toFixed(4);
+    const netStr = (netPaise / 100).toFixed(4);
+    const taxStr = (deductionsPaise / 100).toFixed(4);
+    const employerStr = (employerCostPaise / 100).toFixed(4);
 
     try {
-      if (employerCostNum > 0) {
+      if (employerCostPaise > 0) {
         await this.posting.postJournal(u, {
           entryDate,
           description: `Payroll accrual ${month} — salary expense`,
@@ -53,7 +54,7 @@ export class PayrollPostingService {
           sourceId: String(runId),
           sourceEvent: "finalized",
           lines: [
-            { systemPurpose: "SALARY_EXPENSE", debit: (grossNum).toFixed(4), credit: "0" },
+            { systemPurpose: "SALARY_EXPENSE", debit: (grossPaise / 100).toFixed(4), credit: "0" },
             { systemPurpose: "PAYROLL_PAYABLE", debit: "0", credit: netStr },
             { systemPurpose: "TAX_PAYABLE", debit: "0", credit: taxStr },
           ],
@@ -71,10 +72,10 @@ export class PayrollPostingService {
     net: string,
   ): Promise<void> {
     const entryDate = `${month}-01`;
-    const netNum = parseFloat(net ?? "0");
-    if (netNum <= 0) return;
+    const netPaise = toPaise(net ?? "0");
+    if (netPaise <= 0) return;
 
-    const netStr = netNum.toFixed(4);
+    const netStr = (netPaise / 100).toFixed(4);
 
     try {
       await this.posting.postJournal(u, {

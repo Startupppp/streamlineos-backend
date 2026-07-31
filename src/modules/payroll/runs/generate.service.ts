@@ -29,6 +29,7 @@ import {
   getLockedInputPeriodId,
 } from "./lib/input-puller";
 import { getIndiaBundleForMonth } from "./lib/statutory-registry";
+import { toPaise, fromPaise } from "./lib/money";
 
 type PayrollTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -120,10 +121,10 @@ export class GenerateService {
     } & ReturnType<GeneratePipelineService["runCalcAndDetect"]>;
 
     let processedCount = 0;
-    let grossTotal = 0;
-    let deductionTotal = 0;
-    let employerCostTotal = 0;
-    let netTotal = 0;
+    let grossTotalPaise = 0;
+    let deductionTotalPaise = 0;
+    let employerCostTotalPaise = 0;
+    let netTotalPaise = 0;
     let finalExceptionCount = 0;
 
     const calcResults: EmployeeCalcResult[] = [];
@@ -188,10 +189,10 @@ export class GenerateService {
       };
 
       calcResults.push({ profile, inputs: inputsWithConsumed, pulls, snapshot, exceptions });
-      grossTotal += parseFloat(snapshot.totals.gross);
-      deductionTotal += parseFloat(snapshot.totals.deductions);
-      employerCostTotal += parseFloat(snapshot.totals.employerContributions);
-      netTotal += parseFloat(snapshot.totals.net);
+      grossTotalPaise += toPaise(snapshot.totals.gross);
+      deductionTotalPaise += toPaise(snapshot.totals.deductions);
+      employerCostTotalPaise += toPaise(snapshot.totals.employerContributions);
+      netTotalPaise += toPaise(snapshot.totals.net);
       processedCount++;
     }
 
@@ -386,10 +387,10 @@ export class GenerateService {
         .update(payrollRuns)
         .set({
           status: newStatus,
-          grossTotal: grossTotal.toFixed(2),
-          deductionTotal: deductionTotal.toFixed(2),
-          employerCostTotal: employerCostTotal.toFixed(2),
-          netTotal: netTotal.toFixed(2),
+          grossTotal: fromPaise(grossTotalPaise),
+          deductionTotal: fromPaise(deductionTotalPaise),
+          employerCostTotal: fromPaise(employerCostTotalPaise),
+          netTotal: fromPaise(netTotalPaise),
           employeeCount: processedCount,
           exceptionCount: openBlockers?.total ?? 0,
           policyVersionId,

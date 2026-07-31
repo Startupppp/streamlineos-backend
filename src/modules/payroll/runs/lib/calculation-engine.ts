@@ -380,6 +380,37 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
 
   const netPaise = grossPaise + reimbursementPaise - totalDeductionPaise;
 
+  // C2-10: Deterministic residual allocation.
+  // Re-sum all component amounts from their stored strings to verify integer consistency.
+  // Any paise discrepancy (e.g. introduced by future rounding mode changes) is absorbed by
+  // the largest earning component so payslip line items always audit to the run net exactly.
+  const componentNetPaise =
+    lines.filter(l => l.category === "EARNING").reduce((s, l) => s + toPaise(l.amount), 0)
+    + lines.filter(l => l.category === "REIMBURSEMENT").reduce((s, l) => s + toPaise(l.amount), 0)
+    - lines
+        .filter(l => l.category === "DEDUCTION" || l.category === "TAX" || l.category === "ADJUSTMENT")
+        .reduce((s, l) => s + toPaise(l.amount), 0);
+  const residualPaise = netPaise - componentNetPaise;
+
+  if (residualPaise !== 0) {
+    let largestIdx = -1;
+    let largestPaise = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i]!.category !== "EARNING") continue;
+      const p = toPaise(lines[i]!.amount);
+      if (p > largestPaise) {
+        largestPaise = p;
+        largestIdx = i;
+      }
+    }
+    if (largestIdx >= 0) {
+      const line = lines[largestIdx]!;
+      line.amount = fromPaise(toPaise(line.amount) + residualPaise);
+      line.explain.steps.push(`Residual allocation: ${residualPaise > 0 ? "+" : ""}${residualPaise}p`);
+      grossPaise += residualPaise;
+    }
+  }
+
   let computedNetPayoutCurrency: string | null = null;
   if (fxRate != null && payoutCurrency != null && payoutCurrency !== currency) {
     computedNetPayoutCurrency = ((netPaise / 100) * parseFloat(fxRate)).toFixed(2);
@@ -414,6 +445,17 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
     };
   }
 
+  // Build totals as a variable (not an inline literal) so the extra `residualPaise` field
+  // is persisted in the JSONB snapshot without a TypeScript excess-property error.
+  // Structural subtyping allows a superset object to satisfy CalculationSnapshot['totals'].
+  const totals = {
+    gross: fromPaise(grossPaise),
+    deductions: fromPaise(totalDeductionPaise),
+    employerContributions: fromPaise(totalEmployerPaise),
+    net: fromPaise(netPaise),
+    residualPaise,
+  };
+
   return {
     policyVersionId,
     computedAt: new Date().toISOString(),
@@ -425,12 +467,7 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
     lopDays: input.inputs.lopDays,
     overtimeHours: input.inputs.overtimeHours,
     lines,
-    totals: {
-      gross: fromPaise(grossPaise),
-      deductions: fromPaise(totalDeductionPaise),
-      employerContributions: fromPaise(totalEmployerPaise),
-      net: fromPaise(netPaise),
-    },
+    totals,
     variance,
     wageDefinitionWarning: statResult.wageDefinitionWarning ?? null,
   };

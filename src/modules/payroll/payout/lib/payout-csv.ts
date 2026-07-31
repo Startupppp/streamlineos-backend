@@ -28,11 +28,11 @@ export function csvRow(
   accountNumber: string,
   bankCode: string,
   currency: string,
-  amount: string,
+  amountPaise: number,
   narration: string,
 ): string {
   const safeName = name.replace(/"/g, "");
-  const amt = parseFloat(amount).toFixed(2);
+  const amt = (amountPaise / 100).toFixed(2);
   switch (format) {
     case "NEFT_CSV":
     case "RTGS_CSV":

@@ -28,6 +28,7 @@ import { assertOrgMember } from "../lib/org-membership";
 import { JournalOutboxService } from "../insights/journal-outbox.service";
 import { parseBankReturnCsv } from "./lib/bank-return";
 import { defaultFormatFromCurrency, csvHeader, csvRow } from "./lib/payout-csv";
+import { toPaise, fromPaise } from "../runs/lib/money";
 import {
   checkRunCompletion,
   refreshBatchPaidStatus,
@@ -112,8 +113,8 @@ export class PayoutBatchesService {
       if (e.status === "HELD" || e.holdReason) return false;
       const bank = decryptBankDetails(e.bankDetails ?? null);
       if (!bank?.accountNumber) return false;
-      const net = parseFloat(e.netPayoutCurrency ?? e.net);
-      if (net <= 0) return false;
+      const netPaise = toPaise(e.netPayoutCurrency ?? e.net);
+      if (netPaise <= 0) return false;
       return true;
     });
 
@@ -180,7 +181,7 @@ export class PayoutBatchesService {
         if (!bank?.accountNumber) return;
         const bankCode = bank.ifsc ?? "";
         const effectiveAmount = emp.netPayoutCurrency ?? emp.net;
-        csvRows.push(csvRow(groupFormat, idx + 1, emp.name ?? emp.userId, bank.accountNumber, bankCode, currencyCode, effectiveAmount, narrationLabel));
+        csvRows.push(csvRow(groupFormat, idx + 1, emp.name ?? emp.userId, bank.accountNumber, bankCode, currencyCode, toPaise(effectiveAmount), narrationLabel));
         itemsData.push({
           runEmployeeId: emp.id,
           userId: emp.userId,
@@ -200,7 +201,8 @@ export class PayoutBatchesService {
 
       const seq = baseSeq + groupIdx + 1;
       const batchNumber = `PAY-${monthNum}-${currencyCode}-${String(seq).padStart(3, "0")}`;
-      const totalAmount = itemsData.reduce((s, i) => s + parseFloat(i.amount), 0).toFixed(2);
+      const totalAmountPaise = itemsData.reduce((s, i) => s + toPaise(i.amount), 0);
+      const totalAmount = fromPaise(totalAmountPaise);
       const now = new Date();
 
       let newBatch: typeof payrollBankBatches.$inferSelect | undefined;
