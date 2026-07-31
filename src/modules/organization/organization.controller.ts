@@ -35,7 +35,6 @@ import {
   createOrganizationSchema,
   createHolidaySchema,
   deleteOrgSchema,
-  inviteMemberSchema,
   listMembersSchema,
   schedulePurgeSchema,
   securitySettingsSchema,
@@ -48,7 +47,6 @@ import {
   type CreateHolidayInput,
   type CreateOrganizationInput,
   type DeleteOrgInput,
-  type InviteMemberInput,
   type ListMembersInput,
   type SchedulePurgeInput,
   type SecuritySettingsInput,
@@ -131,22 +129,6 @@ export class OrganizationController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.organization.listMembers(u.orgId, query);
-  }
-
-  @Post("members")
-  @HttpCode(201)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("settings:manage")
-  inviteMember(
-    @Body(new ZodValidationPipe(inviteMemberSchema)) body: InviteMemberInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.invitations.invite(
-      u.orgId,
-      { userId: u.userId, isOrgOwner: u.isOrgOwner},
-      body.email,
-      body.role,
-    );
   }
 
   @UseGuards(PermissionGuard)

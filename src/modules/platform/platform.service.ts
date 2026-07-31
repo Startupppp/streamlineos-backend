@@ -1,6 +1,6 @@
-﻿import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+﻿import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { randomBytes } from "crypto";
-import { eq, sql, gte, desc, ilike, or, and, isNull, count, type SQL } from "drizzle-orm";
+import { eq, sql, gte, desc, ilike, or, and, isNull, type SQL } from "drizzle-orm";
 import {
   platformVisits,
   platformMessages,

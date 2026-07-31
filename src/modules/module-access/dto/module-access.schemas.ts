@@ -1,6 +1,16 @@
 import { z } from "zod";
 
-const dataScopeSchema = z.enum(["all", "team", "own", "none"]);
+/**
+ * Scopes that may be GRANTED today.
+ *
+ * "team" is deliberately excluded: no table links a member to an org team, and
+ * no `applyScope` call site supplies `teamColumn`/`teamIds`, so the runtime
+ * fails closed and a team-scoped grant silently denies everything. The enum
+ * value stays in the DB (existing rows keep their meaning); it just cannot be
+ * newly assigned until team membership is wired. Offering a scope that can
+ * never grant is worse than not offering it.
+ */
+const dataScopeSchema = z.enum(["all", "own", "none"]);
 const moduleKeyRegex = /^[a-z][a-z0-9_-]*$/;
 
 export const moduleKeyParamSchema = z.object({

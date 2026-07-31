@@ -1,5 +1,6 @@
 import {
   pgTable,
+  bigint,
   text,
   serial,
   timestamp,
@@ -48,6 +49,8 @@ export const projects = pgTable(
     ),
     pmWorkspaceId: text("pm_workspace_id").references(() => pmWorkspaces.pmWorkspaceId, { onDelete: "set null" }),
     budget: decimal("budget", { precision: 15, scale: 2 }),
+    budgetMinor: bigint("budget_minor", { mode: "number" }),
+    budgetCurrency: text("budget_currency"),
     settings: jsonb("settings").$type<{
       modules: {
         sprints: boolean;
@@ -71,6 +74,7 @@ export const projects = pgTable(
     index("idx_projects_manager").on(table.managerId),
     index("idx_projects_deal").on(table.dealId),
     index("idx_projects_managed_product").on(table.managedProductId),
+    index("idx_projects_name_trgm").using("gin", table.name.op("gin_trgm_ops")),
     unique("uniq_projects_org_id").on(table.orgId, table.id),
   ],
 );
@@ -247,6 +251,9 @@ export const projectTemplateTickets = pgTable(
   "project_template_tickets",
   {
     id: serial("id").primaryKey(),
+    orgId: text("org_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
     templateId: integer("template_id")
       .notNull()
       .references(() => projectTemplates.id, { onDelete: "cascade" }),
@@ -257,8 +264,12 @@ export const projectTemplateTickets = pgTable(
     estimatedHours: decimal("estimated_hours", { precision: 8, scale: 2 }),
     order: integer("order").notNull().default(0),
     phase: text("phase"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
     index("idx_project_template_tickets_template").on(table.templateId),
+    index("idx_project_template_tickets_org_template").on(table.orgId, table.templateId),
+    unique("uniq_project_template_tickets_org_id").on(table.orgId, table.id),
   ],
 );

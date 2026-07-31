@@ -1,33 +1,19 @@
 import {
-  Body,
-  ConflictException,
   Controller,
-  Delete,
   Get,
-  HttpCode,
   NotFoundException,
   Param,
-  Patch,
-  Post,
   Query,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { Public } from "../../common/auth/public.decorator";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
-import { BlogService, isDuplicateCategory } from "./blog.service";
+import { BlogService } from "./blog.service";
 import {
-  categoryCreateSchema,
-  categoryUpdateSchema,
   feedSchema,
-  postCreateSchema,
-  postUpdateSchema,
-  type CategoryCreateInput,
-  type CategoryUpdateInput,
   type FeedInput,
-  type PostCreateInput,
-  type PostUpdateInput,
-} from "./dto/blog.schemas";
+  } from "./dto/blog.schemas";
 
 @Controller("blog")
 @UseGuards(JwtAuthGuard)

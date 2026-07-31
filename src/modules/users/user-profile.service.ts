@@ -291,6 +291,13 @@ export class UserProfileService {
     ];
 
     await this.db.transaction(async (tx) => {
+      if (data.managerUserId !== undefined) {
+        await tx
+          .update(users)
+          .set({ reportingTo: data.managerUserId })
+          .where(eq(users.id, userId));
+      }
+
       for (const { kind, unitId } of kindMap) {
         if (unitId === undefined) continue;
 

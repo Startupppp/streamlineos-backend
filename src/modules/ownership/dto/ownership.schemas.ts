@@ -27,14 +27,9 @@ export const listTransfersSchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
 
-export const forceTransferOrgSchema = z.object({
-  toMembershipId: z.number().int().positive(),
-  reason: z.string().max(500).optional(),
-});
 
 export type SetModuleOwnerInput = z.infer<typeof setModuleOwnerSchema>;
 export type InitiateOrgTransferInput = z.infer<typeof initiateOrgTransferSchema>;
 export type InitiateModuleTransferInput = z.infer<typeof initiateModuleTransferSchema>;
 export type DeclineTransferInput = z.infer<typeof declineTransferSchema>;
 export type ListTransfersInput = z.infer<typeof listTransfersSchema>;
-export type ForceTransferOrgInput = z.infer<typeof forceTransferOrgSchema>;

@@ -13,6 +13,7 @@ import { CronProjectsService } from "./cron-projects.service";
 import { CrmSequencesRunnerService } from "../crm-automation-studio/crm-sequences-runner.service";
 import { CronFinanceService } from "./cron-finance.service";
 import { CronCrmTasksService } from "./cron-crm-tasks.service";
+import { CronBuildRetentionService } from "./cron-build-retention.service";
 
 @Public()
 @Controller("cron")
@@ -22,6 +23,7 @@ export class CronBuildController {
     private readonly crmSequencesRunner: CrmSequencesRunnerService,
     private readonly cronFinance: CronFinanceService,
     private readonly crmTasks: CronCrmTasksService,
+    private readonly buildRetention: CronBuildRetentionService,
   ) {}
 
   @Get("projects-recurring-flush")
@@ -88,6 +90,32 @@ export class CronBuildController {
   @HttpCode(200)
   postCrmTasksOverdueFlush(@Headers("authorization") authorization?: string) {
     return this.runCrmTasksOverdueFlush(authorization);
+  }
+
+  @Get("build-retention-prune")
+  getBuildRetentionPrune(@Headers("authorization") authorization?: string) {
+    return this.runBuildRetentionPrune(authorization);
+  }
+
+  @Post("build-retention-prune")
+  @HttpCode(200)
+  postBuildRetentionPrune(@Headers("authorization") authorization?: string) {
+    return this.runBuildRetentionPrune(authorization);
+  }
+
+  private async runBuildRetentionPrune(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.buildRetention.pruneWebhookDeliveries();
+      return {
+        success: true,
+        message: `Pruned ${result.webhookDeliveriesPruned} webhook delivery rows`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Build retention prune cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
   }
 
   private async runProjectsRecurringFlush(authorization?: string) {

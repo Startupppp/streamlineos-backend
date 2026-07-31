@@ -2,6 +2,7 @@ import {
   pgTable,
   text,
   serial,
+  bigserial,
   timestamp,
   boolean,
   decimal,
@@ -114,7 +115,6 @@ export const tickets = pgTable(
     index("idx_tickets_assignee").on(t.assigneeId),
     index("idx_tickets_sprint").on(t.sprintId),
     index("idx_tickets_org_status_priority").on(t.orgId, t.status, t.priority),
-    index("idx_tickets_org_project").on(t.orgId, t.projectId),
     index("idx_tickets_org_project_status").on(t.orgId, t.projectId, t.status),
     index("idx_tickets_cycle").on(t.cycleId),
     index("idx_tickets_parent").on(t.parentTicketId),
@@ -459,7 +459,7 @@ export const projectWebhooks = pgTable(
 export const webhookDeliveries = pgTable(
   "webhook_deliveries",
   {
-    id: serial("id").primaryKey(),
+    id: bigserial("id", { mode: "number" }).primaryKey(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),

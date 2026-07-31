@@ -1,10 +1,10 @@
-import { pgTable, text, serial, timestamp, date, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, bigserial, timestamp, date, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../common/auth";
 import { projects } from "./core";
 
 export const projectDailySnapshots = pgTable("project_daily_snapshots", {
-  id: serial("id").primaryKey(),
+  id: bigserial("id", { mode: "number" }).primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
   snapshotDate: date("snapshot_date").notNull(),

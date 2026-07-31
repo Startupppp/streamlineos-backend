@@ -261,7 +261,7 @@ export class ProjectsMembersService {
 
     const [member] = await this.db
       .insert(projectMembers)
-      .values({ projectId, userId: body.userId, role: body.role })
+      .values({ orgId, projectId, userId: body.userId, role: body.role })
       .returning();
 
     this.webhooksDispatch.dispatch(orgId, projectId, "member.added", {

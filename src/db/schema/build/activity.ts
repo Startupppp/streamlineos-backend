@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, serial, integer, timestamp, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, bigserial, integer, timestamp, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { tickets, ticketComments } from "./tasks";
@@ -21,7 +21,7 @@ export const ticketActivityActionEnum = pgEnum("ticket_activity_action", [
 ]);
 
 export const ticketActivityLog = pgTable("ticket_activity_log", {
-  id: serial("id").primaryKey(),
+  id: bigserial("id", { mode: "number" }).primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   ticketId: integer("ticket_id").references(() => tickets.id, { onDelete: "cascade" }).notNull(),
   userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
@@ -36,7 +36,7 @@ export const ticketActivityLog = pgTable("ticket_activity_log", {
 ]);
 
 export const ticketCommentMentions = pgTable("ticket_comment_mentions", {
-  id: serial("id").primaryKey(),
+  id: bigserial("id", { mode: "number" }).primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   commentId: integer("comment_id").references(() => ticketComments.id, { onDelete: "cascade" }).notNull(),
   mentionedUserId: text("mentioned_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),

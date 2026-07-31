@@ -39,10 +39,6 @@ interface OrgContextEntry {
   expiresAt: number;
 }
 
-interface PlatformAdminEntry {
-  value: boolean;
-  expiresAt: number;
-}
 
 const ORG_CTX_TTL_MS = 60_000;
 const REVOCATION_CACHE_TTL_MS = 5_000;

@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { AccessService } from "../access/access.service";
 import { and, asc, count, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -19,6 +20,8 @@ import type {
   ListUsersInput,
   UpdateUserInput,
 } from "./dto/users.schemas";
+import { assertInvitableRole } from "../../common/rbac/assert-invitable-role";
+import { ORG_ADMIN_PERMISSION_KEY } from "../../common/rbac/grantability";
 
 @Injectable()
 export class UsersService {
@@ -26,13 +29,15 @@ export class UsersService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly invitationsSvc: InvitationsService,
+    private readonly access: AccessService,
   ) {}
 
-  async createUser(orgId: string, input: CreateUserInput, actorUserId: string) {
+  async createUser(orgId: string, input: CreateUserInput, actor: InviteActor) {
+    const actorUserId = actor.userId;
     const { email, firstName, lastName, role, designation, phone, departmentId, branchId, sendInvite } = input;
 
     if (sendInvite) {
-      return this.invitationsSvc.invite(orgId, actorUserId, email, role);
+      return this.invitationsSvc.invite(orgId, actor, email, role);
     }
 
     const existing = await this.db.query.users.findFirst({ where: eq(users.email, email) });
@@ -262,7 +267,21 @@ export class UsersService {
     return rows[0]!;
   }
 
-  async updateUser(orgId: string, userId: string, data: UpdateUserInput, actorUserId: string) {
+  private async assertMayGrantRole(
+    orgId: string,
+    actor: InviteActor,
+    role: string,
+  ): Promise<void> {
+    let isOrgAdmin = false;
+    if (!actor.isOrgOwner) {
+      const resolved = await this.access.resolveUserPermissions(orgId, actor.userId);
+      isOrgAdmin = (resolved.get(ORG_ADMIN_PERMISSION_KEY) ?? "none") !== "none";
+    }
+    assertInvitableRole({ isOrgOwner: actor.isOrgOwner, isOrgAdmin }, role);
+  }
+
+  async updateUser(orgId: string, userId: string, data: UpdateUserInput, actor: InviteActor) {
+    const actorUserId = actor.userId;
     await this.getUser(orgId, userId);
 
     const updateData: Record<string, unknown> = {};
@@ -294,10 +313,20 @@ export class UsersService {
     }
 
     if (data.role !== undefined) {
-      await this.db
-        .update(organizationMembers)
-        .set({ role: data.role })
-        .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)));
+      const nextRole = data.role;
+      await this.assertMayGrantRole(orgId, actor, nextRole);
+      await this.db.transaction(async (tx) => {
+        const [member] = await tx
+          .update(organizationMembers)
+          .set({ role: nextRole })
+          .where(
+            and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)),
+          )
+          .returning({ id: organizationMembers.id });
+        if (member) {
+          await syncStructuralRoleAssignment(tx, orgId, member.id, nextRole);
+        }
+      });
     }
 
     this.audit.log({

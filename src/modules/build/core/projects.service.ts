@@ -479,6 +479,7 @@ export class ProjectsService {
             if (validMemberIds.length > 0) {
               await tx.insert(projectMembers).values(
                 validMemberIds.map((userId) => ({
+                  orgId,
                   projectId,
                   userId,
                   role: "CONTRIBUTOR",

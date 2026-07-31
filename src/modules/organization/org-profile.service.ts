@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { organizationMembers, organizations, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
+import { seedSystemRolesForOrg } from "../rbac/seed-system-roles";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
@@ -143,6 +144,8 @@ export class OrgProfileService {
         activatedAt: new Date(),
       });
     });
+
+    await seedSystemRolesForOrg(this.db, orgId);
 
     return { id: orgId, name: input.name, slug: input.slug };
   }

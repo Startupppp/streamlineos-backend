@@ -1,19 +1,12 @@
 ﻿import {
-  BadRequestException,
   Body,
   Controller,
-  Delete,
   Get,
   HttpCode,
-  NotFoundException,
-  Param,
-  Patch,
   Post,
-  Query,
   Req,
   Res,
-  UseGuards,
-} from "@nestjs/common";
+  } from "@nestjs/common";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import type { Request, Response } from "express";
 import { Public } from "../../common/auth/public.decorator";
@@ -21,16 +14,9 @@ import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { PlatformService } from "./platform.service";
 import {
   visitSchema,
-  listMessagesQuerySchema,
-  markStatusBodySchema,
-  markRepliedBodySchema,
-  replyMessageSchema,
   contactFormSchema,
-  grantPlatformAdminSchema,
   type ContactFormInput,
-  type GrantPlatformAdminInput,
-} from "./dto/platform.schemas";
-import type { CurrentUserContext } from "../../common/auth/backend-claims";
+  } from "./dto/platform.schemas";
 
 function headerValue(value: string | string[] | undefined): string | null {
   if (Array.isArray(value)) return value[0] ?? null;

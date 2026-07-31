@@ -64,6 +64,7 @@ export class ProjectsTemplatesService {
     if (input.tickets.length > 0) {
       await this.db.insert(projectTemplateTickets).values(
         input.tickets.map((t, i) => ({
+          orgId,
           templateId: template.id,
           title: t.title,
           description: t.description,
@@ -119,7 +120,7 @@ export class ProjectsTemplatesService {
 
     if (!project) throw new InternalServerErrorException("Failed to create project");
 
-    await this.db.insert(projectMembers).values({ projectId: project.id, userId, role: "OWNER" });
+    await this.db.insert(projectMembers).values({ orgId, projectId: project.id, userId, role: "OWNER" });
 
     await this.db
       .insert(projectStatuses)

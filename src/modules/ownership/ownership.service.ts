@@ -25,12 +25,13 @@ import { assignModuleOwnerRole, revokeModuleOwnerRole } from "./module-owner-rol
 import { bustMembershipStatusCache } from "../../common/auth/jwt-auth.guard";
 import type {
   DeclineTransferInput,
-  ForceTransferOrgInput,
   InitiateModuleTransferInput,
   InitiateOrgTransferInput,
   ListTransfersInput,
   SetModuleOwnerInput,
 } from "./dto/ownership.schemas";
+import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
+import { syncStructuralRoleAssignment } from "../../common/rbac/sync-structural-role";
 
 @Injectable()
 export class OwnershipService {
@@ -488,8 +489,14 @@ export class OwnershipService {
 
         await tx
           .update(organizationMembers)
-          .set({ isOwner: false, role: "ADMIN" })
+          .set({ isOwner: false, role: ORG_MEMBER_ROLES.ORG_ADMIN })
           .where(eq(organizationMembers.id, fromMember.id));
+        await syncStructuralRoleAssignment(
+          tx,
+          orgId,
+          fromMember.id,
+          ORG_MEMBER_ROLES.ORG_ADMIN,
+        );
         await tx
           .update(organizationMembers)
           .set({ isOwner: true, role: "OWNER", status: "ACTIVE" })
@@ -862,115 +869,6 @@ export class OwnershipService {
     return { data: rows };
   }
 
-  async forceTransferOrgOwnership(
-    orgId: string,
-    actorUserId: string,
-    input: ForceTransferOrgInput,
-  ): Promise<{ success: true }> {
-    const result = await this.db.transaction(async (tx) => {
-      const [org] = await tx
-        .select({ ownerMembershipId: organizations.ownerMembershipId })
-        .from(organizations)
-        .where(eq(organizations.id, orgId))
-        .for("update");
-      if (!org) throw new NotFoundException("Organization not found");
-
-      const [toMembership] = await tx
-        .select({
-          id: organizationMembers.id,
-          userId: organizationMembers.userId,
-          status: organizationMembers.status,
-        })
-        .from(organizationMembers)
-        .where(
-          and(
-            eq(organizationMembers.orgId, orgId),
-            eq(organizationMembers.id, input.toMembershipId),
-          ),
-        )
-        .for("update");
-      if (!toMembership) throw new NotFoundException("Target membership not found in this organization");
-      if (toMembership.status !== "ACTIVE") {
-        throw new BadRequestException("Target membership must be ACTIVE to receive ownership");
-      }
-      if (org.ownerMembershipId === toMembership.id) {
-        throw new BadRequestException("Target member is already the organization owner");
-      }
-
-      let previousOwnerUserId: string | null = null;
-
-      if (org.ownerMembershipId !== null) {
-        const [currentOwner] = await tx
-          .select({
-            id: organizationMembers.id,
-            userId: organizationMembers.userId,
-          })
-          .from(organizationMembers)
-          .where(
-            and(
-              eq(organizationMembers.orgId, orgId),
-              eq(organizationMembers.id, org.ownerMembershipId),
-            ),
-          )
-          .for("update");
-
-        if (currentOwner) {
-          previousOwnerUserId = currentOwner.userId;
-          await tx
-            .update(organizationMembers)
-            .set({ isOwner: false, role: "ADMIN" })
-            .where(eq(organizationMembers.id, currentOwner.id));
-        }
-      }
-
-      await tx
-        .update(organizationMembers)
-        .set({ isOwner: true, role: "OWNER", status: "ACTIVE" })
-        .where(eq(organizationMembers.id, toMembership.id));
-
-      await tx
-        .update(organizations)
-        .set({ ownerMembershipId: toMembership.id })
-        .where(eq(organizations.id, orgId));
-
-      await tx
-        .update(ownershipTransfers)
-        .set({ status: "CANCELLED" })
-        .where(
-          and(
-            eq(ownershipTransfers.orgId, orgId),
-            eq(ownershipTransfers.scope, "ORGANIZATION"),
-            eq(ownershipTransfers.status, "PENDING"),
-          ),
-        );
-
-      await bumpPermissionsVersion(tx, orgId);
-      return { newOwnerUserId: toMembership.userId, previousOwnerUserId };
-    });
-
-    await this.invalidateUserAccess(orgId, result.newOwnerUserId);
-    if (result.previousOwnerUserId) {
-      await this.invalidateUserAccess(orgId, result.previousOwnerUserId);
-    }
-    await Promise.all([
-      this.cache.invalidatePattern(CACHE_KEYS.ownershipTransfersPattern(orgId)),
-      this.cache.invalidatePattern(CACHE_KEYS.incomingTransfersPattern(orgId)),
-    ]);
-
-    this.audit.log({
-      action: "ownership.org_ownership_forced",
-      userId: actorUserId,
-      orgId,
-      targetId: String(input.toMembershipId),
-      targetType: "membership",
-      metadata: {
-        toMembershipId: input.toMembershipId,
-        reason: input.reason ?? null,
-      },
-    });
-
-    return { success: true as const };
-  }
 
   async expireStaleTransfers(orgId?: string): Promise<{ expired: number }> {
     const conditions = [

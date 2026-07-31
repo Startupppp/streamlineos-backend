@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, foreignKey, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, bigint, timestamp, boolean, jsonb, decimal, date, integer, foreignKey, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import {
   intakeStatusEnum,
   intakeSourceEnum,
@@ -26,14 +26,19 @@ export const projectStatuses = pgTable("project_statuses", {
 
 export const projectMembers = pgTable("project_members", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
   role: text("role").default("CONTRIBUTOR").notNull(),
   hourlyRate: decimal("hourly_rate", { precision: 10, scale: 2 }).default("0").notNull(),
+  hourlyRateMinor: bigint("hourly_rate_minor", { mode: "number" }).default(0).notNull(),
+  rateCurrency: text("rate_currency"),
   joinedAt: timestamp("joined_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uniq_project_members_project_user").on(table.projectId, table.userId),
   index("idx_project_members_user").on(table.userId),
+  index("idx_project_members_org_user").on(table.orgId, table.userId),
+  unique("uniq_project_members_org_id").on(table.orgId, table.id),
 ]);
 
 export const projectViews = pgTable("project_views", {

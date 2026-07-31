@@ -23,13 +23,11 @@ import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { OwnershipService } from "./ownership.service";
 import {
   declineTransferSchema,
-  forceTransferOrgSchema,
   initiateModuleTransferSchema,
   initiateOrgTransferSchema,
   listTransfersSchema,
   setModuleOwnerSchema,
   type DeclineTransferInput,
-  type ForceTransferOrgInput,
   type InitiateModuleTransferInput,
   type InitiateOrgTransferInput,
   type ListTransfersInput,
@@ -87,8 +85,6 @@ export class OwnershipController {
     }
     return this.ownership.initiateOrgTransfer(u.orgId, u.userId, body);
   }
-
-  @Put("org/owner")
 
   @Post("modules/:moduleKey/transfer")
   @HttpCode(HttpStatus.CREATED)

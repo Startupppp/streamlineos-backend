@@ -79,8 +79,9 @@ export class ProjectsProvisionService {
 
       const additionalMembers = (input.memberIds ?? []).filter((id) => id !== creatorUserId);
       const memberRows = [
-        { projectId: created.id, userId: creatorUserId, role: "OWNER" as const },
+        { orgId, projectId: created.id, userId: creatorUserId, role: "OWNER" as const },
         ...additionalMembers.map((userId) => ({
+          orgId,
           projectId: created.id,
           userId,
           role: "CONTRIBUTOR" as const,
@@ -179,7 +180,7 @@ export class ProjectsProvisionService {
         })),
       );
 
-      await tx.insert(projectMembers).values({ projectId: created.id, userId, role: "OWNER" });
+      await tx.insert(projectMembers).values({ orgId, projectId: created.id, userId, role: "OWNER" });
 
       await OutboxWriter.emit(tx, {
         eventId: randomUUID(),

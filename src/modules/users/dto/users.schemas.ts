@@ -63,7 +63,7 @@ export type InviteUserInput = z.infer<typeof inviteUserSchema>;
 
 export const bulkInviteSchema = z.object({
   emails: z.array(inviteEmailSchema).min(1).max(50),
-  role: z.string().default(ORG_MEMBER_ROLES.MEMBER),
+  role: z.enum(ORG_MEMBER_ROLE_VALUES).default(ORG_MEMBER_ROLES.MEMBER),
 });
 export type BulkInviteInput = z.infer<typeof bulkInviteSchema>;
 
@@ -106,7 +106,7 @@ export const importUsersRowSchema = z.object({
   email: z.string().email(),
   firstName: z.string().min(1).optional(),
   lastName: z.string().min(1).optional(),
-  role: z.string().default("MEMBER"),
+  role: z.enum(ORG_MEMBER_ROLE_VALUES).default(ORG_MEMBER_ROLES.MEMBER),
   designation: z.string().optional(),
   phone: z.string().optional(),
 });
@@ -114,7 +114,7 @@ export type ImportUsersRow = z.infer<typeof importUsersRowSchema>;
 
 export const bulkUpdateUsersSchema = z.object({
   userIds: z.array(z.string()).min(1).max(200),
-  role: z.string().optional(),
+  role: z.enum(ORG_MEMBER_ROLE_VALUES).optional(),
   departmentId: z.number().int().optional().nullable(),
   branchId: z.string().optional().nullable(),
   teamId: z.string().optional().nullable(),
@@ -126,7 +126,7 @@ export const createUserSchema = z.object({
   email: z.string().email(),
   firstName: z.string().min(1).optional(),
   lastName: z.string().min(1).optional(),
-  role: z.string().default("MEMBER"),
+  role: z.enum(ORG_MEMBER_ROLE_VALUES).default(ORG_MEMBER_ROLES.MEMBER),
   designation: z.string().optional(),
   phone: z.string().optional(),
   departmentId: z.coerce.number().int().optional(),

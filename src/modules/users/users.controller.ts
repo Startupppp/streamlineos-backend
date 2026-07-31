@@ -97,7 +97,7 @@ export class UsersController {
     @Body(new ZodValidationPipe(createUserSchema)) body: CreateUserInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.users.createUser(u.orgId, body, u.userId);
+    return this.users.createUser(u.orgId, body, { userId: u.userId, isOrgOwner: u.isOrgOwner });
   }
 
   @RequirePermission("hr:employees:create")
@@ -120,7 +120,7 @@ export class UsersController {
     @Body(new ZodValidationPipe(bulkInviteSchema)) body: BulkInviteInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.invitations.bulkInvite(u.orgId, u.userId, body.emails, body.role);
+    return this.invitations.bulkInvite(u.orgId, { userId: u.userId, isOrgOwner: u.isOrgOwner }, body.emails, body.role);
   }
 
   @RequirePermission("hr:employees:manage")
@@ -160,7 +160,7 @@ export class UsersController {
     @Body(new ZodValidationPipe(bulkUpdateUsersSchema)) body: BulkUpdateUsersInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.userOps.bulkUpdateUsers(u.orgId, body, u.userId);
+    return this.userOps.bulkUpdateUsers(u.orgId, body, { userId: u.userId, isOrgOwner: u.isOrgOwner });
   }
 
   @RequirePermission("hr:employees:create")
@@ -170,7 +170,7 @@ export class UsersController {
     body: { rows: ImportUsersRow[] },
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.userOps.importUsers(u.orgId, body.rows, u.userId);
+    return this.userOps.importUsers(u.orgId, body.rows, { userId: u.userId, isOrgOwner: u.isOrgOwner });
   }
 
   // ── Invitation sub-routes (static prefix "invitations/") ──
@@ -203,7 +203,7 @@ export class UsersController {
     @Body(new ZodValidationPipe(updateUserSchema)) body: UpdateUserInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.users.updateUser(u.orgId, userId, body, u.userId);
+    return this.users.updateUser(u.orgId, userId, body, { userId: u.userId, isOrgOwner: u.isOrgOwner });
   }
 
   @RequirePermission("hr:employees:manage")

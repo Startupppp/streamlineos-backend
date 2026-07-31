@@ -7,6 +7,16 @@ import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { UpdateBudgetInput } from "./dto/projects.schemas";
 
+const MINOR_UNITS_PER_MAJOR = 100;
+
+function majorToMinor(major: number): number {
+  return Math.round(major * MINOR_UNITS_PER_MAJOR);
+}
+
+function minorToMajor(minor: number): number {
+  return minor / MINOR_UNITS_PER_MAJOR;
+}
+
 export interface MemberCost {
   userId: string;
   hours: number;
@@ -23,12 +33,21 @@ export class ProjectsBudgetService {
   private async assertProjectAccess(
     u: CurrentUserContext,
     projectId: number,
-  ): Promise<{ id: number; budget: string | null }> {
+  ): Promise<{
+    id: number;
+    budgetMinor: number | null;
+    budgetCurrency: string | null;
+  }> {
     const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
     const isOwnerOrAdmin = perms.has("build:manage");
     const project = await this.db.query.projects.findFirst({
       where: and(eq(projects.id, projectId), eq(projects.orgId, u.orgId)),
-      columns: { id: true, budget: true, managerId: true },
+      columns: {
+        id: true,
+        budgetMinor: true,
+        budgetCurrency: true,
+        managerId: true,
+      },
     });
     if (!project) throw new NotFoundException("Project not found");
 
@@ -36,11 +55,21 @@ export class ProjectsBudgetService {
       const memberOf = await this.db
         .select({ projectId: projectMembers.projectId })
         .from(projectMembers)
-        .where(and(eq(projectMembers.userId, u.userId), eq(projectMembers.projectId, projectId)));
+        .where(
+          and(
+            eq(projectMembers.orgId, u.orgId),
+            eq(projectMembers.userId, u.userId),
+            eq(projectMembers.projectId, projectId),
+          ),
+        );
       if (memberOf.length === 0) throw new NotFoundException("Not found");
     }
 
-    return { id: project.id, budget: project.budget };
+    return {
+      id: project.id,
+      budgetMinor: project.budgetMinor,
+      budgetCurrency: project.budgetCurrency,
+    };
   }
 
   async getBudget(u: CurrentUserContext, projectId: number) {
@@ -48,12 +77,15 @@ export class ProjectsBudgetService {
     const orgId = u.orgId;
 
     const members = await this.db.query.projectMembers.findMany({
-      where: eq(projectMembers.projectId, projectId),
-      columns: { userId: true, hourlyRate: true },
+      where: and(
+        eq(projectMembers.orgId, orgId),
+        eq(projectMembers.projectId, projectId),
+      ),
+      columns: { userId: true, hourlyRateMinor: true },
     });
 
     const memberRates = new Map(
-      members.map((m): [string, number] => [m.userId, Number(m.hourlyRate ?? 0)]),
+      members.map((m): [string, number] => [m.userId, m.hourlyRateMinor ?? 0]),
     );
     const memberIds = [...memberRates.keys()];
 
@@ -93,21 +125,27 @@ export class ProjectsBudgetService {
     );
 
     const memberCosts: MemberCost[] = [];
-    for (const [userId, rate] of memberRates) {
+    let actualCostMinor = 0;
+    for (const [userId, rateMinor] of memberRates) {
       const hours = hoursByUser.get(userId) ?? 0;
-      memberCosts.push({ userId, hours, cost: hours * rate });
+      const costMinor = Math.round(hours * rateMinor);
+      actualCostMinor += costMinor;
+      memberCosts.push({ userId, hours, cost: minorToMajor(costMinor) });
     }
 
-    const actualCost = memberCosts.reduce((acc, m) => acc + m.cost, 0);
-    const plannedBudget = Number(project.budget ?? 0);
+    const plannedBudgetMinor = project.budgetMinor ?? 0;
     const totalHours = Number(totalHoursResult[0]?.value ?? 0);
 
     return {
       projectId,
-      plannedBudget,
-      actualCost,
-      remaining: plannedBudget - actualCost,
-      utilizationPct: plannedBudget > 0 ? Math.round((actualCost / plannedBudget) * 100) : 0,
+      plannedBudget: minorToMajor(plannedBudgetMinor),
+      actualCost: minorToMajor(actualCostMinor),
+      remaining: minorToMajor(plannedBudgetMinor - actualCostMinor),
+      utilizationPct:
+        plannedBudgetMinor > 0
+          ? Math.round((actualCostMinor / plannedBudgetMinor) * 100)
+          : 0,
+      currency: project.budgetCurrency,
       totalHours,
       memberBreakdown: memberCosts,
     };
@@ -118,11 +156,22 @@ export class ProjectsBudgetService {
 
     const [updated] = await this.db
       .update(projects)
-      .set({ budget: String(input.budget) })
+      .set({
+        budget: String(input.budget),
+        budgetMinor: majorToMinor(input.budget),
+      })
       .where(and(eq(projects.id, projectId), eq(projects.orgId, u.orgId)))
-      .returning({ id: projects.id, budget: projects.budget });
+      .returning({
+        id: projects.id,
+        budgetMinor: projects.budgetMinor,
+        budgetCurrency: projects.budgetCurrency,
+      });
 
     if (!updated) throw new NotFoundException("Project not found");
-    return updated;
+    return {
+      id: updated.id,
+      budget: minorToMajor(updated.budgetMinor ?? 0),
+      currency: updated.budgetCurrency,
+    };
   }
 }

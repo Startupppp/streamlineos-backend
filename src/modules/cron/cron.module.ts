@@ -45,6 +45,7 @@ import { CronSupportService } from "./cron-support.service";
 import { CronFinanceService } from "./cron-finance.service";
 import { CronCrmTasksService } from "./cron-crm-tasks.service";
 import { CronIdempotencyService } from "./cron-idempotency.service";
+import { CronBuildRetentionService } from "./cron-build-retention.service";
 import { CronOrganizationService } from "./cron-organization.service";
 import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
 
@@ -100,6 +101,7 @@ import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
     CronFinanceService,
     CronCrmTasksService,
     CronIdempotencyService,
+    CronBuildRetentionService,
     CronOrganizationService,
     CronOrgPurgeWorkerService,
   ],

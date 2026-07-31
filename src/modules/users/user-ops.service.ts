@@ -1,4 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { EmailService } from "../email/email.service";
+import { AccessService } from "../access/access.service";
 import { and, count, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { randomUUID, randomBytes } from "node:crypto";
 import { addHours } from "date-fns";
@@ -16,6 +18,9 @@ import {
 } from "../../db/schema";
 import type { BulkUpdateUsersInput, ImportUsersRow } from "./dto/users.schemas";
 import { UsersService } from "./users.service";
+import { syncStructuralRoleAssignment } from "../../common/rbac/sync-structural-role";
+import { assertInvitableRole } from "../../common/rbac/assert-invitable-role";
+import { ORG_ADMIN_PERMISSION_KEY } from "../../common/rbac/grantability";
 
 @Injectable()
 export class UserOpsService {
@@ -25,6 +30,8 @@ export class UserOpsService {
     private readonly cache: CacheService,
     private readonly invitationsSvc: InvitationsService,
     private readonly usersSvc: UsersService,
+    private readonly access: AccessService,
+    private readonly email: EmailService,
   ) {}
 
   async exportUsers(orgId: string): Promise<string> {
@@ -166,7 +173,21 @@ export class UserOpsService {
     };
   }
 
-  async bulkUpdateUsers(orgId: string, data: BulkUpdateUsersInput, actorUserId: string) {
+  private async assertMayGrantRole(
+    orgId: string,
+    actor: InviteActor,
+    role: string,
+  ): Promise<void> {
+    let isOrgAdmin = false;
+    if (!actor.isOrgOwner) {
+      const resolved = await this.access.resolveUserPermissions(orgId, actor.userId);
+      isOrgAdmin = (resolved.get(ORG_ADMIN_PERMISSION_KEY) ?? "none") !== "none";
+    }
+    assertInvitableRole({ isOrgOwner: actor.isOrgOwner, isOrgAdmin }, role);
+  }
+
+  async bulkUpdateUsers(orgId: string, data: BulkUpdateUsersInput, actor: InviteActor) {
+    const actorUserId = actor.userId;
     const { userIds, role, departmentId, branchId, teamId, managerUserId } = data;
 
     const memberRows = await this.db
@@ -190,15 +211,22 @@ export class UserOpsService {
     }
 
     if (role) {
-      await this.db
-        .update(organizationMembers)
-        .set({ role })
-        .where(
-          and(
-            eq(organizationMembers.orgId, orgId),
-            inArray(organizationMembers.userId, scopedIds),
-          ),
-        );
+      await this.assertMayGrantRole(orgId, actor, role);
+      await this.db.transaction(async (tx) => {
+        const rows = await tx
+          .update(organizationMembers)
+          .set({ role })
+          .where(
+            and(
+              eq(organizationMembers.orgId, orgId),
+              inArray(organizationMembers.userId, scopedIds),
+            ),
+          )
+          .returning({ id: organizationMembers.id });
+        for (const row of rows) {
+          await syncStructuralRoleAssignment(tx, orgId, row.id, role);
+        }
+      });
     }
 
     this.audit.log({
@@ -231,6 +259,8 @@ export class UserOpsService {
       expiresAt: addHours(new Date(), 24),
     });
 
+    await this.email.sendMagicLinkEmail(user.email, rawToken);
+
     this.audit.log({
       action: "user.signin_link_sent",
       userId: actorUserId,
@@ -243,7 +273,7 @@ export class UserOpsService {
     return { success: true, email: user.email };
   }
 
-  async importUsers(orgId: string, rows: ImportUsersRow[], actorUserId: string) {
+  async importUsers(orgId: string, rows: ImportUsersRow[], actor: InviteActor) {
     const results: Array<{
       email: string;
       success: boolean;
@@ -255,7 +285,7 @@ export class UserOpsService {
       try {
         const result = await this.invitationsSvc.invite(
           orgId,
-          actorUserId,
+          actor,
           row.email,
           row.role ?? "MEMBER",
         );

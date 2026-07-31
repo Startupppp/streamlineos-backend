@@ -238,7 +238,7 @@ export class InvitationsService {
 
   async bulkInvite(
     orgId: string,
-    actorUserId: string,
+    actor: InviteActor,
     emails: string[],
     role: string,
   ): Promise<{
@@ -253,7 +253,7 @@ export class InvitationsService {
 
     for (const email of emails) {
       try {
-        const result = await this.invite(orgId, actorUserId, email, role);
+        const result = await this.invite(orgId, actor, email, role);
         results.push({ email, success: true, invitationId: result.invitationId });
       } catch (err) {
         results.push({
