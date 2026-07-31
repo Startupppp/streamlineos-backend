@@ -4,7 +4,7 @@ import { AgentController } from "./agent.controller";
 import { AgentTokensService } from "./agent-tokens.service";
 import { AgentAccessService } from "./agent-access.service";
 import { AgentTokenGuard } from "./agent-token.guard";
-import { ProjectsModule } from "../build/projects.module";
+import { ProjectsModule } from "../build/core/projects.module";
 
 @Module({
   imports: [ProjectsModule],

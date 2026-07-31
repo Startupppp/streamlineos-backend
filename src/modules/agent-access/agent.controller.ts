@@ -7,10 +7,10 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { Public } from "../../common/auth/public.decorator";
 import { AgentTokenGuard } from "./agent-token.guard";
 import { AgentAccessService } from "./agent-access.service";
-import { ProjectsService } from "../build/projects.service";
-import { ProjectsTicketsService } from "../build/projects-tickets.service";
-import { ProjectsWorkQueryService } from "../build/projects-work-query.service";
-import { ProjectsTicketSubresourcesService } from "../build/projects-ticket-subresources.service";
+import { ProjectsService } from "../build/core/projects.service";
+import { ProjectsTicketsService } from "../build/core/projects-tickets.service";
+import { ProjectsWorkQueryService } from "../build/core/projects-work-query.service";
+import { ProjectsTicketSubresourcesService } from "../build/core/projects-ticket-subresources.service";
 import {
   listProjectsSchema,
   createProjectSchema,
@@ -22,7 +22,7 @@ import {
   type CreateTicketInput,
   type AllWorkQuery,
   type TicketsListQuery,
-} from "../build/dto/projects.schemas";
+} from "../build/core/dto/projects.schemas";
 import { agentCommentSchema, agentUpdateTicketSchema, type AgentCommentInput, type AgentUpdateTicketInput } from "./dto/agent-tokens.schemas";
 
 @Public()

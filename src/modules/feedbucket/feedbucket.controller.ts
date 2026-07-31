@@ -21,7 +21,7 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { FeedbucketWidgetsService } from "./feedbucket-widgets.service";
 import { FeedbucketSubmissionsService } from "./feedbucket-submissions.service";
 import { FeedbucketAiService } from "./feedbucket-ai.service";
-import { ProjectsTicketsService } from "../build/projects-tickets.service";
+import { ProjectsTicketsService } from "../build/core/projects-tickets.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import {
   createWidgetSchema,

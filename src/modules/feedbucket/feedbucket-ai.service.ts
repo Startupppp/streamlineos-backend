@@ -17,7 +17,7 @@ import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
 import { AiUsageService } from "../ai/services/ai-usage.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
-import { ProjectsTicketsService } from "../build/projects-tickets.service";
+import { ProjectsTicketsService } from "../build/core/projects-tickets.service";
 import { requireFeature } from "../ai/billing/feature-gates";
 import {
   FeedbackAnalysisSchema,
