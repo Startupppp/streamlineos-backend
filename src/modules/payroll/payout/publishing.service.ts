@@ -115,6 +115,8 @@ export class PublishingService {
       .leftJoin(users, eq(payrollRunEmployees.userId, users.id))
       .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)));
 
+    const totalRunEmployeeCount = employees.length;
+
     if (userIds && userIds.length > 0) {
       employees = employees.filter(e => userIds.includes(e.userId));
     }
@@ -281,8 +283,7 @@ export class PublishingService {
       where: and(eq(payslipPublications.runId, runId), eq(payslipPublications.orgId, orgId)),
       columns: { status: true },
     });
-    const totalEmployees = employees.length;
-    const allPublished = allPublications.length >= totalEmployees &&
+    const allPublished = allPublications.length >= totalRunEmployeeCount &&
       allPublications.every(p => p.status === "PUBLISHED");
 
     if (allPublished) {
@@ -297,7 +298,7 @@ export class PublishingService {
           runId,
           type: "PAYSLIPS_PUBLISHED",
           actorId,
-          metadata: { publishedCount: published, total: totalEmployees },
+          metadata: { publishedCount: published, total: totalRunEmployeeCount },
         });
       });
 
@@ -307,7 +308,7 @@ export class PublishingService {
         orgId,
         targetId: String(runId),
         targetType: "payroll_run",
-        metadata: { publishedCount: published, total: totalEmployees },
+        metadata: { publishedCount: published, total: totalRunEmployeeCount },
       });
 
       runStatus = "PAYSLIPS_PUBLISHED";

@@ -85,7 +85,7 @@ export class ApprovalsService {
         await tx
           .update(payrollRuns)
           .set({ status: "APPROVED", approvedAt: new Date(), approvedBy: userId })
-          .where(eq(payrollRuns.id, runId));
+          .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
 
         await tx.insert(payrollRunEvents).values([
           { orgId, runId, type: "APPROVAL_SUBMITTED", actorId: userId },
@@ -132,7 +132,7 @@ export class ApprovalsService {
       await tx
         .update(payrollRuns)
         .set({ status: "PENDING_APPROVAL" })
-        .where(eq(payrollRuns.id, runId));
+        .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
 
       await tx.insert(payrollRunEvents).values({
         orgId,

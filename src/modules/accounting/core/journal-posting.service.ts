@@ -186,11 +186,12 @@ export class JournalPostingService {
   }
 
   private assertBalanced(lines: DraftLine[]): void {
-    const debit = lines.reduce((acc, l) => acc + l.debit, 0);
-    const credit = lines.reduce((acc, l) => acc + l.credit, 0);
-    const diff = Math.abs(Math.round((debit - credit) * 100) / 100);
-    if (diff > 0.009) {
-      throw new Error(`Unbalanced journal entry: debit=${debit} credit=${credit} diff=${diff}`);
+    const totalDebitMinor = lines.reduce((acc, l) => acc + Math.round(l.debit * 100), 0);
+    const totalCreditMinor = lines.reduce((acc, l) => acc + Math.round(l.credit * 100), 0);
+    if (totalDebitMinor !== totalCreditMinor) {
+      throw new Error(
+        `Unbalanced journal entry: debit=${totalDebitMinor} credit=${totalCreditMinor} diff=${totalDebitMinor - totalCreditMinor} (minor units)`,
+      );
     }
     for (const line of lines) {
       if (line.debit < 0 || line.credit < 0) {

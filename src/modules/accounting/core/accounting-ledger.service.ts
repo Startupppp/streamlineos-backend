@@ -131,7 +131,7 @@ export class AccountingLedgerService {
   async createJournalEntry(orgId: string, userId: string, input: CreateJournalEntryInput) {
     const totalDebit = input.lines.reduce((acc, line) => acc + line.debit, 0);
     const totalCredit = input.lines.reduce((acc, line) => acc + line.credit, 0);
-    if (Math.abs(totalDebit - totalCredit) > 0.009) {
+    if (Math.round(totalDebit * 100) !== Math.round(totalCredit * 100)) {
       throw new BadRequestException(
         `Unbalanced entry: debit ${totalDebit.toFixed(2)} != credit ${totalCredit.toFixed(2)}`,
       );
@@ -379,15 +379,27 @@ export class AccountingLedgerService {
       .limit(1);
     const wasExisting = existing.length > 0;
 
-    const persisted = await this.posting.persistJournalEntry({
-      orgId,
-      entryDate: today,
-      description: `Reversing entry for ${original.entryNumber}`,
-      sourceType: original.sourceType,
-      sourceId: original.sourceId,
-      sourceEvent: "reverse",
-      createdBy: userId,
-      lines: reversingLines,
+    const persisted = await this.db.transaction(async (tx) => {
+      const reversed = await this.posting.persistJournalEntry(
+        {
+          orgId,
+          entryDate: today,
+          description: `Reversing entry for ${original.entryNumber}`,
+          sourceType: original.sourceType,
+          sourceId: original.sourceId,
+          sourceEvent: "reverse",
+          createdBy: userId,
+          lines: reversingLines,
+        },
+        tx,
+      );
+
+      await tx
+        .update(journalEntries)
+        .set({ status: "VOID", reversedEntryId: reversed.id, updatedAt: new Date() })
+        .where(and(eq(journalEntries.id, entryId), eq(journalEntries.orgId, orgId)));
+
+      return reversed;
     });
 
     this.audit.log({

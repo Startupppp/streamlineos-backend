@@ -67,7 +67,7 @@ export class LockingService {
       await tx
         .update(payrollRuns)
         .set({ status: "LOCKED", lockedAt: now, lockedBy: userId })
-        .where(eq(payrollRuns.id, runId));
+        .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
 
       await tx.insert(payrollRunEvents).values({
         orgId,
@@ -184,7 +184,7 @@ export class LockingService {
       await tx
         .update(payrollRuns)
         .set({ status: "REOPENED", reopenedAt: now, reopenedBy: userId, reopenReason: reason })
-        .where(eq(payrollRuns.id, runId));
+        .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
 
       await tx.insert(payrollRunEvents).values({
         orgId,
@@ -226,7 +226,7 @@ export class LockingService {
       await tx
         .update(payrollRuns)
         .set({ status: "CLOSED", closedAt: now, closedBy: userId })
-        .where(eq(payrollRuns.id, runId));
+        .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
 
       await tx.insert(payrollRunEvents).values({
         orgId,
