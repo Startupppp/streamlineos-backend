@@ -50,7 +50,9 @@ const schema = z
     UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
     TURNSTILE_SECRET_KEY: z.string().optional(),
     ABLY_API_KEY: z.string().optional(),
-    ENCRYPTION_KEY: z.string().optional(),
+    ENCRYPTION_KEY: z
+      .string()
+      .min(32, "ENCRYPTION_KEY must be at least 32 characters — it protects PII at rest"),
     AI_CONFIRMATION_SECRET: z.string().optional(),
     COMPOSIO_API_KEY: z.string().optional(),
     COMPOSIO_AUTH_CONFIG_GOOGLE_CALENDAR: z.string().optional(),

@@ -8,12 +8,25 @@ describe("validateEnv", () => {
     PORTAL_JWT_SECRET: "y".repeat(44),
     CORS_ORIGINS: "https://app.example.com",
     APP_URL: "https://app.example.com",
+    ENCRYPTION_KEY: "e".repeat(64),
   };
 
   it("parses a valid environment", () => {
     const cfg = validateEnv(base);
     expect(cfg.PORT).toBe(1500);
     expect(cfg.corsOrigins).toEqual(["https://app.example.com"]);
+  });
+
+  it("throws when ENCRYPTION_KEY is missing", () => {
+    expect(() => validateEnv({ ...base, ENCRYPTION_KEY: undefined })).toThrow(
+      /ENCRYPTION_KEY/,
+    );
+  });
+
+  it("throws when ENCRYPTION_KEY is too short to protect PII at rest", () => {
+    expect(() => validateEnv({ ...base, ENCRYPTION_KEY: "short" })).toThrow(
+      /ENCRYPTION_KEY/,
+    );
   });
 
   it("throws when BACKEND_JWT_SECRET is too short", () => {
