@@ -70,4 +70,4 @@ import { TimesheetsService } from "./timesheets.service";
     TimesheetsService,
   ],
 })
-export class ProjectsExecutionModule {}
+export class BuildExecutionModule {}

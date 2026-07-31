@@ -2,7 +2,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { AccessService } from "../../access/access.service";
 import * as permissionsConstants from "../../rbac/permissions";
 
-jest.mock("../rbac/permissions", () => ({
+jest.mock("../../rbac/permissions", () => ({
   isScopable: jest.fn(),
 }));
 

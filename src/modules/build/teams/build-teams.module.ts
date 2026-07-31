@@ -6,4 +6,4 @@ import { TeamsService } from "./teams.service";
   controllers: [TeamsController],
   providers: [TeamsService],
 })
-export class ProjectsTeamsModule {}
+export class BuildTeamsModule {}

@@ -1,6 +1,6 @@
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import * as schema from "../db/schema";
 import {
   users,
@@ -115,8 +115,14 @@ async function seedRbac(db: Db, orgId: string, memberUserId: string, memberRole:
 async function seed(db: Db): Promise<Record<string, unknown>> {
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
+  const [ownerSeqRow] = await db.execute(
+    sql`SELECT nextval(pg_get_serial_sequence('organization_members', 'id')) AS id`,
+  );
+  const ownerMembershipId = Number(ownerSeqRow?.id);
+
   await db.insert(organizations).values({
     id: ORG_ID,
+    ownerMembershipId,
     name: "Enterprise Demo Co",
     slug: ORG_SLUG,
     industry: "Technology",
@@ -145,6 +151,7 @@ async function seed(db: Db): Promise<Record<string, unknown>> {
   });
 
   await db.insert(organizationMembers).values({
+    id: ownerMembershipId,
     userId: ADMIN_ID,
     orgId: ORG_ID,
     role: "OWNER",

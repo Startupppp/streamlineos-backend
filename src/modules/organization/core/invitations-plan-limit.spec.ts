@@ -1,5 +1,6 @@
-jest.mock("../email/app-url", () => ({ appUrl: "https://test.example.com" }));
+jest.mock("../../email/app-url", () => ({ appUrl: "https://test.example.com" }));
 
+import { AccessService } from "../../access/access.service";
 import { ForbiddenException, ConflictException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { InvitationsService } from "./invitations.service";
@@ -87,6 +88,10 @@ describe("InvitationsService.invite — plan limit enforcement", () => {
         { provide: AuditService, useValue: { log: jest.fn() } },
         { provide: CacheService, useValue: { invalidate: jest.fn(), invalidatePattern: jest.fn().mockResolvedValue(undefined) } },
         { provide: EmailService, useValue: { sendInvitationEmail: jest.fn().mockResolvedValue(undefined) } },
+        {
+          provide: AccessService,
+          useValue: { resolveUserPermissions: jest.fn().mockResolvedValue(new Map()) },
+        },
       ],
     }).compile();
 
@@ -94,7 +99,7 @@ describe("InvitationsService.invite — plan limit enforcement", () => {
   });
 
   it("calls assertWithinLimit(orgId, 'members') before creating an invitation", async () => {
-    await svc.invite(ORG_ID, ACTOR_ID, "new@example.com", "MEMBER");
+    await svc.invite(ORG_ID, { userId: ACTOR_ID, isOrgOwner: true }, "new@example.com", "MEMBER");
     expect(mockPlanLimits.assertWithinLimit).toHaveBeenCalledWith(ORG_ID, "members");
   });
 
@@ -102,14 +107,14 @@ describe("InvitationsService.invite — plan limit enforcement", () => {
     const err = new ForbiddenException("Your Free plan allows 5 members. Upgrade your plan to add more.");
     mockPlanLimits.assertWithinLimit.mockRejectedValueOnce(err);
 
-    await expect(svc.invite(ORG_ID, ACTOR_ID, "new@example.com", "MEMBER")).rejects.toBe(err);
+    await expect(svc.invite(ORG_ID, { userId: ACTOR_ID, isOrgOwner: true }, "new@example.com", "MEMBER")).rejects.toBe(err);
   });
 
   it("does NOT call assertWithinLimit when user is already a member", async () => {
     mockDb.query.users.findFirst.mockResolvedValue({ id: "user-existing" });
     mockDb.query.organizationMembers.findFirst.mockResolvedValue({ userId: "user-existing", orgId: ORG_ID });
 
-    await expect(svc.invite(ORG_ID, ACTOR_ID, "existing@example.com", "MEMBER")).rejects.toBeInstanceOf(
+    await expect(svc.invite(ORG_ID, { userId: ACTOR_ID, isOrgOwner: true }, "existing@example.com", "MEMBER")).rejects.toBeInstanceOf(
       ConflictException,
     );
     expect(mockPlanLimits.assertWithinLimit).not.toHaveBeenCalled();
@@ -125,7 +130,7 @@ describe("InvitationsService.invite — plan limit enforcement", () => {
       return Promise.resolve();
     });
 
-    const results = await svc.bulkInvite(ORG_ID, ACTOR_ID, ["a@example.com", "b@example.com"], "MEMBER");
+    const results = await svc.bulkInvite(ORG_ID, { userId: ACTOR_ID, isOrgOwner: true }, ["a@example.com", "b@example.com"], "MEMBER");
 
     expect(results.results[0].success).toBe(true);
     expect(results.results[1].success).toBe(false);
@@ -152,6 +157,10 @@ describe("InvitationsService.accept — plan limit enforcement", () => {
         { provide: AuditService, useValue: { log: jest.fn() } },
         { provide: CacheService, useValue: { invalidate: jest.fn().mockResolvedValue(undefined), invalidatePattern: jest.fn().mockResolvedValue(undefined) } },
         { provide: EmailService, useValue: { sendInvitationEmail: jest.fn().mockResolvedValue(undefined) } },
+        {
+          provide: AccessService,
+          useValue: { resolveUserPermissions: jest.fn().mockResolvedValue(new Map()) },
+        },
       ],
     }).compile();
 

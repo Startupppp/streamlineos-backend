@@ -58,7 +58,7 @@ describeWithDb(
     async function seed(): Promise<void> {
       await db
         .insert(organizations)
-        .values({ id: ORG_ID, name: "Proj Access E2E", slug: ORG_ID })
+        .values({ id: ORG_ID, name: "Proj Access E2E", slug: ORG_ID , ownerMembershipId: 9001 })
         .onConflictDoNothing();
 
       await db
@@ -108,7 +108,7 @@ describeWithDb(
 
       await db
         .insert(projectMembers)
-        .values({ projectId: projectIds.target, userId: U.member })
+        .values({ orgId: ORG_ID, projectId: projectIds.target, userId: U.member })
         .onConflictDoNothing();
     }
 

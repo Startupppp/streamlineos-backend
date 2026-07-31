@@ -27,7 +27,7 @@ describe("SignOS auth/RBAC (e2e)", () => {
 
     await db.delete(users).where(eq(users.id, USER_ID));
     await db.delete(organizations).where(eq(organizations.id, ORG_ID));
-    await db.insert(organizations).values({ id: ORG_ID, name: "E2E SignOS RBAC Org", slug: `${P}slug` });
+    await db.insert(organizations).values({ id: ORG_ID, name: "E2E SignOS RBAC Org", slug: `${P}slug`, ownerMembershipId: 9001 });
     await db.insert(users).values({ id: USER_ID, email: `${P}user@example.com` });
   }, 30_000);
 

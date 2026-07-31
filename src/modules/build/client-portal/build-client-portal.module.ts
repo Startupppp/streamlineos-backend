@@ -18,4 +18,4 @@ import { ClientVisibilityService } from "./client-visibility.service";
     ClientVisibilityService,
   ],
 })
-export class ProjectsClientPortalModule {}
+export class BuildClientPortalModule {}

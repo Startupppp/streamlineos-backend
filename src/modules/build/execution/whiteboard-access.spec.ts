@@ -24,16 +24,6 @@ describe("resolveWhiteboardAccess", () => {
       ).toBe("manage");
     });
 
-    it("returns manage for platform admin regardless of visibility", () => {
-      expect(
-        resolveWhiteboardAccess({
-          board: privateBoard,
-          shareRole: null,
-          user: { userId: MEMBER_ID, isOrgOwner: false},
-          hasManagePermission: false,
-        }),
-      ).toBe("manage");
-    });
 
     it("returns manage for board creator", () => {
       expect(

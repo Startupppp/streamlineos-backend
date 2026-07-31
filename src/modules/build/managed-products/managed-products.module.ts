@@ -6,4 +6,4 @@ import { ManagedProductsService } from "./managed-products.service";
   controllers: [ManagedProductsController],
   providers: [ManagedProductsService],
 })
-export class ProjectsManagedProductsModule {}
+export class BuildManagedProductsModule {}

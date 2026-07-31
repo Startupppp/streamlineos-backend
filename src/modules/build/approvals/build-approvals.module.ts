@@ -8,4 +8,4 @@ import { ChatModule } from "../../chat/chat.module";
   controllers: [ApprovalsInboxController, ApprovalsController],
   providers: [ApprovalsService],
 })
-export class ProjectsApprovalsModule {}
+export class BuildApprovalsModule {}

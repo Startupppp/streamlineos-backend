@@ -2,8 +2,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { AccessService } from "../../access/access.service";
 import type { DataScope } from "../../access/access.types";
 
-jest.mock("../rbac/permissions", () => ({
-  ...jest.requireActual("../rbac/permissions"),
+jest.mock("../../rbac/permissions", () => ({
+  ...jest.requireActual("../../rbac/permissions"),
   isScopable: jest.fn(() => true),
 }));
 

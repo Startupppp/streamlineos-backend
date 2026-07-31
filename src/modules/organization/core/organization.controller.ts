@@ -142,7 +142,12 @@ export class OrganizationController {
     if (!u.isOrgOwner) {
       throw new ForbiddenException("Forbidden");
     }
-    return this.organization.updateMemberRole(u.orgId, u.userId, memberId, body.role);
+    return this.organization.updateMemberRole(
+      u.orgId,
+      { userId: u.userId, isOrgOwner: u.isOrgOwner },
+      memberId,
+      body.role,
+    );
   }
 
   @Delete("members/:memberId")

@@ -9,7 +9,7 @@ import { CacheService } from "../../../../common/cache/cache.service";
 import { ModuleChecklistService } from "../../../hr/onboarding/flow/module-checklist.service";
 import { ACCESS_MANAGED_MODULES } from "../../../rbac/permissions";
 
-jest.mock("../../../common/rbac/access-invalidate", () => ({
+jest.mock("../../../../common/rbac/access-invalidate", () => ({
   bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
 }));
 

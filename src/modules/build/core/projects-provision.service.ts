@@ -165,6 +165,7 @@ export class ProjectsProvisionService {
           dealId: input.dealId,
           managerId: deal.assignedToId ?? userId,
           budget: deal.value ?? undefined,
+          budgetMinor: deal.value === null ? null : Math.round(Number(deal.value) * 100),
           settings: { modules: { sprints: true, epics: true, timeTracking: true, wiki: true } },
         })
         .returning();

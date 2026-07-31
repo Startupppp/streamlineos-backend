@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import type { InviteActor } from "../organization/core/invitations.service";
 import { AccessService } from "../access/access.service";
 import { and, asc, count, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
@@ -39,6 +40,8 @@ export class UsersService {
     if (sendInvite) {
       return this.invitationsSvc.invite(orgId, actor, email, role);
     }
+
+    await this.assertMayGrantRole(orgId, actor, role);
 
     const existing = await this.db.query.users.findFirst({ where: eq(users.email, email) });
     if (existing) {

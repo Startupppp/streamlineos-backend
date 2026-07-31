@@ -64,7 +64,7 @@ describeWithDb(
     async function seed(): Promise<void> {
       await db
         .insert(organizations)
-        .values({ id: ORG_ID, name: "Team Access E2E", slug: ORG_ID })
+        .values({ id: ORG_ID, name: "Team Access E2E", slug: ORG_ID , ownerMembershipId: 9001 })
         .onConflictDoNothing();
       await db
         .insert(users)

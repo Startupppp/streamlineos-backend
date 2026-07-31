@@ -8,4 +8,4 @@ import { SubmissionsService } from "./submissions.service";
   controllers: [FormsController, SubmissionsController],
   providers: [FormsService, SubmissionsService],
 })
-export class ProjectsFormsModule {}
+export class BuildFormsModule {}

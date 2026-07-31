@@ -8,4 +8,4 @@ import { ActionItemsService } from "./action-items.service";
   controllers: [MeetingsController, ActionItemsController],
   providers: [MeetingsService, ActionItemsService],
 })
-export class ProjectsMeetingsModule {}
+export class BuildMeetingsModule {}

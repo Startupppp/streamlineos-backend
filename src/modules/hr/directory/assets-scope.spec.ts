@@ -6,7 +6,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { DataScope } from "../../access/access.types";
 import * as permissionsConstants from "../../rbac/permissions";
 
-jest.mock("../rbac/permissions", () => ({
+jest.mock("../../rbac/permissions", () => ({
   isScopable: jest.fn(),
 }));
 

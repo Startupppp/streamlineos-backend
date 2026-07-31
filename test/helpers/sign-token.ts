@@ -13,7 +13,6 @@ export async function signToken(
     permissions: ["crm:leads:read"],
     enabledModules: ["crm"],
     plan: "PROFESSIONAL",
-    isPlatformAdmin: false,
     isOrgOwner: false,
     sessionId: "sess_1",
     ...claims,

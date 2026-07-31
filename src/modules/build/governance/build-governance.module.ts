@@ -8,4 +8,4 @@ import { DecisionsService } from "./decisions.service";
   controllers: [RisksController, DecisionsController],
   providers: [RisksService, DecisionsService],
 })
-export class ProjectsGovernanceModule {}
+export class BuildGovernanceModule {}

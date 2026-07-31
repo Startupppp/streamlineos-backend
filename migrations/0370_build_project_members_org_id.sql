@@ -61,15 +61,20 @@ END $$;
 -- --- contract -----------------------------------------------------------------
 ALTER TABLE "project_members" ALTER COLUMN "org_id" SET NOT NULL;
 
-ALTER TABLE "project_members"
-  ADD CONSTRAINT "project_members_org_id_organizations_id_fk"
-  FOREIGN KEY ("org_id") REFERENCES "organizations"("id") ON DELETE CASCADE;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'project_members_org_id_organizations_id_fk') THEN
+    ALTER TABLE "project_members" ADD CONSTRAINT "project_members_org_id_organizations_id_fk" FOREIGN KEY ("org_id") REFERENCES "organizations"("id") ON DELETE CASCADE;
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS "idx_project_members_org_user"
   ON "project_members" ("org_id", "user_id");
 
-ALTER TABLE "project_members"
-  ADD CONSTRAINT "uniq_project_members_org_id" UNIQUE ("org_id", "id");
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uniq_project_members_org_id') THEN
+    ALTER TABLE "project_members" ADD CONSTRAINT "uniq_project_members_org_id" UNIQUE ("org_id", "id");
+  END IF;
+END $$;
 
 -- --- project_template_tickets: the last Build table without a tenant column ----
 ALTER TABLE "project_template_tickets" ADD COLUMN IF NOT EXISTS "org_id" text;
@@ -110,15 +115,20 @@ END $$;
 
 ALTER TABLE "project_template_tickets" ALTER COLUMN "org_id" SET NOT NULL;
 
-ALTER TABLE "project_template_tickets"
-  ADD CONSTRAINT "project_template_tickets_org_id_organizations_id_fk"
-  FOREIGN KEY ("org_id") REFERENCES "organizations"("id") ON DELETE CASCADE;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'project_template_tickets_org_id_organizations_id_fk') THEN
+    ALTER TABLE "project_template_tickets" ADD CONSTRAINT "project_template_tickets_org_id_organizations_id_fk" FOREIGN KEY ("org_id") REFERENCES "organizations"("id") ON DELETE CASCADE;
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS "idx_project_template_tickets_org_template"
   ON "project_template_tickets" ("org_id", "template_id");
 
-ALTER TABLE "project_template_tickets"
-  ADD CONSTRAINT "uniq_project_template_tickets_org_id" UNIQUE ("org_id", "id");
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uniq_project_template_tickets_org_id') THEN
+    ALTER TABLE "project_template_tickets" ADD CONSTRAINT "uniq_project_template_tickets_org_id" UNIQUE ("org_id", "id");
+  END IF;
+END $$;
 
 -- --- PK capacity: widen the append-only tables to bigint -----------------------
 -- serial is int4 (max 2,147,483,647). These four are append-only, never pruned,

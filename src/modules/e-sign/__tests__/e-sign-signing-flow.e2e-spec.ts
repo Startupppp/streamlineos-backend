@@ -84,8 +84,8 @@ describe("SignOS signing flow integration (e2e)", () => {
     watermarkSvc = app.get(SignWatermarkService);
 
     await cleanup();
-    await db.insert(organizations).values({ id: ORG_ID, name: "E2E SignOS Org", slug: `${P}slug` });
-    await db.insert(organizations).values({ id: ORG_B_ID, name: "E2E SignOS Org B", slug: `${P}slug-b` });
+    await db.insert(organizations).values({ id: ORG_ID, name: "E2E SignOS Org", slug: `${P}slug`, ownerMembershipId: 9001 });
+    await db.insert(organizations).values({ id: ORG_B_ID, name: "E2E SignOS Org B", slug: `${P}slug-b`, ownerMembershipId: 9002 });
     await db.insert(users).values({ id: USER_ID, email: `${P}sender@example.com`, name: "Sender" });
     await db.insert(users).values({ id: USER_B_ID, email: `${P}sender-b@example.com`, name: "Sender B" });
   }, 90_000);

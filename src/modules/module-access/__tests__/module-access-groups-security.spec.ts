@@ -138,20 +138,6 @@ describe("ModuleAccessGroupsService — P0-1: self-assignment guard", () => {
     expect(result).toEqual({ success: true });
   });
 
-  it("allows a platform admin to add themselves to a module group", async () => {
-    const { svc } = await buildSvc({
-      selectResultSets: [[{ userId: "u-other-owner" }]],
-    });
-
-    const result = await svc.addGroupMember(
-      makeActor({ userId: "u-actor"}),
-      "hr",
-      9,
-      { userId: "u-actor" },
-    );
-
-    expect(result).toEqual({ success: true });
-  });
 });
 
 describe("ModuleAccessGroupsService — P0-2: module owner protection", () => {

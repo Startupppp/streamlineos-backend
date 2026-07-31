@@ -6,4 +6,4 @@ import { WorkflowService } from "./workflow.service";
   controllers: [WorkflowController],
   providers: [WorkflowService],
 })
-export class ProjectsWorkflowModule {}
+export class BuildWorkflowModule {}

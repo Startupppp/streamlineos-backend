@@ -6,4 +6,4 @@ import { IncidentsService } from "./incidents.service";
   controllers: [IncidentsController],
   providers: [IncidentsService],
 })
-export class ProjectsIncidentsModule {}
+export class BuildIncidentsModule {}

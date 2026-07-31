@@ -1,4 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import type { InviteActor } from "../organization/core/invitations.service";
 import { EmailService } from "../email/email.service";
 import { AccessService } from "../access/access.service";
 import { and, count, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
@@ -274,6 +275,7 @@ export class UserOpsService {
   }
 
   async importUsers(orgId: string, rows: ImportUsersRow[], actor: InviteActor) {
+    const actorUserId = actor.userId;
     const results: Array<{
       email: string;
       success: boolean;

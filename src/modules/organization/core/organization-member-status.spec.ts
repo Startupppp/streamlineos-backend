@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
+import { AccessService } from "../../access/access.service";
 import { Test } from "@nestjs/testing";
 import { OrgMembershipService } from "./org-membership.service";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -25,6 +26,10 @@ describe("OrgMembershipService member status guards", () => {
         { provide: AuditService, useValue: { log: jest.fn() } },
         { provide: CacheService, useValue: { invalidate: jest.fn(), invalidatePattern: jest.fn().mockResolvedValue(undefined) } },
         { provide: SessionsService, useValue: { revokeAllForUser } },
+        {
+          provide: AccessService,
+          useValue: { resolveUserPermissions: jest.fn().mockResolvedValue(new Map()) },
+        },
       ],
     }).compile();
     svc = moduleRef.get(OrgMembershipService);
@@ -127,6 +132,10 @@ describe("OrgMembershipService — module-ownership guards", () => {
         { provide: AuditService, useValue: { log: auditLog } },
         { provide: CacheService, useValue: { invalidate: cacheInvalidate, invalidatePattern: cacheInvalidatePattern } },
         { provide: SessionsService, useValue: { revokeAllForUser } },
+        {
+          provide: AccessService,
+          useValue: { resolveUserPermissions: jest.fn().mockResolvedValue(new Map()) },
+        },
       ],
     }).compile();
     return moduleRef.get(OrgMembershipService);
@@ -225,7 +234,7 @@ describe("OrgMembershipService — module-ownership guards", () => {
       const svc = await buildService(db);
 
       const err = await svc
-        .updateMemberRole(ORG_ID, ACTOR_ID, MEMBER_ID, "VIEWER")
+        .updateMemberRole(ORG_ID, { userId: ACTOR_ID, isOrgOwner: true }, MEMBER_ID, "MEMBER")
         .catch((e: unknown) => e);
 
       expect(err).toBeInstanceOf(BadRequestException);
@@ -245,7 +254,7 @@ describe("OrgMembershipService — module-ownership guards", () => {
       const svc = await buildService(db);
 
       await expect(
-        svc.updateMemberRole(ORG_ID, ACTOR_ID, MEMBER_ID, "VIEWER"),
+        svc.updateMemberRole(ORG_ID, { userId: ACTOR_ID, isOrgOwner: true }, MEMBER_ID, "MEMBER"),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
   });

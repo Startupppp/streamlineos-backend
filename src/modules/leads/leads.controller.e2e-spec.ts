@@ -102,7 +102,7 @@ describeWithDb(
 
       await db
         .insert(organizations)
-        .values({ id: ORG_ID, name: "RBAC Leads E2E", slug: ORG_ID })
+        .values({ id: ORG_ID, name: "RBAC Leads E2E", slug: ORG_ID, ownerMembershipId: 9001 })
         .onConflictDoNothing();
 
       await db

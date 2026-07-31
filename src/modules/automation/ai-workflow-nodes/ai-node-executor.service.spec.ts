@@ -19,7 +19,6 @@ const mockGateway = {
   invokeText: jest.fn(),
 };
 const mockAudit = { log: jest.fn() };
-const mockFlags = { evaluate: jest.fn() };
 const mockConfirmation = { propose: jest.fn() };
 const mockJobs = { fail: jest.fn(), complete: jest.fn(), enqueue: jest.fn() };
 
@@ -62,7 +61,6 @@ describe("AiNodeExecutorService", () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    mockFlags.evaluate.mockResolvedValue(true);
     ({ executor } = await buildModule());
   });
 
@@ -203,25 +201,7 @@ describe("AiNodeExecutorService", () => {
   });
 
   // feature flag disabled
-  describe("feature flag gate", () => {
-    it("returns ok=false without calling the gateway when the feature flag is disabled", async () => {
-      mockFlags.evaluate.mockResolvedValueOnce(false);
 
-      const result = await executor.executeNode(
-        ORG_ID,
-        USER_ID,
-        "classify",
-        { labels: ["a", "b"], field: "status" },
-        { status: "open" },
-      );
-
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.error).toMatch(/feature flag/i);
-      expect(mockGateway.invokeStructured).not.toHaveBeenCalled();
-      expect(mockGateway.invokeText).not.toHaveBeenCalled();
-    });
-  });
 
   // quota_exceeded propagation
   describe("quota_exceeded from gateway", () => {
@@ -259,7 +239,6 @@ describe("WorkflowAiNodeHandler", () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    mockFlags.evaluate.mockResolvedValue(true);
     ({ executor, handler } = await buildModule());
   });
 

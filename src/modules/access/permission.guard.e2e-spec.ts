@@ -55,7 +55,7 @@ const user: CurrentUserContext = {
 };
 
 function attachUser(req: Request, _res: Response, next: NextFunction): void {
-  req.user = { ...user };
+  (req as Request & { user: CurrentUserContext }).user = { ...user };
   next();
 }
 

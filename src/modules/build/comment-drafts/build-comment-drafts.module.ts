@@ -6,4 +6,4 @@ import { CommentDraftsService } from "./comment-drafts.service";
   controllers: [CommentDraftsController],
   providers: [CommentDraftsService],
 })
-export class ProjectsCommentDraftsModule {}
+export class BuildCommentDraftsModule {}

@@ -14,6 +14,7 @@ import {
   userPreferences,
   userSessions,
   type OrgUnitKind,
+  users,
 } from "../../db/schema";
 import type {
   ListAuditInput,

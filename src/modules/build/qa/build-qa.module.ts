@@ -20,4 +20,4 @@ import { BugsService } from "./bugs.service";
     BugsService,
   ],
 })
-export class ProjectsQaModule {}
+export class BuildQaModule {}

@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import type { InviteActor } from "./invitations.service";
 import { OrgProfileService } from "./org-profile.service";
 import { OrgMembershipService } from "./org-membership.service";
 import { OrgLifecycleService } from "./org-lifecycle.service";
@@ -49,11 +50,11 @@ export class OrganizationService {
 
   async updateMemberRole(
     orgId: string,
-    actorUserId: string,
+    actor: InviteActor,
     memberUserId: string,
     role: string,
   ) {
-    return this.orgMembership.updateMemberRole(orgId, actorUserId, memberUserId, role);
+    return this.orgMembership.updateMemberRole(orgId, actor, memberUserId, role);
   }
 
   async leaveOrg(orgId: string, userId: string) {

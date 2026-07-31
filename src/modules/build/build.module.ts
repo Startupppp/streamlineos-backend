@@ -1,38 +1,38 @@
 import { Module } from "@nestjs/common";
 import { ProjectsModule } from "./core/projects.module";
 import { ProjectsByIdModule } from "./core/projects-by-id.module";
-import { ProjectsApprovalsModule } from "./approvals/projects-approvals.module";
-import { ProjectsClientPortalModule } from "./client-portal/projects-client-portal.module";
-import { ProjectsCommentDraftsModule } from "./comment-drafts/projects-comment-drafts.module";
-import { ProjectsExecutionModule } from "./execution/projects-execution.module";
-import { ProjectsFormsModule } from "./forms/projects-forms.module";
-import { ProjectsGovernanceModule } from "./governance/projects-governance.module";
-import { ProjectsIncidentsModule } from "./incidents/projects-incidents.module";
-import { ProjectsManagedProductsModule } from "./managed-products/managed-products.module";
-import { ProjectsMeetingsModule } from "./meetings/projects-meetings.module";
+import { BuildApprovalsModule } from "./approvals/build-approvals.module";
+import { BuildClientPortalModule } from "./client-portal/build-client-portal.module";
+import { BuildCommentDraftsModule } from "./comment-drafts/build-comment-drafts.module";
+import { BuildExecutionModule } from "./execution/build-execution.module";
+import { BuildFormsModule } from "./forms/build-forms.module";
+import { BuildGovernanceModule } from "./governance/build-governance.module";
+import { BuildIncidentsModule } from "./incidents/build-incidents.module";
+import { BuildManagedProductsModule } from "./managed-products/managed-products.module";
+import { BuildMeetingsModule } from "./meetings/build-meetings.module";
 import { PmWorkspacesModule } from "./pm-workspaces/pm-workspaces.module";
-import { ProjectsPortfoliosModule } from "./portfolios/projects-portfolios.module";
-import { ProjectsQaModule } from "./qa/projects-qa.module";
-import { ProjectsTeamsModule } from "./teams/projects-teams.module";
-import { ProjectsWorkflowModule } from "./workflow/projects-workflow.module";
+import { BuildPortfoliosModule } from "./portfolios/build-portfolios.module";
+import { BuildQaModule } from "./qa/build-qa.module";
+import { BuildTeamsModule } from "./teams/build-teams.module";
+import { BuildWorkflowModule } from "./workflow/build-workflow.module";
 
 const BUILD_MODULES = [
   ProjectsModule,
   ProjectsByIdModule,
-  ProjectsApprovalsModule,
-  ProjectsClientPortalModule,
-  ProjectsCommentDraftsModule,
-  ProjectsExecutionModule,
-  ProjectsFormsModule,
-  ProjectsGovernanceModule,
-  ProjectsIncidentsModule,
-  ProjectsManagedProductsModule,
-  ProjectsMeetingsModule,
+  BuildApprovalsModule,
+  BuildClientPortalModule,
+  BuildCommentDraftsModule,
+  BuildExecutionModule,
+  BuildFormsModule,
+  BuildGovernanceModule,
+  BuildIncidentsModule,
+  BuildManagedProductsModule,
+  BuildMeetingsModule,
   PmWorkspacesModule,
-  ProjectsPortfoliosModule,
-  ProjectsQaModule,
-  ProjectsTeamsModule,
-  ProjectsWorkflowModule,
+  BuildPortfoliosModule,
+  BuildQaModule,
+  BuildTeamsModule,
+  BuildWorkflowModule,
 ];
 
 /**

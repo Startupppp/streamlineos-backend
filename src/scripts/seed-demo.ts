@@ -1,7 +1,7 @@
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { createHash } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import * as schema from "../db/schema";
 import {
   users,
@@ -137,10 +137,16 @@ async function seed(db: Db): Promise<SeedSummary> {
   const trialEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
   const invExpiry = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
+  const [ownerSeqRow] = await db.execute(
+    sql`SELECT nextval(pg_get_serial_sequence('organization_members', 'id')) AS id`,
+  );
+  const ownerMembershipId = Number(ownerSeqRow?.id);
+
   const orgRows = await db
     .insert(organizations)
     .values({
       id: DEMO_ORG_ID,
+      ownerMembershipId,
       name: "Demo Workspace",
       slug: DEMO_ORG_SLUG,
       industry: "Technology",
@@ -188,6 +194,7 @@ async function seed(db: Db): Promise<SeedSummary> {
   await db
     .insert(organizationMembers)
     .values({
+      id: ownerMembershipId,
       userId: actualDemoUserId,
       orgId: DEMO_ORG_ID,
       role: "OWNER",

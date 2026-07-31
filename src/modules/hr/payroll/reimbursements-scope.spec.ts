@@ -7,7 +7,7 @@ import type { DataScope } from "../../access/access.types";
 import { AccessService } from "../../access/access.service";
 import * as permissionsConstants from "../../rbac/permissions";
 
-jest.mock("../rbac/permissions", () => ({
+jest.mock("../../rbac/permissions", () => ({
   isScopable: jest.fn(),
 }));
 
