@@ -5,6 +5,7 @@ import { projectWebhooks, webhookDeliveries } from "../../db/schema/build/tasks"
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
+import { checkWebhookUrl } from "./webhook-url-guard";
 
 const WEBHOOK_TIMEOUT_MS = 10_000;
 const RESPONSE_BODY_LIMIT = 2000;
@@ -102,6 +103,19 @@ export class ProjectsWebhooksDispatchService {
     let success = false;
     let lastError: string | null = null;
 
+    const urlCheck = await checkWebhookUrl(endpoint.url);
+    if (!urlCheck.allowed) {
+      await this.recordDelivery(endpoint, eventName, payload, {
+        responseCode: null,
+        responseBody: null,
+        success: false,
+        lastError: `Blocked webhook target (${urlCheck.reason})`,
+        attemptNumber,
+        nextAttemptAt: null,
+      });
+      return false;
+    }
+
     try {
       const response = await fetch(endpoint.url, {
         method: "POST",
@@ -111,6 +125,7 @@ export class ProjectsWebhooksDispatchService {
           "X-Webhook-Event": eventName,
         },
         body,
+        redirect: "error",
         signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
       });
       responseCode = response.status;
@@ -128,24 +143,47 @@ export class ProjectsWebhooksDispatchService {
         ? new Date(Date.now() + (RETRY_DELAYS_MS[attemptNumber - 1] ?? 30_000))
         : null;
 
+    await this.recordDelivery(endpoint, eventName, payload, {
+      responseCode,
+      responseBody,
+      success,
+      lastError,
+      attemptNumber,
+      nextAttemptAt,
+    });
+
+    return success;
+  }
+
+  private async recordDelivery(
+    endpoint: ActiveEndpoint,
+    eventName: string,
+    payload: WebhookPayload,
+    outcome: {
+      responseCode: number | null;
+      responseBody: string | null;
+      success: boolean;
+      lastError: string | null;
+      attemptNumber: number;
+      nextAttemptAt: Date | null;
+    },
+  ): Promise<void> {
     try {
       await this.db.insert(webhookDeliveries).values({
         orgId: endpoint.orgId,
         webhookId: endpoint.id,
         event: eventName,
         payload,
-        status: success ? "success" : "failed",
-        responseCode,
-        responseBody: responseBody?.slice(0, RESPONSE_BODY_LIMIT) ?? null,
-        attempts: attemptNumber,
-        lastError,
-        nextAttemptAt,
+        status: outcome.success ? "success" : "failed",
+        responseCode: outcome.responseCode,
+        responseBody: outcome.responseBody?.slice(0, RESPONSE_BODY_LIMIT) ?? null,
+        attempts: outcome.attemptNumber,
+        lastError: outcome.lastError,
+        nextAttemptAt: outcome.nextAttemptAt,
       });
     } catch (dbError) {
       logger.error("Failed to record webhook delivery", { dbError });
     }
-
-    return success;
   }
 
   async sendTest(
@@ -194,6 +232,11 @@ export class ProjectsWebhooksDispatchService {
     let success = false;
     let lastError: string | null = null;
 
+    const urlCheck = await checkWebhookUrl(row.url);
+    if (!urlCheck.allowed) {
+      return { success: false, responseCode: null };
+    }
+
     try {
       const response = await fetch(row.url, {
         method: "POST",
@@ -203,6 +246,7 @@ export class ProjectsWebhooksDispatchService {
           "X-Webhook-Event": "webhook.test",
         },
         body,
+        redirect: "error",
         signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
       });
       responseCode = response.status;

@@ -150,7 +150,7 @@ export class PlanLimitsService {
           (SELECT COUNT(*)::int FROM contacts WHERE org_id = ${orgId} AND deleted_at IS NULL)                                             AS "crmContacts",
           (SELECT COUNT(*)::int FROM deals WHERE org_id = ${orgId})                                                                       AS "crmDeals",
           (SELECT COUNT(*)::int FROM support_tickets WHERE org_id = ${orgId})                                                             AS "supportTickets",
-          ((SELECT COUNT(*) FROM automation_rules WHERE org_id = ${orgId}) + (SELECT COUNT(*) FROM project_automations WHERE org_id = ${orgId}))::int AS automations,
+          (SELECT COUNT(*)::int FROM automation_rules WHERE org_id = ${orgId})                                                              AS automations,
           (SELECT COUNT(*)::int FROM sign_envelopes WHERE org_id = ${orgId})                                                              AS "signEnvelopes",
           (SELECT COUNT(*)::int FROM survey_forms WHERE org_id = ${orgId})                                                                AS surveys,
           (SELECT COUNT(*)::int FROM invoices WHERE org_id = ${orgId})                                                                    AS "acctInvoices",
@@ -281,10 +281,7 @@ export class PlanLimitsService {
       }
       case "automations": {
         const rows = await this.db.execute(
-          sql`SELECT (
-            (SELECT COUNT(*) FROM automation_rules WHERE org_id = ${orgId}) +
-            (SELECT COUNT(*) FROM project_automations WHERE org_id = ${orgId})
-          )::int AS count`,
+          sql`SELECT COUNT(*)::int AS count FROM automation_rules WHERE org_id = ${orgId}`,
         );
         return Number(rows[0]?.["count"] ?? 0);
       }

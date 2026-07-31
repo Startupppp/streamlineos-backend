@@ -487,6 +487,7 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       "tasks:write",
       "build:view",
       "build:create",
+      "build:update",
       "build:manage",
       "build:tickets:view",
       "build:tickets:create",

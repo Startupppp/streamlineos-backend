@@ -30,7 +30,7 @@ export class ProjectsAutomationsController {
   }
 
   @Post(":projectId/automations")
-  @RequirePermission("build:view")
+  @RequirePermission("build:manage")
   @HttpCode(201)
   create(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -41,7 +41,7 @@ export class ProjectsAutomationsController {
   }
 
   @Patch(":projectId/automations/:automationId")
-  @RequirePermission("build:view")
+  @RequirePermission("build:manage")
   update(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("automationId", ParseIntPipe) automationId: number,
@@ -52,7 +52,7 @@ export class ProjectsAutomationsController {
   }
 
   @Delete(":projectId/automations/:automationId")
-  @RequirePermission("build:view")
+  @RequirePermission("build:manage")
   @HttpCode(204)
   delete(
     @Param("projectId", ParseIntPipe) projectId: number,

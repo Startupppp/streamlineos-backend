@@ -139,7 +139,7 @@ export class ProjectsController {
   }
 
   @Post(":projectId/members")
-  @RequirePermission("build:view")
+  @RequirePermission("build:manage")
   @HttpCode(201)
   addMember(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -150,7 +150,7 @@ export class ProjectsController {
   }
 
   @Delete(":projectId/members")
-  @RequirePermission("build:view")
+  @RequirePermission("build:manage")
   @HttpCode(204)
   removeMember(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -161,7 +161,7 @@ export class ProjectsController {
   }
 
   @Patch(":projectId/members/:memberUserId")
-  @RequirePermission("build:view")
+  @RequirePermission("build:manage")
   updateMemberRole(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("memberUserId") memberUserId: string,
@@ -182,7 +182,7 @@ export class ProjectsController {
   }
 
   @Post(":projectId/custom-states")
-  @RequirePermission("build:view")
+  @RequirePermission("build:manage")
   @HttpCode(201)
   createCustomState(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -193,7 +193,7 @@ export class ProjectsController {
   }
 
   @Patch(":projectId/custom-states/:stateId")
-  @RequirePermission("build:view")
+  @RequirePermission("build:manage")
   updateCustomState(
     @Param("projectId", ParseIntPipe) _: number,
     @Param("stateId", ParseIntPipe) stateId: number,
@@ -205,7 +205,7 @@ export class ProjectsController {
   }
 
   @Delete(":projectId/custom-states/:stateId")
-  @RequirePermission("build:view")
+  @RequirePermission("build:manage")
   @HttpCode(204)
   deleteCustomState(
     @Param("projectId", ParseIntPipe) _: number,
