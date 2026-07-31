@@ -1,4 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import type { OrgUnitKind } from "../../db/schema/common/organization";
 import type { InviteActor } from "../organization/core/invitations.service";
 import { EmailService } from "../email/email.service";
 import { AccessService } from "../access/access.service";
@@ -16,12 +17,13 @@ import {
   magicLinkTokens,
   organizationMembers,
   users,
+  orgUnitMembers,
+  orgUnits,
 } from "../../db/schema";
 import type { BulkUpdateUsersInput, ImportUsersRow } from "./dto/users.schemas";
 import { UsersService } from "./users.service";
 import { syncStructuralRoleAssignment } from "../../common/rbac/sync-structural-role";
-import { assertInvitableRole } from "../../common/rbac/assert-invitable-role";
-import { ORG_ADMIN_PERMISSION_KEY } from "../../common/rbac/grantability";
+import { assertMayGrantRole } from "../../common/rbac/assert-may-grant-role";
 
 @Injectable()
 export class UserOpsService {
@@ -45,7 +47,7 @@ export class UserOpsService {
         role: organizationMembers.role,
         isActive: users.isActive,
         emailVerified: users.emailVerified,
-        departmentId: users.departmentId,
+        departmentId: users.orgDepartmentId,
         designation: users.designation,
         phone: users.phone,
         joinedAt: organizationMembers.joinedAt,
@@ -174,17 +176,8 @@ export class UserOpsService {
     };
   }
 
-  private async assertMayGrantRole(
-    orgId: string,
-    actor: InviteActor,
-    role: string,
-  ): Promise<void> {
-    let isOrgAdmin = false;
-    if (!actor.isOrgOwner) {
-      const resolved = await this.access.resolveUserPermissions(orgId, actor.userId);
-      isOrgAdmin = (resolved.get(ORG_ADMIN_PERMISSION_KEY) ?? "none") !== "none";
-    }
-    assertInvitableRole({ isOrgOwner: actor.isOrgOwner, isOrgAdmin }, role);
+  private assertMayGrantRole(orgId: string, actor: InviteActor, role: string): Promise<void> {
+    return assertMayGrantRole(this.access, orgId, actor, role);
   }
 
   async bulkUpdateUsers(orgId: string, data: BulkUpdateUsersInput, actor: InviteActor) {
@@ -202,13 +195,49 @@ export class UserOpsService {
     }
 
     const userUpdate: Record<string, unknown> = {};
-    if (departmentId !== undefined) userUpdate.departmentId = departmentId;
+    if (departmentId !== undefined) userUpdate.orgDepartmentId = departmentId;
     if (branchId !== undefined) userUpdate.branchId = branchId;
     if (managerUserId !== undefined) userUpdate.reportingTo = managerUserId;
     if (teamId !== undefined) userUpdate.team = teamId;
 
     if (Object.keys(userUpdate).length > 0) {
       await this.db.update(users).set(userUpdate).where(inArray(users.id, scopedIds));
+    }
+
+    // The scalars above are denormalised copies; `org_unit_members` is the hierarchy model that getMembership and HR policy evaluation read
+    const unitMoves: Array<{ kind: OrgUnitKind; unitId: string | null }> = [];
+    if (branchId !== undefined) unitMoves.push({ kind: "BRANCH", unitId: branchId ?? null });
+    if (departmentId !== undefined) unitMoves.push({ kind: "DEPARTMENT", unitId: departmentId ?? null });
+    if (teamId !== undefined) unitMoves.push({ kind: "TEAM", unitId: teamId ?? null });
+
+    if (unitMoves.length > 0) {
+      await this.db.transaction(async (tx) => {
+        for (const { kind, unitId } of unitMoves) {
+          const existing = await tx
+            .select({ id: orgUnitMembers.id })
+            .from(orgUnitMembers)
+            .innerJoin(orgUnits, eq(orgUnits.id, orgUnitMembers.orgUnitId))
+            .where(
+              and(
+                eq(orgUnitMembers.orgId, orgId),
+                inArray(orgUnitMembers.userId, scopedIds),
+                eq(orgUnits.kind, kind),
+              ),
+            );
+          for (const row of existing) 
+            await tx.delete(orgUnitMembers).where(eq(orgUnitMembers.id, row.id));
+          
+
+          if (unitId !== null) 
+            for (const userId of scopedIds) 
+              await tx
+                .insert(orgUnitMembers)
+                .values({ id: randomUUID(), orgId, orgUnitId: unitId, userId, role: "member" })
+                .onConflictDoNothing();
+            
+          
+        }
+      });
     }
 
     if (role) {

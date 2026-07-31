@@ -53,7 +53,7 @@ export class KbSearchService {
     }
 
     const isAdmin = this.access.isAdmin(user);
-    const principal = this.access.getPrincipalIds(user);
+    const principal = await this.access.getPrincipalIds(user);
 
     const tsquery = sql`websearch_to_tsquery('english', ${input.q})`;
     const conditions: SQL[] = [
@@ -121,7 +121,7 @@ export class KbSearchService {
     if (!q) return [];
 
     const isAdmin = this.access.isAdmin(user);
-    const principal = this.access.getPrincipalIds(user);
+    const principal = await this.access.getPrincipalIds(user);
 
     const pool = Math.max(limit * 3, limit);
     const hasSpaces = ids.length > 0;
@@ -223,7 +223,7 @@ export class KbSearchService {
     spaceIds: number[],
     query: string,
     pool: number,
-    principal: { userId: string; role: string },
+    principal: { userId: string; roleSlugs: string[] },
     spaceId?: number,
   ): Promise<number[]> {
     const tsquery = sql`websearch_to_tsquery('english', ${query})`;
@@ -250,7 +250,7 @@ export class KbSearchService {
     spaceIds: number[],
     vector: string,
     pool: number,
-    principal: { userId: string; role: string },
+    principal: { userId: string; roleSlugs: string[] },
     spaceId?: number,
   ): Promise<number[]> {
     try {
@@ -355,7 +355,7 @@ export class KbSearchService {
 
   private articleRestrictionFilter(
     orgId: string,
-    principal: { userId: string; role: string },
+    principal: { userId: string; roleSlugs: string[] },
   ): SQL {
     const kar = kbArticleRestrictions;
     return sql`(
@@ -370,7 +370,11 @@ export class KbSearchService {
         WHERE ${kar.articleId} = ${kbArticles.id}
           AND ${kar.orgId} = ${orgId}
           AND ${kar.level} = 'view'
-          AND (${kar.userId} = ${principal.userId} OR ${kar.role} = ${principal.role})
+          AND (${kar.userId} = ${principal.userId} OR ${
+            principal.roleSlugs.length > 0
+              ? sql`${kar.role} = ANY(${principal.roleSlugs})`
+              : sql`false`
+          })
       )
     )`;
   }

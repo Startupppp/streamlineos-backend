@@ -666,6 +666,34 @@
       "when": 1784993507607,
       "tag": "0375_build_drop_dead_reports",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1784993508607,
+      "tag": "0370_tenant_column_integrity",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1784993509607,
+      "tag": "0371_drop_users_role",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1784993510607,
+      "tag": "0372_timesheets_module",
+      "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1784993511607,
+      "tag": "0373_resource_grants",
+      "breakpoints": true
     }
   ]
 }

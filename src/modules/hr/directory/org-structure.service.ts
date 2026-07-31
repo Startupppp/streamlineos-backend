@@ -95,14 +95,13 @@ export class OrgStructureService {
     const [members, orgDeptRows] = await Promise.all([
       this.db.query.organizationMembers.findMany({
         where: eq(organizationMembers.orgId, orgId),
-        columns: { userId: true },
+        columns: { userId: true, role: true },
         with: {
           user: {
             columns: {
               id: true,
               name: true,
               email: true,
-              role: true,
               designation: true,
               image: true,
               orgDepartmentId: true,
@@ -142,7 +141,7 @@ export class OrgStructureService {
         id: u.id,
         name: u.name,
         email: u.email,
-        role: toTitleCase(u.role ?? "Employee"),
+        role: toTitleCase(m.role ?? "Employee"),
         designation: u.designation,
         image: u.image,
         departmentId: u.orgDepartmentId ?? null,

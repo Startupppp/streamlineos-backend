@@ -43,7 +43,7 @@ export const teamStatusQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
   search: z.string().trim().min(1).max(200).optional(),
   status: z.enum(["PRESENT", "ON_BREAK", "CHECKED_OUT", "OFFLINE"]).optional(),
-  departmentId: z.coerce.number().int().positive().optional(),
+  departmentId: z.string().min(1).optional(),
 });
 
 export const attendanceEmailReportSchema = z.object({

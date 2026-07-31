@@ -64,18 +64,16 @@ describeWithDb(
       await db
         .insert(users)
         .values([
-          { id: U.owner, email: `${U.owner}@e2e.test`, name: "Owner", role: "OWNER" },
+          { id: U.owner, email: `${U.owner}@e2e.test`, name: "Owner" },
           {
             id: U.member,
             email: `${U.member}@e2e.test`,
             name: "Member",
-            role: "MEMBER",
           },
           {
             id: U.outsider,
             email: `${U.outsider}@e2e.test`,
             name: "Outsider",
-            role: "MEMBER",
           },
         ])
         .onConflictDoNothing();
@@ -83,9 +81,9 @@ describeWithDb(
       await db
         .insert(organizationMembers)
         .values([
-          { userId: U.owner, orgId: ORG_ID, role: "OWNER", isOwner: true },
-          { userId: U.member, orgId: ORG_ID, role: "MEMBER", isOwner: false },
-          { userId: U.outsider, orgId: ORG_ID, role: "MEMBER", isOwner: false },
+          { userId: U.owner, orgId: ORG_ID, isOwner: true },
+          { userId: U.member, orgId: ORG_ID, isOwner: false },
+          { userId: U.outsider, orgId: ORG_ID, isOwner: false },
         ])
         .onConflictDoNothing();
 

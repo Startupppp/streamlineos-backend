@@ -60,18 +60,18 @@ describeWithDb(
       await db
         .insert(users)
         .values([
-          { id: U.admin, email: `${U.admin}@e2e.test`, name: "Admin", role: "OWNER" },
-          { id: U.member, email: `${U.member}@e2e.test`, name: "Member", role: "MEMBER" },
-          { id: U.outsider, email: `${U.outsider}@e2e.test`, name: "Outsider", role: "MEMBER" },
+          { id: U.admin, email: `${U.admin}@e2e.test`, name: "Admin" },
+          { id: U.member, email: `${U.member}@e2e.test`, name: "Member" },
+          { id: U.outsider, email: `${U.outsider}@e2e.test`, name: "Outsider" },
         ])
         .onConflictDoNothing();
 
       await db
         .insert(organizationMembers)
         .values([
-          { userId: U.admin, orgId: ORG_ID, role: "OWNER", isOwner: true },
-          { userId: U.member, orgId: ORG_ID, role: "MEMBER", isOwner: false },
-          { userId: U.outsider, orgId: ORG_ID, role: "MEMBER", isOwner: false },
+          { userId: U.admin, orgId: ORG_ID, isOwner: true },
+          { userId: U.member, orgId: ORG_ID, isOwner: false },
+          { userId: U.outsider, orgId: ORG_ID, isOwner: false },
         ])
         .onConflictDoNothing();
 
@@ -144,7 +144,6 @@ describeWithDb(
       const token = await signToken({
         sub: U.member,
         orgId: ORG_ID,
-        role: "MEMBER",
         enabledModules: ["build"],
         isOrgOwner: false,
       });
@@ -170,7 +169,6 @@ describeWithDb(
       const token = await signToken({
         sub: U.member,
         orgId: ORG_ID,
-        role: "MEMBER",
         enabledModules: ["build"],
         isOrgOwner: false,
       });
@@ -194,7 +192,6 @@ describeWithDb(
       const token = await signToken({
         sub: U.outsider,
         orgId: ORG_ID,
-        role: "MEMBER",
         enabledModules: ["build"],
         isOrgOwner: false,
       });
@@ -212,7 +209,6 @@ describeWithDb(
       const token = await signToken({
         sub: U.admin,
         orgId: ORG_ID,
-        role: "OWNER",
         enabledModules: ["build"],
         isOrgOwner: true,
       });

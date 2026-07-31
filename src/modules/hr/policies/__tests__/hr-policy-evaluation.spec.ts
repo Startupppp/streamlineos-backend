@@ -3,18 +3,42 @@ import { NotFoundException } from "@nestjs/common";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { HrPolicyEvaluationService } from "../hr-policy-evaluation.service";
 
+type Rows = Record<string, unknown>[];
+
+/** `resolveEmployeeAttributes` fires three selects in order: departments, teams, role slugs. */
+function makeSelectMock(sequence: Rows[]) {
+  let call = 0;
+  return jest.fn().mockImplementation(() => {
+    const rows = sequence[call] ?? [];
+    call += 1;
+    const chain: Record<string, unknown> = {};
+    const link = () => chain;
+    chain.from = jest.fn(link);
+    chain.innerJoin = jest.fn(link);
+    chain.leftJoin = jest.fn(link);
+    chain.where = jest.fn(link);
+    chain.limit = jest.fn().mockResolvedValue(rows);
+    chain.then = (resolve: (value: Rows) => unknown) => Promise.resolve(rows).then(resolve);
+    return chain;
+  });
+}
+
 const mockDb = {
   query: {
     organizationMembers: { findFirst: jest.fn() },
     users: { findFirst: jest.fn() },
     hrPolicies: { findMany: jest.fn() },
   },
-  select: jest.fn().mockReturnThis(),
-  from: jest.fn().mockReturnThis(),
-  innerJoin: jest.fn().mockReturnThis(),
-  where: jest.fn().mockReturnThis(),
-  limit: jest.fn().mockResolvedValue([]),
+  select: makeSelectMock([]),
 };
+
+function setAttributes(options: { departments?: Rows; teams?: Rows; roles?: Rows }) {
+  mockDb.select = makeSelectMock([
+    options.departments ?? [],
+    options.teams ?? [],
+    options.roles ?? [],
+  ]);
+}
 
 const SCOPE_SPEC = {
   employee: 100,
@@ -62,16 +86,13 @@ describe("HrPolicyEvaluationService", () => {
   beforeEach(async () => {
     jest.clearAllMocks();
 
-    mockDb.limit.mockResolvedValue([]);
-    mockDb.query.organizationMembers.findFirst.mockResolvedValue({ orgId: "org1", userId: "u1", role: "EMPLOYEE" });
-    mockDb.query.users.findFirst.mockResolvedValue({ id: "u1", role: "EMPLOYEE", designation: null, branchId: null });
+    setAttributes({});
+    mockDb.query.organizationMembers.findFirst.mockResolvedValue({ orgId: "org1", userId: "u1" });
+    mockDb.query.users.findFirst.mockResolvedValue({ id: "u1", designation: null, branchId: null });
     mockDb.query.hrPolicies.findMany.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        HrPolicyEvaluationService,
-        { provide: DRIZZLE, useValue: mockDb },
-      ],
+      providers: [HrPolicyEvaluationService, { provide: DRIZZLE, useValue: mockDb }],
     }).compile();
 
     service = module.get(HrPolicyEvaluationService);
@@ -79,13 +100,6 @@ describe("HrPolicyEvaluationService", () => {
 
   describe("evaluatePolicy — no candidates", () => {
     it("returns null when there are no active policies", async () => {
-      mockDb.select.mockReturnThis();
-      mockDb.from.mockReturnThis();
-      mockDb.innerJoin.mockReturnThis();
-      mockDb.where.mockReturnThis();
-      mockDb.limit.mockResolvedValue([]);
-
-      mockDb.query.hrPolicies.findMany.mockResolvedValue([]);
       const result = await service.evaluatePolicy("org1", "u1", "attendance", "2026-07-11");
       expect(result).toBeNull();
     });
@@ -93,51 +107,23 @@ describe("HrPolicyEvaluationService", () => {
 
   describe("evaluatePolicy — scope specificity ordering", () => {
     it("prefers employee scope (100) over department scope (70)", async () => {
-      mockDb.select.mockReturnThis();
-      mockDb.from.mockReturnThis();
-      mockDb.innerJoin.mockReturnThis();
-      mockDb.where.mockReturnThis();
-      mockDb.limit.mockResolvedValue([]);
+      setAttributes({ departments: [{ orgUnitId: "dept-10" }] });
 
-      mockDb.query.users.findFirst.mockResolvedValue({ id: "u1", role: "EMPLOYEE", designation: null, branchId: null });
-      mockDb.query.organizationMembers.findFirst.mockResolvedValue({ orgId: "org1", userId: "u1" });
-
-      const deptPolicy = makePolicy({ id: 1, name: "Dept Policy", priority: 100, scopes: [{ scopeType: "department", scopeValue: "10" }], rules: { graceMinutes: 10 } });
-      const empPolicy = makePolicy({ id: 2, name: "Employee Policy", priority: 1, scopes: [{ scopeType: "employee", scopeValue: "u1" }], rules: { graceMinutes: 30 } });
-
-      mockDb.query.hrPolicies.findMany.mockResolvedValue([deptPolicy, empPolicy]);
-
-      const _attrs = {
-        userId: "u1",
-        departmentId: 10,
-        teamIds: [],
-        role: "EMPLOYEE",
-        designation: null,
-        employmentType: null,
-        locationId: null,
-        countryCode: null,
-        stateCode: null,
-        jobLevel: null,
-      };
-
-      const mockFindFirst = jest.fn().mockResolvedValue({ orgId: "org1", userId: "u1" });
-      const mockSelect = jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({
-          innerJoin: jest.fn().mockReturnValue({
-            where: jest.fn().mockReturnValue({
-              limit: jest.fn().mockResolvedValue([]),
-            }),
-          }),
-          where: jest.fn().mockReturnValue({
-            limit: jest.fn().mockResolvedValue([{ departmentId: 10 }]),
-          }),
-        }),
+      const deptPolicy = makePolicy({
+        id: 1,
+        name: "Dept Policy",
+        priority: 100,
+        scopes: [{ scopeType: "department", scopeValue: "dept-10" }],
+        rules: { graceMinutes: 10 },
       });
-
-      (service as unknown as { db: typeof mockDb }).db.select = mockSelect;
-      (service as unknown as { db: typeof mockDb }).db.query.organizationMembers.findFirst = mockFindFirst;
-      (service as unknown as { db: typeof mockDb }).db.query.users.findFirst = jest.fn().mockResolvedValue({ id: "u1", role: "EMPLOYEE", designation: null, branchId: null });
-      (service as unknown as { db: typeof mockDb }).db.query.hrPolicies.findMany = jest.fn().mockResolvedValue([deptPolicy, empPolicy]);
+      const empPolicy = makePolicy({
+        id: 2,
+        name: "Employee Policy",
+        priority: 1,
+        scopes: [{ scopeType: "employee", scopeValue: "u1" }],
+        rules: { graceMinutes: 30 },
+      });
+      mockDb.query.hrPolicies.findMany.mockResolvedValue([deptPolicy, empPolicy]);
 
       const result = await service.evaluatePolicy("org1", "u1", "attendance", "2026-07-11");
 
@@ -146,57 +132,71 @@ describe("HrPolicyEvaluationService", () => {
     });
 
     it("prefers department scope (70) over role scope (60)", async () => {
-      const mockFindFirst = jest.fn().mockResolvedValue({ orgId: "org1", userId: "u1" });
-      const mockSelect = jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({
-          innerJoin: jest.fn().mockReturnValue({
-            where: jest.fn().mockReturnValue({
-              limit: jest.fn().mockResolvedValue([{ orgUnitId: "5" }]),
-            }),
-          }),
-          where: jest.fn().mockReturnValue({
-            limit: jest.fn().mockResolvedValue([{ orgUnitId: "5" }]),
-          }),
-        }),
+      setAttributes({ departments: [{ orgUnitId: "dept-5" }], roles: [{ slug: "MANAGER" }] });
+
+      const rolePolicy = makePolicy({
+        id: 1,
+        name: "Role Policy",
+        priority: 100,
+        scopes: [{ scopeType: "role", scopeValue: "MANAGER" }],
+        rules: { graceMinutes: 5 },
       });
-
-      (service as unknown as { db: typeof mockDb }).db.select = mockSelect;
-      (service as unknown as { db: typeof mockDb }).db.query.organizationMembers.findFirst = mockFindFirst;
-      (service as unknown as { db: typeof mockDb }).db.query.users.findFirst = jest.fn().mockResolvedValue({ id: "u1", role: "MANAGER", designation: null, branchId: null });
-
-      const rolePolicy = makePolicy({ id: 1, name: "Role Policy", priority: 100, scopes: [{ scopeType: "role", scopeValue: "MANAGER" }], rules: { graceMinutes: 5 } });
-      const deptPolicy = makePolicy({ id: 2, name: "Dept Policy", priority: 1, scopes: [{ scopeType: "department", scopeValue: "5" }], rules: { graceMinutes: 20 } });
-
-      (service as unknown as { db: typeof mockDb }).db.query.hrPolicies.findMany = jest.fn().mockResolvedValue([rolePolicy, deptPolicy]);
+      const deptPolicy = makePolicy({
+        id: 2,
+        name: "Dept Policy",
+        priority: 1,
+        scopes: [{ scopeType: "department", scopeValue: "dept-5" }],
+        rules: { graceMinutes: 20 },
+      });
+      mockDb.query.hrPolicies.findMany.mockResolvedValue([rolePolicy, deptPolicy]);
 
       const result = await service.evaluatePolicy("org1", "u1", "attendance", "2026-07-11");
       expect(result?.policy.name).toBe("Dept Policy");
       expect(result?.trace.maxSpecificity).toBe(SCOPE_SPEC.department);
     });
 
-    it("prefers role scope (60) over organization scope (0) when employee has matching role", async () => {
-      const mockFindFirst = jest.fn().mockResolvedValue({ orgId: "org1", userId: "u1" });
-      const mockSelect = jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({
-          innerJoin: jest.fn().mockReturnValue({
-            where: jest.fn().mockReturnValue({
-              limit: jest.fn().mockResolvedValue([]),
-            }),
-          }),
-          where: jest.fn().mockReturnValue({
-            limit: jest.fn().mockResolvedValue([]),
-          }),
-        }),
+    it("prefers team scope (80) over department scope (70)", async () => {
+      setAttributes({ departments: [{ orgUnitId: "dept-5" }], teams: [{ orgUnitId: "team-9" }] });
+
+      const deptPolicy = makePolicy({
+        id: 1,
+        name: "Dept Policy",
+        priority: 100,
+        scopes: [{ scopeType: "department", scopeValue: "dept-5" }],
+        rules: { graceMinutes: 20 },
       });
+      const teamPolicy = makePolicy({
+        id: 2,
+        name: "Team Policy",
+        priority: 1,
+        scopes: [{ scopeType: "team", scopeValue: "team-9" }],
+        rules: { graceMinutes: 45 },
+      });
+      mockDb.query.hrPolicies.findMany.mockResolvedValue([deptPolicy, teamPolicy]);
 
-      (service as unknown as { db: typeof mockDb }).db.select = mockSelect;
-      (service as unknown as { db: typeof mockDb }).db.query.organizationMembers.findFirst = mockFindFirst;
-      (service as unknown as { db: typeof mockDb }).db.query.users.findFirst = jest.fn().mockResolvedValue({ id: "u1", role: "HR", designation: null, branchId: null });
+      const result = await service.evaluatePolicy("org1", "u1", "attendance", "2026-07-11");
+      expect(result?.policy.name).toBe("Team Policy");
+      expect(result?.trace.maxSpecificity).toBe(SCOPE_SPEC.team);
+    });
 
-      const orgPolicy = makePolicy({ id: 1, name: "Org Policy", priority: 100, scopes: [{ scopeType: "organization", scopeValue: "org1" }], rules: { graceMinutes: 5 } });
-      const rolePolicy = makePolicy({ id: 2, name: "HR Policy", priority: 1, scopes: [{ scopeType: "role", scopeValue: "HR" }], rules: { graceMinutes: 25 } });
+    it("prefers role scope (60) over organization scope (0) when employee has matching role", async () => {
+      setAttributes({ roles: [{ slug: "HR_ADMIN" }] });
 
-      (service as unknown as { db: typeof mockDb }).db.query.hrPolicies.findMany = jest.fn().mockResolvedValue([orgPolicy, rolePolicy]);
+      const orgPolicy = makePolicy({
+        id: 1,
+        name: "Org Policy",
+        priority: 100,
+        scopes: [{ scopeType: "organization", scopeValue: "org1" }],
+        rules: { graceMinutes: 5 },
+      });
+      const rolePolicy = makePolicy({
+        id: 2,
+        name: "HR Policy",
+        priority: 1,
+        scopes: [{ scopeType: "role", scopeValue: "HR_ADMIN" }],
+        rules: { graceMinutes: 25 },
+      });
+      mockDb.query.hrPolicies.findMany.mockResolvedValue([orgPolicy, rolePolicy]);
 
       const result = await service.evaluatePolicy("org1", "u1", "attendance", "2026-07-11");
       expect(result?.policy.name).toBe("HR Policy");
@@ -204,86 +204,72 @@ describe("HrPolicyEvaluationService", () => {
     });
 
     it("falls back to organization scope (0) when no specific scope matches", async () => {
-      const mockFindFirst = jest.fn().mockResolvedValue({ orgId: "org1", userId: "u1" });
-      const mockSelect = jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({
-          innerJoin: jest.fn().mockReturnValue({
-            where: jest.fn().mockReturnValue({
-              limit: jest.fn().mockResolvedValue([]),
-            }),
-          }),
-          where: jest.fn().mockReturnValue({
-            limit: jest.fn().mockResolvedValue([]),
-          }),
-        }),
+      const orgPolicy = makePolicy({
+        id: 1,
+        name: "Org Policy",
+        priority: 5,
+        scopes: [{ scopeType: "organization", scopeValue: "org1" }],
+        rules: { graceMinutes: 15 },
       });
-
-      (service as unknown as { db: typeof mockDb }).db.select = mockSelect;
-      (service as unknown as { db: typeof mockDb }).db.query.organizationMembers.findFirst = mockFindFirst;
-      (service as unknown as { db: typeof mockDb }).db.query.users.findFirst = jest.fn().mockResolvedValue({ id: "u1", role: "EMPLOYEE", designation: null, branchId: null });
-
-      const orgPolicy = makePolicy({ id: 1, name: "Org Policy", priority: 5, scopes: [{ scopeType: "organization", scopeValue: "org1" }], rules: { graceMinutes: 15 } });
-
-      (service as unknown as { db: typeof mockDb }).db.query.hrPolicies.findMany = jest.fn().mockResolvedValue([orgPolicy]);
+      mockDb.query.hrPolicies.findMany.mockResolvedValue([orgPolicy]);
 
       const result = await service.evaluatePolicy("org1", "u1", "attendance", "2026-07-11");
       expect(result?.policy.name).toBe("Org Policy");
       expect(result?.trace.maxSpecificity).toBe(SCOPE_SPEC.organization);
     });
+
+    it("ignores a role-scoped policy when the employee holds no such role", async () => {
+      const rolePolicy = makePolicy({
+        id: 1,
+        name: "Role Policy",
+        priority: 100,
+        scopes: [{ scopeType: "role", scopeValue: "MANAGER" }],
+      });
+      mockDb.query.hrPolicies.findMany.mockResolvedValue([rolePolicy]);
+
+      const result = await service.evaluatePolicy("org1", "u1", "attendance", "2026-07-11");
+      expect(result).toBeNull();
+    });
   });
 
   describe("evaluatePolicy — tie-breaking", () => {
     it("breaks ties on same specificity by priority (higher wins)", async () => {
-      const mockFindFirst = jest.fn().mockResolvedValue({ orgId: "org1", userId: "u1" });
-      const mockSelect = jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({
-          innerJoin: jest.fn().mockReturnValue({
-            where: jest.fn().mockReturnValue({
-              limit: jest.fn().mockResolvedValue([]),
-            }),
-          }),
-          where: jest.fn().mockReturnValue({
-            limit: jest.fn().mockResolvedValue([]),
-          }),
-        }),
+      const lowPriority = makePolicy({
+        id: 1,
+        name: "Low Priority",
+        priority: 1,
+        scopes: [{ scopeType: "organization", scopeValue: "org1" }],
+        rules: { graceMinutes: 5 },
       });
-
-      (service as unknown as { db: typeof mockDb }).db.select = mockSelect;
-      (service as unknown as { db: typeof mockDb }).db.query.organizationMembers.findFirst = mockFindFirst;
-      (service as unknown as { db: typeof mockDb }).db.query.users.findFirst = jest.fn().mockResolvedValue({ id: "u1", role: "EMPLOYEE", designation: null, branchId: null });
-
-      const lowPriority = makePolicy({ id: 1, name: "Low Priority", priority: 1, scopes: [{ scopeType: "organization", scopeValue: "org1" }], rules: { graceMinutes: 5 } });
-      const highPriority = makePolicy({ id: 2, name: "High Priority", priority: 99, scopes: [{ scopeType: "organization", scopeValue: "org1" }], rules: { graceMinutes: 30 } });
-
-      (service as unknown as { db: typeof mockDb }).db.query.hrPolicies.findMany = jest.fn().mockResolvedValue([lowPriority, highPriority]);
+      const highPriority = makePolicy({
+        id: 2,
+        name: "High Priority",
+        priority: 99,
+        scopes: [{ scopeType: "organization", scopeValue: "org1" }],
+        rules: { graceMinutes: 30 },
+      });
+      mockDb.query.hrPolicies.findMany.mockResolvedValue([lowPriority, highPriority]);
 
       const result = await service.evaluatePolicy("org1", "u1", "attendance", "2026-07-11");
       expect(result?.policy.name).toBe("High Priority");
     });
 
     it("breaks ties on same specificity and same priority by version (higher wins)", async () => {
-      const mockFindFirst = jest.fn().mockResolvedValue({ orgId: "org1", userId: "u1" });
-      const mockSelect = jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({
-          innerJoin: jest.fn().mockReturnValue({
-            where: jest.fn().mockReturnValue({
-              limit: jest.fn().mockResolvedValue([]),
-            }),
-          }),
-          where: jest.fn().mockReturnValue({
-            limit: jest.fn().mockResolvedValue([]),
-          }),
-        }),
+      const v1 = makePolicy({
+        id: 1,
+        name: "Version 1",
+        version: 1,
+        priority: 10,
+        scopes: [{ scopeType: "organization", scopeValue: "org1" }],
       });
-
-      (service as unknown as { db: typeof mockDb }).db.select = mockSelect;
-      (service as unknown as { db: typeof mockDb }).db.query.organizationMembers.findFirst = mockFindFirst;
-      (service as unknown as { db: typeof mockDb }).db.query.users.findFirst = jest.fn().mockResolvedValue({ id: "u1", role: "EMPLOYEE", designation: null, branchId: null });
-
-      const v1 = makePolicy({ id: 1, name: "Version 1", version: 1, priority: 10, scopes: [{ scopeType: "organization", scopeValue: "org1" }] });
-      const v3 = makePolicy({ id: 2, name: "Version 3", version: 3, priority: 10, scopes: [{ scopeType: "organization", scopeValue: "org1" }] });
-
-      (service as unknown as { db: typeof mockDb }).db.query.hrPolicies.findMany = jest.fn().mockResolvedValue([v1, v3]);
+      const v3 = makePolicy({
+        id: 2,
+        name: "Version 3",
+        version: 3,
+        priority: 10,
+        scopes: [{ scopeType: "organization", scopeValue: "org1" }],
+      });
+      mockDb.query.hrPolicies.findMany.mockResolvedValue([v1, v3]);
 
       const result = await service.evaluatePolicy("org1", "u1", "attendance", "2026-07-11");
       expect(result?.policy.name).toBe("Version 3");
@@ -292,8 +278,10 @@ describe("HrPolicyEvaluationService", () => {
 
   describe("evaluatePolicy — employee not found", () => {
     it("throws NotFoundException when employee is not in the org", async () => {
-      (service as unknown as { db: typeof mockDb }).db.query.organizationMembers.findFirst = jest.fn().mockResolvedValue(undefined);
-      await expect(service.evaluatePolicy("org1", "ghost", "attendance", "2026-07-11")).rejects.toThrow(NotFoundException);
+      mockDb.query.organizationMembers.findFirst.mockResolvedValue(undefined);
+      await expect(
+        service.evaluatePolicy("org1", "ghost", "attendance", "2026-07-11"),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 });

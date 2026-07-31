@@ -364,7 +364,7 @@ export class JwtAuthGuard implements CanActivate {
     const [user, resolved] = await Promise.all([
       this.db.query.users.findFirst({
         where: eq(users.id, matchedUserId),
-        columns: { id: true, branchId: true, role: true },
+        columns: { id: true, branchId: true },
       }),
       this.resolveOrgContext(matchedUserId),
     ]);

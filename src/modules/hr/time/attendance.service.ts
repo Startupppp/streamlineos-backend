@@ -107,7 +107,7 @@ export class AttendanceService {
       eq(users.isActive, true),
     ];
     if (query.departmentId !== undefined) {
-      baseConditions.push(eq(users.departmentId, query.departmentId));
+      baseConditions.push(eq(users.orgDepartmentId, query.departmentId));
     }
     if (query.search) {
       const term = `%${query.search}%`;

@@ -58,7 +58,7 @@ export class AgentTokenGuard implements CanActivate {
     const [user, memberRows] = await Promise.all([
       this.db.query.users.findFirst({
         where: eq(users.id, row.userId),
-        columns: { id: true, branchId: true, role: true, lastActiveOrgId: true },
+        columns: { id: true, branchId: true, lastActiveOrgId: true },
       }),
       this.db
         .select({

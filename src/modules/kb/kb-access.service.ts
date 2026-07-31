@@ -1,11 +1,14 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, eq, isNull, or, inArray } from "drizzle-orm";
 import {
   kbSpaces,
   kbSpaceMembers,
   kbArticles,
   kbArticleRestrictions,
   kbSpaceGrants,
+  roles,
+  roleAssignments,
+  organizationMembers,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -26,6 +29,25 @@ export class KbAccessService {
     return (
       user.isOrgOwner || user.permissions.includes(KB_MANAGE_SPACES)
     );
+  }
+
+  private async resolveRoleSlugs(orgId: string, userId: string): Promise<string[]> {
+    const rows = await this.db
+      .select({ slug: roles.slug })
+      .from(roleAssignments)
+      .innerJoin(roles, eq(roles.id, roleAssignments.roleId))
+      .innerJoin(
+        organizationMembers,
+        eq(organizationMembers.id, roleAssignments.organizationMembershipId),
+      )
+      .where(
+        and(
+          eq(roleAssignments.orgId, orgId),
+          eq(organizationMembers.userId, userId),
+          eq(organizationMembers.orgId, orgId),
+        ),
+      );
+    return rows.map((r) => r.slug);
   }
 
   private accessibleSpacesKey(orgId: string, userId: string): string {
@@ -52,13 +74,19 @@ export class KbAccessService {
 
     if (this.isAdmin(user)) return spaces.map((s) => s.id);
 
+    const roleSlugs = await this.resolveRoleSlugs(user.orgId, user.userId);
     const grantedRows = await this.db
       .selectDistinct({ spaceId: kbSpaceMembers.spaceId })
       .from(kbSpaceMembers)
       .where(
         and(
           eq(kbSpaceMembers.orgId, user.orgId),
-          or(eq(kbSpaceMembers.userId, user.userId), eq(kbSpaceMembers.role, user.role)),
+          roleSlugs.length > 0
+            ? or(
+                eq(kbSpaceMembers.userId, user.userId),
+                inArray(kbSpaceMembers.role, roleSlugs),
+              )
+            : eq(kbSpaceMembers.userId, user.userId),
         ),
       );
 
@@ -101,8 +129,13 @@ export class KbAccessService {
     if (!ids.includes(spaceId)) throw new NotFoundException("Space not found");
   }
 
-  getPrincipalIds(user: CurrentUserContext): { userId: string; role: string } {
-    return { userId: user.userId, role: user.role };
+  async getPrincipalIds(
+    user: CurrentUserContext,
+  ): Promise<{ userId: string; roleSlugs: string[] }> {
+    return {
+      userId: user.userId,
+      roleSlugs: await this.resolveRoleSlugs(user.orgId, user.userId),
+    };
   }
 
   async assertCanViewArticle(
@@ -129,8 +162,9 @@ export class KbAccessService {
         ),
       );
     if (restrictions.length > 0) {
+      const roleSlugs = await this.resolveRoleSlugs(user.orgId, user.userId);
       const allowed = restrictions.some(
-        (r) => r.userId === user.userId || (r.role !== null && r.role === user.role),
+        (r) => r.userId === user.userId || (r.role !== null && roleSlugs.includes(r.role)),
       );
       if (!allowed) throw new NotFoundException("Article not found");
     }
@@ -174,8 +208,9 @@ export class KbAccessService {
         ),
       );
     if (restrictions.length > 0) {
+      const roleSlugs = await this.resolveRoleSlugs(user.orgId, user.userId);
       const allowed = restrictions.some(
-        (r) => r.userId === user.userId || (r.role !== null && r.role === user.role),
+        (r) => r.userId === user.userId || (r.role !== null && roleSlugs.includes(r.role)),
       );
       if (!allowed) throw new NotFoundException("Article not found");
     }

@@ -31,7 +31,6 @@ import { InvitationsService } from "./invitations.service";
 import {
   acceptInvitationSchema,
   addCustomDomainSchema,
-  cancelInvitationSchema,
   createOrganizationSchema,
   createHolidaySchema,
   deleteOrgSchema,
@@ -43,7 +42,6 @@ import {
   updateOrgSettingsSchema,
   type AcceptInvitationInput,
   type AddCustomDomainInput,
-  type CancelInvitationInput,
   type CreateHolidayInput,
   type CreateOrganizationInput,
   type DeleteOrgInput,
@@ -178,23 +176,6 @@ export class OrganizationController {
   @RequirePermission("settings:manage")
   reactivateMember(@Param("memberId") memberId: string, @CurrentUser() u: CurrentUserContext) {
     return this.organization.reactivateMember(u.orgId, u.userId, memberId);
-  }
-
-  @Get("invitations")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("settings:manage")
-  listInvitations(@CurrentUser() u: CurrentUserContext) {
-    return this.invitations.listPending(u.orgId);
-  }
-
-  @Delete("invitations")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("settings:manage")
-  cancelInvitation(
-    @Body(new ZodValidationPipe(cancelInvitationSchema)) body: CancelInvitationInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.invitations.cancel(u.orgId, body.invitationId, u.userId);
   }
 
   @UseGuards(PermissionGuard)

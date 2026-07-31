@@ -58,38 +58,33 @@ describe("applyScope", () => {
     });
   });
 
-  describe("team — §5 fail-closed behaviour", () => {
-    it("returns sql`false` (deny) when no teamColumn or teamIds are provided", () => {
+  describe("team", () => {
+    it("resolves teammates from org_unit_members when the table has no team column", () => {
       const result = applyScope("team", userId, { ownerColumn });
-      expect(isSqlFalse(result)).toBe(true);
+      expect(isSqlFalse(result)).toBe(false);
+      expect(isSqlTrue(result)).toBe(false);
     });
 
-    it("returns sql`false` (deny) when teamColumn is provided but teamIds is empty", () => {
+    it("resolves teammates from org_unit_members when teamIds is empty", () => {
+      const result = applyScope("team", userId, { ownerColumn, teamColumn, teamIds: [] });
+      expect(isSqlFalse(result)).toBe(false);
+      expect(isSqlTrue(result)).toBe(false);
+    });
+
+    it("uses the explicit team column when teamColumn + teamIds are populated", () => {
       const result = applyScope("team", userId, {
         ownerColumn,
         teamColumn,
-        teamIds: [],
-      });
-      expect(isSqlFalse(result)).toBe(true);
-    });
-
-    it("returns sql`false` (deny) when teamIds is undefined even with a teamColumn", () => {
-      const result = applyScope("team", userId, {
-        ownerColumn,
-        teamColumn,
-        teamIds: undefined,
-      });
-      expect(isSqlFalse(result)).toBe(true);
-    });
-
-    it("returns a compound expression (not the literal false) when teamColumn + teamIds are populated", () => {
-      const result = applyScope("team", userId, {
-        ownerColumn,
-        teamColumn,
-        teamIds: ["dept-1", "dept-2"],
+        teamIds: ["team-1", "team-2"],
       });
       expect(isSqlFalse(result)).toBe(false);
       expect(isSqlTrue(result)).toBe(false);
+    });
+
+    it("never widens to every row", () => {
+      for (const cols of [{ ownerColumn }, { ownerColumn, teamColumn, teamIds: ["team-1"] }]) {
+        expect(isSqlTrue(applyScope("team", userId, cols))).toBe(false);
+      }
     });
   });
 });

@@ -10,6 +10,7 @@ export const ACCESS_MANAGED_MODULES = [
   "surveys",
   "payroll",
   "sign",
+  "timesheets",
 ] as const;
 
 export const MODULE_ACCESS_PERMISSIONS: Permission[] =

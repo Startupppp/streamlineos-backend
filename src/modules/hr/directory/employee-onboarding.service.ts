@@ -30,6 +30,8 @@ import { seedEmployeeSalaryProfile } from "./salary-profile-seed.helper";
 import type { OnboardEmployeeInput, UpdateEmployeeInput } from "./dto/hr-directory.schemas";
 import { ORG_MEMBER_ROLES } from "../../../common/rbac/org-roles";
 import { syncStructuralRoleAssignment } from "../../../common/rbac/sync-structural-role";
+import { assertMayGrantRole } from "../../../common/rbac/assert-may-grant-role";
+import { AccessService } from "../../access/access.service";
 
 type BankDetailsInput = NonNullable<UpdateEmployeeInput["bankDetails"]> & {
   pfUanNumber?: string;
@@ -67,6 +69,7 @@ export class EmployeeOnboardingService {
     private readonly automation: AutomationService,
     private readonly webhooks: WebhooksDispatchService,
     private readonly personEmploymentSync: PersonEmploymentSyncService,
+    private readonly access: AccessService,
   ) {}
 
   async onboardEmployee(actor: CurrentUserContext, body: OnboardEmployeeInput) {
@@ -108,13 +111,13 @@ export class EmployeeOnboardingService {
     }
 
     const role = body.role || ORG_MEMBER_ROLES.MEMBER;
+    await assertMayGrantRole(this.access, actor.orgId, actor, role);
 
     if (existingUser) {
       const linkedUser = await this.db.transaction(async (tx) => {
         const updateData: Partial<typeof users.$inferInsert> = {
           designation: body.designation,
           orgDepartmentId: body.departmentId,
-          role,
           employeeId: resolvedEmployeeId,
           joiningDate: body.joiningDate ? formatDateOnly(new Date(body.joiningDate)) : undefined,
           dateOfBirth: body.dateOfBirth ? formatDateOnly(new Date(body.dateOfBirth)) : undefined,
@@ -218,7 +221,6 @@ export class EmployeeOnboardingService {
           gender: body.gender,
           designation: body.designation,
           orgDepartmentId: body.departmentId,
-          role,
           employeeId: resolvedEmployeeId,
           joiningDate: body.joiningDate ? formatDateOnly(new Date(body.joiningDate)) : undefined,
           dateOfBirth: body.dateOfBirth ? formatDateOnly(new Date(body.dateOfBirth)) : undefined,

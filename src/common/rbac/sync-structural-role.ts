@@ -6,20 +6,7 @@ import { ORG_MEMBER_ROLES } from "./org-roles";
 
 const logger = new Logger("StructuralRoleAssignment");
 
-/**
- * Keeps `role_assignments` in step with a membership's structural role.
- *
- * `organization_members.role` is a label; it is NOT read by
- * `AccessService.computeUserPermissions`, which resolves permissions from
- * `role_assignments`, groups, module ownership and `user_permissions`. So a
- * membership created or updated with `ORG_ADMIN` and no matching assignment row
- * resolves to ZERO permissions — silently, with no error. Every path that
- * creates a membership or changes its role must call this.
- *
- * Only `ORG_ADMIN` is backed by a seeded role: `OWNER` bypasses permission
- * resolution entirely, and `MEMBER` intentionally carries no base grants
- * (module role groups provide them).
- */
+/** Keeps `role_assignments` in step with a membership's structural role. */
 export async function syncStructuralRoleAssignment(
   tx: DbOrTx,
   orgId: string,

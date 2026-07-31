@@ -29,10 +29,6 @@ export const listMembersSchema = z.object({
     .optional(),
 });
 
-export const cancelInvitationSchema = z.object({
-  invitationId: z.string(),
-});
-
 export const updateOrgSettingsSchema = z.object({
   name: z.string().min(1).optional(),
   slug: z
@@ -131,7 +127,6 @@ export const schedulePurgeSchema = z.object({
 
 export type CreateOrganizationInput = z.infer<typeof createOrganizationSchema>;
 export type ListMembersInput = z.infer<typeof listMembersSchema>;
-export type CancelInvitationInput = z.infer<typeof cancelInvitationSchema>;
 export type UpdateOrgSettingsInput = z.infer<typeof updateOrgSettingsSchema>;
 export type SecuritySettingsInput = z.infer<typeof securitySettingsSchema>;
 export type InviteMemberInput = z.infer<typeof inviteMemberSchema>;

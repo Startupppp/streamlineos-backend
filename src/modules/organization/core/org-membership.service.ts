@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import type { InviteActor } from "./invitations.service";
-import { assertInvitableRole } from "../../../common/rbac/assert-invitable-role";
+import { assertMayGrantRole } from "../../../common/rbac/assert-may-grant-role";
 import { AccessService } from "../../access/access.service";
 import { and, count, desc, eq, ilike, inArray, lte, or } from "drizzle-orm";
 import {
@@ -26,7 +26,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { bumpPermissionsVersion, type DbOrTx } from "../../../common/rbac/access-invalidate";
-import { ORG_ADMIN_PERMISSION_KEY, ROLE_RANK } from "../../../common/rbac/grantability";
+import { ROLE_RANK } from "../../../common/rbac/grantability";
 import { bustMembershipStatusCache } from "../../../common/auth/jwt-auth.guard";
 import { SessionsService } from "../../sessions/sessions.service";
 import { stableHash } from "../../../common/cache/cache-hash";
@@ -361,14 +361,8 @@ export class OrgMembershipService {
   ) {
     const actorUserId = actor.userId;
 
-    let isOrgAdmin = false;
-    if (!actor.isOrgOwner) {
-      const resolved = await this.access.resolveUserPermissions(orgId, actor.userId);
-      isOrgAdmin = (resolved.get(ORG_ADMIN_PERMISSION_KEY) ?? "none") !== "none";
-    }
-    // Rejects OWNER outright (ownership moves only through the transfer flow)
-    // and stops a non-admin handing out ORG_ADMIN.
-    assertInvitableRole({ isOrgOwner: actor.isOrgOwner, isOrgAdmin }, role);
+    // Rejects OWNER outright (ownership moves only through the transfer flow) and stops a non-admin handing out ORG_ADMIN
+    await assertMayGrantRole(this.access, orgId, actor, role);
 
     await this.db.transaction(async (tx) => {
       const [member] = await tx

@@ -10,6 +10,7 @@ export const MODULE_CATALOG = [
   "surveys",
   "payroll",
   "sign",
+  "timesheets",
 ] as const;
 
 export type ModuleKey = (typeof MODULE_CATALOG)[number];

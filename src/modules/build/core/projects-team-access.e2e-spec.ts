@@ -69,27 +69,25 @@ describeWithDb(
       await db
         .insert(users)
         .values([
-          { id: U.owner, email: `${U.owner}@e2e.test`, name: "Owner", role: "OWNER" },
+          { id: U.owner, email: `${U.owner}@e2e.test`, name: "Owner" },
           {
             id: U.teamMember,
             email: `${U.teamMember}@e2e.test`,
             name: "Team Member",
-            role: "MEMBER",
           },
           {
             id: U.outsider,
             email: `${U.outsider}@e2e.test`,
             name: "Outsider",
-            role: "MEMBER",
           },
         ])
         .onConflictDoNothing();
       await db
         .insert(organizationMembers)
         .values([
-          { userId: U.owner, orgId: ORG_ID, role: "OWNER", isOwner: true },
-          { userId: U.teamMember, orgId: ORG_ID, role: "MEMBER", isOwner: false },
-          { userId: U.outsider, orgId: ORG_ID, role: "MEMBER", isOwner: false },
+          { userId: U.owner, orgId: ORG_ID, isOwner: true },
+          { userId: U.teamMember, orgId: ORG_ID, isOwner: false },
+          { userId: U.outsider, orgId: ORG_ID, isOwner: false },
         ])
         .onConflictDoNothing();
 
@@ -157,7 +155,6 @@ describeWithDb(
       return signToken({
         sub,
         orgId: ORG_ID,
-        role: "MEMBER",
         enabledModules: ["build"],
         isOrgOwner: false,
       });

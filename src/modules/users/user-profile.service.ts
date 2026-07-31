@@ -257,11 +257,17 @@ export class UserProfileService {
   async getMembership(orgId: string, userId: string) {
     await this.assertMember(orgId, userId);
 
-    const rows = await this.db
-      .select({ unitId: orgUnitMembers.orgUnitId, kind: orgUnits.kind, name: orgUnits.name })
-      .from(orgUnitMembers)
-      .innerJoin(orgUnits, eq(orgUnitMembers.orgUnitId, orgUnits.id))
-      .where(and(eq(orgUnitMembers.userId, userId), eq(orgUnitMembers.orgId, orgId)));
+    const [rows, placement] = await Promise.all([
+      this.db
+        .select({ unitId: orgUnitMembers.orgUnitId, kind: orgUnits.kind, name: orgUnits.name })
+        .from(orgUnitMembers)
+        .innerJoin(orgUnits, eq(orgUnitMembers.orgUnitId, orgUnits.id))
+        .where(and(eq(orgUnitMembers.userId, userId), eq(orgUnitMembers.orgId, orgId))),
+      this.db.query.users.findFirst({
+        where: eq(users.id, userId),
+        columns: { reportingTo: true },
+      }),
+    ]);
 
     const byKind = (kind: string) => rows.find((r) => r.kind === kind)?.unitId ?? null;
 
@@ -272,7 +278,7 @@ export class UserProfileService {
       branchId: byKind("BRANCH"),
       departmentId: byKind("DEPARTMENT"),
       teamId: byKind("TEAM"),
-      managerUserId: null,
+      managerUserId: placement?.reportingTo ?? null,
     };
   }
 
@@ -292,12 +298,19 @@ export class UserProfileService {
     ];
 
     await this.db.transaction(async (tx) => {
-      if (data.managerUserId !== undefined) {
-        await tx
-          .update(users)
-          .set({ reportingTo: data.managerUserId })
-          .where(eq(users.id, userId));
-      }
+      // `users.branchId` / `users.orgDepartmentId` are denormalised copies that several read paths still filter and render from (branch detail lists, the JWT context, HR analytics, workflow approver routing)
+      const scalarPlacement: Partial<{
+        reportingTo: string | null;
+        branchId: string | null;
+        orgDepartmentId: string | null;
+      }> = {};
+      if (data.managerUserId !== undefined) scalarPlacement.reportingTo = data.managerUserId;
+      if (data.branchId !== undefined) scalarPlacement.branchId = data.branchId;
+      if (data.departmentId !== undefined) scalarPlacement.orgDepartmentId = data.departmentId;
+
+      if (Object.keys(scalarPlacement).length > 0) 
+        await tx.update(users).set(scalarPlacement).where(eq(users.id, userId));
+      
 
       for (const { kind, unitId } of kindMap) {
         if (unitId === undefined) continue;

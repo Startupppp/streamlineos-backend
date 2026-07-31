@@ -13,8 +13,7 @@ import { addDays, addMinutes } from "date-fns";
 import { hashToken } from "../../../common/security/token.util";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AccessService } from "../../access/access.service";
-import { assertInvitableRole } from "../../../common/rbac/assert-invitable-role";
-import { ORG_ADMIN_PERMISSION_KEY } from "../../../common/rbac/grantability";
+import { assertMayGrantRole } from "../../../common/rbac/assert-may-grant-role";
 import { syncStructuralRoleAssignment } from "../../../common/rbac/sync-structural-role";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -51,23 +50,8 @@ export class InvitationsService {
 
   private readonly logger = new Logger(InvitationsService.name);
 
-  private async assertMayInviteWithRole(
-    orgId: string,
-    actor: InviteActor,
-    role: string,
-  ): Promise<void> {
-    let isOrgAdmin = false;
-    if (!actor.isOrgOwner) {
-      const resolved = await this.access.resolveUserPermissions(orgId, actor.userId);
-      isOrgAdmin = (resolved.get(ORG_ADMIN_PERMISSION_KEY) ?? "none") !== "none";
-    }
-    assertInvitableRole(
-      {
-        isOrgOwner: actor.isOrgOwner,
-        isOrgAdmin,
-      },
-      role,
-    );
+  private assertMayInviteWithRole(orgId: string, actor: InviteActor, role: string): Promise<void> {
+    return assertMayGrantRole(this.access, orgId, actor, role);
   }
 
   async invite(
@@ -267,27 +251,6 @@ export class InvitationsService {
     return { results };
   }
 
-  listPending(orgId: string) {
-    return this.db
-      .select({
-        id: invitations.id,
-        email: invitations.email,
-        role: invitations.role,
-        expiresAt: invitations.expiresAt,
-        createdAt: invitations.createdAt,
-      })
-      .from(invitations)
-      .where(
-        and(
-          eq(invitations.orgId, orgId),
-          eq(invitations.status, "PENDING"),
-          isNull(invitations.acceptedAt),
-          gt(invitations.expiresAt, new Date()),
-        ),
-      )
-      .orderBy(desc(invitations.createdAt));
-  }
-
   async listPaginated(
     orgId: string,
     params?: { page?: number; limit?: number; includeAccepted?: boolean },
@@ -470,7 +433,6 @@ export class InvitationsService {
         firstName,
         lastName,
         emailVerified: new Date(),
-        role: invitation.role,
         hasDashboardAccess: true,
         lastActiveOrgId: invitation.orgId,
       });
@@ -593,14 +555,7 @@ export class InvitationsService {
     return { success: true };
   }
 
-  /**
-   * Changes the structural role a PENDING invitation will grant.
-   *
-   * Without this the only way to correct a mis-addressed role was cancel +
-   * re-invite, which burns the recipient's existing link. The role is put
-   * through the same guard as a fresh invite, so this cannot become a side door
-   * for minting an ORG_ADMIN.
-   */
+  /** Changes the structural role a PENDING invitation will grant. */
   async changeRole(
     orgId: string,
     invitationId: string,

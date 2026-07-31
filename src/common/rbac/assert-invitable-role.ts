@@ -6,22 +6,7 @@ export interface InviteRoleActor {
   isOrgAdmin: boolean;
 }
 
-/**
- * Guards the structural role an invite (or direct membership creation) may carry.
- *
- * `POST /users/invite` is gated on `hr:employees:create`, so anyone who may add
- * an employee reaches this code. Without this check a free-text `role` would let
- * them mint an `ORG_ADMIN` — and since `syncStructuralRoleAssignment` now turns
- * that label into a real `role_assignments` grant, the escalation would be live
- * rather than cosmetic.
- *
- * Rules:
- *  - the role must be one of the three structural values;
- *  - `OWNER` is never invitable — an org has exactly one owner and ownership
- *    moves only through the transfer flow;
- *  - `ORG_ADMIN` may only be handed out by an owner, platform admin, or an
- *    existing org admin.
- */
+/** Guards the structural role an invite (or direct membership creation) may carry. */
 export function assertInvitableRole(actor: InviteRoleActor, role: string): void {
   if (!isOrgMemberRole(role)) {
     throw new BadRequestException(

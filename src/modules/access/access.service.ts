@@ -204,6 +204,9 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       map = new Map(Object.entries(resolved));
     }
 
+    // Denies never apply to the org owner
+    if (await this.isOrgOwner(orgId, userId)) return map;
+
     const denied = await this.getUserDeniedModules(orgId, userId);
     if (denied.size > 0) {
       for (const key of Array.from(map.keys())) {
@@ -219,21 +222,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     return map;
   }
 
-  /**
-   * Permission keys explicitly denied to this user.
-   *
-   * Resolution is an allow-wins union (`broadest`), so a permission inherited
-   * through a group or module ownership could not previously be taken back from
-   * one person. `user_permissions.granted = false` existed in the schema but
-   * nothing ever read it — only `granted = true` rows were fetched.
-   *
-   * The deny is whole-key on purpose: a scope-narrowing deny cannot be expressed
-   * by this model ("none" is the LOWEST allow rank, not a subtraction), so the
-   * way to give someone a narrower view is an "own"-scoped grant, not a deny.
-   *
-   * Org owners never reach this code — `computeUserPermissions` short-circuits
-   * for them — so a deny row can never lock an owner out of their own org.
-   */
+  /** Permission keys explicitly denied to this user. */
   async getUserDeniedPermissions(orgId: string, userId: string): Promise<Set<string>> {
     const cacheKey = `${orgId}:${userId}`;
     const cached = this.deniedPermissionsCache.get(cacheKey);
@@ -261,6 +250,29 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       expiresAt: Date.now() + AccessService.DENIED_MODULES_TTL_MS,
     });
     return permissionSet;
+  }
+
+  private readonly ownerCache = new Map<string, { isOwner: boolean; expiresAt: number }>();
+
+  /** Cached `organization_members.is_owner` for the deny exemption above. */
+  private async isOrgOwner(orgId: string, userId: string): Promise<boolean> {
+    const cacheKey = `${orgId}:${userId}`;
+    const cached = this.ownerCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) return cached.isOwner;
+
+    const member = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.userId, userId),
+        eq(organizationMembers.orgId, orgId),
+      ),
+      columns: { isOwner: true },
+    });
+    const isOwner = member?.isOwner === true;
+    this.ownerCache.set(cacheKey, {
+      isOwner,
+      expiresAt: Date.now() + AccessService.DENIED_MODULES_TTL_MS,
+    });
+    return isOwner;
   }
 
   private readonly deniedPermissionsCache = new Map<
@@ -375,16 +387,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     return { permissions, scopes, modules, isOrgOwner: ctx.isOrgOwner, version };
   }
 
-  /**
-   * Module on/off flags for the access snapshot.
-   *
-   * Only the toggleable catalog modules are subject to org enablement — the
-   * remaining permission namespaces (billing, notifications, calendar, …) have
-   * no `org_modules` row and are always available. Org enablement is a tenant
-   * configuration, not a permission, so owners and platform admins are NOT
-   * exempt: they see the modules the org actually turned on and can enable more
-   * from Settings → Modules.
-   */
+  /** Module on/off flags for the access snapshot. */
   private async resolveModuleFlags(
     orgId: string,
     denied: ReadonlySet<string>,

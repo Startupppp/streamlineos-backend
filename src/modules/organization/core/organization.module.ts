@@ -8,11 +8,10 @@ import { OrgMembershipService } from "./org-membership.service";
 import { OrgLifecycleService } from "./org-lifecycle.service";
 import { OrganizationSettingsService } from "./organization-settings.service";
 import { InvitationsService } from "./invitations.service";
-import { OrganizationInvitationsController } from "../../email/controllers/organization-invitations.controller";
 
 @Module({
   imports: [BillingModule, SessionsModule],
-  controllers: [OrganizationController, OrganizationInvitationsController],
+  controllers: [OrganizationController],
   providers: [
     OrgProfileService,
     OrgMembershipService,

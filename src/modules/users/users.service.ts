@@ -21,8 +21,7 @@ import type {
   ListUsersInput,
   UpdateUserInput,
 } from "./dto/users.schemas";
-import { assertInvitableRole } from "../../common/rbac/assert-invitable-role";
-import { ORG_ADMIN_PERMISSION_KEY } from "../../common/rbac/grantability";
+import { assertMayGrantRole } from "../../common/rbac/assert-may-grant-role";
 
 @Injectable()
 export class UsersService {
@@ -80,7 +79,7 @@ export class UsersService {
         emailVerified: new Date(),
         designation: designation ?? null,
         phone: phone ?? null,
-        departmentId: departmentId ?? null,
+        orgDepartmentId: departmentId ?? null,
         branchId: branchId ?? null,
         userStatus: "active",
         activatedAt: new Date(),
@@ -130,7 +129,7 @@ export class UsersService {
     }
 
     if (role) conditions.push(eq(organizationMembers.role, role));
-    if (departmentId !== undefined) conditions.push(eq(users.departmentId, departmentId));
+    if (departmentId !== undefined) conditions.push(eq(users.orgDepartmentId, departmentId));
     if (branchId !== undefined) conditions.push(eq(users.branchId, branchId));
     if (teamId !== undefined) conditions.push(eq(users.team, teamId));
     if (managerUserId !== undefined) conditions.push(eq(users.reportingTo, managerUserId));
@@ -172,7 +171,7 @@ export class UsersService {
           role: organizationMembers.role,
           isActive: users.isActive,
           emailVerified: users.emailVerified,
-          departmentId: users.departmentId,
+          departmentId: users.orgDepartmentId,
           branchId: users.branchId,
           designation: users.designation,
           phone: users.phone,
@@ -228,7 +227,7 @@ export class UsersService {
         lastName: users.lastName,
         image: users.image,
         role: organizationMembers.role,
-        departmentId: users.departmentId,
+        departmentId: users.orgDepartmentId,
         designation: users.designation,
         phone: users.phone,
         whatsappNumber: users.whatsappNumber,
@@ -270,17 +269,8 @@ export class UsersService {
     return rows[0]!;
   }
 
-  private async assertMayGrantRole(
-    orgId: string,
-    actor: InviteActor,
-    role: string,
-  ): Promise<void> {
-    let isOrgAdmin = false;
-    if (!actor.isOrgOwner) {
-      const resolved = await this.access.resolveUserPermissions(orgId, actor.userId);
-      isOrgAdmin = (resolved.get(ORG_ADMIN_PERMISSION_KEY) ?? "none") !== "none";
-    }
-    assertInvitableRole({ isOrgOwner: actor.isOrgOwner, isOrgAdmin }, role);
+  private assertMayGrantRole(orgId: string, actor: InviteActor, role: string): Promise<void> {
+    return assertMayGrantRole(this.access, orgId, actor, role);
   }
 
   async updateUser(orgId: string, userId: string, data: UpdateUserInput, actor: InviteActor) {
@@ -301,7 +291,7 @@ export class UsersService {
     }
     if (data.designation !== undefined) updateData.designation = data.designation;
     if (data.phone !== undefined) updateData.phone = data.phone;
-    if (data.departmentId !== undefined) updateData.departmentId = data.departmentId;
+    if (data.departmentId !== undefined) updateData.orgDepartmentId = data.departmentId;
     if (data.bio !== undefined) updateData.bio = data.bio;
     if (data.linkedinUrl !== undefined) updateData.linkedinUrl = data.linkedinUrl || null;
     if (data.twitterUrl !== undefined) updateData.twitterUrl = data.twitterUrl || null;

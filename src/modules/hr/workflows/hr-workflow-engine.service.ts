@@ -299,7 +299,7 @@ export class HrWorkflowEngineService {
     const [employee] = await this.db.select({
       id: users.id,
       reportingTo: users.reportingTo,
-      departmentId: users.departmentId,
+      departmentId: users.orgDepartmentId,
       branchId: users.branchId,
       role: organizationMembers.role,
     }).from(users)

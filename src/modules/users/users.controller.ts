@@ -184,7 +184,6 @@ export class UsersController {
     return this.invitations.resend(u.orgId, invitationId, u.userId);
   }
 
-  @RequirePermission("hr:employees:delete")
   @RequirePermission("hr:employees:create")
   @Patch("invitations/:invitationId/role")
   @HttpCode(200)
@@ -201,6 +200,7 @@ export class UsersController {
     );
   }
 
+  @RequirePermission("hr:employees:delete")
   @Delete("invitations/:invitationId")
   cancelInvite(@Param("invitationId") invitationId: string, @CurrentUser() u: CurrentUserContext) {
     return this.invitations.cancel(u.orgId, invitationId, u.userId);

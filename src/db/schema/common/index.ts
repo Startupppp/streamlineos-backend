@@ -18,3 +18,4 @@ export * from "./permission-scopes";
 export * from "./modules";
 export * from "./ownership";
 export * from "./invitations-events";
+export * from "./resource-grants";

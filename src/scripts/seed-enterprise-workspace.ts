@@ -41,14 +41,14 @@ const ORG_SLUG = "enterprise-demo-workspace";
 const ADMIN_EMAIL = "admin@enterprise-demo.streamlineos.in";
 
 const PEOPLE = [
-  { id: "e1000001-0000-4000-8000-000000000003", email: "priya.mgr@enterprise-demo.in", first: "Priya", last: "Sharma", role: "MEMBER", emp: "EMP-MGR-01", worker: "FULL_TIME" as const, status: "ACTIVE" as const, designation: "Engineering Manager", dept: "Engineering", isManager: true },
+  { id: "e1000001-0000-4000-8000-000000000003", email: "priya.mgr@enterprise-demo.in", first: "Priya", last: "Sharma", emp: "EMP-MGR-01", worker: "FULL_TIME" as const, status: "ACTIVE" as const, designation: "Engineering Manager", dept: "Engineering", isManager: true },
   { id: "e1000001-0000-4000-8000-000000000004", email: "rahul.mgr@enterprise-demo.in", first: "Rahul", last: "Mehta", role: "HR", emp: "EMP-MGR-02", worker: "FULL_TIME" as const, status: "ACTIVE" as const, designation: "HR Manager", dept: "People Operations", isManager: true },
-  { id: "e1000001-0000-4000-8000-000000000005", email: "anita@enterprise-demo.in", first: "Anita", last: "Kapoor", role: "MEMBER", emp: "EMP-001", worker: "FULL_TIME" as const, status: "ACTIVE" as const, designation: "Software Engineer", dept: "Engineering", manager: "priya.mgr@enterprise-demo.in" },
-  { id: "e1000001-0000-4000-8000-000000000006", email: "vikram@enterprise-demo.in", first: "Vikram", last: "Singh", role: "MEMBER", emp: "EMP-002", worker: "FULL_TIME" as const, status: "ACTIVE" as const, designation: "Software Engineer", dept: "Engineering", manager: "priya.mgr@enterprise-demo.in" },
-  { id: "e1000001-0000-4000-8000-000000000007", email: "neha@enterprise-demo.in", first: "Neha", last: "Gupta", role: "MEMBER", emp: "EMP-003", worker: "FULL_TIME" as const, status: "ACTIVE" as const, designation: "Product Analyst", dept: "Engineering", manager: "priya.mgr@enterprise-demo.in" },
-  { id: "e1000001-0000-4000-8000-000000000008", email: "alex.contractor@enterprise-demo.in", first: "Alex", last: "Turner", role: "MEMBER", emp: "CTR-001", worker: "CONTRACTOR" as const, status: "ACTIVE" as const, designation: "DevOps Consultant", dept: "Engineering", manager: "priya.mgr@enterprise-demo.in" },
-  { id: "e1000001-0000-4000-8000-000000000009", email: "meera.intern@enterprise-demo.in", first: "Meera", last: "Patel", role: "MEMBER", emp: "INT-001", worker: "INTERN" as const, status: "ACTIVE" as const, designation: "Engineering Intern", dept: "Engineering", manager: "priya.mgr@enterprise-demo.in" },
-  { id: "e1000001-0000-4000-8000-00000000000a", email: "sanjay.exited@enterprise-demo.in", first: "Sanjay", last: "Reddy", role: "MEMBER", emp: "EMP-004", worker: "FULL_TIME" as const, status: "EXITED" as const, designation: "Former Analyst", dept: "Engineering", inactive: true },
+  { id: "e1000001-0000-4000-8000-000000000005", email: "anita@enterprise-demo.in", first: "Anita", last: "Kapoor", emp: "EMP-001", worker: "FULL_TIME" as const, status: "ACTIVE" as const, designation: "Software Engineer", dept: "Engineering", manager: "priya.mgr@enterprise-demo.in" },
+  { id: "e1000001-0000-4000-8000-000000000006", email: "vikram@enterprise-demo.in", first: "Vikram", last: "Singh", emp: "EMP-002", worker: "FULL_TIME" as const, status: "ACTIVE" as const, designation: "Software Engineer", dept: "Engineering", manager: "priya.mgr@enterprise-demo.in" },
+  { id: "e1000001-0000-4000-8000-000000000007", email: "neha@enterprise-demo.in", first: "Neha", last: "Gupta", emp: "EMP-003", worker: "FULL_TIME" as const, status: "ACTIVE" as const, designation: "Product Analyst", dept: "Engineering", manager: "priya.mgr@enterprise-demo.in" },
+  { id: "e1000001-0000-4000-8000-000000000008", email: "alex.contractor@enterprise-demo.in", first: "Alex", last: "Turner", emp: "CTR-001", worker: "CONTRACTOR" as const, status: "ACTIVE" as const, designation: "DevOps Consultant", dept: "Engineering", manager: "priya.mgr@enterprise-demo.in" },
+  { id: "e1000001-0000-4000-8000-000000000009", email: "meera.intern@enterprise-demo.in", first: "Meera", last: "Patel", emp: "INT-001", worker: "INTERN" as const, status: "ACTIVE" as const, designation: "Engineering Intern", dept: "Engineering", manager: "priya.mgr@enterprise-demo.in" },
+  { id: "e1000001-0000-4000-8000-00000000000a", email: "sanjay.exited@enterprise-demo.in", first: "Sanjay", last: "Reddy", emp: "EMP-004", worker: "FULL_TIME" as const, status: "EXITED" as const, designation: "Former Analyst", dept: "Engineering", inactive: true },
 ] as const;
 
 function normalizeDatabaseUrl(url: string): string {
@@ -141,7 +141,6 @@ async function seed(db: Db): Promise<Record<string, unknown>> {
     emailVerified: now,
     isActive: true,
     hasDashboardAccess: true,
-    role: "OWNER",
     userStatus: "active",
     lastActiveOrgId: ORG_ID,
     activatedAt: now,
@@ -154,7 +153,6 @@ async function seed(db: Db): Promise<Record<string, unknown>> {
     id: ownerMembershipId,
     userId: ADMIN_ID,
     orgId: ORG_ID,
-    role: "OWNER",
     isOwner: true,
   }).onConflictDoNothing();
 
@@ -177,7 +175,6 @@ async function seed(db: Db): Promise<Record<string, unknown>> {
       emailVerified: now,
       isActive: !("inactive" in p && p.inactive),
       hasDashboardAccess: true,
-      role: p.role,
       userStatus: p.status === "EXITED" ? "inactive" : "active",
       lastActiveOrgId: ORG_ID,
       activatedAt: now,
@@ -186,7 +183,6 @@ async function seed(db: Db): Promise<Record<string, unknown>> {
     await db.insert(organizationMembers).values({
       userId: p.id,
       orgId: ORG_ID,
-      role: p.role,
       isOwner: false,
     }).onConflictDoNothing();
   }

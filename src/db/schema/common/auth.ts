@@ -113,7 +113,6 @@ export const users = pgTable("users", {
   taxId: text("tax_id"),
   bankDetails: text("bank_details"),
   image: text("image"),
-  role: text("role").default("MEMBER").notNull(),
   departmentId: integer("department_id"),
   orgDepartmentId: text("org_department_id"),
   designation: text("designation"),

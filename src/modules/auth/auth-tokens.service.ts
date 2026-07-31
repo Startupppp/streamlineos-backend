@@ -59,6 +59,7 @@ export class AuthTokensService {
   ): Promise<{
     orgId: string;
     isOwner: boolean;
+    role: string;
     mfaEnforced: boolean;
     orgOnboardingCompletedAt: Date | null;
   } | null> {
@@ -66,6 +67,7 @@ export class AuthTokensService {
       .select({
         orgId: organizationMembers.orgId,
         isOwner: organizationMembers.isOwner,
+        role: organizationMembers.role,
         mfaEnforced: organizations.mfaEnforced,
         orgOnboardingCompletedAt: organizations.onboardingCompletedAt,
       })
@@ -204,7 +206,6 @@ export class AuthTokensService {
         name: displayName,
         firstName: displayName,
         lastName: "",
-        role: "OWNER",
         isActive: true,
         hasDashboardAccess: true,
         emailVerified: null,
@@ -589,7 +590,6 @@ export class AuthTokensService {
         firstName,
         lastName,
         image: input.image || null,
-        role: "OWNER",
         isActive: true,
         hasDashboardAccess: true,
         emailVerified: new Date(),

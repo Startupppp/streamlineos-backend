@@ -20,7 +20,10 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { queryAiUsage } from "./ai-usage.query";
-import { ALL_ROLES, PERMISSIONS } from "../rbac/permissions";
+import { PERMISSIONS } from "../rbac/permissions";
+import { AccessService } from "../access/access.service";
+import { assertMayGrantRole } from "../../common/rbac/assert-may-grant-role";
+import { syncStructuralRoleAssignment } from "../../common/rbac/sync-structural-role";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import {
   VALID_API_KEY_SCOPES,
@@ -47,6 +50,7 @@ export class SettingsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly planLimits: PlanLimitsService,
+    private readonly access: AccessService,
   ) {}
 
   getPermissions() {
@@ -455,7 +459,7 @@ export class SettingsService {
 
   async updateUserRole(u: CurrentUserContext, targetUserId: string, role: string) {
     if (!u.isOrgOwner) {
-      throw new ForbiddenException("Only the Org Owner or a Platform Admin can change member roles");
+      throw new ForbiddenException("Only the organization owner can change member roles");
     }
 
     const member = await this.db.query.organizationMembers.findFirst({
@@ -463,16 +467,18 @@ export class SettingsService {
         eq(organizationMembers.userId, targetUserId),
         eq(organizationMembers.orgId, u.orgId),
       ),
+      columns: { id: true, isOwner: true },
     });
     if (!member) throw new NotFoundException("User not found in this organization");
 
-    if (!ALL_ROLES.includes(role)) {
-      throw new BadRequestException(`Invalid role. Valid roles: ${ALL_ROLES.join(", ")}`);
+    if (member.isOwner) {
+      throw new BadRequestException(
+        "The organization owner's role cannot be changed here. Use the ownership transfer flow instead.",
+      );
     }
 
-    if (targetUserId === u.userId && !u.isOrgOwner) {
-      throw new ForbiddenException("You cannot change your own role");
-    }
+    // Rejects OWNER outright so a second owner cannot be minted outside the transfer flow
+    await assertMayGrantRole(this.access, u.orgId, u, role);
 
     await this.db.transaction(async (tx) => {
       await tx
@@ -484,6 +490,7 @@ export class SettingsService {
             eq(organizationMembers.orgId, u.orgId),
           ),
         );
+      await syncStructuralRoleAssignment(tx, u.orgId, member.id, role);
     });
 
     return { success: true, userId: targetUserId, role };

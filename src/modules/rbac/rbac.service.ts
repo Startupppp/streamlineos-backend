@@ -50,10 +50,12 @@ export class RbacService {
   }
 
   async getUserPermissions(userId: string, orgId: string): Promise<string[]> {
-    const user = await this.db.query.users.findFirst({
-      where: eq(users.id, userId),
+    // The per-org standing lives on the membership; `users.role` was a global label that could not describe someone who belongs to several orgs
+    const membership = await this.db.query.organizationMembers.findFirst({
+      where: and(eq(organizationMembers.userId, userId), eq(organizationMembers.orgId, orgId)),
+      columns: { role: true },
     });
-    const role = user?.role;
+    const role = membership?.role;
 
     const userPerms = await this.db.query.userPermissions.findMany({
       where: and(

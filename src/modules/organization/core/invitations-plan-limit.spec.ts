@@ -176,7 +176,7 @@ describe("InvitationsService.accept — plan limit enforcement", () => {
     );
 
     await expect(svc.accept({ token: RAW_TOKEN })).rejects.toThrow(
-      "This workspace has reached its member limit. Ask an admin to upgrade the plan or free a seat.",
+      "This organization has reached its member limit. Ask an admin to upgrade the plan or free a seat.",
     );
   });
 
@@ -199,7 +199,7 @@ describe("InvitationsService.accept — plan limit enforcement", () => {
     );
 
     await expect(svc.accept({ token: RAW_TOKEN, firstName: "Jane", lastName: "Doe" })).rejects.toThrow(
-      "This workspace has reached its member limit. Ask an admin to upgrade the plan or free a seat.",
+      "This organization has reached its member limit. Ask an admin to upgrade the plan or free a seat.",
     );
   });
 

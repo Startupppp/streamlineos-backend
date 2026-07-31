@@ -170,7 +170,6 @@ async function seed(db: Db): Promise<SeedSummary> {
       emailVerified: now,
       isActive: true,
       hasDashboardAccess: true,
-      role: "OWNER",
       userStatus: "active",
       lastActiveOrgId: DEMO_ORG_ID,
       activatedAt: now,
@@ -180,7 +179,6 @@ async function seed(db: Db): Promise<SeedSummary> {
       set: {
         isActive: true,
         hasDashboardAccess: true,
-        role: "OWNER",
         userStatus: "active",
         emailVerified: now,
         lastActiveOrgId: DEMO_ORG_ID,
@@ -197,7 +195,6 @@ async function seed(db: Db): Promise<SeedSummary> {
       id: ownerMembershipId,
       userId: actualDemoUserId,
       orgId: DEMO_ORG_ID,
-      role: "OWNER",
       isOwner: true,
     })
     .onConflictDoNothing();
@@ -214,7 +211,6 @@ async function seed(db: Db): Promise<SeedSummary> {
         emailVerified: now,
         isActive: m.userStatus !== "suspended",
         hasDashboardAccess: true,
-        role: m.role,
         userStatus: m.userStatus,
         lastActiveOrgId: DEMO_ORG_ID,
         activatedAt: now,
@@ -231,7 +227,6 @@ async function seed(db: Db): Promise<SeedSummary> {
         .values({
           userId: memberId,
           orgId: DEMO_ORG_ID,
-          role: m.role,
           isOwner: false,
         })
         .onConflictDoNothing();

@@ -33,7 +33,7 @@ const makeDb = () => {
 const makeAccess = (spaceIds: number[] = [1], isAdminResult = false) => ({
   getAccessibleSpaceIds: jest.fn().mockResolvedValue(spaceIds),
   isAdmin: jest.fn().mockReturnValue(isAdminResult),
-  getPrincipalIds: jest.fn().mockReturnValue({ userId: "user-1", role: "member" }),
+  getPrincipalIds: jest.fn().mockResolvedValue({ userId: "user-1", roleSlugs: ["MEMBER"] }),
 });
 
 const makeEvents = () => ({ record: jest.fn().mockResolvedValue(undefined) });

@@ -51,7 +51,7 @@ export class ChatChannelMembersService {
       with: {
         members: {
           with: {
-            user: { columns: { id: true, name: true, image: true, email: true, role: true } },
+            user: { columns: { id: true, name: true, image: true, email: true } },
           },
         },
       },
@@ -68,7 +68,7 @@ export class ChatChannelMembersService {
       limit: 100,
       with: {
         user: {
-          columns: { id: true, name: true, image: true, email: true, role: true },
+          columns: { id: true, name: true, image: true, email: true },
         },
       },
     });

@@ -53,7 +53,7 @@ export class EmployeeMutationsService {
   async getEmployeeDetail(orgId: string, userId: string) {
     const member = await this.db.query.organizationMembers.findFirst({
       where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)),
-      columns: { userId: true },
+      columns: { userId: true, role: true },
       with: {
         user: {
           columns: {
@@ -62,7 +62,6 @@ export class EmployeeMutationsService {
             firstName: true,
             lastName: true,
             email: true,
-            role: true,
             designation: true,
             employeeId: true,
             departmentId: true,
@@ -129,7 +128,7 @@ export class EmployeeMutationsService {
       firstName: u.firstName,
       lastName: u.lastName,
       email: u.email,
-      role: u.role,
+      role: member.role,
       designation: u.designation,
       employeeId: u.employeeId,
       departmentId: u.departmentId,
@@ -214,7 +213,6 @@ export class EmployeeMutationsService {
       updateData.lastName = last;
       if (!body.name) updateData.name = `${first} ${last}`.trim();
     }
-    if (body.role !== undefined && isOwnerOrAdmin) updateData.role = body.role;
     if (body.gender !== undefined) updateData.gender = body.gender;
     if (body.taxId !== undefined) updateData.taxId = body.taxId ? encrypt(body.taxId) : "";
     if (body.monthlySalary !== undefined && isOwnerOrAdmin) updateData.monthlySalary = String(body.monthlySalary);

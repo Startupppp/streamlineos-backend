@@ -8,6 +8,8 @@ import {
   orgUnits,
   organizationMembers,
   users,
+  roles,
+  roleAssignments,
 } from "../../../db/schema";
 import type { PolicyType } from "./hr-policy-types";
 
@@ -53,7 +55,7 @@ interface EmployeeAttributes {
   userId: string;
   departmentId: string | null;
   teamIds: string[];
-  role: string;
+  roleSlugs: string[];
   designation: string | null;
   employmentType: string | null;
   locationId: string | null;
@@ -129,7 +131,7 @@ export class HrPolicyEvaluationService {
 
     if (!member) throw new NotFoundException("Employee not found in organisation");
 
-    const [deptMemberships, teamMemberships, u] = await Promise.all([
+    const [deptMemberships, teamMemberships, roleRows, u] = await Promise.all([
       this.db
         .select({ orgUnitId: orgUnitMembers.orgUnitId })
         .from(orgUnitMembers)
@@ -142,9 +144,7 @@ export class HrPolicyEvaluationService {
           ),
         )
         .limit(10),
-      // A policy scoped to a TEAM matched nothing while this was hardcoded to
-      // [], so `scopeMatchesEmployee` scored 0 and the policy was silently
-      // discarded. Org-unit TEAM membership is the real source.
+      // A policy scoped to a TEAM matched nothing while this was hardcoded to [], so `scopeMatchesEmployee` scored 0 and the policy was silently discarded
       this.db
         .select({ orgUnitId: orgUnitMembers.orgUnitId })
         .from(orgUnitMembers)
@@ -157,6 +157,21 @@ export class HrPolicyEvaluationService {
           ),
         )
         .limit(10),
+      this.db
+        .select({ slug: roles.slug })
+        .from(roleAssignments)
+        .innerJoin(roles, eq(roles.id, roleAssignments.roleId))
+        .innerJoin(
+          organizationMembers,
+          eq(organizationMembers.id, roleAssignments.organizationMembershipId),
+        )
+        .where(
+          and(
+            eq(roleAssignments.orgId, orgId),
+            eq(organizationMembers.userId, employeeId),
+            eq(organizationMembers.orgId, orgId),
+          ),
+        ),
       this.db.query.users.findFirst({
         where: eq(users.id, employeeId),
       }),
@@ -166,7 +181,7 @@ export class HrPolicyEvaluationService {
       userId: employeeId,
       departmentId: deptMemberships[0]?.orgUnitId ?? null,
       teamIds: teamMemberships.map((m) => m.orgUnitId),
-      role: u?.role ?? "",
+      roleSlugs: roleRows.map((r) => r.slug),
       designation: u?.designation ?? null,
       employmentType: null,
       locationId: u?.branchId ?? null,
@@ -242,7 +257,7 @@ export class HrPolicyEvaluationService {
       case "team":
         return attrs.teamIds.includes(scope.scopeValue);
       case "role":
-        return scope.scopeValue === attrs.role;
+        return attrs.roleSlugs.includes(scope.scopeValue);
       case "job_level":
         return scope.scopeValue === (attrs.jobLevel ?? "");
       case "employment_type":
