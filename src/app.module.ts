@@ -41,23 +41,7 @@ import { OrgModule } from "./modules/org/org.module";
 import { OrganizationModule } from "./modules/organization/organization.module";
 import { OwnershipModule } from "./modules/ownership/ownership.module";
 import { BranchesModule } from "./modules/branches/branches.module";
-import { ProjectsExecutionModule } from "./modules/build/execution/projects-execution.module";
-import { ProjectsQaModule } from "./modules/build/qa/projects-qa.module";
-import { ProjectsClientPortalModule } from "./modules/build/client-portal/projects-client-portal.module";
-import { ProjectsApprovalsModule } from "./modules/build/approvals/projects-approvals.module";
-import { ProjectsGovernanceModule } from "./modules/build/governance/projects-governance.module";
-import { ProjectsMeetingsModule } from "./modules/build/meetings/projects-meetings.module";
-import { ProjectsPortfoliosModule } from "./modules/build/portfolios/projects-portfolios.module";
-import { ProjectsManagedProductsModule } from "./modules/build/managed-products/managed-products.module";
-import { PmWorkspacesModule } from "./modules/build/pm-workspaces/pm-workspaces.module";
 import { OfferFulfillmentModule } from "./modules/offer-fulfillment/offer-fulfillment.module";
-import { ProjectsTeamsModule } from "./modules/build/teams/projects-teams.module";
-import { ProjectsCommentDraftsModule } from "./modules/build/comment-drafts/projects-comment-drafts.module";
-import { ProjectsIncidentsModule } from "./modules/build/incidents/projects-incidents.module";
-import { ProjectsWorkflowModule } from "./modules/build/workflow/projects-workflow.module";
-import { ProjectsFormsModule } from "./modules/build/forms/projects-forms.module";
-import { ProjectsModule } from "./modules/build/core/projects.module";
-import { ProjectsByIdModule } from "./modules/build/core/projects-by-id.module";
 import { SupportModule } from "./modules/support/support.module";
 import { ESignModule } from "./modules/e-sign/e-sign.module";
 import { KbModule } from "./modules/kb/kb.module";
@@ -166,6 +150,8 @@ import { OutboxModule } from "./common/outbox/outbox.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 import { MeService } from "./me/me.service";
+import { BuildModule } from "./modules/build/build.module";
+import { ZodValidationInterceptor } from "./common/validation/zod-validation.interceptor";
 
 @Module({
   imports: [
@@ -212,23 +198,8 @@ import { MeService } from "./me/me.service";
     OrganizationModule,
     OwnershipModule,
     BranchesModule,
-    ProjectsPortfoliosModule,
-    ProjectsManagedProductsModule,
-    PmWorkspacesModule,
+    BuildModule,
     OfferFulfillmentModule,
-    ProjectsTeamsModule,
-    ProjectsCommentDraftsModule,
-    ProjectsExecutionModule,
-    ProjectsQaModule,
-    ProjectsClientPortalModule,
-    ProjectsApprovalsModule,
-    ProjectsGovernanceModule,
-    ProjectsMeetingsModule,
-    ProjectsIncidentsModule,
-    ProjectsWorkflowModule,
-    ProjectsFormsModule,
-    ProjectsModule,
-    ProjectsByIdModule,
     SupportModule,
     ESignModule,
     KbModule,
@@ -336,6 +307,7 @@ import { MeService } from "./me/me.service";
     MeService,
     Reflector,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_INTERCEPTOR, useClass: ZodValidationInterceptor },
     { provide: APP_INTERCEPTOR, useClass: DeprecationInterceptor },
   ],
 })

@@ -34,8 +34,8 @@ describe("resolveTimesheetsScope", () => {
   });
 
   it("returns all when the permission is not scopable", async () => {
-    const { isScopable } = jest.requireActual<typeof import("../rbac/permissions")>(
-      "../rbac/permissions",
+    const { isScopable } = jest.requireActual<typeof import("../../rbac/permissions")>(
+      "../../rbac/permissions",
     );
     expect(isScopable(TIMESHEETS_MANAGE_PERMISSION)).toBe(true);
   });

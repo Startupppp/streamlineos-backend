@@ -34,8 +34,8 @@ describe("resolveProjectsScope", () => {
   });
 
   it("confirms the permission is scopable (non-scopable path would return all without a DB call)", async () => {
-    const { isScopable } = jest.requireActual<typeof import("../rbac/permissions")>(
-      "../rbac/permissions",
+    const { isScopable } = jest.requireActual<typeof import("../../rbac/permissions")>(
+      "../../rbac/permissions",
     );
     expect(isScopable(PROJECTS_MANAGE_PERMISSION)).toBe(true);
   });

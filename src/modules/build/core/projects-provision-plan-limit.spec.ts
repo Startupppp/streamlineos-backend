@@ -1,4 +1,4 @@
-jest.mock("../email/app-url", () => ({ appUrl: "https://test.example.com" }));
+jest.mock("../../email/app-url", () => ({ appUrl: "https://test.example.com" }));
 
 import { ForbiddenException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
