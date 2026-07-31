@@ -45,7 +45,7 @@ export const projectForms = pgTable("project_forms", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at"),
 }, (t) => [
-  index("idx_project_forms_org_project").on(t.orgId, t.projectId),
+  index("idx_project_forms_org_project").on(t.orgId, t.projectId).where(sql`deleted_at IS NULL`),
   uniqueIndex("uq_project_forms_project_number").on(t.projectId, t.formNumber),
   index("idx_project_forms_public_token").on(t.publicToken),
   unique("uniq_project_forms_org_id").on(t.orgId, t.id),

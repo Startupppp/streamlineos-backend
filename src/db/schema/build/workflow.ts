@@ -19,7 +19,7 @@ export const workflowTransitions = pgTable("workflow_transitions", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at"),
 }, (t) => [
-  index("idx_workflow_transitions_org_project").on(t.orgId, t.projectId),
+  index("idx_workflow_transitions_org_project").on(t.orgId, t.projectId).where(sql`deleted_at IS NULL`),
   index("idx_workflow_transitions_from").on(t.fromStatusId),
   index("idx_workflow_transitions_to").on(t.toStatusId),
   unique("uniq_workflow_transitions_org_id").on(t.orgId, t.id),

@@ -8,6 +8,7 @@ import {
   unique,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
 
@@ -33,7 +34,7 @@ export const projectTeams = pgTable(
   },
   (t) => [
     uniqueIndex("uniq_project_teams_org_key").on(t.orgId, t.key),
-    index("idx_project_teams_org").on(t.orgId),
+    index("idx_project_teams_org").on(t.orgId).where(sql`deleted_at IS NULL`),
     unique("uniq_project_teams_org_id").on(t.orgId, t.id),
   ],
 );

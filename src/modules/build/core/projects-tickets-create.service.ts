@@ -15,6 +15,7 @@ import { logger } from "../../../common/logger/logger.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { NotificationsService } from "../../notifications/notifications.service";
+import { BuildAutomationRunnerService } from "./build-automation-runner.service";
 import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
 import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
@@ -30,6 +31,7 @@ export class ProjectsTicketsCreateService {
     private readonly query: ProjectsTicketsQueryService,
     private readonly read: ProjectsTicketsReadService,
     private readonly webhooksDispatch: ProjectsWebhooksDispatchService,
+    private readonly automationRunner: BuildAutomationRunnerService,
     private readonly cache: CacheService,
   ) {}
 
@@ -214,6 +216,17 @@ export class ProjectsTicketsCreateService {
       assigneeId: ticket.assigneeId ?? null,
       actor: u.userId,
       timestamp: new Date().toISOString(),
+    });
+
+    this.automationRunner.runForTicketEvent(u.orgId, projectId, "ticket.created", {
+      ticketId: ticket.id,
+      projectId,
+      orgId: u.orgId,
+      title: ticket.title,
+      status: ticket.status,
+      priority: ticket.priority,
+      assigneeId: ticket.assigneeId ?? null,
+      type: ticket.type,
     });
 
     void this.cache

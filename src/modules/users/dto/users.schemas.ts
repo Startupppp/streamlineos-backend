@@ -29,7 +29,7 @@ export const updateUserSchema = z.object({
   designation: z.string().optional(),
   phone: z.string().optional(),
   departmentId: z.coerce.number().int().optional(),
-  role: z.string().optional(),
+  role: z.enum(ORG_MEMBER_ROLE_VALUES).optional(),
   bio: z.string().optional(),
   linkedinUrl: z.string().url().optional().or(z.literal("")),
   twitterUrl: z.string().url().optional().or(z.literal("")),
@@ -144,3 +144,8 @@ export const listAuditSchema = z.object({
   to: z.string().optional(),
 });
 export type ListAuditInput = z.infer<typeof listAuditSchema>;
+
+export const changeInviteRoleSchema = z.object({
+  role: z.enum(ORG_MEMBER_ROLE_VALUES),
+});
+export type ChangeInviteRoleInput = z.infer<typeof changeInviteRoleSchema>;

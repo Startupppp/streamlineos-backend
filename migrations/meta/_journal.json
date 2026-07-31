@@ -607,15 +607,64 @@
     {
       "idx": 86,
       "version": "7",
-      "when": 1784993500607,
-      "tag": "0369_drop_platform_admin",
+      "when": 1784993499608,
+      "tag": "0366_role_column_defaults",
       "breakpoints": true
     },
     {
       "idx": 87,
       "version": "7",
-      "when": 1784993501607,
+      "when": 1784993499609,
+      "tag": "0367_drop_dead_user_preferences",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1784993499610,
+      "tag": "0368_rename_ceo_to_final",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1784993500607,
+      "tag": "0369_drop_platform_admin",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1784993503607,
       "tag": "0370_build_project_members_org_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1784993504607,
+      "tag": "0371_build_status_check_constraints",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1784993505607,
+      "tag": "0372_build_pk_widening_round2",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1784993506607,
+      "tag": "0374_build_partial_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1784993507607,
+      "tag": "0375_build_drop_dead_reports",
       "breakpoints": true
     }
   ]

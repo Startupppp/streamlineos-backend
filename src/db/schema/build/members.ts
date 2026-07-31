@@ -1,4 +1,5 @@
-import { pgTable, text, serial, bigint, timestamp, boolean, jsonb, decimal, date, integer, foreignKey, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, bigint, timestamp, boolean, jsonb, decimal, date, integer, foreignKey, index, unique, uniqueIndex, check } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import {
   intakeStatusEnum,
   intakeSourceEnum,
@@ -124,4 +125,5 @@ export const projectMilestones = pgTable("project_milestones", {
   index("idx_project_milestones_project").on(table.projectId),
   index("idx_project_milestones_org").on(table.orgId),
   unique("uniq_project_milestones_org_id").on(table.orgId, table.id),
+  check("chk_project_milestones_status", sql`${table.status} IN ('PENDING','ACHIEVED','MISSED')`),
 ]);

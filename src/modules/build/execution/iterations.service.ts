@@ -431,7 +431,26 @@ export class EpicsService {
         eq(tickets.projectId, projectId),
         eq(tickets.type, "EPIC"),
       ),
-      with: { assignee: true },
+      columns: {
+        completionPercentage: false,
+        clientVisible: false,
+        isRecurring: false,
+        recurrenceRule: false,
+        recurrenceParentId: false,
+        recurrenceNextRunAt: false,
+      },
+      with: {
+        assignee: {
+          columns: {
+            id: true,
+            name: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            image: true,
+          },
+        },
+      },
       orderBy: [desc(tickets.createdAt)],
       limit: 100,
     });

@@ -6,6 +6,7 @@ import {
   index,
   unique,
   uniqueIndex,
+  check,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
@@ -47,6 +48,7 @@ export const pmWorkspaces = pgTable(
       .on(t.orgId)
       .where(sql`is_default = true`),
     uniqueIndex("uniq_pm_workspaces_org_slug").on(t.orgId, t.slug),
-    index("idx_pm_workspaces_org").on(t.orgId),
+    index("idx_pm_workspaces_org").on(t.orgId).where(sql`deleted_at IS NULL`),
+    check("chk_pm_workspaces_status", sql`${t.status} IN ('active','archived')`),
   ],
 );

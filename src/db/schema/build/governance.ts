@@ -1,4 +1,5 @@
 import { pgTable, pgEnum, text, serial, timestamp, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
 import { tickets } from "./tasks";
@@ -26,7 +27,7 @@ export const projectRisks = pgTable("project_risks", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at"),
 }, (t) => [
-  index("idx_project_risks_org_project_status").on(t.orgId, t.projectId, t.status),
+  index("idx_project_risks_org_project_status").on(t.orgId, t.projectId, t.status).where(sql`deleted_at IS NULL`),
   uniqueIndex("uq_project_risks_project_number").on(t.projectId, t.riskNumber),
   index("idx_project_risks_owner").on(t.ownerId),
   unique("uniq_project_risks_org_id").on(t.orgId, t.id),
@@ -51,7 +52,7 @@ export const projectDecisions = pgTable("project_decisions", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at"),
 }, (t) => [
-  index("idx_project_decisions_org_project_status").on(t.orgId, t.projectId, t.status),
+  index("idx_project_decisions_org_project_status").on(t.orgId, t.projectId, t.status).where(sql`deleted_at IS NULL`),
   uniqueIndex("uq_project_decisions_project_number").on(t.projectId, t.decisionNumber),
   unique("uniq_project_decisions_org_id").on(t.orgId, t.id),
 ]);

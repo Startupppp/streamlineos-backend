@@ -5,6 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
 import { AccessService } from "../access/access.service";
 import { seedSystemRolesForOrg } from "../rbac/seed-system-roles";
 import { EntitlementsService } from "../access/entitlements.service";
@@ -104,7 +105,7 @@ export class AuthService {
         id: ownerMembershipId,
         orgId,
         userId,
-        role: "owner",
+        role: ORG_MEMBER_ROLES.OWNER,
         isOwner: true,
       });
 

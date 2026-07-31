@@ -1,4 +1,5 @@
 import { pgTable, pgEnum, text, serial, timestamp, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
 import { tickets } from "./tasks";
@@ -30,7 +31,7 @@ export const projectIncidents = pgTable("project_incidents", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at"),
 }, (t) => [
-  index("idx_project_incidents_org_project_status").on(t.orgId, t.projectId, t.status),
+  index("idx_project_incidents_org_project_status").on(t.orgId, t.projectId, t.status).where(sql`deleted_at IS NULL`),
   uniqueIndex("uq_project_incidents_project_number").on(t.projectId, t.incidentNumber),
   index("idx_project_incidents_severity").on(t.severity),
   unique("uniq_project_incidents_org_id").on(t.orgId, t.id),

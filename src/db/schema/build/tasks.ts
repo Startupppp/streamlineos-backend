@@ -3,6 +3,8 @@ import {
   text,
   serial,
   bigserial,
+  bigint,
+  check,
   timestamp,
   boolean,
   decimal,
@@ -130,7 +132,7 @@ export const tickets = pgTable(
 export const ticketAssignees = pgTable(
   "ticket_assignees",
   {
-    id: serial("id").primaryKey(),
+    id: bigserial("id", { mode: "number" }).primaryKey(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -157,7 +159,7 @@ export const ticketAssignees = pgTable(
 export const ticketComments = pgTable(
   "ticket_comments",
   {
-    id: serial("id").primaryKey(),
+    id: bigserial("id", { mode: "number" }).primaryKey(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -169,7 +171,7 @@ export const ticketComments = pgTable(
       .notNull(),
     content: text("content").notNull(),
     clientVisible: boolean("client_visible").notNull().default(false),
-    parentCommentId: integer("parent_comment_id"),
+    parentCommentId: bigint("parent_comment_id", { mode: "number" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -232,7 +234,7 @@ export const ticketLabels = pgTable(
 export const ticketLabelMappings = pgTable(
   "ticket_label_mappings",
   {
-    id: serial("id").primaryKey(),
+    id: bigserial("id", { mode: "number" }).primaryKey(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -255,7 +257,7 @@ export const ticketLabelMappings = pgTable(
 export const ticketWatchers = pgTable(
   "ticket_watchers",
   {
-    id: serial("id").primaryKey(),
+    id: bigserial("id", { mode: "number" }).primaryKey(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -404,6 +406,10 @@ export const projectReleases = pgTable(
     index("idx_project_releases_project").on(table.projectId),
     index("idx_project_releases_org_status").on(table.orgId, table.status),
     unique("uniq_project_releases_org_id").on(table.orgId, table.id),
+    check(
+      "chk_project_releases_status",
+      sql`${table.status} IN ('draft','released','archived')`,
+    ),
   ],
 );
 
@@ -481,6 +487,10 @@ export const webhookDeliveries = pgTable(
   (t) => [
     index("idx_webhook_deliveries_webhook_id").on(t.webhookId),
     index("idx_webhook_deliveries_delivered_at").on(t.deliveredAt),
+    check(
+      "chk_webhook_deliveries_status",
+      sql`${t.status} IN ('pending','success','failed')`,
+    ),
   ],
 );
 
@@ -488,7 +498,7 @@ export const ticketCommentReactions = pgTable(
   "ticket_comment_reactions",
   {
     id: serial("id").primaryKey(),
-    commentId: integer("comment_id")
+    commentId: bigint("comment_id", { mode: "number" })
       .notNull()
       .references(() => ticketComments.id, { onDelete: "cascade" }),
     userId: text("user_id")

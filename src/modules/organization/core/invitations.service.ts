@@ -393,7 +393,7 @@ export class InvitationsService {
         } catch (err) {
           if (err instanceof ForbiddenException) {
             throw new ForbiddenException(
-              "This workspace has reached its member limit. Ask an admin to upgrade the plan or free a seat.",
+              "This organization has reached its member limit. Ask an admin to upgrade the plan or free a seat.",
             );
           }
           throw err;
@@ -458,7 +458,7 @@ export class InvitationsService {
       } catch (err) {
         if (err instanceof ForbiddenException) {
           throw new ForbiddenException(
-            "This workspace has reached its member limit. Ask an admin to upgrade the plan or free a seat.",
+            "This organization has reached its member limit. Ask an admin to upgrade the plan or free a seat.",
           );
         }
         throw err;
@@ -588,6 +588,68 @@ export class InvitationsService {
       targetId: invitationId,
       targetType: "invitation",
       metadata: { email: invitation.email },
+    });
+
+    return { success: true };
+  }
+
+  /**
+   * Changes the structural role a PENDING invitation will grant.
+   *
+   * Without this the only way to correct a mis-addressed role was cancel +
+   * re-invite, which burns the recipient's existing link. The role is put
+   * through the same guard as a fresh invite, so this cannot become a side door
+   * for minting an ORG_ADMIN.
+   */
+  async changeRole(
+    orgId: string,
+    invitationId: string,
+    actor: InviteActor,
+    role: string,
+  ): Promise<{ success: true }> {
+    await this.assertMayInviteWithRole(orgId, actor, role);
+
+    const invitation = await this.db.query.invitations.findFirst({
+      where: and(
+        eq(invitations.id, invitationId),
+        eq(invitations.orgId, orgId),
+        inArray(invitations.status, ["PENDING", "EXPIRED"]),
+        isNull(invitations.acceptedAt),
+      ),
+    });
+    if (!invitation) {
+      throw new NotFoundException("Invitation not found or already accepted");
+    }
+    if (invitation.role === role) return { success: true };
+
+    const actorMembership = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, actor.userId),
+      ),
+      columns: { id: true },
+    });
+
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(invitations)
+        .set({ role })
+        .where(eq(invitations.id, invitationId));
+      await tx.insert(invitationEvents).values({
+        orgId,
+        invitationId,
+        event: "ROLE_CHANGED",
+        actorMembershipId: actorMembership?.id ?? null,
+      });
+    });
+
+    this.audit.log({
+      action: "user.invitation.role_changed",
+      userId: actor.userId,
+      orgId,
+      targetId: invitationId,
+      targetType: "invitation",
+      metadata: { from: invitation.role, to: role },
     });
 
     return { success: true };

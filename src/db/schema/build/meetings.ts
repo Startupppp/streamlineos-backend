@@ -1,4 +1,5 @@
 import { pgTable, pgEnum, text, serial, timestamp, integer, boolean, date, jsonb, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects, sprints } from "./core";
 import { tickets } from "./tasks";
@@ -28,7 +29,7 @@ export const projectMeetings = pgTable("project_meetings", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at"),
 }, (t) => [
-  index("idx_project_meetings_org_project_status").on(t.orgId, t.projectId, t.status),
+  index("idx_project_meetings_org_project_status").on(t.orgId, t.projectId, t.status).where(sql`deleted_at IS NULL`),
   uniqueIndex("uq_project_meetings_project_number").on(t.projectId, t.meetingNumber),
   index("idx_project_meetings_scheduled").on(t.scheduledAt),
   unique("uniq_project_meetings_org_id").on(t.orgId, t.id),
@@ -64,7 +65,7 @@ export const meetingActionItems = pgTable("meeting_action_items", {
   deletedAt: timestamp("deleted_at"),
 }, (t) => [
   index("idx_meeting_action_items_meeting").on(t.meetingId),
-  index("idx_meeting_action_items_org_project_status").on(t.orgId, t.projectId, t.status),
+  index("idx_meeting_action_items_org_project_status").on(t.orgId, t.projectId, t.status).where(sql`deleted_at IS NULL`),
   index("idx_meeting_action_items_assignee").on(t.assigneeId),
   unique("uniq_meeting_action_items_org_id").on(t.orgId, t.id),
 ]);

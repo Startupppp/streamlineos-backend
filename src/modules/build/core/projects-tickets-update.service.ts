@@ -20,6 +20,7 @@ import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
 import { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
 import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
+import { BuildAutomationRunnerService } from "./build-automation-runner.service";
 import { ProjectsTicketConflictException } from "../../../common/http/api-exceptions";
 import type { UpdateTicketInput } from "./dto/projects.schemas";
 import { normalizeTicketType, resolveAssigneeId } from "./tickets-helpers";
@@ -35,6 +36,7 @@ export class ProjectsTicketsUpdateService {
     private readonly read: ProjectsTicketsReadService,
     private readonly transfer: ProjectsTicketsTransferService,
     private readonly webhooksDispatch: ProjectsWebhooksDispatchService,
+    private readonly automationRunner: BuildAutomationRunnerService,
     private readonly cache: CacheService,
   ) {}
 
@@ -281,6 +283,27 @@ export class ProjectsTicketsUpdateService {
           timestamp: now.toISOString(),
         },
       );
+    }
+
+    const afterPayload = {
+      ticketId,
+      projectId: ticketProjectId,
+      orgId,
+      title: input.title ?? before.title,
+      status: input.status ?? before.status,
+      priority: input.priority ?? before.priority,
+      assigneeId: newAssignee !== undefined ? newAssignee : before.assigneeId,
+      type: input.type ? normalizeTicketType(input.type) : before.type,
+    };
+
+    this.automationRunner.runForTicketEvent(orgId, ticketProjectId, "ticket.updated", afterPayload);
+
+    if (input.status && input.status !== before.status) {
+      this.automationRunner.runForTicketEvent(orgId, ticketProjectId, "ticket.status_changed", afterPayload);
+    }
+
+    if (newAssignee !== undefined && newAssignee !== before.assigneeId) {
+      this.automationRunner.runForTicketEvent(orgId, ticketProjectId, "ticket.assigned", afterPayload);
     }
 
     void this.cache

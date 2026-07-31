@@ -1,4 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
+import { ORG_MEMBER_ROLES } from "../../../common/rbac/org-roles";
 import { desc, eq, inArray, sql } from "drizzle-orm";
 import {
   users,
@@ -132,7 +133,7 @@ export class OrgSetupService {
         id: ownerMembershipId,
         orgId,
         userId: u.userId,
-        role: "owner",
+        role: ORG_MEMBER_ROLES.OWNER,
         isOwner: true,
       });
       const trialDays = getTrialDays();

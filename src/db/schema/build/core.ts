@@ -12,7 +12,9 @@ import {
   index,
   unique,
   uniqueIndex,
+  check,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import {
   projectStatusEnum,
   stateGroupEnum,
@@ -103,6 +105,10 @@ export const sprints = pgTable(
   (table) => [
     index("idx_sprints_project_status").on(table.projectId, table.status),
     unique("uniq_sprints_org_id").on(table.orgId, table.id),
+    check(
+      "chk_sprints_status",
+      sql`${table.status} IN ('PLANNED','ACTIVE','COMPLETED')`,
+    ),
   ],
 );
 
@@ -190,39 +196,6 @@ export const modules = pgTable(
     index("idx_modules_project").on(table.projectId),
     index("idx_modules_org").on(table.orgId),
     unique("uniq_modules_org_id").on(table.orgId, table.id),
-  ],
-);
-
-export const reports = pgTable(
-  "reports",
-  {
-    id: serial("id").primaryKey(),
-    orgId: text("org_id")
-      .references(() => organizations.id, { onDelete: "cascade" })
-      .notNull(),
-    name: text("name").notNull(),
-    type: text("type").notNull(),
-    config: jsonb("config").$type<{
-      filters: Record<string, unknown>;
-      columns: string[];
-    }>(),
-    createdBy: text("created_by").references(() => users.id, {
-      onDelete: "set null",
-    }),
-    isScheduled: boolean("is_scheduled").default(false).notNull(),
-    scheduleConfig: jsonb("schedule_config").$type<{
-      frequency: string;
-      recipients: string[];
-    }>(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at")
-      .defaultNow()
-      .notNull()
-      .$onUpdate(() => new Date()),
-  },
-  (table) => [
-    index("idx_reports_org_type").on(table.orgId, table.type),
-    unique("uniq_reports_org_id").on(table.orgId, table.id),
   ],
 );
 

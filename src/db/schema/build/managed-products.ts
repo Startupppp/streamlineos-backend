@@ -10,6 +10,7 @@ import {
   uniqueIndex,
   foreignKey,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { managedProductStatusEnum } from "../common/enums";
 import { organizations, users, organizationMembers } from "../common/auth";
 import { pmWorkspaces } from "./pm-workspaces";
@@ -48,7 +49,7 @@ export const managedProducts = pgTable(
   },
   (table) => [
     uniqueIndex("uniq_managed_products_org_key").on(table.orgId, table.key),
-    index("idx_managed_products_org_status").on(table.orgId, table.status),
+    index("idx_managed_products_org_status").on(table.orgId, table.status).where(sql`deleted_at IS NULL`),
     unique("uniq_managed_products_org_pk").on(table.orgId, table.managedProductId),
     foreignKey({
       columns: [table.orgId, table.ownerMembershipId],

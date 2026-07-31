@@ -118,7 +118,7 @@ export const feedbucketWidgets = pgTable(
   },
   (t) => [
     uniqueIndex("uniq_feedbucket_widgets_public_key").on(t.publicKey),
-    index("idx_feedbucket_widgets_org").on(t.orgId, t.createdAt),
+    index("idx_feedbucket_widgets_org").on(t.orgId, t.createdAt).where(sql`deleted_at IS NULL`),
     unique("uniq_feedbucket_widgets_org_id").on(t.orgId, t.id),
   ],
 );
@@ -157,9 +157,9 @@ export const feedbucketSubmissions = pgTable(
     deletedAt: timestamp("deleted_at"),
   },
   (t) => [
-    index("idx_feedbucket_submissions_widget").on(t.orgId, t.widgetId, t.status, t.createdAt),
-    index("idx_feedbucket_submissions_org_status").on(t.orgId, t.status, t.createdAt),
-    index("idx_feedbucket_submissions_assignee").on(t.orgId, t.assigneeId),
+    index("idx_feedbucket_submissions_widget").on(t.orgId, t.widgetId, t.status, t.createdAt).where(sql`deleted_at IS NULL`),
+    index("idx_feedbucket_submissions_org_status").on(t.orgId, t.status, t.createdAt).where(sql`deleted_at IS NULL`),
+    index("idx_feedbucket_submissions_assignee").on(t.orgId, t.assigneeId).where(sql`deleted_at IS NULL`),
     unique("uniq_feedbucket_submissions_org_id").on(t.orgId, t.id),
   ],
 );

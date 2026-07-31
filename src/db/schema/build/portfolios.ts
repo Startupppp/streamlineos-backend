@@ -1,4 +1,5 @@
 import { pgTable, pgEnum, text, serial, integer, timestamp, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
 
@@ -29,7 +30,7 @@ export const projectPortfolios = pgTable("project_portfolios", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at"),
 }, (t) => [
-  index("idx_project_portfolios_org_status").on(t.orgId, t.status),
+  index("idx_project_portfolios_org_status").on(t.orgId, t.status).where(sql`deleted_at IS NULL`),
   unique("uniq_project_portfolios_org_id").on(t.orgId, t.id),
 ]);
 
@@ -47,7 +48,7 @@ export const projectPrograms = pgTable("project_programs", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at"),
 }, (t) => [
-  index("idx_project_programs_org_status").on(t.orgId, t.status),
+  index("idx_project_programs_org_status").on(t.orgId, t.status).where(sql`deleted_at IS NULL`),
   index("idx_project_programs_portfolio").on(t.portfolioId),
   unique("uniq_project_programs_org_id").on(t.orgId, t.id),
 ]);

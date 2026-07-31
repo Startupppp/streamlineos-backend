@@ -1,7 +1,14 @@
 import { pgTable, text, integer, timestamp, index, uuid } from "drizzle-orm/pg-core";
 import { invitations } from "./auth";
 
-export type InvitationEventType = "CREATED" | "RESENT" | "ACCEPTED" | "DECLINED" | "REVOKED" | "EXPIRED";
+export type InvitationEventType =
+  | "CREATED"
+  | "RESENT"
+  | "ACCEPTED"
+  | "DECLINED"
+  | "REVOKED"
+  | "EXPIRED"
+  | "ROLE_CHANGED";
 
 export const invitationEvents = pgTable(
   "invitation_events",

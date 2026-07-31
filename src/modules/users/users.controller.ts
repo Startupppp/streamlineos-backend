@@ -21,6 +21,8 @@ import {
   type InviteUserInput, type BulkInviteInput, type UpdatePreferencesInput,
   type UpdateMembershipInput, type BulkActionInput, type ListLoginHistoryInput,
   type BulkUpdateUsersInput, type ListAuditInput, type ImportUsersRow, type CreateUserInput,
+  changeInviteRoleSchema,
+  type ChangeInviteRoleInput,
 } from "./dto/users.schemas";
 import { z } from "zod";
 
@@ -183,6 +185,22 @@ export class UsersController {
   }
 
   @RequirePermission("hr:employees:delete")
+  @RequirePermission("hr:employees:create")
+  @Patch("invitations/:invitationId/role")
+  @HttpCode(200)
+  changeInviteRole(
+    @Param("invitationId") invitationId: string,
+    @Body(new ZodValidationPipe(changeInviteRoleSchema)) body: ChangeInviteRoleInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.invitations.changeRole(
+      u.orgId,
+      invitationId,
+      { userId: u.userId, isOrgOwner: u.isOrgOwner },
+      body.role,
+    );
+  }
+
   @Delete("invitations/:invitationId")
   cancelInvite(@Param("invitationId") invitationId: string, @CurrentUser() u: CurrentUserContext) {
     return this.invitations.cancel(u.orgId, invitationId, u.userId);

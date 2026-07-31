@@ -178,6 +178,14 @@ export class ProjectsTicketSubresourcesService {
   getSubtasks(orgId: string, ticketId: number) {
     return this.db.query.tickets.findMany({
       where: and(eq(tickets.parentTicketId, ticketId), eq(tickets.orgId, orgId)),
+      columns: {
+        completionPercentage: false,
+        clientVisible: false,
+        isRecurring: false,
+        recurrenceRule: false,
+        recurrenceParentId: false,
+        recurrenceNextRunAt: false,
+      },
       with: {
         assignee: {
           columns: {

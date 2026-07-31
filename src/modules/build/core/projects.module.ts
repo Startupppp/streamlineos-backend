@@ -47,6 +47,7 @@ import { ProjectsLabelsService } from "./projects-labels.service";
 import { ProjectsTicketChecklistsService } from "./projects-ticket-checklists.service";
 import { ProjectsTicketLinksService } from "./projects-ticket-links.service";
 import { ProjectsTicketRelationsService } from "./projects-ticket-relations.service";
+import { BuildAutomationRunnerService } from "./build-automation-runner.service";
 
 @Module({
   imports: [BillingModule, NotificationsModule, UsersModule],
@@ -98,6 +99,7 @@ import { ProjectsTicketRelationsService } from "./projects-ticket-relations.serv
     ProjectsTicketChecklistsService,
     ProjectsTicketLinksService,
     ProjectsTicketRelationsService,
+    BuildAutomationRunnerService,
   ],
   exports: [
     ProjectsTicketsService,

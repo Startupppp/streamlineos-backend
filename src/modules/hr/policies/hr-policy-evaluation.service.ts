@@ -129,7 +129,7 @@ export class HrPolicyEvaluationService {
 
     if (!member) throw new NotFoundException("Employee not found in organisation");
 
-    const [deptMemberships, u] = await Promise.all([
+    const [deptMemberships, teamMemberships, u] = await Promise.all([
       this.db
         .select({ orgUnitId: orgUnitMembers.orgUnitId })
         .from(orgUnitMembers)
@@ -142,6 +142,21 @@ export class HrPolicyEvaluationService {
           ),
         )
         .limit(10),
+      // A policy scoped to a TEAM matched nothing while this was hardcoded to
+      // [], so `scopeMatchesEmployee` scored 0 and the policy was silently
+      // discarded. Org-unit TEAM membership is the real source.
+      this.db
+        .select({ orgUnitId: orgUnitMembers.orgUnitId })
+        .from(orgUnitMembers)
+        .innerJoin(orgUnits, eq(orgUnits.id, orgUnitMembers.orgUnitId))
+        .where(
+          and(
+            eq(orgUnitMembers.userId, employeeId),
+            eq(orgUnits.orgId, orgId),
+            eq(orgUnits.kind, "TEAM"),
+          ),
+        )
+        .limit(10),
       this.db.query.users.findFirst({
         where: eq(users.id, employeeId),
       }),
@@ -150,7 +165,7 @@ export class HrPolicyEvaluationService {
     return {
       userId: employeeId,
       departmentId: deptMemberships[0]?.orgUnitId ?? null,
-      teamIds: [],
+      teamIds: teamMemberships.map((m) => m.orgUnitId),
       role: u?.role ?? "",
       designation: u?.designation ?? null,
       employmentType: null,

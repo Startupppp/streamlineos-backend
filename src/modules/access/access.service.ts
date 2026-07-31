@@ -210,8 +210,59 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
         if (denied.has(moduleOf(key))) map.delete(key);
       }
     }
+
+    const deniedPermissions = await this.getUserDeniedPermissions(orgId, userId);
+    for (const key of deniedPermissions) map.delete(key);
+
     return map;
   }
+
+  /**
+   * Permission keys explicitly denied to this user.
+   *
+   * Resolution is an allow-wins union (`broadest`), so a permission inherited
+   * through a group or module ownership could not previously be taken back from
+   * one person. `user_permissions.granted = false` existed in the schema but
+   * nothing ever read it — only `granted = true` rows were fetched.
+   *
+   * The deny is whole-key on purpose: a scope-narrowing deny cannot be expressed
+   * by this model ("none" is the LOWEST allow rank, not a subtraction), so the
+   * way to give someone a narrower view is an "own"-scoped grant, not a deny.
+   *
+   * Org owners never reach this code — `computeUserPermissions` short-circuits
+   * for them — so a deny row can never lock an owner out of their own org.
+   */
+  async getUserDeniedPermissions(orgId: string, userId: string): Promise<Set<string>> {
+    const cacheKey = `${orgId}:${userId}`;
+    const cached = this.deniedPermissionsCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) return cached.permissions;
+
+    const rows = await this.safeAccessTableRead(
+      () =>
+        this.db.query.userPermissions.findMany({
+          where: and(
+            eq(userPermissions.userId, userId),
+            eq(userPermissions.orgId, orgId),
+            eq(userPermissions.granted, false),
+          ),
+          with: { permission: { columns: { name: true } } },
+        }),
+      [] as { permission: { name: string } | null }[],
+    );
+    const permissionSet = new Set(
+      rows.map((row) => row.permission?.name).filter((name): name is string => !!name),
+    );
+    this.deniedPermissionsCache.set(cacheKey, {
+      permissions: permissionSet,
+      expiresAt: Date.now() + AccessService.DENIED_MODULES_TTL_MS,
+    });
+    return permissionSet;
+  }
+
+  private readonly deniedPermissionsCache = new Map<
+    string,
+    { permissions: Set<string>; expiresAt: number }
+  >();
 
   async getUserDeniedModules(orgId: string, userId: string): Promise<Set<string>> {
     const cacheKey = `${orgId}:${userId}`;

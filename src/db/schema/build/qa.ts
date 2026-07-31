@@ -23,7 +23,7 @@ export const testSuites = pgTable("test_suites", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at"),
 }, (table) => [
-  index("idx_test_suites_org_project").on(table.orgId, table.projectId),
+  index("idx_test_suites_org_project").on(table.orgId, table.projectId).where(sql`deleted_at IS NULL`),
   index("idx_test_suites_parent").on(table.parentId),
   unique("uniq_test_suites_org_id").on(table.orgId, table.id),
 ]);
@@ -47,7 +47,7 @@ export const testCases = pgTable("test_cases", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at"),
 }, (table) => [
-  index("idx_test_cases_org_project_suite").on(table.orgId, table.projectId, table.suiteId),
+  index("idx_test_cases_org_project_suite").on(table.orgId, table.projectId, table.suiteId).where(sql`deleted_at IS NULL`),
   uniqueIndex("uq_test_cases_project_number").on(table.projectId, table.caseNumber),
   unique("uniq_test_cases_org_id").on(table.orgId, table.id),
 ]);
@@ -71,7 +71,7 @@ export const testRuns = pgTable("test_runs", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at"),
 }, (table) => [
-  index("idx_test_runs_org_project_status").on(table.orgId, table.projectId, table.status),
+  index("idx_test_runs_org_project_status").on(table.orgId, table.projectId, table.status).where(sql`deleted_at IS NULL`),
   index("idx_test_runs_sprint").on(table.sprintId),
   index("idx_test_runs_release").on(table.releaseId),
   uniqueIndex("uq_test_runs_project_number").on(table.projectId, table.runNumber),
