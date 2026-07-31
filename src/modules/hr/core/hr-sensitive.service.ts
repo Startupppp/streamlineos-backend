@@ -8,6 +8,34 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import type { UpdateSensitiveInput } from "./dto/hr-core.schemas";
 import { HrAuditService } from "./hr-audit.service";
+import { encrypt, decrypt } from "../onboarding/core/crypto.helpers";
+
+type SensitiveRow = typeof hrEmployeeSensitiveFields.$inferSelect;
+
+const ENCRYPTED_FIELDS = [
+  "taxId",
+  "panNumber",
+  "nationalId",
+  "passportNumber",
+  "medicalNotes",
+] as const satisfies readonly (keyof SensitiveRow)[];
+
+function encryptField(value: string | null | undefined): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || value === "") return value;
+  return encrypt(value);
+}
+
+function decryptRow(row: SensitiveRow): SensitiveRow {
+  const out = { ...row };
+  for (const field of ENCRYPTED_FIELDS) {
+    const value = out[field];
+    if (typeof value === "string" && value !== "") {
+      out[field] = decrypt(value);
+    }
+  }
+  return out;
+}
 
 @Injectable()
 export class HrSensitiveService {
@@ -51,7 +79,7 @@ export class HrSensitiveService {
       ipAddress,
     });
 
-    return row ?? null;
+    return row ? decryptRow(row) : null;
   }
 
   async update(
@@ -99,14 +127,14 @@ export class HrSensitiveService {
           salaryCurrency: input.salaryCurrency ?? null,
           salaryFrequency: input.salaryFrequency ?? null,
           bankDetails: input.bankDetails ?? null,
-          taxId: input.taxId ?? null,
-          panNumber: input.panNumber ?? null,
-          nationalId: input.nationalId ?? null,
-          passportNumber: input.passportNumber ?? null,
+          taxId: encryptField(input.taxId) ?? null,
+          panNumber: encryptField(input.panNumber) ?? null,
+          nationalId: encryptField(input.nationalId) ?? null,
+          passportNumber: encryptField(input.passportNumber) ?? null,
           passportExpiry: input.passportExpiry ?? null,
           visaType: input.visaType ?? null,
           visaExpiry: input.visaExpiry ?? null,
-          medicalNotes: input.medicalNotes ?? null,
+          medicalNotes: encryptField(input.medicalNotes) ?? null,
           bloodGroup: input.bloodGroup ?? null,
           bgvStatus: input.bgvStatus ?? null,
         })
@@ -121,14 +149,16 @@ export class HrSensitiveService {
           ...(input.salaryCurrency !== undefined && { salaryCurrency: input.salaryCurrency }),
           ...(input.salaryFrequency !== undefined && { salaryFrequency: input.salaryFrequency }),
           ...(input.bankDetails !== undefined && { bankDetails: input.bankDetails }),
-          ...(input.taxId !== undefined && { taxId: input.taxId }),
-          ...(input.panNumber !== undefined && { panNumber: input.panNumber }),
-          ...(input.nationalId !== undefined && { nationalId: input.nationalId }),
-          ...(input.passportNumber !== undefined && { passportNumber: input.passportNumber }),
+          ...(input.taxId !== undefined && { taxId: encryptField(input.taxId) }),
+          ...(input.panNumber !== undefined && { panNumber: encryptField(input.panNumber) }),
+          ...(input.nationalId !== undefined && { nationalId: encryptField(input.nationalId) }),
+          ...(input.passportNumber !== undefined && {
+            passportNumber: encryptField(input.passportNumber),
+          }),
           ...(input.passportExpiry !== undefined && { passportExpiry: input.passportExpiry }),
           ...(input.visaType !== undefined && { visaType: input.visaType }),
           ...(input.visaExpiry !== undefined && { visaExpiry: input.visaExpiry }),
-          ...(input.medicalNotes !== undefined && { medicalNotes: input.medicalNotes }),
+          ...(input.medicalNotes !== undefined && { medicalNotes: encryptField(input.medicalNotes) }),
           ...(input.bloodGroup !== undefined && { bloodGroup: input.bloodGroup }),
           ...(input.bgvStatus !== undefined && { bgvStatus: input.bgvStatus }),
         })
@@ -166,6 +196,6 @@ export class HrSensitiveService {
       ipAddress,
     });
 
-    return updated;
+    return decryptRow(updated);
   }
 }

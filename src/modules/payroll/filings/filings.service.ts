@@ -23,7 +23,7 @@ import {
   getIndiaBundleForDate,
   IN_STATUTORY_RULE_BUNDLE_VERSION,
 } from "../runs/lib/statutory-registry";
-import { decryptBankDetails } from "../../hr/payroll/lib/encryption";
+import { decrypt, decryptBankDetails } from "../../hr/payroll/lib/encryption";
 import {
   buildFilingExport,
   type EmployeeStatutorySourceRow,
@@ -482,7 +482,10 @@ export class PayrollFilingsService {
         : [];
 
     const sensitiveByEmployment = new Map(
-      sensitiveRows.map((s) => [s.employmentId, s]),
+      sensitiveRows.map((s) => [
+        s.employmentId,
+        { ...s, panNumber: s.panNumber ? decrypt(s.panNumber) : s.panNumber },
+      ]),
     );
 
     const lineRows = await this.db
