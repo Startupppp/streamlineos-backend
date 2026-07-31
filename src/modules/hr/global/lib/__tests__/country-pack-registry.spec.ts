@@ -4,7 +4,7 @@ import {
   describeCountryPack,
   entityReadinessScore,
   listCountryPackDescriptors,
-} from "../../country-pack-registry";
+} from "../country-pack-registry";
 
 describe("country pack registry", () => {
   it("lists packs with maturity and honesty", () => {

@@ -1,10 +1,10 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
-import { PayrollInputsService } from "../../payroll-inputs.service";
+import { PayrollInputsService } from "../payroll-inputs.service";
 import { HrAuditService } from "../../core/hr-audit.service";
 import { HrAutomationEngineService } from "../../automations/hr-automation-engine.service";
-import { PayrollInputsBuildService } from "../../payroll-inputs-build.service";
+import { PayrollInputsBuildService } from "../payroll-inputs-build.service";
 
 function _chainable(terminal: unknown = undefined) {
   const obj: Record<string, jest.Mock> = {};

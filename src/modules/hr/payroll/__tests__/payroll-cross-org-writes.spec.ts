@@ -1,6 +1,6 @@
 import { ForbiddenException } from "@nestjs/common";
-import { BonusesService } from "../../bonuses.service";
-import { LoansService } from "../../loans.service";
+import { BonusesService } from "../bonuses.service";
+import { LoansService } from "../loans.service";
 
 function makeDb(membershipRow: unknown, insertResult: unknown[] = [{ id: 1 }]) {
   const findFirst = jest.fn().mockResolvedValue(membershipRow);

@@ -1,4 +1,4 @@
-import { classifyAging, sortByUrgency, severityRank } from "../../service-delivery-aging";
+import { classifyAging, sortByUrgency, severityRank } from "../service-delivery-aging";
 
 describe("service delivery aging", () => {
   const now = new Date("2026-07-24T12:00:00Z");

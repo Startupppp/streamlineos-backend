@@ -1,7 +1,7 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import { NotFoundException } from "@nestjs/common";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
-import { HrPolicyEvaluationService } from "../../hr-policy-evaluation.service";
+import { HrPolicyEvaluationService } from "../hr-policy-evaluation.service";
 
 const mockDb = {
   query: {

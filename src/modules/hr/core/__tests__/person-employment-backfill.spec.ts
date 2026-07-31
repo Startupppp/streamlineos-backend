@@ -1,4 +1,4 @@
-import { PersonEmploymentSyncService } from "../../person-employment-sync.service";
+import { PersonEmploymentSyncService } from "../person-employment-sync.service";
 
 describe("PersonEmploymentSyncService.backfillOrg", () => {
   it("scans members and aggregates create counts", async () => {

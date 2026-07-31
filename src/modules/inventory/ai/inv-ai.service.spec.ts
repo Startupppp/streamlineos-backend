@@ -1,5 +1,5 @@
 import { InvAiService } from "./inv-ai.service";
-import { InvValuationService } from "../../inv-valuation/inv-valuation.service";
+import { InvValuationService } from "../valuation/inv-valuation.service";
 import { InvReplenishmentService } from "../replenishment/inv-replenishment.service";
 
 const mockCache = { cached: jest.fn((_, fn) => fn()), invalidate: jest.fn(), invalidatePattern: jest.fn() };

@@ -3,7 +3,7 @@
  * offer handoff → person exists → onboard marks ONBOARDING → salary profile seed shape.
  */
 import { RecruitmentHandoffService } from "../../recruitment/recruitment-handoff.service";
-import { seedEmployeeSalaryProfile } from "../../salary-profile-seed.helper";
+import { seedEmployeeSalaryProfile } from "../salary-profile-seed.helper";
 
 describe("Phase 2.1 lifecycle journey (contracts)", () => {
   it("handoff reuses person; salary seed creates profile with components", async () => {

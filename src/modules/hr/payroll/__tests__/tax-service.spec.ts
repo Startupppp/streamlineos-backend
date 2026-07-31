@@ -1,4 +1,4 @@
-import { TaxService } from "../../tax.service";
+import { TaxService } from "../tax.service";
 
 function makeDb(selectResult: unknown[] = [], _updateResult: unknown[] = [], insertResult: unknown[] = []) {
   const returning = jest.fn().mockResolvedValue(insertResult);

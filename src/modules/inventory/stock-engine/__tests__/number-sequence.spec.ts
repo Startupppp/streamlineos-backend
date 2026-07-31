@@ -1,4 +1,4 @@
-import { NumberSequenceService } from "../../number-sequence.service";
+import { NumberSequenceService } from "../number-sequence.service";
 
 describe("NumberSequenceService", () => {
   function buildMockDb(returningRow: { prefix: string; nextNumber: number; padding: number } | null) {

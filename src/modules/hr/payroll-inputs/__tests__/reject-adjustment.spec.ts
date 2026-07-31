@@ -1,5 +1,5 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
-import { PayrollInputsService } from "../../payroll-inputs.service";
+import { PayrollInputsService } from "../payroll-inputs.service";
 
 function makeService(adj: unknown) {
   const findFirst = jest.fn().mockResolvedValue(adj);

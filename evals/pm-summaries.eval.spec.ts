@@ -1,7 +1,7 @@
 import { PM_SUMMARIES_DATASET } from "./datasets/pm-summaries.dataset";
 import { scoreGrounding } from "./scorers/grounding.scorer";
 import { runEval, meetsGate, EVAL_ACCEPTANCE } from "./ai-eval-runner";
-import { PmSummaryOutputSchema } from "src/modules/ai/dto/pm.schemas";
+import { PmSummaryOutputSchema } from "src/modules/ai/core/dto/pm.schemas";
 import { validateAgainstSchema } from "./scorers/schema.scorer";
 
 interface PmSummaryOutput {

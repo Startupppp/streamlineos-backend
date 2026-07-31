@@ -1,6 +1,6 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
-import { AttendancePolicyService } from "../../attendance-policy.service";
+import { AttendancePolicyService } from "../attendance-policy.service";
 import { HrPolicyEvaluationService } from "../../policies/hr-policy-evaluation.service";
 
 const mockLimitFn = jest.fn().mockResolvedValue([]);

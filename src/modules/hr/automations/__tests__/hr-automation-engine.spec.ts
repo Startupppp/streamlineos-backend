@@ -1,8 +1,8 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
-import { HrAutomationEngineService } from "../../hr-automation-engine.service";
-import { HrAutomationActionsService } from "../../hr-automation-actions.service";
-import { HR_WORKFLOW_STARTER } from "../../hr-workflow-starter.port";
+import { HrAutomationEngineService } from "../hr-automation-engine.service";
+import { HrAutomationActionsService } from "../hr-automation-actions.service";
+import { HR_WORKFLOW_STARTER } from "../hr-workflow-starter.port";
 import { NotificationsService } from "../../../notifications/notifications.service";
 import { AutomationEmailService } from "../../../automation/automation-email.service";
 

@@ -20,7 +20,7 @@ const mockActor: CurrentUserContext = {
 const toolOpts: ToolCallOptions = { toolCallId: "test-call", messages: [] };
 
 function buildMocks() {
-  const db = { select: jest.fn(), update: jest.fn(), insert: jest.fn() } as unknown as import("../../db/drizzle.module").Db;
+  const db = { select: jest.fn(), update: jest.fn(), insert: jest.fn() } as unknown as import("../../../db/drizzle.module").Db;
   const toolAccess = { denyReason: jest.fn(), scope: jest.fn() } as unknown as ToolAccessService;
   const confirmation = { propose: jest.fn(), confirm: jest.fn(), markExecuted: jest.fn(), cancel: jest.fn() } as unknown as AiConfirmationService;
   const moduleRef = { get: jest.fn() } as unknown as import("@nestjs/core").ModuleRef;
@@ -73,7 +73,7 @@ describe("ProjectsCopilotTools", () => {
       const { toolAccess, confirmation, moduleRef } = buildMocks();
       jest.mocked(toolAccess.denyReason).mockResolvedValue(null);
 
-      const db = buildTicketsDb(true) as unknown as import("../../db/drizzle.module").Db;
+      const db = buildTicketsDb(true) as unknown as import("../../../db/drizzle.module").Db;
       const tools = new ProjectsCopilotTools(db, toolAccess, confirmation, moduleRef);
       const built = tools.buildTools({ actor: mockActor });
 
@@ -87,7 +87,7 @@ describe("ProjectsCopilotTools", () => {
       const { toolAccess, confirmation, moduleRef } = buildMocks();
       jest.mocked(toolAccess.denyReason).mockResolvedValue(null);
 
-      const db = buildTicketsDb(false) as unknown as import("../../db/drizzle.module").Db;
+      const db = buildTicketsDb(false) as unknown as import("../../../db/drizzle.module").Db;
       const tools = new ProjectsCopilotTools(db, toolAccess, confirmation, moduleRef);
       const built = tools.buildTools({ actor: mockActor });
 

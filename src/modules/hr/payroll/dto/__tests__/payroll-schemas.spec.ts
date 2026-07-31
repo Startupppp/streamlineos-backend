@@ -4,7 +4,7 @@ import {
   patchFnfSchema,
   createTaxWindowBodySchema,
   patchTaxWindowBodySchema,
-} from "../../payroll.schemas";
+} from "../payroll.schemas";
 
 describe("createBonusSchema", () => {
   const validBase = {

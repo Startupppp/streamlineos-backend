@@ -1,4 +1,4 @@
-import { checkProgressiveDiscipline } from "../../progressive-discipline";
+import { checkProgressiveDiscipline } from "../progressive-discipline";
 
 describe("progressive discipline", () => {
   it("allows verbal warning always", () => {

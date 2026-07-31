@@ -1,4 +1,4 @@
-import { PersonEmploymentSyncService } from "../../person-employment-sync.service";
+import { PersonEmploymentSyncService } from "../person-employment-sync.service";
 
 describe("PersonEmploymentSyncService", () => {
   it("creates person and employment when neither exists", async () => {

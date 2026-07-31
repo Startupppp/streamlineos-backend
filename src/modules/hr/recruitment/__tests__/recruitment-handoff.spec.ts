@@ -1,4 +1,4 @@
-import { RecruitmentHandoffService } from "../../recruitment-handoff.service";
+import { RecruitmentHandoffService } from "../recruitment-handoff.service";
 
 describe("RecruitmentHandoffService", () => {
   it("reuses person by email and does not insert a second person", async () => {

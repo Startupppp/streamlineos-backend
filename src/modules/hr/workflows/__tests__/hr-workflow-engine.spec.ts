@@ -1,7 +1,7 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
-import { HrWorkflowEngineService } from "../../hr-workflow-engine.service";
+import { HrWorkflowEngineService } from "../hr-workflow-engine.service";
 import { AccessService } from "../../../access/access.service";
 
 function makeSelectChain(results: unknown[][] = []) {

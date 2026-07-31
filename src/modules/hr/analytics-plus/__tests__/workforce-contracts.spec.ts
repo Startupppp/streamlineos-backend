@@ -1,4 +1,4 @@
-import { HrAnalyticsPlusService } from "../../hr-analytics-plus.service";
+import { HrAnalyticsPlusService } from "../hr-analytics-plus.service";
 
 function createExecuteDb(results: unknown[][]) {
   let call = 0;

@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException } from "@nestjs/common";
-import { LeavesService } from "../../leaves.service";
-import { LeavePoliciesService } from "../../leave-policies.service";
+import { LeavesService } from "../leaves.service";
+import { LeavePoliciesService } from "../leave-policies.service";
 
 function createDb(typeRows: { id: number }[]) {
   const insert = jest.fn();

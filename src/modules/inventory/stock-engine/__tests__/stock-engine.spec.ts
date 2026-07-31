@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, UnprocessableEntityException } from "@nestjs/common";
-import { StockEngineService, addDec, mulDec, divDec } from "../../stock-engine.service";
-import type { StockEngineCommand } from "../../stock-engine.types";
+import { StockEngineService, addDec, mulDec, divDec } from "../stock-engine.service";
+import type { StockEngineCommand } from "../stock-engine.types";
 
 function makeInsertChain(txnReturningId?: number) {
   const returning = jest.fn().mockResolvedValue(txnReturningId !== undefined ? [{ id: txnReturningId }] : []);

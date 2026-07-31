@@ -1,4 +1,4 @@
-import { escapeHtml, sanitizeHtml } from "../../html-sanitizer";
+import { escapeHtml, sanitizeHtml } from "../html-sanitizer";
 
 describe("escapeHtml", () => {
   it("escapes ampersand", () => {

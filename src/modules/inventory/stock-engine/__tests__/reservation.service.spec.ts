@@ -1,4 +1,4 @@
-import { ReservationService } from "../../reservation.service";
+import { ReservationService } from "../reservation.service";
 
 function makeUpdateChain() {
   const where = jest.fn().mockResolvedValue(undefined);

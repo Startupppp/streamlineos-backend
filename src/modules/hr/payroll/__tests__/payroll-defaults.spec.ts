@@ -2,7 +2,7 @@ import {
   resolvePayrollDefaults,
   countWorkingDays,
   SEEDED_PAYROLL_DEFAULTS,
-} from "../../lib/payroll-defaults";
+} from "../lib/payroll-defaults";
 
 describe("resolvePayrollDefaults", () => {
   it("returns seeded defaults when no policy config exists", () => {

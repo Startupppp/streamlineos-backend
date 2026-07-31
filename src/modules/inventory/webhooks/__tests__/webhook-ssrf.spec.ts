@@ -1,4 +1,4 @@
-import { validateWebhookUrl } from "../../webhooks.service";
+import { validateWebhookUrl } from "../webhooks.service";
 
 describe("validateWebhookUrl", () => {
   describe("valid public HTTPS URLs", () => {

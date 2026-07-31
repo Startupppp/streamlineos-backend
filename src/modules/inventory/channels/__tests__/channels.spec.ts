@@ -1,5 +1,5 @@
 import { NotFoundException } from "@nestjs/common";
-import { ChannelsService } from "../../channels.service";
+import { ChannelsService } from "../channels.service";
 
 function makeWhereChain(result: unknown[]) {
   const where = jest.fn().mockResolvedValue(result);

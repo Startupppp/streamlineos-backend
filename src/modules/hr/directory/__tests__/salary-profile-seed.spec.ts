@@ -1,4 +1,4 @@
-import { seedEmployeeSalaryProfile } from "../../salary-profile-seed.helper";
+import { seedEmployeeSalaryProfile } from "../salary-profile-seed.helper";
 
 describe("seedEmployeeSalaryProfile", () => {
   it("creates profile and assigns org components with BASIC amount", async () => {

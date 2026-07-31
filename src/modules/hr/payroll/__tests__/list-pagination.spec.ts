@@ -1,4 +1,4 @@
-import { listPageQuerySchema } from "../../dto/payroll.schemas";
+import { listPageQuerySchema } from "../dto/payroll.schemas";
 
 describe("listPageQuerySchema", () => {
   it("accepts empty query and coerces string params", () => {

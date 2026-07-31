@@ -1,5 +1,5 @@
-import { parseCsv, toCsv } from "../../csv.util";
-import { ImportService } from "../../import.service";
+import { parseCsv, toCsv } from "../csv.util";
+import { ImportService } from "../import.service";
 
 describe("parseCsv", () => {
   it("parses a simple 2-column, 2-row CSV", () => {

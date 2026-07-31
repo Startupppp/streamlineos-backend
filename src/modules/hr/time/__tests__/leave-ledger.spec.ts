@@ -1,6 +1,6 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
-import { LeaveLedgerService } from "../../leave-ledger.service";
+import { LeaveLedgerService } from "../leave-ledger.service";
 
 const mockLimitFn = jest.fn().mockResolvedValue([]);
 const mockWhereFn = jest.fn().mockReturnThis();

@@ -1,7 +1,7 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
-import { HrCasesService } from "../../hr-cases.service";
+import { HrCasesService } from "../hr-cases.service";
 import { HrAuditService } from "../../core/hr-audit.service";
 
 const mockSelectFn = jest.fn().mockReturnThis();

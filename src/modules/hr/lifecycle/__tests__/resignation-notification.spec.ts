@@ -1,6 +1,6 @@
 process.env.APP_URL ??= "http://localhost:1000";
 
-import { ResignationJobsService } from "../../resignation-jobs.service";
+import { ResignationJobsService } from "../resignation-jobs.service";
 
 function buildNotificationsService() {
   const sent: { orgId: string; userId: string; type: string; title: string }[] = [];

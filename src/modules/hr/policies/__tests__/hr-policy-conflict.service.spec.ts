@@ -1,4 +1,4 @@
-import { HrPolicyConflictService } from "../../hr-policy-conflict.service";
+import { HrPolicyConflictService } from "../hr-policy-conflict.service";
 
 describe("HrPolicyConflictService", () => {
   it("flags equal-priority overlapping org-scope policies as blocking", async () => {

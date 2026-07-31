@@ -1,5 +1,5 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
-import { InvStockAdjustmentsService } from "../../inv-stock-adjustments.service";
+import { InvStockAdjustmentsService } from "../inv-stock-adjustments.service";
 
 function makeDb(adjRow?: Partial<{ id: number; status: string; referenceNumber: string; reason: string; notes: string | null; lines: unknown[] }>) {
   const returning = jest.fn().mockResolvedValue([{ id: 1, referenceNumber: "ADJ-00001" }]);

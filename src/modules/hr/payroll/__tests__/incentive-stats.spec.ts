@@ -1,4 +1,4 @@
-import { IncentivesService } from "../../incentives.service";
+import { IncentivesService } from "../incentives.service";
 
 function makeDb(statsRow: { totalRevenue: string; approvedCount: string; pendingCount: string; thisMonth: string }) {
   const where = jest.fn().mockResolvedValue([statsRow]);

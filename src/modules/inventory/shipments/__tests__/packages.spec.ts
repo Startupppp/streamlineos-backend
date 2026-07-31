@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
-import { PackagesService } from "../../packages.service";
+import { PackagesService } from "../packages.service";
 import { INV_ERRORS } from "../../stock-engine/stock-engine.types";
 
 function limitChain(result: unknown[]) {
