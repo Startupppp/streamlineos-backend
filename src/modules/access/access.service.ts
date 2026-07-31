@@ -211,8 +211,10 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    const deniedPermissions = await this.getUserDeniedPermissions(orgId, userId);
-    for (const key of deniedPermissions) map.delete(key);
+    if (map.size > 0) {
+      const deniedPermissions = await this.getUserDeniedPermissions(orgId, userId);
+      for (const key of deniedPermissions) map.delete(key);
+    }
 
     return map;
   }
@@ -250,7 +252,9 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       [] as { permission: { name: string } | null }[],
     );
     const permissionSet = new Set(
-      rows.map((row) => row.permission?.name).filter((name): name is string => !!name),
+      (Array.isArray(rows) ? rows : [])
+        .map((row) => row.permission?.name)
+        .filter((name): name is string => !!name),
     );
     this.deniedPermissionsCache.set(cacheKey, {
       permissions: permissionSet,
