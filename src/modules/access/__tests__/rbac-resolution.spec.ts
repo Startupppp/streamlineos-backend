@@ -109,7 +109,7 @@ describe("AccessService.resolveUserPermissions — org owner receives every cata
   });
 });
 
-describe("AccessService.getAccessSnapshot — platform admin receives every catalog permission without querying permission tables", () => {
+describe("AccessService.getAccessSnapshot — org owner receives every catalog permission without querying permission tables", () => {
   it("returns all catalog keys in scopes and marks every module enabled, bypassing resolveUserPermissions entirely", async () => {
     const db = {
       query: {
@@ -124,12 +124,12 @@ describe("AccessService.getAccessSnapshot — platform admin receives every cata
       userId: USER,
       orgId: ORG_A,
       branchId: null,
-      role: "PLATFORM_ADMIN",
+      role: "OWNER",
       permissions: [],
       enabledModules: [],
       plan: null,
-      isOrgOwner: false,
-      sessionId: "session-platform",
+      isOrgOwner: true,
+      sessionId: "session-owner",
     };
 
     const svc = buildService(db);
@@ -141,7 +141,7 @@ describe("AccessService.getAccessSnapshot — platform admin receives every cata
     expect(snapshot.permissions).toContain("ownership:org:transfer");
     expect(snapshot.scopes["hr:leaves:approve"]).toBe("all");
     expect(snapshot.scopes["hr:employees:view"]).toBe("all");
-    expect(snapshot.isOrgOwner).toBe(false);
+    expect(snapshot.isOrgOwner).toBe(true);
     expect(Object.keys(snapshot.modules).length).toBeGreaterThan(0);
     expect(Object.values(snapshot.modules).every((enabled) => enabled === true)).toBe(true);
     expect(db.query.organizationMembers.findFirst).not.toHaveBeenCalled();

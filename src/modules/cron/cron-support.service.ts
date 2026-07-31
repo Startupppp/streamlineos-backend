@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
-import { SupportSlaService } from "../support/support-sla.service";
-import { SupportTicketsService } from "../support/support-tickets.service";
+import { SupportSlaService } from "../support/core/support-sla.service";
+import { SupportTicketsService } from "../support/core/support-tickets.service";
 
 @Injectable()
 export class CronSupportService {

@@ -29,7 +29,7 @@ import type { RegisterInput } from "./dto/auth.schemas";
 import {
   getTrialDays,
   TRIAL_PLAN,
-} from "../billing/plan-entitlements.constants";
+} from "../billing/core/plan-entitlements.constants";
 
 function slugify(name: string): string {
   return (

@@ -11,7 +11,7 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { UsersService } from "./users.service";
 import { UserProfileService } from "./user-profile.service";
 import { UserOpsService } from "./user-ops.service";
-import { InvitationsService } from "../organization/invitations.service";
+import { InvitationsService } from "../organization/core/invitations.service";
 import {
   listUsersSchema, updateUserSchema, updateUserStatusSchema,
   inviteUserSchema, bulkInviteSchema, updatePreferencesSchema,

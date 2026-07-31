@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { z } from "zod";
-import { ComposioGateway } from "../integrations/composio.gateway";
+import { ComposioGateway } from "../integrations/core/composio.gateway";
 import { TOOL_SLUGS, unwrapComposioData } from "./external-event-normalizers";
 
 export interface PushEventInput {

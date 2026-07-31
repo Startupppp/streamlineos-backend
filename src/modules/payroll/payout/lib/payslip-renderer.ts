@@ -1,5 +1,5 @@
 import type { CalculationSnapshot, CalculationSnapshotLine, PayrollWorkerType } from "../../payroll.types";
-import type { PayslipPdfData } from "../../../hr-payroll/lib/payslip-pdf";
+import type { PayslipPdfData } from "../../../hr/payroll/lib/payslip-pdf";
 import type { PayslipTemplateConfig } from "../dto/payout.schemas";
 import { amountInWords } from "./amount-in-words";
 

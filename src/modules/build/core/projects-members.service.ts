@@ -11,12 +11,10 @@ import {
   organizationMembers,
   projectMembers,
   projects,
-  projectStatuses,
   projectTeamAssignments,
   projectTeamMembers,
   projectTeams,
   ticketAssignees,
-  ticketLabels,
   tickets,
   users,
 } from "../../../db/schema";
@@ -33,6 +31,8 @@ import type {
   UpdateProjectMemberRoleInput,
 } from "./dto/projects.schemas";
 import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
+import { ProjectsCustomStatesService } from "./projects-custom-states.service";
+import { ProjectsLabelsService } from "./projects-labels.service";
 
 async function assertProjectOwnership(
   db: Db,
@@ -46,16 +46,14 @@ async function assertProjectOwnership(
   if (!project) throw new NotFoundException("Project not found");
 }
 
-function statusTypeOf(type: string | null | undefined): string {
-  return type ?? "unstarted";
-}
-
 @Injectable()
 export class ProjectsMembersService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly webhooksDispatch: ProjectsWebhooksDispatchService,
     private readonly access: AccessService,
+    private readonly statesService: ProjectsCustomStatesService,
+    private readonly labelsService: ProjectsLabelsService,
   ) {}
 
   async assertCanManageProject(
@@ -371,16 +369,7 @@ export class ProjectsMembersService {
 
   async listCustomStates(u: CurrentUserContext, projectId: number) {
     await this.assertProjectAccess(u, projectId);
-    return this.db
-      .select()
-      .from(projectStatuses)
-      .where(
-        and(
-          eq(projectStatuses.projectId, projectId),
-          eq(projectStatuses.orgId, u.orgId),
-        ),
-      )
-      .orderBy(projectStatuses.order);
+    return this.statesService.listCustomStates(u.orgId, projectId);
   }
 
   async createCustomState(
@@ -388,232 +377,35 @@ export class ProjectsMembersService {
     projectId: number,
     body: CreateStateInput,
   ) {
-    const orgId = u.orgId;
     await this.assertCanManageProject(u, projectId);
-
-    const existing = await this.db
-      .select({ id: projectStatuses.id })
-      .from(projectStatuses)
-      .where(
-        and(
-          eq(projectStatuses.projectId, projectId),
-          eq(projectStatuses.orgId, orgId),
-          eq(projectStatuses.name, body.name),
-        ),
-      )
-      .limit(1);
-    if (existing.length > 0) {
-      throw new ConflictException(
-        `A column named "${body.name}" already exists in this project`,
-      );
-    }
-
-    const [maxResult] = await this.db
-      .select({
-        maxOrder: sql<number>`COALESCE(MAX(${projectStatuses.order}), -1)`,
-      })
-      .from(projectStatuses)
-      .where(
-        and(
-          eq(projectStatuses.projectId, projectId),
-          eq(projectStatuses.orgId, orgId),
-        ),
-      );
-    const nextOrder = body.order ?? (maxResult?.maxOrder ?? -1) + 1;
-
-    const [state] = await this.db
-      .insert(projectStatuses)
-      .values({
-        projectId,
-        orgId,
-        name: body.name,
-        color: body.color,
-        order: nextOrder,
-        type: body.type ?? "unstarted",
-      })
-      .returning();
-    return state;
+    return this.statesService.createCustomState(u.orgId, projectId, body);
   }
 
-  listLabels(orgId: string) {
-    return this.db.query.ticketLabels.findMany({
-      where: eq(ticketLabels.orgId, orgId),
-      orderBy: [asc(ticketLabels.name)],
-      limit: 300,
-    });
-  }
-
-  async createLabel(orgId: string, body: CreateLabelInput) {
-    const [label] = await this.db
-      .insert(ticketLabels)
-      .values({ orgId, name: body.name, color: body.color ?? "#3B82F6" })
-      .returning();
-    return label;
-  }
-
-  async updateLabel(orgId: string, labelId: number, data: UpdateLabelInput) {
-    const [updated] = await this.db
-      .update(ticketLabels)
-      .set(data)
-      .where(and(eq(ticketLabels.id, labelId), eq(ticketLabels.orgId, orgId)))
-      .returning();
-    if (!updated) throw new NotFoundException("Label not found");
-    return updated;
-  }
-
-  async deleteLabel(orgId: string, labelId: number) {
-    const [deleted] = await this.db
-      .delete(ticketLabels)
-      .where(and(eq(ticketLabels.id, labelId), eq(ticketLabels.orgId, orgId)))
-      .returning();
-    if (!deleted) throw new NotFoundException("Label not found");
-    return { success: true };
-  }
-
-  async updateCustomState(
+  updateCustomState(
     u: CurrentUserContext,
     stateId: number,
     data: UpdateCustomStateInput,
   ) {
-    const orgId = u.orgId;
-    const [existing] = await this.db
-      .select()
-      .from(projectStatuses)
-      .where(
-        and(eq(projectStatuses.id, stateId), eq(projectStatuses.orgId, orgId)),
-      )
-      .limit(1);
-    if (!existing) throw new NotFoundException("Status not found");
-    await this.assertCanManageProject(u, existing.projectId);
-
-    if (data.name !== undefined && data.name !== existing.name) {
-      const [duplicate] = await this.db
-        .select({ id: projectStatuses.id })
-        .from(projectStatuses)
-        .where(
-          and(
-            eq(projectStatuses.projectId, existing.projectId),
-            eq(projectStatuses.orgId, orgId),
-            eq(projectStatuses.name, data.name),
-            ne(projectStatuses.id, stateId),
-          ),
-        )
-        .limit(1);
-      if (duplicate) {
-        throw new ConflictException(
-          `A column named "${data.name}" already exists in this project`,
-        );
-      }
-    }
-
-    const updateData: Partial<typeof projectStatuses.$inferInsert> = {};
-    if (data.name !== undefined) updateData.name = data.name;
-    if (data.color !== undefined) updateData.color = data.color;
-    if (data.order !== undefined) updateData.order = data.order;
-    if (data.type !== undefined) updateData.type = data.type;
-
-    const updated = await this.db.transaction(async (tx) => {
-      if (data.name !== undefined && data.name !== existing.name) {
-        await tx
-          .update(tickets)
-          .set({ status: data.name })
-          .where(
-            and(
-              eq(tickets.orgId, orgId),
-              eq(tickets.projectId, existing.projectId),
-              eq(tickets.status, existing.name),
-            ),
-          );
-      }
-
-      const [row] = await tx
-        .update(projectStatuses)
-        .set(updateData)
-        .where(
-          and(
-            eq(projectStatuses.id, stateId),
-            eq(projectStatuses.orgId, orgId),
-          ),
-        )
-        .returning();
-      return row;
-    });
-
-    if (!updated) throw new NotFoundException("Status not found");
-    return updated;
+    return this.statesService.updateCustomState(u, stateId, data);
   }
 
-  async deleteCustomState(u: CurrentUserContext, stateId: number) {
-    const orgId = u.orgId;
-    const [existing] = await this.db
-      .select()
-      .from(projectStatuses)
-      .where(
-        and(eq(projectStatuses.id, stateId), eq(projectStatuses.orgId, orgId)),
-      )
-      .limit(1);
-    if (!existing) throw new NotFoundException("Status not found");
-    await this.assertCanManageProject(u, existing.projectId);
+  deleteCustomState(u: CurrentUserContext, stateId: number) {
+    return this.statesService.deleteCustomState(u, stateId);
+  }
 
-    const siblings = await this.db
-      .select()
-      .from(projectStatuses)
-      .where(
-        and(
-          eq(projectStatuses.projectId, existing.projectId),
-          eq(projectStatuses.orgId, orgId),
-        ),
-      )
-      .orderBy(projectStatuses.order);
+  listLabels(orgId: string) {
+    return this.labelsService.listLabels(orgId);
+  }
 
-    const remaining = siblings.filter((s) => s.id !== stateId);
-    if (remaining.length === 0) {
-      throw new BadRequestException("At least one workflow status is required");
-    }
+  createLabel(orgId: string, body: CreateLabelInput) {
+    return this.labelsService.createLabel(orgId, body);
+  }
 
-    const existingType = statusTypeOf(existing.type);
-    if (
-      existingType === "unstarted" &&
-      !remaining.some((s) => statusTypeOf(s.type) === "unstarted")
-    ) {
-      throw new BadRequestException("Keep at least one Unstarted status");
-    }
-    if (
-      existingType === "completed" &&
-      !remaining.some((s) => statusTypeOf(s.type) === "completed")
-    ) {
-      throw new BadRequestException("Keep at least one Completed status");
-    }
+  updateLabel(orgId: string, labelId: number, data: UpdateLabelInput) {
+    return this.labelsService.updateLabel(orgId, labelId, data);
+  }
 
-    const fallback =
-      remaining.find((s) => statusTypeOf(s.type) === "unstarted") ??
-      remaining[0];
-    if (!fallback) {
-      throw new BadRequestException("At least one workflow status is required");
-    }
-
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(tickets)
-        .set({ status: fallback.name })
-        .where(
-          and(
-            eq(tickets.orgId, orgId),
-            eq(tickets.projectId, existing.projectId),
-            eq(tickets.status, existing.name),
-          ),
-        );
-
-      await tx
-        .delete(projectStatuses)
-        .where(
-          and(
-            eq(projectStatuses.id, stateId),
-            eq(projectStatuses.orgId, orgId),
-          ),
-        );
-    });
-
-    return { success: true };
+  deleteLabel(orgId: string, labelId: number) {
+    return this.labelsService.deleteLabel(orgId, labelId);
   }
 }

@@ -3,8 +3,8 @@ import { and, eq, isNull } from "drizzle-orm";
 import { attendance } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { HrAutomationEngineService } from "../hr-automations/hr-automation-engine.service";
-import { AttendancePolicyService } from "../hr-time/attendance-policy.service";
+import { HrAutomationEngineService } from "../hr/automations/hr-automation-engine.service";
+import { AttendancePolicyService } from "../hr/time/attendance-policy.service";
 
 const DEFAULT_AUTO_CHECKOUT_TIME = "19:00";
 const DEFAULT_BREAK_HOURS_AUTO_CHECKOUT = 1;

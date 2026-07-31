@@ -12,7 +12,7 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { PlanLimitsService } from "../../billing/plan-limits.service";
+import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import type { ApplyTemplateInput, CreateTemplateInput } from "./dto/projects.schemas";
 
 const APPLY_DEFAULT_STATUSES = [

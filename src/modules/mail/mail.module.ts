@@ -1,6 +1,6 @@
 import { forwardRef, Module } from "@nestjs/common";
-import { IntegrationsModule } from "../integrations/integrations.module";
-import { AiModule } from "../ai/ai.module";
+import { IntegrationsModule } from "../integrations/core/integrations.module";
+import { AiModule } from "../ai/core/ai.module";
 import { MailController } from "./mail.controller";
 import { MailService } from "./mail.service";
 import { MailAccountsService } from "./mail-accounts.service";

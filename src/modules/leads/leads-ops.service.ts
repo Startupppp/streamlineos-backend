@@ -19,8 +19,8 @@ import { logger } from "../../common/logger/logger.service";
 import { EmailService } from "../email/email.service";
 import { appUrl } from "../email/app-url";
 import { getLeadDistributionEmailTemplate } from "../email/templates/crm";
-import { CrmValidationService } from "../crm-metadata/crm-validation.service";
-import { PlanLimitsService } from "../billing/plan-limits.service";
+import { CrmValidationService } from "../crm/metadata/crm-validation.service";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import type {
   BulkDeleteInput,
   BulkUpdateInput,

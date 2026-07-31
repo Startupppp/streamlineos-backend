@@ -3,7 +3,7 @@ import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { AutomationService } from "./automation.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { AutomationEmailService } from "./automation-email.service";
-import { PlanLimitsService } from "../billing/plan-limits.service";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { AiNodeExecutorService } from "./ai-workflow-nodes/ai-node-executor.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 

@@ -3,7 +3,7 @@ import { and, eq, desc } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { projectAutomations } from "../../../db/schema";
-import { PlanLimitsService } from "../../billing/plan-limits.service";
+import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { ProjectsMembersService } from "./projects-members.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { CreateAutomationInput, UpdateAutomationInput } from "./dto/automation.schemas";

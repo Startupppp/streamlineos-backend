@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
+import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
 
 export type SmartNotificationEvent =
   | "LEAD_ASSIGNED"

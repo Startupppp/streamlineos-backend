@@ -10,8 +10,8 @@ import { moduleOwnerships, modulesCatalog, orgModules, organizations, pmWorkspac
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
-import { PLAN_LOCKED_MODULES } from "../billing/plan-entitlements.constants";
-import { PlanLimitsService } from "../billing/plan-limits.service";
+import { PLAN_LOCKED_MODULES } from "../billing/core/plan-entitlements.constants";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
 import { MODULE_CATALOG } from "../../common/rbac/module-vocabulary";

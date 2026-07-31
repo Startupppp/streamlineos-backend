@@ -8,8 +8,8 @@ import { FeedbucketAiService } from "./feedbucket-ai.service";
 import { FeedbucketCorsMiddleware } from "./feedbucket-cors.middleware";
 import { ProjectsModule } from "../build/core/projects.module";
 import { NotificationsModule } from "../notifications/notifications.module";
-import { AiModule } from "../ai/ai.module";
-import { BillingModule } from "../billing/billing.module";
+import { AiModule } from "../ai/core/ai.module";
+import { BillingModule } from "../billing/core/billing.module";
 
 @Module({
   imports: [ProjectsModule, NotificationsModule, AiModule, BillingModule],

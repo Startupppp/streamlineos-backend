@@ -2,7 +2,7 @@ import { ForbiddenException, NotFoundException, ServiceUnavailableException } fr
 import { Test } from "@nestjs/testing";
 import { PayrollAiExplainService } from "./payroll-ai-explain.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
-import { AiGatewayService } from "../../ai/gateway/ai-gateway.service";
+import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 
 const PUBLISHED_PUB = {
   pubId: 1,

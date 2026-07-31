@@ -13,7 +13,7 @@ import { type Db } from "../../db/drizzle.module";
 import {
   EmbeddingsService,
   EMBEDDING_MODEL,
-} from "../ai/providers/embeddings.service";
+} from "../ai/core/providers/embeddings.service";
 import { StorageService } from "../storage/storage.service";
 import {
   extractAttachmentText,

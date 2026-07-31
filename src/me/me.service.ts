@@ -7,7 +7,7 @@ import {
   decrypt,
   decryptBankDetails,
   encryptBankDetails,
-} from "../modules/onboarding/crypto.helpers";
+} from "../modules/hr/onboarding/core/crypto.helpers";
 import type { UpdateProfileInput } from "./dto/me.schemas";
 import { withClientInfo, withDeviceClientInfo } from "../common/http/parse-user-agent";
 

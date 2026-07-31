@@ -1,7 +1,7 @@
 import { Module } from "@nestjs/common";
 import { PayrollInsightsModule } from "../insights/payroll-insights.module";
 import { PayrollRunsModule } from "../runs/payroll-runs.module";
-import { AccountingModule } from "../../accounting/accounting.module";
+import { AccountingModule } from "../../accounting/core/accounting.module";
 import { ApprovalsController } from "./approvals.controller";
 import { ApprovalsService } from "./approvals.service";
 import { LockingController } from "./locking.controller";

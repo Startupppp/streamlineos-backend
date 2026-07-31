@@ -6,7 +6,7 @@ import { type Db } from "../../db/drizzle.module";
 import { EmailService } from "../email/email.service";
 import { appUrl } from "../email/app-url";
 import { logger } from "../../common/logger/logger.service";
-import { AiCreditsService } from "../billing/ai-credits.service";
+import { AiCreditsService } from "../billing/core/ai-credits.service";
 
 const REMINDER_DAYS = [7, 3, 1] as const;
 

@@ -1,26 +1,13 @@
 import { Module } from "@nestjs/common";
-import { BillingModule } from "../billing/billing.module";
-import { SessionsModule } from "../sessions/sessions.module";
-import { OrganizationController } from "./organization.controller";
-import { OrganizationService } from "./organization.service";
-import { OrgProfileService } from "./org-profile.service";
-import { OrgMembershipService } from "./org-membership.service";
-import { OrgLifecycleService } from "./org-lifecycle.service";
-import { OrganizationSettingsService } from "./organization-settings.service";
-import { InvitationsService } from "./invitations.service";
-import { OrganizationInvitationsController } from "../email/controllers/organization-invitations.controller";
+import { OrganizationModule } from "./core/organization.module";
+import { OrgModule } from "./setup/org.module";
+import { OrgHierarchyModule } from "./hierarchy/org-hierarchy.module";
+import { WorkspaceOnboardingModule } from "./onboarding/workspace-onboarding.module";
+
+const ORGANIZATION_MODULES = [OrganizationModule, OrgModule, OrgHierarchyModule, WorkspaceOnboardingModule];
 
 @Module({
-  imports: [BillingModule, SessionsModule],
-  controllers: [OrganizationController, OrganizationInvitationsController],
-  providers: [
-    OrgProfileService,
-    OrgMembershipService,
-    OrgLifecycleService,
-    OrganizationService,
-    OrganizationSettingsService,
-    InvitationsService,
-  ],
-  exports: [InvitationsService],
+  imports: ORGANIZATION_MODULES,
+  exports: ORGANIZATION_MODULES,
 })
-export class OrganizationModule {}
+export class OrganizationRootModule {}

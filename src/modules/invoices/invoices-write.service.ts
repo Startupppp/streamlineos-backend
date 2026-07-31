@@ -7,9 +7,9 @@ import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
 import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { AuditService } from "../../common/audit/audit.service";
-import { JournalPostingService } from "../accounting/journal-posting.service";
+import { JournalPostingService } from "../accounting/core/journal-posting.service";
 import { InvoicesLifecycleService } from "./invoices-lifecycle.service";
-import { PlanLimitsService } from "../billing/plan-limits.service";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import {
   round2,
   normalizeGstRate,

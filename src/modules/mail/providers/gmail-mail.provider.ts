@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { ComposioGateway } from "../../integrations/composio.gateway";
+import { ComposioGateway } from "../../integrations/core/composio.gateway";
 import {
   normalizeGmailMessage,
   unwrapComposioData,

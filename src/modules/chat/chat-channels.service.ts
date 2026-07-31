@@ -8,7 +8,7 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { PlanLimitsService } from "../billing/plan-limits.service";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { logger } from "../../common/logger/logger.service";
 import type { CreateChannelInput } from "./dto/chat.schemas";

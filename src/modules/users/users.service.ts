@@ -14,7 +14,7 @@ import {
   users,
 } from "../../db/schema";
 import { AuditService } from "../../common/audit/audit.service";
-import { InvitationsService } from "../organization/invitations.service";
+import { InvitationsService } from "../organization/core/invitations.service";
 import type {
   CreateUserInput,
   ListUsersInput,

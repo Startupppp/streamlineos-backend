@@ -2,7 +2,7 @@ import { BadRequestException } from "@nestjs/common";
 import { EntitlementsService } from "./entitlements.service";
 import type { Db } from "../../db/drizzle.module";
 import type { CacheService } from "../../common/cache/cache.service";
-import type { PlanLimitsService } from "../billing/plan-limits.service";
+import type { PlanLimitsService } from "../billing/core/plan-limits.service";
 
 type DeepPartial<T> = {
   [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K];

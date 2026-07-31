@@ -15,7 +15,7 @@ import { type Db } from "../../db/drizzle.module";
 import { extractPageLinkIds } from "./kb-page-content.util";
 import { KbIndexingService } from "./kb-indexing.service";
 import { AuditService } from "../../common/audit/audit.service";
-import { PlanLimitsService } from "../billing/plan-limits.service";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { MovePageInput } from "./dto/kb-pages.schemas";
 

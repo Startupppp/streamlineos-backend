@@ -14,7 +14,7 @@ import { CronNotificationDeliveryService } from "./cron-notification-delivery.se
 import { CronOrganizationService } from "./cron-organization.service";
 import { CronIdempotencyService } from "./cron-idempotency.service";
 import { ChatReplyRemindersService } from "../chat/chat-reply-reminders.service";
-import { ExceptionsDetectorService } from "../timesheets-core/exceptions-detector.service";
+import { ExceptionsDetectorService } from "../timesheets/core/exceptions-detector.service";
 
 @Public()
 @Controller("cron")

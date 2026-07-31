@@ -3,12 +3,12 @@ import { and, eq } from "drizzle-orm";
 import { kbArticles } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
+import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { KbAccessService } from "./kb-access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import type { AiUsageMeta } from "../ai/gateway/ai-gateway.types";
-import { throwOnAiFailure } from "../ai/services/gateway-result.util";
+import type { AiUsageMeta } from "../ai/core/gateway/ai-gateway.types";
+import { throwOnAiFailure } from "../ai/core/services/gateway-result.util";
 
 const MAX_ARTICLE_TEXT = 4000;
 

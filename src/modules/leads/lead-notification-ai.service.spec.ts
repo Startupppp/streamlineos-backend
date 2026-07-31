@@ -1,6 +1,6 @@
 import { LeadNotificationAiService } from "./lead-notification-ai.service";
-import type { AiGatewayService } from "../ai/gateway/ai-gateway.service";
-import type { AiInvokeResult } from "../ai/gateway/ai-gateway.types";
+import type { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
+import type { AiInvokeResult } from "../ai/core/gateway/ai-gateway.types";
 
 const ORG = "org_1";
 

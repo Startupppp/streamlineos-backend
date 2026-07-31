@@ -3,8 +3,8 @@ jest.mock("../email/app-url", () => ({ appUrl: "https://test.example.com" }));
 import { BadRequestException } from "@nestjs/common";
 import type { Db } from "../../db/drizzle.module";
 import { DealsService } from "./deals.service";
-import { CrmBlueprintsService } from "../crm-metadata/crm-blueprints.service";
-import { CrmMetadataService } from "../crm-metadata/crm-metadata.service";
+import { CrmBlueprintsService } from "../crm/metadata/crm-blueprints.service";
+import { CrmMetadataService } from "../crm/metadata/crm-metadata.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { EmailService } from "../email/email.service";
@@ -92,8 +92,8 @@ describe("DealsService – blueprint transition enforcement", () => {
       { dispatch: jest.fn().mockResolvedValue(undefined) } as unknown as WebhooksDispatchService,
       mockBlueprints as unknown as CrmBlueprintsService,
       mockCrmMetadata as unknown as CrmMetadataService,
-      { evaluate: jest.fn().mockResolvedValue({ valid: true, errors: [] }) } as unknown as import("../crm-metadata/crm-validation.service").CrmValidationService,
-      { emit: jest.fn().mockResolvedValue(undefined) } as unknown as import("../crm-automation-studio/crm-automation-bus.service").CrmAutomationBusService,
+      { evaluate: jest.fn().mockResolvedValue({ valid: true, errors: [] }) } as unknown as import("../crm/metadata/crm-validation.service").CrmValidationService,
+      { emit: jest.fn().mockResolvedValue(undefined) } as unknown as import("../crm/automation-studio/crm-automation-bus.service").CrmAutomationBusService,
       {} as unknown as import("./deals-crud.service").DealsCrudService,
       {} as unknown as import("./deals-activities.service").DealsActivitiesService,
       {} as unknown as import("./deals-import-export.service").DealsImportExportService,

@@ -1,10 +1,10 @@
 import { BadRequestException, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
 import { KbEventsService } from "./kb-events.service";
 import { KbSearchService } from "./kb-search.service";
-import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
+import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { AskInput } from "./dto/kb-ai.schemas";
-import type { AiUsageMeta } from "../ai/gateway/ai-gateway.types";
+import type { AiUsageMeta } from "../ai/core/gateway/ai-gateway.types";
 
 const MAX_CONTEXT_ARTICLES = 6;
 const MAX_CONTEXT_CHARS = 1500;

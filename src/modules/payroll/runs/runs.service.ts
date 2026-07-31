@@ -21,7 +21,7 @@ import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
 import { toPaise, fromPaise } from "./lib/money";
 import { AuditService } from "../../../common/audit/audit.service";
 import { PayrollEntitiesService } from "../entities/entities.service";
-import { describeCountryPack } from "../../hr-global/lib/country-pack-registry";
+import { describeCountryPack } from "../../hr/global/lib/country-pack-registry";
 import { getIndiaBundleForMonth } from "./lib/statutory-registry";
 
 @Injectable()

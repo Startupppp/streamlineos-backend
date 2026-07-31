@@ -1,5 +1,5 @@
 import { Module } from "@nestjs/common";
-import { BillingModule } from "../billing/billing.module";
+import { BillingModule } from "../billing/core/billing.module";
 import { ChatActionsController } from "./chat-actions.controller";
 import { ChatChannelsController } from "./chat-channels.controller";
 import { ChatMessagesController } from "./chat-messages.controller";

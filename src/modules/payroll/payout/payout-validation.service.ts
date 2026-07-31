@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { payrollRuns, payrollRunEmployees, users } from "../../../db/schema";
-import { decryptBankDetails } from "../../../modules/hr-payroll/lib/encryption";
+import { decryptBankDetails } from "../../../modules/hr/payroll/lib/encryption";
 import {
   detectScheme,
   inferCountryFromCurrency,

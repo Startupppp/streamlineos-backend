@@ -4,13 +4,13 @@ jest.mock("../../build/core/projects-tickets.service");
 import { BadRequestException, ConflictException, ForbiddenException, HttpException, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { FeedbucketAiService } from "../feedbucket-ai.service";
 import type { Db } from "../../../db/drizzle.module";
-import type { AiGatewayService } from "../../ai/gateway/ai-gateway.service";
-import type { AiUsageService } from "../../ai/services/ai-usage.service";
+import type { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
+import type { AiUsageService } from "../../ai/core/services/ai-usage.service";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
 import type { ProjectsTicketsService } from "../../build/core/projects-tickets.service";
 import type { FeedbackAnalysis } from "../feedbucket-ai.schemas";
-import type { AiInvokeWithUsageResult } from "../../ai/gateway/ai-gateway.types";
+import type { AiInvokeWithUsageResult } from "../../ai/core/gateway/ai-gateway.types";
 
 const ORG_A = "org_a";
 const ORG_B = "org_b";

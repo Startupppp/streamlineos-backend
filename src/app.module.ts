@@ -28,122 +28,50 @@ import { CalendarModule } from "./modules/calendar/calendar.module";
 import { SettingsModule } from "./modules/settings/settings.module";
 import { InvoicesModule } from "./modules/invoices/invoices.module";
 import { CareersModule } from "./modules/careers/careers.module";
-import { OnboardingModule } from "./modules/onboarding/onboarding.module";
 import { WebhooksModule } from "./modules/webhooks/webhooks.module";
 import { ClientsModule } from "./modules/clients/clients.module";
-import { CrmModule } from "./modules/crm/crm.module";
+import { CrmRootModule } from "./modules/crm/crm.module";
 import { DashboardModule } from "./modules/dashboard/dashboard.module";
 import { PublicModule } from "./modules/public/public.module";
 import { RbacModule } from "./modules/rbac/rbac.module";
 import { AccessModule } from "./modules/access/access.module";
 import { DealsModule } from "./modules/deals/deals.module";
-import { OrgModule } from "./modules/org/org.module";
-import { OrganizationModule } from "./modules/organization/organization.module";
+import { OrganizationRootModule } from "./modules/organization/organization.module";
 import { OwnershipModule } from "./modules/ownership/ownership.module";
 import { BranchesModule } from "./modules/branches/branches.module";
 import { OfferFulfillmentModule } from "./modules/offer-fulfillment/offer-fulfillment.module";
-import { SupportModule } from "./modules/support/support.module";
+import { SupportRootModule } from "./modules/support/support.module";
 import { ESignModule } from "./modules/e-sign/e-sign.module";
 import { KbModule } from "./modules/kb/kb.module";
-import { AccountingModule } from "./modules/accounting/accounting.module";
+import { AccountingRootModule } from "./modules/accounting/accounting.module";
 import { ChatModule } from "./modules/chat/chat.module";
-import { HrConfigModule } from "./modules/hr-config/hr-config.module";
-import { HrTimeModule } from "./modules/hr-time/hr-time.module";
-import { HrDirectoryModule } from "./modules/hr-directory/hr-directory.module";
-import { HrPerformanceModule } from "./modules/hr-performance/hr-performance.module";
-import { HrPayrollModule } from "./modules/hr-payroll/hr-payroll.module";
-import { HrLifecycleModule } from "./modules/hr-lifecycle/hr-lifecycle.module";
-import { HrCoreModule } from "./modules/hr-core/hr-core.module";
-import { HrAutomationsModule } from "./modules/hr-automations/hr-automations.module";
-import { HrPoliciesModule } from "./modules/hr-policies/hr-policies.module";
-import { HrWorkflowsModule } from "./modules/hr-workflows/hr-workflows.module";
-import { HrTemplatesModule } from "./modules/hr-templates/hr-templates.module";
-import { HrPayrollInputsModule } from "./modules/hr-payroll-inputs/hr-payroll-inputs.module";
-import { HrCasesModule } from "./modules/hr-cases/hr-cases.module";
-import { HrBenefitsModule } from "./modules/hr-benefits/hr-benefits.module";
-import { HrGlobalModule } from "./modules/hr-global/hr-global.module";
-import { HrFormsModule } from "./modules/hr-forms/hr-forms.module";
-import { HrAnalyticsPlusModule } from "./modules/hr-analytics-plus/hr-analytics-plus.module";
-import { HrSettingsHubModule } from "./modules/hr-settings-hub/hr-settings-hub.module";
-import { HrGovernanceModule } from "./modules/hr-governance/hr-governance.module";
-import { HrEnterpriseCompModule } from "./modules/hr-enterprise-comp/hr-enterprise-comp.module";
-import { HrEnterpriseOpsModule } from "./modules/hr-enterprise-ops/hr-enterprise-ops.module";
+import { HrModule } from "./modules/hr/hr.module";
 import { SearchModule } from "./modules/search/search.module";
-import { IntegrationsGitModule } from "./modules/integrations-git/integrations-git.module";
-import { IntegrationsModule } from "./modules/integrations/integrations.module";
+import { IntegrationsRootModule } from "./modules/integrations/integrations.module";
 import { CronModule } from "./modules/cron/cron.module";
-import { HrHelpdeskModule } from "./modules/hr-helpdesk/hr-helpdesk.module";
-import { HrRecruitmentModule } from "./modules/hr-recruitment/hr-recruitment.module";
-import { HrInterviewsModule } from "./modules/hr-interviews/hr-interviews.module";
-import { InvProductsModule } from "./modules/inv-products/inv-products.module";
-import { InvWarehousesModule } from "./modules/inv-warehouses/inv-warehouses.module";
-import { InvStockModule } from "./modules/inv-stock/inv-stock.module";
-import { InvVendorsModule } from "./modules/inv-vendors/inv-vendors.module";
-import { InvPurchaseOrdersModule } from "./modules/inv-purchase-orders/inv-purchase-orders.module";
-import { InvSalesOrdersModule } from "./modules/inv-sales-orders/inv-sales-orders.module";
-import { InvReportsModule } from "./modules/inv-reports/inv-reports.module";
-import { InvBarcodeModule } from "./modules/inv-barcode/inv-barcode.module";
-import { InvCountsModule } from "./modules/inv-counts/inv-counts.module";
-import { InvReturnsModule } from "./modules/inv-returns/inv-returns.module";
-import { InvTraceabilityModule } from "./modules/inv-traceability/inv-traceability.module";
-import { InvValuationModule } from "./modules/inv-valuation/inv-valuation.module";
-import { InvReplenishmentModule } from "./modules/inv-replenishment/inv-replenishment.module";
-import { InvAiModule } from "./modules/inv-ai/inv-ai.module";
-import { InvQualityModule } from "./modules/inv-quality/inv-quality.module";
-import { InvShipmentsModule } from "./modules/inv-shipments/inv-shipments.module";
-import { InvChannelsModule } from "./modules/inv-channels/inv-channels.module";
-import { InvImportExportModule } from "./modules/inv-import-export/inv-import-export.module";
-import { InvWebhooksModule } from "./modules/inv-webhooks/inv-webhooks.module";
-import { InvSettingsModule } from "./modules/inv-settings/inv-settings.module";
+import { InventoryModule } from "./modules/inventory/inventory.module";
 import { EmailModule } from "./modules/email/email.module";
-import { AiModule } from "./modules/ai/ai.module";
-import { AiSummariesModule } from "./modules/ai-summaries/ai-summaries.module";
-import { SupportKbGapModule } from "./modules/support-kb-gap";
+import { AiRootModule } from "./modules/ai/ai.module";
 import { StorageModule } from "./modules/storage/storage.module";
-import { BillingModule } from "./modules/billing/billing.module";
+import { BillingRootModule } from "./modules/billing/billing.module";
 import { RealtimeModule } from "./modules/realtime/realtime.module";
 import { AutomationModule } from "./modules/automation/automation.module";
 import { SessionsModule } from "./modules/sessions/sessions.module";
 import { MfaModule } from "./modules/mfa/mfa.module";
 import { AuthModule } from "./modules/auth/auth.module";
-import { AiJobsModule } from "./modules/ai-jobs/ai-jobs.module";
-import { AiConfirmationModule } from "./modules/ai-confirmation";
-import { OrgHierarchyModule } from "./modules/org-hierarchy/org-hierarchy.module";
-import { ApiTokensModule } from "./modules/api-tokens/api-tokens.module";
-import { UserApiTokensModule } from "./modules/user-api-tokens/user-api-tokens.module";
+import { ApiTokensRootModule } from "./modules/api-tokens/api-tokens.module";
 import { DelegationsModule } from "./modules/delegations/delegations.module";
 import { UsersModule } from "./modules/users/users.module";
-import { WorkspaceOnboardingModule } from "./modules/workspace-onboarding/workspace-onboarding.module";
 import { WorkflowsModule } from "./modules/workflows/workflows.module";
 import { PayrollModule } from "./modules/payroll/payroll.module";
-import { TimesheetsModule } from "./modules/timesheets/timesheets.module";
-import { TimesheetsCoreModule } from "./modules/timesheets-core/timesheets-core.module";
-import { PaymentsModule } from "./modules/payments/payments.module";
+import { TimesheetsRootModule } from "./modules/timesheets/timesheets.module";
 import { FeedbucketModule } from "./modules/feedbucket/feedbucket.module";
-import { HrImportModule } from "./modules/hr-import/hr-import.module";
-import { CrmMetadataModule } from "./modules/crm-metadata/crm-metadata.module";
-import { CrmPricebooksModule } from "./modules/crm-pricebooks/crm-pricebooks.module";
-import { CrmInboxModule } from "./modules/crm-inbox/crm-inbox.module";
-import { CrmAutomationStudioModule } from "./modules/crm-automation-studio/crm-automation-studio.module";
-import { FinanceReportsModule } from "./modules/finance-reports/finance-reports.module";
-import { FinanceExpensesModule } from "./modules/finance-expenses/finance-expenses.module";
-import { AccountingSettingsModule } from "./modules/accounting-settings/accounting-settings.module";
-import { AccountingGlModule } from "./modules/accounting-gl/accounting-gl.module";
-import { FinanceArModule } from "./modules/finance-ar/finance-ar.module";
-import { FinanceApModule } from "./modules/finance-ap/finance-ap.module";
-import { FinanceBankingModule } from "./modules/finance-banking/finance-banking.module";
-import { FinanceTaxModule } from "./modules/finance-tax/finance-tax.module";
-import { FinancePlanningModule } from "./modules/finance-planning/finance-planning.module";
-import { FinanceAssetsModule } from "./modules/finance-assets/finance-assets.module";
-import { FinanceControlsModule } from "./modules/finance-controls/finance-controls.module";
-import { AccountingAiModule } from "./modules/accounting-ai/accounting-ai.module";
+import { FinanceModule } from "./modules/finance/finance.module";
 import { AgentAccessModule } from "./modules/agent-access/agent-access.module";
 import { MailModule } from "./modules/mail/mail.module";
 import { DirectoryModule } from "./modules/directory/directory.module";
 import { PartyModule } from "./modules/party/party.module";
-import { PortalAccessModule } from "./modules/portal-access/portal-access.module";
-import { PortalAuthModule } from "./modules/portal-auth/portal-auth.module";
-import { PortalClientModule } from "./modules/portal-client/portal-client.module";
+import { PortalModule } from "./modules/portal/portal.module";
 import { ModuleAccessModule } from "./modules/module-access/module-access.module";
 import { IdempotencyModule } from "./common/idempotency/idempotency.module";
 import { OutboxModule } from "./common/outbox/outbox.module";
@@ -180,125 +108,52 @@ import { ZodValidationInterceptor } from "./common/validation/zod-validation.int
     SettingsModule,
     InvoicesModule,
     CareersModule,
-    OnboardingModule,
     WebhooksModule,
     ClientsModule,
-    CrmModule,
-    CrmMetadataModule,
-    CrmPricebooksModule,
-    CrmInboxModule,
-    CrmAutomationStudioModule,
-    FinanceReportsModule,
+    CrmRootModule,
+    FinanceModule,
     DashboardModule,
     PublicModule,
     RbacModule,
     AccessModule,
     DealsModule,
-    OrgModule,
-    OrganizationModule,
+    OrganizationRootModule,
     OwnershipModule,
     BranchesModule,
     BuildModule,
     OfferFulfillmentModule,
-    SupportModule,
+    SupportRootModule,
     ESignModule,
     KbModule,
-    AccountingModule,
+    AccountingRootModule,
     ChatModule,
-    HrConfigModule,
-    HrTimeModule,
-    HrCoreModule,
-    HrAutomationsModule,
-    HrPoliciesModule,
-    HrWorkflowsModule,
-    HrTemplatesModule,
-    HrPayrollInputsModule,
-    HrCasesModule,
-    HrBenefitsModule,
-    HrGlobalModule,
-    HrFormsModule,
-    HrAnalyticsPlusModule,
-    HrSettingsHubModule,
-    HrGovernanceModule,
-    HrEnterpriseCompModule,
-    HrEnterpriseOpsModule,
-    HrDirectoryModule,
+    HrModule,
     DirectoryModule,
     PartyModule,
-    PortalAccessModule,
-
-    PortalAuthModule,
-    PortalClientModule,
+    PortalModule,
     ModuleAccessModule,
     IdempotencyModule,
     OutboxModule,
-    HrPerformanceModule,
-    HrPayrollModule,
-    HrLifecycleModule,
     SearchModule,
-    IntegrationsGitModule,
-    IntegrationsModule,
+    IntegrationsRootModule,
     CronModule,
-    HrHelpdeskModule,
-    HrRecruitmentModule,
-    HrInterviewsModule,
-    InvProductsModule,
-    InvWarehousesModule,
-    InvStockModule,
-    InvVendorsModule,
-    InvPurchaseOrdersModule,
-    InvSalesOrdersModule,
-    InvReportsModule,
-    InvBarcodeModule,
-    InvCountsModule,
-    InvReturnsModule,
-    InvTraceabilityModule,
-    InvValuationModule,
-    InvReplenishmentModule,
-    InvAiModule,
-    InvQualityModule,
-    InvShipmentsModule,
-    InvChannelsModule,
-    InvImportExportModule,
-    InvWebhooksModule,
-    InvSettingsModule,
+    InventoryModule,
     EmailModule,
-    AiModule,
-    AiSummariesModule,
-    SupportKbGapModule,
+    AiRootModule,
     StorageModule,
-    BillingModule,
+    BillingRootModule,
     RealtimeModule,
     AutomationModule,
     SessionsModule,
     MfaModule,
     AuthModule,
-    AiJobsModule,
-    AiConfirmationModule,
-    OrgHierarchyModule,
-    ApiTokensModule,
-    UserApiTokensModule,
+    ApiTokensRootModule,
     DelegationsModule,
     UsersModule,
-    WorkspaceOnboardingModule,
     WorkflowsModule,
     PayrollModule,
-    TimesheetsModule,
-    TimesheetsCoreModule,
-    PaymentsModule,
+    TimesheetsRootModule,
     FeedbucketModule,
-    HrImportModule,
-    FinanceExpensesModule,
-    AccountingSettingsModule,
-    AccountingGlModule,
-    FinanceArModule,
-    FinanceApModule,
-    FinanceBankingModule,
-    FinanceTaxModule,
-    FinancePlanningModule,
-    FinanceAssetsModule,
-    FinanceControlsModule,
-    AccountingAiModule,
     AgentAccessModule,
     MailModule,
   ],

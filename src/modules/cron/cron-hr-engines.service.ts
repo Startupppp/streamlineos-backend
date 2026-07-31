@@ -4,14 +4,14 @@ import { organizations, goals, reviewCycles, hrBenefitEnrollmentWindows, assets 
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
-import { HrWorkflowEngineService } from "../hr-workflows/hr-workflow-engine.service";
-import { HrEffectiveChangesService } from "../hr-core/hr-effective-changes.service";
-import { HrAutomationEngineService } from "../hr-automations/hr-automation-engine.service";
-import { HrWebhooksService } from "../hr-automations/hr-webhooks.service";
-import { ProbationService } from "../hr-lifecycle/probation.service";
-import { ComplianceRequirementsService } from "../hr-global/compliance-requirements.service";
-import { WorkAuthorizationsService } from "../hr-global/work-authorizations.service";
-import { ContractsService } from "../hr-global/contracts.service";
+import { HrWorkflowEngineService } from "../hr/workflows/hr-workflow-engine.service";
+import { HrEffectiveChangesService } from "../hr/core/hr-effective-changes.service";
+import { HrAutomationEngineService } from "../hr/automations/hr-automation-engine.service";
+import { HrWebhooksService } from "../hr/automations/hr-webhooks.service";
+import { ProbationService } from "../hr/lifecycle/probation.service";
+import { ComplianceRequirementsService } from "../hr/global/compliance-requirements.service";
+import { WorkAuthorizationsService } from "../hr/global/work-authorizations.service";
+import { ContractsService } from "../hr/global/contracts.service";
 
 interface SweepResult {
   orgId: string;

@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
-import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
-import { throwOnAiFailure, unwrapAiResult } from "../ai/services/gateway-result.util";
+import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
+import { throwOnAiFailure, unwrapAiResult } from "../ai/core/services/gateway-result.util";
 import { MailService } from "./mail.service";
 import {
   MailDraftOutputSchema,
@@ -11,7 +11,7 @@ import {
   type MailThreadSummaryOutput,
 } from "./dto/mail-ai-schemas";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import type { AiUsageMeta } from "../ai/gateway/ai-gateway.types";
+import type { AiUsageMeta } from "../ai/core/gateway/ai-gateway.types";
 
 const SNIPPET_MAX = 160;
 const BODY_CHAR_MAX = 1500;

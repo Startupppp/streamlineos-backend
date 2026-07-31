@@ -3,7 +3,7 @@ import { and, eq, lt, gte, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { tasks } from "../../db/schema";
-import { CrmAutomationBusService } from "../crm-automation-studio/crm-automation-bus.service";
+import { CrmAutomationBusService } from "../crm/automation-studio/crm-automation-bus.service";
 
 @Injectable()
 export class CronCrmTasksService {

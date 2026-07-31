@@ -12,7 +12,7 @@ import type { KbPageContent } from "../../db/schema/kb/pages";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { NotificationsService } from "../notifications/notifications.service";
-import { PlanLimitsService } from "../billing/plan-limits.service";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { extractMentionUserIds } from "./kb-page-content.util";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { CreatePageInput, UpdatePageInput, VerifyPageInput } from "./dto/kb-pages.schemas";

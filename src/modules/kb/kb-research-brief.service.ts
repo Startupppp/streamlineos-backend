@@ -3,7 +3,7 @@ import { and, desc, eq, lt } from "drizzle-orm";
 import { kbResearchBriefs } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
-import { AiJobsService } from "../ai-jobs/ai-jobs.service";
+import { AiJobsService } from "../ai/jobs/ai-jobs.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { KbResearchBriefCreateInput, KbResearchBriefListInput } from "./dto/kb-ai.schemas";
 

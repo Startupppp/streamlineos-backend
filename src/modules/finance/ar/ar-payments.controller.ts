@@ -1,0 +1,26 @@
+import { Controller, Get, Query, UseGuards } from "@nestjs/common";
+import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../../access/permission.guard";
+import { RequirePermission } from "../../access/require-permission.decorator";
+import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { CurrentUser } from "../../../common/auth/current-user.decorator";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { ArPaymentsService } from "./ar-payments.service";
+import { listArPaymentsSchema, type ListArPaymentsQuery } from "./dto/finance-ar.schemas";
+
+@RequireModule("accounting")
+@Controller("accounting/ar-payments")
+@UseGuards(JwtAuthGuard, PermissionGuard)
+export class ArPaymentsController {
+  constructor(private readonly svc: ArPaymentsService) {}
+
+  @Get()
+  @RequirePermission("accounting:receivables:read")
+  list(
+    @Query(new ZodValidationPipe(listArPaymentsSchema)) query: ListArPaymentsQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.list(u.orgId, query);
+  }
+}

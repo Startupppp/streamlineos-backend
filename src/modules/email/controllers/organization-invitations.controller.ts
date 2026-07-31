@@ -5,7 +5,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
-import { InvitationsService } from "../../organization/invitations.service";
+import { InvitationsService } from "../../organization/core/invitations.service";
 import { resendInvitationSchema, type ResendInvitationInput } from "../dto/email.schemas";
 
 @Controller("organization/invitations")

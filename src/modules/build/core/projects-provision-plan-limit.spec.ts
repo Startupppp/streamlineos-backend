@@ -3,7 +3,7 @@ jest.mock("../../email/app-url", () => ({ appUrl: "https://test.example.com" }))
 import { ForbiddenException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { ProjectsProvisionService } from "./projects-provision.service";
-import { PlanLimitsService } from "../../billing/plan-limits.service";
+import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { ProjectsEmailService } from "./projects-email.service";

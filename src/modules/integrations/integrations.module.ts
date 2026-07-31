@@ -1,11 +1,11 @@
 import { Module } from "@nestjs/common";
-import { IntegrationsController } from "./integrations.controller";
-import { IntegrationsService } from "./integrations.service";
-import { ComposioGateway } from "./composio.gateway";
+import { IntegrationsModule } from "./core/integrations.module";
+import { IntegrationsGitModule } from "./git/integrations-git.module";
+
+const INTEGRATIONS_MODULES = [IntegrationsModule, IntegrationsGitModule];
 
 @Module({
-  controllers: [IntegrationsController],
-  providers: [IntegrationsService, ComposioGateway],
-  exports: [ComposioGateway, IntegrationsService],
+  imports: INTEGRATIONS_MODULES,
+  exports: INTEGRATIONS_MODULES,
 })
-export class IntegrationsModule {}
+export class IntegrationsRootModule {}

@@ -1,6 +1,6 @@
 import { DealsAnalyticsService } from "./deals-analytics.service";
 import type { Db } from "../../db/drizzle.module";
-import { CrmMetadataService } from "../crm-metadata/crm-metadata.service";
+import { CrmMetadataService } from "../crm/metadata/crm-metadata.service";
 import { CacheService } from "../../common/cache/cache.service";
 
 function makeChain(result: unknown[] = []): Record<string, unknown> {

@@ -7,7 +7,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { AuditService } from "../../../common/audit/audit.service";
-import { PlanLimitsService } from "../../billing/plan-limits.service";
+import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { ProjectsEmailService } from "./projects-email.service";
 import type { CreateProjectInput, FromDealInput } from "./dto/projects.schemas";
 

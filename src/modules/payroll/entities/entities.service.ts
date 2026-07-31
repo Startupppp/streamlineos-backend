@@ -9,14 +9,14 @@ import { and, desc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { payrollEntities, payrollPeriods } from "../../../db/schema";
-import { getCountryPack } from "../../hr-global/country-packs";
+import { getCountryPack } from "../../hr/global/country-packs";
 import {
   assertEntityCountryIsolation,
   buildEntityReadiness,
   describeCountryPack,
   entityReadinessScore,
   listCountryPackDescriptors,
-} from "../../hr-global/lib/country-pack-registry";
+} from "../../hr/global/lib/country-pack-registry";
 
 @Injectable()
 export class PayrollEntitiesService {

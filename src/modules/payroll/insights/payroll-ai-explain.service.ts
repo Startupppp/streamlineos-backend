@@ -8,14 +8,14 @@ import {
   payrollRuns,
   payrollLineItems,
 } from "../../../db/schema";
-import { AiGatewayService } from "../../ai/gateway/ai-gateway.service";
+import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import {
   PAYROLL_AI_CAPABILITY,
   FORBIDDEN_PAYROLL_AI_ACTIONS,
   buildPayslipEvidenceCitations,
   type EvidenceCitation,
 } from "./payroll-ai-guardrails";
-import type { AiUsageMeta } from "../../ai/gateway/ai-gateway.types";
+import type { AiUsageMeta } from "../../ai/core/gateway/ai-gateway.types";
 
 const FEATURE_KEY = "payroll.explain-payslip" as const;
 

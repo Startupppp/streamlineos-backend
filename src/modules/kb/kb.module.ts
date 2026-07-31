@@ -1,7 +1,7 @@
 ﻿import { Module } from "@nestjs/common";
-import { BillingModule } from "../billing/billing.module";
-import { AiModule } from "../ai/ai.module";
-import { AiJobsModule } from "../ai-jobs/ai-jobs.module";
+import { BillingModule } from "../billing/core/billing.module";
+import { AiModule } from "../ai/core/ai.module";
+import { AiJobsModule } from "../ai/jobs/ai-jobs.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { KbCreditsService } from "./kb-credits.service";
 import { KbAccessService } from "./kb-access.service";

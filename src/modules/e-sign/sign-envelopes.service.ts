@@ -21,7 +21,7 @@ import { SignAuditService } from "./sign-audit.service";
 import { SignRecipientsService } from "./sign-recipients.service";
 import { SignIntegrationsService } from "./sign-integrations.service";
 import { SignNotificationsService } from "./sign-notifications.service";
-import { PlanLimitsService } from "../billing/plan-limits.service";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import {
   SignEnvelopeValidationService,
   type EnvelopeValidationResult,

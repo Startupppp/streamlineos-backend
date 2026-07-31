@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
-import { AiGatewayService } from "../../ai/gateway/ai-gateway.service";
-import { throwOnAiFailure } from "../../ai/services/gateway-result.util";
-import { AiConfirmationService } from "../../ai-confirmation/ai-confirmation.service";
+import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
+import { throwOnAiFailure } from "../../ai/core/services/gateway-result.util";
+import { AiConfirmationService } from "../../ai/confirmation/ai-confirmation.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import {
   classifyNodeConfigSchema,
@@ -22,6 +22,13 @@ export interface AiNodeResult {
   proposalToken?: string;
 }
 
+const AI_NODE_FEATURE: Record<AiNodeType, string> = {
+  classify: "automation.classify",
+  summarize: "automation.summarize",
+  extract: "automation.extract",
+  routing_suggestion: "automation.routing-suggestion",
+};
+
 @Injectable()
 export class AiNodeExecutorService {
   constructor(
@@ -37,6 +44,7 @@ export class AiNodeExecutorService {
     nodeConfig: unknown,
     payload: Record<string, unknown>,
   ): Promise<AiNodeResult> {
+    const feature = AI_NODE_FEATURE[nodeType];
     const actor = { orgId, userId };
 
     if (nodeType === "classify") {

@@ -1,6 +1,6 @@
 import { Injectable, type OnModuleInit } from "@nestjs/common";
-import { AiJobHandlerRegistry, type AiJobContext, type AiJobHandler } from "../../../ai-jobs/ai-job-handler";
-import { AiJobsService } from "../../../ai-jobs/ai-jobs.service";
+import { AiJobHandlerRegistry, type AiJobContext, type AiJobHandler } from "../../../ai/jobs/ai-job-handler";
+import { AiJobsService } from "../../../ai/jobs/ai-jobs.service";
 import { AiNodeExecutorService } from "../ai-node-executor.service";
 import type { AiNodeType } from "../ai-node-types";
 

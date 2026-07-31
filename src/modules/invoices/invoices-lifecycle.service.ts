@@ -5,9 +5,9 @@ import { invoices, payments, finPaymentAllocations, organizationMembers, journal
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { OutboxWriter } from "../../common/outbox/outbox-writer";
-import { FinancePostingService } from "../accounting/finance-posting.service";
+import { FinancePostingService } from "../accounting/core/finance-posting.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
-import { CrmAutomationBusService } from "../crm-automation-studio/crm-automation-bus.service";
+import { CrmAutomationBusService } from "../crm/automation-studio/crm-automation-bus.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
 type DbOrTx = Parameters<Parameters<Db["transaction"]>[0]>[0] | Db;

@@ -5,7 +5,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { SurveyVersionService } from "./survey-version.service";
 import { SurveyTemplateService } from "./survey-template.service";
-import { PlanLimitsService } from "../billing/plan-limits.service";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import type { CreateSurveyInput, ListSurveysInput, PatchSurveyInput } from "./dto/survey-forms.schemas";
 
 @Injectable()

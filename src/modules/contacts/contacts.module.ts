@@ -3,7 +3,7 @@ import { ContactsController } from "./contacts.controller";
 import { ContactsService } from "./contacts.service";
 import { ContactRolesController } from "./contact-roles.controller";
 import { ContactRolesService } from "./contact-roles.service";
-import { BillingModule } from "../billing/billing.module";
+import { BillingModule } from "../billing/core/billing.module";
 
 @Module({
   imports: [BillingModule],

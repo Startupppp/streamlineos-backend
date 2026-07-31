@@ -1,11 +1,11 @@
 import { Module } from "@nestjs/common";
-import { PayrollController } from "./payroll.controller";
-import { PayrollSummaryService } from "./payroll-summary.service";
-import { PayrollExportService } from "./payroll-export.service";
-import { PayrollSettingsService } from "./payroll-settings.service";
+import { TimesheetsCoreModule } from "./core/timesheets-core.module";
+import { TimesheetsModule } from "./payroll/timesheets.module";
+
+const TIMESHEETS_MODULES = [TimesheetsCoreModule, TimesheetsModule];
 
 @Module({
-  controllers: [PayrollController],
-  providers: [PayrollSummaryService, PayrollExportService, PayrollSettingsService],
+  imports: TIMESHEETS_MODULES,
+  exports: TIMESHEETS_MODULES,
 })
-export class TimesheetsModule {}
+export class TimesheetsRootModule {}

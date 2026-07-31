@@ -2,13 +2,12 @@ import { HttpException, HttpStatus, ServiceUnavailableException } from "@nestjs/
 import { Test, type TestingModule } from "@nestjs/testing";
 import { AiNodeExecutorService } from "./ai-node-executor.service";
 import { WorkflowAiNodeHandler } from "./ai-job-handlers/workflow-ai-node.handler";
-import { AiGatewayService } from "../../ai/gateway/ai-gateway.service";
+import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { AuditService } from "../../../common/audit/audit.service";
-import { FeatureFlagsService } from "../../feature-flags/feature-flags.service";
-import { AiConfirmationService } from "../../ai-confirmation/ai-confirmation.service";
-import { AiJobsService } from "../../ai-jobs/ai-jobs.service";
-import { AiJobHandlerRegistry } from "../../ai-jobs/ai-job-handler";
-import type { AiInvokeResult } from "../../ai/gateway/ai-gateway.types";
+import { AiConfirmationService } from "../../ai/confirmation/ai-confirmation.service";
+import { AiJobsService } from "../../ai/jobs/ai-jobs.service";
+import { AiJobHandlerRegistry } from "../../ai/jobs/ai-job-handler";
+import type { AiInvokeResult } from "../../ai/core/gateway/ai-gateway.types";
 import type { AiNodeType } from "./ai-node-types";
 
 const ORG_ID = "org-test-1";
@@ -46,7 +45,6 @@ async function buildModule(): Promise<{ executor: AiNodeExecutorService; handler
       WorkflowAiNodeHandler,
       { provide: AiGatewayService, useValue: mockGateway },
       { provide: AuditService, useValue: mockAudit },
-      { provide: FeatureFlagsService, useValue: mockFlags },
       { provide: AiConfirmationService, useValue: mockConfirmation },
       { provide: AiJobsService, useValue: mockJobs },
       { provide: AiJobHandlerRegistry, useValue: { register: jest.fn() } },

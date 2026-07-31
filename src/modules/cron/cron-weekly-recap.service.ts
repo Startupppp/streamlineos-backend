@@ -13,7 +13,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { EmailService } from "../email/email.service";
-import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
+import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
 import { getWeeklyRecapEmailTemplate } from "../email/templates/reports";
 import { logger } from "../../common/logger/logger.service";
 

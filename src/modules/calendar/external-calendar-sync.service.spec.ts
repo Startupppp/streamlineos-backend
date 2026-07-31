@@ -1,7 +1,7 @@
 jest.mock("@composio/core", () => ({ Composio: jest.fn() }));
 
 import { ExternalCalendarSyncService } from "./external-calendar-sync.service";
-import type { ComposioGateway } from "../integrations/composio.gateway";
+import type { ComposioGateway } from "../integrations/core/composio.gateway";
 
 describe("ExternalCalendarSyncService", () => {
   const conn = { id: 3, toolkit: "googlecalendar" as const, composioConnectedAccountId: "ca_1" };

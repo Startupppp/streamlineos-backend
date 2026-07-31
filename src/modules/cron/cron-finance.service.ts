@@ -1,12 +1,12 @@
 import { Injectable, Logger } from "@nestjs/common";
-import { RecurringJournalsService } from "../accounting-gl/recurring-journals.service";
-import { RecurringInvoicesService } from "../finance-ar/recurring-invoices.service";
-import { RemindersService } from "../finance-ar/reminders.service";
+import { RecurringJournalsService } from "../accounting/gl/recurring-journals.service";
+import { RecurringInvoicesService } from "../finance/ar/recurring-invoices.service";
+import { RemindersService } from "../finance/ar/reminders.service";
 import { InvoicesWriteService } from "../invoices/invoices-write.service";
-import { RecurringBillsService } from "../finance-ap/recurring-bills.service";
-import { BillsDueCheckService } from "../finance-ap/bills-due-check.service";
-import { TaxComplianceService } from "../finance-tax/tax-compliance.service";
-import { DepreciationRunsService } from "../finance-assets/depreciation-runs.service";
+import { RecurringBillsService } from "../finance/ap/recurring-bills.service";
+import { BillsDueCheckService } from "../finance/ap/bills-due-check.service";
+import { TaxComplianceService } from "../finance/tax/tax-compliance.service";
+import { DepreciationRunsService } from "../finance/assets/depreciation-runs.service";
 
 interface RunResult {
   ran: string[];

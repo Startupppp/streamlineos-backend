@@ -3,8 +3,8 @@ import { Test, type TestingModule } from "@nestjs/testing";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
-import { CrmAutomationBusService } from "../crm-automation-studio/crm-automation-bus.service";
-import { PlanLimitsService } from "../billing/plan-limits.service";
+import { CrmAutomationBusService } from "../crm/automation-studio/crm-automation-bus.service";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { QuotesService } from "./quotes.service";
 import { QuotesLifecycleService } from "./quotes-lifecycle.service";
 

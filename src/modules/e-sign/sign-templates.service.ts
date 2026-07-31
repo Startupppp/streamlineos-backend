@@ -12,7 +12,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { SignAuditService } from "./sign-audit.service";
 import { SignTokensService } from "./sign-tokens.service";
-import { PlanLimitsService } from "../billing/plan-limits.service";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import type {
   CreateTemplateInput,
   UpdateTemplateInput,

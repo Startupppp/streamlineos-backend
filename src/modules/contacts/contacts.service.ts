@@ -5,8 +5,8 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
-import { PlanLimitsService } from "../billing/plan-limits.service";
-import { toCsv } from "../inv-import-export/csv.util";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
+import { toCsv } from "../inventory/import-export/csv.util";
 import type {
   BulkImportContactsInput,
   CreateInput,

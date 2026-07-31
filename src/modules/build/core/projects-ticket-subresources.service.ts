@@ -1,19 +1,16 @@
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, lt, or } from "drizzle-orm";
 import {
-  gitTicketLinks,
-  projectMembers,
-  projects,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import { and, desc, eq, lt } from "drizzle-orm";
+import {
   ticketActivityLog,
   ticketAttachments,
-  ticketChecklistItems,
-  ticketChecklists,
   ticketLabelMappings,
-  ticketRelatedLinks,
   tickets,
   ticketWatchers,
   users,
-  workItemRelations,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -21,7 +18,18 @@ import { logger } from "../../../common/logger/logger.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ProjectsActivityService } from "./projects-activity.service";
 import { ProjectsTicketCommentsService } from "./projects-ticket-comments.service";
-import type { AddLabelInput, AddRelatedLinkInput, AddRelationInput, AddWatcherInput, AttachmentInput, CommentInput, UpdateRelatedLinkInput } from "./dto/projects.schemas";
+import { ProjectsTicketChecklistsService } from "./projects-ticket-checklists.service";
+import { ProjectsTicketLinksService } from "./projects-ticket-links.service";
+import { ProjectsTicketRelationsService } from "./projects-ticket-relations.service";
+import type {
+  AddLabelInput,
+  AddRelatedLinkInput,
+  AddRelationInput,
+  AddWatcherInput,
+  AttachmentInput,
+  CommentInput,
+  UpdateRelatedLinkInput,
+} from "./dto/projects.schemas";
 
 const ACTION_LABELS: Record<string, string> = {
   created: "created this ticket",
@@ -47,29 +55,58 @@ export class ProjectsTicketSubresourcesService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly activity: ProjectsActivityService,
     private readonly comments: ProjectsTicketCommentsService,
+    private readonly checklistsService: ProjectsTicketChecklistsService,
+    private readonly linksService: ProjectsTicketLinksService,
+    private readonly relationsService: ProjectsTicketRelationsService,
   ) {}
 
   addComment(u: CurrentUserContext, ticketId: number, body: CommentInput) {
     return this.comments.addComment(u, ticketId, body);
   }
 
-  getComment(u: CurrentUserContext, projectId: number, ticketId: number, commentId: number) {
+  getComment(
+    u: CurrentUserContext,
+    projectId: number,
+    ticketId: number,
+    commentId: number,
+  ) {
     return this.comments.getComment(u, projectId, ticketId, commentId);
   }
 
-  editComment(u: CurrentUserContext, projectId: number, ticketId: number, commentId: number, content: string) {
+  editComment(
+    u: CurrentUserContext,
+    projectId: number,
+    ticketId: number,
+    commentId: number,
+    content: string,
+  ) {
     return this.comments.editComment(u, projectId, ticketId, commentId, content);
   }
 
-  deleteComment(u: CurrentUserContext, projectId: number, ticketId: number, commentId: number) {
+  deleteComment(
+    u: CurrentUserContext,
+    projectId: number,
+    ticketId: number,
+    commentId: number,
+  ) {
     return this.comments.deleteComment(u, projectId, ticketId, commentId);
   }
 
-  addReaction(commentId: number, userId: string, orgId: string, emoji: string) {
+  addReaction(
+    commentId: number,
+    userId: string,
+    orgId: string,
+    emoji: string,
+  ) {
     return this.comments.addReaction(commentId, userId, orgId, emoji);
   }
 
-  removeReaction(commentId: number, userId: string, orgId: string, emoji: string) {
+  removeReaction(
+    commentId: number,
+    userId: string,
+    orgId: string,
+    emoji: string,
+  ) {
     return this.comments.removeReaction(commentId, userId, orgId, emoji);
   }
 
@@ -84,7 +121,11 @@ export class ProjectsTicketSubresourcesService {
     opts: { limit: number; before?: number },
   ) {
     const ticket = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, ticketId), eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)),
+      where: and(
+        eq(tickets.id, ticketId),
+        eq(tickets.projectId, projectId),
+        eq(tickets.orgId, orgId),
+      ),
       columns: { id: true },
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
@@ -93,7 +134,8 @@ export class ProjectsTicketSubresourcesService {
       eq(ticketActivityLog.ticketId, ticketId),
       eq(ticketActivityLog.orgId, orgId),
     ];
-    if (opts.before !== undefined) conditions.push(lt(ticketActivityLog.id, opts.before));
+    if (opts.before !== undefined)
+      conditions.push(lt(ticketActivityLog.id, opts.before));
 
     const rows = await this.db
       .select({
@@ -115,8 +157,10 @@ export class ProjectsTicketSubresourcesService {
       .limit(opts.limit);
 
     return rows.map((row) => {
-      const fallbackName = `${row.userFirstName ?? ""} ${row.userLastName ?? ""}`.trim();
-      const resolvedName = row.userName ?? (fallbackName.length > 0 ? fallbackName : null);
+      const fallbackName =
+        `${row.userFirstName ?? ""} ${row.userLastName ?? ""}`.trim();
+      const resolvedName =
+        row.userName ?? (fallbackName.length > 0 ? fallbackName : null);
       return {
         id: row.id,
         action: row.action,
@@ -124,7 +168,9 @@ export class ProjectsTicketSubresourcesService {
         fromValue: row.fromValue,
         toValue: row.toValue,
         createdAt: row.createdAt,
-        user: row.userId ? { id: row.userId, name: resolvedName, image: row.userImage } : null,
+        user: row.userId
+          ? { id: row.userId, name: resolvedName, image: row.userImage }
+          : null,
       };
     });
   }
@@ -134,34 +180,18 @@ export class ProjectsTicketSubresourcesService {
       where: and(eq(tickets.parentTicketId, ticketId), eq(tickets.orgId, orgId)),
       with: {
         assignee: {
-          columns: { id: true, name: true, firstName: true, lastName: true, image: true, email: true },
+          columns: {
+            id: true,
+            name: true,
+            firstName: true,
+            lastName: true,
+            image: true,
+            email: true,
+          },
         },
       },
       limit: 200,
     });
-  }
-
-  private async requireMember(projectId: number, userId: string): Promise<void> {
-    const member = await this.db.query.projectMembers.findFirst({
-      where: and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)),
-    });
-    if (!member) throw new ForbiddenException("Not a project member.");
-  }
-
-  private async requireProjectTicket(
-    orgId: string,
-    projectId: number,
-    ticketId: number,
-  ): Promise<void> {
-    const ticket = await this.db.query.tickets.findFirst({
-      where: and(
-        eq(tickets.id, ticketId),
-        eq(tickets.orgId, orgId),
-        eq(tickets.projectId, projectId),
-      ),
-      columns: { id: true },
-    });
-    if (!ticket) throw new NotFoundException("Ticket not found");
   }
 
   private async requireTicket(orgId: string, ticketId: number): Promise<void> {
@@ -172,137 +202,58 @@ export class ProjectsTicketSubresourcesService {
     if (!ticket) throw new NotFoundException("Ticket not found");
   }
 
-  async listRelations(u: CurrentUserContext, projectId: number, ticketId: number) {
-    await this.requireMember(projectId, u.userId);
-    await this.requireProjectTicket(u.orgId, projectId, ticketId);
-
-    const relatedTicketSelect = {
-      columns: {
-        id: true,
-        title: true,
-        ticketNumber: true,
-        status: true,
-        priority: true,
-        type: true,
-        points: true,
-        assigneeId: true,
-        projectId: true,
-      },
-      with: {
-        assignee: {
-          columns: {
-            id: true,
-            name: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            image: true,
-          },
-        },
-        project: {
-          columns: { key: true },
-        },
-      },
-    } as const;
-
-    const relations = await this.db.query.workItemRelations.findMany({
-      where: and(
-        eq(workItemRelations.orgId, u.orgId),
-        or(
-          eq(workItemRelations.workItemId, ticketId),
-          eq(workItemRelations.relatedWorkItemId, ticketId),
-        ),
-      ),
-      with: {
-        workItem: relatedTicketSelect,
-        relatedWorkItem: relatedTicketSelect,
-      },
-      limit: 100,
-    });
-
-    return relations.map((r) => {
-      const isSource = r.workItemId === ticketId;
-      return {
-        id: r.id,
-        relationType: r.relationType,
-        relatedTicket: isSource ? r.relatedWorkItem : r.workItem,
-        direction: isSource ? "outgoing" : "incoming",
-      };
-    });
-  }
-
-  async addRelation(u: CurrentUserContext, projectId: number, ticketId: number, body: AddRelationInput) {
-    await this.requireMember(projectId, u.userId);
-    await this.requireProjectTicket(u.orgId, projectId, ticketId);
-
-    if (body.relatedTicketId === ticketId) {
-      throw new BadRequestException("A ticket cannot relate to itself.");
-    }
-
-    const relatedTicket = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, body.relatedTicketId), eq(tickets.projectId, projectId), eq(tickets.orgId, u.orgId)),
-      columns: { id: true },
-    });
-    if (!relatedTicket) throw new NotFoundException("Related ticket not found in this project.");
-
-    const [created] = await this.db
-      .insert(workItemRelations)
-      .values({ orgId: u.orgId, workItemId: ticketId, relatedWorkItemId: body.relatedTicketId, relationType: body.relationType })
-      .onConflictDoNothing()
-      .returning();
-
-    if (!created) throw new ConflictException("This relation already exists.");
-
-    return created;
-  }
-
-  async removeRelation(u: CurrentUserContext, projectId: number, ticketId: number, relatedId: number) {
-    await this.requireMember(projectId, u.userId);
-    await this.requireProjectTicket(u.orgId, projectId, ticketId);
-
-    if (!relatedId) throw new BadRequestException("relatedId query param required.");
-
-    await this.db.delete(workItemRelations).where(
-      and(
-        eq(workItemRelations.orgId, u.orgId),
-        or(
-          and(eq(workItemRelations.workItemId, ticketId), eq(workItemRelations.relatedWorkItemId, relatedId)),
-          and(eq(workItemRelations.workItemId, relatedId), eq(workItemRelations.relatedWorkItemId, ticketId)),
-        ),
-      ),
-    );
-
-    return { success: true };
-  }
-
   async getWatchers(orgId: string, ticketId: number) {
     await this.requireTicket(orgId, ticketId);
     return this.db.query.ticketWatchers.findMany({
       where: eq(ticketWatchers.ticketId, ticketId),
       with: {
         user: {
-          columns: { id: true, name: true, firstName: true, lastName: true, image: true, email: true },
+          columns: {
+            id: true,
+            name: true,
+            firstName: true,
+            lastName: true,
+            image: true,
+            email: true,
+          },
         },
       },
       limit: 100,
     });
   }
 
-  async addWatcher(u: CurrentUserContext, ticketId: number, body: AddWatcherInput) {
+  async addWatcher(
+    u: CurrentUserContext,
+    ticketId: number,
+    body: AddWatcherInput,
+  ) {
     await this.requireTicket(u.orgId, ticketId);
     const userId = body.userId ?? u.userId;
-    await this.db.insert(ticketWatchers).values({ orgId: u.orgId, ticketId, userId }).onConflictDoNothing();
+    await this.db
+      .insert(ticketWatchers)
+      .values({ orgId: u.orgId, ticketId, userId })
+      .onConflictDoNothing();
     return { success: true };
   }
 
   async removeWatcher(u: CurrentUserContext, ticketId: number) {
     await this.db
       .delete(ticketWatchers)
-      .where(and(eq(ticketWatchers.ticketId, ticketId), eq(ticketWatchers.userId, u.userId)));
+      .where(
+        and(
+          eq(ticketWatchers.ticketId, ticketId),
+          eq(ticketWatchers.userId, u.userId),
+        ),
+      );
     return { success: true };
   }
 
-  async addLabel(orgId: string, userId: string, ticketId: number, body: AddLabelInput) {
+  async addLabel(
+    orgId: string,
+    userId: string,
+    ticketId: number,
+    body: AddLabelInput,
+  ) {
     await this.requireTicket(orgId, ticketId);
     const [mapping] = await this.db
       .insert(ticketLabelMappings)
@@ -313,17 +264,31 @@ export class ProjectsTicketSubresourcesService {
     return { success: true };
   }
 
-  async removeLabel(orgId: string, userId: string, ticketId: number, labelId: number) {
+  async removeLabel(
+    orgId: string,
+    userId: string,
+    ticketId: number,
+    labelId: number,
+  ) {
     await this.requireTicket(orgId, ticketId);
     const deleted = await this.db
       .delete(ticketLabelMappings)
-      .where(and(eq(ticketLabelMappings.ticketId, ticketId), eq(ticketLabelMappings.labelId, labelId)))
+      .where(
+        and(
+          eq(ticketLabelMappings.ticketId, ticketId),
+          eq(ticketLabelMappings.labelId, labelId),
+        ),
+      )
       .returning({ id: ticketLabelMappings.id });
     if (deleted.length > 0) await this.logLabelChange(orgId, ticketId, userId);
     return { success: true };
   }
 
-  private async logLabelChange(orgId: string, ticketId: number, userId: string): Promise<void> {
+  private async logLabelChange(
+    orgId: string,
+    ticketId: number,
+    userId: string,
+  ): Promise<void> {
     try {
       await this.activity.logTicketActivity(orgId, ticketId, userId, "label_changed");
     } catch (error) {
@@ -331,7 +296,11 @@ export class ProjectsTicketSubresourcesService {
     }
   }
 
-  async addAttachment(u: CurrentUserContext, ticketId: number, body: AttachmentInput) {
+  async addAttachment(
+    u: CurrentUserContext,
+    ticketId: number,
+    body: AttachmentInput,
+  ) {
     await this.requireTicket(u.orgId, ticketId);
     const [attachment] = await this.db
       .insert(ticketAttachments)
@@ -348,197 +317,117 @@ export class ProjectsTicketSubresourcesService {
     return { id: attachment.id };
   }
 
-  async getChecklists(orgId: string, projectId: number, ticketId: number) {
-    const ticket = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, ticketId), eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)),
-      columns: { id: true },
-    });
-    if (!ticket) throw new NotFoundException("Ticket not found");
-
-    return this.db.query.ticketChecklists.findMany({
-      where: and(eq(ticketChecklists.ticketId, ticketId), eq(ticketChecklists.orgId, orgId)),
-      with: { items: { orderBy: (i, { asc }) => [asc(i.order)] } },
-      orderBy: (c, { asc }) => [asc(c.createdAt)],
-      limit: 100,
-    });
+  listRelations(u: CurrentUserContext, projectId: number, ticketId: number) {
+    return this.relationsService.listRelations(u, projectId, ticketId);
   }
 
-  async createChecklist(orgId: string, projectId: number, ticketId: number, data: { title: string }) {
-    const ticket = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, ticketId), eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)),
-      columns: { id: true },
-    });
-    if (!ticket) throw new NotFoundException("Ticket not found");
-
-    const [checklist] = await this.db.insert(ticketChecklists).values({
-      orgId,
-      ticketId,
-      title: data.title,
-    }).returning();
-    return checklist;
+  addRelation(
+    u: CurrentUserContext,
+    projectId: number,
+    ticketId: number,
+    body: AddRelationInput,
+  ) {
+    return this.relationsService.addRelation(u, projectId, ticketId, body);
   }
 
-  async updateChecklist(orgId: string, checklistId: number, data: { title: string }) {
-    const [updated] = await this.db.update(ticketChecklists)
-      .set({ title: data.title })
-      .where(and(eq(ticketChecklists.id, checklistId), eq(ticketChecklists.orgId, orgId)))
-      .returning();
-    if (!updated) throw new NotFoundException("Checklist not found");
-    return updated;
+  removeRelation(
+    u: CurrentUserContext,
+    projectId: number,
+    ticketId: number,
+    relatedId: number,
+  ) {
+    return this.relationsService.removeRelation(u, projectId, ticketId, relatedId);
   }
 
-  async deleteChecklist(orgId: string, checklistId: number) {
-    const [deleted] = await this.db.delete(ticketChecklists)
-      .where(and(eq(ticketChecklists.id, checklistId), eq(ticketChecklists.orgId, orgId)))
-      .returning();
-    if (!deleted) throw new NotFoundException("Checklist not found");
-    return { success: true };
+  getChecklists(orgId: string, projectId: number, ticketId: number) {
+    return this.checklistsService.getChecklists(orgId, projectId, ticketId);
   }
 
-  async createChecklistItem(orgId: string, checklistId: number, data: { text: string; assigneeId?: string; dueDate?: string | null; order: number }) {
-    const checklist = await this.db.query.ticketChecklists.findFirst({
-      where: and(eq(ticketChecklists.id, checklistId), eq(ticketChecklists.orgId, orgId)),
-      columns: { id: true },
-    });
-    if (!checklist) throw new NotFoundException("Checklist not found");
-
-    const [item] = await this.db.insert(ticketChecklistItems).values({
-      orgId,
-      checklistId,
-      text: data.text,
-      assigneeId: data.assigneeId,
-      dueDate: data.dueDate,
-      order: data.order,
-    }).returning();
-    return item;
+  createChecklist(
+    orgId: string,
+    projectId: number,
+    ticketId: number,
+    data: { title: string },
+  ) {
+    return this.checklistsService.createChecklist(orgId, projectId, ticketId, data);
   }
 
-  async updateChecklistItem(orgId: string, itemId: number, data: { text?: string; isCompleted?: boolean; assigneeId?: string | null; dueDate?: string | null; order?: number }) {
-    const existing = await this.db.query.ticketChecklistItems.findFirst({
-      where: eq(ticketChecklistItems.id, itemId),
-      columns: { id: true, checklistId: true },
-      with: { checklist: { columns: { orgId: true } } },
-    });
-    if (!existing || existing.checklist.orgId !== orgId) throw new NotFoundException("Checklist item not found");
-
-    const [item] = await this.db.update(ticketChecklistItems)
-      .set(data)
-      .where(eq(ticketChecklistItems.id, itemId))
-      .returning();
-    if (!item) throw new NotFoundException("Checklist item not found");
-    return item;
+  updateChecklist(orgId: string, checklistId: number, data: { title: string }) {
+    return this.checklistsService.updateChecklist(orgId, checklistId, data);
   }
 
-  async deleteChecklistItem(orgId: string, itemId: number) {
-    const existing = await this.db.query.ticketChecklistItems.findFirst({
-      where: eq(ticketChecklistItems.id, itemId),
-      columns: { id: true, checklistId: true },
-      with: { checklist: { columns: { orgId: true } } },
-    });
-    if (!existing || existing.checklist.orgId !== orgId) throw new NotFoundException("Checklist item not found");
-
-    const [deleted] = await this.db.delete(ticketChecklistItems)
-      .where(eq(ticketChecklistItems.id, itemId))
-      .returning();
-    if (!deleted) throw new NotFoundException("Checklist item not found");
-    return { success: true };
+  deleteChecklist(orgId: string, checklistId: number) {
+    return this.checklistsService.deleteChecklist(orgId, checklistId);
   }
 
-  async getGitLinks(orgId: string, projectId: number, ticketId: number) {
-    const project = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
-      columns: { id: true },
-    });
-    if (!project) throw new NotFoundException("Project not found");
-
-    const ticket = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, ticketId), eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)),
-      columns: { id: true },
-    });
-    if (!ticket) throw new NotFoundException("Ticket not found");
-
-    return this.db
-      .select({
-        id: gitTicketLinks.id,
-        provider: gitTicketLinks.provider,
-        refType: gitTicketLinks.refType,
-        externalId: gitTicketLinks.externalId,
-        title: gitTicketLinks.title,
-        url: gitTicketLinks.url,
-        author: gitTicketLinks.author,
-        status: gitTicketLinks.status,
-        createdAt: gitTicketLinks.createdAt,
-      })
-      .from(gitTicketLinks)
-      .where(and(eq(gitTicketLinks.ticketId, ticketId), eq(gitTicketLinks.orgId, orgId)))
-      .orderBy(desc(gitTicketLinks.createdAt))
-      .limit(100);
+  createChecklistItem(
+    orgId: string,
+    checklistId: number,
+    data: {
+      text: string;
+      assigneeId?: string;
+      dueDate?: string | null;
+      order: number;
+    },
+  ) {
+    return this.checklistsService.createChecklistItem(orgId, checklistId, data);
   }
 
-  async listRelatedLinks(u: CurrentUserContext, projectId: number, ticketId: number) {
-    await this.assertTicketAccess(u, projectId, ticketId);
-    return this.db
-      .select({
-        id: ticketRelatedLinks.id,
-        url: ticketRelatedLinks.url,
-        label: ticketRelatedLinks.label,
-        createdAt: ticketRelatedLinks.createdAt,
-      })
-      .from(ticketRelatedLinks)
-      .where(eq(ticketRelatedLinks.ticketId, ticketId))
-      .orderBy(ticketRelatedLinks.createdAt)
-      .limit(50);
+  updateChecklistItem(
+    orgId: string,
+    itemId: number,
+    data: {
+      text?: string;
+      isCompleted?: boolean;
+      assigneeId?: string | null;
+      dueDate?: string | null;
+      order?: number;
+    },
+  ) {
+    return this.checklistsService.updateChecklistItem(orgId, itemId, data);
   }
 
-  async addRelatedLink(u: CurrentUserContext, projectId: number, ticketId: number, body: AddRelatedLinkInput) {
-    await this.assertTicketAccess(u, projectId, ticketId);
-    const existing = await this.db
-      .select({ id: ticketRelatedLinks.id })
-      .from(ticketRelatedLinks)
-      .where(eq(ticketRelatedLinks.ticketId, ticketId));
-    if (existing.length >= 20) throw new BadRequestException("A ticket can have at most 20 related links");
-    const [created] = await this.db
-      .insert(ticketRelatedLinks)
-      .values({ orgId: u.orgId, ticketId, url: body.url, label: body.label ?? null, createdBy: u.userId })
-      .returning();
-    return created;
+  deleteChecklistItem(orgId: string, itemId: number) {
+    return this.checklistsService.deleteChecklistItem(orgId, itemId);
   }
 
-  async updateRelatedLink(u: CurrentUserContext, projectId: number, ticketId: number, linkId: number, body: UpdateRelatedLinkInput) {
-    await this.assertTicketAccess(u, projectId, ticketId);
-    const [link] = await this.db
-      .select({ id: ticketRelatedLinks.id, createdBy: ticketRelatedLinks.createdBy })
-      .from(ticketRelatedLinks)
-      .where(and(eq(ticketRelatedLinks.id, linkId), eq(ticketRelatedLinks.ticketId, ticketId)));
-    if (!link) throw new NotFoundException("Related link not found");
-    if (link.createdBy !== u.userId && !u.isOrgOwner) throw new ForbiddenException("Cannot edit another user's link");
-    const update: { url?: string; label?: string | null } = {};
-    if (body.url !== undefined) update.url = body.url;
-    if (body.label !== undefined) update.label = body.label;
-    const [updated] = await this.db
-      .update(ticketRelatedLinks)
-      .set(update)
-      .where(and(eq(ticketRelatedLinks.id, linkId), eq(ticketRelatedLinks.ticketId, ticketId)))
-      .returning();
-    return updated;
+  getGitLinks(orgId: string, projectId: number, ticketId: number) {
+    return this.linksService.getGitLinks(orgId, projectId, ticketId);
   }
 
-  async deleteRelatedLink(u: CurrentUserContext, projectId: number, ticketId: number, linkId: number) {
-    await this.assertTicketAccess(u, projectId, ticketId);
-    const [link] = await this.db
-      .select({ id: ticketRelatedLinks.id, createdBy: ticketRelatedLinks.createdBy })
-      .from(ticketRelatedLinks)
-      .where(and(eq(ticketRelatedLinks.id, linkId), eq(ticketRelatedLinks.ticketId, ticketId)));
-    if (!link) throw new NotFoundException("Related link not found");
-    if (link.createdBy !== u.userId && !u.isOrgOwner) throw new ForbiddenException("Cannot delete another user's link");
-    await this.db.delete(ticketRelatedLinks).where(and(eq(ticketRelatedLinks.id, linkId), eq(ticketRelatedLinks.ticketId, ticketId)));
+  listRelatedLinks(
+    u: CurrentUserContext,
+    projectId: number,
+    ticketId: number,
+  ) {
+    return this.linksService.listRelatedLinks(u, projectId, ticketId);
   }
 
-  private async assertTicketAccess(u: CurrentUserContext, projectId: number, ticketId: number) {
-    const [ticket] = await this.db
-      .select({ id: tickets.id, projectId: tickets.projectId, orgId: tickets.orgId })
-      .from(tickets)
-      .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, u.orgId)));
-    if (!ticket || ticket.projectId !== projectId) throw new NotFoundException("Ticket not found");
+  addRelatedLink(
+    u: CurrentUserContext,
+    projectId: number,
+    ticketId: number,
+    body: AddRelatedLinkInput,
+  ) {
+    return this.linksService.addRelatedLink(u, projectId, ticketId, body);
+  }
+
+  updateRelatedLink(
+    u: CurrentUserContext,
+    projectId: number,
+    ticketId: number,
+    linkId: number,
+    body: UpdateRelatedLinkInput,
+  ) {
+    return this.linksService.updateRelatedLink(u, projectId, ticketId, linkId, body);
+  }
+
+  deleteRelatedLink(
+    u: CurrentUserContext,
+    projectId: number,
+    ticketId: number,
+    linkId: number,
+  ) {
+    return this.linksService.deleteRelatedLink(u, projectId, ticketId, linkId);
   }
 }

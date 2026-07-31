@@ -18,8 +18,8 @@ import {
   users,
 } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
-import { ReimbursementsService } from "../../hr-payroll/reimbursements.service";
-import { LoansService } from "../../hr-payroll/loans.service";
+import { ReimbursementsService } from "../../hr/payroll/reimbursements.service";
+import { LoansService } from "../../hr/payroll/loans.service";
 
 export interface ManagerTeamMember {
   userId: string;

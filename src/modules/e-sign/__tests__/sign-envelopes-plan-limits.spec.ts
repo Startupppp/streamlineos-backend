@@ -5,7 +5,7 @@ import { SignEnvelopeValidationService } from "../sign-envelope-validation.servi
 import { SignEnvelopeDispatchService } from "../sign-envelope-dispatch.service";
 import { SignEnvelopeSweepsService } from "../sign-envelope-sweeps.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
-import { PlanLimitsService } from "../../billing/plan-limits.service";
+import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { SignAuditService } from "../sign-audit.service";
 import { SignNotificationsService } from "../sign-notifications.service";
 import { SignRecipientsService } from "../sign-recipients.service";

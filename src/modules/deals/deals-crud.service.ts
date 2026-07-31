@@ -8,9 +8,9 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
-import { CrmValidationService } from "../crm-metadata/crm-validation.service";
-import { CrmAutomationBusService } from "../crm-automation-studio/crm-automation-bus.service";
-import { PlanLimitsService } from "../billing/plan-limits.service";
+import { CrmValidationService } from "../crm/metadata/crm-validation.service";
+import { CrmAutomationBusService } from "../crm/automation-studio/crm-automation-bus.service";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import type { CreateDealInput, ListDealsInput } from "./dto/deals.schemas";
 
 @Injectable()

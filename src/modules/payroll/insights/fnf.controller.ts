@@ -18,7 +18,7 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { FnfInsightsService } from "./fnf.service";
-import { patchFnfSchema, type PatchFnfInput } from "../../hr-payroll/dto/payroll.schemas";
+import { patchFnfSchema, type PatchFnfInput } from "../../hr/payroll/dto/payroll.schemas";
 
 @RequireModule("payroll")
 @Controller("payroll/fnf")

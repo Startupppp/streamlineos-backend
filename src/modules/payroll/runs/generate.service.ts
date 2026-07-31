@@ -17,7 +17,7 @@ import {
   users,
   payrollRunAllocations,
 } from "../../../db/schema";
-import { decryptBankDetails } from "../../hr-payroll/lib/encryption";
+import { decryptBankDetails } from "../../hr/payroll/lib/encryption";
 import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
 import { DEFAULT_PAYROLL_TOGGLES } from "../payroll.types";
 import type { PayrollToggles, PayrollPolicyConfig, CalculationSnapshot, InputsSnapshot } from "../payroll.types";

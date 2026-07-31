@@ -37,6 +37,7 @@ export class FeedbucketSubmissionsService {
     const [rows, countResult] = await Promise.all([
       this.db.query.feedbucketSubmissions.findMany({
         where,
+        columns: { consoleLogs: false, networkLogs: false },
         with: { widget: true, assignee: true },
         orderBy: [desc(feedbucketSubmissions.createdAt)],
         limit,

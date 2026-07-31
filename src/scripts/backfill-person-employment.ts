@@ -1,7 +1,7 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "../app.module";
-import { PersonEmploymentSyncService } from "../modules/hr-core/person-employment-sync.service";
+import { PersonEmploymentSyncService } from "../modules/hr/core/person-employment-sync.service";
 import { DRIZZLE } from "../db/drizzle.constants";
 import type { Db } from "../db/drizzle.module";
 import { organizations } from "../db/schema";

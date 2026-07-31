@@ -13,12 +13,12 @@ import { and, eq, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { feedbucketSubmissions } from "../../db/schema";
-import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
-import { AiUsageService } from "../ai/services/ai-usage.service";
+import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
+import { AiUsageService } from "../ai/core/services/ai-usage.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { ProjectsTicketsService } from "../build/core/projects-tickets.service";
-import { requireFeature } from "../ai/billing/feature-gates";
+import { requireFeature } from "../ai/core/billing/feature-gates";
 import {
   FeedbackAnalysisSchema,
   type FeedbackAnalysis,
@@ -32,7 +32,7 @@ import {
 } from "./feedbucket-ai.prompts";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { FeedbucketConsoleEntry, FeedbucketMetadata, FeedbucketNetworkEntry } from "../../db/schema/build/feedback";
-import type { AiUsageMeta } from "../ai/gateway/ai-gateway.types";
+import type { AiUsageMeta } from "../ai/core/gateway/ai-gateway.types";
 
 const FEATURE_KEY = "feedbucket.analyze" as const;
 const PUBLIC_FEATURE_KEY = "feedbucket.assist" as const;

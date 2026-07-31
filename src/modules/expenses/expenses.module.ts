@@ -1,6 +1,6 @@
 import { Module } from "@nestjs/common";
 import { AutomationModule } from "../automation/automation.module";
-import { AccountingModule } from "../accounting/accounting.module";
+import { AccountingModule } from "../accounting/core/accounting.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { ExpensesController } from "./expenses.controller";
 import { ExpenseCategoriesController } from "./expense-categories.controller";

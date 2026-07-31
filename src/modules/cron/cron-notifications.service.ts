@@ -4,7 +4,7 @@ import { notifications, organizationMembers, organizations, users } from "../../
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
-import { birthdaySubject, birthdayMessage } from "../hr-lifecycle/hr-notification-texts";
+import { birthdaySubject, birthdayMessage } from "../hr/lifecycle/hr-notification-texts";
 
 interface BroadcastInput {
   type?: "INFO" | "SUCCESS" | "WARNING" | "ERROR";

@@ -1,7 +1,7 @@
 import { Module } from "@nestjs/common";
-import { HrPayrollModule } from "../../hr-payroll/hr-payroll.module";
+import { HrPayrollModule } from "../../hr/payroll/hr-payroll.module";
 import { NotificationsModule } from "../../notifications/notifications.module";
-import { AiModule } from "../../ai/ai.module";
+import { AiModule } from "../../ai/core/ai.module";
 import { ReportsController } from "./reports.controller";
 import { ReportsService } from "./reports.service";
 import { JournalController } from "./journal.controller";

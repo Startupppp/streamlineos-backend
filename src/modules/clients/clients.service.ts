@@ -7,7 +7,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
-import { toCsv } from "../inv-import-export/csv.util";
+import { toCsv } from "../inventory/import-export/csv.util";
 
 export type ClientHealthFilter = "healthy" | "at_risk" | "critical";
 

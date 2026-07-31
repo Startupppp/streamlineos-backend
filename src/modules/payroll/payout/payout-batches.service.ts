@@ -21,7 +21,7 @@ import {
 } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
 import { StorageService } from "../../storage/storage.service";
-import { decryptBankDetails } from "../../../modules/hr-payroll/lib/encryption";
+import { decryptBankDetails } from "../../../modules/hr/payroll/lib/encryption";
 import type { PayoutBatchFormat } from "./dto/payout.schemas";
 import { PayrollPostingService } from "../payroll-posting.service";
 import { assertOrgMember } from "../lib/org-membership";

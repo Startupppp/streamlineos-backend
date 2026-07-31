@@ -3,7 +3,7 @@ import { WebhooksModule } from "../webhooks/webhooks.module";
 import { LeadsModule } from "../leads/leads.module";
 import { TasksModule } from "../tasks/tasks.module";
 import { NotificationsModule } from "../notifications/notifications.module";
-import { BillingModule } from "../billing/billing.module";
+import { BillingModule } from "../billing/core/billing.module";
 import { SurveysController } from "./surveys.controller";
 import { SurveyBuilderController } from "./survey-builder.controller";
 import { SurveyCollectorsController } from "./survey-collectors.controller";

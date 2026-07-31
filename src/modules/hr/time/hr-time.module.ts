@@ -1,0 +1,91 @@
+import { Module, forwardRef } from "@nestjs/common";
+import { AutomationModule } from "../../automation/automation.module";
+import { WebhooksModule } from "../../webhooks/webhooks.module";
+import { NotificationsModule } from "../../notifications/notifications.module";
+import { HrAutomationsModule } from "../automations/hr-automations.module";
+import { HrPoliciesModule } from "../policies/hr-policies.module";
+import { HrWorkflowsModule } from "../workflows/hr-workflows.module";
+import { HrPayrollInputsModule } from "../payroll-inputs/hr-payroll-inputs.module";
+import { LeaveCalendarController, LeavesController } from "./leaves.controller";
+import { AttendanceController } from "./attendance.controller";
+import { AttendanceRegularizationController } from "./attendance-regularization.controller";
+import { AttendanceSummaryController } from "./attendance-summary.controller";
+import { WfhController } from "./wfh.controller";
+import { WorkLogsController } from "./work-logs.controller";
+import { ShiftsController } from "./shifts.controller";
+import { RostersController } from "./rosters.controller";
+import { OvertimeController } from "./overtime.controller";
+import { GeofencingController } from "./geofencing.controller";
+import { BiometricController } from "./biometric.controller";
+import { LeavePoliciesController } from "./leave-policies.controller";
+import { LeavePolicySummaryController } from "./leave-policy-summary.controller";
+import { LeavesService } from "./leaves.service";
+import { LeavesWriteService } from "./leaves-write.service";
+import { LeavesApprovalService } from "./leaves-approval.service";
+import { LeavesPageService } from "./leaves-page.service";
+import { AttendanceService } from "./attendance.service";
+import { AttendanceClockService } from "./attendance-clock.service";
+import { AttendanceReadService } from "./attendance-read.service";
+import { AttendancePolicyService } from "./attendance-policy.service";
+import { AttendanceRegularizationService } from "./attendance-regularization.service";
+import { AttendanceSummaryService } from "./attendance-summary.service";
+import { WfhService } from "./wfh.service";
+import { WorkLogsService } from "./work-logs.service";
+import { ShiftsService } from "./shifts.service";
+import { RostersService } from "./rosters.service";
+import { OvertimeService } from "./overtime.service";
+import { GeofencingService } from "./geofencing.service";
+import { BiometricService } from "./biometric.service";
+import { LeavePoliciesService } from "./leave-policies.service";
+import { LeaveLedgerService } from "./leave-ledger.service";
+
+@Module({
+  imports: [
+    AutomationModule,
+    WebhooksModule,
+    NotificationsModule,
+    HrAutomationsModule,
+    HrPoliciesModule,
+    HrWorkflowsModule,
+    forwardRef(() => HrPayrollInputsModule),
+  ],
+  controllers: [
+    LeavesController,
+    LeaveCalendarController,
+    AttendanceController,
+    AttendanceRegularizationController,
+    AttendanceSummaryController,
+    WfhController,
+    WorkLogsController,
+    ShiftsController,
+    RostersController,
+    OvertimeController,
+    GeofencingController,
+    BiometricController,
+    LeavePoliciesController,
+    LeavePolicySummaryController,
+  ],
+  providers: [
+    LeavesService,
+    LeavesWriteService,
+    LeavesApprovalService,
+    LeaveLedgerService,
+    LeavesPageService,
+    AttendanceClockService,
+    AttendanceReadService,
+    AttendanceService,
+    AttendancePolicyService,
+    AttendanceRegularizationService,
+    AttendanceSummaryService,
+    WfhService,
+    WorkLogsService,
+    ShiftsService,
+    RostersService,
+    OvertimeService,
+    GeofencingService,
+    BiometricService,
+    LeavePoliciesService,
+  ],
+  exports: [AttendancePolicyService, AttendanceSummaryService, LeaveLedgerService],
+})
+export class HrTimeModule {}

@@ -1,0 +1,81 @@
+import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Post, Query, UseGuards } from "@nestjs/common";
+import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { CurrentUser } from "../../../common/auth/current-user.decorator";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { PermissionGuard } from "../../access/permission.guard";
+import { RequirePermission } from "../../access/require-permission.decorator";
+import { AttendanceRegularizationService } from "./attendance-regularization.service";
+import { z } from "zod";
+
+const createRegularizationSchema = z.object({
+  attendanceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  requestedCheckIn: z.string().datetime().optional(),
+  requestedCheckOut: z.string().datetime().optional(),
+  reason: z.string().min(10).max(500),
+});
+
+const listRegularizationsSchema = z.object({
+  userId: z.string().optional(),
+  status: z.enum(["PENDING", "APPROVED", "REJECTED"]).optional(),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+const rejectRegularizationSchema = z.object({
+  rejectionReason: z.string().min(1).max(500),
+});
+
+@RequireModule("hr")
+@Controller("hr/attendance/regularizations")
+@UseGuards(JwtAuthGuard)
+export class AttendanceRegularizationController {
+  constructor(private readonly regularizationService: AttendanceRegularizationService) {}
+
+  @Post()
+  @HttpCode(201)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:attendance:regularize")
+  create(
+    @Body(new ZodValidationPipe(createRegularizationSchema)) body: z.infer<typeof createRegularizationSchema>,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.regularizationService.create(u, body);
+  }
+
+  @Get()
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:attendance:view")
+  list(
+    @Query(new ZodValidationPipe(listRegularizationsSchema)) query: z.infer<typeof listRegularizationsSchema>,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.regularizationService.list(u, query);
+  }
+
+  @Post(":regularizationId/apply")
+  @HttpCode(200)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:attendance:manage")
+  apply(
+    @Param("regularizationId", ParseIntPipe) regularizationId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.regularizationService.apply(u, regularizationId);
+  }
+
+  @Post(":regularizationId/reject")
+  @HttpCode(200)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:attendance:manage")
+  reject(
+    @Param("regularizationId", ParseIntPipe) regularizationId: number,
+    @Body(new ZodValidationPipe(rejectRegularizationSchema)) body: z.infer<typeof rejectRegularizationSchema>,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.regularizationService.reject(u, regularizationId, body.rejectionReason);
+  }
+}

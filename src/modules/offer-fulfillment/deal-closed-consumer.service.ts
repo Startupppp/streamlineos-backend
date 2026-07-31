@@ -5,8 +5,8 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { InboxConsumer } from "../../common/outbox/inbox-consumer";
 import { dealClosedPayloadSchema } from "../../common/outbox/outbox-event-schema";
-import { NumberSequenceService } from "../inv-stock-engine/number-sequence.service";
-import { addDec, mulDec } from "../inv-stock-engine/stock-engine.service";
+import { NumberSequenceService } from "../inventory/stock-engine/number-sequence.service";
+import { addDec, mulDec } from "../inventory/stock-engine/stock-engine.service";
 
 const CONSUMER_NAME = "offer-fulfillment:deal-closed";
 

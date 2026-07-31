@@ -20,10 +20,10 @@ import { EmailService } from "../email/email.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { appUrl } from "../email/app-url";
 import { getLeadStatusChangeEmailTemplate } from "../email/templates/crm";
-import { CrmMetadataService } from "../crm-metadata/crm-metadata.service";
-import { CrmBlueprintsService } from "../crm-metadata/crm-blueprints.service";
+import { CrmMetadataService } from "../crm/metadata/crm-metadata.service";
+import { CrmBlueprintsService } from "../crm/metadata/crm-blueprints.service";
 import { resolveLeadStatusSemantics } from "./lead-status-semantics";
-import { PlanLimitsService } from "../billing/plan-limits.service";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import type { TransitionLeadStatusInput } from "./dto/lead-mutations.schemas";
 
 type LeadRow = typeof leads.$inferSelect;

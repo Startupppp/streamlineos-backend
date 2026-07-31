@@ -5,7 +5,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { KbAccessService } from "./kb-access.service";
 import { KbEventsService } from "./kb-events.service";
-import { EmbeddingsService } from "../ai/providers/embeddings.service";
+import { EmbeddingsService } from "../ai/core/providers/embeddings.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { SearchInput } from "./dto/kb-ai.schemas";
 

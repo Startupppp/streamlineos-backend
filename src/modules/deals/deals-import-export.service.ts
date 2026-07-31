@@ -3,8 +3,8 @@ import { desc, eq } from "drizzle-orm";
 import { deals, organizationMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { PlanLimitsService } from "../billing/plan-limits.service";
-import { toCsv } from "../inv-import-export/csv.util";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
+import { toCsv } from "../inventory/import-export/csv.util";
 import { DealsCrudService } from "./deals-crud.service";
 import type { BulkImportDealsInput } from "./dto/deals.schemas";
 

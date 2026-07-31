@@ -1,7 +1,7 @@
 import { Injectable, ServiceUnavailableException } from "@nestjs/common";
 import { KbCreditsService } from "./kb-credits.service";
 import { KbEventsService } from "./kb-events.service";
-import { LlmService } from "../ai/providers/llm.service";
+import { LlmService } from "../ai/core/providers/llm.service";
 import type { DraftInput, ImproveInput, SummarizeInput } from "./dto/kb-authoring.schemas";
 
 const COST = 1;

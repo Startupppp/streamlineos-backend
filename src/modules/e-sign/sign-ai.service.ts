@@ -4,8 +4,8 @@ import { signDocuments, signEnvelopes } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { StorageService } from "../storage/storage.service";
-import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
-import { unwrapAiResult } from "../ai/services/gateway-result.util";
+import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
+import { unwrapAiResult } from "../ai/core/services/gateway-result.util";
 import { extractAttachmentText } from "../kb/kb-attachment-extract.util";
 
 const SIGN_SUMMARIZE_FEATURE = "sign.summarize-document";

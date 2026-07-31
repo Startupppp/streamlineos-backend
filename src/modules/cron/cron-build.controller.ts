@@ -10,7 +10,7 @@ import { Public } from "../../common/auth/public.decorator";
 import { logger } from "../../common/logger/logger.service";
 import { assertCronSecret } from "./cron-secret";
 import { CronProjectsService } from "./cron-projects.service";
-import { CrmSequencesRunnerService } from "../crm-automation-studio/crm-sequences-runner.service";
+import { CrmSequencesRunnerService } from "../crm/automation-studio/crm-sequences-runner.service";
 import { CronFinanceService } from "./cron-finance.service";
 import { CronCrmTasksService } from "./cron-crm-tasks.service";
 import { CronBuildRetentionService } from "./cron-build-retention.service";

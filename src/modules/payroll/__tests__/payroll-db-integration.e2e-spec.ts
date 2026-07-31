@@ -19,7 +19,7 @@ import {
   payrollRunEvents,
   employeeSalaryProfiles,
 } from '../../../db/schema';
-import { encryptBankDetails } from '../../onboarding/crypto.helpers';
+import { encryptBankDetails } from '../../hr/onboarding/core/crypto.helpers';
 import { DEFAULT_PAYROLL_TOGGLES } from '../payroll.types';
 import { PayoutBatchesService } from '../payout/payout-batches.service';
 import { ProfilesService } from '../runs/profiles.service';

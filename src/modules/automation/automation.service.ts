@@ -22,7 +22,7 @@ import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { AutomationEmailService } from "./automation-email.service";
-import { PlanLimitsService } from "../billing/plan-limits.service";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { evaluateConditions, type EventPayload } from "./automation.evaluator";
 import type { CreateAutomationRuleInput, UpdateAutomationRuleInput } from "./dto/automation.schemas";
 

@@ -1,5 +1,5 @@
 import { Module } from "@nestjs/common";
-import { BillingModule } from "../../billing/billing.module";
+import { BillingModule } from "../../billing/core/billing.module";
 import { NotificationsModule } from "../../notifications/notifications.module";
 import { UsersModule } from "../../users/users.module";
 import { ProjectsController } from "./projects.controller";
@@ -17,6 +17,8 @@ import { ProjectsWorkspaceMembersService } from "./projects-workspace-members.se
 import { ProjectsCustomersController } from "./projects-customers.controller";
 import { ProjectsCustomersService } from "./projects-customers.service";
 import { ProjectsService } from "./projects.service";
+import { ProjectsQueryService } from "./projects-query.service";
+import { ProjectsWriteService } from "./projects-write.service";
 import { ProjectsProvisionService } from "./projects-provision.service";
 import { ProjectsEmailService } from "./projects-email.service";
 import { ProjectsMembersService } from "./projects-members.service";
@@ -40,6 +42,11 @@ import { ProjectsReleasesService } from "./projects-releases.service";
 import { ProjectsWebhooksService } from "./projects-webhooks.service";
 import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
 import { ProjectsAutomationsService } from "./projects-automations.service";
+import { ProjectsCustomStatesService } from "./projects-custom-states.service";
+import { ProjectsLabelsService } from "./projects-labels.service";
+import { ProjectsTicketChecklistsService } from "./projects-ticket-checklists.service";
+import { ProjectsTicketLinksService } from "./projects-ticket-links.service";
+import { ProjectsTicketRelationsService } from "./projects-ticket-relations.service";
 
 @Module({
   imports: [BillingModule, NotificationsModule, UsersModule],
@@ -59,6 +66,8 @@ import { ProjectsAutomationsService } from "./projects-automations.service";
   ],
   providers: [
     ProjectsService,
+    ProjectsQueryService,
+    ProjectsWriteService,
     ProjectsProvisionService,
     ProjectsEmailService,
     ProjectsMembersService,
@@ -84,6 +93,11 @@ import { ProjectsAutomationsService } from "./projects-automations.service";
     ProjectsAutomationsService,
     ProjectsCustomersService,
     ProjectsWorkspaceMembersService,
+    ProjectsCustomStatesService,
+    ProjectsLabelsService,
+    ProjectsTicketChecklistsService,
+    ProjectsTicketLinksService,
+    ProjectsTicketRelationsService,
   ],
   exports: [
     ProjectsTicketsService,

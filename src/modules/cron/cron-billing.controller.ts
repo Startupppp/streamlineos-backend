@@ -10,7 +10,7 @@ import { Public } from "../../common/auth/public.decorator";
 import { logger } from "../../common/logger/logger.service";
 import { assertCronSecret } from "./cron-secret";
 import { CronBillingService } from "./cron-billing.service";
-import { AiJobsWorkerService } from "../ai-jobs/ai-jobs-worker.service";
+import { AiJobsWorkerService } from "../ai/jobs/ai-jobs-worker.service";
 
 @Public()
 @Controller("cron")

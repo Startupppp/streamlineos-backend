@@ -4,7 +4,7 @@ import {
 } from "@nestjs/common";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { KbAskService } from "./kb-ask.service";
-import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
+import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
 import { KbEventsService } from "./kb-events.service";
 import { KbSearchService } from "./kb-search.service";
 

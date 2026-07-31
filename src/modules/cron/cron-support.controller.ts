@@ -11,7 +11,7 @@ import { logger } from "../../common/logger/logger.service";
 import { assertCronSecret } from "./cron-secret";
 import { CronKbService } from "./cron-kb.service";
 import { CronSupportService } from "./cron-support.service";
-import { SupportKbGapService } from "../support-kb-gap/support-kb-gap.service";
+import { SupportKbGapService } from "../support/kb-gap/support-kb-gap.service";
 
 @Public()
 @Controller("cron")
