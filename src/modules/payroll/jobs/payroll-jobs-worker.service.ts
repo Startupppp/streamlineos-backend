@@ -1,7 +1,9 @@
 import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from "@nestjs/common";
 import { ModuleRef } from "@nestjs/core";
+import { and, eq, isNotNull, lt } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
+import { payrollJobs } from "../../../db/schema";
 import { PayrollJobsService, type PayrollJobType } from "./payroll-jobs.service";
 import { GenerateService } from "../runs/generate.service";
 import { PublishingService } from "../payout/publishing.service";
@@ -10,6 +12,11 @@ import { isTransientDbError } from "../../../common/db/transient-error";
 
 const POLL_MS = 5_000;
 const BATCH_SIZE = 5;
+/**
+ * Modelled on NotificationDeliveryWorker (10 min). Payroll generation for a large
+ * org can take several minutes, so we use a wider window before assuming a crash.
+ */
+const STALE_LOCK_MS = 15 * 60 * 1_000;
 
 /**
  * In-process durable worker for payroll jobs.
@@ -30,9 +37,7 @@ export class PayrollJobsWorkerService implements OnModuleInit, OnModuleDestroy {
     @Optional() private readonly generate?: GenerateService,
     @Optional() private readonly publishing?: PublishingService,
     @Optional() private readonly filings?: PayrollFilingsService,
-  ) {
-    void this.db;
-  }
+  ) {}
 
   onModuleInit(): void {
     // Lazy resolve to avoid circular DI hard-failures at bootstrap
@@ -49,6 +54,7 @@ export class PayrollJobsWorkerService implements OnModuleInit, OnModuleDestroy {
 
   /** Exposed for cron/manual flush and tests. */
   async flush(limit = BATCH_SIZE): Promise<{ claimed: number; completed: number; failed: number }> {
+    await this.reclaimStale();
     const claimed = await this.jobs.claimPending(limit);
     let completed = 0;
     let failed = 0;
@@ -71,6 +77,31 @@ export class PayrollJobsWorkerService implements OnModuleInit, OnModuleDestroy {
       }
     }
     return { claimed: claimed.length, completed, failed };
+  }
+
+  /**
+   * Reclaim RUNNING jobs whose lock has aged past STALE_LOCK_MS, resetting them to
+   * PENDING so the next flush can re-claim them. Mirrors NotificationDeliveryWorker's
+   * stale-lock reclaim pattern (staleBefore = now − STALE_LOCK_MS on lockedAt).
+   */
+  private async reclaimStale(): Promise<void> {
+    const staleBefore = new Date(Date.now() - STALE_LOCK_MS);
+    const rows = await this.db
+      .update(payrollJobs)
+      .set({ status: "PENDING", startedAt: null, progress: 0 })
+      .where(
+        and(
+          eq(payrollJobs.status, "RUNNING"),
+          isNotNull(payrollJobs.startedAt),
+          lt(payrollJobs.startedAt, staleBefore),
+        ),
+      )
+      .returning({ id: payrollJobs.id });
+    if (rows.length > 0) {
+      this.logger.warn(
+        `Payroll stale-lock reclaim: reset ${rows.length} RUNNING job(s) locked before ${staleBefore.toISOString()} back to PENDING`,
+      );
+    }
   }
 
   private async tick(): Promise<void> {
@@ -185,8 +216,16 @@ export class PayrollJobsWorkerService implements OnModuleInit, OnModuleDestroy {
       }
       case "PREVIEW":
       case "EXPORT":
+        throw new Error(
+          `${jobType} jobs are not yet implemented — no handler is wired for this job type. ` +
+          `Job marked FAILED to prevent silent no-ops. Deploy a real handler before re-enqueueing.`,
+        );
       case "RECONCILE":
-        return { ok: true, note: `${jobType} acknowledged (no-op handler)` };
+        throw new Error(
+          "RECONCILE jobs are not yet implemented — bank-return matching requires a dedicated " +
+          "reconciliation engine (parser + persistence). A RECONCILE that returns success without " +
+          "reconciling is worse than failing loudly. Job marked FAILED. Deploy a real engine first.",
+        );
       default:
         throw new Error(`Unknown job type: ${jobType}`);
     }

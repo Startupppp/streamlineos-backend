@@ -472,40 +472,43 @@ export class OnboardingService {
   async submit(orgId: string, userId: string) {
     await this.details.upsertOnboardingStep(userId, orgId, "Final Review");
 
-    await this.db
-      .update(users)
-      .set({ onboardingCompletedAt: new Date() })
-      .where(eq(users.id, userId));
-
-    await this.details.invalidateSessionCache(userId);
-
-    await this.sessions.completeSession(orgId, userId, "employee_onboarding");
-
     const currentYear = new Date().getFullYear();
-    const existingBalance = await this.db.query.leaveBalances.findFirst({
-      where: and(
-        eq(leaveBalances.userId, userId),
-        eq(leaveBalances.year, currentYear),
-      ),
-    });
 
-    if (!existingBalance) {
-      const orgLeaveTypes = await this.db.query.leaveTypes.findMany({
-        where: eq(leaveTypes.orgId, orgId),
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(users)
+        .set({ onboardingCompletedAt: new Date() })
+        .where(eq(users.id, userId));
+
+      const existingBalance = await tx.query.leaveBalances.findFirst({
+        where: and(
+          eq(leaveBalances.orgId, orgId),
+          eq(leaveBalances.userId, userId),
+          eq(leaveBalances.year, currentYear),
+        ),
       });
 
-      if (orgLeaveTypes.length > 0) {
-        await this.db.insert(leaveBalances).values(
-          orgLeaveTypes.map((lt) => ({
-            orgId,
-            userId,
-            leaveTypeId: lt.id,
-            balance: String(lt.daysPerYear),
-            year: currentYear,
-          })),
-        );
+      if (!existingBalance) {
+        const orgLeaveTypes = await tx.query.leaveTypes.findMany({
+          where: eq(leaveTypes.orgId, orgId),
+        });
+
+        if (orgLeaveTypes.length > 0) {
+          await tx.insert(leaveBalances).values(
+            orgLeaveTypes.map((lt) => ({
+              orgId,
+              userId,
+              leaveTypeId: lt.id,
+              balance: String(lt.daysPerYear),
+              year: currentYear,
+            })),
+          );
+        }
       }
-    }
+    });
+
+    await this.details.invalidateSessionCache(userId);
+    await this.sessions.completeSession(orgId, userId, "employee_onboarding");
 
     return { success: true };
   }

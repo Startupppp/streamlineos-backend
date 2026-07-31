@@ -32,10 +32,33 @@ export interface OutboxFlushResult {
 @Injectable()
 export class OutboxPublisherService {
   private readonly logger = new Logger(OutboxPublisherService.name);
+  private noBrokerWarned = false;
 
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
+  /**
+   * Returns true only once a real broker is injected and deliver() is implemented.
+   * Phase-1 default is false: flush() is a deliberate no-op so events stay PENDING
+   * (unclaimed) until a real dispatch target is wired, rather than being falsely
+   * marked DELIVERED. Override in a concrete subclass or swap to true here when
+   * wiring Kafka / SQS / EventBus dispatch.
+   */
+  protected isDispatchConfigured(): boolean {
+    return false;
+  }
+
   async flush(): Promise<OutboxFlushResult> {
+    if (!this.isDispatchConfigured()) {
+      if (!this.noBrokerWarned) {
+        this.logger.warn(
+          "OutboxPublisher: no dispatch target is configured — flush is a no-op; events remain " +
+            "PENDING and will be retried when a broker is wired. Override isDispatchConfigured() " +
+            "and implement deliver() to enable real dispatch. (Further warnings suppressed.)",
+        );
+        this.noBrokerWarned = true;
+      }
+      return { claimed: 0, delivered: 0, suppressed: 0, retried: 0, dead: 0 };
+    }
     const claimed = await this.claimBatch();
     let delivered = 0;
     let suppressed = 0;
@@ -109,8 +132,12 @@ export class OutboxPublisherService {
   }
 
   private async deliver(event: OutboxEventRow): Promise<void> {
-    this.logger.debug(
-      `outbox ${event.eventId} (${event.eventType}) ready for aggregate ${event.aggregateType}:${event.aggregateId}`,
+    // Replace this body with real EventBus / Kafka / SQS dispatch, keyed on event.eventType
+    // or event.aggregateType prefix. This method is only called once isDispatchConfigured()
+    // returns true — throwing here prevents any uncaught "delivered" marking if someone
+    // overrides isDispatchConfigured() before wiring a real dispatch target.
+    throw new Error(
+      `no dispatch handler for event type '${event.eventType}' — implement routing in deliver()`,
     );
   }
 

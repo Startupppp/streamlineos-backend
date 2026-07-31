@@ -1,6 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, gte, inArray, isNotNull, isNull, lte, or } from "drizzle-orm";
-import { attendance, employeeShiftAssignments, hrAttendanceRegularizations, orgHolidays, organizationMembers, rosterEntries, rosters, shiftTemplates, users } from "../../../db/schema";
+import { toZonedTime } from "date-fns-tz";
+import { attendance, employeeShiftAssignments, hrAttendanceRegularizations, orgHolidays, organizationMembers, organizations, rosterEntries, rosters, shiftTemplates, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AttendancePolicyService } from "./attendance-policy.service";
@@ -79,7 +80,8 @@ export class AttendanceSummaryService {
 
     const userIds = members.map((m) => m.userId);
 
-    const [attendanceRows, regularizationRows, holidayRows] = await Promise.all([
+    const [orgRow, attendanceRows, regularizationRows, holidayRows] = await Promise.all([
+      this.db.select({ timezone: organizations.timezone }).from(organizations).where(eq(organizations.id, orgId)).limit(1),
       this.db
         .select({
           userId: attendance.userId,
@@ -123,6 +125,8 @@ export class AttendanceSummaryService {
         .from(orgHolidays)
         .where(and(eq(orgHolidays.orgId, orgId), gte(orgHolidays.date, periodStart), lte(orgHolidays.date, periodEnd))),
     ]);
+
+    const orgTimezone = orgRow[0]?.timezone ?? "Asia/Kolkata";
 
     const holidaySet = new Set(holidayRows.map((h) => h.date));
 
@@ -184,26 +188,33 @@ export class AttendanceSummaryService {
       if (!assignedShiftByUser.has(r.userId)) assignedShiftByUser.set(r.userId, r);
     }
 
-    const representativeUserId = userIds[0] ?? "";
-    const [orgAttendanceRules, orgOvertimeRules] = representativeUserId
-      ? await Promise.all([
-          this.policyService.getAttendanceRules(orgId, representativeUserId, periodStart),
-          this.policyService.getOvertimeRules(orgId, representativeUserId, periodStart),
-        ])
-      : [
-          { graceMinutes: 15, autoCheckoutTime: "19:00", lateArrivalPenalty: "none", halfDayThresholdMinutes: 240, absentThresholdMinutes: 0, enforceGeofence: false, minReclockInMinutes: 2 },
-          { dailyThresholdMinutes: 480 },
-        ] as const;
+    const [attendanceRulesByUser, overtimeRulesByUser] = await Promise.all([
+      Promise.all(
+        userIds.map(async (uid) => {
+          const rules = await this.policyService.getAttendanceRules(orgId, uid, periodStart);
+          return [uid, rules] as const;
+        }),
+      ).then((entries) => new Map(entries)),
+      Promise.all(
+        userIds.map(async (uid) => {
+          const rules = await this.policyService.getOvertimeRules(orgId, uid, periodStart);
+          return [uid, rules] as const;
+        }),
+      ).then((entries) => new Map(entries)),
+    ]);
 
     const results: EmployeeAttendanceSummary[] = members.map((member) => {
         const userId = member.userId;
         const rows = attendanceByUser.get(userId) ?? [];
 
+        const attendanceRules = attendanceRulesByUser.get(userId) ?? { graceMinutes: 15, lateArrivalPenalty: "none", halfDayThresholdMinutes: 240, absentThresholdMinutes: 0 };
+        const overtimeRules = overtimeRulesByUser.get(userId) ?? { dailyThresholdMinutes: 480 };
+
         const shiftDef = rosterShiftByUser.get(userId) ?? assignedShiftByUser.get(userId) ?? null;
 
         const shiftInfo = shiftDef
           ? { shiftStartMinutes: (() => { const [h, m] = shiftDef.startTime.split(":"); return Number(h) * 60 + Number(m); })(), graceMinutes: shiftDef.gracePeriodMinutes }
-          : { shiftStartMinutes: 9 * 60, graceMinutes: orgAttendanceRules.graceMinutes };
+          : { shiftStartMinutes: 9 * 60, graceMinutes: attendanceRules.graceMinutes };
 
         const shiftEndMinutes = shiftDef
           ? (() => {
@@ -223,20 +234,20 @@ export class AttendanceSummaryService {
 
         for (const row of rows) {
           if (row.checkIn) {
-            const ci = new Date(row.checkIn);
-            const ciMinutes = ci.getUTCHours() * 60 + ci.getUTCMinutes();
+            const localCi = toZonedTime(new Date(row.checkIn), orgTimezone);
+            const ciMinutes = localCi.getHours() * 60 + localCi.getMinutes();
             if (ciMinutes > shiftInfo.shiftStartMinutes + shiftInfo.graceMinutes) lateCount++;
           }
 
           if (row.checkOut) {
-            const co = new Date(row.checkOut);
-            const coMinutes = co.getUTCHours() * 60 + co.getUTCMinutes();
+            const localCo = toZonedTime(new Date(row.checkOut), orgTimezone);
+            const coMinutes = localCo.getHours() * 60 + localCo.getMinutes();
             if (coMinutes < shiftEndMinutes - 15) earlyExitCount++;
           }
 
           if (row.isOvertime) {
             const wh = Number(row.workHours ?? 0);
-            const thresholdHours = orgOvertimeRules.dailyThresholdMinutes / 60;
+            const thresholdHours = overtimeRules.dailyThresholdMinutes / 60;
             if (wh > thresholdHours) {
               overtimeMinutes += Math.round((wh - thresholdHours) * 60);
             }
@@ -248,7 +259,7 @@ export class AttendanceSummaryService {
           if (holidaySet.has(row.date)) holidayWorkDays++;
         }
 
-        const latePenaltyDays = this.calculateLatePenaltyDays(lateCount, orgAttendanceRules.lateArrivalPenalty);
+        const latePenaltyDays = this.calculateLatePenaltyDays(lateCount, attendanceRules.lateArrivalPenalty);
         const absentDays = Math.max(0, workingDaysInPeriod - presentDays);
         const payableDays = Math.max(0, presentDays - latePenaltyDays);
         const approvedRegularizations = regularizationsByUser.get(userId) ?? 0;

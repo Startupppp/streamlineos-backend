@@ -507,7 +507,7 @@ export class PayrollInputsService {
     const [updated] = await this.db
       .update(hrPayrollAdjustments)
       .set({ status: "approved", approvedBy: actorId, approvedAt: new Date(), updatedAt: new Date() })
-      .where(eq(hrPayrollAdjustments.id, adjustmentId))
+      .where(and(eq(hrPayrollAdjustments.id, adjustmentId), eq(hrPayrollAdjustments.orgId, orgId)))
       .returning();
 
     await this.audit.log({
@@ -543,7 +543,7 @@ export class PayrollInputsService {
         rejectionReason: reason,
         updatedAt: new Date(),
       })
-      .where(eq(hrPayrollAdjustments.id, adjustmentId))
+      .where(and(eq(hrPayrollAdjustments.id, adjustmentId), eq(hrPayrollAdjustments.orgId, orgId)))
       .returning();
 
     await this.audit.log({

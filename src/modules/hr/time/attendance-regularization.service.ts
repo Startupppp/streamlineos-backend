@@ -146,6 +146,17 @@ export class AttendanceRegularizationService {
       throw new BadRequestException(`Regularization is already ${reg.status}.`);
     }
 
+    let originalCheckIn: Date | null = null;
+    let originalCheckOut: Date | null = null;
+    if (reg.attendanceId) {
+      const original = await this.db.query.attendance.findFirst({
+        where: and(eq(attendance.id, reg.attendanceId), eq(attendance.orgId, u.orgId)),
+        columns: { checkIn: true, checkOut: true },
+      });
+      originalCheckIn = original?.checkIn ?? null;
+      originalCheckOut = original?.checkOut ?? null;
+    }
+
     await this.db.transaction(async (tx) => {
       if (reg.attendanceId) {
         const updateSet: Record<string, unknown> = {
@@ -181,7 +192,7 @@ export class AttendanceRegularizationService {
 
     const monthKey = reg.attendanceDate.slice(0, 7);
 
-    this.audit.log({
+    await this.audit.logCritical({
       action: "hr.attendance_regularization.approved",
       userId: u.userId,
       orgId: u.orgId,
@@ -192,6 +203,14 @@ export class AttendanceRegularizationService {
         attendanceDate: reg.attendanceDate,
         monthKey,
         feedsPayrollInputRebuild: true,
+      },
+      before: {
+        checkIn: originalCheckIn?.toISOString() ?? null,
+        checkOut: originalCheckOut?.toISOString() ?? null,
+      },
+      after: {
+        checkIn: reg.requestedCheckIn?.toISOString() ?? null,
+        checkOut: reg.requestedCheckOut?.toISOString() ?? null,
       },
     });
 

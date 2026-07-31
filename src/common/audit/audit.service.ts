@@ -27,12 +27,7 @@ export class AuditService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   log(entry: AuditEntry): void {
-    const enrichedMetadata: Record<string, unknown> = { ...entry.metadata };
-    if (entry.result !== undefined) enrichedMetadata.result = entry.result;
-    if (entry.requestId) enrichedMetadata.requestId = entry.requestId;
-    if (entry.userAgent) enrichedMetadata.userAgent = entry.userAgent;
-    if (entry.before) enrichedMetadata.before = entry.before;
-    if (entry.after) enrichedMetadata.after = entry.after;
+    const enrichedMetadata = this.buildMetadata(entry);
 
     void this.db
       .insert(auditLogs)
@@ -49,5 +44,32 @@ export class AuditService {
         ipAddress: entry.ipAddress ?? null,
       })
       .catch((error: unknown) => logger.error("audit.log failed", { error, action: entry.action }));
+  }
+
+  async logCritical(entry: AuditEntry): Promise<void> {
+    const enrichedMetadata = this.buildMetadata(entry);
+
+    await this.db.insert(auditLogs).values({
+      action: entry.action,
+      userId: entry.userId,
+      orgId: entry.orgId ?? null,
+      targetId: entry.targetId ?? null,
+      targetType: entry.targetType ?? null,
+      actorUserId: entry.actorUserId ?? null,
+      resourceType: entry.resourceType ?? null,
+      resourceId: entry.resourceId ?? null,
+      metadata: enrichedMetadata,
+      ipAddress: entry.ipAddress ?? null,
+    });
+  }
+
+  private buildMetadata(entry: AuditEntry): Record<string, unknown> {
+    const enrichedMetadata: Record<string, unknown> = { ...entry.metadata };
+    if (entry.result !== undefined) enrichedMetadata.result = entry.result;
+    if (entry.requestId) enrichedMetadata.requestId = entry.requestId;
+    if (entry.userAgent) enrichedMetadata.userAgent = entry.userAgent;
+    if (entry.before) enrichedMetadata.before = entry.before;
+    if (entry.after) enrichedMetadata.after = entry.after;
+    return enrichedMetadata;
   }
 }

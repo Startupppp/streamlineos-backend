@@ -313,27 +313,30 @@ export class ExitWriteService {
 
     const approved = input.decision === "approve";
 
-    await this.db
-      .update(resignations)
-      .set({
-        status: approved ? "FINAL_APPROVED" : "REJECTED",
-        finalReviewedBy: actorUserId,
-        finalReviewedAt: new Date(),
-        finalRemarks: input.remarks,
-        updatedAt: new Date(),
-      })
-      .where(eq(resignations.id, resignationId));
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(resignations)
+        .set({
+          status: approved ? "FINAL_APPROVED" : "REJECTED",
+          finalReviewedBy: actorUserId,
+          finalReviewedAt: new Date(),
+          finalRemarks: input.remarks,
+          updatedAt: new Date(),
+        })
+        .where(eq(resignations.id, resignationId));
+
+      if (approved) {
+        await tx
+          .insert(fnfSettlements)
+          .values({ orgId, userId: record.userId, resignationId, status: "DRAFT" })
+          .onConflictDoNothing();
+      }
+    });
 
     this.resignationJobs.notifyFinalDecision(orgId, record.userId, approved);
 
     if (approved) {
-      await this.db
-        .insert(fnfSettlements)
-        .values({ orgId, userId: record.userId, resignationId, status: "DRAFT" })
-        .onConflictDoNothing();
-
       void this.exitChecklist.seedChecklistFromTemplate(orgId, resignationId).catch(() => undefined);
-
       this.dispatchResignationApprovedAutomation(orgId, resignationId, record.userId, record.lastWorkingDate, actorUserId);
     }
 
