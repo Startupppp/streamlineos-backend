@@ -27,6 +27,7 @@ import {
   ROLE_RANK,
   toGrantableSet,
 } from "../../common/rbac/grantability";
+import { moduleAccessDenied } from "./module-access-errors";
 import { resolveActorRankContext } from "./module-access.helpers";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
@@ -130,7 +131,7 @@ export class ModuleAccessGroupsService {
     if (isOrgAdmin) return;
     const scope = resolved.get(`${moduleKey}:access:${action}`);
     if (!scope || scope === "none") {
-      throw new ForbiddenException("You do not have access to manage this module's roles");
+      throw moduleAccessDenied(action);
     }
   }
 
