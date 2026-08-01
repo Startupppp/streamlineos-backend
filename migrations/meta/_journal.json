@@ -729,6 +729,13 @@
       "when": 1784993516607,
       "tag": "0378_rls_remaining_tenant_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1784993517607,
+      "tag": "0379_drop_users_department_id",
+      "breakpoints": true
     }
   ]
 }

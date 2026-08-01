@@ -10,6 +10,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
+import { syncOrgUnitPlacement } from "../../common/org/sync-org-unit-placement";
 import type {
   CreateBranchInput,
   UpdateBranchInput,
@@ -179,17 +180,11 @@ export class BranchesService {
         .returning();
       if (!created) throw new Error("Insert returned no row");
 
-      if (input.branchManagerId) {
-        await tx
-          .update(users)
-          .set({ branchId: created.id })
-          .where(eq(users.id, input.branchManagerId));
-      }
-      if (input.branchHrId) {
-        await tx
-          .update(users)
-          .set({ branchId: created.id })
-          .where(eq(users.id, input.branchHrId));
+      // The scalar alone leaves them out of the branch org unit, which is what HR policy evaluation reads
+      for (const userId of [input.branchManagerId, input.branchHrId]) {
+        if (!userId) continue;
+        await tx.update(users).set({ branchId: created.id }).where(eq(users.id, userId));
+        await syncOrgUnitPlacement(tx, orgId, userId, { BRANCH: created.id });
       }
       return created;
     });
@@ -253,6 +248,18 @@ export class BranchesService {
       )
       .returning();
     if (!updated) return null;
+
+    if (input.branchManagerId) {
+      await this.db.transaction(async (tx) => {
+        await tx
+          .update(users)
+          .set({ branchId: updated.id })
+          .where(eq(users.id, input.branchManagerId as string));
+        await syncOrgUnitPlacement(tx, orgId, input.branchManagerId as string, {
+          BRANCH: updated.id,
+        });
+      });
+    }
 
     await this.cache.invalidate(CACHE_KEYS.branchesList(orgId));
     return updated;

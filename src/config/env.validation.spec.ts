@@ -61,6 +61,48 @@ describe("validateEnv", () => {
     expect(validateEnv(base).NODE_ENV).toBe("test");
   });
 
+  it("requires APP_DATABASE_URL in production so the app cannot run as the owner", () => {
+    expect(() =>
+      validateEnv({
+        ...base,
+        NODE_ENV: "production",
+        CRON_SECRET: "x".repeat(32),
+        INTERNAL_API_SECRET: "x".repeat(32),
+        CONTACT_NOTIFICATION_EMAIL: "contact@example.com",
+      }),
+    ).toThrow(/APP_DATABASE_URL/);
+  });
+
+  it("rejects APP_DATABASE_URL pointing at the same role as DATABASE_URL", () => {
+    expect(() =>
+      validateEnv({
+        ...base,
+        NODE_ENV: "production",
+        CRON_SECRET: "x".repeat(32),
+        INTERNAL_API_SECRET: "x".repeat(32),
+        CONTACT_NOTIFICATION_EMAIL: "contact@example.com",
+        APP_DATABASE_URL: base.DATABASE_URL,
+      }),
+    ).toThrow(/must not equal DATABASE_URL/);
+  });
+
+  it("accepts a distinct APP_DATABASE_URL in production", () => {
+    expect(
+      validateEnv({
+        ...base,
+        NODE_ENV: "production",
+        CRON_SECRET: "x".repeat(32),
+        INTERNAL_API_SECRET: "x".repeat(32),
+        CONTACT_NOTIFICATION_EMAIL: "contact@example.com",
+        APP_DATABASE_URL: "postgres://streamline_app:p@localhost:5432/db",
+      }).APP_DATABASE_URL,
+    ).toBe("postgres://streamline_app:p@localhost:5432/db");
+  });
+
+  it("does not require APP_DATABASE_URL outside production", () => {
+    expect(validateEnv(base).APP_DATABASE_URL).toBeUndefined();
+  });
+
   it("requires CONTACT_NOTIFICATION_EMAIL in production", () => {
     expect(() =>
       validateEnv({
