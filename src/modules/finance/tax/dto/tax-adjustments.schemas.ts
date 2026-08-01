@@ -17,5 +17,4 @@ export const createTaxAdjustmentSchema = z.object({
   lines: z.array(adjustmentLineSchema).min(2),
 });
 
-export type AdjustmentLine = z.infer<typeof adjustmentLineSchema>;
 export type CreateTaxAdjustmentInput = z.infer<typeof createTaxAdjustmentSchema>;

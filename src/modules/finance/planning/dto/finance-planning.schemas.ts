@@ -31,7 +31,6 @@ export const budgetLineSchema = z.object({
   departmentId: z.string().uuid().optional(),
   projectId: z.number().int().positive().optional(),
 });
-export type BudgetLineInput = z.infer<typeof budgetLineSchema>;
 
 export const replaceBudgetLinesSchema = z.object({
   lines: z.array(budgetLineSchema).max(5000),

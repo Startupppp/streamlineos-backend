@@ -3,7 +3,6 @@ import { z } from "zod";
 export const generatePayrollSchema = z.object({
   month: z.string().optional(),
 });
-export type GeneratePayrollInput = z.infer<typeof generatePayrollSchema>;
 
 export const generateSinglePayrollSchema = z.object({
   userId: z.string(),
@@ -17,24 +16,20 @@ export const generateSinglePayrollSchema = z.object({
   overtimeHours: z.number().min(0).optional(),
   overtimeAmount: z.number().min(0).optional(),
 });
-export type GenerateSinglePayrollInput = z.infer<typeof generateSinglePayrollSchema>;
 
 export const allPayrollsQuerySchema = z.object({
   month: z.string().optional(),
   year: z.string().optional(),
 });
-export type AllPayrollsQueryInput = z.infer<typeof allPayrollsQuerySchema>;
 
 export const payrollReportsQuerySchema = z.object({
   year: z.string().optional(),
   type: z.string().optional(),
 });
-export type PayrollReportsQueryInput = z.infer<typeof payrollReportsQuerySchema>;
 
 export const payslipsQuerySchema = z.object({
   userId: z.string().optional(),
 });
-export type PayslipsQueryInput = z.infer<typeof payslipsQuerySchema>;
 
 export const createBonusSchema = z.object({
   userId: z.string().min(1),
@@ -162,7 +157,6 @@ export const accountingExportSchema = z.object({
   month: z.string().regex(/^\d{4}-\d{2}$/),
   format: z.enum(["TALLY_XML", "QUICKBOOKS_CSV", "JSON"]).optional().default("JSON"),
 });
-export type AccountingExportInput = z.infer<typeof accountingExportSchema>;
 
 export const taxCalcSchema = z.object({
   annualCtc: z.number().positive(),
@@ -171,7 +165,6 @@ export const taxCalcSchema = z.object({
   regime: z.enum(["OLD", "NEW"]).optional().default("NEW"),
   pfOptOut: z.boolean().optional().default(false),
 });
-export type TaxCalcInput = z.infer<typeof taxCalcSchema>;
 
 const bankTransferEntrySchema = z.object({
   userId: z.string().min(1),
@@ -196,7 +189,6 @@ export const updateBankTransferStatusSchema = z.object({
   status: z.enum(["PENDING", "PROCESSING", "COMPLETED", "FAILED"]),
   referenceNo: z.string().max(100).optional(),
 });
-export type UpdateBankTransferStatusInput = z.infer<typeof updateBankTransferStatusSchema>;
 
 export const createAllowanceSchema = z.object({
   name: z.string().min(1).max(100),
@@ -207,10 +199,8 @@ export const createAllowanceSchema = z.object({
   isTaxable: z.boolean().optional(),
   isActive: z.boolean().optional(),
 });
-export type CreateAllowanceInput = z.infer<typeof createAllowanceSchema>;
 
 export const updateAllowanceSchema = createAllowanceSchema.partial();
-export type UpdateAllowanceInput = z.infer<typeof updateAllowanceSchema>;
 
 const decimalNonNegativeStringSchema = z
   .number()
@@ -230,7 +220,6 @@ export const hrTaxCreateOrUpdateSchema = z.object({
   previousEmploymentIncome: decimalNonNegativeStringSchema,
   previousEmployerTds: decimalNonNegativeStringSchema,
 });
-export type HrTaxCreateOrUpdateInput = z.infer<typeof hrTaxCreateOrUpdateSchema>;
 
 export const hrTaxAddProofSchema = z.object({
   category: z.string().min(1).max(100),
@@ -239,7 +228,6 @@ export const hrTaxAddProofSchema = z.object({
   proofUrl: z.string().url().optional(),
   financialYear: z.string().min(1).max(20).optional(),
 });
-export type HrTaxAddProofInput = z.infer<typeof hrTaxAddProofSchema>;
 
 export const createTaxWindowBodySchema = z.object({
   financialYear: z.string().min(1),

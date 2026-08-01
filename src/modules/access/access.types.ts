@@ -16,10 +16,3 @@ export interface AccessSnapshot {
   isOrgOwner: boolean;
   version: number;
 }
-
-export interface ResolvedAccess {
-  permissionKey: string;
-  scope: DataScope;
-  orgId: string;
-  userId: string;
-}

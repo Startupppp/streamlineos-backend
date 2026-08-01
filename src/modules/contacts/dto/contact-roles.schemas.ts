@@ -9,8 +9,6 @@ export const CONTACT_ROLE_DEFAULTS = [
   "user",
 ] as const;
 
-export type ContactRoleKey = (typeof CONTACT_ROLE_DEFAULTS)[number];
-
 export const contactRoleCreateSchema = z.object({
   entityType: z.enum(["deal", "company"]),
   entityId: z.number().int().positive(),

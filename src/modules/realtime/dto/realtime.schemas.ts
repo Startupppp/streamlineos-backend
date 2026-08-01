@@ -42,19 +42,13 @@ export const chatMessageUpdatedPayloadSchema = z.object({
   updatedAt: z.string(),
 });
 
-export type ChatMessageUpdatedPayload = z.infer<typeof chatMessageUpdatedPayloadSchema>;
-
 export const chatMessageDeletedPayloadSchema = z.object({
   id: z.number(),
   channelId: z.number(),
 });
-
-export type ChatMessageDeletedPayload = z.infer<typeof chatMessageDeletedPayloadSchema>;
 
 export const chatReactionUpdatedPayloadSchema = z.object({
   messageId: z.number(),
   channelId: z.number(),
   reactions: z.record(z.string(), z.array(z.string())),
 });
-
-export type ChatReactionUpdatedPayload = z.infer<typeof chatReactionUpdatedPayloadSchema>;

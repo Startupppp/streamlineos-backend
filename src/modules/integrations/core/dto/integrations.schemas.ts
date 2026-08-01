@@ -15,4 +15,3 @@ export const finalizeConnectionSchema = z.object({
 
 export type InitiateConnectionInput = z.infer<typeof initiateConnectionSchema>;
 export type FinalizeConnectionInput = z.infer<typeof finalizeConnectionSchema>;
-export type ReturnPath = z.infer<typeof returnPathSchema>;

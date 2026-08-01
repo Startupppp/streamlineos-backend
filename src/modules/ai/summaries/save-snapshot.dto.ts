@@ -21,8 +21,6 @@ export const saveSnapshotSchema = z.object({
   confidence: z.number().optional(),
 });
 
-export type SaveSnapshotInput = z.infer<typeof saveSnapshotSchema> & SnapshotPayload;
-
 export const ALLOWED_ENTITY_TYPES = [
   "project",
   "ticket",

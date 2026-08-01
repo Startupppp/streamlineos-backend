@@ -299,7 +299,6 @@ export const importTicketsSchema = z.object({
   rows: z.array(importTicketRowSchema).min(1).max(500),
 });
 
-export type ImportTicketRow = z.infer<typeof importTicketRowSchema>;
 export type ImportTicketsInput = z.infer<typeof importTicketsSchema>;
 
 export type TicketsListQuery = z.infer<typeof ticketsListQuerySchema>;

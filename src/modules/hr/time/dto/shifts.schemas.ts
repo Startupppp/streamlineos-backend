@@ -75,5 +75,4 @@ export const updateSwapStatusSchema = z.object({
 });
 
 export type AssignShiftInput = z.infer<typeof assignShiftSchema>;
-export type CreateSwapRequestInput = z.infer<typeof createSwapRequestSchema>;
 export type UpdateSwapStatusInput = z.infer<typeof updateSwapStatusSchema>;

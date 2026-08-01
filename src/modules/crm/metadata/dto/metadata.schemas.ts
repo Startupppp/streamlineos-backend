@@ -47,7 +47,6 @@ const OPTION_TYPES = [
   "activity_type", "competitor", "forecast_category", "task_type", "contact_role",
 ] as const;
 export const optionTypeSchema = z.enum(OPTION_TYPES);
-export type OptionType = z.infer<typeof optionTypeSchema>;
 
 export const createOptionSchema = z.object({
   key: z.string().min(1).max(100).regex(keyRegex),
@@ -69,4 +68,3 @@ export type UpdateOptionInput = z.infer<typeof updateOptionSchema>;
 export const listPipelinesSchema = z.object({
   type: z.enum(["lead", "deal", "renewal", "customer_success", "partner", "custom"]).optional(),
 }).strict();
-export type ListPipelinesInput = z.infer<typeof listPipelinesSchema>;

@@ -114,4 +114,3 @@ export type AddAttendeeInput = z.infer<typeof addAttendeeSchema>;
 export type UpsertStandupInput = z.infer<typeof upsertStandupSchema>;
 export type CreateActionItemInput = z.infer<typeof createActionItemSchema>;
 export type UpdateActionItemInput = z.infer<typeof updateActionItemSchema>;
-export type RecurrenceRule = z.infer<typeof recurrenceRuleSchema>;

@@ -23,17 +23,9 @@ export type PayrollWorkerType = (typeof payrollWorkerTypeEnum.enumValues)[number
 export type SalaryComponentType = (typeof salaryComponentTypeEnum.enumValues)[number];
 export type SalaryComponentCalcMethod = (typeof salaryComponentCalcMethodEnum.enumValues)[number];
 export type PayrollExceptionSeverity = (typeof payrollExceptionSeverityEnum.enumValues)[number];
-export type PayrollExceptionStatus = (typeof payrollExceptionStatusEnum.enumValues)[number];
-export type PayrollApprovalStatus = (typeof payrollApprovalStatusEnum.enumValues)[number];
-export type PayrollBankBatchStatus = (typeof payrollBankBatchStatusEnum.enumValues)[number];
-export type PayrollBankItemStatus = (typeof payrollBankItemStatusEnum.enumValues)[number];
-export type PayFrequency = (typeof payFrequencyEnum.enumValues)[number];
 export type TaxRegimeType = (typeof taxRegimeTypeEnum.enumValues)[number];
 export type PayslipLayout = (typeof payslipLayoutEnum.enumValues)[number];
-export type PayslipPublishChannel = (typeof payslipPublishChannelEnum.enumValues)[number];
-export type PayrollCalendarEventType = (typeof payrollCalendarEventTypeEnum.enumValues)[number];
 export type PayrollInputSource = (typeof payrollInputSourceEnum.enumValues)[number];
-export type PayrollRunEventType = (typeof payrollRunEventTypeEnum.enumValues)[number];
 export type PayrollTemplateCategory = (typeof payrollTemplateCategoryEnum.enumValues)[number];
 
 export type MoneyString = string;

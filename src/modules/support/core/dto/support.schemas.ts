@@ -564,13 +564,11 @@ export const improveReplySchema = z.object({
   content: z.string().trim().min(1).max(10000),
   macroId: z.number().int().positive().optional(),
 });
-export type ImproveReplyInput = z.infer<typeof improveReplySchema>;
 
 export const translateDraftSchema = z.object({
   language: z.string().trim().min(2).max(50),
   content: z.string().trim().max(10000).optional(),
 });
-export type TranslateDraftInput = z.infer<typeof translateDraftSchema>;
 
 export const supportAiReportFiltersSchema = z.object({
   cursor: z.coerce.number().int().min(0).default(0),

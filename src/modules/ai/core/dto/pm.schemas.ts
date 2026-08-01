@@ -32,7 +32,6 @@ const RiskItemSchema = z.object({
 export const PmRisksOutputSchema = z.object({
   risks: z.array(RiskItemSchema).describe("Identified risks ordered by severity"),
 });
-export type PmRisksOutput = z.infer<typeof PmRisksOutputSchema>;
 
 const ClientUpdateSectionSchema = z.object({
   heading: z.string(),
@@ -44,7 +43,6 @@ export const PmClientUpdateOutputSchema = z.object({
   body: z.string().describe("2-3 paragraph narrative, max 300 words, no internal data"),
   sections: z.array(ClientUpdateSectionSchema).describe("Optional structured sections"),
 });
-export type PmClientUpdateOutput = z.infer<typeof PmClientUpdateOutputSchema>;
 
 const PlanTaskSchema = z.object({
   title: z.string().describe("Task title"),
@@ -61,7 +59,6 @@ export const PmPlanOutputSchema = z.object({
   summary: z.string().describe("Brief plan summary, 1-2 sentences"),
   milestones: z.array(PlanMilestoneSchema).describe("Suggested milestones with tasks (2-5 milestones)"),
 });
-export type PmPlanOutput = z.infer<typeof PmPlanOutputSchema>;
 
 const ExtractedTaskSchema = z.object({
   title: z.string().describe("Extracted task title"),
@@ -73,13 +70,11 @@ const ExtractedTaskSchema = z.object({
 export const PmExtractOutputSchema = z.object({
   tasks: z.array(ExtractedTaskSchema).describe("Candidate tasks extracted, deduplicated against existing tickets"),
 });
-export type PmExtractOutput = z.infer<typeof PmExtractOutputSchema>;
 
 export const PmAskOutputSchema = z.object({
   answer: z.string().describe("Direct answer to the question, 2-4 sentences"),
   confidence: z.enum(["high", "medium", "low"]).describe("Confidence based on data quality"),
 });
-export type PmAskOutput = z.infer<typeof PmAskOutputSchema>;
 
 export const weeklyUpdateBodySchema = z.object({
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD").optional(),
@@ -99,7 +94,6 @@ export const PmWeeklyUpdateOutputSchema = z.object({
   upcomingFocus: z.array(z.string()).describe("Top 2-3 things to focus on next week"),
   citations: z.array(WeeklyUpdateCitationSchema).describe("Data sources cited in the draft"),
 });
-export type PmWeeklyUpdateOutput = z.infer<typeof PmWeeklyUpdateOutputSchema>;
 
 export const PmChangeImpactOutputSchema = z.object({
   headline: z.string().describe("One-line impact summary, max 15 words"),
@@ -110,4 +104,3 @@ export const PmChangeImpactOutputSchema = z.object({
   pendingApprovals: z.array(z.string()).describe("Titles of approvals still pending, empty if none"),
   citations: z.array(z.object({ source: z.enum(["change_request", "risk", "approval", "plan"]), label: z.string() })).describe("Sources cited"),
 });
-export type PmChangeImpactOutput = z.infer<typeof PmChangeImpactOutputSchema>;

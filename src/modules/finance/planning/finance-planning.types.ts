@@ -8,32 +8,6 @@ export interface BudgetLineRow {
   projectId: number | null;
 }
 
-export interface BudgetDetail {
-  id: number;
-  orgId: string;
-  name: string;
-  fiscalYear: string;
-  periodType: string;
-  dimensionType: string | null;
-  status: string;
-  totalAmount: string;
-  createdBy: string;
-  approvedBy: string | null;
-  approvedAt: Date | null;
-  createdAt: Date;
-  updatedAt: Date;
-  lines: BudgetLineRow[];
-}
-
-export interface BudgetRevisionRow {
-  id: number;
-  revisionNumber: number;
-  note: string | null;
-  createdBy: string;
-  createdAt: Date;
-  lineCount: number;
-}
-
 export interface BvaAccountPeriodRow {
   accountId: number;
   accountCode: string;

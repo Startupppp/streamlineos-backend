@@ -9,7 +9,6 @@ export const webhookEnvelopeSchema = z.object({
   payload: z.record(z.string(), z.unknown()).default({}),
   created_at: z.number().optional(),
 });
-export type WebhookEnvelope = z.infer<typeof webhookEnvelopeSchema>;
 
 export const generateWebhookSchema = z.object({
   environment: z.enum(["test", "live"]),

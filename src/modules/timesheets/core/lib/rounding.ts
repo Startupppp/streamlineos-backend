@@ -1,11 +1,3 @@
-export type RoundingRule =
-  | "NONE"
-  | "NEAREST_5"
-  | "NEAREST_6"
-  | "NEAREST_10"
-  | "NEAREST_15"
-  | "ROUND_UP"
-  | "ROUND_DOWN";
 
 const INCREMENT_MINUTES: Record<string, number> = {
   NEAREST_5: 5,

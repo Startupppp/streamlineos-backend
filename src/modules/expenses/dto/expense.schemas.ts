@@ -172,7 +172,6 @@ export const updateExpensePatchSchema = z.union([
   updateExpenseDetailsSchema,
 ]);
 
-export type ExpenseStatus = (typeof _EXPENSE_STATUSES)[number];
 export type AllExpenseStatus = (typeof ALL_EXPENSE_STATUSES)[number];
 export type ListInput = z.infer<typeof listSchema>;
 export type PageDataInput = z.infer<typeof pageDataSchema>;
@@ -182,7 +181,5 @@ export type EmailReportFilters = z.infer<typeof emailReportFiltersSchema>;
 export type EmailReportInput = z.infer<typeof emailReportSchema>;
 export type CreateCategoryInput = z.infer<typeof createCategorySchema>;
 export type CreateExpenseInput = z.infer<typeof createExpenseSchema>;
-export type UpdateExpenseStatusInput = z.infer<typeof updateExpenseStatusSchema>;
-export type UpdateExpenseDetailsInput = z.infer<typeof updateExpenseDetailsSchema>;
 export type RejectExpenseInput = z.infer<typeof rejectExpenseSchema>;
 export type UpdateExpensePatchInput = z.infer<typeof updateExpensePatchSchema>;

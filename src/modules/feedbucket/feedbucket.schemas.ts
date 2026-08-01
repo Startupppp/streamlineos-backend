@@ -88,8 +88,6 @@ export const publicAiAssistSchema = z.object({
   networkLogs: z.array(feedbucketNetworkEntrySchema).max(50).optional(),
 });
 
-export type PublicAiAssistInput = z.infer<typeof publicAiAssistSchema>;
-
 export type CreateWidgetInput = z.infer<typeof createWidgetSchema>;
 export type UpdateWidgetInput = z.infer<typeof updateWidgetSchema>;
 export type ListSubmissionsQuery = z.infer<typeof listSubmissionsQuerySchema>;

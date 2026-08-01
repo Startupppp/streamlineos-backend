@@ -11,8 +11,6 @@ export const HELPDESK_CATEGORIES = [
   "other",
 ] as const;
 
-export type HelpdeskCategory = (typeof HELPDESK_CATEGORIES)[number];
-
 const ticketStatusSchema = z.enum(["TODO", "IN_PROGRESS", "IN_REVIEW", "DONE"]);
 const ticketPrioritySchema = z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]);
 const categorySchema = z.enum(HELPDESK_CATEGORIES);

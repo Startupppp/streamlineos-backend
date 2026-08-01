@@ -151,7 +151,6 @@ export type ExperienceLetterInput = z.infer<typeof experienceLetterSchema>;
 export type TerminationCreateInput = z.infer<typeof terminationCreateSchema>;
 export type TerminationReviewInput = z.infer<typeof terminationReviewSchema>;
 export type ListTerminationsQueryInput = z.infer<typeof listTerminationsQuerySchema>;
-export type TerminationLetterQuery = z.infer<typeof terminationLetterQuerySchema>;
 export type AttendanceAnalyticsQuery = z.infer<typeof attendanceAnalyticsQuerySchema>;
 
 export const listResignationsQuerySchema = z.object({

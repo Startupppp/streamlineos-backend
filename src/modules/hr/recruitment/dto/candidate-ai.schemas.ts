@@ -3,7 +3,6 @@ import { z } from "zod";
 export const resumeParseBodySchema = z.object({
   resumeText: z.string().min(1, "resumeText is required"),
 });
-export type ResumeParseBodyInput = z.infer<typeof resumeParseBodySchema>;
 
 export const ParsedResumeSchema = z.object({
   name: z.string().nullable(),

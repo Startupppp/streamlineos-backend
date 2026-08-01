@@ -106,4 +106,3 @@ export const SimulateWorkflowSchema = z.object({
 
 export type SimulateWorkflowDto = z.infer<typeof SimulateWorkflowSchema>;
 export type UpdateDelegationDto = z.infer<typeof UpdateDelegationSchema>;
-export type HrWorkflowStepDto = z.infer<typeof HrWorkflowStepSchema>;

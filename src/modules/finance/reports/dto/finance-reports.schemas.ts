@@ -49,8 +49,6 @@ export const clientStatementParamsSchema = z.object({
 
 export type OverviewQuery = z.infer<typeof overviewQuerySchema>;
 export type DateRangeQuery = z.infer<typeof dateRangeSchema>;
-export type StatementQuery = z.infer<typeof statementQuerySchema>;
-export type AnalyticsDateRangeQuery = z.infer<typeof analyticsDateRangeSchema>;
 export type BudgetVsActualQuery = z.infer<typeof budgetVsActualQuerySchema>;
 export type WorkingCapitalQuery = z.infer<typeof workingCapitalQuerySchema>;
 export type CashRunwayQuery = z.infer<typeof cashRunwayQuerySchema>;

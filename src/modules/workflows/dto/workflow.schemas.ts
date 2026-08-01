@@ -72,4 +72,3 @@ export type ApprovalActionDto = z.infer<typeof ApprovalActionSchema>;
 export type CreateScheduleDto = z.infer<typeof CreateScheduleSchema>;
 export type UpdateScheduleDto = z.infer<typeof UpdateScheduleSchema>;
 export type CreateSecretDto = z.infer<typeof CreateSecretSchema>;
-export type CreateVariableDto = z.infer<typeof CreateVariableSchema>;

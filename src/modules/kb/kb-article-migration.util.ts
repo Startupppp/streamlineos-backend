@@ -17,8 +17,6 @@ export interface MappedPage {
   parentPageId: null;
 }
 
-export type PageInsert = typeof kbPages.$inferInsert;
-
 const VERIFIED_WINDOW_MS = 180 * 24 * 60 * 60 * 1000;
 
 export function paragraphize(contentText: string | null | undefined): Record<string, unknown> {

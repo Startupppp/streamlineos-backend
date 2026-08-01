@@ -48,4 +48,3 @@ export type CreatePeriodInput = z.infer<typeof createPeriodSchema>;
 export type ListPeriodsInput = z.infer<typeof listPeriodsSchema>;
 export type SectionQueryInput = z.infer<typeof sectionQuerySchema>;
 export type CreateAdjustmentInput = z.infer<typeof createAdjustmentSchema>;
-export type RejectAdjustmentInput = z.infer<typeof rejectAdjustmentSchema>;

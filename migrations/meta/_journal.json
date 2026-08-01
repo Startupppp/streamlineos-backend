@@ -778,6 +778,20 @@
       "when": 1784993523607,
       "tag": "0385_intake_project_org_resolver",
       "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1784993524607,
+      "tag": "0386_survey_session_org_resolver",
+      "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1784993525607,
+      "tag": "0387_git_connection_org_resolver",
+      "breakpoints": true
     }
   ]
 }

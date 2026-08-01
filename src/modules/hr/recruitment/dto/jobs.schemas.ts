@@ -23,7 +23,6 @@ export const screeningQuestionSchema = z.object({
   knockoutAnswer: z.string().max(200).optional(),
   options: z.array(z.string().max(200)).optional(),
 });
-export type ScreeningQuestionInput = z.infer<typeof screeningQuestionSchema>;
 
 export const jobListSchema = z
   .object({

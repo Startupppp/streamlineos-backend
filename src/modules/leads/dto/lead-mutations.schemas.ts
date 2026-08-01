@@ -114,6 +114,5 @@ export type LeadMergeInput = z.infer<typeof leadMergeSchema>;
 export type TopMergeInput = z.infer<typeof topMergeSchema>;
 export type BulkUpdateInput = z.infer<typeof bulkUpdateSchema>;
 export type BulkDeleteInput = z.infer<typeof bulkDeleteSchema>;
-export type ImportRowInput = z.infer<typeof importRowSchema>;
 export type ImportInput = z.infer<typeof importSchema>;
 export type DistributeInput = z.infer<typeof distributeSchema>;

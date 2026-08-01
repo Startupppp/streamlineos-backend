@@ -3,12 +3,10 @@ import { z } from "zod";
 export const scoreLeadSingleSchema = z.object({
   leadId: z.number().int().positive(),
 });
-export type ScoreLeadSingleInput = z.infer<typeof scoreLeadSingleSchema>;
 
 export const scoreLeadBatchSchema = z.object({
   leadIds: z.array(z.number().int().positive()).min(1).max(50),
 });
-export type ScoreLeadBatchInput = z.infer<typeof scoreLeadBatchSchema>;
 
 export const predictDealSchema = z.object({
   dealId: z.number().int().positive(),
@@ -158,35 +156,29 @@ export const chatRequestSchema = z.object({
   conversationId: z.number().int().positive().optional(),
   persona: z.string().optional(),
 });
-export type ChatRequestInput = z.infer<typeof chatRequestSchema>;
 
 export const chatHistoryQuerySchema = z.object({
   cursor: z.coerce.number().int().positive().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(30),
 });
-export type ChatHistoryQueryInput = z.infer<typeof chatHistoryQuerySchema>;
 
 export const conversationCreateSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
 });
-export type ConversationCreateInput = z.infer<typeof conversationCreateSchema>;
 
 export const conversationRenameSchema = z.object({
   title: z.string().trim().min(1).max(200),
 });
-export type ConversationRenameInput = z.infer<typeof conversationRenameSchema>;
 
 export const conversationsListQuerySchema = z.object({
   cursor: z.coerce.number().int().positive().optional(),
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
-export type ConversationsListQueryInput = z.infer<typeof conversationsListQuerySchema>;
 
 export const conversationMessagesQuerySchema = z.object({
   cursor: z.coerce.number().int().positive().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(30),
 });
-export type ConversationMessagesQueryInput = z.infer<typeof conversationMessagesQuerySchema>;
 
 export const policyQaSchema = z.object({
   question: z.string().trim().min(3).max(1000),

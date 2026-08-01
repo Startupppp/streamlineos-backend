@@ -19,7 +19,6 @@ export type DraftTicketBodyInput = z.infer<typeof draftTicketBodySchema>;
 export const TicketSuggestTitleOutputSchema = z.object({
   title: z.string().describe("Concise issue title, max 120 characters"),
 });
-export type TicketSuggestTitleOutput = z.infer<typeof TicketSuggestTitleOutputSchema>;
 
 export const TicketSuggestFieldsOutputSchema = z.object({
   priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).describe("Suggested priority"),
@@ -36,21 +35,18 @@ export const TicketSuggestFieldsOutputSchema = z.object({
     .describe("Up to 5 labels chosen ONLY from the provided available labels list"),
   rationale: z.string().describe("1-2 sentence rationale for the suggestions"),
 });
-export type TicketSuggestFieldsOutput = z.infer<typeof TicketSuggestFieldsOutputSchema>;
 
 export const TicketSummaryOutputSchema = z.object({
   summary: z.string().describe("2-3 sentence summary of the ticket"),
   keyPoints: z.array(z.string()).describe("Up to 5 key points about this ticket"),
   blockers: z.array(z.string()).describe("Current blockers or impediments, empty if none"),
 });
-export type TicketSummaryOutput = z.infer<typeof TicketSummaryOutputSchema>;
 
 export const TicketCommentsSummaryOutputSchema = z.object({
   summary: z.string().describe("2-4 sentence summary of the comment thread"),
   themes: z.array(z.string()).describe("Up to 5 recurring themes or topics from comments"),
   openQuestions: z.array(z.string()).describe("Unresolved questions raised in comments, empty if none"),
 });
-export type TicketCommentsSummaryOutput = z.infer<typeof TicketCommentsSummaryOutputSchema>;
 
 const SubtaskSuggestionSchema = z.object({
   title: z.string().describe("Concise subtask title"),
@@ -59,7 +55,6 @@ const SubtaskSuggestionSchema = z.object({
 export const TicketSubtasksOutputSchema = z.object({
   subtasks: z.array(SubtaskSuggestionSchema).describe("3-7 suggested subtask titles, deduplicated against existing ones"),
 });
-export type TicketSubtasksOutput = z.infer<typeof TicketSubtasksOutputSchema>;
 
 const ChecklistItemSuggestionSchema = z.object({
   text: z.string().describe("Concise checklist item, actionable and verifiable"),
@@ -71,10 +66,8 @@ export const TicketChecklistOutputSchema = z.object({
     .array(ChecklistItemSuggestionSchema)
     .describe("4-10 checklist items tailored to the ticket, deduplicated against existing items"),
 });
-export type TicketChecklistOutput = z.infer<typeof TicketChecklistOutputSchema>;
 
 export const extractMeetingActionsBodySchema = z.object({});
-export type ExtractMeetingActionsBodyInput = z.infer<typeof extractMeetingActionsBodySchema>;
 
 const ProposedActionItemSchema = z.object({
   title: z.string().describe("Action item title, max 200 chars"),
@@ -87,7 +80,6 @@ export const MeetingExtractActionsOutputSchema = z.object({
   actions: z.array(ProposedActionItemSchema).describe("Proposed action items, max 10, deduplicated"),
   summary: z.string().describe("1-2 sentence summary of the meeting notes"),
 });
-export type MeetingExtractActionsOutput = z.infer<typeof MeetingExtractActionsOutputSchema>;
 
 const HandoffCitationSchema = z.object({
   source: z.enum(["description", "comment", "decision"]),
@@ -101,4 +93,3 @@ export const TicketHandoffOutputSchema = z.object({
   blockers: z.array(z.string()).describe("Current blockers, empty if none"),
   citations: z.array(HandoffCitationSchema).describe("Citations from ticket data"),
 });
-export type TicketHandoffOutput = z.infer<typeof TicketHandoffOutputSchema>;

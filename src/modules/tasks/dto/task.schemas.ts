@@ -77,7 +77,6 @@ export type ListInput = z.infer<typeof listSchema>;
 export type CreateInput = z.infer<typeof createSchema>;
 export type UpdateInput = z.infer<typeof updateSchema>;
 export type CompleteInput = z.infer<typeof completeSchema>;
-export type OverdueInput = z.infer<typeof overdueSchema>;
 export type AnalyticsInput = z.infer<typeof analyticsSchema>;
 export type SequenceListInput = z.infer<typeof sequenceListSchema>;
 export type SequenceCreateInput = z.infer<typeof sequenceCreateSchema>;

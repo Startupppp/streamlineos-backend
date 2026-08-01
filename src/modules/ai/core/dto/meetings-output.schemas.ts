@@ -5,7 +5,6 @@ export const citationSchema = z.object({
   title: z.string(),
   snippet: z.string().optional(),
 });
-export type CitationOutput = z.infer<typeof citationSchema>;
 
 export const agendaOutputSchema = z.object({
   agenda: z.string(),

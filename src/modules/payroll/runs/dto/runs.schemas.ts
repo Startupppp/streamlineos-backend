@@ -56,7 +56,6 @@ export const adjustmentSchema = z.object({
   code: z.string().min(1).max(50).optional(),
   name: z.string().min(1).max(100).optional(),
 });
-export type AdjustmentInput = z.infer<typeof adjustmentSchema>;
 
 export const patchInputSchema = z.object({
   scheduledDays: z.string().optional(),

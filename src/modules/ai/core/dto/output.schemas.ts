@@ -54,7 +54,6 @@ export const ConversationSummarySchema = z.object({
   actionItems: z.array(z.string()),
   sentiment: z.enum(["positive", "neutral", "negative"]),
 });
-export type ConversationSummaryResult = z.infer<typeof ConversationSummarySchema>;
 
 export const LeadEnrichmentSchema = z.object({
   companyInsight: z.string(),
@@ -64,7 +63,6 @@ export const LeadEnrichmentSchema = z.object({
   potentialNeeds: z.array(z.string()),
   recommendedApproach: z.string(),
 });
-export type LeadEnrichmentResult = z.infer<typeof LeadEnrichmentSchema>;
 
 export const CandidateScoreSchema = z.object({
   score: z.number().min(0).max(100),
@@ -119,7 +117,6 @@ export const NlSearchFilterSchema = z.object({
   nameSearch: z.string().optional(),
   assignedToName: z.string().optional(),
 });
-export type NlSearchFilters = z.infer<typeof NlSearchFilterSchema>;
 
 export const ObjectionResponseSchema = z.object({
   counterArguments: z.array(z.string()),
@@ -236,7 +233,6 @@ export const StalePipelineDigestSchema = z.object({
   groupedByStage: z.record(z.string(), z.array(z.string())).describe("stage => deal names with evidence"),
   topRisk: z.string().describe("1 sentence on the biggest stale risk"),
 });
-export type StalePipelineDigest = z.infer<typeof StalePipelineDigestSchema>;
 
 export const DataQualityIssueSchema = z.object({
   entityType: z.enum(["lead", "deal"]),
@@ -247,7 +243,6 @@ export const DataQualityIssueSchema = z.object({
   severity: z.enum(["low", "medium", "high"]),
   suggestedFix: z.string().describe("What the user should do to fix this issue"),
 });
-export type DataQualityIssue = z.infer<typeof DataQualityIssueSchema>;
 
 export const DataQualityCopilotSchema = z.object({
   issues: z.array(DataQualityIssueSchema),

@@ -58,15 +58,3 @@ export type RoutingSuggestionNodeConfig = z.infer<typeof routingSuggestionNodeCo
 export type RoutingSuggestionNodeOutput = z.infer<typeof routingSuggestionNodeOutputSchema>;
 
 export type AiNodeType = "classify" | "summarize" | "extract" | "routing_suggestion";
-
-export type AiNodeConfig =
-  | ClassifyNodeConfig
-  | SummarizeNodeConfig
-  | ExtractNodeConfig
-  | RoutingSuggestionNodeConfig;
-
-export type AiNodeOutput =
-  | ClassifyNodeOutput
-  | SummarizeNodeOutput
-  | ExtractNodeOutput
-  | RoutingSuggestionNodeOutput;
