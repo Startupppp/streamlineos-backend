@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { HttpException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import type { OrgUnitKind } from "../../db/schema/common/organization";
 import type { InviteActor } from "../organization/core/invitations.service";
 import { EmailService } from "../email/email.service";
@@ -126,14 +126,24 @@ export class UserOpsService {
     );
   }
 
-  async bulkSuspend(orgId: string, userIds: string[], actorUserId: string) {
+  private async bulkUpdateStatus(
+    orgId: string,
+    userIds: string[],
+    status: "active" | "suspended" | "archived",
+    actorUserId: string,
+    fallbackError: string,
+  ) {
     const results: Array<{ userId: string; success: boolean; error?: string }> = [];
     for (const userId of userIds) {
       try {
-        await this.usersSvc.updateUserStatus(orgId, userId, "suspended", actorUserId);
+        await this.usersSvc.updateUserStatus(orgId, userId, status, actorUserId);
         results.push({ userId, success: true });
-      } catch {
-        results.push({ userId, success: false, error: "Failed to suspend" });
+      } catch (err) {
+        results.push({
+          userId,
+          success: false,
+          error: err instanceof HttpException ? err.message : fallbackError,
+        });
       }
     }
     return {
@@ -141,40 +151,18 @@ export class UserOpsService {
       succeeded: results.filter((r) => r.success).length,
       failed: results.filter((r) => !r.success).length,
     };
+  }
+
+  async bulkSuspend(orgId: string, userIds: string[], actorUserId: string) {
+    return this.bulkUpdateStatus(orgId, userIds, "suspended", actorUserId, "Failed to suspend");
   }
 
   async bulkArchive(orgId: string, userIds: string[], actorUserId: string) {
-    const results: Array<{ userId: string; success: boolean; error?: string }> = [];
-    for (const userId of userIds) {
-      try {
-        await this.usersSvc.updateUserStatus(orgId, userId, "archived", actorUserId);
-        results.push({ userId, success: true });
-      } catch {
-        results.push({ userId, success: false, error: "Failed to archive" });
-      }
-    }
-    return {
-      results,
-      succeeded: results.filter((r) => r.success).length,
-      failed: results.filter((r) => !r.success).length,
-    };
+    return this.bulkUpdateStatus(orgId, userIds, "archived", actorUserId, "Failed to archive");
   }
 
   async bulkRestore(orgId: string, userIds: string[], actorUserId: string) {
-    const results: Array<{ userId: string; success: boolean; error?: string }> = [];
-    for (const userId of userIds) {
-      try {
-        await this.usersSvc.updateUserStatus(orgId, userId, "active", actorUserId);
-        results.push({ userId, success: true });
-      } catch {
-        results.push({ userId, success: false, error: "Failed to restore" });
-      }
-    }
-    return {
-      results,
-      succeeded: results.filter((r) => r.success).length,
-      failed: results.filter((r) => !r.success).length,
-    };
+    return this.bulkUpdateStatus(orgId, userIds, "active", actorUserId, "Failed to restore");
   }
 
   private assertMayGrantRole(orgId: string, actor: InviteActor, role: string): Promise<void> {

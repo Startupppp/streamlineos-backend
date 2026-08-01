@@ -11,6 +11,8 @@ import { randomUUID, randomBytes, createHash } from "node:crypto";
 import { and, count, desc, eq, gt, isNull, lt, inArray} from "drizzle-orm";
 import { addDays, addMinutes } from "date-fns";
 import { hashToken } from "../../../common/security/token.util";
+import { withPublicToken } from "../../../common/tenant/with-public-token";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AccessService } from "../../access/access.service";
 import { assertMayGrantRole } from "../../../common/rbac/assert-may-grant-role";
@@ -327,14 +329,18 @@ export class InvitationsService {
   }
 
   async accept(input: AcceptInvitationInput): Promise<{ ok: boolean; autoLoginToken?: string }> {
-    const invitation = await this.db.query.invitations.findFirst({
-      where: and(
-        eq(invitations.tokenHash, hashToken(input.token)),
-        gt(invitations.expiresAt, new Date()),
-        isNull(invitations.acceptedAt),
-      ),
-    });
+    const tokenHash = hashToken(input.token);
+    const invitation = await withPublicToken(this.db, tokenHash, (tx) =>
+      tx.query.invitations.findFirst({
+        where: and(
+          eq(invitations.tokenHash, tokenHash),
+          gt(invitations.expiresAt, new Date()),
+          isNull(invitations.acceptedAt),
+        ),
+      }),
+    );
     if (!invitation) throw new NotFoundException("Invalid or expired invitation");
+    const invitedOrgId = invitation.orgId;
 
     const existingUser = await this.db.query.users.findFirst({
       where: eq(users.email, invitation.email),
@@ -350,7 +356,7 @@ export class InvitationsService {
       if (existingMembership)
         throw new ConflictException("You are already a member of this organization");
 
-      await this.db.transaction(async (tx) => {
+      await runInTenantTransaction(this.db, async (tx) => {
         try {
           await this.planLimits.assertWithinLimit(invitation.orgId, "members", 0);
         } catch (err) {
@@ -388,7 +394,7 @@ export class InvitationsService {
           event: "ACCEPTED",
           actorMembershipId: membershipId,
         });
-      });
+      }, { orgId: invitedOrgId });
 
       const autoLoginToken = randomBytes(32).toString("hex");
       await this.db.insert(magicLinkTokens).values({
@@ -415,7 +421,7 @@ export class InvitationsService {
     const emailLocal = invitation.email.split("@")[0]?.trim() || null;
     const fullName = fromNames ?? emailLocal;
 
-    await this.db.transaction(async (tx) => {
+    await runInTenantTransaction(this.db, async (tx) => {
       try {
         await this.planLimits.assertWithinLimit(invitation.orgId, "members", 0);
       } catch (err) {
@@ -459,7 +465,7 @@ export class InvitationsService {
         event: "ACCEPTED",
         actorMembershipId: membershipId,
       });
-    });
+    }, { orgId: invitedOrgId });
 
     const autoLoginToken = randomBytes(32).toString("hex");
     await this.db.insert(magicLinkTokens).values({

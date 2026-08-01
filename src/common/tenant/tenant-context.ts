@@ -29,6 +29,10 @@ export function runWithTenantContext<T>(context: TenantContext, fn: () => Promis
   return storage.run(context, fn);
 }
 
+export function runOutsideTenantContext<T>(fn: () => Promise<T>): Promise<T> {
+  return storage.exit(fn);
+}
+
 @Injectable()
 export class TenantContextService {
   run<T>(context: TenantContext, fn: () => Promise<T>): Promise<T> {

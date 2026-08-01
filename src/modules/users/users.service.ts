@@ -23,7 +23,10 @@ import type {
 } from "./dto/users.schemas";
 import { assertMayGrantRole } from "../../common/rbac/assert-may-grant-role";
 import { syncOrgUnitPlacement } from "../../common/org/sync-org-unit-placement";
-import { assertTargetNotOwner } from "../../common/rbac/assert-target-not-owner";
+import {
+  assertOwnerNotTargeted,
+  assertTargetNotOwner,
+} from "../../common/rbac/assert-target-not-owner";
 
 @Injectable()
 export class UsersService {
@@ -179,6 +182,7 @@ export class UsersService {
           lastName: users.lastName,
           image: users.image,
           role: organizationMembers.role,
+          isOwner: organizationMembers.isOwner,
           isActive: users.isActive,
           emailVerified: users.emailVerified,
           departmentId: users.orgDepartmentId,
@@ -237,6 +241,7 @@ export class UsersService {
         lastName: users.lastName,
         image: users.image,
         role: organizationMembers.role,
+        isOwner: organizationMembers.isOwner,
         departmentId: users.orgDepartmentId,
         designation: users.designation,
         phone: users.phone,
@@ -363,6 +368,10 @@ export class UsersService {
   ) {
     const user = await this.getUser(orgId, userId);
 
+    if (status !== "active") {
+      await assertOwnerNotTargeted(this.db, orgId, userId, status);
+    }
+
     if (!user.isActive && status !== "active") {
       const lastStatusEvent = await this.db
         .select({ action: auditLogs.action })
@@ -421,6 +430,7 @@ export class UsersService {
 
   async deleteUser(orgId: string, userId: string, actorUserId: string) {
     await this.getUser(orgId, userId);
+    await assertOwnerNotTargeted(this.db, orgId, userId, "deleted");
 
     await this.db
       .update(users)

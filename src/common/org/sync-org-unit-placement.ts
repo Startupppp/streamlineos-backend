@@ -1,3 +1,4 @@
+import { BadRequestException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { orgUnitMembers, orgUnits, type OrgUnitKind } from "../../db/schema";
@@ -5,6 +6,20 @@ import type { DbOrTx } from "../rbac/access-invalidate";
 
 export type PlacementUpdate = Partial<Record<OrgUnitKind, string | null | undefined>>;
 
+async function assertUnitInOrg(
+  tx: DbOrTx,
+  orgId: string,
+  unitId: string,
+  kind: OrgUnitKind,
+): Promise<void> {
+  const [unit] = await tx
+    .select({ id: orgUnits.id })
+    .from(orgUnits)
+    .where(and(eq(orgUnits.id, unitId), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, kind)))
+    .limit(1);
+
+  if (!unit) throw new BadRequestException(`Invalid ${kind.toLowerCase()} selection.`);
+}
 
 export async function syncOrgUnitPlacement(
   tx: DbOrTx,
@@ -16,6 +31,7 @@ export async function syncOrgUnitPlacement(
     [OrgUnitKind, string | null | undefined]
   >) {
     if (unitId === undefined) continue;
+    if (unitId !== null) await assertUnitInOrg(tx, orgId, unitId, kind);
 
     const existing = await tx
       .select({ id: orgUnitMembers.id })

@@ -3,6 +3,7 @@ import postgres from "postgres";
 import * as schema from "../db/schema";
 import { organizations } from "../db/schema";
 import { seedSystemRolesForOrg } from "../modules/rbac/seed-system-roles";
+import { runWithTenantContext, withTenant } from "../common/tenant";
 
 type Database = PostgresJsDatabase<typeof schema>;
 
@@ -27,8 +28,12 @@ async function run(db: Database): Promise<OrgSummary[]> {
   const results: OrgSummary[] = [];
 
   for (const org of orgs) {
-    const { created } = await seedSystemRolesForOrg(db, org.id);
-    results.push({ orgId: org.id, created });
+    await withTenant(db, { orgId: org.id, audience: "INTERNAL" }, (tx) =>
+      runWithTenantContext({ orgId: org.id, audience: "INTERNAL", tx }, async () => {
+        const { created } = await seedSystemRolesForOrg(tx, org.id);
+        results.push({ orgId: org.id, created });
+      }),
+    );
   }
 
   return results;

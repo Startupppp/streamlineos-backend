@@ -193,18 +193,18 @@ export class CronBillingService {
     let suspended = 0;
     let skipped = 0;
 
-    const pastDueSubs = await this.db
-      .select({
-        id: subscriptions.id,
-        orgId: subscriptions.orgId,
-        metadata: subscriptions.metadata,
-        updatedAt: subscriptions.updatedAt,
-      })
-      .from(subscriptions)
-      .where(eq(subscriptions.status, "PAST_DUE"));
+    await forEachOrg(this.db, "billing-dunning", async (_tx, orgId) => {
+      const pastDueSubs = await this.db
+        .select({
+          id: subscriptions.id,
+          orgId: subscriptions.orgId,
+          metadata: subscriptions.metadata,
+          updatedAt: subscriptions.updatedAt,
+        })
+        .from(subscriptions)
+        .where(and(eq(subscriptions.orgId, orgId), eq(subscriptions.status, "PAST_DUE")));
 
-    for (const sub of pastDueSubs) {
-      try {
+      for (const sub of pastDueSubs) {
         const meta = (sub.metadata ?? {}) as DunningMeta;
 
         if (meta.suspendedForNonPayment) {
@@ -303,15 +303,8 @@ export class CronBillingService {
         if (!sentThisRun) {
           skipped++;
         }
-      } catch (err: unknown) {
-        logger.error("[billing-cron] dunning pass failed for subscription", {
-          subId: sub.id,
-          orgId: sub.orgId,
-          err,
-        });
-        skipped++;
       }
-    }
+    });
 
     return { notified, suspended, skipped };
   }

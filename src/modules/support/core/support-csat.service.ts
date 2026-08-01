@@ -3,6 +3,8 @@ import { and, eq, isNull } from "drizzle-orm";
 import { supportCsatRequests, supportTickets, csatSurveys, csatResponses } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { withPublicToken } from "../../../common/tenant/with-public-token";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import type { SubmitCsatInput } from "./dto/support.schemas";
 
 @Injectable()
@@ -20,34 +22,58 @@ export class SupportCsatService {
   }
 
   async getByToken(token: string) {
-    const request = await this.db.query.supportCsatRequests.findFirst({
-      where: eq(supportCsatRequests.token, token),
-      with: { ticket: { columns: { id: true, title: true } } },
-    });
+    const request = await withPublicToken(this.db, token, (tx) =>
+      tx.query.supportCsatRequests.findFirst({
+        where: eq(supportCsatRequests.token, token),
+      }),
+    );
     if (!request) throw new NotFoundException("Invalid or expired CSAT link");
-    return { ticketId: request.ticket?.id, ticketTitle: request.ticket?.title, alreadyResponded: !!request.respondedAt };
+
+    return runInTenantTransaction(
+      this.db,
+      async () => {
+        const ticket = await this.db.query.supportTickets.findFirst({
+          where: eq(supportTickets.id, request.ticketId),
+          columns: { id: true, title: true },
+        });
+        return {
+          ticketId: ticket?.id,
+          ticketTitle: ticket?.title,
+          alreadyResponded: !!request.respondedAt,
+        };
+      },
+      { orgId: request.orgId },
+    );
   }
 
   async submit(token: string, input: SubmitCsatInput) {
-    const request = await this.db.query.supportCsatRequests.findFirst({
-      where: eq(supportCsatRequests.token, token),
-    });
+    const request = await withPublicToken(this.db, token, (tx) =>
+      tx.query.supportCsatRequests.findFirst({
+        where: eq(supportCsatRequests.token, token),
+      }),
+    );
     if (!request) throw new NotFoundException("Invalid or expired CSAT link");
     if (request.respondedAt) throw new ConflictException("This survey has already been submitted");
 
-    const [updated] = await this.db
-      .update(supportCsatRequests)
-      .set({ score: input.score, comment: input.comment ?? null, respondedAt: new Date() })
-      .where(
-        and(
-          eq(supportCsatRequests.id, request.id),
-          eq(supportCsatRequests.orgId, request.orgId),
-          isNull(supportCsatRequests.respondedAt),
-        ),
-      )
-      .returning();
-    if (!updated) throw new ConflictException("This survey has already been submitted");
-    return { success: true, score: updated.score };
+    return runInTenantTransaction(
+      this.db,
+      async () => {
+        const [updated] = await this.db
+          .update(supportCsatRequests)
+          .set({ score: input.score, comment: input.comment ?? null, respondedAt: new Date() })
+          .where(
+            and(
+              eq(supportCsatRequests.id, request.id),
+              eq(supportCsatRequests.orgId, request.orgId),
+              isNull(supportCsatRequests.respondedAt),
+            ),
+          )
+          .returning();
+        if (!updated) throw new ConflictException("This survey has already been submitted");
+        return { success: true, score: updated.score };
+      },
+      { orgId: request.orgId },
+    );
   }
 
   /**

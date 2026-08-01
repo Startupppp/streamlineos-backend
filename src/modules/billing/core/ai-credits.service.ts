@@ -12,6 +12,7 @@ import { TRIAL_GRANT_MILLI, planGrantMilli } from "./ai-credit-units";
 import { AiCreditsReservationService } from "./ai-credits-reservation.service";
 import { AiCreditsPacksService } from "./ai-credits-packs.service";
 import type { AiCreditReserveInput, AiCreditSettleInput } from "../../ai/core/gateway/credit-ledger.interface";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 
 @Injectable()
 export class AiCreditsService {
@@ -336,7 +337,7 @@ export class AiCreditsService {
     const creditsAddedMilli = creditsToMilli(creditsAdded);
 
     try {
-      await this.db.transaction(async (tx) => {
+      await runInTenantTransaction(this.db, async (tx) => {
         const [wallet] = await tx
           .select()
           .from(orgAiCredits)
@@ -370,7 +371,7 @@ export class AiCreditsService {
           referenceId: paymentId,
           metadata: { source: "webhook" },
         });
-      });
+      }, { orgId });
     } catch (err: unknown) {
       if ((err as { code?: string }).code === "23505") {
         return;

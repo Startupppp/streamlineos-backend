@@ -9,6 +9,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { supportChannels, supportTickets, supportTicketMessages, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { SupportTicketsService } from "./support-tickets.service";
 import type {
   CreateSupportChannelInput,
@@ -96,33 +97,45 @@ export class SupportChannelsService {
     channelType: InboundChannelType,
     providedSecret: string | undefined,
   ): Promise<SupportChannelRow> {
-    const channel = await this.db.query.supportChannels.findFirst({
-      where: and(eq(supportChannels.orgId, orgId), eq(supportChannels.type, channelType), eq(supportChannels.isActive, true)),
-    });
-    if (!channel?.inboundSecret || !providedSecret || channel.inboundSecret !== providedSecret) {
-      throw new UnauthorizedException("Invalid inbound webhook secret");
-    }
-    return channel;
+    return runInTenantTransaction(
+      this.db,
+      async () => {
+        const channel = await this.db.query.supportChannels.findFirst({
+          where: and(eq(supportChannels.orgId, orgId), eq(supportChannels.type, channelType), eq(supportChannels.isActive, true)),
+        });
+        if (!channel?.inboundSecret || !providedSecret || channel.inboundSecret !== providedSecret) {
+          throw new UnauthorizedException("Invalid inbound webhook secret");
+        }
+        return channel;
+      },
+      { orgId },
+    );
   }
 
   async ingestInboundEmail(orgId: string, channel: SupportChannelRow, input: InboundEmailInput) {
-    const threadTicket = input.inReplyTo
-      ? await this.db.query.supportTickets.findFirst({
-          where: and(eq(supportTickets.orgId, orgId), eq(supportTickets.sourceMessageId, input.inReplyTo)),
-          columns: { id: true },
-        })
-      : null;
+    return runInTenantTransaction(
+      this.db,
+      async () => {
+        const threadTicket = input.inReplyTo
+          ? await this.db.query.supportTickets.findFirst({
+              where: and(eq(supportTickets.orgId, orgId), eq(supportTickets.sourceMessageId, input.inReplyTo)),
+              columns: { id: true },
+            })
+          : null;
 
-    return this.ingestInboundMessage(orgId, channel, {
-      messageId: input.messageId,
-      threadTicketId: threadTicket?.id ?? null,
-      bodyText: input.bodyText,
-      requesterContact: input.fromEmail,
-      requesterName: input.fromName ?? input.fromEmail,
-      subject: input.subject,
-      attachments: input.attachments,
-      sourceChannel: "email",
-    });
+        return this.ingestInboundMessage(orgId, channel, {
+          messageId: input.messageId,
+          threadTicketId: threadTicket?.id ?? null,
+          bodyText: input.bodyText,
+          requesterContact: input.fromEmail,
+          requesterName: input.fromName ?? input.fromEmail,
+          subject: input.subject,
+          attachments: input.attachments,
+          sourceChannel: "email",
+        });
+      },
+      { orgId },
+    );
   }
 
   /**
@@ -133,23 +146,29 @@ export class SupportChannelsService {
    * than using WhatsApp's native reply-to gesture).
    */
   async ingestInboundWhatsApp(orgId: string, channel: SupportChannelRow, input: InboundWhatsAppInput) {
-    const threadTicketId = input.inReplyTo
-      ? (
-          await this.db.query.supportTickets.findFirst({
-            where: and(eq(supportTickets.orgId, orgId), eq(supportTickets.sourceMessageId, input.inReplyTo)),
-            columns: { id: true },
-          })
-        )?.id ?? null
-      : await this.findOpenTicketIdByContact(orgId, "whatsapp", input.from);
+    return runInTenantTransaction(
+      this.db,
+      async () => {
+        const threadTicketId = input.inReplyTo
+          ? (
+              await this.db.query.supportTickets.findFirst({
+                where: and(eq(supportTickets.orgId, orgId), eq(supportTickets.sourceMessageId, input.inReplyTo)),
+                columns: { id: true },
+              })
+            )?.id ?? null
+          : await this.findOpenTicketIdByContact(orgId, "whatsapp", input.from);
 
-    return this.ingestInboundMessage(orgId, channel, {
-      messageId: input.messageId,
-      threadTicketId,
-      bodyText: input.bodyText,
-      requesterContact: input.from,
-      requesterName: input.fromName ?? input.from,
-      sourceChannel: "whatsapp",
-    });
+        return this.ingestInboundMessage(orgId, channel, {
+          messageId: input.messageId,
+          threadTicketId,
+          bodyText: input.bodyText,
+          requesterContact: input.from,
+          requesterName: input.fromName ?? input.from,
+          sourceChannel: "whatsapp",
+        });
+      },
+      { orgId },
+    );
   }
 
   /**
@@ -158,16 +177,22 @@ export class SupportChannelsService {
    * channel, or starts a new one if none exists.
    */
   async ingestInboundSms(orgId: string, channel: SupportChannelRow, input: InboundSmsInput) {
-    const threadTicketId = await this.findOpenTicketIdByContact(orgId, "sms", input.from);
+    return runInTenantTransaction(
+      this.db,
+      async () => {
+        const threadTicketId = await this.findOpenTicketIdByContact(orgId, "sms", input.from);
 
-    return this.ingestInboundMessage(orgId, channel, {
-      messageId: input.messageId,
-      threadTicketId,
-      bodyText: input.bodyText,
-      requesterContact: input.from,
-      requesterName: input.from,
-      sourceChannel: "sms",
-    });
+        return this.ingestInboundMessage(orgId, channel, {
+          messageId: input.messageId,
+          threadTicketId,
+          bodyText: input.bodyText,
+          requesterContact: input.from,
+          requesterName: input.from,
+          sourceChannel: "sms",
+        });
+      },
+      { orgId },
+    );
   }
 
   private async findOpenTicketIdByContact(
@@ -273,29 +298,35 @@ export class SupportChannelsService {
    * own threading identifiers) scoped by `sourceChannel = "chat"`.
    */
   async startChatSession(orgId: string, input: StartChatSessionInput) {
-    const channel = await this.db.query.supportChannels.findFirst({
-      where: and(eq(supportChannels.orgId, orgId), eq(supportChannels.type, "chat"), eq(supportChannels.isActive, true)),
-    });
-    if (!channel) throw new NotFoundException("Live chat is not enabled for this organization");
+    return runInTenantTransaction(
+      this.db,
+      async () => {
+        const channel = await this.db.query.supportChannels.findFirst({
+          where: and(eq(supportChannels.orgId, orgId), eq(supportChannels.type, "chat"), eq(supportChannels.isActive, true)),
+        });
+        if (!channel) throw new NotFoundException("Live chat is not enabled for this organization");
 
-    const ownerUserId = typeof channel.config?.ownerUserId === "string" ? channel.config.ownerUserId : null;
-    if (!ownerUserId) {
-      throw new BadRequestException("This chat channel has no configured owner (config.ownerUserId)");
-    }
-    const owner = await this.db.query.users.findFirst({ where: eq(users.id, ownerUserId), columns: { id: true } });
-    if (!owner) {
-      throw new BadRequestException("The chat channel's configured owner is not a valid user");
-    }
+        const ownerUserId = typeof channel.config?.ownerUserId === "string" ? channel.config.ownerUserId : null;
+        if (!ownerUserId) {
+          throw new BadRequestException("This chat channel has no configured owner (config.ownerUserId)");
+        }
+        const owner = await this.db.query.users.findFirst({ where: eq(users.id, ownerUserId), columns: { id: true } });
+        if (!owner) {
+          throw new BadRequestException("The chat channel's configured owner is not a valid user");
+        }
 
-    const sessionToken = generateInboundSecret();
-    const ticket = await this.tickets.createTicket(
-      orgId,
-      ownerUserId,
-      { title: `Live chat with ${input.name}`.slice(0, 150), description: input.message },
-      { channel: "chat", messageId: sessionToken, requesterEmail: input.email ?? null, requesterName: input.name },
+        const sessionToken = generateInboundSecret();
+        const ticket = await this.tickets.createTicket(
+          orgId,
+          ownerUserId,
+          { title: `Live chat with ${input.name}`.slice(0, 150), description: input.message },
+          { channel: "chat", messageId: sessionToken, requesterEmail: input.email ?? null, requesterName: input.name },
+        );
+
+        return { ticketId: ticket.id, sessionToken };
+      },
+      { orgId },
     );
-
-    return { ticketId: ticket.id, sessionToken };
   }
 
   private async findTicketBySessionToken(orgId: string, sessionToken: string) {
@@ -312,21 +343,33 @@ export class SupportChannelsService {
   }
 
   async sendChatMessage(orgId: string, sessionToken: string, input: SendChatMessageInput) {
-    const ticket = await this.findTicketBySessionToken(orgId, sessionToken);
-    const message = await this.tickets.addMessage(
-      orgId,
-      ticket.id,
-      null,
-      { body: input.body, isInternal: false },
-      { channel: "chat" },
+    return runInTenantTransaction(
+      this.db,
+      async () => {
+        const ticket = await this.findTicketBySessionToken(orgId, sessionToken);
+        const message = await this.tickets.addMessage(
+          orgId,
+          ticket.id,
+          null,
+          { body: input.body, isInternal: false },
+          { channel: "chat" },
+        );
+        return { ticketId: ticket.id, messageId: message.id };
+      },
+      { orgId },
     );
-    return { ticketId: ticket.id, messageId: message.id };
   }
 
   async getChatSession(orgId: string, sessionToken: string) {
-    const ticket = await this.findTicketBySessionToken(orgId, sessionToken);
-    const messages = await this.tickets.listPublicMessages(orgId, ticket.id);
-    return { ticketId: ticket.id, messages };
+    return runInTenantTransaction(
+      this.db,
+      async () => {
+        const ticket = await this.findTicketBySessionToken(orgId, sessionToken);
+        const messages = await this.tickets.listPublicMessages(orgId, ticket.id);
+        return { ticketId: ticket.id, messages };
+      },
+      { orgId },
+    );
   }
 }
 

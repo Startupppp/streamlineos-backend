@@ -4,6 +4,7 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { organizationMembers, organizations, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { seedSystemRolesForOrg } from "../../rbac/seed-system-roles";
+import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -119,7 +120,7 @@ export class OrgProfileService {
       billingEmail = actor?.email ?? null;
     }
 
-    await this.db.transaction(async (tx) => {
+    await runInNewTenantTransaction(this.db, orgId, async (tx) => {
       const seqRows = await tx.execute(
         sql`SELECT nextval(pg_get_serial_sequence('organization_members', 'id')) AS id`,
       );
@@ -143,9 +144,8 @@ export class OrgProfileService {
         status: "ACTIVE",
         activatedAt: new Date(),
       });
+      await seedSystemRolesForOrg(this.db, orgId);
     });
-
-    await seedSystemRolesForOrg(this.db, orgId);
 
     return { id: orgId, name: input.name, slug: input.slug };
   }

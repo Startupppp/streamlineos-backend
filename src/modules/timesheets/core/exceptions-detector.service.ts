@@ -11,7 +11,7 @@ import {
   timesheets,
   users,
 } from "../../../db/schema";
-import { logger } from "../../../common/logger/logger.service";
+import { forEachOrg } from "../../../common/tenant";
 import { formatDateOnly } from "./lib/period.helpers";
 import { addDays, lastCompleteWeekRange } from "./lib/exception-window";
 
@@ -269,23 +269,21 @@ export class ExceptionsDetectorService {
     return { week, candidates: rows.length, created };
   }
 
-  /** Run detection for every org that has timesheet settings configured. */
   async detectAllOrgs() {
-    const orgs = await this.db
-      .selectDistinct({ orgId: timesheetSettings.orgId })
-      .from(timesheetSettings);
-
     let orgsScanned = 0;
     let created = 0;
-    for (const org of orgs) {
-      try {
-        const result = await this.detectForOrg(org.orgId);
-        created += result.created;
-        orgsScanned++;
-      } catch (error) {
-        logger.error(`Timesheet exception detection failed for org ${org.orgId}`, error);
-      }
-    }
+
+    await forEachOrg(this.db, "timesheets-exception-detection", async (_tx, orgId) => {
+      const [hasSettings] = await this.db
+        .select({ orgId: timesheetSettings.orgId })
+        .from(timesheetSettings)
+        .where(eq(timesheetSettings.orgId, orgId))
+        .limit(1);
+      if (!hasSettings) return;
+      const result = await this.detectForOrg(orgId);
+      created += result.created;
+      orgsScanned++;
+    });
 
     return { orgsScanned, created };
   }

@@ -32,6 +32,7 @@ import { ORG_MEMBER_ROLES } from "../../../common/rbac/org-roles";
 import { syncStructuralRoleAssignment } from "../../../common/rbac/sync-structural-role";
 import { assertMayGrantRole } from "../../../common/rbac/assert-may-grant-role";
 import { AccessService } from "../../access/access.service";
+import { syncOrgUnitPlacement } from "../../../common/org/sync-org-unit-placement";
 
 type BankDetailsInput = NonNullable<UpdateEmployeeInput["bankDetails"]> & {
   pfUanNumber?: string;
@@ -131,6 +132,7 @@ export class EmployeeOnboardingService {
         }
 
         await tx.update(users).set(updateData).where(eq(users.id, existingUser.id));
+        await syncOrgUnitPlacement(tx, actor.orgId, existingUser.id, { DEPARTMENT: body.departmentId });
         const insertedMembership = await tx
           .insert(organizationMembers)
           .values({ orgId: actor.orgId, userId: existingUser.id, role })
@@ -235,6 +237,7 @@ export class EmployeeOnboardingService {
         .returning();
 
       if (!created) throw new InternalServerErrorException("Failed to create user record.");
+      await syncOrgUnitPlacement(tx, actor.orgId, created.id, { DEPARTMENT: body.departmentId });
 
       const createdMembership = await tx
         .insert(organizationMembers)

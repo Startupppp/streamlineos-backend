@@ -1,5 +1,9 @@
 import type { Db } from "../../db/drizzle.module";
-import { getTenantContext } from "./tenant-context";
+import {
+  getTenantContext,
+  runOutsideTenantContext,
+  runWithTenantContext,
+} from "./tenant-context";
 import { withTenant, type TenantTx } from "./with-tenant";
 
 
@@ -25,5 +29,25 @@ export async function runInTenantTransaction<T>(
 
   if (ambient) return fn(ambient.tx);
 
-  return withTenant(db, { orgId: explicit.orgId, audience: explicit.audience ?? "INTERNAL" }, fn);
+  const audience = explicit.audience ?? "INTERNAL";
+  return withTenant(db, { orgId: explicit.orgId, audience }, (tx) =>
+    runWithTenantContext({ orgId: explicit.orgId, audience, tx }, () => fn(tx)),
+  );
+}
+
+
+export async function runInNewTenantTransaction<T>(
+  db: Db,
+  orgId: string,
+  fn: (tx: TenantTx) => Promise<T>,
+): Promise<T> {
+  if (!orgId) {
+    throw new Error("runInNewTenantTransaction: orgId must be a non-empty string");
+  }
+
+  return runOutsideTenantContext(() =>
+    withTenant(db, { orgId, audience: "INTERNAL" }, (tx) =>
+      runWithTenantContext({ orgId, audience: "INTERNAL", tx }, () => fn(tx)),
+    ),
+  );
 }

@@ -24,6 +24,8 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { withPublicToken } from "../../common/tenant/with-public-token";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import type {
   ApplyInput,
   ExternalReferralSubmitInput,
@@ -36,24 +38,38 @@ export class RecruitmentService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async getApplicationStatus(token: string) {
-    const application = await this.db.query.candidateApplications.findFirst({
-      where: eq(candidateApplications.trackingToken, token),
-      columns: { status: true, appliedAt: true, updatedAt: true },
-      with: {
-        candidate: { columns: { firstName: true, lastName: true, email: true } },
-        jobPosting: { columns: { title: true, location: true, type: true } },
-      },
-    });
+    const application = await withPublicToken(this.db, token, (tx) =>
+      tx.query.candidateApplications.findFirst({
+        where: eq(candidateApplications.trackingToken, token),
+        columns: { orgId: true, status: true, appliedAt: true, updatedAt: true },
+      }),
+    );
 
     if (!application) throw new NotFoundException("Application not found");
 
-    return {
-      status: application.status,
-      appliedAt: application.appliedAt,
-      updatedAt: application.updatedAt,
-      job: application.jobPosting,
-      candidate: application.candidate,
-    };
+    return runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const full = await tx.query.candidateApplications.findFirst({
+          where: eq(candidateApplications.trackingToken, token),
+          columns: { status: true, appliedAt: true, updatedAt: true },
+          with: {
+            candidate: { columns: { firstName: true, lastName: true, email: true } },
+            jobPosting: { columns: { title: true, location: true, type: true } },
+          },
+        });
+        if (!full) throw new NotFoundException("Application not found");
+
+        return {
+          status: full.status,
+          appliedAt: full.appliedAt,
+          updatedAt: full.updatedAt,
+          job: full.jobPosting,
+          candidate: full.candidate,
+        };
+      },
+      { orgId: application.orgId },
+    );
   }
 
   async listOrgJobs(orgSlug: string) {
@@ -128,7 +144,7 @@ export class RecruitmentService {
     const lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : "-";
     const trackingToken = randomBytes(32).toString("hex");
 
-    return this.db.transaction(async (tx) => {
+    return runInTenantTransaction(this.db, async (tx) => {
       const [candidate] = await tx
         .insert(candidates)
         .values({

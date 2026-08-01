@@ -12,6 +12,7 @@ import { PaymentAnalyticsService } from "./payment-analytics.service";
 import { webhookEnvelopeSchema } from "./dto/webhook.schemas";
 import { ProviderBridgeService } from "../../finance/controls/provider-bridge.service";
 import type { RequestActorContext } from "../../../common/audit/actor-context";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 
 // Only an allow-listed summary is ever persisted in payload_redacted — never the full webhook
 // body, which can carry card/bank/contact details depending on event type.
@@ -172,9 +173,14 @@ export class PaymentWebhookHealthService {
     const adapter = this.registry.get(params.providerKey);
     if (!adapter) return { status: 404, body: { ok: false, error: "unknown provider" } };
 
-    const provider = await this.db.query.paymentProviders.findFirst({
-      where: and(eq(paymentProviders.orgId, params.orgId), eq(paymentProviders.providerKey, params.providerKey)),
-    });
+    const provider = await runInTenantTransaction(this.db, async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(paymentProviders)
+        .where(and(eq(paymentProviders.orgId, params.orgId), eq(paymentProviders.providerKey, params.providerKey)))
+        .limit(1);
+      return row;
+    }, { orgId: params.orgId });
     if (!provider) return { status: 404, body: { ok: false, error: "provider not configured" } };
 
     const creds = await this.providers.getDecryptedSecret(params.orgId, provider.id, params.environment);
@@ -186,19 +192,24 @@ export class PaymentWebhookHealthService {
       webhookSecret: creds.webhookSecret,
     });
 
-    const endpoint = await this.db.query.paymentWebhookEndpoints.findFirst({
-      where: and(eq(paymentWebhookEndpoints.providerId, provider.id), eq(paymentWebhookEndpoints.environment, params.environment)),
-    });
+    const endpoint = await runInTenantTransaction(this.db, async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(paymentWebhookEndpoints)
+        .where(and(eq(paymentWebhookEndpoints.providerId, provider.id), eq(paymentWebhookEndpoints.environment, params.environment)))
+        .limit(1);
+      return row;
+    }, { orgId: params.orgId });
 
     if (!signatureValid) {
       if (endpoint) {
         const wasHealthy = endpoint.status !== "failing";
-        await this.db
-          .update(paymentWebhookEndpoints)
-          .set({ status: "failing", lastFailureAt: new Date(), failureReason: "Invalid signature" })
-          .where(eq(paymentWebhookEndpoints.id, endpoint.id));
-        // Notify only on the transition to failing, not on every request, to avoid flooding
-        // the owner if a bot repeatedly probes the endpoint with a bad signature.
+        await runInTenantTransaction(this.db, async (tx) => {
+          await tx
+            .update(paymentWebhookEndpoints)
+            .set({ status: "failing", lastFailureAt: new Date(), failureReason: "Invalid signature" })
+            .where(eq(paymentWebhookEndpoints.id, endpoint.id));
+        }, { orgId: params.orgId });
         if (wasHealthy) {
           await this.paymentAnalytics.notifyOwner(params.orgId, {
             title: "Payment webhook is failing",
@@ -224,30 +235,34 @@ export class PaymentWebhookHealthService {
     const providerEventId =
       params.providerEventIdHeader ?? createHash("sha256").update(params.rawBody).digest("hex");
 
-    const [inserted] = await this.db
-      .insert(paymentWebhookEvents)
-      .values({
-        orgId: params.orgId,
-        providerId: provider.id,
-        environment: params.environment,
-        providerEventId,
-        eventType: envelope.event,
-        signatureValid: true,
-        processingStatus: "processed",
-        idempotencyKey: providerEventId,
-        payloadRedacted: redactPayload(envelope.payload),
-        processedAt: new Date(),
-      })
-      .onConflictDoNothing({
-        target: [paymentWebhookEvents.providerId, paymentWebhookEvents.environment, paymentWebhookEvents.providerEventId],
-      })
-      .returning();
+    const [inserted] = await runInTenantTransaction(this.db, async (tx) => {
+      return tx
+        .insert(paymentWebhookEvents)
+        .values({
+          orgId: params.orgId,
+          providerId: provider.id,
+          environment: params.environment,
+          providerEventId,
+          eventType: envelope.event,
+          signatureValid: true,
+          processingStatus: "processed",
+          idempotencyKey: providerEventId,
+          payloadRedacted: redactPayload(envelope.payload),
+          processedAt: new Date(),
+        })
+        .onConflictDoNothing({
+          target: [paymentWebhookEvents.providerId, paymentWebhookEvents.environment, paymentWebhookEvents.providerEventId],
+        })
+        .returning();
+    }, { orgId: params.orgId });
 
     if (endpoint) {
-      await this.db
-        .update(paymentWebhookEndpoints)
-        .set({ status: "verified", lastVerifiedAt: new Date(), failureReason: null })
-        .where(eq(paymentWebhookEndpoints.id, endpoint.id));
+      await runInTenantTransaction(this.db, async (tx) => {
+        await tx
+          .update(paymentWebhookEndpoints)
+          .set({ status: "verified", lastVerifiedAt: new Date(), failureReason: null })
+          .where(eq(paymentWebhookEndpoints.id, endpoint.id));
+      }, { orgId: params.orgId });
     }
 
     if (!inserted) {

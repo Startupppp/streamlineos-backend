@@ -25,6 +25,10 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { randomUUID, randomBytes, createHash } from "node:crypto";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { bumpPermissionsVersion } from "../../../common/rbac/access-invalidate";
+import {
+  runInNewTenantTransaction,
+  runInTenantTransaction,
+} from "../../../common/tenant/run-in-tenant-transaction";
 import { seedSystemRolesForOrg } from "../../rbac/seed-system-roles";
 import { ModuleChecklistService } from "../../hr/onboarding/flow/module-checklist.service";
 import {
@@ -105,17 +109,34 @@ export class OrgSetupService {
       return valid.orgId;
     }
 
-    const orphanIds = memberships.map((m) => m.id);
-    if (orphanIds.length > 0) {
-      await this.db
-        .delete(organizationMembers)
-        .where(inArray(organizationMembers.id, orphanIds));
+    const orphansByOrg = new Map<string, number[]>();
+    for (const m of memberships) {
+      orphansByOrg.set(m.orgId, [...(orphansByOrg.get(m.orgId) ?? []), m.id]);
+    }
+    for (const [orphanOrgId, ids] of orphansByOrg) {
+      try {
+        await runInTenantTransaction(
+          this.db,
+          async (tx) => {
+            await tx
+              .delete(organizationMembers)
+              .where(inArray(organizationMembers.id, ids));
+          },
+          { orgId: orphanOrgId },
+        );
+      } catch (error) {
+        logger.warn("Orphan membership cleanup failed", {
+          userId: u.userId,
+          orphanOrgId,
+          error,
+        });
+      }
     }
 
     const orgId = randomUUID();
     const orgName = input.companyName?.trim() || "My Organization";
 
-    await this.db.transaction(async (tx) => {
+    await runInNewTenantTransaction(this.db, orgId, async (tx) => {
       const seqRows = await tx.execute(
         sql`SELECT nextval(pg_get_serial_sequence('organization_members', 'id')) AS id`,
       );
@@ -146,9 +167,8 @@ export class OrgSetupService {
         currentPeriodEnd: addDays(new Date(), trialDays),
       });
       await bumpPermissionsVersion(tx, orgId);
+      await seedSystemRolesForOrg(this.db, orgId);
     });
-
-    await seedSystemRolesForOrg(this.db, orgId);
 
     this.audit.log({
       action: "org.created",
@@ -227,44 +247,48 @@ export class OrgSetupService {
     const orgId = await this.resolveOrCreateOrg(u, input);
     if (u.orgId && !u.isOrgOwner) return { success: true, orgId };
 
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(organizations)
-        .set({
-          industry: input.industry,
-          companySize: input.companySize,
-          ...(input.country ? { country: input.country } : {}),
-          ...(input.timezone ? { timezone: input.timezone } : {}),
-          ...(input.companyName ? { name: input.companyName } : {}),
-          onboardingCompletedAt: new Date(),
-        })
-        .where(eq(organizations.id, orgId));
+    const autoLoginToken = randomBytes(32).toString("hex");
 
-      await this.provisionOrgModules(tx, orgId, input.enabledModules, u.userId);
+    await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        await tx
+          .update(organizations)
+          .set({
+            industry: input.industry,
+            companySize: input.companySize,
+            ...(input.country ? { country: input.country } : {}),
+            ...(input.timezone ? { timezone: input.timezone } : {}),
+            ...(input.companyName ? { name: input.companyName } : {}),
+            onboardingCompletedAt: new Date(),
+          })
+          .where(eq(organizations.id, orgId));
 
-      await tx
-        .update(users)
-        .set({
-          lastActiveOrgId: orgId,
-          ...(input.phone ? { phone: input.phone } : {}),
-        })
-        .where(eq(users.id, u.userId));
-    });
+        await this.provisionOrgModules(tx, orgId, input.enabledModules, u.userId);
+
+        await tx
+          .update(users)
+          .set({
+            lastActiveOrgId: orgId,
+            ...(input.phone ? { phone: input.phone } : {}),
+          })
+          .where(eq(users.id, u.userId));
+
+        await this.checklists.ensureChecklistsForModules(orgId, input.enabledModules);
+        await this.sessions.completeSession(orgId, u.userId, "org_setup");
+
+        await tx.insert(magicLinkTokens).values({
+          id: randomUUID(),
+          userId: u.userId,
+          tokenHash: createHash("sha256").update(autoLoginToken).digest("hex"),
+          expiresAt: addMinutes(new Date(), 10),
+        });
+      },
+      { orgId },
+    );
 
     await this.cache.invalidate(CACHE_KEYS.userSession(u.userId));
-
-    await this.checklists.ensureChecklistsForModules(orgId, input.enabledModules);
-
-    await this.sessions.completeSession(orgId, u.userId, "org_setup");
     await this.sendWelcome(u.userId);
-
-    const autoLoginToken = randomBytes(32).toString("hex");
-    await this.db.insert(magicLinkTokens).values({
-      id: randomUUID(),
-      userId: u.userId,
-      tokenHash: createHash("sha256").update(autoLoginToken).digest("hex"),
-      expiresAt: addMinutes(new Date(), 10),
-    });
 
     return { success: true, orgId, autoLoginToken };
   }
@@ -296,30 +320,41 @@ export class OrgSetupService {
       return { success: true, orgId };
     }
 
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(organizations)
-        .set({
-          industry: "IT Services",
-          companySize: "1-10",
-          onboardingCompletedAt: new Date(),
-        })
-        .where(eq(organizations.id, orgId));
+    const autoLoginToken = randomBytes(32).toString("hex");
 
-      await this.provisionOrgModules(tx, orgId, DEFAULT_SKIP_MODULES, u.userId);
+    await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        await tx
+          .update(organizations)
+          .set({
+            industry: "IT Services",
+            companySize: "1-10",
+            onboardingCompletedAt: new Date(),
+          })
+          .where(eq(organizations.id, orgId));
 
-      await tx
-        .update(users)
-        .set({ lastActiveOrgId: orgId })
-        .where(eq(users.id, u.userId));
-    });
+        await this.provisionOrgModules(tx, orgId, DEFAULT_SKIP_MODULES, u.userId);
+
+        await tx
+          .update(users)
+          .set({ lastActiveOrgId: orgId })
+          .where(eq(users.id, u.userId));
+
+        await this.checklists.ensureChecklistsForModules(orgId, DEFAULT_SKIP_MODULES);
+        await this.sessions.skipSession(orgId, u.userId, "org_setup", reason);
+
+        await tx.insert(magicLinkTokens).values({
+          id: randomUUID(),
+          userId: u.userId,
+          tokenHash: createHash("sha256").update(autoLoginToken).digest("hex"),
+          expiresAt: addMinutes(new Date(), 10),
+        });
+      },
+      { orgId },
+    );
 
     await this.cache.invalidate(CACHE_KEYS.userSession(u.userId));
-    await this.checklists.ensureChecklistsForModules(
-      orgId,
-      DEFAULT_SKIP_MODULES,
-    );
-    await this.sessions.skipSession(orgId, u.userId, "org_setup", reason);
 
     this.audit.log({
       action: "org.setup.skipped",
@@ -327,14 +362,6 @@ export class OrgSetupService {
       orgId,
       targetId: orgId,
       targetType: "organization",
-    });
-
-    const autoLoginToken = randomBytes(32).toString("hex");
-    await this.db.insert(magicLinkTokens).values({
-      id: randomUUID(),
-      userId: u.userId,
-      tokenHash: createHash("sha256").update(autoLoginToken).digest("hex"),
-      expiresAt: addMinutes(new Date(), 10),
     });
 
     return { success: true, orgId, autoLoginToken };

@@ -8,7 +8,7 @@ import { AuditService } from "../../common/audit/audit.service";
 import type { CreateInput, ExportInput, ListInput, UpdateInput } from "./dto/quote.schemas";
 import { QuotesLifecycleService } from "./quotes-lifecycle.service";
 
-export { SendNotDraft, isSendNotDraft } from "./quotes-lifecycle.service";
+export { isSendNotDraft } from "./quotes-lifecycle.service";
 
 const LIST_TTL = 30;
 

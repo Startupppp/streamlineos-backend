@@ -8,6 +8,8 @@ import { eq, sql } from "drizzle-orm";
 import { leads, npsResponses, npsSurveys, webLeadForms } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { withPublicToken } from "../../common/tenant/with-public-token";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { categoryForScore } from "./public.helpers";
 import type { LeadFormBody, NpsSubmitInput } from "./dto/public.schemas";
 import { CrmAutomationBusService } from "../crm/automation-studio/crm-automation-bus.service";
@@ -22,14 +24,16 @@ export class CrmService {
   ) {}
 
   async getSurvey(token: string) {
-    const [survey] = await this.db
-      .select({
-        title: npsSurveys.title,
-        question: npsSurveys.question,
-        status: npsSurveys.status,
-      })
-      .from(npsSurveys)
-      .where(eq(npsSurveys.publicToken, token));
+    const [survey] = await withPublicToken(this.db, token, (tx) =>
+      tx
+        .select({
+          title: npsSurveys.title,
+          question: npsSurveys.question,
+          status: npsSurveys.status,
+        })
+        .from(npsSurveys)
+        .where(eq(npsSurveys.publicToken, token)),
+    );
 
     if (!survey || survey.status !== "active") {
       throw new NotFoundException("Survey not found");
@@ -39,14 +43,16 @@ export class CrmService {
   }
 
   async submitSurvey(token: string, input: NpsSubmitInput) {
-    const [survey] = await this.db
-      .select({
-        id: npsSurveys.id,
-        orgId: npsSurveys.orgId,
-        status: npsSurveys.status,
-      })
-      .from(npsSurveys)
-      .where(eq(npsSurveys.publicToken, token));
+    const [survey] = await withPublicToken(this.db, token, (tx) =>
+      tx
+        .select({
+          id: npsSurveys.id,
+          orgId: npsSurveys.orgId,
+          status: npsSurveys.status,
+        })
+        .from(npsSurveys)
+        .where(eq(npsSurveys.publicToken, token)),
+    );
 
     if (!survey || survey.status !== "active") {
       throw new NotFoundException("Survey not found or no longer active");
@@ -54,30 +60,38 @@ export class CrmService {
 
     const email = input.email && input.email.length > 0 ? input.email : null;
 
-    await this.db.insert(npsResponses).values({
-      orgId: survey.orgId,
-      surveyId: survey.id,
-      score: input.score,
-      category: categoryForScore(input.score),
-      comment: input.comment && input.comment.length > 0 ? input.comment : null,
-      respondentName: input.name && input.name.length > 0 ? input.name : null,
-      respondentEmail: email,
-    });
+    await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        await tx.insert(npsResponses).values({
+          orgId: survey.orgId,
+          surveyId: survey.id,
+          score: input.score,
+          category: categoryForScore(input.score),
+          comment: input.comment && input.comment.length > 0 ? input.comment : null,
+          respondentName: input.name && input.name.length > 0 ? input.name : null,
+          respondentEmail: email,
+        });
+      },
+      { orgId: survey.orgId },
+    );
 
     return { success: true };
   }
 
   async getLeadForm(token: string) {
-    const [form] = await this.db
-      .select({
-        name: webLeadForms.name,
-        fields: webLeadForms.fields,
-        submitMessage: webLeadForms.submitMessage,
-        redirectUrl: webLeadForms.redirectUrl,
-        isActive: webLeadForms.isActive,
-      })
-      .from(webLeadForms)
-      .where(eq(webLeadForms.publicToken, token));
+    const [form] = await withPublicToken(this.db, token, (tx) =>
+      tx
+        .select({
+          name: webLeadForms.name,
+          fields: webLeadForms.fields,
+          submitMessage: webLeadForms.submitMessage,
+          redirectUrl: webLeadForms.redirectUrl,
+          isActive: webLeadForms.isActive,
+        })
+        .from(webLeadForms)
+        .where(eq(webLeadForms.publicToken, token)),
+    );
 
     if (!form || !form.isActive) throw new NotFoundException("Form not found");
 
@@ -85,10 +99,10 @@ export class CrmService {
   }
 
   async submitLeadForm(token: string, body: LeadFormBody) {
-    const [form] = await this.db
-      .select()
-      .from(webLeadForms)
-      .where(eq(webLeadForms.publicToken, token));
+    const form = await withPublicToken(this.db, token, async (tx) => {
+      const [row] = await tx.select().from(webLeadForms).where(eq(webLeadForms.publicToken, token));
+      return row;
+    });
 
     if (!form || !form.isActive) {
       throw new NotFoundException("Form not found or inactive");
@@ -120,24 +134,32 @@ export class CrmService {
 
     const leadNotes = strField("message") ?? strField("notes");
 
-    const [insertedLead] = await this.db.insert(leads).values({
-      orgId: form.orgId,
-      name: leadName,
-      email: strField("email"),
-      phone: strField("phone"),
-      company: strField("company"),
-      notes: leadNotes,
-      source: "website",
-      customData: body,
-    }).returning({ id: leads.id });
+    const insertedLead = await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const [lead] = await tx.insert(leads).values({
+          orgId: form.orgId,
+          name: leadName,
+          email: strField("email"),
+          phone: strField("phone"),
+          company: strField("company"),
+          notes: leadNotes,
+          source: "website",
+          customData: body,
+        }).returning({ id: leads.id });
 
-    await this.db
-      .update(webLeadForms)
-      .set({
-        totalSubmissions: sql`${webLeadForms.totalSubmissions} + 1`,
-        updatedAt: new Date(),
-      })
-      .where(eq(webLeadForms.id, form.id));
+        await tx
+          .update(webLeadForms)
+          .set({
+            totalSubmissions: sql`${webLeadForms.totalSubmissions} + 1`,
+            updatedAt: new Date(),
+          })
+          .where(eq(webLeadForms.id, form.id));
+
+        return lead;
+      },
+      { orgId: form.orgId },
+    );
 
     if (insertedLead !== undefined) {
       void this.bus.emit(form.orgId, "form.submitted", {

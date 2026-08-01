@@ -42,6 +42,7 @@ import {
   ANNUAL_DISCOUNT_PCT,
   buildPlanCatalog,
 } from "./plan-entitlements.constants";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 
 interface WebhookResult {
   status: number;
@@ -349,10 +350,19 @@ export class BillingService {
       refundedAt: payment.status === "refunded" ? new Date() : null,
     };
 
-    await this.db
-      .insert(platformPayments)
-      .values(fields)
-      .onConflictDoUpdate({ target: platformPayments.razorpayPaymentId, set: fields });
+    if (orgId !== null) {
+      await runInTenantTransaction(this.db, async (tx) => {
+        await tx
+          .insert(platformPayments)
+          .values(fields)
+          .onConflictDoUpdate({ target: platformPayments.razorpayPaymentId, set: fields });
+      }, { orgId });
+    } else {
+      await this.db
+        .insert(platformPayments)
+        .values(fields)
+        .onConflictDoUpdate({ target: platformPayments.razorpayPaymentId, set: fields });
+    }
   }
 
   private async findOrgFromNotes(
@@ -379,7 +389,7 @@ export class BillingService {
 
   private async transitionToPastDue(orgId: string, paymentId: string): Promise<void> {
     const now = new Date();
-    await this.db.transaction(async (tx) => {
+    await runInTenantTransaction(this.db, async (tx) => {
       const [existing] = await tx
         .select({ id: subscriptions.id, metadata: subscriptions.metadata })
         .from(subscriptions)
@@ -401,7 +411,7 @@ export class BillingService {
           },
         })
         .where(eq(subscriptions.id, existing.id));
-    });
+    }, { orgId });
     await this.planLimits.bust(orgId);
     logger.info("[billing] subscription transitioned to PAST_DUE", { orgId, paymentId });
   }

@@ -24,6 +24,7 @@ import { userCan } from "./ability.helpers";
 import type { UpdateEmployeeInput } from "./dto/hr-directory.schemas";
 import { hrEmployments, hrPeople } from "../../../db/schema/hr/core-people";
 import { assertUsersInOrg } from "../../../common/tenant/org-membership";
+import { syncOrgUnitPlacement } from "../../../common/org/sync-org-unit-placement";
 
 type BankDetailsInput = NonNullable<UpdateEmployeeInput["bankDetails"]> & {
   pfUanNumber?: string;
@@ -240,6 +241,7 @@ export class EmployeeMutationsService {
       if (Object.keys(updateData).length > 0) {
         await tx.update(users).set(updateData).where(eq(users.id, targetUserId));
       }
+      await syncOrgUnitPlacement(tx, actor.orgId, targetUserId, { DEPARTMENT: body.departmentId });
 
       if (body.skills !== undefined) {
         const existing = await tx

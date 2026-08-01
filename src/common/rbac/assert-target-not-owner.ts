@@ -6,6 +6,24 @@ import type { DbOrTx } from "./access-invalidate";
 const MESSAGE =
   "The organization owner's role cannot be changed. Use the ownership transfer flow instead.";
 
+export type OwnerProtectedAction = "suspended" | "archived" | "deleted";
+
+async function targetIsOwner(
+  db: DbOrTx,
+  orgId: string,
+  targetUserId: string,
+): Promise<boolean> {
+  const [member] = await db
+    .select({ isOwner: organizationMembers.isOwner })
+    .from(organizationMembers)
+    .where(
+      and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, targetUserId)),
+    )
+    .limit(1);
+
+  return member?.isOwner === true;
+}
+
 /**
  * Refuses a role change aimed at the org owner.
  *
@@ -19,15 +37,20 @@ export async function assertTargetNotOwner(
   orgId: string,
   targetUserId: string,
 ): Promise<void> {
-  const [member] = await db
-    .select({ isOwner: organizationMembers.isOwner })
-    .from(organizationMembers)
-    .where(
-      and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, targetUserId)),
-    )
-    .limit(1);
+  if (await targetIsOwner(db, orgId, targetUserId)) throw new BadRequestException(MESSAGE);
+}
 
-  if (member?.isOwner) throw new BadRequestException(MESSAGE);
+export async function assertOwnerNotTargeted(
+  db: DbOrTx,
+  orgId: string,
+  targetUserId: string,
+  action: OwnerProtectedAction,
+): Promise<void> {
+  if (await targetIsOwner(db, orgId, targetUserId)) {
+    throw new BadRequestException(
+      `The organization owner cannot be ${action}. Transfer ownership to another member first.`,
+    );
+  }
 }
 
 export async function assertNoOwnerAmongTargets(

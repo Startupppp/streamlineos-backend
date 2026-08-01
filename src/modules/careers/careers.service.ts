@@ -8,6 +8,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import type { ApplyInput } from "./dto/careers.schemas";
 
 export type ApplyJobNotFound = { error: "job_not_found" };
@@ -66,7 +67,7 @@ export class CareersService {
     const firstName = nameParts[0] ?? name.trim();
     const lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : "-";
 
-    const result = await this.db.transaction(async (tx) => {
+    const result = await runInTenantTransaction(this.db, async (tx) => {
       const existingCandidate = await tx.query.candidates.findFirst({
         where: and(eq(candidates.orgId, job.orgId), ilike(candidates.email, normalizedEmail)),
         columns: { id: true },
@@ -109,7 +110,7 @@ export class CareersService {
       });
 
       return { id: candidateId };
-    });
+    }, { orgId: job.orgId });
 
     await this.cache.invalidatePattern(`hr:candidates:list:${job.orgId}:*`);
     return result;
