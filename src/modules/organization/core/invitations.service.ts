@@ -277,6 +277,8 @@ export class InvitationsService {
           expiresAt: invitations.expiresAt,
           acceptedAt: invitations.acceptedAt,
           createdAt: invitations.createdAt,
+          status: invitations.status,
+          revokedAt: invitations.revokedAt,
         })
         .from(invitations)
         .where(and(...conditions))
@@ -303,6 +305,7 @@ export class InvitationsService {
     const invitation = await this.db.query.invitations.findFirst({
       where: and(
         eq(invitations.tokenHash, hashToken(token)),
+        eq(invitations.status, "PENDING"),
         gt(invitations.expiresAt, new Date()),
         isNull(invitations.acceptedAt),
       ),
@@ -334,6 +337,7 @@ export class InvitationsService {
       tx.query.invitations.findFirst({
         where: and(
           eq(invitations.tokenHash, tokenHash),
+          eq(invitations.status, "PENDING"),
           gt(invitations.expiresAt, new Date()),
           isNull(invitations.acceptedAt),
         ),
@@ -380,14 +384,16 @@ export class InvitationsService {
           .update(users)
           .set({ lastActiveOrgId: invitation.orgId })
           .where(eq(users.id, existingUser.id));
-        await tx
+        const claimedRows = await tx
           .update(invitations)
           .set({
             acceptedAt: new Date(),
             status: "ACCEPTED",
             ...(membershipId !== null ? { acceptedMembershipId: membershipId } : {}),
           })
-          .where(eq(invitations.id, invitation.id));
+          .where(and(eq(invitations.id, invitation.id), eq(invitations.status, "PENDING"), isNull(invitations.acceptedAt)))
+          .returning({ id: invitations.id });
+        if (claimedRows.length === 0) throw new NotFoundException("Invalid or expired invitation");
         await tx.insert(invitationEvents).values({
           orgId: invitation.orgId,
           invitationId: invitation.id,
@@ -451,14 +457,16 @@ export class InvitationsService {
       if (membershipId !== null) 
         await syncStructuralRoleAssignment(tx, invitation.orgId, membershipId, invitation.role);
       
-      await tx
+      const claimedRows = await tx
         .update(invitations)
         .set({
           acceptedAt: new Date(),
           status: "ACCEPTED",
           ...(membershipId !== null ? { acceptedMembershipId: membershipId } : {}),
         })
-        .where(eq(invitations.id, invitation.id));
+        .where(and(eq(invitations.id, invitation.id), eq(invitations.status, "PENDING"), isNull(invitations.acceptedAt)))
+        .returning({ id: invitations.id });
+      if (claimedRows.length === 0) throw new NotFoundException("Invalid or expired invitation");
       await tx.insert(invitationEvents).values({
         orgId: invitation.orgId,
         invitationId: invitation.id,
