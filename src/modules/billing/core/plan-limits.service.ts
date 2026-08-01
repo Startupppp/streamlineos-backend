@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Logger, Optional } from "@nestjs/common";
 import { sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -14,6 +14,7 @@ import {
 } from "./plan-entitlements.constants";
 import { canUseFeature, minPlanFor, type Feature } from "../../ai/core/billing/feature-gates";
 import { PaymentRequiredException } from "../../../common/http/api-exceptions";
+import { NotificationsService } from "../../notifications/notifications.service";
 
 export interface EntitlementsDto {
   tier: PlanTier;
@@ -33,13 +34,34 @@ const TIER_CACHE_TTL_MS = 30_000;
 
 const ENTITLEMENTS_CACHE_TTL = 60;
 
+const QUOTA_ALERT_TTL_SECONDS = 30 * 24 * 60 * 60;
+
+const LIMIT_KEY_LABELS: Record<LimitKey, string> = {
+  members: "team members",
+  projects: "projects",
+  kbPages: "knowledge base pages",
+  chatChannels: "chat channels",
+  crmLeads: "CRM leads",
+  crmContacts: "CRM contacts",
+  crmDeals: "CRM deals",
+  supportTickets: "support tickets",
+  automations: "automations",
+  signEnvelopes: "sign envelopes",
+  surveys: "surveys",
+  acctInvoices: "accounting invoices",
+  hrCandidates: "HR candidates",
+  hrJobPostings: "HR job postings",
+};
+
 @Injectable()
 export class PlanLimitsService {
   private readonly tierCache = new Map<string, TierCache>();
+  private readonly logger = new Logger(PlanLimitsService.name);
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    @Optional() private readonly notifications: NotificationsService | null,
   ) {}
 
   async resolveTier(orgId: string): Promise<{ tier: PlanTier; plan: EffectivePlan }> {
@@ -209,6 +231,10 @@ export class PlanLimitsService {
         upgradePath: "/billing",
       });
     }
+
+    void this.maybeAlertQuota(orgId, key, used + increment, limit).catch((err: unknown) =>
+      this.logger.warn(`quota alert failed [${orgId}/${key}]`, { err }),
+    );
   }
 
   async checkFeature(orgId: string, feature: Feature): Promise<boolean> {
@@ -334,6 +360,73 @@ export class PlanLimitsService {
         );
         return Number(rows[0]?.["count"] ?? 0);
       }
+    }
+  }
+
+  private crossedThresholds(afterCount: number, limit: number): number[] {
+    const result: number[] = [];
+    if (afterCount >= limit) result.push(100);
+    if (afterCount >= limit * 0.8) result.push(80);
+    return result;
+  }
+
+  private async findOrgOwnerForAlert(orgId: string): Promise<{ userId: string } | null> {
+    try {
+      const rows = await this.db.execute(
+        sql`SELECT om.user_id FROM organization_members om
+            INNER JOIN users u ON u.id = om.user_id
+            WHERE om.org_id = ${orgId} AND om.is_owner = true AND u.is_active = true
+            LIMIT 1`,
+      );
+      const row = rows[0];
+      if (!row) return null;
+      const userId = String(row["user_id"] ?? "");
+      return userId ? { userId } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async maybeAlertQuota(
+    orgId: string,
+    key: LimitKey,
+    afterCount: number,
+    limit: number,
+  ): Promise<void> {
+    if (!this.notifications) return;
+
+    const thresholds = this.crossedThresholds(afterCount, limit);
+    if (thresholds.length === 0) return;
+
+    const owner = await this.findOrgOwnerForAlert(orgId);
+    if (!owner) return;
+
+    const label = LIMIT_KEY_LABELS[key];
+
+    for (const pct of thresholds) {
+      const dedupKey = `billing:quota-alert:${orgId}:${key}:${pct}`;
+      const alreadySent = await this.cache.get<boolean>(dedupKey);
+      if (alreadySent) continue;
+
+      const is100 = pct === 100;
+      await this.notifications.create({
+        orgId,
+        userId: owner.userId,
+        type: is100 ? "WARNING" : "INFO",
+        priority: is100 ? "HIGH" : "NORMAL",
+        category: "BILLING",
+        sourceModule: "billing",
+        eventKey: is100 ? "billing.quota.exceeded" : "billing.quota.warning",
+        title: is100
+          ? `${label} limit reached (${afterCount}/${limit})`
+          : `${label} at 80% of limit (${afterCount}/${limit})`,
+        message: is100
+          ? `Your workspace has used all ${limit} ${label}. New additions are now blocked. Upgrade your plan to continue.`
+          : `Your workspace has used ${afterCount} of ${limit} ${label} (${Math.round((afterCount / limit) * 100)}%). Consider upgrading before you hit the limit.`,
+        link: "/billing",
+      });
+
+      await this.cache.set(dedupKey, true, QUOTA_ALERT_TTL_SECONDS);
     }
   }
 }

@@ -22,6 +22,7 @@ import { computeVerificationInterval, shouldResetTrust } from "./kb-page-governa
 import { KbPageReviewsService } from "./kb-page-reviews.service";
 import { KbIndexingService } from "./kb-indexing.service";
 import { resyncPageLinks, snapshotIfNeeded } from "./kb-page-edit.util";
+import { assertPageAccessible } from "./kb-page-access.util";
 
 type PageRow = typeof kbPages.$inferSelect;
 
@@ -136,6 +137,7 @@ export class KbPagesService {
   }
 
   async update(user: CurrentUserContext, pageId: number, input: UpdatePageInput, canManage: boolean): Promise<PageRow> {
+    await assertPageAccessible(this.db, user, pageId);
     const orgId = user.orgId;
     const current = await this.db.query.kbPages.findFirst({
       where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
@@ -206,6 +208,7 @@ export class KbPagesService {
   }
 
   async lock(user: CurrentUserContext, pageId: number, isLocked: boolean): Promise<PageRow> {
+    await assertPageAccessible(this.db, user, pageId);
     const orgId = user.orgId;
     const [updated] = await this.db
       .update(kbPages)
@@ -261,6 +264,7 @@ export class KbPagesService {
   }
 
   async verify(user: CurrentUserContext, pageId: number, input: VerifyPageInput): Promise<PageRow> {
+    await assertPageAccessible(this.db, user, pageId);
     const orgId = user.orgId;
     const current = await this.db.query.kbPages.findFirst({
       where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
@@ -289,6 +293,7 @@ export class KbPagesService {
   }
 
   async markStale(user: CurrentUserContext, pageId: number): Promise<PageRow> {
+    await assertPageAccessible(this.db, user, pageId);
     const orgId = user.orgId;
     const current = await this.db.query.kbPages.findFirst({
       where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),

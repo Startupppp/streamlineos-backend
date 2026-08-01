@@ -18,6 +18,7 @@ import { AuditService } from "../../common/audit/audit.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { MovePageInput } from "./dto/kb-pages.schemas";
+import { assertPageAccessible } from "./kb-page-access.util";
 
 type PageRow = typeof kbPages.$inferSelect;
 type KbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -96,6 +97,7 @@ export class KbPageTreeService {
   }
 
   async softDelete(user: CurrentUserContext, pageId: number): Promise<{ deletedCount: number }> {
+    await assertPageAccessible(this.db, user, pageId);
     const orgId = user.orgId;
     const page = await this.db.query.kbPages.findFirst({
       where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)),
@@ -283,6 +285,7 @@ export class KbPageTreeService {
   }
 
   async move(user: CurrentUserContext, pageId: number, input: MovePageInput): Promise<PageRow> {
+    await assertPageAccessible(this.db, user, pageId);
     const orgId = user.orgId;
 
     const page = await this.db.query.kbPages.findFirst({
@@ -351,6 +354,7 @@ export class KbPageTreeService {
   }
 
   async duplicate(user: CurrentUserContext, pageId: number): Promise<PageRow> {
+    await assertPageAccessible(this.db, user, pageId);
     const orgId = user.orgId;
     const root = await this.db.query.kbPages.findFirst({
       where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),

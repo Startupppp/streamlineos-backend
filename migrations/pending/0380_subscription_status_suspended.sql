@@ -1,0 +1,23 @@
+-- Add SUSPENDED to the subscription_status enum.
+--
+-- IRREVERSIBILITY WARNING (read before applying):
+--   ALTER TYPE ... ADD VALUE is permanent in PostgreSQL. There is no
+--   ALTER TYPE ... REMOVE VALUE. Once this migration is committed, the
+--   'SUSPENDED' label exists in the pg_enum catalog forever — it cannot
+--   be removed without dropping the type (which requires dropping every
+--   column and constraint that references it). The .down.sql for this
+--   migration performs a best-effort DATA rollback only; it cannot undo
+--   the catalog change.
+--
+-- TRANSACTION BEHAVIOUR IN POSTGRESQL 12+:
+--   ALTER TYPE ... ADD VALUE can execute inside a transaction block, but
+--   the new value is NOT visible to subsequent statements in the same
+--   transaction. Drizzle Kit wraps each migration file in its own
+--   transaction, so the new value is safe to use from the NEXT migration
+--   file onward (i.e. 0381_dunning_attempts_table.sql). Do NOT combine
+--   this statement with DDL that references 'SUSPENDED' in the same file.
+--
+-- PRECONDITION:
+--   Neon / PostgreSQL >= 12 (verified; Neon runs PG 16).
+
+ALTER TYPE subscription_status ADD VALUE IF NOT EXISTS 'SUSPENDED';

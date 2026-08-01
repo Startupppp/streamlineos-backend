@@ -115,7 +115,7 @@ export const kbSpaceRoleEnum = pgEnum("kb_space_role", ["viewer", "commenter", "
 export const kbTranslationStatusEnum = pgEnum("kb_translation_status", ["draft", "in_progress", "translated", "published", "outdated"]);
 
 export const quoteStatusEnum = pgEnum("quote_status", ["DRAFT", "SENT", "ACCEPTED", "REJECTED", "EXPIRED"]);
-export const subscriptionStatusEnum = pgEnum("subscription_status", ["TRIAL", "ACTIVE", "PAST_DUE", "CANCELLED", "EXPIRED"]);
+export const subscriptionStatusEnum = pgEnum("subscription_status", ["TRIAL", "ACTIVE", "PAST_DUE", "CANCELLED", "SUSPENDED", "EXPIRED"]);
 export const subscriptionPlanEnum = pgEnum("subscription_plan", ["STARTER", "PROFESSIONAL", "ENTERPRISE"]);
 
 export const taskEntityTypeEnum = pgEnum("task_entity_type", ["LEAD", "DEAL", "CONTACT", "PROJECT"]);

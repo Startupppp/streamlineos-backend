@@ -13,8 +13,10 @@ import { ReferralService } from "./referral.service";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
 import { EnterpriseQuotesService } from "./enterprise-quotes.service";
 import { PlanLimitsService } from "./plan-limits.service";
+import { NotificationsModule } from "../../notifications/notifications.module";
 
 @Module({
+  imports: [NotificationsModule],
   controllers: [BillingController, RazorpayWebhookController],
   providers: [BillingService, RazorpayService, MarketplaceService, AiCreditsService, AiCreditsReservationService, AiCreditsPacksService, AiCreditsUsageService, AffiliateService, ReferralService, RevenueAnalyticsService, EnterpriseQuotesService, PlanLimitsService],
   exports: [AiCreditsService, AiCreditsUsageService, RevenueAnalyticsService, PlanLimitsService],
