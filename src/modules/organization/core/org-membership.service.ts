@@ -17,7 +17,6 @@ import {
   orgUnitMembers,
   orgUnits,
   organizationMembers,
-  userPermissions,
   users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -217,9 +216,6 @@ export class OrgMembershipService {
             ),
           );
 
-        await tx
-          .delete(userPermissions)
-          .where(and(eq(userPermissions.orgId, orgId), eq(userPermissions.userId, memberUserId)));
         await tx.delete(orgUnitMembers).where(
           and(
             eq(orgUnitMembers.userId, memberUserId),

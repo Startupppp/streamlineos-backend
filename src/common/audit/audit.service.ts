@@ -2,6 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { auditLogs } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { getTenantContext, withTenant } from "../tenant";
 import { logger } from "../logger/logger.service";
 
 export interface AuditEntry {
@@ -27,29 +28,31 @@ export class AuditService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   log(entry: AuditEntry): void {
-    const enrichedMetadata = this.buildMetadata(entry);
-
-    void this.db
-      .insert(auditLogs)
-      .values({
-        action: entry.action,
-        userId: entry.userId,
-        orgId: entry.orgId ?? null,
-        targetId: entry.targetId ?? null,
-        targetType: entry.targetType ?? null,
-        actorUserId: entry.actorUserId ?? null,
-        resourceType: entry.resourceType ?? null,
-        resourceId: entry.resourceId ?? null,
-        metadata: enrichedMetadata,
-        ipAddress: entry.ipAddress ?? null,
-      })
-      .catch((error: unknown) => logger.error("audit.log failed", { error, action: entry.action }));
+    void this.write(entry).catch((error: unknown) =>
+      logger.error("audit.log failed", { error, action: entry.action }),
+    );
   }
 
   async logCritical(entry: AuditEntry): Promise<void> {
-    const enrichedMetadata = this.buildMetadata(entry);
+    await this.write(entry);
+  }
 
-    await this.db.insert(auditLogs).values({
+  private async write(entry: AuditEntry): Promise<void> {
+    const values = this.buildValues(entry);
+    const orgId = entry.orgId ?? null;
+
+    if (orgId && !getTenantContext()) {
+      await withTenant(this.db, { orgId, audience: "INTERNAL" }, async (tx) => {
+        await tx.insert(auditLogs).values(values);
+      });
+      return;
+    }
+
+    await this.db.insert(auditLogs).values(values);
+  }
+
+  private buildValues(entry: AuditEntry) {
+    return {
       action: entry.action,
       userId: entry.userId,
       orgId: entry.orgId ?? null,
@@ -58,9 +61,9 @@ export class AuditService {
       actorUserId: entry.actorUserId ?? null,
       resourceType: entry.resourceType ?? null,
       resourceId: entry.resourceId ?? null,
-      metadata: enrichedMetadata,
+      metadata: this.buildMetadata(entry),
       ipAddress: entry.ipAddress ?? null,
-    });
+    };
   }
 
   private buildMetadata(entry: AuditEntry): Record<string, unknown> {

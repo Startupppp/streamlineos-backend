@@ -736,6 +736,34 @@
       "when": 1784993517607,
       "tag": "0379_drop_users_department_id",
       "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1784993518607,
+      "tag": "0380_rls_with_check_nullable_tenant",
+      "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1784993519607,
+      "tag": "0381_rls_read_predicate_nullable_tenant",
+      "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1784993520607,
+      "tag": "0383_rls_org_members_identity_read",
+      "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1784993521607,
+      "tag": "0382_drop_user_permissions",
+      "breakpoints": true
     }
   ]
 }

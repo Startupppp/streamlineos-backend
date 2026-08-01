@@ -5,14 +5,12 @@ import {
   groupRoleAssignments,
   moduleOwnerships,
   organizationMembers,
-  permissions,
   principalGroupMembers,
   roleAssignments,
   rolePermissionGrants,
   roles,
   userDelegations,
   userModuleAccess,
-  userPermissions,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -214,42 +212,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    if (map.size > 0) {
-      const deniedPermissions = await this.getUserDeniedPermissions(orgId, userId);
-      for (const key of deniedPermissions) map.delete(key);
-    }
-
     return map;
-  }
-
-  /** Permission keys explicitly denied to this user. */
-  async getUserDeniedPermissions(orgId: string, userId: string): Promise<Set<string>> {
-    const cacheKey = `${orgId}:${userId}`;
-    const cached = this.deniedPermissionsCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) return cached.permissions;
-
-    const rows = await this.safeAccessTableRead(
-      () =>
-        this.db.query.userPermissions.findMany({
-          where: and(
-            eq(userPermissions.userId, userId),
-            eq(userPermissions.orgId, orgId),
-            eq(userPermissions.granted, false),
-          ),
-          with: { permission: { columns: { name: true } } },
-        }),
-      [] as { permission: { name: string } | null }[],
-    );
-    const permissionSet = new Set(
-      (Array.isArray(rows) ? rows : [])
-        .map((row) => row.permission?.name)
-        .filter((name): name is string => !!name),
-    );
-    this.deniedPermissionsCache.set(cacheKey, {
-      permissions: permissionSet,
-      expiresAt: Date.now() + AccessService.DENIED_MODULES_TTL_MS,
-    });
-    return permissionSet;
   }
 
   private readonly ownerCache = new Map<string, { isOwner: boolean; expiresAt: number }>();
@@ -274,11 +237,6 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     });
     return isOwner;
   }
-
-  private readonly deniedPermissionsCache = new Map<
-    string,
-    { permissions: Set<string>; expiresAt: number }
-  >();
 
   async getUserDeniedModules(orgId: string, userId: string): Promise<Set<string>> {
     const cacheKey = `${orgId}:${userId}`;
@@ -549,18 +507,6 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    const grantedUserPerms = await this.db.query.userPermissions.findMany({
-      where: and(
-        eq(userPermissions.userId, userId),
-        eq(userPermissions.orgId, orgId),
-        eq(userPermissions.granted, true),
-      ),
-      with: { permission: { columns: { name: true } } },
-    });
-    for (const userPerm of grantedUserPerms) {
-      if (userPerm.permission?.name) mergeIfKnown(userPerm.permission.name, "all", "user-permission");
-    }
-
     const delegationRows = await this.safeAccessTableRead(
       () =>
         this.db
@@ -641,7 +587,6 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       explicitGrantRoleIdRows,
       allExplicitRoleIdRows,
       slugMatchingRoleRows,
-      userPermRows,
       ownershipRows,
     ] = await Promise.all([
       this.safeAccessTableRead(
@@ -693,33 +638,6 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
             [] as { id: number }[],
           )
         : Promise.resolve([] as { id: number }[]),
-
-      this.safeAccessTableRead(
-        () =>
-          this.db
-            .selectDistinct({ userId: organizationMembers.userId, membershipId: organizationMembers.id })
-            .from(organizationMembers)
-            .innerJoin(
-              userPermissions,
-              and(
-                eq(userPermissions.userId, organizationMembers.userId),
-                eq(userPermissions.orgId, orgId),
-                eq(userPermissions.granted, true),
-              ),
-            )
-            .innerJoin(
-              permissions,
-              and(
-                eq(permissions.id, userPermissions.permissionId),
-                eq(permissions.name, permissionKey),
-              ),
-            )
-            .where(
-              and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.status, "ACTIVE")),
-            )
-            .limit(limit),
-        [] as { userId: string; membershipId: number }[],
-      ),
 
       this.safeAccessTableRead(
         () =>
@@ -809,7 +727,6 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       ...ownerRows,
       ...directRoleRows,
       ...groupRoleRows,
-      ...userPermRows,
       ...ownershipRows,
     ]) {
       if (!seen.has(row.userId)) {

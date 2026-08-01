@@ -31,6 +31,7 @@ import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { EmailService } from "../email/email.service";
 import { SessionService } from "./session.service";
 import { hashToken } from "../../common/security/token.util";
+import { getTenantContext, withIdentity, withTenant } from "../../common/tenant";
 import { logger } from "../../common/logger/logger.service";
 import { addDays, addHours, addMinutes, subDays } from "date-fns";
 import type {
@@ -63,18 +64,20 @@ export class AuthTokensService {
     mfaEnforced: boolean;
     orgOnboardingCompletedAt: Date | null;
   } | null> {
-    const rows = await this.db
-      .select({
-        orgId: organizationMembers.orgId,
-        isOwner: organizationMembers.isOwner,
-        role: organizationMembers.role,
-        mfaEnforced: organizations.mfaEnforced,
-        orgOnboardingCompletedAt: organizations.onboardingCompletedAt,
-      })
-      .from(organizationMembers)
-      .innerJoin(organizations, eq(organizations.id, organizationMembers.orgId))
-      .where(eq(organizationMembers.userId, userId))
-      .orderBy(desc(organizationMembers.joinedAt));
+    const rows = await withIdentity(this.db, userId, async (tx) =>
+      tx
+        .select({
+          orgId: organizationMembers.orgId,
+          isOwner: organizationMembers.isOwner,
+          role: organizationMembers.role,
+          mfaEnforced: organizations.mfaEnforced,
+          orgOnboardingCompletedAt: organizations.onboardingCompletedAt,
+        })
+        .from(organizationMembers)
+        .innerJoin(organizations, eq(organizations.id, organizationMembers.orgId))
+        .where(eq(organizationMembers.userId, userId))
+        .orderBy(desc(organizationMembers.joinedAt)),
+    );
 
     if (preferredOrgId) {
       const preferred = rows.find((r) => r.orgId === preferredOrgId);
@@ -92,19 +95,28 @@ export class AuthTokensService {
     context: { ipAddress?: string; userAgent?: string },
   ): Promise<void> {
     if (!userId) return;
-    await this.db
-      .insert(loginHistory)
-      .values({
-        id: randomUUID(),
-        userId,
-        orgId,
-        event,
-        ipAddress: context.ipAddress,
-        userAgent: context.userAgent,
-        success,
-        failureReason,
-      })
-      .catch(() => {});
+    const values = {
+      id: randomUUID(),
+      userId,
+      orgId,
+      event,
+      ipAddress: context.ipAddress,
+      userAgent: context.userAgent,
+      success,
+      failureReason,
+    };
+
+    try {
+      if (orgId && !getTenantContext()) {
+        await withTenant(this.db, { orgId, audience: "INTERNAL" }, async (tx) => {
+          await tx.insert(loginHistory).values(values);
+        });
+        return;
+      }
+      await this.db.insert(loginHistory).values(values);
+    } catch (error: unknown) {
+      logger.error("login history write failed", { error, event, userId });
+    }
   }
 
   async verifyEmail(

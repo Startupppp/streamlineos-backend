@@ -17,6 +17,12 @@ const adminUrl =
 
 const PROBE_ROLE = "rls_probe_role";
 const PROBE_TABLE = "rls_probe";
+// Second probe with a NULLABLE tenant column. Platform-level rows (sign-in OTP
+// -> email_outbox) are written with no org and no tenant context, and that path
+// was broken for every nullable-tenant table until 0380 because WITH CHECK
+// called the raising helper unconditionally. Probing only a NOT NULL table is
+// what let that ship.
+const PROBE_TABLE_NULLABLE = "rls_probe_nullable";
 
 const sql = postgres(adminUrl, { prepare: false, max: 1, onnotice: () => {} });
 let failures = 0;
@@ -27,6 +33,7 @@ const check = (label, ok, detail = "") => {
 
 const teardown = `
   DROP TABLE IF EXISTS public.${PROBE_TABLE};
+  DROP TABLE IF EXISTS public.${PROBE_TABLE_NULLABLE};
   DO $$ BEGIN
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${PROBE_ROLE}') THEN
       EXECUTE 'REVOKE ALL ON SCHEMA public FROM ${PROBE_ROLE}';
@@ -64,6 +71,16 @@ try {
     CREATE POLICY tenant_isolation ON public.${PROBE_TABLE} FOR ALL
       USING (org_id = app.current_org_id())
       WITH CHECK (org_id = app.current_org_id());
+
+    CREATE TABLE public.${PROBE_TABLE_NULLABLE} (id serial primary key, org_id text, note text);
+    INSERT INTO public.${PROBE_TABLE_NULLABLE} (org_id, note) VALUES
+      ('org-A','a1'),('org-B','b1'),(NULL,'platform');
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.${PROBE_TABLE_NULLABLE} TO ${PROBE_ROLE};
+    GRANT USAGE, SELECT ON SEQUENCE public.${PROBE_TABLE_NULLABLE}_id_seq TO ${PROBE_ROLE};
+    ALTER TABLE public.${PROBE_TABLE_NULLABLE} ENABLE ROW LEVEL SECURITY;
+    CREATE POLICY tenant_isolation ON public.${PROBE_TABLE_NULLABLE} FOR ALL
+      USING (CASE WHEN org_id IS NULL THEN true ELSE org_id = app.current_org_id() END)
+      WITH CHECK (CASE WHEN org_id IS NULL THEN true ELSE org_id = app.current_org_id() END);
   `);
 
   const asTenant = (org, fn) =>
@@ -117,6 +134,46 @@ try {
     (await sql`SELECT count(*)::int n FROM rls_probe WHERE org_id='org-B'`)[0].n === 2,
   );
 
+  // Nullable tenant column — the platform-level write path (sign-in OTP).
+  // This is the regression 0380 fixed: WITH CHECK called app.current_org_id()
+  // unconditionally, so a NULL-tenant insert with no tenant context raised
+  // 42501 and no sign-in email was ever queued.
+  check(
+    "platform-level INSERT succeeds with no tenant context",
+    (await asTenant(null, async (tx) =>
+      (await tx`INSERT INTO rls_probe_nullable (org_id, note) VALUES (NULL,'otp') RETURNING id`)
+        .length)) === 1,
+  );
+  check(
+    "platform-level INSERT succeeds inside a tenant transaction",
+    (await asTenant("org-A", async (tx) =>
+      (await tx`INSERT INTO rls_probe_nullable (org_id, note) VALUES (NULL,'otp2') RETURNING id`)
+        .length)) === 1,
+  );
+  check(
+    "own-tenant INSERT still succeeds on a nullable tenant column",
+    (await asTenant("org-A", async (tx) =>
+      (await tx`INSERT INTO rls_probe_nullable (org_id, note) VALUES ('org-A','ok') RETURNING id`)
+        .length)) === 1,
+  );
+
+  try {
+    await asTenant("org-A", (tx) =>
+      tx`INSERT INTO rls_probe_nullable (org_id, note) VALUES ('org-B','x')`);
+    check("cross-tenant INSERT is blocked on a nullable tenant column", false, "it was allowed");
+  } catch (err) {
+    check(
+      "cross-tenant INSERT is blocked on a nullable tenant column",
+      /row-level security/i.test(String(err.message)),
+    );
+  }
+
+  check(
+    "tenant does not see the other tenant's rows on a nullable tenant column",
+    (await asTenant("org-A", async (tx) =>
+      (await tx`SELECT count(*)::int n FROM rls_probe_nullable WHERE org_id='org-B'`)[0].n)) === 0,
+  );
+
   // The property the pooler makes or breaks: a tenant id must not outlive its transaction
   await sql.begin((tx) => tx`SELECT set_config('app.organization_id', 'org-LEAK', true)`);
   const [{ v: leaked }] = await sql`SELECT current_setting('app.organization_id', true) AS v`;
@@ -127,7 +184,7 @@ try {
   const [{ n: roleLeft }] = await sql`SELECT count(*)::int n FROM pg_roles WHERE rolname=${PROBE_ROLE}`;
   const [{ n: tableLeft }] = await sql`
     SELECT count(*)::int n FROM information_schema.tables
-    WHERE table_schema='public' AND table_name=${PROBE_TABLE}`;
+    WHERE table_schema='public' AND table_name IN (${PROBE_TABLE}, ${PROBE_TABLE_NULLABLE})`;
   if (roleLeft || tableLeft) {
     failures++;
     console.error(`teardown incomplete: role=${roleLeft} table=${tableLeft}`);

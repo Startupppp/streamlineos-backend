@@ -237,7 +237,6 @@ describe("AccessService.resolveUserPermissions", () => {
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 1 }),
         },
-        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
       },
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([]))
@@ -259,7 +258,6 @@ describe("AccessService.resolveUserPermissions", () => {
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 2 }),
         },
-        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
       },
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([{ roleId: 10 }]))
@@ -284,7 +282,6 @@ describe("AccessService.resolveUserPermissions", () => {
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 5 }),
         },
-        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
       },
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([]))
@@ -309,7 +306,6 @@ describe("AccessService.resolveUserPermissions", () => {
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 6 }),
         },
-        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
       },
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([]))
@@ -332,7 +328,6 @@ describe("AccessService.resolveUserPermissions", () => {
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 7 }),
         },
-        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
       },
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([{ roleId: 30 }]))
@@ -363,7 +358,6 @@ describe("AccessService.resolveUserPermissions", () => {
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 3 }),
         },
-        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
       },
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([]))
@@ -385,7 +379,6 @@ describe("AccessService.resolveUserPermissions", () => {
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 4 }),
         },
-        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
       },
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([]))
@@ -409,7 +402,6 @@ describe("AccessService.resolveUserPermissions — module ownership grants", () 
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 1 }),
         },
-        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
       },
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([]))
@@ -435,7 +427,6 @@ describe("AccessService.resolveUserPermissions — module ownership grants", () 
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 1 }),
         },
-        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
       },
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([]))
@@ -465,7 +456,6 @@ describe("AccessService.resolveUserPermissions — version bump invalidates loca
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 1 }),
         },
-        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
       },
       select: jest.fn().mockReturnValue(selectChain),
       insert: jest.fn().mockReturnValue({
@@ -515,7 +505,6 @@ describe("AccessService.resolveUserPermissions — unknown permission keys are o
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 10 }),
         },
-        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
       },
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([{ roleId: 50 }]))
@@ -540,7 +529,6 @@ describe("AccessService.resolveUserPermissions — unknown permission keys are o
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 11 }),
         },
-        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
       },
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([{ roleId: 51 }]))
@@ -569,7 +557,6 @@ describe("AccessService.resolveUserPermissions — unknown permission keys are o
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 12 }),
         },
-        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
       },
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([]))
@@ -592,7 +579,6 @@ describe("AccessService.resolveUserPermissions — unknown permission keys are o
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 13 }),
         },
-        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
       },
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([{ roleId: 52 }]))
@@ -717,7 +703,6 @@ describe("AccessService.membersWithPermission", () => {
         [],
         [],
         [],
-        [],
       ],
     });
     const result = await svc.membersWithPermission("org-1", PERM);
@@ -731,7 +716,6 @@ describe("AccessService.membersWithPermission", () => {
         [],
       ],
       distinctResults: [
-        [],
         [],
         [],
         [],
@@ -750,7 +734,6 @@ describe("AccessService.membersWithPermission", () => {
       distinctResults: [
         [{ roleId: 42 }],
         [{ roleId: 42 }],
-        [],
         [],
         [{ userId: "u-direct", membershipId: 20 }],
         [],
@@ -771,7 +754,6 @@ describe("AccessService.membersWithPermission", () => {
         [{ roleId: 55 }],
         [],
         [],
-        [],
         [{ userId: "u-group", membershipId: 30 }],
       ],
     });
@@ -786,7 +768,6 @@ describe("AccessService.membersWithPermission", () => {
         [],
       ],
       distinctResults: [
-        [],
         [],
         [],
         [{ userId: "u-modowner", membershipId: 40 }],
@@ -807,7 +788,6 @@ describe("AccessService.membersWithPermission", () => {
         [],
         [],
         [],
-        [],
       ],
     });
     const result = await svc.membersWithPermission("org-1", PERM);
@@ -821,7 +801,6 @@ describe("AccessService.membersWithPermission", () => {
         [{ id: 77 }],
       ],
       distinctResults: [
-        [],
         [],
         [],
         [],
@@ -842,7 +821,6 @@ describe("AccessService.membersWithPermission", () => {
       distinctResults: [
         [{ roleId: 88 }],
         [{ roleId: 88 }],
-        [],
         [],
         [{ userId: "u-dup", membershipId: 60 }],
         [],

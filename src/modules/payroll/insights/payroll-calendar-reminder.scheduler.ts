@@ -1,5 +1,5 @@
 import { Injectable, Inject, OnModuleInit, OnModuleDestroy } from "@nestjs/common";
-import { and, eq, gte, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -9,10 +9,12 @@ import {
 } from "../../../db/schema";
 import { PayrollNotificationsService } from "./payroll-notifications.service";
 import { logger } from "../../../common/logger/logger.service";
+import { forEachOrg } from "../../../common/tenant";
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const REMINDER_WINDOW_DAYS = 3;
 const JOB_NAME = "payroll.calendar_reminders";
+const PER_ORG_EVENT_LIMIT = 200;
 
 function msUntilNextEightAM(): number {
   const now = new Date();
@@ -22,11 +24,6 @@ function msUntilNextEightAM(): number {
   return target.getTime() - now.getTime();
 }
 
-/**
- * Calendar reminder scheduler. Process timers only wake instances; the actual
- * daily run is claimed atomically in payroll_scheduler_state, so exactly one
- * instance sends reminders per day and a boot after a missed 8AM catches up.
- */
 @Injectable()
 export class PayrollCalendarReminderScheduler implements OnModuleInit, OnModuleDestroy {
   private timeout: ReturnType<typeof setTimeout> | undefined;
@@ -103,61 +100,51 @@ export class PayrollCalendarReminderScheduler implements OnModuleInit, OnModuleD
       const windowEnd = new Date(today.getTime() + REMINDER_WINDOW_DAYS * ONE_DAY_MS);
       const windowEndStr = windowEnd.toISOString().slice(0, 10);
 
-      const events = await this.db
-        .select({
-          id: payrollCalendarEvents.id,
-          orgId: payrollCalendarEvents.orgId,
-          title: payrollCalendarEvents.title,
-          date: payrollCalendarEvents.date,
-        })
-        .from(payrollCalendarEvents)
-        .where(
-          and(
-            gte(payrollCalendarEvents.date, todayStr),
-            lte(payrollCalendarEvents.date, windowEndStr),
-          ),
-        )
-        .limit(5000);
+      await forEachOrg(this.db, JOB_NAME, async (tx, orgId) => {
+        const events = await tx
+          .select({
+            id: payrollCalendarEvents.id,
+            title: payrollCalendarEvents.title,
+            date: payrollCalendarEvents.date,
+          })
+          .from(payrollCalendarEvents)
+          .where(
+            and(
+              eq(payrollCalendarEvents.orgId, orgId),
+              gte(payrollCalendarEvents.date, todayStr),
+              lte(payrollCalendarEvents.date, windowEndStr),
+            ),
+          )
+          .limit(PER_ORG_EVENT_LIMIT);
 
-      if (events.length === 0) {
-        await this.markFinished(null);
-        return;
-      }
+        if (events.length === 0) return;
 
-      const orgIds = [...new Set(events.map((e) => e.orgId))];
-
-      const ownerRows = await this.db
-        .select({ orgId: organizationMembers.orgId, userId: organizationMembers.userId })
-        .from(organizationMembers)
-        .where(
-          and(
-            inArray(organizationMembers.orgId, orgIds),
-            eq(organizationMembers.isOwner, true),
-          ),
-        );
-
-      const ownersByOrg = new Map<string, string[]>();
-      for (const row of ownerRows) {
-        const existing = ownersByOrg.get(row.orgId);
-        if (existing !== undefined) {
-          existing.push(row.userId);
-        } else {
-          ownersByOrg.set(row.orgId, [row.userId]);
-        }
-      }
-
-      for (const event of events) {
-        const userIds = ownersByOrg.get(event.orgId) ?? [];
-        for (const userId of userIds) {
-          await this.notifications.remindCalendarEvent(
-            event.orgId,
-            userId,
-            event.id,
-            event.title,
-            event.date,
+        const ownerRows = await tx
+          .select({ userId: organizationMembers.userId })
+          .from(organizationMembers)
+          .where(
+            and(
+              eq(organizationMembers.orgId, orgId),
+              eq(organizationMembers.isOwner, true),
+            ),
           );
+
+        const ownerIds = ownerRows.map((r) => r.userId);
+        if (ownerIds.length === 0) return;
+
+        for (const event of events) {
+          for (const userId of ownerIds) {
+            await this.notifications.remindCalendarEvent(
+              orgId,
+              userId,
+              event.id,
+              event.title,
+              event.date,
+            );
+          }
         }
-      }
+      });
+
       await this.markFinished(null);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);

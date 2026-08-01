@@ -91,7 +91,6 @@ describe("AccessService.resolveUserPermissions — org owner receives every cata
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue({ isOwner: true, status: "ACTIVE", id: 1 }),
         },
-        userPermissions: { findMany: jest.fn() },
       },
       select: jest.fn().mockReturnValue(makeSelectChain([])),
     };
@@ -105,7 +104,6 @@ describe("AccessService.resolveUserPermissions — org owner receives every cata
     expect(result.get("hr:employees:view")).toBe("all");
     expect(result.get("crm:leads:view")).toBe("all");
     expect(result.get("ownership:org:transfer")).toBe("all");
-    expect(db.query.userPermissions.findMany).not.toHaveBeenCalled();
   });
 });
 
@@ -115,7 +113,6 @@ describe("AccessService.getAccessSnapshot — org owner receives every catalog p
       query: {
         accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
         organizationMembers: { findFirst: jest.fn() },
-        userPermissions: { findMany: jest.fn() },
       },
       select: jest.fn(),
     };
@@ -157,7 +154,6 @@ describe("AccessService.resolveUserPermissions — ORG_ADMIN role grants every c
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 1 }),
         },
-        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
       },
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([{ roleId: 99 }]))
@@ -189,7 +185,6 @@ describe("AccessService.resolveUserPermissions — module owner: all permissions
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 2 }),
         },
-        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
       },
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([]))
@@ -226,7 +221,6 @@ describe("AccessService.resolveUserPermissions — member with a single role inh
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 3 }),
         },
-        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
       },
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([{ roleId: 10 }]))
@@ -262,7 +256,6 @@ describe("AccessService.resolveUserPermissions — member with two role sources:
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 4 }),
         },
-        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
       },
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([{ roleId: 20 }]))
@@ -300,7 +293,6 @@ describe("AccessService.resolveUserPermissions — member with no role assignmen
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 5 }),
         },
-        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
       },
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([]))
@@ -324,7 +316,6 @@ describe("AccessService.resolveUserPermissions — cross-tenant isolation: org A
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue(null),
         },
-        userPermissions: { findMany: jest.fn() },
       },
       select: jest.fn().mockReturnValue(makeSelectChain([])),
     };
@@ -332,7 +323,6 @@ describe("AccessService.resolveUserPermissions — cross-tenant isolation: org A
     const result = await buildService(db).resolveUserPermissions(ORG_B, USER);
 
     expect(result.size).toBe(0);
-    expect(db.query.userPermissions.findMany).not.toHaveBeenCalled();
   });
 });
 
@@ -344,7 +334,6 @@ describe("AccessService.resolveUserPermissions — HEADLINE: a \"Recruitment HR\
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 6 }),
         },
-        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
       },
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([{ roleId: 30 }]))

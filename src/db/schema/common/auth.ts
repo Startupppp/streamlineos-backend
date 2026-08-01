@@ -314,19 +314,6 @@ export const permissions = pgTable("permissions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-export const userPermissions = pgTable("user_permissions", {
-  id: serial("id").primaryKey(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  permissionId: integer("permission_id").references(() => permissions.id, { onDelete: "cascade" }).notNull(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  granted: boolean("granted").default(true).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  uniqueIndex("uniq_user_permissions_user_perm_org").on(table.userId, table.permissionId, table.orgId),
-  index("idx_user_permissions_org").on(table.orgId),
-  index("idx_user_permissions_user_org").on(table.userId, table.orgId),
-]);
-
 export const onboardingSteps = pgTable("onboarding_steps", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
@@ -385,17 +372,6 @@ export const rolesRelations = relations(roles, ({ one }) => ({
   organization: one(organizations, {
     fields: [roles.orgId],
     references: [organizations.id],
-  }),
-}));
-
-export const permissionsRelations = relations(permissions, ({ many }) => ({
-  userPermissions: many(userPermissions),
-}));
-
-export const userPermissionsRelations = relations(userPermissions, ({ one }) => ({
-  permission: one(permissions, {
-    fields: [userPermissions.permissionId],
-    references: [permissions.id],
   }),
 }));
 

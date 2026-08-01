@@ -32,6 +32,7 @@ export type OrgUnitMetadata = {
   latitude?: number;
   longitude?: number;
   capacity?: number;
+  hrContactUserId?: string;
 };
 
 export const orgUnits = pgTable(

@@ -7,7 +7,6 @@ import {
   roleAssignments,
   rolePermissionGrants,
   roles,
-  userPermissions,
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -50,35 +49,18 @@ export class RbacService {
   }
 
   async getUserPermissions(userId: string, orgId: string): Promise<string[]> {
-    // The per-org standing lives on the membership; `users.role` was a global label that could not describe someone who belongs to several orgs
     const membership = await this.db.query.organizationMembers.findFirst({
       where: and(eq(organizationMembers.userId, userId), eq(organizationMembers.orgId, orgId)),
       columns: { role: true },
     });
     const role = membership?.role;
 
-    const userPerms = await this.db.query.userPermissions.findMany({
-      where: and(
-        eq(userPermissions.userId, userId),
-        eq(userPermissions.orgId, orgId),
-        eq(userPermissions.granted, true),
-      ),
-      with: { permission: true },
-      limit: 500,
-    });
-
     const rolePerms = role ? await this.grantsForRoleSlug(role, orgId) : [];
-
     const defaultPerms = role ? (ROLE_DEFAULT_PERMISSIONS[role] ?? []) : [];
 
     const permissionSet = new Set<string>();
 
-    userPerms.forEach((up) => {
-      if (up.permission?.name) permissionSet.add(up.permission.name);
-    });
-
     rolePerms.forEach((key) => permissionSet.add(key));
-
     defaultPerms.forEach((perm) => permissionSet.add(perm));
 
     return Array.from(permissionSet);

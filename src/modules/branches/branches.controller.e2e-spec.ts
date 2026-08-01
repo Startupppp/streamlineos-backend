@@ -46,15 +46,14 @@ describe("Branches auth/RBAC (e2e)", () => {
     expect(res.body).toEqual({ error: "Unauthorized" });
   });
 
-  const authOnlyGetRoutes: ReadonlyArray<string> = ["/branches", "/branches/00000000-0000-4000-8000-000000000001"];
+  const permGatedGetRoutes: ReadonlyArray<string> = ["/branches", "/branches/00000000-0000-4000-8000-000000000001"];
 
-  it.each(authOnlyGetRoutes)(
-    "does NOT enforce an ability gate on GET %s (auth-only)",
+  it.each(permGatedGetRoutes)(
+    "403 on GET %s without branch:view permission",
     async (path) => {
       const token = await signToken({ permissions: [], enabledModules: [] });
       const res = await callRoute("get", path).set("Authorization", `Bearer ${token}`);
-      expect(res.status).not.toBe(401);
-      expect(res.status).not.toBe(403);
+      expect(res.status).toBe(403);
     },
   );
 });

@@ -16,10 +16,9 @@ import type {
   UpdateBranchInput,
 } from "./dto/branches.schemas";
 
-type BranchMeta = OrgUnitMetadata & { hrContactUserId?: string };
-
-function readBranchMeta(raw: OrgUnitMetadata | null | undefined): BranchMeta {
-  return (raw ?? {}) as BranchMeta;
+function readBranchMeta(raw: OrgUnitMetadata | null | undefined): OrgUnitMetadata {
+  if (!raw) return {};
+  return raw;
 }
 
 @Injectable()
@@ -155,7 +154,7 @@ export class BranchesService {
   }
 
   async create(orgId: string, input: CreateBranchInput) {
-    const meta: BranchMeta = {
+    const meta: OrgUnitMetadata = {
       city: input.city,
       state: input.state,
       country: input.country,
@@ -180,7 +179,6 @@ export class BranchesService {
         .returning();
       if (!created) throw new Error("Insert returned no row");
 
-      // The scalar alone leaves them out of the branch org unit, which is what HR policy evaluation reads
       for (const userId of [input.branchManagerId, input.branchHrId]) {
         if (!userId) continue;
         await tx.update(users).set({ branchId: created.id }).where(eq(users.id, userId));
@@ -210,7 +208,9 @@ export class BranchesService {
     if (!current) return null;
 
     const existingMeta = readBranchMeta(current.metadata);
-    const patchedMeta: BranchMeta = {
+    const oldHrId = existingMeta.hrContactUserId;
+
+    const patchedMeta: OrgUnitMetadata = {
       ...existingMeta,
       ...(input.city !== undefined ? { city: input.city } : {}),
       ...(input.state !== undefined ? { state: input.state } : {}),
@@ -219,56 +219,76 @@ export class BranchesService {
       ...(input.address !== undefined ? { address: input.address } : {}),
       ...(input.phone !== undefined ? { phone: input.phone } : {}),
       ...(input.email !== undefined ? { email: input.email } : {}),
-      ...(input.branchHrId !== undefined
-        ? { hrContactUserId: input.branchHrId }
-        : {}),
+      ...(input.branchHrId !== undefined ? { hrContactUserId: input.branchHrId } : {}),
     };
 
-    const [updated] = await this.db
-      .update(orgUnits)
-      .set({
-        ...(input.name !== undefined ? { name: input.name } : {}),
-        ...(input.code !== undefined ? { code: input.code.toUpperCase() } : {}),
-        ...(input.branchManagerId !== undefined
-          ? { headUserId: input.branchManagerId }
-          : {}),
-        ...(input.status !== undefined
-          ? { status: input.status === "ACTIVE" ? "ACTIVE" : "DISABLED" }
-          : {}),
-        metadata: patchedMeta,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(orgUnits.id, id),
-          eq(orgUnits.orgId, orgId),
-          eq(orgUnits.kind, "BRANCH"),
-          isNull(orgUnits.deletedAt),
-        ),
-      )
-      .returning();
-    if (!updated) return null;
+    const updated = await this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(orgUnits)
+        .set({
+          ...(input.name !== undefined ? { name: input.name } : {}),
+          ...(input.code !== undefined ? { code: input.code.toUpperCase() } : {}),
+          ...(input.branchManagerId !== undefined
+            ? { headUserId: input.branchManagerId }
+            : {}),
+          ...(input.status !== undefined
+            ? { status: input.status === "ACTIVE" ? "ACTIVE" : "DISABLED" }
+            : {}),
+          metadata: patchedMeta,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(orgUnits.id, id),
+            eq(orgUnits.orgId, orgId),
+            eq(orgUnits.kind, "BRANCH"),
+            isNull(orgUnits.deletedAt),
+          ),
+        )
+        .returning();
+      if (!row) return null;
 
-    if (input.branchManagerId) {
-      await this.db.transaction(async (tx) => {
+      if (input.branchManagerId !== undefined) {
         await tx
           .update(users)
-          .set({ branchId: updated.id })
-          .where(eq(users.id, input.branchManagerId as string));
-        await syncOrgUnitPlacement(tx, orgId, input.branchManagerId as string, {
-          BRANCH: updated.id,
+          .set({ branchId: row.id })
+          .where(eq(users.id, input.branchManagerId));
+        await syncOrgUnitPlacement(tx, orgId, input.branchManagerId, {
+          BRANCH: row.id,
         });
-      });
-    }
+      }
 
+      if (input.branchHrId !== undefined) {
+        if (input.branchHrId) {
+          await tx
+            .update(users)
+            .set({ branchId: row.id })
+            .where(eq(users.id, input.branchHrId));
+          await syncOrgUnitPlacement(tx, orgId, input.branchHrId, {
+            BRANCH: row.id,
+          });
+        }
+        if (oldHrId && oldHrId !== input.branchHrId && oldHrId !== row.headUserId) {
+          await tx
+            .update(users)
+            .set({ branchId: null })
+            .where(eq(users.id, oldHrId));
+          await syncOrgUnitPlacement(tx, orgId, oldHrId, { BRANCH: null });
+        }
+      }
+
+      return row;
+    });
+
+    if (!updated) return null;
     await this.cache.invalidate(CACHE_KEYS.branchesList(orgId));
     return updated;
   }
 
   async remove(orgId: string, id: string) {
-    const [deleted] = await this.db
-      .update(orgUnits)
-      .set({ deletedAt: new Date() })
+    const current = await this.db
+      .select({ headUserId: orgUnits.headUserId, metadata: orgUnits.metadata })
+      .from(orgUnits)
       .where(
         and(
           eq(orgUnits.id, id),
@@ -277,8 +297,42 @@ export class BranchesService {
           isNull(orgUnits.deletedAt),
         ),
       )
-      .returning({ id: orgUnits.id });
-    if (!deleted) return null;
+      .limit(1)
+      .then((r) => r[0] ?? null);
+    if (!current) return null;
+
+    const meta = readBranchMeta(current.metadata);
+    const managerId = current.headUserId;
+    const hrId = meta.hrContactUserId;
+
+    await this.db.transaction(async (tx) => {
+      if (managerId) {
+        await tx
+          .update(users)
+          .set({ branchId: null })
+          .where(eq(users.id, managerId));
+        await syncOrgUnitPlacement(tx, orgId, managerId, { BRANCH: null });
+      }
+      if (hrId && hrId !== managerId) {
+        await tx
+          .update(users)
+          .set({ branchId: null })
+          .where(eq(users.id, hrId));
+        await syncOrgUnitPlacement(tx, orgId, hrId, { BRANCH: null });
+      }
+      await tx
+        .update(orgUnits)
+        .set({ deletedAt: new Date() })
+        .where(
+          and(
+            eq(orgUnits.id, id),
+            eq(orgUnits.orgId, orgId),
+            eq(orgUnits.kind, "BRANCH"),
+            isNull(orgUnits.deletedAt),
+          ),
+        );
+    });
+
     await this.cache.invalidate(CACHE_KEYS.branchesList(orgId));
     return { success: true };
   }

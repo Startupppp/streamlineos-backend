@@ -2,6 +2,7 @@ export { getTenantContext, runWithTenantContext, TenantContextService } from "./
 export type { TenantAudience, TenantContext } from "./tenant-context";
 export { withTenant } from "./with-tenant";
 export type { TenantTx } from "./with-tenant";
+export { withIdentity } from "./with-identity";
 export { runInTenantTransaction } from "./run-in-tenant-transaction";
 export { createTenantAwareDb } from "./tenant-db";
 export { TenantContextInterceptor } from "./tenant-context.interceptor";

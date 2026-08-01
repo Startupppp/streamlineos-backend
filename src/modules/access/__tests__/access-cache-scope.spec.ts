@@ -58,7 +58,6 @@ function buildService(
       organizationMembers: {
         findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 1 }),
       },
-      userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
       userModuleAccess: {
         findFirst: jest.fn().mockResolvedValue(undefined),
         findMany: jest.fn().mockResolvedValue([]),
@@ -108,8 +107,7 @@ describe("AccessService.resolveUserPermissions — org-scoped Redis cache key", 
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 1 }),
         },
-        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
-      },
+        },
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
@@ -145,8 +143,7 @@ describe("AccessService.resolveUserPermissions — org-scoped Redis cache key", 
           organizationMembers: {
             findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: memberId }),
           },
-          userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
-        },
+            },
         select: jest.fn()
           .mockReturnValueOnce(makeSelectChain([]))
           .mockReturnValueOnce(makeSelectChain([]))
@@ -202,8 +199,7 @@ describe("AccessService.resolveUserPermissions — revoked/expired roles grant n
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 3 }),
         },
-        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
-      },
+        },
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
@@ -224,8 +220,7 @@ describe("AccessService.resolveUserPermissions — revoked/expired roles grant n
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 4 }),
         },
-        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
-      },
+        },
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
@@ -246,8 +241,7 @@ describe("AccessService.resolveUserPermissions — revoked/expired roles grant n
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "SUSPENDED", id: 5 }),
         },
-        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
-      },
+        },
       select: jest.fn().mockReturnValue(makeSelectChain([])),
     };
 
@@ -266,8 +260,7 @@ describe("AccessService.resolveUserPermissions — group-derived role resolution
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 7 }),
         },
-        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
-      },
+        },
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([{ principalGroupId: "group-uuid-1" }]))
@@ -293,8 +286,7 @@ describe("AccessService.resolveUserPermissions — group-derived role resolution
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 8 }),
         },
-        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
-      },
+        },
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([{ principalGroupId: "group-empty" }]))
@@ -315,8 +307,7 @@ describe("AccessService.resolveUserPermissions — group-derived role resolution
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 9 }),
         },
-        userPermissions: { findMany: jest.fn().mockResolvedValue([]) },
-      },
+        },
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([{ roleId: 30 }]))
         .mockReturnValueOnce(makeSelectChain([{ principalGroupId: "group-uuid-2" }]))

@@ -21,6 +21,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
+import { runWithTenantContext, withTenant } from "../../common/tenant";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { SessionService } from "./session.service";
@@ -72,7 +73,7 @@ export class AuthService {
     const userId = randomUUID();
     const orgId = randomUUID();
 
-    await this.db.transaction(async (tx) => {
+    await withTenant(this.db, { orgId, audience: "INTERNAL" }, async (tx) => {
       const seqRows = await tx.execute(
         sql`SELECT nextval(pg_get_serial_sequence('organization_members', 'id')) AS id`,
       );
@@ -119,7 +120,11 @@ export class AuthService {
       });
     });
 
-    await seedSystemRolesForOrg(this.db, orgId);
+    await withTenant(this.db, { orgId, audience: "INTERNAL" }, async (tx) =>
+      runWithTenantContext({ orgId, audience: "INTERNAL", tx }, () =>
+        seedSystemRolesForOrg(this.db, orgId),
+      ),
+    );
 
     this.audit.log({
       action: "user.registered",
