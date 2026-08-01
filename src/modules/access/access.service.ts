@@ -19,7 +19,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ALL_PERMISSION_NAMES, PERMISSIONS, ROLE_DEFAULT_PERMISSIONS, moduleScopedPermissions } from "../rbac/permissions";
+import { ACCESS_MANAGED_MODULES, ALL_PERMISSION_NAMES, PERMISSIONS, ROLE_DEFAULT_PERMISSIONS, moduleScopedPermissions } from "../rbac/permissions";
 
 import { subscribeVersionBump } from "../../common/rbac/access-invalidate";
 import type { AccessSnapshot, DataScope } from "./access.types";
@@ -30,6 +30,18 @@ const MEMBERS_WITH_PERM_DEFAULT_CAP = 50;
 const MANAGEABLE_MODULE_SET: ReadonlySet<string> = new Set(MODULE_CATALOG);
 
 const CATALOG_KEY_SET: ReadonlySet<string> = new Set(ALL_PERMISSION_NAMES);
+
+const ACCESS_MANAGE_TO_VIEW_MAP: ReadonlyMap<string, string> = (() => {
+  const map = new Map<string, string>();
+  for (const mod of ACCESS_MANAGED_MODULES) {
+    const manageKey = `${mod}:access:manage`;
+    const viewKey = `${mod}:access:view`;
+    if (CATALOG_KEY_SET.has(manageKey) && CATALOG_KEY_SET.has(viewKey)) {
+      map.set(manageKey, viewKey);
+    }
+  }
+  return map;
+})();
 
 export const SCOPE_RANK: Record<DataScope, number> = { none: 0, own: 1, team: 2, all: 3 };
 
@@ -107,6 +119,15 @@ function allCatalogScopes(): Record<string, DataScope> {
   const scopes: Record<string, DataScope> = {};
   for (const permission of PERMISSIONS) scopes[permission.name] = "all";
   return scopes;
+}
+
+function deriveAccessViewImplication(result: Record<string, DataScope>): void {
+  for (const [manageKey, viewKey] of ACCESS_MANAGE_TO_VIEW_MAP) {
+    const manageScope = result[manageKey];
+    if (!manageScope || manageScope === "none") continue;
+    const existing = result[viewKey];
+    result[viewKey] = existing ? broadest(existing, manageScope) : manageScope;
+  }
 }
 
 @Injectable()
@@ -568,6 +589,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
+    deriveAccessViewImplication(result);
     return result;
   }
 
