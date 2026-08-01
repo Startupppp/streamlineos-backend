@@ -31,37 +31,33 @@ export class PayrollPostingService {
     const taxStr = (deductionsPaise / 100).toFixed(4);
     const employerStr = (employerCostPaise / 100).toFixed(4);
 
-    try {
-      if (employerCostPaise > 0) {
-        await this.posting.postJournal(u, {
-          entryDate,
-          description: `Payroll accrual ${month} — salary expense`,
-          sourceType: "PAYROLL_RUN",
-          sourceId: String(runId),
-          sourceEvent: "finalized",
-          lines: [
-            { systemPurpose: "SALARY_EXPENSE", debit: totalExpense, credit: "0" },
-            { systemPurpose: "PAYROLL_PAYABLE", debit: "0", credit: netStr },
-            { systemPurpose: "TAX_PAYABLE", debit: "0", credit: taxStr },
-            { systemPurpose: "EXPENSE_CLEARING", debit: "0", credit: employerStr },
-          ],
-        });
-      } else {
-        await this.posting.postJournal(u, {
-          entryDate,
-          description: `Payroll accrual ${month} — salary expense`,
-          sourceType: "PAYROLL_RUN",
-          sourceId: String(runId),
-          sourceEvent: "finalized",
-          lines: [
-            { systemPurpose: "SALARY_EXPENSE", debit: (grossPaise / 100).toFixed(4), credit: "0" },
-            { systemPurpose: "PAYROLL_PAYABLE", debit: "0", credit: netStr },
-            { systemPurpose: "TAX_PAYABLE", debit: "0", credit: taxStr },
-          ],
-        });
-      }
-    } catch (err) {
-      this.logger.error("Payroll finalized ledger posting failed", { runId, month, err });
+    if (employerCostPaise > 0) {
+      await this.posting.postJournal(u, {
+        entryDate,
+        description: `Payroll accrual ${month} — salary expense`,
+        sourceType: "PAYROLL_RUN",
+        sourceId: String(runId),
+        sourceEvent: "finalized",
+        lines: [
+          { systemPurpose: "SALARY_EXPENSE", debit: totalExpense, credit: "0" },
+          { systemPurpose: "PAYROLL_PAYABLE", debit: "0", credit: netStr },
+          { systemPurpose: "TAX_PAYABLE", debit: "0", credit: taxStr },
+          { systemPurpose: "EXPENSE_CLEARING", debit: "0", credit: employerStr },
+        ],
+      });
+    } else {
+      await this.posting.postJournal(u, {
+        entryDate,
+        description: `Payroll accrual ${month} — salary expense`,
+        sourceType: "PAYROLL_RUN",
+        sourceId: String(runId),
+        sourceEvent: "finalized",
+        lines: [
+          { systemPurpose: "SALARY_EXPENSE", debit: (grossPaise / 100).toFixed(4), credit: "0" },
+          { systemPurpose: "PAYROLL_PAYABLE", debit: "0", credit: netStr },
+          { systemPurpose: "TAX_PAYABLE", debit: "0", credit: taxStr },
+        ],
+      });
     }
   }
 

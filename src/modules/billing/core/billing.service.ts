@@ -320,6 +320,16 @@ export class BillingService {
       }
     }
 
+    if (event.event === "payment.failed" && payment.status === "failed" && org) {
+      this.transitionToPastDue(org.id, payment.id).catch((err: unknown) =>
+        logger.warn("[razorpay] PAST_DUE transition failed (non-fatal)", {
+          orgId: org.id,
+          paymentId: payment.id,
+          err,
+        }),
+      );
+    }
+
     return { status: 200, body: { ok: true } };
   }
 
@@ -349,13 +359,51 @@ export class BillingService {
     notes?: Record<string, string>,
   ): Promise<{ id: string } | null> {
     if (!notes) return null;
-    const slug = notes.org_slug || notes.organization_slug || notes.orgSlug;
+    // Subscription orders embed orgId directly — prefer direct lookup over slug search.
+    const directId = notes.orgId ?? notes.org_id;
+    if (directId) {
+      const org = await this.db.query.organizations.findFirst({
+        where: eq(organizations.id, directId),
+        columns: { id: true },
+      });
+      if (org) return org;
+    }
+    const slug = notes.org_slug ?? notes.organization_slug ?? notes.orgSlug;
     if (!slug) return null;
     const org = await this.db.query.organizations.findFirst({
       where: eq(organizations.slug, slug),
       columns: { id: true },
     });
     return org ?? null;
+  }
+
+  private async transitionToPastDue(orgId: string, paymentId: string): Promise<void> {
+    const now = new Date();
+    await this.db.transaction(async (tx) => {
+      const [existing] = await tx
+        .select({ id: subscriptions.id, metadata: subscriptions.metadata })
+        .from(subscriptions)
+        .where(and(eq(subscriptions.orgId, orgId), eq(subscriptions.status, "ACTIVE")))
+        .for("update")
+        .limit(1);
+      if (!existing) return;
+      const meta = existing.metadata ?? {};
+      await tx
+        .update(subscriptions)
+        .set({
+          status: "PAST_DUE",
+          updatedAt: now,
+          metadata: {
+            ...meta,
+            pastDueAt: now.toISOString(),
+            lastFailedPaymentId: paymentId,
+            dunningAttempts: [] as number[],
+          },
+        })
+        .where(eq(subscriptions.id, existing.id));
+    });
+    await this.planLimits.bust(orgId);
+    logger.info("[billing] subscription transitioned to PAST_DUE", { orgId, paymentId });
   }
 
   getPlans() {

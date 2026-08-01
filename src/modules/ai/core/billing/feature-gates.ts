@@ -1,5 +1,3 @@
-import { HttpException, HttpStatus } from "@nestjs/common";
-
 export const PLANS = ["FREE", "STARTER", "PROFESSIONAL", "ENTERPRISE"] as const;
 export type Plan = (typeof PLANS)[number];
 
@@ -88,13 +86,3 @@ export function minPlanFor(feature: Feature): Plan | null {
   return null;
 }
 
-export function requireFeature(plan: string | null | undefined, feature: Feature): void {
-  if (canUseFeature(plan, feature)) return;
-  throw new HttpException(
-    {
-      error: `This feature requires a higher plan. Current: ${plan ?? "none"}.`,
-      requiredPlan: minPlanFor(feature),
-    },
-    HttpStatus.PAYMENT_REQUIRED,
-  );
-}

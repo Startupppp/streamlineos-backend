@@ -100,11 +100,11 @@ describe("KB Pages auth/RBAC (e2e)", () => {
     ["patch", "/kb/pages/1/lock"],
   ];
 
-  it.each(moduleCheckRoutes)("404 on %s %s when the kb module is disabled", async (method, path) => {
+  it.each(moduleCheckRoutes)("402 on %s %s when the kb module is not enabled", async (method, path) => {
     const token = await signToken({ permissions: [], enabledModules: [] });
     const res = await callRoute(method, path).set("Authorization", `Bearer ${token}`);
-    expect(res.status).toBe(404);
-    expect(res.body).toMatchObject({ code: "MODULE_DISABLED", module: "kb" });
+    expect(res.status).toBe(402);
+    expect(res.body).toMatchObject({ code: "MODULE_NOT_ENABLED", moduleKey: "kb" });
   });
 
   it.each(moduleCheckRoutes)("403 on %s %s without permission", async (method, path) => {

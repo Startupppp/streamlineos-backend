@@ -4,7 +4,7 @@ import { toZonedTime } from "date-fns-tz";
 import { attendance, employeeShiftAssignments, hrAttendanceRegularizations, orgHolidays, organizationMembers, organizations, rosterEntries, rosters, shiftTemplates, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { AttendancePolicyService } from "./attendance-policy.service";
+import { AttendancePolicyService, type AttendancePolicyRules, type OvertimePolicyRules } from "./attendance-policy.service";
 
 interface ShiftInfo {
   startTime: string;
@@ -188,20 +188,32 @@ export class AttendanceSummaryService {
       if (!assignedShiftByUser.has(r.userId)) assignedShiftByUser.set(r.userId, r);
     }
 
-    const [attendanceRulesByUser, overtimeRulesByUser] = await Promise.all([
-      Promise.all(
-        userIds.map(async (uid) => {
-          const rules = await this.policyService.getAttendanceRules(orgId, uid, periodStart);
-          return [uid, rules] as const;
-        }),
-      ).then((entries) => new Map(entries)),
-      Promise.all(
-        userIds.map(async (uid) => {
-          const rules = await this.policyService.getOvertimeRules(orgId, uid, periodStart);
-          return [uid, rules] as const;
-        }),
-      ).then((entries) => new Map(entries)),
-    ]);
+    const POLICY_CHUNK_SIZE = 25;
+    const attendanceEntries: Array<readonly [string, AttendancePolicyRules]> = [];
+    const overtimeEntries: Array<readonly [string, OvertimePolicyRules]> = [];
+
+    for (let i = 0; i < userIds.length; i += POLICY_CHUNK_SIZE) {
+      const chunk = userIds.slice(i, i + POLICY_CHUNK_SIZE);
+      const [attBatch, otBatch] = await Promise.all([
+        Promise.all(
+          chunk.map(async (uid) => {
+            const rules = await this.policyService.getAttendanceRules(orgId, uid, periodStart);
+            return [uid, rules] as const;
+          }),
+        ),
+        Promise.all(
+          chunk.map(async (uid) => {
+            const rules = await this.policyService.getOvertimeRules(orgId, uid, periodStart);
+            return [uid, rules] as const;
+          }),
+        ),
+      ]);
+      attendanceEntries.push(...attBatch);
+      overtimeEntries.push(...otBatch);
+    }
+
+    const attendanceRulesByUser = new Map(attendanceEntries);
+    const overtimeRulesByUser = new Map(overtimeEntries);
 
     const results: EmployeeAttendanceSummary[] = members.map((member) => {
         const userId = member.userId;

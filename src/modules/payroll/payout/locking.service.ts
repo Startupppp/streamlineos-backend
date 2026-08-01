@@ -78,6 +78,15 @@ export class LockingService {
 
       await this.generate.postPayrollLock(orgId, runId, tx);
       await this.writeTdsYtdLedger(tx, orgId, runId, run.month);
+      await this.payrollPosting.postFinalized(
+        { userId, orgId, branchId: null, role: "system", permissions: [], enabledModules: [], plan: null, isOrgOwner: true, sessionId: "system" },
+        runId,
+        run.month,
+        run.grossTotal ?? "0",
+        run.deductionTotal ?? "0",
+        run.netTotal ?? "0",
+        run.employerCostTotal ?? "0",
+      );
     });
 
     this.audit.log({
@@ -88,16 +97,6 @@ export class LockingService {
       targetType: "payroll_run",
       metadata: { month: run.month },
     });
-
-    void this.payrollPosting.postFinalized(
-      { userId, orgId, branchId: null, role: "system", permissions: [], enabledModules: [], plan: null, isOrgOwner: true, sessionId: "system" },
-      runId,
-      run.month,
-      run.grossTotal ?? "0",
-      run.deductionTotal ?? "0",
-      run.netTotal ?? "0",
-      run.employerCostTotal ?? "0",
-    );
 
     return { success: true, lockedAt: now };
   }

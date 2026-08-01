@@ -12,7 +12,7 @@ import {
   date,
   unique,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { sql, relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { orgUnits } from "../common/organization";
 
@@ -199,7 +199,9 @@ export const hrEffectiveDatedChanges = pgTable("hr_effective_dated_changes", {
   oldValue: jsonb("old_value"),
   newValue: jsonb("new_value"),
   effectiveFrom: date("effective_from").notNull(),
-  effectiveTo: date("effective_to"),
+  effectiveTo: date("effective_to")
+    .notNull()
+    .default(sql`'infinity'::date`),
   status: hrEffectiveDateChangeStatusEnum("status").default("draft").notNull(),
   approvedBy: text("approved_by").references(() => users.id, { onDelete: "set null" }),
   approvedAt: timestamp("approved_at"),
@@ -223,7 +225,9 @@ export const hrReportingLines = pgTable("hr_reporting_lines", {
   managerEmploymentId: integer("manager_employment_id").references(() => hrEmployments.id, { onDelete: "cascade" }).notNull(),
   lineType: hrReportingLineTypeEnum("line_type").default("primary").notNull(),
   effectiveFrom: date("effective_from").notNull(),
-  effectiveTo: date("effective_to"),
+  effectiveTo: date("effective_to")
+    .notNull()
+    .default(sql`'infinity'::date`),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [

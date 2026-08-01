@@ -271,13 +271,13 @@ describe("Support auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ error: "Permission denied" });
   });
 
-  it("404 MODULE_DISABLED on GET /support/macros when support module is disabled", async () => {
+  it("402 MODULE_NOT_ENABLED on GET /support/macros when support module is disabled", async () => {
     const token = await signToken({ permissions: ["support:macros:view"], enabledModules: [] });
     const res = await request(app.getHttpServer())
       .get("/support/macros")
       .set("Authorization", `Bearer ${token}`);
-    expect(res.status).toBe(404);
-    expect(res.body).toMatchObject({ code: "MODULE_DISABLED" });
+    expect(res.status).toBe(402);
+    expect(res.body).toMatchObject({ code: "MODULE_NOT_ENABLED" });
   });
 
   const ticketPermissionCases: ReadonlyArray<{
@@ -483,11 +483,11 @@ describe("Support auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ error: "Permission denied" });
   });
 
-  it("404 MODULE_DISABLED on GET /support when support module is disabled", async () => {
+  it("402 MODULE_NOT_ENABLED on GET /support when support module is disabled", async () => {
     const token = await signToken({ permissions: ["support:tickets:view"], enabledModules: [] });
     const res = await request(app.getHttpServer()).get("/support").set("Authorization", `Bearer ${token}`);
-    expect(res.status).toBe(404);
-    expect(res.body).toMatchObject({ code: "MODULE_DISABLED" });
+    expect(res.status).toBe(402);
+    expect(res.body).toMatchObject({ code: "MODULE_NOT_ENABLED" });
   });
 
   it("403 on POST /support/queues with only support:tickets:view (needs support:queues:manage)", async () => {

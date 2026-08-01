@@ -1,15 +1,34 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, gte, lt, lte } from "drizzle-orm";
-import { subscriptions, organizations, organizationMembers, users } from "../../db/schema";
+import { and, eq, gte, lt, lte, or } from "drizzle-orm";
+import {
+  aiCreditTransactions,
+  organizationMembers,
+  organizations,
+  subscriptions,
+  users,
+} from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { EmailService } from "../email/email.service";
 import { appUrl } from "../email/app-url";
 import { logger } from "../../common/logger/logger.service";
 import { AiCreditsService } from "../billing/core/ai-credits.service";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { forEachOrg } from "../../common/tenant";
 
 const REMINDER_DAYS = [7, 3, 1] as const;
+const DUNNING_SCHEDULE_DAYS = [7, 3, 1] as const;
+const SUSPENSION_DAY = 14;
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
+interface DunningMeta {
+  pastDueAt?: string;
+  lastFailedPaymentId?: string;
+  dunningAttempts?: number[];
+  suspendedForNonPayment?: boolean;
+  suspendedAt?: string;
+}
 
 @Injectable()
 export class CronBillingService {
@@ -17,6 +36,8 @@ export class CronBillingService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly email: EmailService,
     private readonly aiCredits: AiCreditsService,
+    private readonly planLimits: PlanLimitsService,
+    private readonly dispatch: NotificationDispatchService,
   ) {}
 
   async processTrialExpiry(): Promise<{ expired: number; reminded: number }> {
@@ -141,7 +162,7 @@ export class CronBillingService {
           continue;
         }
         try {
-          const alreadyToppedToday = await this.aiCredits.hasSameDayPurchaseForPack(
+          const alreadyToppedToday = await this.hasSameDayTopUpIst(
             wallet.orgId,
             wallet.autoTopUpPackId,
           );
@@ -164,5 +185,192 @@ export class CronBillingService {
     });
 
     return { topped, skipped, failed };
+  }
+
+  async processDunning(): Promise<{ notified: number; suspended: number; skipped: number }> {
+    const now = new Date();
+    let notified = 0;
+    let suspended = 0;
+    let skipped = 0;
+
+    const pastDueSubs = await this.db
+      .select({
+        id: subscriptions.id,
+        orgId: subscriptions.orgId,
+        metadata: subscriptions.metadata,
+        updatedAt: subscriptions.updatedAt,
+      })
+      .from(subscriptions)
+      .where(eq(subscriptions.status, "PAST_DUE"));
+
+    for (const sub of pastDueSubs) {
+      try {
+        const meta = (sub.metadata ?? {}) as DunningMeta;
+
+        if (meta.suspendedForNonPayment) {
+          skipped++;
+          continue;
+        }
+
+        const pastDueAt = meta.pastDueAt ? new Date(meta.pastDueAt) : sub.updatedAt;
+        const daysSincePastDue = Math.floor(
+          (now.getTime() - pastDueAt.getTime()) / 86_400_000,
+        );
+        const attempts = meta.dunningAttempts ?? [];
+
+        if (daysSincePastDue >= SUSPENSION_DAY) {
+          await this.db
+            .update(subscriptions)
+            .set({
+              status: "CANCELLED",
+              updatedAt: now,
+              metadata: {
+                ...sub.metadata,
+                suspendedForNonPayment: true,
+                suspendedAt: now.toISOString(),
+              },
+            })
+            .where(
+              and(eq(subscriptions.id, sub.id), eq(subscriptions.status, "PAST_DUE")),
+            );
+
+          await this.planLimits.bust(sub.orgId);
+
+          const owner = await this.findOrgOwner(sub.orgId);
+          if (owner) {
+            await this.dispatch
+              .emit({
+                orgId: sub.orgId,
+                eventKey: "billing.subscription.cancelled",
+                targetUserIds: [owner.userId],
+                title: "Subscription suspended due to non-payment",
+                message:
+                  "Your subscription has been suspended because an outstanding payment could not be collected. Your data is safe. Please update your payment method to restore full access.",
+                link: `${appUrl}/billing`,
+                priority: "CRITICAL",
+              })
+              .catch((err: unknown) =>
+                logger.warn("[billing-cron] suspension notification failed", { orgId: sub.orgId, err }),
+              );
+          }
+
+          suspended++;
+          continue;
+        }
+
+        let sentThisRun = false;
+        for (const day of DUNNING_SCHEDULE_DAYS) {
+          if (daysSincePastDue >= day && !attempts.includes(day)) {
+            const updatedAttempts = [...attempts, day];
+
+            await this.db
+              .update(subscriptions)
+              .set({
+                updatedAt: now,
+                metadata: {
+                  ...sub.metadata,
+                  dunningAttempts: updatedAttempts,
+                },
+              })
+              .where(
+                and(eq(subscriptions.id, sub.id), eq(subscriptions.status, "PAST_DUE")),
+              );
+
+            const owner = await this.findOrgOwner(sub.orgId);
+            if (owner) {
+              const daysRemaining = SUSPENSION_DAY - daysSincePastDue;
+              await this.dispatch
+                .emit({
+                  orgId: sub.orgId,
+                  eventKey: "billing.payment.failed",
+                  targetUserIds: [owner.userId],
+                  title: `Payment overdue — action required (day ${day})`,
+                  message: `Your subscription payment remains outstanding. Please update your payment method within ${daysRemaining} day(s) to avoid suspension.`,
+                  link: `${appUrl}/billing`,
+                  priority: "HIGH",
+                })
+                .catch((err: unknown) =>
+                  logger.warn("[billing-cron] dunning notification failed", { orgId: sub.orgId, day, err }),
+                );
+            }
+
+            notified++;
+            sentThisRun = true;
+            break;
+          }
+        }
+
+        if (!sentThisRun) {
+          skipped++;
+        }
+      } catch (err: unknown) {
+        logger.error("[billing-cron] dunning pass failed for subscription", {
+          subId: sub.id,
+          orgId: sub.orgId,
+          err,
+        });
+        skipped++;
+      }
+    }
+
+    return { notified, suspended, skipped };
+  }
+
+  private async findOrgOwner(orgId: string): Promise<{ userId: string; email: string } | null> {
+    const [owner] = await this.db
+      .select({ userId: organizationMembers.userId, email: users.email })
+      .from(organizationMembers)
+      .innerJoin(users, eq(organizationMembers.userId, users.id))
+      .where(
+        and(
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.isOwner, true),
+          eq(users.isActive, true),
+        ),
+      )
+      .limit(1);
+    return owner ?? null;
+  }
+
+  private async hasSameDayTopUpIst(orgId: string, packId: number): Promise<boolean> {
+    const now = new Date();
+    const istMirror = new Date(now.getTime() + IST_OFFSET_MS);
+
+    // IST day expressed as UTC timestamps (IST +05:30 means every IST day starts
+    // 5h30m before UTC midnight, so it always spans exactly 2 UTC calendar dates).
+    const istDayStartUtc = new Date(
+      Date.UTC(istMirror.getUTCFullYear(), istMirror.getUTCMonth(), istMirror.getUTCDate()) -
+        IST_OFFSET_MS,
+    );
+    const istDayEndUtc = new Date(istDayStartUtc.getTime() + 86_400_000);
+
+    // Build the UTC-date strings for both UTC calendar dates within this IST day.
+    // utcDateA = the UTC date at the start of the IST window (always istMirror.date - 1 in UTC)
+    // utcDateB = the UTC date for the remaining portion (adding 6h always crosses to the next UTC date)
+    const fmtDate = (d: Date): string =>
+      `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+    const utcDateB = new Date(istDayStartUtc.getTime() + 6 * 60 * 60 * 1000);
+
+    // Manual purchase referenceId = String(packId); automatic = `auto-<packId>-<UTC date>`.
+    // We check both UTC dates that fall in the IST window to catch purchases that occurred
+    // near UTC midnight on either side (the bug: same IST day, two UTC dates → two top-ups).
+    const [row] = await this.db
+      .select({ id: aiCreditTransactions.id })
+      .from(aiCreditTransactions)
+      .where(
+        and(
+          eq(aiCreditTransactions.orgId, orgId),
+          eq(aiCreditTransactions.type, "PURCHASE"),
+          gte(aiCreditTransactions.createdAt, istDayStartUtc),
+          lt(aiCreditTransactions.createdAt, istDayEndUtc),
+          or(
+            eq(aiCreditTransactions.referenceId, String(packId)),
+            eq(aiCreditTransactions.referenceId, `auto-${packId}-${fmtDate(istDayStartUtc)}`),
+            eq(aiCreditTransactions.referenceId, `auto-${packId}-${fmtDate(utcDateB)}`),
+          ),
+        ),
+      )
+      .limit(1);
+    return !!row;
   }
 }

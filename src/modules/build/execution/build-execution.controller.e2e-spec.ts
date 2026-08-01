@@ -81,14 +81,14 @@ describe("ProjectsExecution auth/RBAC (e2e)", () => {
     expect(res.body).toEqual({ error: "Unauthorized" });
   });
 
-  it("404 MODULE_DISABLED on POST /projects/1/sprints when projects module is off", async () => {
+  it("402 MODULE_NOT_ENABLED on POST /projects/1/sprints when projects module is off", async () => {
     const token = await signToken({ permissions: [], enabledModules: [] });
     const res = await request(app.getHttpServer())
       .post("/projects/1/sprints")
       .set("Authorization", `Bearer ${token}`)
       .send({});
-    expect(res.status).toBe(404);
-    expect(res.body).toMatchObject({ code: "MODULE_DISABLED", module: "build" });
+    expect(res.status).toBe(402);
+    expect(res.body).toMatchObject({ code: "MODULE_NOT_ENABLED", moduleKey: "build" });
   });
 
   it("403 on POST /projects/1/sprints without projects:sprints manage", async () => {

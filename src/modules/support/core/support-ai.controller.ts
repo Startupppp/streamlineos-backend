@@ -162,11 +162,11 @@ export class SupportAiController {
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @HttpCode(200)
-  improveReply(
+  async improveReply(
     @Body(new ZodValidationPipe(improveReplyBodySchema)) body: ImproveReplyBody,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    requireFeature(u.plan, "ai.reply-suggestion");
+    await this.planLimits.assertFeature(u.orgId, "ai.reply-suggestion");
     return this.ai.improveReply(u.orgId, body.ticketId, body.content, u.userId, body.macroId);
   }
 
@@ -175,11 +175,11 @@ export class SupportAiController {
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @HttpCode(200)
-  translateDraft(
+  async translateDraft(
     @Body(new ZodValidationPipe(translateDraftBodySchema)) body: TranslateDraftBody,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    requireFeature(u.plan, "ai.reply-suggestion");
+    await this.planLimits.assertFeature(u.orgId, "ai.reply-suggestion");
     return this.ai.translateDraft(u.orgId, body.ticketId, body.language, body.content, u.userId);
   }
 
