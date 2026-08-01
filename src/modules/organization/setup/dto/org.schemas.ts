@@ -12,6 +12,7 @@ export const ORG_MODULE_KEYS = [
   "surveys",
   "payroll",
   "sign",
+  "timesheets",
 ] as const;
 
 export const setupSchema = z.object({

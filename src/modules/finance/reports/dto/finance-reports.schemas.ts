@@ -39,14 +39,6 @@ export const cashRunwayQuerySchema = z.object({
   months: z.coerce.number().int().min(1).max(24).default(6),
 });
 
-export const vendorStatementParamsSchema = z.object({
-  vendorId: z.coerce.number().int().positive(),
-});
-
-export const clientStatementParamsSchema = z.object({
-  clientId: z.coerce.number().int().positive(),
-});
-
 export type OverviewQuery = z.infer<typeof overviewQuerySchema>;
 export type DateRangeQuery = z.infer<typeof dateRangeSchema>;
 export type BudgetVsActualQuery = z.infer<typeof budgetVsActualQuerySchema>;

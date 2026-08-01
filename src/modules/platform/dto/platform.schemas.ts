@@ -10,15 +10,6 @@ export type VisitInput = z.infer<typeof visitSchema>;
 
 export const messageStatusSchema = z.enum(["NEW", "READ", "REPLIED", "ARCHIVED"]);
 
-export const markStatusBodySchema = z.object({
-  status: messageStatusSchema,
-});
-
-export const markRepliedBodySchema = z.object({
-  replyBody: z.string().min(1).max(10_000),
-  repliedById: z.string().min(1),
-});
-
 export const listMessagesQuerySchema = z.object({
   status: z.enum(["NEW", "READ", "REPLIED", "ARCHIVED", "ALL"]).optional(),
   topic: z.string().optional(),

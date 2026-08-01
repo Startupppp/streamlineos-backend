@@ -1,4 +1,4 @@
-import { kbArticles, kbPages } from "../../db/schema";
+import { kbArticles } from "../../db/schema";
 
 type ArticleRow = typeof kbArticles.$inferSelect;
 

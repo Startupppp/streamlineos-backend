@@ -174,8 +174,3 @@ export function validatePolicyRules(
   const schema = RULES_BY_TYPE[policyType];
   return schema.parse(rules);
 }
-
-export function buildDefaultRules(policyType: PolicyType): Record<string, unknown> {
-  const schema = RULES_BY_TYPE[policyType];
-  return schema.parse({});
-}

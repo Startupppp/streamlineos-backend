@@ -73,14 +73,6 @@ export async function getLockedInputPeriodId(
   return period?.id ?? null;
 }
 
-export async function hasLockedInputPeriod(
-  db: Db,
-  orgId: string,
-  month: string,
-): Promise<boolean> {
-  return (await getLockedInputPeriodId(db, orgId, month)) != null;
-}
-
 export async function loadLockedSectionsByUser(
   db: Db,
   orgId: string,

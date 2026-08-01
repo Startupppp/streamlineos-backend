@@ -62,7 +62,3 @@ export function sanitizePolicyCitations(
   }
   return out;
 }
-
-export function isForbiddenPayrollAiAction(action: string): boolean {
-  return (FORBIDDEN_HR_AI_ACTIONS as readonly string[]).includes(action);
-}

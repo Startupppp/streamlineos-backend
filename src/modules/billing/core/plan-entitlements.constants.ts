@@ -84,23 +84,6 @@ export const PLAN_LABELS: Record<EffectivePlan, string> = {
   ENTERPRISE:   "Enterprise",
 };
 
-export const LIMIT_HUMAN_LABELS: Record<LimitKey, string> = {
-  members:        "members",
-  projects:       "projects",
-  kbPages:        "knowledge base pages",
-  chatChannels:   "chat channels",
-  crmLeads:       "CRM leads",
-  crmContacts:    "CRM contacts",
-  crmDeals:       "CRM deals",
-  supportTickets: "support tickets",
-  automations:    "automations",
-  signEnvelopes:  "sign envelopes",
-  surveys:        "surveys",
-  acctInvoices:   "invoices",
-  hrCandidates:   "candidates",
-  hrJobPostings:  "job postings",
-};
-
 // ---------------------------------------------------------------------------
 // Trial / pricing catalog (charged amounts + public plan list)
 // ---------------------------------------------------------------------------

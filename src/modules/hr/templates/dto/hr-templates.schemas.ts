@@ -39,69 +39,6 @@ export const VALID_TRANSITIONS: Record<string, string[]> = {
   archived: [],
 };
 
-const checklistItemSchema = z.object({
-  id: z.string(),
-  title: z.string().min(1),
-  assigneeRole: z.enum(["hr", "manager", "it", "employee", "buddy"]),
-  dueOffsetDays: z.number().int().min(0),
-  required: z.boolean(),
-  order: z.number().int().min(0),
-});
-
-const reviewQuestionSchema = z.object({
-  id: z.string(),
-  text: z.string().min(1),
-  type: z.enum(["rating", "text", "boolean"]),
-  required: z.boolean(),
-});
-
-const reviewSectionSchema = z.object({
-  id: z.string(),
-  title: z.string().min(1),
-  questions: z.array(reviewQuestionSchema),
-});
-
-const surveyQuestionSchema = z.object({
-  id: z.string(),
-  text: z.string().min(1),
-  type: z.enum(["rating", "text", "boolean", "multiple_choice"]),
-  options: z.array(z.string()).optional(),
-  required: z.boolean(),
-  order: z.number().int().min(0),
-});
-
-const goalItemSchema = z.object({
-  id: z.string(),
-  title: z.string().min(1),
-  description: z.string().optional(),
-  metricType: z.enum(["numeric", "percentage", "boolean"]),
-  targetValue: z.number().optional(),
-  required: z.boolean(),
-});
-
-export const templateContentSchema = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.enum(["onboarding_checklist", "offboarding_checklist", "asset_assignment"]),
-    items: z.array(checklistItemSchema),
-  }),
-  z.object({
-    kind: z.enum(["probation_review", "performance_review", "exit_interview"]),
-    sections: z.array(reviewSectionSchema),
-  }),
-  z.object({
-    kind: z.literal("survey"),
-    questions: z.array(surveyQuestionSchema),
-  }),
-  z.object({
-    kind: z.literal("goal"),
-    goals: z.array(goalItemSchema),
-  }),
-  z.object({
-    kind: z.enum(["letter", "document_request", "email", "notification", "training"]),
-    subject: z.string().optional(),
-    bodyHtml: z.string(),
-  }),
-]);
 
 const hrTemplateNameSchema = z
   .string()

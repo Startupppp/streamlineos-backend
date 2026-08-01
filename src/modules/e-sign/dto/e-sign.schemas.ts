@@ -239,8 +239,6 @@ export const publicAuthSchema = z.object({
 });
 export type PublicAuthInput = z.infer<typeof publicAuthSchema>;
 
-export const publicRequestOtpSchema = z.object({});
-
 export const publicConsentSchema = z.object({
   disclosureVersion: z.string().trim().min(1).max(50),
 });

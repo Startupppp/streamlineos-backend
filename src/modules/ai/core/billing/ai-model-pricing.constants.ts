@@ -26,8 +26,6 @@ const MODEL_TOKEN_PRICING_RAW: Record<string, ModelTokenPricing> = {
   "gemini-1.5-flash-latest": { inputUsdPer1M: 0.075, outputUsdPer1M: 0.3 },
 };
 
-export const MODEL_TOKEN_PRICING: Readonly<Record<string, ModelTokenPricing>> = MODEL_TOKEN_PRICING_RAW;
-
 function lookupPricing(model: string): ModelTokenPricing {
   const normalized = normalizeModelId(model);
   return MODEL_TOKEN_PRICING_RAW[normalized] ?? MODEL_TOKEN_PRICING_RAW["DEFAULT"]!;

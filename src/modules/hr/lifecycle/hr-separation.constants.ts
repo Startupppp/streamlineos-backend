@@ -30,5 +30,3 @@ export const RESIGNATION_REASONS = [
   "Starting own business",
   "Other",
 ] as const;
-
-export const RESIGNATION_REASON_OTHER = "Other";

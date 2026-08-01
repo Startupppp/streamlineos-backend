@@ -1,5 +1,4 @@
 import { z } from "zod";
-import type { SnapshotPayload } from "./ai-summaries.types";
 
 const citationSchema = z.object({
   id: z.union([z.string(), z.number()]),

@@ -1,14 +1,5 @@
 import { z } from "zod";
 
-export const onboardingFlowTypeSchema = z.enum([
-  "org_setup",
-  "member_setup",
-  "employee_onboarding",
-  "module_setup",
-  "guided_tour",
-  "payment_setup",
-]);
-
 export const sessionPatchSchema = z.object({
   currentStep: z.string().min(1).max(120).optional(),
   data: z.record(z.string(), z.any()).optional(),
