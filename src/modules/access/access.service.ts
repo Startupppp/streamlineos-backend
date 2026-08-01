@@ -14,6 +14,7 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
@@ -160,13 +161,18 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     const cached = this.versionCache.get(orgId);
     if (cached && cached.expiresAt > Date.now()) return cached.version;
 
-    const row = await this.safeAccessTableRead(
+    const row = await runInTenantTransaction(
+      this.db,
       () =>
-        this.db.query.accessVersions.findFirst({
-          where: eq(accessVersions.orgId, orgId),
-          columns: { permissionsVersion: true },
-        }),
-      undefined,
+        this.safeAccessTableRead(
+          () =>
+            this.db.query.accessVersions.findFirst({
+              where: eq(accessVersions.orgId, orgId),
+              columns: { permissionsVersion: true },
+            }),
+          undefined,
+        ),
+      { orgId },
     );
     const version = row?.permissionsVersion ?? 1;
     this.versionCache.set(orgId, { version, expiresAt: Date.now() + VERSION_CACHE_TTL_MS });
@@ -180,39 +186,45 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
   }
 
   async resolveUserPermissions(orgId: string, userId: string): Promise<Map<string, DataScope>> {
-    const version = await this.getPermissionsVersion(orgId);
-    const permsKey = `${orgId}:${userId}:${version}`;
-    const local = this.permsCache.get(permsKey);
-    let map: Map<string, DataScope>;
-    if (local && local.expiresAt > Date.now()) {
-      map = new Map(Object.entries(local.perms));
-    } else {
-      const resolved = await this.cache.cached<Record<string, DataScope>>(
-        CACHE_KEYS.accessPerms(orgId, userId, version),
-        () => this.computeUserPermissions(orgId, userId),
-        CACHE_TTL.LONG,
-      );
-      this.permsCache.set(permsKey, { perms: resolved, expiresAt: Date.now() + PERMS_CACHE_TTL_MS });
-      if (this.permsCache.size > 5000) {
-        const now = Date.now();
-        for (const [key, entry] of this.permsCache) {
-          if (entry.expiresAt <= now) this.permsCache.delete(key);
+    return runInTenantTransaction(
+      this.db,
+      async () => {
+        const version = await this.getPermissionsVersion(orgId);
+        const permsKey = `${orgId}:${userId}:${version}`;
+        const local = this.permsCache.get(permsKey);
+        let map: Map<string, DataScope>;
+        if (local && local.expiresAt > Date.now()) {
+          map = new Map(Object.entries(local.perms));
+        } else {
+          const resolved = await this.cache.cached<Record<string, DataScope>>(
+            CACHE_KEYS.accessPerms(orgId, userId, version),
+            () => this.computeUserPermissions(orgId, userId),
+            CACHE_TTL.LONG,
+          );
+          this.permsCache.set(permsKey, { perms: resolved, expiresAt: Date.now() + PERMS_CACHE_TTL_MS });
+          if (this.permsCache.size > 5000) {
+            const now = Date.now();
+            for (const [key, entry] of this.permsCache) {
+              if (entry.expiresAt <= now) this.permsCache.delete(key);
+            }
+          }
+          map = new Map(Object.entries(resolved));
         }
-      }
-      map = new Map(Object.entries(resolved));
-    }
 
-    // Denies never apply to the org owner
-    if (await this.isOrgOwner(orgId, userId)) return map;
+        // Denies never apply to the org owner
+        if (await this.isOrgOwner(orgId, userId)) return map;
 
-    const denied = await this.getUserDeniedModules(orgId, userId);
-    if (denied.size > 0) {
-      for (const key of Array.from(map.keys())) {
-        if (denied.has(moduleOf(key))) map.delete(key);
-      }
-    }
+        const denied = await this.getUserDeniedModules(orgId, userId);
+        if (denied.size > 0) {
+          for (const key of Array.from(map.keys())) {
+            if (denied.has(moduleOf(key))) map.delete(key);
+          }
+        }
 
-    return map;
+        return map;
+      },
+      { orgId },
+    );
   }
 
   private readonly ownerCache = new Map<string, { isOwner: boolean; expiresAt: number }>();
@@ -243,19 +255,24 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     const cached = this.deniedModulesCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) return cached.modules;
 
-    const rows = await this.safeAccessTableRead(
+    const rows = await runInTenantTransaction(
+      this.db,
       () =>
-        this.db
-          .select({ moduleKey: userModuleAccess.moduleKey })
-          .from(userModuleAccess)
-          .where(
-            and(
-              eq(userModuleAccess.orgId, orgId),
-              eq(userModuleAccess.userId, userId),
-              eq(userModuleAccess.enabled, false),
-            ),
-          ),
-      [] as { moduleKey: string }[],
+        this.safeAccessTableRead(
+          () =>
+            this.db
+              .select({ moduleKey: userModuleAccess.moduleKey })
+              .from(userModuleAccess)
+              .where(
+                and(
+                  eq(userModuleAccess.orgId, orgId),
+                  eq(userModuleAccess.userId, userId),
+                  eq(userModuleAccess.enabled, false),
+                ),
+              ),
+          [] as { moduleKey: string }[],
+        ),
+      { orgId },
     );
     const modules = new Set(rows.map((row) => row.moduleKey));
     this.deniedModulesCache.set(cacheKey, {
@@ -286,22 +303,29 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     if (!MANAGEABLE_MODULE_SET.has(moduleKey)) {
       throw new BadRequestException(`Unknown module "${moduleKey}"`);
     }
-    const member = await this.db.query.organizationMembers.findFirst({
-      where: and(
-        eq(organizationMembers.orgId, orgId),
-        eq(organizationMembers.userId, userId),
-      ),
-      columns: { userId: true },
-    });
-    if (!member) throw new NotFoundException("User is not a member of this workspace");
 
-    await this.db
-      .insert(userModuleAccess)
-      .values({ orgId, userId, moduleKey, enabled, updatedBy })
-      .onConflictDoUpdate({
-        target: [userModuleAccess.orgId, userModuleAccess.userId, userModuleAccess.moduleKey],
-        set: { enabled, updatedBy },
-      });
+    await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const member = await tx.query.organizationMembers.findFirst({
+          where: and(
+            eq(organizationMembers.orgId, orgId),
+            eq(organizationMembers.userId, userId),
+          ),
+          columns: { userId: true },
+        });
+        if (!member) throw new NotFoundException("User is not a member of this workspace");
+
+        await tx
+          .insert(userModuleAccess)
+          .values({ orgId, userId, moduleKey, enabled, updatedBy })
+          .onConflictDoUpdate({
+            target: [userModuleAccess.orgId, userModuleAccess.userId, userModuleAccess.moduleKey],
+            set: { enabled, updatedBy },
+          });
+      },
+      { orgId },
+    );
 
     this.deniedModulesCache.delete(`${orgId}:${userId}`);
     await this.cache.invalidate(CACHE_KEYS.userSession(userId));
@@ -313,6 +337,16 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
   }
 
   async getAccessSnapshot(
+    orgId: string,
+    userId: string,
+    ctx: CurrentUserContext,
+  ): Promise<AccessSnapshot> {
+    return runInTenantTransaction(this.db, () => this.computeAccessSnapshot(orgId, userId, ctx), {
+      orgId,
+    });
+  }
+
+  private async computeAccessSnapshot(
     orgId: string,
     userId: string,
     ctx: CurrentUserContext,
@@ -538,6 +572,18 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
   }
 
   async membersWithPermission(
+    orgId: string,
+    permissionKey: string,
+    options?: { limit?: number },
+  ): Promise<{ userId: string; membershipId: number }[]> {
+    return runInTenantTransaction(
+      this.db,
+      () => this.computeMembersWithPermissionCached(orgId, permissionKey, options),
+      { orgId },
+    );
+  }
+
+  private async computeMembersWithPermissionCached(
     orgId: string,
     permissionKey: string,
     options?: { limit?: number },

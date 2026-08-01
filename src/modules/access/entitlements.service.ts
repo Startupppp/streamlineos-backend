@@ -9,6 +9,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { moduleOwnerships, modulesCatalog, orgModules, organizations, pmWorkspaces } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { CacheService } from "../../common/cache/cache.service";
 import { PLAN_LOCKED_MODULES } from "../billing/core/plan-entitlements.constants";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
@@ -103,18 +104,23 @@ export class EntitlementsService implements OnModuleInit {
     const key = `entitlements:modules:${orgId}`;
     const map = await this.cache.cached(
       key,
-      async () => {
-        const rows = await this.safeRead(
-          () =>
-            this.db.query.orgModules.findMany({
-              where: eq(orgModules.orgId, orgId),
-            }),
-          [],
-        );
-        const result: Record<string, boolean> = {};
-        for (const row of rows) result[row.moduleKey] = row.enabled;
-        return result;
-      },
+      () =>
+        runInTenantTransaction(
+          this.db,
+          async () => {
+            const rows = await this.safeRead(
+              () =>
+                this.db.query.orgModules.findMany({
+                  where: eq(orgModules.orgId, orgId),
+                }),
+              [],
+            );
+            const result: Record<string, boolean> = {};
+            for (const row of rows) result[row.moduleKey] = row.enabled;
+            return result;
+          },
+          { orgId },
+        ),
       30,
     );
     this.moduleMapCache.set(orgId, {
@@ -152,7 +158,7 @@ export class EntitlementsService implements OnModuleInit {
         );
       }
     }
-    await this.db.transaction(async (tx) => {
+    await runInTenantTransaction(this.db, async (tx) => {
       await tx
         .insert(orgModules)
         .values({ orgId, moduleKey, enabled, enabledBy })
@@ -206,7 +212,7 @@ export class EntitlementsService implements OnModuleInit {
       }
 
       await bumpPermissionsVersion(tx, orgId);
-    });
+    }, { orgId });
 
     this.moduleMapCache.delete(orgId);
     await this.cache.invalidate(`entitlements:module:${orgId}:${moduleKey}`);
