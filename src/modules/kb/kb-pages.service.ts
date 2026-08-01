@@ -11,6 +11,7 @@ import { kbPages, kbPageFavorites, kbPageTemplates, kbSpaces } from "../../db/sc
 import type { KbPageContent } from "../../db/schema/kb/pages";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { withPublicToken } from "../../common/tenant/with-public-token";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { extractMentionUserIds } from "./kb-page-content.util";
@@ -396,14 +397,16 @@ export class KbPagesService {
     content: KbPageContent | null;
     updatedAt: Date;
   }> {
-    const page = await this.db.query.kbPages.findFirst({
-      where: and(
-        eq(kbPages.publicToken, token),
-        eq(kbPages.visibility, "public"),
-        isNull(kbPages.deletedAt),
-      ),
-      columns: { title: true, icon: true, coverImage: true, content: true, updatedAt: true },
-    });
+    const page = await withPublicToken(this.db, token, (tx) =>
+      tx.query.kbPages.findFirst({
+        where: and(
+          eq(kbPages.publicToken, token),
+          eq(kbPages.visibility, "public"),
+          isNull(kbPages.deletedAt),
+        ),
+        columns: { title: true, icon: true, coverImage: true, content: true, updatedAt: true },
+      }),
+    );
     if (!page) throw new NotFoundException("Page not found");
     return page;
   }

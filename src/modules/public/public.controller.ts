@@ -4,6 +4,7 @@ import {
   Get,
   Header,
   HttpCode,
+  Inject,
   Param,
   ParseIntPipe,
   Patch,
@@ -14,6 +15,9 @@ import {
 } from "@nestjs/common";
 import type { Request } from "express";
 import { Public } from "../../common/auth/public.decorator";
+import { DRIZZLE } from "../../db/drizzle.constants";
+import { type Db } from "../../db/drizzle.module";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
@@ -77,6 +81,7 @@ export class PublicController {
     private readonly org: OrgService,
     private readonly publicForms: PublicFormsService,
     private readonly contact: ContactService,
+    @Inject(DRIZZLE) private readonly db: Db,
   ) {}
 
   @Post("contact")
@@ -223,7 +228,9 @@ export class PublicController {
   getRoadmap(
     @Query(new ZodValidationPipe(roadmapQuerySchema)) query: RoadmapQueryInput,
   ) {
-    return this.roadmap.getRoadmap(query.org);
+    return runInTenantTransaction(this.db, () => this.roadmap.getRoadmap(query.org), {
+      orgId: query.org,
+    });
   }
 
   @Post("roadmap/vote")
@@ -232,7 +239,9 @@ export class PublicController {
     @Query(new ZodValidationPipe(roadmapQuerySchema)) query: RoadmapQueryInput,
     @Body(new ZodValidationPipe(roadmapVoteSchema)) body: RoadmapVoteInput,
   ) {
-    return this.roadmap.vote(query.org, body);
+    return runInTenantTransaction(this.db, () => this.roadmap.vote(query.org, body), {
+      orgId: query.org,
+    });
   }
 
   @Post("roadmap/feedback")
@@ -241,7 +250,9 @@ export class PublicController {
     @Query(new ZodValidationPipe(roadmapQuerySchema)) query: RoadmapQueryInput,
     @Body(new ZodValidationPipe(roadmapFeedbackSchema)) body: RoadmapFeedbackInput,
   ) {
-    return this.roadmap.submitFeedback(query.org, body);
+    return runInTenantTransaction(this.db, () => this.roadmap.submitFeedback(query.org, body), {
+      orgId: query.org,
+    });
   }
 
   @Get("org/:orgId")
@@ -255,7 +266,7 @@ export class PublicController {
 
   @Get("kb")
   listKb(@Query(new ZodValidationPipe(kbListQuerySchema)) query: KbListInput) {
-    return this.kb.list(query);
+    return runInTenantTransaction(this.db, () => this.kb.list(query), { orgId: query.org });
   }
 
   @Get("kb/:slug")
@@ -263,7 +274,9 @@ export class PublicController {
     @Param("slug") slug: string,
     @Query(new ZodValidationPipe(orgQuerySchema)) query: OrgQueryInput,
   ) {
-    return this.kb.getArticle(slug, query.org);
+    return runInTenantTransaction(this.db, () => this.kb.getArticle(slug, query.org), {
+      orgId: query.org,
+    });
   }
 
   @Post("kb/:slug/feedback")
@@ -275,6 +288,10 @@ export class PublicController {
     @Req() req: Request,
   ) {
     const visitorId = body.visitorId ?? clientIp(req);
-    return this.kb.submitFeedback(slug, query.org, { ...body, visitorId });
+    return runInTenantTransaction(
+      this.db,
+      () => this.kb.submitFeedback(slug, query.org, { ...body, visitorId }),
+      { orgId: query.org },
+    );
   }
 }

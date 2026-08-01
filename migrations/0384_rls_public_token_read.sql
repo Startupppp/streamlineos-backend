@@ -86,7 +86,7 @@ BEGIN
       ('project_forms',          'public_token'),
       ('nps_surveys',            'public_token'),
       ('web_lead_forms',         'public_token'),
-      ('git_connections',        'id')
+      ('agent_tokens',           'token_hash')
     ) AS t(table_name, token_column)
   LOOP
     SELECT a.attname INTO tenant_col

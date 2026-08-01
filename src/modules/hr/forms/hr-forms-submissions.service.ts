@@ -10,6 +10,7 @@ import {
 import { and, count, desc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { hrFormSubmissions } from "../../../db/schema/hr/forms";
 import { hrWorkflowObjectTypeEnum } from "../../../db/schema/hr/workflow-engine";
 import { HrAuditService } from "../core/hr-audit.service";
@@ -98,6 +99,10 @@ export class HrFormsSubmissionsService {
     }
   }
 
+  async getPublicFormBySlug(orgId: string, slug: string) {
+    return runInTenantTransaction(this.db, () => this.formsService.getFormBySlug(orgId, slug), { orgId });
+  }
+
   async submit(
     orgId: string,
     formId: number,
@@ -105,68 +110,74 @@ export class HrFormsSubmissionsService {
     submittedByUserId: string | null,
     canViewSensitive: boolean,
   ) {
-    const form = await this.formsService.loadForm(orgId, formId);
-    if (form.status !== "active") {
-      throw new BadRequestException("Form is not active");
-    }
+    return runInTenantTransaction(
+      this.db,
+      async () => {
+        const form = await this.formsService.loadForm(orgId, formId);
+        if (form.status !== "active") {
+          throw new BadRequestException("Form is not active");
+        }
 
-    const visibleFields = form.schema.filter((f) => this.evaluateConditional(f, input.data));
+        const visibleFields = form.schema.filter((f) => this.evaluateConditional(f, input.data));
 
-    const validator = this.buildZodValidator(visibleFields);
-    const parseResult = validator.safeParse(input.data);
-    if (!parseResult.success) {
-      throw new BadRequestException(parseResult.error.issues.map((issue) => issue.message).join("; "));
-    }
+        const validator = this.buildZodValidator(visibleFields);
+        const parseResult = validator.safeParse(input.data);
+        if (!parseResult.success) {
+          throw new BadRequestException(parseResult.error.issues.map((issue) => issue.message).join("; "));
+        }
 
-    const hasSensitive = visibleFields.some((f) => f.sensitive);
-    if (hasSensitive && !canViewSensitive) {
-      throw new ForbiddenException("Sensitive fields require hr:sensitive:manage permission");
-    }
+        const hasSensitive = visibleFields.some((f) => f.sensitive);
+        if (hasSensitive && !canViewSensitive) {
+          throw new ForbiddenException("Sensitive fields require hr:sensitive:manage permission");
+        }
 
-    const [submission] = await this.db.transaction(async (tx) => {
-      const [sub] = await tx
-        .insert(hrFormSubmissions)
-        .values({
+        const [submission] = await this.db.transaction(async (tx) => {
+          const [sub] = await tx
+            .insert(hrFormSubmissions)
+            .values({
+              orgId,
+              formId,
+              formSchemaSnapshot: form.schema,
+              submittedBy: submittedByUserId,
+              submittedByName: input.submittedByName ?? null,
+              subjectEmployeeId: input.subjectEmployeeId ?? null,
+              data: input.data,
+              status: "submitted",
+            })
+            .returning();
+
+          if (!sub) throw new BadRequestException("Failed to create submission");
+
+          return [sub];
+        });
+
+        const validWorkflowTypes = new Set<string>(hrWorkflowObjectTypeEnum.enumValues);
+        if (form.workflowObjectType && submittedByUserId && validWorkflowTypes.has(form.workflowObjectType)) {
+          this.workflowEngine.startWorkflow({
+            orgId,
+            objectType: form.workflowObjectType as typeof hrWorkflowObjectTypeEnum.enumValues[number],
+            objectId: String(submission.id),
+            requestedByUserId: submittedByUserId,
+            subjectEmployeeId: input.subjectEmployeeId ? String(input.subjectEmployeeId) : submittedByUserId,
+            context: { formId, submissionId: submission.id },
+          }).catch((err: unknown) => {
+            this.logger.warn({ orgId, formId, submissionId: submission.id, err }, "startWorkflow failed after submission committed");
+          });
+        }
+
+        await this.audit.log({
           orgId,
-          formId,
-          formSchemaSnapshot: form.schema,
-          submittedBy: submittedByUserId,
-          submittedByName: input.submittedByName ?? null,
-          subjectEmployeeId: input.subjectEmployeeId ?? null,
-          data: input.data,
-          status: "submitted",
-        })
-        .returning();
+          actorId: submittedByUserId,
+          entityType: "hr_form_submission",
+          entityId: String(submission.id),
+          action: "form.submitted",
+          after: { formId, formName: form.name },
+        });
 
-      if (!sub) throw new BadRequestException("Failed to create submission");
-
-      return [sub];
-    });
-
-    const validWorkflowTypes = new Set<string>(hrWorkflowObjectTypeEnum.enumValues);
-    if (form.workflowObjectType && submittedByUserId && validWorkflowTypes.has(form.workflowObjectType)) {
-      this.workflowEngine.startWorkflow({
-        orgId,
-        objectType: form.workflowObjectType as typeof hrWorkflowObjectTypeEnum.enumValues[number],
-        objectId: String(submission.id),
-        requestedByUserId: submittedByUserId,
-        subjectEmployeeId: input.subjectEmployeeId ? String(input.subjectEmployeeId) : submittedByUserId,
-        context: { formId, submissionId: submission.id },
-      }).catch((err: unknown) => {
-        this.logger.warn({ orgId, formId, submissionId: submission.id, err }, "startWorkflow failed after submission committed");
-      });
-    }
-
-    await this.audit.log({
-      orgId,
-      actorId: submittedByUserId,
-      entityType: "hr_form_submission",
-      entityId: String(submission.id),
-      action: "form.submitted",
-      after: { formId, formName: form.name },
-    });
-
-    return submission;
+        return submission;
+      },
+      { orgId },
+    );
   }
 
   async listSubmissions(orgId: string, formId: number, query: ListSubmissionsQuery, canViewSensitive: boolean) {

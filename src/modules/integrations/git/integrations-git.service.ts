@@ -1,8 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { asc, and, eq, inArray } from "drizzle-orm";
+import { asc, and, eq, inArray, sql } from "drizzle-orm";
 import { gitConnections, gitTicketLinks, projectStatuses, projects, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { logger } from "../../../common/logger/logger.service";
 import { verifyGithubSignature, verifyGitlabToken } from "./git-signature";
 import { asRecord, extractTicketRefs, parseEvent } from "./git-event-parser";
@@ -38,61 +39,73 @@ export class IntegrationsGitService {
     const connectionId = Number(req.connectionIdRaw ?? null);
     if (!Number.isFinite(connectionId)) return;
 
-    const connection = await this.db.query.gitConnections.findFirst({
-      where: eq(gitConnections.id, connectionId),
-    });
-    if (!connection || !connection.isActive) return;
+    const orgIdRows = await this.db.execute(
+      sql`SELECT app.resolve_git_connection_org_id(${connectionId}) AS org_id`,
+    );
+    const orgId = orgIdRows[0]?.org_id ? String(orgIdRows[0].org_id) : null;
+    if (!orgId) return;
 
-    const provider = connection.provider;
-    if (!this.verifySignature(provider, connection.webhookSecret, req)) {
-      logger.warn("[git-webhook] signature verification failed", { connectionId });
-      return;
-    }
-
-    let body: Record<string, unknown> | null;
-    try {
-      const parsed: unknown = JSON.parse(req.rawBody);
-      body = asRecord(parsed);
-    } catch {
-      return;
-    }
-    if (!body) return;
-
-    const eventType = provider === "gitlab" ? req.gitlabEvent ?? null : req.githubEvent ?? null;
-    const parsedRefs = parseEvent(provider, eventType, body);
-    if (parsedRefs.length === 0) return;
-
-    const links: GitLinkInput[] = [];
-    for (const parsed of parsedRefs) {
-      const ticketRefs = extractTicketRefs(parsed.text);
-      if (ticketRefs.length === 0) continue;
-      const resolved = await this.resolveTicketsByRef(connection.orgId, ticketRefs);
-      for (const { ticketId } of resolved) {
-        links.push({
-          orgId: connection.orgId,
-          ticketId,
-          connectionId: connection.id,
-          provider,
-          refType: parsed.refType,
-          externalId: parsed.externalId,
-          title: parsed.title,
-          url: parsed.url,
-          author: parsed.author,
-          status: parsed.status,
+    await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const connection = await tx.query.gitConnections.findFirst({
+          where: eq(gitConnections.id, connectionId),
         });
-      }
-    }
+        if (!connection || !connection.isActive) return;
 
-    if (links.length > 0) {
-      await this.recordLinks(links);
-    }
+        const provider = connection.provider;
+        if (!this.verifySignature(provider, connection.webhookSecret, req)) {
+          logger.warn("[git-webhook] signature verification failed", { connectionId });
+          return;
+        }
 
-    const mergedPrLinks = links.filter((l) => l.refType === "pull_request" && l.status === "merged");
-    if (mergedPrLinks.length > 0) {
-      void this.autoTransitionOnMerge(connection.orgId, mergedPrLinks).catch((error) =>
-        logger.error("[git-webhook] auto-transition failed", { error }),
-      );
-    }
+        let body: Record<string, unknown> | null;
+        try {
+          const parsed: unknown = JSON.parse(req.rawBody);
+          body = asRecord(parsed);
+        } catch {
+          return;
+        }
+        if (!body) return;
+
+        const eventType = provider === "gitlab" ? req.gitlabEvent ?? null : req.githubEvent ?? null;
+        const parsedRefs = parseEvent(provider, eventType, body);
+        if (parsedRefs.length === 0) return;
+
+        const links: GitLinkInput[] = [];
+        for (const parsed of parsedRefs) {
+          const ticketRefs = extractTicketRefs(parsed.text);
+          if (ticketRefs.length === 0) continue;
+          const resolved = await this.resolveTicketsByRef(connection.orgId, ticketRefs);
+          for (const { ticketId } of resolved) {
+            links.push({
+              orgId: connection.orgId,
+              ticketId,
+              connectionId: connection.id,
+              provider,
+              refType: parsed.refType,
+              externalId: parsed.externalId,
+              title: parsed.title,
+              url: parsed.url,
+              author: parsed.author,
+              status: parsed.status,
+            });
+          }
+        }
+
+        if (links.length > 0) {
+          await this.recordLinks(links);
+        }
+
+        const mergedPrLinks = links.filter((l) => l.refType === "pull_request" && l.status === "merged");
+        if (mergedPrLinks.length > 0) {
+          void this.autoTransitionOnMerge(connection.orgId, mergedPrLinks).catch((error) =>
+            logger.error("[git-webhook] auto-transition failed", { error }),
+          );
+        }
+      },
+      { orgId },
+    );
   }
 
   private async autoTransitionOnMerge(orgId: string, mergedLinks: GitLinkInput[]): Promise<void> {

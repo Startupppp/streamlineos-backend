@@ -4,6 +4,8 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { surveyCollectors } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { withPublicToken } from "../../common/tenant/with-public-token";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import type { CreateCollectorInput, PatchCollectorInput } from "./dto/survey-collectors.schemas";
 
 @Injectable()
@@ -47,12 +49,26 @@ export class SurveyCollectorService {
   }
 
   async getByToken(token: string) {
-    const collector = await this.db.query.surveyCollectors.findFirst({
-      where: eq(surveyCollectors.token, token),
-      with: { survey: true },
-    });
+    const collector = await withPublicToken(this.db, token, (tx) =>
+      tx.query.surveyCollectors.findFirst({
+        where: eq(surveyCollectors.token, token),
+        columns: { id: true, orgId: true },
+      }),
+    );
     if (!collector) throw new NotFoundException("Survey not found");
-    return collector;
+
+    return runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const full = await tx.query.surveyCollectors.findFirst({
+          where: eq(surveyCollectors.token, token),
+          with: { survey: true },
+        });
+        if (!full) throw new NotFoundException("Survey not found");
+        return full;
+      },
+      { orgId: collector.orgId },
+    );
   }
 
   async incrementCounter(collectorId: number, field: "opens" | "starts" | "completions") {

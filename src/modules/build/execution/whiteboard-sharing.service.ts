@@ -16,6 +16,8 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { withPublicToken } from "../../../common/tenant/with-public-token";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { resolveWhiteboardAccess } from "./whiteboard-access";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -229,9 +231,11 @@ export class WhiteboardSharingService {
   }
 
   async getPublicByToken(token: string) {
-    const board = await this.db.query.projectWhiteboards.findFirst({
-      where: eq(projectWhiteboards.shareToken, token),
-    });
+    const board = await withPublicToken(this.db, token, (tx) =>
+      tx.query.projectWhiteboards.findFirst({
+        where: eq(projectWhiteboards.shareToken, token),
+      }),
+    );
 
     if (
       !board ||
@@ -251,10 +255,12 @@ export class WhiteboardSharingService {
   }
 
   async updatePublicByToken(token: string, data: ExcalidrawSceneInput) {
-    const board = await this.db.query.projectWhiteboards.findFirst({
-      where: eq(projectWhiteboards.shareToken, token),
-      columns: { id: true, visibility: true, publicAccess: true, linkExpiresAt: true },
-    });
+    const board = await withPublicToken(this.db, token, (tx) =>
+      tx.query.projectWhiteboards.findFirst({
+        where: eq(projectWhiteboards.shareToken, token),
+        columns: { id: true, orgId: true, visibility: true, publicAccess: true, linkExpiresAt: true },
+      }),
+    );
 
     if (
       !board ||
@@ -269,11 +275,18 @@ export class WhiteboardSharingService {
     }
 
     const now = new Date();
-    const [updated] = await this.db
-      .update(projectWhiteboards)
-      .set({ data, updatedAt: now })
-      .where(eq(projectWhiteboards.id, board.id))
-      .returning({ updatedAt: projectWhiteboards.updatedAt });
+    const updated = await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const [row] = await tx
+          .update(projectWhiteboards)
+          .set({ data, updatedAt: now })
+          .where(eq(projectWhiteboards.id, board.id))
+          .returning({ updatedAt: projectWhiteboards.updatedAt });
+        return row;
+      },
+      { orgId: board.orgId },
+    );
 
     return { success: true, updatedAt: updated?.updatedAt ?? now };
   }

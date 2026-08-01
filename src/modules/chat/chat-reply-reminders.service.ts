@@ -10,6 +10,7 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import { forEachOrg } from "../../common/tenant/for-each-org";
 import { EmailService } from "../email/email.service";
 import { getChatReplyReminderEmail } from "../email/templates/chat";
 import { logger } from "../../common/logger/logger.service";
@@ -70,30 +71,33 @@ export class ChatReplyRemindersService {
 
   async processDueReminders(): Promise<{ sent: number; cancelled: number }> {
     const now = new Date();
-    const due = await this.db.query.chatReplyReminders.findMany({
-      where: and(
-        lte(chatReplyReminders.remindAt, now),
-        isNull(chatReplyReminders.sentAt),
-        isNull(chatReplyReminders.cancelledAt),
-      ),
-      limit: 100,
-    });
-
     let sent = 0;
     let cancelled = 0;
 
-    for (const reminder of due) {
-      try {
-        const handled = await this.processReminder(reminder.id);
-        if (handled === "sent") sent += 1;
-        if (handled === "cancelled") cancelled += 1;
-      } catch (error) {
-        logger.error("[chat.processReplyReminder]", {
-          reminderId: reminder.id,
-          error: error instanceof Error ? error.message : "Unknown error",
-        });
+    await forEachOrg(this.db, "chat-reply-reminders", async (_tx, orgId) => {
+      const due = await this.db.query.chatReplyReminders.findMany({
+        where: and(
+          eq(chatReplyReminders.orgId, orgId),
+          lte(chatReplyReminders.remindAt, now),
+          isNull(chatReplyReminders.sentAt),
+          isNull(chatReplyReminders.cancelledAt),
+        ),
+        limit: 100,
+      });
+
+      for (const reminder of due) {
+        try {
+          const handled = await this.processReminder(reminder.id);
+          if (handled === "sent") sent += 1;
+          if (handled === "cancelled") cancelled += 1;
+        } catch (error) {
+          logger.error("[chat.processReplyReminder]", {
+            reminderId: reminder.id,
+            error: error instanceof Error ? error.message : "Unknown error",
+          });
+        }
       }
-    }
+    });
 
     return { sent, cancelled };
   }

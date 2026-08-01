@@ -13,14 +13,12 @@ import {
 import { Public } from "../../../common/auth/public.decorator";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
-import { HrFormsService } from "./hr-forms.service";
 import { HrFormsSubmissionsService } from "./hr-forms-submissions.service";
 import { submitHrFormSchema, type SubmitHrFormInput } from "./dto/hr-forms.schemas";
 
 @Controller("public/hr-forms")
 export class HrFormsPublicController {
   constructor(
-    private readonly svc: HrFormsService,
     private readonly submissions: HrFormsSubmissionsService,
     private readonly rateLimit: RateLimitService,
   ) {}
@@ -47,7 +45,7 @@ export class HrFormsPublicController {
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("hr-form:public-view", this.getIp(req));
-    const form = await this.svc.getFormBySlug(orgId, slug);
+    const form = await this.submissions.getPublicFormBySlug(orgId, slug);
     if (form.audience !== "public" || form.status !== "active") {
       throw new NotFoundException("Form not found");
     }
@@ -69,7 +67,7 @@ export class HrFormsPublicController {
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("hr-form:public-submit", this.getIp(req));
-    const form = await this.svc.getFormBySlug(orgId, slug);
+    const form = await this.submissions.getPublicFormBySlug(orgId, slug);
     if (form.audience !== "public" || form.status !== "active") {
       throw new NotFoundException("Form not found");
     }

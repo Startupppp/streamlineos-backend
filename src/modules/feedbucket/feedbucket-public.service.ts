@@ -3,6 +3,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { feedbucketSubmissions, feedbucketWidgets } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import { withPublicToken } from "../../common/tenant/with-public-token";
 import type { PublicSubmitInput } from "./feedbucket.schemas";
 
 type WidgetRow = typeof feedbucketWidgets.$inferSelect;
@@ -12,13 +13,15 @@ export class FeedbucketPublicService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async resolveWidget(publicKey: string): Promise<WidgetRow | null> {
-    const widget = await this.db.query.feedbucketWidgets.findFirst({
-      where: and(
-        eq(feedbucketWidgets.publicKey, publicKey),
-        eq(feedbucketWidgets.isActive, true),
-        isNull(feedbucketWidgets.deletedAt),
-      ),
-    });
+    const widget = await withPublicToken(this.db, publicKey, (tx) =>
+      tx.query.feedbucketWidgets.findFirst({
+        where: and(
+          eq(feedbucketWidgets.publicKey, publicKey),
+          eq(feedbucketWidgets.isActive, true),
+          isNull(feedbucketWidgets.deletedAt),
+        ),
+      }),
+    );
     return widget ?? null;
   }
 
@@ -44,6 +47,7 @@ export class FeedbucketPublicService {
         status: "open",
       })
       .returning({ id: feedbucketSubmissions.id });
+    if (!submission) throw new Error("Failed to create feedbucket submission");
     return submission.id;
   }
 }

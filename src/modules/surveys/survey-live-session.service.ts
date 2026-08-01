@@ -4,6 +4,8 @@ import { and, asc, eq } from "drizzle-orm";
 import { surveyLiveSessions, surveyForms, surveyQuestions, surveySections, surveyQuestionChoices } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { withPublicToken } from "../../common/tenant/with-public-token";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import type { CreateLiveSessionInput } from "./dto/survey-live-session.schemas";
 
 function generateSessionCode(): string {
@@ -42,9 +44,19 @@ export class SurveyLiveSessionService {
   }
 
   async getByCode(sessionCode: string) {
-    const session = await this.db.query.surveyLiveSessions.findFirst({ where: eq(surveyLiveSessions.sessionCode, sessionCode) });
+    const session = await withPublicToken(this.db, sessionCode, (tx) =>
+      tx.query.surveyLiveSessions.findFirst({ where: eq(surveyLiveSessions.sessionCode, sessionCode) }),
+    );
     if (!session) throw new NotFoundException("Live session not found");
     return session;
+  }
+
+  async withLiveSession<T>(
+    sessionCode: string,
+    fn: (session: typeof surveyLiveSessions.$inferSelect) => Promise<T>,
+  ): Promise<T> {
+    const session = await this.getByCode(sessionCode);
+    return runInTenantTransaction(this.db, () => fn(session), { orgId: session.orgId });
   }
 
   async getCurrentQuestion(session: typeof surveyLiveSessions.$inferSelect) {

@@ -10,6 +10,8 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { withPublicToken } from "../../common/tenant/with-public-token";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { SignAuditService } from "./sign-audit.service";
 import { SignTokensService } from "./sign-tokens.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
@@ -446,12 +448,20 @@ export class SignTemplatesService {
   }
 
   async getPublicForm(slug: string) {
-    const form = await this.db.query.signPublicForms.findFirst({ where: eq(signPublicForms.slug, slug) });
+    const form = await withPublicToken(this.db, slug, (tx) =>
+      tx.query.signPublicForms.findFirst({ where: eq(signPublicForms.slug, slug) }),
+    );
     if (!form || form.status !== "published") throw new NotFoundException("Form not found");
     if (form.expiresAt && form.expiresAt.getTime() < Date.now()) throw new NotFoundException("Form not found");
     if (form.maxSubmissions && form.submissionCount >= form.maxSubmissions) throw new NotFoundException("Form not found");
 
-    const template = await this.db.query.signTemplates.findFirst({ where: eq(signTemplates.id, form.templateId) });
-    return { form: { slug: form.slug, requiresAccessCode: Boolean(form.accessCodeHash), embedAllowed: form.embedAllowed }, template };
+    return runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const template = await tx.query.signTemplates.findFirst({ where: eq(signTemplates.id, form.templateId) });
+        return { form: { slug: form.slug, requiresAccessCode: Boolean(form.accessCodeHash), embedAllowed: form.embedAllowed }, template };
+      },
+      { orgId: form.orgId },
+    );
   }
 }

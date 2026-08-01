@@ -22,6 +22,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { runWithTenantContext, withTenant } from "../../common/tenant";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { SessionService } from "./session.service";
@@ -209,25 +210,31 @@ export class AuthService {
           mfaEnforced = membership.mfaEnforced;
           orgOnboardingCompletedAt = membership.orgOnboardingCompletedAt?.toISOString() ?? null;
 
-          const [sub, moduleStatuses] = await Promise.all([
-            this.db.query.subscriptions.findFirst({
-              where: eq(subscriptions.orgId, membership.orgId),
-              columns: { plan: true, status: true },
-            }),
-            this.entitlements.listModules(membership.orgId).catch(() => []),
-          ]);
+          await runInTenantTransaction(
+            this.db,
+            async (tx) => {
+              const [sub, moduleStatuses] = await Promise.all([
+                tx.query.subscriptions.findFirst({
+                  where: eq(subscriptions.orgId, membership.orgId),
+                  columns: { plan: true, status: true },
+                }),
+                this.entitlements.listModules(membership.orgId).catch(() => []),
+              ]);
 
-          if (sub) {
-            plan = sub.status === "ACTIVE" || sub.status === "TRIAL" ? sub.plan : "FREE";
-          }
-          enabledModules = moduleStatuses.filter((m) => m.enabled).map((m) => m.moduleKey);
+              if (sub) {
+                plan = sub.status === "ACTIVE" || sub.status === "TRIAL" ? sub.plan : "FREE";
+              }
+              enabledModules = moduleStatuses.filter((m) => m.enabled).map((m) => m.moduleKey);
 
-          try {
-            const permMap = await this.access.resolveUserPermissions(membership.orgId, userId);
-            permissions = [...permMap.keys()];
-          } catch {
-            permissions = [];
-          }
+              try {
+                const permMap = await this.access.resolveUserPermissions(membership.orgId, userId);
+                permissions = [...permMap.keys()];
+              } catch {
+                permissions = [];
+              }
+            },
+            { orgId: membership.orgId },
+          );
         }
 
         return {

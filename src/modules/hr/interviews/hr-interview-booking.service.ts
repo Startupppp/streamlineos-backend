@@ -3,6 +3,8 @@ import { and, eq } from "drizzle-orm";
 import { calendarEvents, candidates, interviewBookingLinks, interviews, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { withPublicToken } from "../../../common/tenant/with-public-token";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { EmailService } from "../../email/email.service";
 import { getBookingConfirmationEmail } from "../../email/templates/interviews";
 import type { BookInterviewInput } from "./dto/interview-scheduling.schemas";
@@ -21,64 +23,75 @@ export class HrInterviewBookingService {
   ) {}
 
   async book(token: string, input: BookInterviewInput) {
-    const link = await this.db.query.interviewBookingLinks.findFirst({
-      where: eq(interviewBookingLinks.token, token),
-      with: { interviewers: { columns: { userId: true } } },
-    });
-    if (!link) throw new NotFoundException("Booking link not found.");
-    if (link.status !== "pending") throw new GoneException("This booking link has already been used.");
-    if (new Date() > link.expiresAt) throw new GoneException("This booking link has expired.");
+    const linkStub = await withPublicToken(this.db, token, (tx) =>
+      tx.query.interviewBookingLinks.findFirst({
+        where: eq(interviewBookingLinks.token, token),
+        columns: { id: true, orgId: true },
+      }),
+    );
+    if (!linkStub) throw new NotFoundException("Booking link not found.");
 
-    const slotStart = new Date(input.slotStart);
-    const validSlot = link.availableSlots.some((s) => new Date(s.start).getTime() === slotStart.getTime());
-    if (!validSlot) throw new BadRequestException("Selected slot is not available.");
+    return runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const link = await tx.query.interviewBookingLinks.findFirst({
+          where: eq(interviewBookingLinks.token, token),
+          with: { interviewers: { columns: { userId: true } } },
+        });
+        if (!link) throw new NotFoundException("Booking link not found.");
+        if (link.status !== "pending") throw new GoneException("This booking link has already been used.");
+        if (new Date() > link.expiresAt) throw new GoneException("This booking link has expired.");
 
-    const endDate = new Date(slotStart.getTime() + link.durationMinutes * 60_000);
+        const slotStart = new Date(input.slotStart);
+        const validSlot = link.availableSlots.some((s) => new Date(s.start).getTime() === slotStart.getTime());
+        if (!validSlot) throw new BadRequestException("Selected slot is not available.");
 
-    const interview = await this.db.transaction(async (tx) => {
-      const [claimed] = await tx
-        .update(interviewBookingLinks)
-        .set({ status: "booked", selectedSlot: slotStart, updatedAt: new Date() })
-        .where(and(eq(interviewBookingLinks.id, link.id), eq(interviewBookingLinks.status, "pending")))
-        .returning({ id: interviewBookingLinks.id });
-      if (!claimed) throw new GoneException("This booking link has already been used.");
+        const endDate = new Date(slotStart.getTime() + link.durationMinutes * 60_000);
 
-      const [created] = await tx
-        .insert(interviews)
-        .values({
+        const [claimed] = await tx
+          .update(interviewBookingLinks)
+          .set({ status: "booked", selectedSlot: slotStart, updatedAt: new Date() })
+          .where(and(eq(interviewBookingLinks.id, link.id), eq(interviewBookingLinks.status, "pending")))
+          .returning({ id: interviewBookingLinks.id });
+        if (!claimed) throw new GoneException("This booking link has already been used.");
+
+        const [created] = await tx
+          .insert(interviews)
+          .values({
+            orgId: link.orgId,
+            candidateId: link.candidateId,
+            jobPostingId: link.jobPostingId,
+            interviewerId: link.interviewers[0]?.userId ?? link.createdBy,
+            type: TYPE_MAP[link.interviewType] ?? "VIDEO",
+            scheduledAt: slotStart,
+            duration: link.durationMinutes,
+            notes: link.notes,
+            result: "PENDING",
+            remindersSent: {},
+          })
+          .returning({ id: interviews.id });
+        if (!created) throw new BadRequestException("Failed to create the interview.");
+
+        await tx.insert(calendarEvents).values({
           orgId: link.orgId,
-          candidateId: link.candidateId,
-          jobPostingId: link.jobPostingId,
-          interviewerId: link.interviewers[0]?.userId ?? link.createdBy,
-          type: TYPE_MAP[link.interviewType] ?? "VIDEO",
-          scheduledAt: slotStart,
-          duration: link.durationMinutes,
-          notes: link.notes,
-          result: "PENDING",
-          remindersSent: {},
-        })
-        .returning({ id: interviews.id });
+          title: "Interview (self-scheduled)",
+          description: link.notes ?? `Self-scheduled ${link.interviewType} interview`,
+          startDate: slotStart,
+          endDate,
+          allDay: false,
+          category: "interview",
+          entityType: "interview",
+          entityId: String(created.id),
+          createdBy: link.createdBy,
+          attendeeIds: link.interviewers.map((i) => i.userId),
+        });
 
-      await tx.insert(calendarEvents).values({
-        orgId: link.orgId,
-        title: "Interview (self-scheduled)",
-        description: link.notes ?? `Self-scheduled ${link.interviewType} interview`,
-        startDate: slotStart,
-        endDate,
-        allDay: false,
-        category: "interview",
-        entityType: "interview",
-        entityId: String(created.id),
-        createdBy: link.createdBy,
-        attendeeIds: link.interviewers.map((i) => i.userId),
-      });
+        void this.notifyCreator(link.orgId, link.candidateId, link.createdBy, slotStart).catch(() => undefined);
 
-      return created;
-    });
-
-    void this.notifyCreator(link.orgId, link.candidateId, link.createdBy, slotStart).catch(() => undefined);
-
-    return { success: true, interviewId: interview.id };
+        return { success: true, interviewId: created.id };
+      },
+      { orgId: linkStub.orgId },
+    );
   }
 
   private async notifyCreator(

@@ -18,6 +18,7 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { forEachOrg } from "../../../common/tenant/for-each-org";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { KbArticlesService } from "../../kb/kb-articles.service";
 import { KbEventsService } from "../../kb/kb-events.service";
@@ -294,15 +295,22 @@ export class SupportKbGapService {
   }
 
   async runDetectAllOrgs(): Promise<{ processed: number; errors: number }> {
-    const orgRows = await this.db
-      .selectDistinct({ orgId: supportTickets.orgId })
-      .from(supportTickets)
-      .where(or(eq(supportTickets.status, "OPEN"), eq(supportTickets.status, "IN_PROGRESS")));
-
     let processed = 0;
     let errors = 0;
 
-    for (const { orgId } of orgRows) {
+    await forEachOrg(this.db, "support-kb-gap-detect", async (tx, orgId) => {
+      const [hasOpenTicket] = await tx
+        .select({ id: supportTickets.id })
+        .from(supportTickets)
+        .where(
+          and(
+            eq(supportTickets.orgId, orgId),
+            or(eq(supportTickets.status, "OPEN"), eq(supportTickets.status, "IN_PROGRESS")),
+          ),
+        )
+        .limit(1);
+      if (!hasOpenTicket) return;
+
       try {
         await this.detectGaps(orgId);
         processed++;
@@ -313,7 +321,7 @@ export class SupportKbGapService {
           err: err instanceof Error ? err.message : String(err),
         });
       }
-    }
+    });
 
     return { processed, errors };
   }

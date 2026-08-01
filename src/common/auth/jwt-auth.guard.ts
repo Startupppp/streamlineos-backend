@@ -19,6 +19,8 @@ import { ALLOW_NO_ORG_KEY } from "./allow-no-org.decorator";
 import type { BackendClaims, CurrentUserContext } from "./backend-claims";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { withIdentity } from "../tenant/with-identity";
+import { runInTenantTransaction } from "../tenant/run-in-tenant-transaction";
 import { REDIS } from "../../common/cache/cache.service";
 import {
   organizationMembers,
@@ -245,17 +247,22 @@ export class JwtAuthGuard implements CanActivate {
 
     let active = true;
     try {
-      const rows = await this.db
-        .select({ status: organizationMembers.status })
-        .from(organizationMembers)
-        .where(
-          and(
-            eq(organizationMembers.userId, userId),
-            eq(organizationMembers.orgId, orgId),
-          ),
-        )
-        .orderBy(desc(organizationMembers.joinedAt))
-        .limit(1);
+      const rows = await runInTenantTransaction(
+        this.db,
+        (tx) =>
+          tx
+            .select({ status: organizationMembers.status })
+            .from(organizationMembers)
+            .where(
+              and(
+                eq(organizationMembers.userId, userId),
+                eq(organizationMembers.orgId, orgId),
+              ),
+            )
+            .orderBy(desc(organizationMembers.joinedAt))
+            .limit(1),
+        { orgId },
+      );
       const status = rows[0]?.status;
       if (status === "SUSPENDED" || status === "LEFT") active = false;
     } catch {
@@ -292,15 +299,17 @@ export class JwtAuthGuard implements CanActivate {
         where: eq(users.id, userId),
         columns: { lastActiveOrgId: true },
       }),
-      this.db
-        .select({
-          orgId: organizationMembers.orgId,
-          role: organizationMembers.role,
-          isOwner: organizationMembers.isOwner,
-        })
-        .from(organizationMembers)
-        .where(eq(organizationMembers.userId, userId))
-        .orderBy(desc(organizationMembers.joinedAt)),
+      withIdentity(this.db, userId, (tx) =>
+        tx
+          .select({
+            orgId: organizationMembers.orgId,
+            role: organizationMembers.role,
+            isOwner: organizationMembers.isOwner,
+          })
+          .from(organizationMembers)
+          .where(eq(organizationMembers.userId, userId))
+          .orderBy(desc(organizationMembers.joinedAt)),
+      ),
     ]);
 
     const preferred = user?.lastActiveOrgId
@@ -309,12 +318,17 @@ export class JwtAuthGuard implements CanActivate {
     const member = preferred ?? rows[0];
     if (!member) return null;
 
-    const subscription = await this.db
-      .select({ plan: subscriptions.plan })
-      .from(subscriptions)
-      .where(eq(subscriptions.orgId, member.orgId))
-      .limit(1)
-      .then((r) => r[0] ?? null);
+    const subscription = await runInTenantTransaction(
+      this.db,
+      (tx) =>
+        tx
+          .select({ plan: subscriptions.plan })
+          .from(subscriptions)
+          .where(eq(subscriptions.orgId, member.orgId))
+          .limit(1)
+          .then((r) => r[0] ?? null),
+      { orgId: member.orgId },
+    );
 
     return {
       orgId: member.orgId,
