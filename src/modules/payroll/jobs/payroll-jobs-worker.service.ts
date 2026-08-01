@@ -9,7 +9,9 @@ import { GenerateService } from "../runs/generate.service";
 import { PublishingService } from "../payout/publishing.service";
 import { PayrollFilingsService } from "../filings/filings.service";
 import { isTransientDbError } from "../../../common/db/transient-error";
-import { forEachOrg } from "../../../common/tenant";
+import { forEachOrg, withTenant, runWithTenantContext } from "../../../common/tenant";
+
+type ClaimedPayrollJob = typeof payrollJobs.$inferSelect;
 
 const POLL_MS = 5_000;
 const BATCH_SIZE = 5;
@@ -58,24 +60,41 @@ export class PayrollJobsWorkerService implements OnModuleInit, OnModuleDestroy {
   /** Exposed for cron/manual flush and tests. */
   async flush(limit = BATCH_SIZE): Promise<{ claimed: number; completed: number; failed: number }> {
     await this.reclaimStale();
-    const claimed = await this.jobs.claimPending(limit);
+
+    const claimed: ClaimedPayrollJob[] = [];
+    await forEachOrg(this.db, "payroll-jobs-claim", async () => {
+      const remaining = limit - claimed.length;
+      if (remaining <= 0) return;
+      claimed.push(...(await this.jobs.claimPending(remaining)));
+    });
+
     let completed = 0;
     let failed = 0;
     for (const job of claimed) {
       try {
-        await this.jobs.setProgress(job.orgId, job.id, 10);
-        const result = await this.execute(job.jobType as PayrollJobType, {
-          orgId: job.orgId,
-          actorId: job.createdBy ?? "system",
-          resourceId: job.resourceId,
-          payload: (job.payload ?? {}) as Record<string, unknown>,
+        await this.inTenant(job.orgId, async () => {
+          await this.jobs.setProgress(job.orgId, job.id, 10);
+          const result = await this.execute(job.jobType as PayrollJobType, {
+            orgId: job.orgId,
+            actorId: job.createdBy ?? "system",
+            resourceId: job.resourceId,
+            payload: (job.payload ?? {}) as Record<string, unknown>,
+          });
+          await this.jobs.succeed(job.orgId, job.id, result);
         });
-        await this.jobs.succeed(job.orgId, job.id, result);
         completed += 1;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         this.logger.error(`Payroll job ${job.id} (${job.jobType}) failed: ${msg}`);
-        await this.jobs.fail(job.orgId, job.id, msg);
+        try {
+          await this.inTenant(job.orgId, () => this.jobs.fail(job.orgId, job.id, msg));
+        } catch (markErr) {
+          this.logger.error(
+            `Payroll job ${job.id} could not be marked FAILED: ${
+              markErr instanceof Error ? markErr.message : String(markErr)
+            }`,
+          );
+        }
         failed += 1;
       }
     }
@@ -87,6 +106,12 @@ export class PayrollJobsWorkerService implements OnModuleInit, OnModuleDestroy {
    * PENDING so the next flush can re-claim them. Mirrors NotificationDeliveryWorker's
    * stale-lock reclaim pattern (staleBefore = now − STALE_LOCK_MS on lockedAt).
    */
+  private inTenant<T>(orgId: string, fn: () => Promise<T>): Promise<T> {
+    return withTenant(this.db, { orgId, audience: "INTERNAL" }, (tx) =>
+      runWithTenantContext({ orgId, audience: "INTERNAL", tx }, fn),
+    );
+  }
+
   private async reclaimStale(): Promise<void> {
     const now = Date.now();
     if (now - this.lastReclaimAt < RECLAIM_INTERVAL_MS) return;
