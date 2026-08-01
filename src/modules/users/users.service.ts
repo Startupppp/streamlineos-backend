@@ -22,6 +22,7 @@ import type {
   UpdateUserInput,
 } from "./dto/users.schemas";
 import { assertMayGrantRole } from "../../common/rbac/assert-may-grant-role";
+import { syncOrgUnitPlacement } from "../../common/org/sync-org-unit-placement";
 import { assertTargetNotOwner } from "../../common/rbac/assert-target-not-owner";
 
 @Injectable()
@@ -59,6 +60,10 @@ export class UsersService {
         if (membershipId !== undefined) {
           await syncStructuralRoleAssignment(tx, orgId, membershipId, role);
         }
+        await syncOrgUnitPlacement(tx, orgId, existing.id, {
+          DEPARTMENT: departmentId ?? null,
+          BRANCH: branchId ?? null,
+        });
       });
       return { userId: existing.id, created: false };
     }
@@ -95,6 +100,10 @@ export class UsersService {
       if (membershipId !== undefined) {
         await syncStructuralRoleAssignment(tx, orgId, membershipId, role);
       }
+      await syncOrgUnitPlacement(tx, orgId, userId, {
+        DEPARTMENT: departmentId ?? null,
+        BRANCH: branchId ?? null,
+      });
     });
 
     this.audit.log({
@@ -303,7 +312,13 @@ export class UsersService {
     if (data.emergencyContact !== undefined) updateData.emergencyContact = data.emergencyContact;
 
     if (Object.keys(updateData).length > 0) {
-      await this.db.update(users).set(updateData).where(eq(users.id, userId));
+      await this.db.transaction(async (tx) => {
+        await tx.update(users).set(updateData).where(eq(users.id, userId));
+        await syncOrgUnitPlacement(tx, orgId, userId, {
+          DEPARTMENT: data.departmentId,
+          TEAM: data.team,
+        });
+      });
     }
 
     if (data.role !== undefined) {

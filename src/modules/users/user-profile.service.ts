@@ -1,6 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, desc, eq, gte, ilike, lte } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
@@ -13,7 +12,6 @@ import {
   orgUnits,
   userPreferences,
   userSessions,
-  type OrgUnitKind,
   users,
 } from "../../db/schema";
 import type {
@@ -23,6 +21,7 @@ import type {
   UpdatePreferencesInput,
 } from "./dto/users.schemas";
 import { withClientInfo, withDeviceClientInfo } from "../../common/http/parse-user-agent";
+import { syncOrgUnitPlacement } from "../../common/org/sync-org-unit-placement";
 
 @Injectable()
 export class UserProfileService {
@@ -290,13 +289,6 @@ export class UserProfileService {
   ) {
     await this.assertMember(orgId, userId);
 
-    const kindMap: Array<{ kind: OrgUnitKind; unitId: string | null | undefined }> = [
-      { kind: "BUSINESS_UNIT", unitId: data.businessUnitId },
-      { kind: "BRANCH", unitId: data.branchId },
-      { kind: "DEPARTMENT", unitId: data.departmentId },
-      { kind: "TEAM", unitId: data.teamId },
-    ];
-
     await this.db.transaction(async (tx) => {
       // `users.branchId` / `users.orgDepartmentId` are denormalised copies that several read paths still filter and render from (branch detail lists, the JWT context, HR analytics, workflow approver routing)
       const scalarPlacement: Partial<{
@@ -312,29 +304,12 @@ export class UserProfileService {
         await tx.update(users).set(scalarPlacement).where(eq(users.id, userId));
       
 
-      for (const { kind, unitId } of kindMap) {
-        if (unitId === undefined) continue;
-
-        const existingRows = await tx
-          .select({ id: orgUnitMembers.id, orgUnitId: orgUnitMembers.orgUnitId })
-          .from(orgUnitMembers)
-          .innerJoin(orgUnits, eq(orgUnitMembers.orgUnitId, orgUnits.id))
-          .where(and(eq(orgUnitMembers.userId, userId), eq(orgUnitMembers.orgId, orgId), eq(orgUnits.kind, kind)));
-
-        for (const row of existingRows) {
-          await tx.delete(orgUnitMembers).where(eq(orgUnitMembers.id, row.id));
-        }
-
-        if (unitId !== null) {
-          await tx.insert(orgUnitMembers).values({
-            id: randomUUID(),
-            orgId,
-            orgUnitId: unitId,
-            userId,
-            role: "member",
-          }).onConflictDoNothing();
-        }
-      }
+      await syncOrgUnitPlacement(tx, orgId, userId, {
+        BUSINESS_UNIT: data.businessUnitId,
+        BRANCH: data.branchId,
+        DEPARTMENT: data.departmentId,
+        TEAM: data.teamId,
+      });
     });
 
     this.audit.log({

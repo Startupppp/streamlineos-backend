@@ -248,6 +248,7 @@ export class KbPagesService {
     pageId: number,
     status: "draft" | "in_review" | "published" | "archived",
   ): Promise<PageRow> {
+    await assertPageAccessible(this.db, user, pageId);
     const orgId = user.orgId;
     const current = await this.db.query.kbPages.findFirst({
       where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
