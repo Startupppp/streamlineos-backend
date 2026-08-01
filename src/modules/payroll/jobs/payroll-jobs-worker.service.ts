@@ -9,6 +9,7 @@ import { GenerateService } from "../runs/generate.service";
 import { PublishingService } from "../payout/publishing.service";
 import { PayrollFilingsService } from "../filings/filings.service";
 import { isTransientDbError } from "../../../common/db/transient-error";
+import { forEachOrg } from "../../../common/tenant";
 
 const POLL_MS = 5_000;
 const BATCH_SIZE = 5;
@@ -17,6 +18,7 @@ const BATCH_SIZE = 5;
  * org can take several minutes, so we use a wider window before assuming a crash.
  */
 const STALE_LOCK_MS = 15 * 60 * 1_000;
+const RECLAIM_INTERVAL_MS = 60_000;
 
 /**
  * In-process durable worker for payroll jobs.
@@ -29,6 +31,7 @@ export class PayrollJobsWorkerService implements OnModuleInit, OnModuleDestroy {
   private timer: ReturnType<typeof setInterval> | undefined;
   private running = false;
   private transientStreak = 0;
+  private lastReclaimAt = 0;
 
   constructor(
     private readonly jobs: PayrollJobsService,
@@ -85,21 +88,32 @@ export class PayrollJobsWorkerService implements OnModuleInit, OnModuleDestroy {
    * stale-lock reclaim pattern (staleBefore = now − STALE_LOCK_MS on lockedAt).
    */
   private async reclaimStale(): Promise<void> {
-    const staleBefore = new Date(Date.now() - STALE_LOCK_MS);
-    const rows = await this.db
-      .update(payrollJobs)
-      .set({ status: "PENDING", startedAt: null, progress: 0 })
-      .where(
-        and(
-          eq(payrollJobs.status, "RUNNING"),
-          isNotNull(payrollJobs.startedAt),
-          lt(payrollJobs.startedAt, staleBefore),
-        ),
-      )
-      .returning({ id: payrollJobs.id });
-    if (rows.length > 0) {
+    const now = Date.now();
+    if (now - this.lastReclaimAt < RECLAIM_INTERVAL_MS) return;
+    this.lastReclaimAt = now;
+
+    const staleBefore = new Date(now - STALE_LOCK_MS);
+    let reclaimed = 0;
+
+    await forEachOrg(this.db, "payroll-stale-lock-reclaim", async (tx, orgId) => {
+      const rows = await tx
+        .update(payrollJobs)
+        .set({ status: "PENDING", startedAt: null, progress: 0 })
+        .where(
+          and(
+            eq(payrollJobs.orgId, orgId),
+            eq(payrollJobs.status, "RUNNING"),
+            isNotNull(payrollJobs.startedAt),
+            lt(payrollJobs.startedAt, staleBefore),
+          ),
+        )
+        .returning({ id: payrollJobs.id });
+      reclaimed += rows.length;
+    });
+
+    if (reclaimed > 0) {
       this.logger.warn(
-        `Payroll stale-lock reclaim: reset ${rows.length} RUNNING job(s) locked before ${staleBefore.toISOString()} back to PENDING`,
+        `Payroll stale-lock reclaim: reset ${reclaimed} RUNNING job(s) locked before ${staleBefore.toISOString()} back to PENDING`,
       );
     }
   }
