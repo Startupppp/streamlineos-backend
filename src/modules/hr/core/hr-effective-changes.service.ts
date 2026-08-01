@@ -6,6 +6,7 @@ import {
   hrEmployeeSensitiveFields,
   hrReportingLines,
   hrPeople,
+  OPEN_ENDED_DATE,
 } from "../../../db/schema/hr/core-people";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -48,7 +49,7 @@ export class HrEffectiveChangesService {
         oldValue: input.oldValue ?? null,
         newValue: input.newValue,
         effectiveFrom: input.effectiveFrom,
-        effectiveTo: input.effectiveTo ?? null,
+        effectiveTo: input.effectiveTo ?? OPEN_ENDED_DATE,
         notes: input.notes ?? null,
         createdBy: actorId,
         status: "draft",

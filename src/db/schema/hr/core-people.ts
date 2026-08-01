@@ -191,6 +191,8 @@ export const hrEmploymentHistory = pgTable("hr_employment_history", {
   index("idx_hr_emp_history_created_at").on(table.createdAt),
 ]);
 
+export const OPEN_ENDED_DATE = "infinity";
+
 export const hrEffectiveDatedChanges = pgTable("hr_effective_dated_changes", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
