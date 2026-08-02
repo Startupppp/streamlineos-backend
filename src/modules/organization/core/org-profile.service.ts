@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Inject, Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { organizationMembers, organizations, users } from "../../../db/schema";
+import { organizationMembers, organizations, subscriptions, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { seedSystemRolesForOrg } from "../../rbac/seed-system-roles";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
@@ -10,6 +10,10 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import type { CreateOrganizationInput } from "./dto/organization.schemas";
+import { addDays } from "date-fns";
+import { bumpPermissionsVersion } from "../../../common/rbac/access-invalidate";
+import { getTrialDays, TRIAL_PLAN } from "../../billing/core/plan-entitlements.constants";
+import { provisionOrgModules, DEFAULT_SKIP_MODULES } from "../setup/org-setup.service";
 
 @Injectable()
 export class OrgProfileService {
@@ -144,7 +148,18 @@ export class OrgProfileService {
         status: "ACTIVE",
         activatedAt: new Date(),
       });
+      const trialDays = getTrialDays();
+      await tx.insert(subscriptions).values({
+        orgId,
+        plan: TRIAL_PLAN,
+        status: "TRIAL",
+        trialEndsAt: addDays(new Date(), trialDays),
+        currentPeriodStart: new Date(),
+        currentPeriodEnd: addDays(new Date(), trialDays),
+      });
+      await bumpPermissionsVersion(tx, orgId);
       await seedSystemRolesForOrg(this.db, orgId);
+      await provisionOrgModules(tx, orgId, DEFAULT_SKIP_MODULES, userId);
     });
 
     return { id: orgId, name: input.name, slug: input.slug };

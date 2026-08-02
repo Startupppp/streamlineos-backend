@@ -151,7 +151,7 @@ export class ModuleChecklistService {
   ) {}
 
   /** Idempotently creates a checklist + seeded items for each module key. Safe to call repeatedly. */
-  async ensureChecklistsForModules(orgId: string, moduleKeys: string[]) {
+  async ensureChecklistsForModules(orgId: string, moduleKeys: readonly string[]) {
     for (const moduleKey of moduleKeys) {
       const seeds = CHECKLIST_SEEDS[moduleKey];
       if (!seeds) continue;
