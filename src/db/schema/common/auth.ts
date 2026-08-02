@@ -129,7 +129,6 @@ export const users = pgTable("users", {
   deletedAt: timestamp("deleted_at"),
   hasDashboardAccess: boolean("has_dashboard_access").default(false).notNull(),
   reportingTo: text("reporting_to"),
-  team: text("team"),
   branchId: text("branch_id"),
   emergencyContact: jsonb("emergency_contact").$type<{
     name: string;
