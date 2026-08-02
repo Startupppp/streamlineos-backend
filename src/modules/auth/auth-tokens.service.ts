@@ -75,7 +75,7 @@ export class AuthTokensService {
         })
         .from(organizationMembers)
         .innerJoin(organizations, eq(organizations.id, organizationMembers.orgId))
-        .where(eq(organizationMembers.userId, userId))
+        .where(and(eq(organizationMembers.userId, userId), eq(organizationMembers.status, "ACTIVE")))
         .orderBy(desc(organizationMembers.joinedAt)),
     );
 
