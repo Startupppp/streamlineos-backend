@@ -70,7 +70,7 @@ export class CommsActionsTools {
           if (deny) return { denied: true, reason: deny };
 
           const rows = await this.db.execute(
-            sql`SELECT id, name FROM chat_channels WHERE org_id = ${orgId} AND name ILIKE ${"%" + channelName + "%"} AND deleted_at IS NULL LIMIT 1`,
+            sql`SELECT id, name FROM chat_channels WHERE org_id = ${orgId} AND name ILIKE ${"%" + channelName + "%"} AND is_archived = false LIMIT 1`,
           );
 
           const row = rows[0] as Record<string, unknown> | undefined;

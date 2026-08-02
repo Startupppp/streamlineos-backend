@@ -103,13 +103,11 @@ export class EmergencyService {
       ? await this.db.execute(
           sql`SELECT DISTINCT u.id FROM users u
               INNER JOIN organization_members om ON om.user_id = u.id AND om.org_id = ${orgId}
-              INNER JOIN hr_employments he ON he.user_id = u.id AND he.org_id = ${orgId} AND he.location_id = ${event.locationId} AND he.deleted_at IS NULL
-              WHERE om.deleted_at IS NULL`,
+              INNER JOIN hr_employments he ON he.user_id = u.id AND he.org_id = ${orgId} AND he.location_id = ${event.locationId} AND he.deleted_at IS NULL`,
         )
       : await this.db.execute(
           sql`SELECT DISTINCT u.id FROM users u
-              INNER JOIN organization_members om ON om.user_id = u.id AND om.org_id = ${orgId}
-              WHERE om.deleted_at IS NULL`,
+              INNER JOIN organization_members om ON om.user_id = u.id AND om.org_id = ${orgId}`,
         );
 
     const allUserIds: string[] = [];

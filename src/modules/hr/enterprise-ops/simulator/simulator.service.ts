@@ -137,13 +137,13 @@ export class SimulatorService {
     input: SimulatePayrollImpactInput,
   ) {
     const rows = await this.db.execute(
-      sql`SELECT ctc FROM salary_profiles
-          WHERE org_id = ${orgId} AND user_id = ${input.employeeId} AND status = 'active'
+      sql`SELECT annual_ctc FROM employee_salary_profiles
+          WHERE org_id = ${orgId} AND user_id = ${input.employeeId} AND status = 'ACTIVE'
           ORDER BY effective_from DESC LIMIT 1`,
     );
 
     const lastGross = rows.length > 0
-      ? Number((rows[0] as Record<string, unknown>)["ctc"] ?? 0)
+      ? Number((rows[0] as Record<string, unknown>)["annual_ctc"] ?? 0)
       : 0;
 
     let totalEarningsDelta = 0;

@@ -440,7 +440,7 @@ export class HrAiService {
     const safeQuestion = redactSensitiveData(question);
 
     const rows = await this.db.execute(sql`
-      SELECT id, policy_type, scope_type, name
+      SELECT id, policy_type, name
       FROM hr_policies
       WHERE org_id = ${orgId}
         AND status = 'active'
@@ -452,7 +452,7 @@ export class HrAiService {
     const policies = (rows as Array<Record<string, unknown>>).map((p) => ({
       id: Number(p.id),
       policyType: String(p.policy_type),
-      scopeType: p.scope_type ? String(p.scope_type) : null,
+      scopeType: null as string | null,
       name: p.name ? String(p.name) : null,
     }));
 

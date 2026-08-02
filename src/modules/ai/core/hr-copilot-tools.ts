@@ -35,7 +35,7 @@ export class HrCopilotTools {
           if (deny) return { denied: true, reason: deny };
 
           const policies = await this.db.execute(sql`
-            SELECT id, policy_type, status, scope_type, created_at
+            SELECT id, policy_type, status, created_at
             FROM hr_policies
             WHERE org_id = ${orgId}
               AND status = 'active'
@@ -54,7 +54,7 @@ export class HrCopilotTools {
           const policyList = policies
             .map(
               (p: Record<string, unknown>) =>
-                `Policy type: ${String(p.policy_type)}, scope: ${String(p.scope_type)}`,
+                `Policy type: ${String(p.policy_type)}`,
             )
             .join("\n");
 
