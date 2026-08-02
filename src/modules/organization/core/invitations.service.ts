@@ -151,7 +151,16 @@ export class InvitationsService {
 
       await tx
         .update(invitations)
-        .set({ tokenHash: hashToken(rawToken), expiresAt: newExpiresAt, role, invitedBy: actorUserId })
+        .set({
+          tokenHash: hashToken(rawToken),
+          expiresAt: newExpiresAt,
+          role,
+          invitedBy: actorUserId,
+          status: "PENDING",
+          revokedAt: null,
+          revokedByMembershipId: null,
+          declinedAt: null,
+        })
         .where(eq(invitations.id, pendingInvitation.id));
 
       await tx.insert(invitationEvents).values({
@@ -554,7 +563,14 @@ export class InvitationsService {
     await this.db.transaction(async (tx) => {
       await tx
         .update(invitations)
-        .set({ tokenHash: hashToken(rawToken), expiresAt: newExpiresAt })
+        .set({
+          tokenHash: hashToken(rawToken),
+          expiresAt: newExpiresAt,
+          status: "PENDING",
+          revokedAt: null,
+          revokedByMembershipId: null,
+          declinedAt: null,
+        })
         .where(eq(invitations.id, invitationId));
       await tx.insert(invitationEvents).values({
         orgId,
