@@ -200,7 +200,7 @@ export class UsersController {
     );
   }
 
-  @RequirePermission("hr:employees:delete")
+  @RequirePermission("hr:employees:create")
   @Delete("invitations/:invitationId")
   cancelInvite(@Param("invitationId") invitationId: string, @CurrentUser() u: CurrentUserContext) {
     return this.invitations.cancel(u.orgId, invitationId, u.userId);

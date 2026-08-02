@@ -137,9 +137,6 @@ export class OrganizationController {
     @Body(new ZodValidationPipe(updateMemberRoleSchema)) body: UpdateMemberRoleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner) {
-      throw new ForbiddenException("Forbidden");
-    }
     return this.organization.updateMemberRole(
       u.orgId,
       { userId: u.userId, isOrgOwner: u.isOrgOwner },
