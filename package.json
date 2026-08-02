@@ -19,6 +19,7 @@
     "db:bootstrap-role": "node src/scripts/db-bootstrap-app-role.mjs",
     "db:verify-rls": "node src/scripts/db-verify-rls.mjs",
     "purge:user": "node src/scripts/purge-user.mjs",
+    "backfill:member-roles": "node src/scripts/backfill-member-role-assignments.mjs",
     "db:studio": "drizzle-kit studio --config drizzle.config.ts",
     "setup:r2": "node --env-file=.env -r ts-node/register src/scripts/setup-r2-buckets.ts",
     "backfill:system-roles": "node --env-file=.env -r ts-node/register src/scripts/backfill-system-roles.ts",
