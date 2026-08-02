@@ -164,7 +164,10 @@ export class OrgProfileService {
       await bumpPermissionsVersion(tx, orgId);
       await seedSystemRolesForOrg(this.db, orgId);
       await provisionOrgModules(tx, orgId, DEFAULT_SKIP_MODULES, userId);
+      await tx.update(users).set({ lastActiveOrgId: orgId }).where(eq(users.id, userId));
     });
+
+    await this.cache.invalidate(CACHE_KEYS.userSession(userId));
 
     return { id: orgId, name: input.name, slug: input.slug };
   }

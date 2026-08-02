@@ -93,7 +93,15 @@ export class OrgSetupService {
         columns: { id: true },
       });
       if (existingOrg) {
-        return u.orgId;
+        const orgId = u.orgId;
+        await runInTenantTransaction(
+          this.db,
+          async () => {
+            await seedSystemRolesForOrg(this.db, orgId);
+          },
+          { orgId },
+        );
+        return orgId;
       }
     }
 
@@ -110,6 +118,13 @@ export class OrgSetupService {
 
     const valid = memberships.find((m) => m.existingOrgId !== null);
     if (valid) {
+      await runInTenantTransaction(
+        this.db,
+        async () => {
+          await seedSystemRolesForOrg(this.db, valid.orgId);
+        },
+        { orgId: valid.orgId },
+      );
       return valid.orgId;
     }
 
