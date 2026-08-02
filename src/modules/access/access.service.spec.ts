@@ -4,7 +4,7 @@ import {
   evaluateMembershipGate,
   isActiveDelegation,
   isActiveAssignment,
-  isInternalModule,
+  isPlanGatedModule,
   moduleOf,
   type DelegationRow,
 } from "./access.service";
@@ -46,15 +46,33 @@ describe("moduleOf", () => {
   });
 });
 
-describe("isInternalModule", () => {
-  it("treats settings and self as internal", () => {
-    expect(isInternalModule("settings")).toBe(true);
-    expect(isInternalModule("self")).toBe(true);
+describe("isPlanGatedModule", () => {
+  it("gates the modules an organization actually buys and toggles", () => {
+    expect(isPlanGatedModule("hr")).toBe(true);
+    expect(isPlanGatedModule("crm")).toBe(true);
+    expect(isPlanGatedModule("payroll")).toBe(true);
   });
 
-  it("treats feature modules as non-internal", () => {
-    expect(isInternalModule("hr")).toBe(false);
-    expect(isInternalModule("crm")).toBe(false);
+  it("does not gate settings or self", () => {
+    expect(isPlanGatedModule("settings")).toBe(false);
+    expect(isPlanGatedModule("self")).toBe(false);
+  });
+
+  it("does not gate platform infrastructure, which no org can enable", () => {
+    for (const module of [
+      "directory",
+      "party",
+      "ownership",
+      "onboarding",
+      "workforce",
+      "notifications",
+      "dashboard",
+      "billing",
+      "branch",
+      "audit-log",
+    ]) {
+      expect(isPlanGatedModule(module)).toBe(false);
+    }
   });
 });
 

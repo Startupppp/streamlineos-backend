@@ -22,6 +22,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ACCESS_MANAGED_MODULES, ALL_PERMISSION_NAMES, PERMISSIONS, ROLE_DEFAULT_PERMISSIONS, moduleScopedPermissions } from "../rbac/permissions";
 
 import { subscribeVersionBump } from "../../common/rbac/access-invalidate";
+import { isPlanGatedModule } from "../../common/rbac/module-vocabulary";
 import type { AccessSnapshot, DataScope } from "./access.types";
 import { EntitlementsService, MODULE_CATALOG } from "./entitlements.service";
 
@@ -95,9 +96,7 @@ export function moduleOf(permissionKey: string): string {
   return idx === -1 ? permissionKey : permissionKey.slice(0, idx);
 }
 
-export function isInternalModule(module: string): boolean {
-  return module === "settings" || module === "self";
-}
+export { isPlanGatedModule };
 
 export interface MembershipGateResult {
   active: boolean;
@@ -408,7 +407,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     const effective = await this.entitlements.getEffectiveModuleMap(orgId);
     const modules: Record<string, boolean> = {};
     for (const moduleKey of CATALOG_MODULES) {
-      if (isInternalModule(moduleKey)) {
+      if (!isPlanGatedModule(moduleKey)) {
         modules[moduleKey] = true;
         continue;
       }
@@ -612,7 +611,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
   ): Promise<{ userId: string; membershipId: number }[]> {
     const permModule = moduleOf(permissionKey);
 
-    if (!isInternalModule(permModule)) {
+    if (isPlanGatedModule(permModule)) {
       const enabled = await this.isModuleEnabled(orgId, permModule);
       if (!enabled) return [];
     }
@@ -804,7 +803,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    if (candidates.length === 0 || isInternalModule(permModule)) return candidates;
+    if (candidates.length === 0 || !isPlanGatedModule(permModule)) return candidates;
 
     const deniedRows = await this.safeAccessTableRead(
       () =>

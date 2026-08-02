@@ -1,5 +1,6 @@
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { isInternalModule, moduleOf } from "./access.service";
+import { isPlanGatedModule } from "../../common/rbac/module-vocabulary";
+import { moduleOf } from "./access.service";
 import type { AuthResult, DataScope } from "./access.types";
 
 export interface AccessResolver {
@@ -17,7 +18,7 @@ export async function authorize(
   if (ctx.isOrgOwner) return { allow: true, scope: "all" };
 
   const moduleKey = moduleOf(permissionKey);
-  if (!isInternalModule(moduleKey) && !(await access.isModuleEnabled(ctx.orgId, moduleKey))) {
+  if (isPlanGatedModule(moduleKey) && !(await access.isModuleEnabled(ctx.orgId, moduleKey))) {
     return { allow: false, scope: "none", reason: "NO_MODULE" };
   }
 

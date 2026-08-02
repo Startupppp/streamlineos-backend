@@ -14,3 +14,10 @@ export const MODULE_CATALOG = [
 ] as const;
 
 export type ModuleKey = (typeof MODULE_CATALOG)[number];
+
+const PLAN_GATED_MODULES: ReadonlySet<string> = new Set(MODULE_CATALOG);
+
+
+export function isPlanGatedModule(module: string): boolean {
+  return PLAN_GATED_MODULES.has(module);
+}
