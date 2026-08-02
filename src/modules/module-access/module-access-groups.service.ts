@@ -750,7 +750,11 @@ export class ModuleAccessGroupsService {
       throw err;
     }
 
-    await this.cache.invalidate(CACHE_KEYS.moduleAccessOwnership(actor.orgId, moduleKey));
+    await Promise.all([
+      this.cache.invalidate(CACHE_KEYS.moduleAccessOwnership(actor.orgId, moduleKey)),
+      this.cache.invalidatePattern(CACHE_KEYS.ownershipTransfersPattern(actor.orgId)),
+      this.cache.invalidatePattern(CACHE_KEYS.incomingTransfersPattern(actor.orgId)),
+    ]);
 
     return { success: true };
   }
@@ -1135,7 +1139,11 @@ export class ModuleAccessGroupsService {
       .set({ status: "CANCELLED" })
       .where(eq(ownershipTransfers.id, transfer.id));
 
-    await this.cache.invalidate(CACHE_KEYS.moduleAccessOwnership(actor.orgId, moduleKey));
+    await Promise.all([
+      this.cache.invalidate(CACHE_KEYS.moduleAccessOwnership(actor.orgId, moduleKey)),
+      this.cache.invalidatePattern(CACHE_KEYS.ownershipTransfersPattern(actor.orgId)),
+      this.cache.invalidatePattern(CACHE_KEYS.incomingTransfersPattern(actor.orgId)),
+    ]);
 
     return { success: true };
   }
