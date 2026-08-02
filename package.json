@@ -21,6 +21,7 @@
     "db:verify-rls": "node src/scripts/db-verify-rls.mjs",
     "seed:marketplace-apps": "node --env-file=.env -r ts-node/register src/db/seeds/marketplace-apps.seed.ts",
     "purge:user": "node src/scripts/purge-user.mjs",
+    "e2e:smoke": "node src/scripts/e2e-smoke.mjs",
     "backfill:member-roles": "node src/scripts/backfill-member-role-assignments.mjs",
     "db:studio": "drizzle-kit studio --config drizzle.config.ts",
     "setup:r2": "node --env-file=.env -r ts-node/register src/scripts/setup-r2-buckets.ts",

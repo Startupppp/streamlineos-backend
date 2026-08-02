@@ -311,17 +311,17 @@ export class InvitationsService {
           revokedAt: invitations.revokedAt,
           deliveryFailed: sql<boolean>`EXISTS (
             SELECT 1 FROM ${invitationEvents} f
-            WHERE f.invitation_id = ${invitations.id}
+            WHERE f.invitation_id = "invitations"."id"
               AND f.org_id = ${orgId}
               AND f.event = 'DELIVERY_FAILED'
               AND f.created_at > COALESCE(
                 (
                   SELECT MAX(r.created_at) FROM ${invitationEvents} r
-                  WHERE r.invitation_id = ${invitations.id}
+                  WHERE r.invitation_id = "invitations"."id"
                     AND r.org_id = ${orgId}
                     AND r.event = 'RESENT'
                 ),
-                ${invitations.createdAt}
+                "invitations"."created_at"
               )
           )`,
         })
