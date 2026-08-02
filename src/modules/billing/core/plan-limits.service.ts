@@ -171,12 +171,12 @@ export class PlanLimitsService {
           (SELECT COUNT(*)::int FROM chat_channels WHERE org_id = ${orgId})                                                               AS "chatChannels",
           (SELECT COUNT(*)::int FROM leads WHERE org_id = ${orgId} AND deleted_at IS NULL)                                                AS "crmLeads",
           (SELECT COUNT(*)::int FROM contacts WHERE org_id = ${orgId} AND deleted_at IS NULL)                                             AS "crmContacts",
-          (SELECT COUNT(*)::int FROM deals WHERE org_id = ${orgId} AND deleted_at IS NULL)                                               AS "crmDeals",
+          (SELECT COUNT(*)::int FROM deals WHERE org_id = ${orgId})                                                                    AS "crmDeals",
           (SELECT COUNT(*)::int FROM support_tickets WHERE org_id = ${orgId})                                                             AS "supportTickets",
           (SELECT COUNT(*)::int FROM automation_rules WHERE org_id = ${orgId})                                                              AS automations,
           (SELECT COUNT(*)::int FROM sign_envelopes WHERE org_id = ${orgId})                                                              AS "signEnvelopes",
           (SELECT COUNT(*)::int FROM survey_forms WHERE org_id = ${orgId})                                                                AS surveys,
-          (SELECT COUNT(*)::int FROM invoices WHERE org_id = ${orgId} AND deleted_at IS NULL)                                            AS "acctInvoices",
+          (SELECT COUNT(*)::int FROM invoices WHERE org_id = ${orgId})                                                                  AS "acctInvoices",
           (SELECT COUNT(*)::int FROM candidates WHERE org_id = ${orgId})                                                                  AS "hrCandidates",
           (SELECT COUNT(*)::int FROM job_postings WHERE org_id = ${orgId})                                                                AS "hrJobPostings"
       `);
@@ -314,7 +314,7 @@ export class PlanLimitsService {
       }
       case "crmDeals": {
         const rows = await this.db.execute(
-          sql`SELECT COUNT(*)::int AS count FROM deals WHERE org_id = ${orgId} AND deleted_at IS NULL`,
+          sql`SELECT COUNT(*)::int AS count FROM deals WHERE org_id = ${orgId}`,
         );
         return Number(rows[0]?.["count"] ?? 0);
       }
@@ -344,7 +344,7 @@ export class PlanLimitsService {
       }
       case "acctInvoices": {
         const rows = await this.db.execute(
-          sql`SELECT COUNT(*)::int AS count FROM invoices WHERE org_id = ${orgId} AND deleted_at IS NULL`,
+          sql`SELECT COUNT(*)::int AS count FROM invoices WHERE org_id = ${orgId}`,
         );
         return Number(rows[0]?.["count"] ?? 0);
       }
