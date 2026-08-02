@@ -85,6 +85,8 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
     slug: "HR_ADMIN",
     moduleKey: "hr",
     permissions: [
+      "settings:view",
+      "settings:organization:manage",
       "hr:employees:view",
       "hr:employees:read",
       "hr:employees:manage",
@@ -176,6 +178,7 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
     slug: "BRANCH_HR",
     moduleKey: "hr",
     permissions: [
+      "settings:view",
       "hr:employees:view",
       "hr:employees:create",
       "hr:employees:update",
@@ -452,6 +455,7 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       "chat:messages:write",
       "tasks:read",
       "tasks:write",
+      "settings:view",
       "hr:employees:read",
       "hr:employees:view",
       "hr:employees:manage",
