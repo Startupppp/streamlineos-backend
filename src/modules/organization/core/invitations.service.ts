@@ -609,11 +609,7 @@ export class InvitationsService {
         org?.name ?? "Your Organization",
         inviterName,
       )
-      .catch((err: unknown) => {
-        this.logger.error(
-          `Invitation email delivery failed: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      });
+      .catch((err: unknown) => this.recordDeliveryFailure(orgId, invitationId, err));
 
     this.audit.log({
       action: "user.invitation.resent",
