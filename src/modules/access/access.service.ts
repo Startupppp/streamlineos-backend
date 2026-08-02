@@ -1,4 +1,11 @@
-import { BadRequestException, Inject, Injectable, NotFoundException, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+  type OnModuleDestroy,
+  type OnModuleInit,
+} from "@nestjs/common";
 import { and, eq, gt, inArray, isNull, or } from "drizzle-orm";
 import {
   accessVersions,
@@ -19,9 +26,18 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ACCESS_MANAGED_MODULES, ALL_PERMISSION_NAMES, PERMISSIONS, ROLE_DEFAULT_PERMISSIONS, moduleScopedPermissions } from "../rbac/permissions";
+import {
+  ACCESS_MANAGED_MODULES,
+  ALL_PERMISSION_NAMES,
+  PERMISSIONS,
+  ROLE_DEFAULT_PERMISSIONS,
+  moduleScopedPermissions,
+} from "../rbac/permissions";
 
-import { subscribeVersionBump } from "../../common/rbac/access-invalidate";
+import {
+  bumpPermissionsVersion,
+  subscribeVersionBump,
+} from "../../common/rbac/access-invalidate";
 import { isPlanGatedModule } from "../../common/rbac/module-vocabulary";
 import type { AccessSnapshot, DataScope } from "./access.types";
 import { EntitlementsService, MODULE_CATALOG } from "./entitlements.service";
@@ -44,7 +60,12 @@ const ACCESS_MANAGE_TO_VIEW_MAP: ReadonlyMap<string, string> = (() => {
   return map;
 })();
 
-export const SCOPE_RANK: Record<DataScope, number> = { none: 0, own: 1, team: 2, all: 3 };
+export const SCOPE_RANK: Record<DataScope, number> = {
+  none: 0,
+  own: 1,
+  team: 2,
+  all: 3,
+};
 
 interface VersionEntry {
   version: number;
@@ -87,7 +108,10 @@ export function isActiveDelegation(row: DelegationRow, now: Date): boolean {
   return row.status === "ACTIVE" && row.endsAt > now;
 }
 
-export function isActiveAssignment(row: { expiresAt: Date | null }, now: Date): boolean {
+export function isActiveAssignment(
+  row: { expiresAt: Date | null },
+  now: Date,
+): boolean {
   return row.expiresAt === null || row.expiresAt > now;
 }
 
@@ -106,11 +130,14 @@ export interface MembershipGateResult {
 export function evaluateMembershipGate(
   member: { status: string; isOwner: boolean } | null | undefined,
 ): MembershipGateResult {
-  if (!member || member.status !== "ACTIVE") return { active: false, isOwner: false };
+  if (!member || member.status !== "ACTIVE")
+    return { active: false, isOwner: false };
   return { active: true, isOwner: member.isOwner };
 }
 
-const CATALOG_MODULES = Array.from(new Set(PERMISSIONS.map((permission) => moduleOf(permission.name))));
+const CATALOG_MODULES = Array.from(
+  new Set(PERMISSIONS.map((permission) => moduleOf(permission.name))),
+);
 
 const EMPTY_DENIED_MODULES: ReadonlySet<string> = new Set<string>();
 
@@ -167,7 +194,10 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  private async safeAccessTableRead<T>(read: () => PromiseLike<T>, fallback: T): Promise<T> {
+  private async safeAccessTableRead<T>(
+    read: () => PromiseLike<T>,
+    fallback: T,
+  ): Promise<T> {
     try {
       return await read();
     } catch (error: unknown) {
@@ -195,7 +225,10 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       { orgId },
     );
     const version = row?.permissionsVersion ?? 1;
-    this.versionCache.set(orgId, { version, expiresAt: Date.now() + VERSION_CACHE_TTL_MS });
+    this.versionCache.set(orgId, {
+      version,
+      expiresAt: Date.now() + VERSION_CACHE_TTL_MS,
+    });
     if (this.versionCache.size > 2000) {
       const now = Date.now();
       for (const [key, entry] of this.versionCache) {
@@ -205,7 +238,10 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     return version;
   }
 
-  async resolveUserPermissions(orgId: string, userId: string): Promise<Map<string, DataScope>> {
+  async resolveUserPermissions(
+    orgId: string,
+    userId: string,
+  ): Promise<Map<string, DataScope>> {
     return runInTenantTransaction(
       this.db,
       async () => {
@@ -221,7 +257,10 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
             () => this.computeUserPermissions(orgId, userId),
             CACHE_TTL.LONG,
           );
-          this.permsCache.set(permsKey, { perms: resolved, expiresAt: Date.now() + PERMS_CACHE_TTL_MS });
+          this.permsCache.set(permsKey, {
+            perms: resolved,
+            expiresAt: Date.now() + PERMS_CACHE_TTL_MS,
+          });
           if (this.permsCache.size > 5000) {
             const now = Date.now();
             for (const [key, entry] of this.permsCache) {
@@ -247,7 +286,10 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  private readonly ownerCache = new Map<string, { isOwner: boolean; expiresAt: number }>();
+  private readonly ownerCache = new Map<
+    string,
+    { isOwner: boolean; expiresAt: number }
+  >();
 
   /** Cached `organization_members.is_owner` for the deny exemption above. */
   private async isOrgOwner(orgId: string, userId: string): Promise<boolean> {
@@ -270,8 +312,12 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     return isOwner;
   }
 
-  async getUserDeniedModules(orgId: string, userId: string): Promise<Set<string>> {
-    const cacheKey = `${orgId}:${userId}`;
+  async getUserDeniedModules(
+    orgId: string,
+    userId: string,
+  ): Promise<Set<string>> {
+    const version = await this.getPermissionsVersion(orgId);
+    const cacheKey = `${orgId}:${userId}:${version}`;
     const cached = this.deniedModulesCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) return cached.modules;
 
@@ -334,20 +380,26 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
           ),
           columns: { userId: true },
         });
-        if (!member) throw new NotFoundException("User is not a member of this workspace");
+        if (!member)
+          throw new NotFoundException("User is not a member of this workspace");
 
         await tx
           .insert(userModuleAccess)
           .values({ orgId, userId, moduleKey, enabled, updatedBy })
           .onConflictDoUpdate({
-            target: [userModuleAccess.orgId, userModuleAccess.userId, userModuleAccess.moduleKey],
+            target: [
+              userModuleAccess.orgId,
+              userModuleAccess.userId,
+              userModuleAccess.moduleKey,
+            ],
             set: { enabled, updatedBy },
           });
+
+        await bumpPermissionsVersion(tx, orgId);
       },
       { orgId },
     );
 
-    this.deniedModulesCache.delete(`${orgId}:${userId}`);
     await this.cache.invalidate(CACHE_KEYS.userSession(userId));
     return this.getUserModuleAccess(orgId, userId);
   }
@@ -361,9 +413,13 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     userId: string,
     ctx: CurrentUserContext,
   ): Promise<AccessSnapshot> {
-    return runInTenantTransaction(this.db, () => this.computeAccessSnapshot(orgId, userId, ctx), {
-      orgId,
-    });
+    return runInTenantTransaction(
+      this.db,
+      () => this.computeAccessSnapshot(orgId, userId, ctx),
+      {
+        orgId,
+      },
+    );
   }
 
   private async computeAccessSnapshot(
@@ -396,7 +452,13 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     const denied = await this.getUserDeniedModules(orgId, userId);
     const modules = await this.resolveModuleFlags(orgId, denied);
 
-    return { permissions, scopes, modules, isOrgOwner: ctx.isOrgOwner, version };
+    return {
+      permissions,
+      scopes,
+      modules,
+      isOrgOwner: ctx.isOrgOwner,
+      version,
+    };
   }
 
   /** Module on/off flags for the access snapshot. */
@@ -411,7 +473,8 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
         modules[moduleKey] = true;
         continue;
       }
-      const orgEnabled = moduleKey in effective ? effective[moduleKey] === true : true;
+      const orgEnabled =
+        moduleKey in effective ? effective[moduleKey] === true : true;
       modules[moduleKey] = orgEnabled && !denied.has(moduleKey);
     }
     return modules;
@@ -422,7 +485,10 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     userId: string,
   ): Promise<Record<string, DataScope>> {
     const member = await this.db.query.organizationMembers.findFirst({
-      where: and(eq(organizationMembers.userId, userId), eq(organizationMembers.orgId, orgId)),
+      where: and(
+        eq(organizationMembers.userId, userId),
+        eq(organizationMembers.orgId, orgId),
+      ),
       columns: { isOwner: true, status: true, id: true },
     });
     const gate = evaluateMembershipGate(member);
@@ -453,12 +519,17 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       this.safeAccessTableRead(
         () =>
           this.db
-            .select({ principalGroupId: principalGroupMembers.principalGroupId })
+            .select({
+              principalGroupId: principalGroupMembers.principalGroupId,
+            })
             .from(principalGroupMembers)
             .where(
               and(
                 eq(principalGroupMembers.orgId, orgId),
-                eq(principalGroupMembers.organizationMembershipId, membershipId),
+                eq(
+                  principalGroupMembers.organizationMembershipId,
+                  membershipId,
+                ),
               ),
             ),
         [] as { principalGroupId: string }[],
@@ -504,16 +575,25 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       const existing = result[key];
       result[key] = existing ? broadest(existing, scope) : scope;
     };
-    const mergeIfKnown = (key: string, scope: DataScope, source: string): void => {
+    const mergeIfKnown = (
+      key: string,
+      scope: DataScope,
+      source: string,
+    ): void => {
       if (CATALOG_KEY_SET.has(key)) {
         merge(key, scope);
         return;
       }
       if (!this.warnedUnknownKeys.has(key)) {
         this.warnedUnknownKeys.add(key);
-        logger.warn("access: unknown permission key in grant — absent from catalog, omitted from resolved permissions", {
-          orgId, key, source,
-        });
+        logger.warn(
+          "access: unknown permission key in grant — absent from catalog, omitted from resolved permissions",
+          {
+            orgId,
+            key,
+            source,
+          },
+        );
       }
     };
 
@@ -523,7 +603,9 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
         .select({ id: roles.id, slug: roles.slug })
         .from(roles)
         .where(and(eq(roles.orgId, orgId), inArray(roles.id, roleIdList)));
-      const roleById = new Map(roleRecords.map((record) => [record.id, record]));
+      const roleById = new Map(
+        roleRecords.map((record) => [record.id, record]),
+      );
 
       const grantRows = await this.safeAccessTableRead(
         () =>
@@ -542,7 +624,10 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
             ),
         [],
       );
-      const grantsByRole = new Map<number, { permissionKey: string; scope: DataScope }[]>();
+      const grantsByRole = new Map<
+        number,
+        { permissionKey: string; scope: DataScope }[]
+      >();
       for (const grant of grantRows) {
         const list = grantsByRole.get(grant.roleId) ?? [];
         list.push({ permissionKey: grant.permissionKey, scope: grant.scope });
@@ -552,11 +637,14 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       for (const roleId of roleIdList) {
         const grants = grantsByRole.get(roleId);
         if (grants && grants.length > 0) {
-          for (const grant of grants) mergeIfKnown(grant.permissionKey, grant.scope, "role-grant");
+          for (const grant of grants)
+            mergeIfKnown(grant.permissionKey, grant.scope, "role-grant");
           continue;
         }
         const record = roleById.get(roleId);
-        const defaults = record ? (ROLE_DEFAULT_PERMISSIONS[record.slug] ?? []) : [];
+        const defaults = record
+          ? (ROLE_DEFAULT_PERMISSIONS[record.slug] ?? [])
+          : [];
         for (const key of defaults) merge(key, "all");
       }
     }
@@ -599,7 +687,8 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
   ): Promise<{ userId: string; membershipId: number }[]> {
     return runInTenantTransaction(
       this.db,
-      () => this.computeMembersWithPermissionCached(orgId, permissionKey, options),
+      () =>
+        this.computeMembersWithPermissionCached(orgId, permissionKey, options),
       { orgId },
     );
   }
@@ -618,20 +707,30 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
 
     const limit = Math.max(1, options?.limit ?? MEMBERS_WITH_PERM_DEFAULT_CAP);
     const version = await this.getPermissionsVersion(orgId);
-    const cacheKey = CACHE_KEYS.accessMembersWithPerm(orgId, permissionKey, version, limit);
+    const cacheKey = CACHE_KEYS.accessMembersWithPerm(
+      orgId,
+      permissionKey,
+      version,
+      limit,
+    );
 
-    const result = await this.cache.cached<{ userId: string; membershipId: number }[]>(
+    const result = await this.cache.cached<
+      { userId: string; membershipId: number }[]
+    >(
       cacheKey,
       () => this.computeMembersWithPermission(orgId, permissionKey, limit),
       CACHE_TTL.SHORT,
     );
 
     if (result.length >= limit) {
-      logger.warn("access: membersWithPermission result may be truncated — raise limit or investigate org size", {
-        orgId,
-        permissionKey,
-        limit,
-      });
+      logger.warn(
+        "access: membersWithPermission result may be truncated — raise limit or investigate org size",
+        {
+          orgId,
+          permissionKey,
+          limit,
+        },
+      );
     }
 
     return result;
@@ -659,7 +758,10 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       this.safeAccessTableRead(
         () =>
           this.db
-            .select({ userId: organizationMembers.userId, membershipId: organizationMembers.id })
+            .select({
+              userId: organizationMembers.userId,
+              membershipId: organizationMembers.id,
+            })
             .from(organizationMembers)
             .where(
               and(
@@ -701,7 +803,12 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
               this.db
                 .select({ id: roles.id })
                 .from(roles)
-                .where(and(eq(roles.orgId, orgId), inArray(roles.slug, slugsWithPermInDefaults))),
+                .where(
+                  and(
+                    eq(roles.orgId, orgId),
+                    inArray(roles.slug, slugsWithPermInDefaults),
+                  ),
+                ),
             [] as { id: number }[],
           )
         : Promise.resolve([] as { id: number }[]),
@@ -709,7 +816,10 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       this.safeAccessTableRead(
         () =>
           this.db
-            .selectDistinct({ userId: organizationMembers.userId, membershipId: organizationMembers.id })
+            .selectDistinct({
+              userId: organizationMembers.userId,
+              membershipId: organizationMembers.id,
+            })
             .from(organizationMembers)
             .innerJoin(
               moduleOwnerships,
@@ -720,14 +830,19 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
               ),
             )
             .where(
-              and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.status, "ACTIVE")),
+              and(
+                eq(organizationMembers.orgId, orgId),
+                eq(organizationMembers.status, "ACTIVE"),
+              ),
             )
             .limit(limit),
         [] as { userId: string; membershipId: number }[],
       ),
     ]);
 
-    const orgExplicitRoleIds = new Set(allExplicitRoleIdRows.map((r) => r.roleId));
+    const orgExplicitRoleIds = new Set(
+      allExplicitRoleIdRows.map((r) => r.roleId),
+    );
     const defaultFallbackRoleIds = slugMatchingRoleRows
       .filter((r) => !orgExplicitRoleIds.has(r.id))
       .map((r) => r.id);
@@ -736,57 +851,82 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       ...defaultFallbackRoleIds,
     ];
 
-    const [directRoleRows, groupRoleRows] = allGrantingRoleIds.length > 0
-      ? await Promise.all([
-          this.safeAccessTableRead(
-            () =>
-              this.db
-                .selectDistinct({ userId: organizationMembers.userId, membershipId: organizationMembers.id })
-                .from(organizationMembers)
-                .innerJoin(
-                  roleAssignments,
-                  and(
-                    eq(roleAssignments.orgId, orgId),
-                    eq(roleAssignments.organizationMembershipId, organizationMembers.id),
-                    inArray(roleAssignments.roleId, allGrantingRoleIds),
-                    or(isNull(roleAssignments.expiresAt), gt(roleAssignments.expiresAt, now)),
-                  ),
-                )
-                .where(
-                  and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.status, "ACTIVE")),
-                )
-                .limit(limit),
-            [] as { userId: string; membershipId: number }[],
-          ),
+    const [directRoleRows, groupRoleRows] =
+      allGrantingRoleIds.length > 0
+        ? await Promise.all([
+            this.safeAccessTableRead(
+              () =>
+                this.db
+                  .selectDistinct({
+                    userId: organizationMembers.userId,
+                    membershipId: organizationMembers.id,
+                  })
+                  .from(organizationMembers)
+                  .innerJoin(
+                    roleAssignments,
+                    and(
+                      eq(roleAssignments.orgId, orgId),
+                      eq(
+                        roleAssignments.organizationMembershipId,
+                        organizationMembers.id,
+                      ),
+                      inArray(roleAssignments.roleId, allGrantingRoleIds),
+                      or(
+                        isNull(roleAssignments.expiresAt),
+                        gt(roleAssignments.expiresAt, now),
+                      ),
+                    ),
+                  )
+                  .where(
+                    and(
+                      eq(organizationMembers.orgId, orgId),
+                      eq(organizationMembers.status, "ACTIVE"),
+                    ),
+                  )
+                  .limit(limit),
+              [] as { userId: string; membershipId: number }[],
+            ),
 
-          this.safeAccessTableRead(
-            () =>
-              this.db
-                .selectDistinct({ userId: organizationMembers.userId, membershipId: organizationMembers.id })
-                .from(organizationMembers)
-                .innerJoin(
-                  principalGroupMembers,
-                  and(
-                    eq(principalGroupMembers.orgId, orgId),
-                    eq(principalGroupMembers.organizationMembershipId, organizationMembers.id),
-                  ),
-                )
-                .innerJoin(
-                  groupRoleAssignments,
-                  and(
-                    eq(groupRoleAssignments.orgId, orgId),
-                    eq(groupRoleAssignments.principalGroupId, principalGroupMembers.principalGroupId),
-                    inArray(groupRoleAssignments.roleId, allGrantingRoleIds),
-                  ),
-                )
-                .where(
-                  and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.status, "ACTIVE")),
-                )
-                .limit(limit),
-            [] as { userId: string; membershipId: number }[],
-          ),
-        ])
-      : [[], []];
+            this.safeAccessTableRead(
+              () =>
+                this.db
+                  .selectDistinct({
+                    userId: organizationMembers.userId,
+                    membershipId: organizationMembers.id,
+                  })
+                  .from(organizationMembers)
+                  .innerJoin(
+                    principalGroupMembers,
+                    and(
+                      eq(principalGroupMembers.orgId, orgId),
+                      eq(
+                        principalGroupMembers.organizationMembershipId,
+                        organizationMembers.id,
+                      ),
+                    ),
+                  )
+                  .innerJoin(
+                    groupRoleAssignments,
+                    and(
+                      eq(groupRoleAssignments.orgId, orgId),
+                      eq(
+                        groupRoleAssignments.principalGroupId,
+                        principalGroupMembers.principalGroupId,
+                      ),
+                      inArray(groupRoleAssignments.roleId, allGrantingRoleIds),
+                    ),
+                  )
+                  .where(
+                    and(
+                      eq(organizationMembers.orgId, orgId),
+                      eq(organizationMembers.status, "ACTIVE"),
+                    ),
+                  )
+                  .limit(limit),
+              [] as { userId: string; membershipId: number }[],
+            ),
+          ])
+        : [[], []];
 
     const seen = new Set<string>();
     const candidates: { userId: string; membershipId: number }[] = [];
@@ -803,7 +943,8 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    if (candidates.length === 0 || !isPlanGatedModule(permModule)) return candidates;
+    if (candidates.length === 0 || !isPlanGatedModule(permModule))
+      return candidates;
 
     const deniedRows = await this.safeAccessTableRead(
       () =>

@@ -17,6 +17,7 @@ import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import {
   assertPermissionsGrantable,
   buildPermissionModuleMap,
+  isImmutableSystemRole,
   toGrantableSet,
 } from "../../common/rbac/grantability";
 import { moduleAccessDenied } from "./module-access-errors";
@@ -205,8 +206,8 @@ export class ModuleAccessService {
       where: and(eq(roles.id, roleId), eq(roles.orgId, actor.orgId)),
     });
     if (!role) throw new NotFoundException("Role not found");
-    if (role.isSystem) {
-      throw new ForbiddenException("System roles cannot be edited");
+    if (isImmutableSystemRole(role)) {
+      throw new ForbiddenException("Organization-level system roles cannot be edited");
     }
 
     if (!actor.isOrgOwner) {

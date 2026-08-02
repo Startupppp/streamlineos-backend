@@ -7,7 +7,12 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, asc, eq, inArray } from "drizzle-orm";
-import { organizationMembers, roleAssignments, rolePermissionGrants, roles } from "../../db/schema";
+import {
+  organizationMembers,
+  roleAssignments,
+  rolePermissionGrants,
+  roles,
+} from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -17,6 +22,7 @@ import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import {
   assertPermissionsGrantable,
   buildPermissionModuleMap,
+  isImmutableSystemRole,
   ROLE_RANK,
   toGrantableSet,
   type RoleGrantTarget,
@@ -46,7 +52,10 @@ export class RolePermissionService {
     private readonly access: AccessService,
   ) {}
 
-  private async invalidateRoleHolderSessions(orgId: string, roleId: number): Promise<void> {
+  private async invalidateRoleHolderSessions(
+    orgId: string,
+    roleId: number,
+  ): Promise<void> {
     const assignees = await this.db
       .select({ userId: organizationMembers.userId })
       .from(roleAssignments)
@@ -57,10 +66,17 @@ export class RolePermissionService {
           eq(organizationMembers.id, roleAssignments.organizationMembershipId),
         ),
       )
-      .where(and(eq(roleAssignments.orgId, orgId), eq(roleAssignments.roleId, roleId)))
+      .where(
+        and(
+          eq(roleAssignments.orgId, orgId),
+          eq(roleAssignments.roleId, roleId),
+        ),
+      )
       .limit(500);
     await Promise.all(
-      assignees.map((a) => this.cache.invalidate(CACHE_KEYS.userSession(a.userId))),
+      assignees.map((a) =>
+        this.cache.invalidate(CACHE_KEYS.userSession(a.userId)),
+      ),
     );
   }
 
@@ -82,7 +98,12 @@ export class RolePermissionService {
           eq(organizationMembers.id, roleAssignments.organizationMembershipId),
         ),
       )
-      .where(and(eq(roleAssignments.orgId, orgId), eq(organizationMembers.userId, userId)))
+      .where(
+        and(
+          eq(roleAssignments.orgId, orgId),
+          eq(organizationMembers.userId, userId),
+        ),
+      )
       .limit(100);
 
     if (rows.length === 0) {
@@ -186,9 +207,10 @@ export class RolePermissionService {
   ): Promise<{ success: true; version: number }> {
     const existingRole = await this.getRole(actor.orgId, roleId);
 
-    if (existingRole.isSystem) {
-      throw new ForbiddenException("System roles cannot be modified");
-    }
+    if (isImmutableSystemRole(existingRole))
+      throw new ForbiddenException(
+        "Organization-level system roles cannot be modified",
+      );
 
     const deduped = new Map<string, DataScope>();
     for (const item of input.items) {
@@ -265,8 +287,9 @@ export class RolePermissionService {
     return { success: true, version: nextVersion };
   }
 
-  async getPermissionsMatrix(orgId: string): Promise<
-RolePermissionMatrixEntry[]> {
+  async getPermissionsMatrix(
+    orgId: string,
+  ): Promise<RolePermissionMatrixEntry[]> {
     const version = await this.access.getPermissionsVersion(orgId);
     return this.cache.cached(
       CACHE_KEYS.permissionsMatrix(orgId, version),
@@ -275,8 +298,9 @@ RolePermissionMatrixEntry[]> {
     );
   }
 
-  private async fetchPermissionsMatrix(orgId: string): Promise<
-RolePermissionMatrixEntry[]> {
+  private async fetchPermissionsMatrix(
+    orgId: string,
+  ): Promise<RolePermissionMatrixEntry[]> {
     const orgRoles = await this.db
       .select({
         id: roles.id,
@@ -314,7 +338,7 @@ RolePermissionMatrixEntry[]> {
 
     return orgRoles.map((role) => {
       const explicit = grantsByRole.get(role.id);
-      const permissions = explicit ?? (ROLE_DEFAULT_PERMISSIONS[role.slug] ?? []);
+      const permissions = explicit ?? ROLE_DEFAULT_PERMISSIONS[role.slug] ?? [];
       return {
         roleId: role.id,
         roleName: role.name,

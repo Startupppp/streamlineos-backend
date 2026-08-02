@@ -9,14 +9,12 @@ export const ROLE_RANK = {
   FUNCTIONAL: 40,
 } as const satisfies Record<string, number>;
 
-
 export const RESERVED_PROPAGATION_KEYS: ReadonlySet<string> = new Set([
   "settings:manage",
   "settings:rbac:manage",
 ]);
 
 export const ORG_ADMIN_PERMISSION_KEY = "settings:manage";
-
 
 export interface GrantabilityActor {
   isOrgOwner: boolean;
@@ -32,7 +30,9 @@ export interface RoleGrantTarget {
 
 export type PermissionModuleMap = ReadonlyMap<string, string | null>;
 
-export function toGrantableSet(resolved: ReadonlyMap<string, string>): Set<string> {
+export function toGrantableSet(
+  resolved: ReadonlyMap<string, string>,
+): Set<string> {
   const set = new Set<string>();
   for (const [key, scope] of resolved) {
     if (scope !== "none") set.add(key);
@@ -40,7 +40,9 @@ export function toGrantableSet(resolved: ReadonlyMap<string, string>): Set<strin
   return set;
 }
 
-export function buildPermissionModuleMap(keys: readonly string[]): PermissionModuleMap {
+export function buildPermissionModuleMap(
+  keys: readonly string[],
+): PermissionModuleMap {
   const map = new Map<string, string | null>();
   for (const key of keys) {
     const idx = key.indexOf(":");
@@ -83,7 +85,9 @@ export function assertPermissionsGrantable(
   }
 
   if (!actor.grantable.has(ORG_ADMIN_PERMISSION_KEY)) {
-    const reserved = requestedKeys.filter((key) => RESERVED_PROPAGATION_KEYS.has(key));
+    const reserved = requestedKeys.filter((key) =>
+      RESERVED_PROPAGATION_KEYS.has(key),
+    );
     if (reserved.length > 0) {
       throw new ForbiddenException(
         `Only an organization owner or administrator can grant: ${reserved.join(", ")}`,
@@ -117,7 +121,9 @@ export function assertPermissionsGrantable(
     const crossModule = requestedKeys.filter((key) => {
       const keyModule = permissionMeta.get(key);
       return (
-        keyModule === undefined || keyModule === null || !allowedModules.has(keyModule)
+        keyModule === undefined ||
+        keyModule === null ||
+        !allowedModules.has(keyModule)
       );
     });
     if (crossModule.length > 0) {
@@ -130,4 +136,11 @@ export function assertPermissionsGrantable(
       );
     }
   }
+}
+
+export function isImmutableSystemRole(role: {
+  isSystem: boolean;
+  moduleKey: string | null;
+}): boolean {
+  return role.isSystem && !role.moduleKey;
 }

@@ -1,4 +1,5 @@
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { ORG_ADMIN_PERMISSION_KEY } from "../../common/rbac/grantability";
 import { isPlanGatedModule } from "../../common/rbac/module-vocabulary";
 import { moduleOf } from "./access.service";
 import type { AuthResult, DataScope } from "./access.types";
@@ -17,12 +18,17 @@ export async function authorize(
 
   if (ctx.isOrgOwner) return { allow: true, scope: "all" };
 
+  const resolved = await access.resolveUserPermissions(ctx.orgId, ctx.userId);
+
+  if ((resolved.get(ORG_ADMIN_PERMISSION_KEY) ?? "none") !== "none") {
+    return { allow: true, scope: "all" };
+  }
+
   const moduleKey = moduleOf(permissionKey);
   if (isPlanGatedModule(moduleKey) && !(await access.isModuleEnabled(ctx.orgId, moduleKey))) {
     return { allow: false, scope: "none", reason: "NO_MODULE" };
   }
 
-  const resolved = await access.resolveUserPermissions(ctx.orgId, ctx.userId);
   const scope = resolved.get(permissionKey);
   if (!scope || scope === "none") return { allow: false, scope: "none", reason: "FORBIDDEN" };
 

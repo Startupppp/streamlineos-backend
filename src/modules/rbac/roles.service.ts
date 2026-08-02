@@ -25,6 +25,7 @@ import {
   assertKnownPermissionKeys,
   assertPermissionsGrantable,
   buildPermissionModuleMap,
+  isImmutableSystemRole,
   ROLE_RANK,
   toGrantableSet,
   type RoleGrantTarget,
@@ -219,8 +220,11 @@ export class RolesService {
       });
       if (!existing) throw new NotFoundException("Role not found");
 
-      if (existing.isSystem && (input.name !== undefined || input.permissions !== undefined)) {
-        throw new ForbiddenException("System roles cannot be modified");
+      if (
+        isImmutableSystemRole(existing) &&
+        (input.name !== undefined || input.permissions !== undefined)
+      ) {
+        throw new ForbiddenException("Organization-level system roles cannot be modified");
       }
 
       if (input.permissions !== undefined) {

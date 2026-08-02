@@ -29,22 +29,29 @@ export function buildOrgAdminPermissionKeys(dbCatalog: Set<string>): string[] {
   return candidates.filter((key) => dbCatalog.has(key));
 }
 
+const PEOPLE_ADMIN_MODULE = "hr";
+const PEOPLE_ADMIN_KEYS = ["settings:view", "settings:organization:manage"];
+const PEOPLE_READ_KEYS = ["settings:view"];
+
 export function buildModuleAdminPermissionKeys(
   moduleKey: string,
   dbCatalog: Set<string>,
 ): string[] {
-  return moduleScopedPermissions(moduleKey).filter((key) => dbCatalog.has(key));
+  const extra = moduleKey === PEOPLE_ADMIN_MODULE ? PEOPLE_ADMIN_KEYS : [];
+  return [...moduleScopedPermissions(moduleKey), ...extra].filter((key) =>
+    dbCatalog.has(key),
+  );
 }
 
 export function buildModuleMemberPermissionKeys(
   moduleKey: string,
   dbCatalog: Set<string>,
 ): string[] {
-  return moduleScopedPermissions(moduleKey).filter(
-    (key) =>
-      dbCatalog.has(key) &&
-      (key.endsWith(":view") || key.endsWith(":read")),
+  const scoped = moduleScopedPermissions(moduleKey).filter(
+    (key) => key.endsWith(":view") || key.endsWith(":read"),
   );
+  const extra = moduleKey === PEOPLE_ADMIN_MODULE ? PEOPLE_READ_KEYS : [];
+  return [...scoped, ...extra].filter((key) => dbCatalog.has(key));
 }
 
 export function buildOrgMemberPermissionKeys(dbCatalog: Set<string>): string[] {
