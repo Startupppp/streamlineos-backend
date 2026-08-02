@@ -11,14 +11,14 @@ export function getInvitationEmailTemplate(
   const safeOrgName = escapeHtml(organizationName);
   const safeInviter = inviterName ? escapeHtml(inviterName) : undefined;
   const intro = safeInviter
-    ? `<strong>${safeInviter}</strong> invited you to join the <strong>${safeOrgName}</strong> workspace.`
-    : `You&apos;ve been invited to join the <strong>${safeOrgName}</strong> workspace.`;
+    ? `<strong>${safeInviter}</strong> invited you to join the <strong>${safeOrgName}</strong> organization.`
+    : `You&apos;ve been invited to join the <strong>${safeOrgName}</strong> organization.`;
   const preheader = safeInviter
     ? `${safeInviter} invited you to join ${safeOrgName}`
     : `You've been invited to join ${safeOrgName}`;
 
   const content = `
-    <p class="email-label">Workspace invitation</p>
+    <p class="email-label">Organization invitation</p>
     <h1 class="email-title">Join ${safeOrgName}</h1>
     <p class="email-text">
       ${intro} Accept below to create your account and get started.
