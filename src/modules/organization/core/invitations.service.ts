@@ -8,7 +8,7 @@ import {
   Logger,
 } from "@nestjs/common";
 import { randomUUID, randomBytes, createHash } from "node:crypto";
-import { and, count, desc, eq, gt, isNull, lt, inArray} from "drizzle-orm";
+import { and, count, desc, eq, gt, isNull, lt, inArray, sql } from "drizzle-orm";
 import { addDays, addMinutes } from "date-fns";
 import { hashToken } from "../../../common/security/token.util";
 import { withPublicToken } from "../../../common/tenant/with-public-token";
@@ -51,6 +51,33 @@ export class InvitationsService {
   ) {}
 
   private readonly logger = new Logger(InvitationsService.name);
+
+  private async recordDeliveryFailure(
+    orgId: string,
+    invitationId: string,
+    err: unknown,
+  ): Promise<void> {
+    this.logger.error(
+      `Invitation email delivery failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    try {
+      await runInTenantTransaction(
+        this.db,
+        (tx) =>
+          tx.insert(invitationEvents).values({
+            orgId,
+            invitationId,
+            event: "DELIVERY_FAILED",
+            actorMembershipId: null,
+          }),
+        { orgId },
+      );
+    } catch (recordErr: unknown) {
+      this.logger.error(
+        `Failed to record invitation delivery failure: ${recordErr instanceof Error ? recordErr.message : String(recordErr)}`,
+      );
+    }
+  }
 
   private assertMayInviteWithRole(orgId: string, actor: InviteActor, role: string): Promise<void> {
     return assertMayGrantRole(this.access, orgId, actor, role);
@@ -141,11 +168,9 @@ export class InvitationsService {
       const { pendingInvitation, rawToken } = pendingResult;
       void this.email
         .sendInvitationEmail(email, rawToken, org?.name ?? "Your Organization")
-        .catch((err: unknown) => {
-        this.logger.error(
-          `Invitation email delivery failed: ${err instanceof Error ? err.message : String(err)}`,
+        .catch((err: unknown) =>
+          this.recordDeliveryFailure(orgId, pendingInvitation.id, err),
         );
-      });
 
       this.audit.log({
         action: "user.invitation.resent",
@@ -204,11 +229,7 @@ export class InvitationsService {
 
     void this.email
       .sendInvitationEmail(email, rawToken, org?.name ?? "Your Organization")
-      .catch((err: unknown) => {
-        this.logger.error(
-          `Invitation email delivery failed: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      });
+      .catch((err: unknown) => this.recordDeliveryFailure(orgId, invitationId, err));
 
     this.audit.log({
       action: "user.invited",
@@ -279,6 +300,21 @@ export class InvitationsService {
           createdAt: invitations.createdAt,
           status: invitations.status,
           revokedAt: invitations.revokedAt,
+          deliveryFailed: sql<boolean>`EXISTS (
+            SELECT 1 FROM ${invitationEvents} f
+            WHERE f.invitation_id = ${invitations.id}
+              AND f.org_id = ${orgId}
+              AND f.event = 'DELIVERY_FAILED'
+              AND f.created_at > COALESCE(
+                (
+                  SELECT MAX(r.created_at) FROM ${invitationEvents} r
+                  WHERE r.invitation_id = ${invitations.id}
+                    AND r.org_id = ${orgId}
+                    AND r.event = 'RESENT'
+                ),
+                ${invitations.createdAt}
+              )
+          )`,
         })
         .from(invitations)
         .where(and(...conditions))

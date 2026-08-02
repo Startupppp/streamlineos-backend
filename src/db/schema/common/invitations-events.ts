@@ -8,7 +8,8 @@ export type InvitationEventType =
   | "DECLINED"
   | "REVOKED"
   | "EXPIRED"
-  | "ROLE_CHANGED";
+  | "ROLE_CHANGED"
+  | "DELIVERY_FAILED";
 
 export const invitationEvents = pgTable(
   "invitation_events",
