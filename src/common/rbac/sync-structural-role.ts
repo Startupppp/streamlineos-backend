@@ -19,36 +19,101 @@ export async function syncStructuralRoleAssignment(
     .where(and(eq(roles.orgId, orgId), eq(roles.slug, ORG_MEMBER_ROLES.ORG_ADMIN)))
     .limit(1);
 
-  if (!adminRole) {
-    if (role === ORG_MEMBER_ROLES.ORG_ADMIN) {
+  const [memberRole] = await tx
+    .select({ id: roles.id })
+    .from(roles)
+    .where(and(eq(roles.orgId, orgId), eq(roles.slug, ORG_MEMBER_ROLES.MEMBER)))
+    .limit(1);
+
+  if (!adminRole && !memberRole) {
+    if (role === ORG_MEMBER_ROLES.ORG_ADMIN || role === ORG_MEMBER_ROLES.MEMBER) {
       logger.warn(
-        "ORG_ADMIN role row missing for org; the member will resolve to zero permissions until system roles are seeded",
-        { orgId, organizationMembershipId },
+        "Structural role rows missing for org; the member will resolve to zero permissions until system roles are seeded",
+        { orgId, organizationMembershipId, role },
       );
     }
     return;
   }
 
   if (role === ORG_MEMBER_ROLES.ORG_ADMIN) {
-    await tx
-      .insert(roleAssignments)
-      .values({
-        orgId,
-        organizationMembershipId,
-        roleId: adminRole.id,
-        assignedByMembershipId: null,
-      })
-      .onConflictDoNothing();
-  } else {
-    await tx
-      .delete(roleAssignments)
-      .where(
-        and(
-          eq(roleAssignments.orgId, orgId),
-          eq(roleAssignments.organizationMembershipId, organizationMembershipId),
-          eq(roleAssignments.roleId, adminRole.id),
-        ),
+    if (adminRole) {
+      await tx
+        .insert(roleAssignments)
+        .values({
+          orgId,
+          organizationMembershipId,
+          roleId: adminRole.id,
+          assignedByMembershipId: null,
+        })
+        .onConflictDoNothing();
+    } else {
+      logger.warn(
+        "ORG_ADMIN role row missing for org; the member will resolve to limited permissions until system roles are seeded",
+        { orgId, organizationMembershipId },
       );
+    }
+    if (memberRole) {
+      await tx
+        .delete(roleAssignments)
+        .where(
+          and(
+            eq(roleAssignments.orgId, orgId),
+            eq(roleAssignments.organizationMembershipId, organizationMembershipId),
+            eq(roleAssignments.roleId, memberRole.id),
+          ),
+        );
+    }
+  } else if (role === ORG_MEMBER_ROLES.MEMBER) {
+    if (memberRole) {
+      await tx
+        .insert(roleAssignments)
+        .values({
+          orgId,
+          organizationMembershipId,
+          roleId: memberRole.id,
+          assignedByMembershipId: null,
+        })
+        .onConflictDoNothing();
+    } else {
+      logger.warn(
+        "MEMBER role row missing for org; the member will resolve to zero permissions until system roles are seeded",
+        { orgId, organizationMembershipId },
+      );
+    }
+    if (adminRole) {
+      await tx
+        .delete(roleAssignments)
+        .where(
+          and(
+            eq(roleAssignments.orgId, orgId),
+            eq(roleAssignments.organizationMembershipId, organizationMembershipId),
+            eq(roleAssignments.roleId, adminRole.id),
+          ),
+        );
+    }
+  } else {
+    if (adminRole) {
+      await tx
+        .delete(roleAssignments)
+        .where(
+          and(
+            eq(roleAssignments.orgId, orgId),
+            eq(roleAssignments.organizationMembershipId, organizationMembershipId),
+            eq(roleAssignments.roleId, adminRole.id),
+          ),
+        );
+    }
+    if (memberRole) {
+      await tx
+        .delete(roleAssignments)
+        .where(
+          and(
+            eq(roleAssignments.orgId, orgId),
+            eq(roleAssignments.organizationMembershipId, organizationMembershipId),
+            eq(roleAssignments.roleId, memberRole.id),
+          ),
+        );
+    }
   }
 
   await bumpPermissionsVersion(tx, orgId);

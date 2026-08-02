@@ -3,7 +3,7 @@ import type { Db } from "../../db/drizzle.module";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { MODULE_CATALOG } from "../../common/rbac/module-vocabulary";
 import { ROLE_RANK } from "../../common/rbac/grantability";
-import { ACCESS_MANAGED_MODULES, MODULE_ACCESS_PERMISSIONS, moduleScopedPermissions } from "./permissions";
+import { ACCESS_MANAGED_MODULES, MODULE_ACCESS_PERMISSIONS, moduleScopedPermissions, ROLE_DEFAULT_PERMISSIONS } from "./permissions";
 
 export async function resolveDbPermissionSet(db: Db): Promise<Set<string>> {
   const rows = await db
@@ -47,6 +47,10 @@ export function buildModuleMemberPermissionKeys(
   );
 }
 
+export function buildOrgMemberPermissionKeys(dbCatalog: Set<string>): string[] {
+  return (ROLE_DEFAULT_PERMISSIONS["MEMBER"] ?? []).filter((key) => dbCatalog.has(key));
+}
+
 export async function seedSystemRolesForOrg(
   db: Db,
   orgId: string,
@@ -66,6 +70,13 @@ export async function seedSystemRolesForOrg(
       rank: ROLE_RANK.ORG_ADMIN,
       moduleKey: null,
       permissionKeys: buildOrgAdminPermissionKeys(dbCatalog),
+    },
+    {
+      slug: "MEMBER",
+      name: "Member",
+      rank: ROLE_RANK.FUNCTIONAL,
+      moduleKey: null,
+      permissionKeys: buildOrgMemberPermissionKeys(dbCatalog),
     },
     ...MODULE_CATALOG.map((mod) => ({
       slug: `${mod.toUpperCase()}_MODULE_ADMIN`,
