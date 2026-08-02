@@ -46,6 +46,24 @@ export class RolePermissionService {
     private readonly access: AccessService,
   ) {}
 
+  private async invalidateRoleHolderSessions(orgId: string, roleId: number): Promise<void> {
+    const assignees = await this.db
+      .select({ userId: organizationMembers.userId })
+      .from(roleAssignments)
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, roleAssignments.orgId),
+          eq(organizationMembers.id, roleAssignments.organizationMembershipId),
+        ),
+      )
+      .where(and(eq(roleAssignments.orgId, orgId), eq(roleAssignments.roleId, roleId)))
+      .limit(500);
+    await Promise.all(
+      assignees.map((a) => this.cache.invalidate(CACHE_KEYS.userSession(a.userId))),
+    );
+  }
+
   private async resolveActorRankContext(
     orgId: string,
     userId: string,
@@ -233,6 +251,7 @@ export class RolePermissionService {
     });
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
+    await this.invalidateRoleHolderSessions(actor.orgId, roleId);
 
     this.audit.log({
       action: "role.permissions.set",

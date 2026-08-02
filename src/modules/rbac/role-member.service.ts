@@ -36,6 +36,25 @@ export class RoleMemberService {
     private readonly lockout: RoleLockoutService,
   ) {}
 
+  private async invalidateRoleHolderSessions(orgId: string, roleId: number): Promise<void> {
+    const assignees = await this.db
+      .select({ userId: organizationMembers.userId })
+      .from(roleAssignments)
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, roleAssignments.orgId),
+          eq(organizationMembers.id, roleAssignments.organizationMembershipId),
+        ),
+      )
+      .where(and(eq(roleAssignments.orgId, orgId), eq(roleAssignments.roleId, roleId)))
+      .limit(500);
+    await Promise.all(
+      assignees.map((a) => this.cache.invalidate(CACHE_KEYS.userSession(a.userId))),
+    );
+  }
+
+
   private async getRole(orgId: string, roleId: number) {
     const role = await this.db.query.roles.findFirst({
       where: and(eq(roles.id, roleId), eq(roles.orgId, orgId)),
@@ -228,6 +247,7 @@ export class RoleMemberService {
     }
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
+    await this.invalidateRoleHolderSessions(actor.orgId, roleId);
 
     this.audit.log({
       action: "role.member.added",
@@ -312,6 +332,7 @@ export class RoleMemberService {
     });
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
+    await this.invalidateRoleHolderSessions(actor.orgId, roleId);
 
     this.audit.log({
       action: "role.member.removed",
