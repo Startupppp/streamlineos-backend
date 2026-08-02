@@ -187,13 +187,11 @@ export class UserOpsService {
     if (departmentId !== undefined) userUpdate.orgDepartmentId = departmentId;
     if (branchId !== undefined) userUpdate.branchId = branchId;
     if (managerUserId !== undefined) userUpdate.reportingTo = managerUserId;
-    if (teamId !== undefined) userUpdate.team = teamId;
 
     if (Object.keys(userUpdate).length > 0) {
       await this.db.update(users).set(userUpdate).where(inArray(users.id, scopedIds));
     }
 
-    // The scalars above are denormalised copies; `org_unit_members` is the hierarchy model that getMembership and HR policy evaluation read
     const unitMoves: Array<{ kind: OrgUnitKind; unitId: string | null }> = [];
     if (branchId !== undefined) unitMoves.push({ kind: "BRANCH", unitId: branchId ?? null });
     if (departmentId !== undefined) unitMoves.push({ kind: "DEPARTMENT", unitId: departmentId ?? null });

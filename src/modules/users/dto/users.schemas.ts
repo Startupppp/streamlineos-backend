@@ -36,7 +36,7 @@ export const updateUserSchema = z.object({
   githubUrl: z.string().url().optional().or(z.literal("")),
   websiteUrl: z.string().url().optional().or(z.literal("")),
   reportingTo: z.string().optional(),
-  team: z.string().optional(),
+  teamId: z.string().optional().nullable(),
   emergencyContact: emergencyContactSchema,
 });
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;

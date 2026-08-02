@@ -9,6 +9,8 @@ import { type Db } from "../../db/drizzle.module";
 import {
   auditLogs,
   organizationMembers,
+  orgUnitMembers,
+  orgUnits,
   projectTeamMembers,
   projectTeams,
   userSessions,
@@ -24,9 +26,13 @@ import type {
 import { assertMayGrantRole } from "../../common/rbac/assert-may-grant-role";
 import { syncOrgUnitPlacement } from "../../common/org/sync-org-unit-placement";
 import {
+  assertNotModuleOwner,
   assertOwnerNotTargeted,
   assertTargetNotOwner,
 } from "../../common/rbac/assert-target-not-owner";
+import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { bustMembershipStatusCache } from "../../common/auth/jwt-auth.guard";
+import { SessionsService } from "../sessions/sessions.service";
 
 @Injectable()
 export class UsersService {
@@ -35,6 +41,7 @@ export class UsersService {
     private readonly audit: AuditService,
     private readonly invitationsSvc: InvitationsService,
     private readonly access: AccessService,
+    private readonly sessions: SessionsService,
   ) {}
 
   async createUser(orgId: string, input: CreateUserInput, actor: InviteActor) {
@@ -144,7 +151,19 @@ export class UsersService {
     if (role) conditions.push(eq(organizationMembers.role, role));
     if (departmentId !== undefined) conditions.push(eq(users.orgDepartmentId, departmentId));
     if (branchId !== undefined) conditions.push(eq(users.branchId, branchId));
-    if (teamId !== undefined) conditions.push(eq(users.team, teamId));
+    if (teamId !== undefined) {
+      conditions.push(
+        sql`EXISTS (
+          SELECT 1 FROM ${orgUnitMembers}
+          INNER JOIN ${orgUnits} ON ${orgUnitMembers.orgUnitId} = ${orgUnits.id}
+          WHERE ${orgUnitMembers.userId} = ${users.id}
+            AND ${orgUnitMembers.orgId} = ${orgId}
+            AND ${orgUnits.id} = ${teamId}
+            AND ${orgUnits.kind} = 'TEAM'
+            AND ${orgUnits.orgId} = ${orgId}
+        )`,
+      );
+    }
     if (managerUserId !== undefined) conditions.push(eq(users.reportingTo, managerUserId));
 
     if (status === "active") {
@@ -251,7 +270,15 @@ export class UsersService {
         isActive: users.isActive,
         userStatus: users.userStatus,
         reportingTo: users.reportingTo,
-        team: users.team,
+        team: sql<string | null>`(
+          SELECT ${orgUnitMembers.orgUnitId}
+          FROM ${orgUnitMembers}
+          INNER JOIN ${orgUnits} ON ${orgUnitMembers.orgUnitId} = ${orgUnits.id}
+          WHERE ${orgUnitMembers.userId} = ${users.id}
+            AND ${orgUnitMembers.orgId} = ${orgId}
+            AND ${orgUnits.kind} = 'TEAM'
+          LIMIT 1
+        )`,
         branchId: users.branchId,
         emergencyContact: users.emergencyContact,
         bio: users.bio,
@@ -313,15 +340,19 @@ export class UsersService {
     if (data.githubUrl !== undefined) updateData.githubUrl = data.githubUrl || null;
     if (data.websiteUrl !== undefined) updateData.websiteUrl = data.websiteUrl || null;
     if (data.reportingTo !== undefined) updateData.reportingTo = data.reportingTo;
-    if (data.team !== undefined) updateData.team = data.team;
     if (data.emergencyContact !== undefined) updateData.emergencyContact = data.emergencyContact;
 
-    if (Object.keys(updateData).length > 0) {
+    const hasUserUpdates = Object.keys(updateData).length > 0;
+    const hasPlacementUpdates = data.departmentId !== undefined || data.teamId !== undefined;
+
+    if (hasUserUpdates || hasPlacementUpdates) {
       await this.db.transaction(async (tx) => {
-        await tx.update(users).set(updateData).where(eq(users.id, userId));
+        if (hasUserUpdates) {
+          await tx.update(users).set(updateData).where(eq(users.id, userId));
+        }
         await syncOrgUnitPlacement(tx, orgId, userId, {
           DEPARTMENT: data.departmentId,
-          TEAM: data.team,
+          TEAM: data.teamId,
         });
       });
     }
@@ -397,20 +428,45 @@ export class UsersService {
       }
     }
 
-    const update: Record<string, unknown> = {
+    const userUpdate: Record<string, unknown> = {
       isActive: status === "active",
       userStatus: status,
     };
-    if (status === "active") update.activatedAt = new Date();
-    if (status === "archived") update.archivedAt = new Date();
+    if (status === "active") userUpdate.activatedAt = new Date();
+    if (status === "archived") userUpdate.archivedAt = new Date();
 
-    await this.db.update(users).set(update).where(eq(users.id, userId));
+    await this.db.transaction(async (tx) => {
+      if (status !== "active") {
+        const [member] = await tx
+          .select({ id: organizationMembers.id })
+          .from(organizationMembers)
+          .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+          .limit(1);
+        if (member) {
+          await assertNotModuleOwner(tx, orgId, member.id);
+        }
+      }
 
-    if (status === "suspended") {
-      await this.db
-        .update(userSessions)
-        .set({ isRevoked: true })
-        .where(and(eq(userSessions.userId, userId), eq(userSessions.isRevoked, false)));
+      await tx.update(users).set(userUpdate).where(eq(users.id, userId));
+
+      if (status === "active") {
+        await tx
+          .update(organizationMembers)
+          .set({ status: "ACTIVE", activatedAt: new Date(), suspendedAt: null })
+          .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)));
+      } else {
+        await tx
+          .update(organizationMembers)
+          .set({ status: "SUSPENDED", suspendedAt: new Date() })
+          .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)));
+      }
+
+      await bumpPermissionsVersion(tx, orgId);
+    });
+
+    bustMembershipStatusCache(userId, orgId);
+    if (status !== "active") {
+      await this.sessions.revokeAllForUser(userId);
     }
 
     this.audit.log({
@@ -430,21 +486,49 @@ export class UsersService {
 
   async deleteUser(orgId: string, userId: string, actorUserId: string) {
     await this.getUser(orgId, userId);
-    await assertOwnerNotTargeted(this.db, orgId, userId, "deleted");
 
-    await this.db
-      .update(users)
-      .set({ isActive: false, userStatus: "deleted", deletedAt: new Date() })
-      .where(eq(users.id, userId));
+    const PG_FK_VIOLATION = "23503";
+    try {
+      await this.db.transaction(async (tx) => {
+        const [member] = await tx
+          .select({ isOwner: organizationMembers.isOwner, id: organizationMembers.id })
+          .from(organizationMembers)
+          .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+          .for("update")
+          .limit(1);
 
-    await this.db
-      .update(userSessions)
-      .set({ isRevoked: true })
-      .where(and(eq(userSessions.userId, userId), eq(userSessions.isRevoked, false)));
+        if (!member) throw new NotFoundException("User not found in this organization");
+        if (member.isOwner) {
+          throw new BadRequestException(
+            "The organization owner cannot be deleted. Transfer ownership to another member first.",
+          );
+        }
 
-    await this.db
-      .delete(organizationMembers)
-      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)));
+        await assertNotModuleOwner(tx, orgId, member.id);
+
+        await tx
+          .update(users)
+          .set({ isActive: false, userStatus: "deleted", deletedAt: new Date() })
+          .where(eq(users.id, userId));
+
+        await tx
+          .delete(organizationMembers)
+          .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)));
+
+        await bumpPermissionsVersion(tx, orgId);
+      });
+    } catch (err) {
+      if (err instanceof BadRequestException || err instanceof NotFoundException) throw err;
+      if ((err as { code?: string }).code === PG_FK_VIOLATION) {
+        throw new BadRequestException(
+          "Cannot delete a member who owns a module. Transfer module ownership first.",
+        );
+      }
+      throw err;
+    }
+
+    bustMembershipStatusCache(userId, orgId);
+    await this.sessions.revokeAllForUser(userId);
 
     this.audit.log({
       action: "user.deleted",
