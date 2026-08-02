@@ -514,6 +514,7 @@ export class ModuleAccessGroupsService {
     });
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
+    await this.cache.invalidate(CACHE_KEYS.userSession(input.userId));
     this.audit.log({
       action: "module_access.group_member_added",
       userId: actor.userId,
@@ -565,6 +566,7 @@ export class ModuleAccessGroupsService {
         await bumpPermissionsVersion(tx, actor.orgId);
       });
       await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
+      await this.cache.invalidate(CACHE_KEYS.userSession(userId));
       this.audit.log({
         action: "module_access.group_member_removed",
         userId: actor.userId,
@@ -930,6 +932,7 @@ export class ModuleAccessGroupsService {
     });
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
+    await this.cache.invalidate(CACHE_KEYS.userSession(input.userId));
     this.audit.log({
       action: "module_access.member_added",
       userId: actor.userId,
@@ -1019,6 +1022,7 @@ export class ModuleAccessGroupsService {
     });
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
+    await this.cache.invalidate(CACHE_KEYS.userSession(userId));
     this.audit.log({
       action: "module_access.member_groups_updated",
       userId: actor.userId,
@@ -1078,6 +1082,7 @@ export class ModuleAccessGroupsService {
     });
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
+    await this.cache.invalidate(CACHE_KEYS.userSession(userId));
     this.audit.log({
       action: "module_access.member_removed",
       userId: actor.userId,

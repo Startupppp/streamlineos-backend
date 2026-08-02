@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, asc, count, desc, eq, sql } from "drizzle-orm";
-import { auditLogs, moduleOwnerships, organizationMembers, rolePermissionGrants, roles, users } from "../../db/schema";
+import { auditLogs, moduleOwnerships, organizationMembers, roleAssignments, rolePermissionGrants, roles, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -323,6 +323,21 @@ export class ModuleAccessService {
     });
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
+
+    const assignees = await this.db
+      .select({ userId: organizationMembers.userId })
+      .from(roleAssignments)
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, roleAssignments.orgId),
+          eq(organizationMembers.id, roleAssignments.organizationMembershipId),
+        ),
+      )
+      .where(and(eq(roleAssignments.orgId, actor.orgId), eq(roleAssignments.roleId, roleId)))
+      .limit(500);
+    await Promise.all(assignees.map((a) => this.cache.invalidate(CACHE_KEYS.userSession(a.userId))));
+
     this.audit.log({
       action: "module_access.role_permissions_set",
       userId: actor.userId,
