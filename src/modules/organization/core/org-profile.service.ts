@@ -13,7 +13,10 @@ import type { CreateOrganizationInput } from "./dto/organization.schemas";
 import { addDays } from "date-fns";
 import { bumpPermissionsVersion } from "../../../common/rbac/access-invalidate";
 import { getTrialDays, TRIAL_PLAN } from "../../billing/core/plan-entitlements.constants";
-import { provisionOrgModules, DEFAULT_SKIP_MODULES } from "../setup/org-setup.service";
+import {
+  provisionOrgModules,
+  DEFAULT_SKIP_MODULES,
+} from "../../../common/org/provision-org-modules";
 
 @Injectable()
 export class OrgProfileService {
@@ -138,6 +141,7 @@ export class OrgProfileService {
         slug: input.slug,
         billingEmail,
         ownerMembershipId,
+        onboardingCompletedAt: new Date(),
       });
       await tx.insert(organizationMembers).values({
         id: ownerMembershipId,

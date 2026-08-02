@@ -8,6 +8,10 @@ import {
 import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
 import { AccessService } from "../access/access.service";
 import { seedSystemRolesForOrg } from "../rbac/seed-system-roles";
+import {
+  DEFAULT_SKIP_MODULES,
+  provisionOrgModules,
+} from "../../common/org/provision-org-modules";
 import { EntitlementsService } from "../access/entitlements.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { eq, sql } from "drizzle-orm";
@@ -122,9 +126,10 @@ export class AuthService {
     });
 
     await withTenant(this.db, { orgId, audience: "INTERNAL" }, async (tx) =>
-      runWithTenantContext({ orgId, audience: "INTERNAL", tx }, () =>
-        seedSystemRolesForOrg(this.db, orgId),
-      ),
+      runWithTenantContext({ orgId, audience: "INTERNAL", tx }, async () => {
+        await seedSystemRolesForOrg(this.db, orgId);
+        await provisionOrgModules(tx, orgId, DEFAULT_SKIP_MODULES, userId);
+      }),
     );
 
     this.audit.log({

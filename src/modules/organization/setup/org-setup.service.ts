@@ -29,7 +29,11 @@ import {
   runInNewTenantTransaction,
   runInTenantTransaction,
 } from "../../../common/tenant/run-in-tenant-transaction";
-import { type TenantTx } from "../../../common/tenant/with-tenant";
+import type { TenantTx } from "../../../common/tenant/with-tenant";
+import {
+  DEFAULT_SKIP_MODULES,
+  provisionOrgModules,
+} from "../../../common/org/provision-org-modules";
 import { seedSystemRolesForOrg } from "../../rbac/seed-system-roles";
 import { ModuleChecklistService } from "../../hr/onboarding/flow/module-checklist.service";
 import {
@@ -37,63 +41,7 @@ import {
   TRIAL_PLAN,
 } from "../../billing/core/plan-entitlements.constants";
 
-export const DEFAULT_SKIP_MODULES = ["hr", "crm", "build"] as const;
-const OWNERSHIP_MANAGED_MODULES = new Set<string>(ACCESS_MANAGED_MODULES);
-
-export async function provisionOrgModules(
-  tx: TenantTx,
-  orgId: string,
-  moduleKeys: readonly string[],
-  enabledBy: string,
-): Promise<void> {
-  const selected = new Set(moduleKeys);
-  const catalog = await tx
-    .select({ moduleKey: modulesCatalog.moduleKey, isCore: modulesCatalog.isCore })
-    .from(modulesCatalog);
-
-  const rows =
-    catalog.length > 0
-      ? catalog.map((entry) => ({
-          orgId,
-          moduleKey: entry.moduleKey,
-          enabled: entry.isCore === true || selected.has(entry.moduleKey),
-          enabledBy,
-        }))
-      : moduleKeys.map((moduleKey) => ({ orgId, moduleKey, enabled: true, enabledBy }));
-
-  if (rows.length === 0) return;
-
-  await tx
-    .insert(orgModules)
-    .values(rows)
-    .onConflictDoUpdate({
-      target: [orgModules.orgId, orgModules.moduleKey],
-      set: { enabled: sql`excluded.enabled`, enabledBy: sql`excluded.enabled_by` },
-    });
-
-  const eligibleKeys = moduleKeys.filter((key) => OWNERSHIP_MANAGED_MODULES.has(key));
-  if (eligibleKeys.length === 0) return;
-
-  const [orgRow] = await tx
-    .select({ ownerMembershipId: organizations.ownerMembershipId })
-    .from(organizations)
-    .where(eq(organizations.id, orgId))
-    .limit(1);
-
-  const ownerMembershipId = orgRow?.ownerMembershipId;
-  if (ownerMembershipId === null || ownerMembershipId === undefined) return;
-
-  await tx
-    .insert(moduleOwnerships)
-    .values(
-      eligibleKeys.map((moduleKey) => ({
-        orgId,
-        moduleKey,
-        ownerMembershipId,
-      })),
-    )
-    .onConflictDoNothing();
-}
+export { DEFAULT_SKIP_MODULES, provisionOrgModules };
 
 @Injectable()
 export class OrgSetupService {
