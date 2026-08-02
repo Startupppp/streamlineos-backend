@@ -55,8 +55,9 @@ interface MembershipStatusEntry {
 const MEMBERSHIP_STATUS_TTL_MS = 15_000;
 const membershipStatusCache = new Map<string, MembershipStatusEntry>();
 
-/** Bust the cached active-membership check so a suspend/leave takes effect immediately. */
+/** Bust the cached active-membership and account-status checks so a status change takes effect immediately. */
 export function bustMembershipStatusCache(userId: string, orgId?: string): void {
+  membershipStatusCache.delete(`${userId}:account`);
   if (orgId) {
     membershipStatusCache.delete(`${userId}:${orgId}`);
     return;
@@ -200,14 +201,15 @@ export class JwtAuthGuard implements CanActivate {
         throw new ForbiddenException("Organization not found");
       }
 
-      // Re-check membership every request so a suspended/left member loses access within the
-      // cache TTL rather than only at JWT expiry.
+      const accountActive = await this.checkUserAccountActive(claims.sub);
+      if (!accountActive) {
+        throw new UnauthorizedException("Unauthorized");
+      }
+
       if (orgId) {
         const membershipActive = await this.isMembershipActive(claims.sub, orgId);
         if (!membershipActive) {
-          throw new ForbiddenException(
-            "Your organization membership is suspended or no longer active",
-          );
+          throw new UnauthorizedException("Unauthorized");
         }
       }
 
@@ -234,12 +236,6 @@ export class JwtAuthGuard implements CanActivate {
     throw new UnauthorizedException("Unauthorized");
   }
 
-  /**
-   * Re-validate active membership on each request (versioned JWTs are hints, not authority).
-   * Rejects ONLY an explicit SUSPENDED/LEFT membership; ACTIVE, unknown status, a missing row,
-   * or any query error all pass, so a transient failure or un-migrated column cannot lock the
-   * whole org out. Cached briefly so this is ~one query per user per window, not per request.
-   */
   private async isMembershipActive(userId: string, orgId: string): Promise<boolean> {
     const key = `${userId}:${orgId}`;
     const cached = membershipStatusCache.get(key);
@@ -251,8 +247,13 @@ export class JwtAuthGuard implements CanActivate {
         this.db,
         (tx) =>
           tx
-            .select({ status: organizationMembers.status })
+            .select({
+              status: organizationMembers.status,
+              userIsActive: users.isActive,
+              userDeletedAt: users.deletedAt,
+            })
             .from(organizationMembers)
+            .innerJoin(users, eq(users.id, organizationMembers.userId))
             .where(
               and(
                 eq(organizationMembers.userId, userId),
@@ -263,8 +264,37 @@ export class JwtAuthGuard implements CanActivate {
             .limit(1),
         { orgId },
       );
-      const status = rows[0]?.status;
-      if (status === "SUSPENDED" || status === "LEFT") active = false;
+      const row = rows[0];
+      if (row?.status === "SUSPENDED" || row?.status === "LEFT") active = false;
+      if (row && (!row.userIsActive || row.userDeletedAt !== null)) active = false;
+    } catch {
+      active = true;
+    }
+
+    membershipStatusCache.set(key, {
+      active,
+      expiresAt: Date.now() + MEMBERSHIP_STATUS_TTL_MS,
+    });
+    return active;
+  }
+
+  private async checkUserAccountActive(userId: string): Promise<boolean> {
+    const key = `${userId}:account`;
+    const cached = membershipStatusCache.get(key);
+    if (cached && cached.expiresAt > Date.now()) return cached.active;
+
+    let active = true;
+    try {
+      const rows = await this.db
+        .select({
+          isActive: users.isActive,
+          deletedAt: users.deletedAt,
+        })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      const row = rows[0];
+      if (row && (!row.isActive || row.deletedAt !== null)) active = false;
     } catch {
       active = true;
     }
@@ -378,12 +408,13 @@ export class JwtAuthGuard implements CanActivate {
     const [user, resolved] = await Promise.all([
       this.db.query.users.findFirst({
         where: eq(users.id, matchedUserId),
-        columns: { id: true, branchId: true },
+        columns: { id: true, branchId: true, isActive: true, deletedAt: true },
       }),
       this.resolveOrgContext(matchedUserId),
     ]);
 
     if (!user || !resolved) return null;
+    if (!user.isActive || user.deletedAt !== null) return null;
 
     return {
       userId: matchedUserId,

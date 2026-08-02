@@ -316,10 +316,11 @@ export class AuthTokensService {
 
     const user = await this.db.query.users.findFirst({
       where: sql`lower(${users.email}) = ${normalizedEmail}`,
-      columns: { id: true },
+      columns: { id: true, isActive: true, deletedAt: true },
     });
 
     if (!user) throw new UnauthorizedException("Invalid or expired code");
+    if (!user.isActive || user.deletedAt !== null) throw new UnauthorizedException("Invalid or expired code");
 
     const row = await this.db.query.emailOtpCodes.findFirst({
       where: and(
@@ -443,8 +444,16 @@ export class AuthTokensService {
 
     const user = await this.db.query.users.findFirst({
       where: eq(users.id, row.userId),
-      columns: { lastActiveOrgId: true },
+      columns: { lastActiveOrgId: true, isActive: true, deletedAt: true },
     });
+
+    if (!user || !user.isActive || user.deletedAt !== null) {
+      await this.logLoginEvent(row.userId, null, "magic_link.verify", false, "account_inactive", context);
+      throw new UnauthorizedException({
+        code: "AUTH_TOKEN_INVALID",
+        message: "Invalid or expired credentials",
+      });
+    }
 
     await this.db
       .update(users)
@@ -452,7 +461,7 @@ export class AuthTokensService {
       .where(and(eq(users.id, row.userId), isNull(users.emailVerified)));
 
     const [membership, sessionId] = await Promise.all([
-      this.resolveActiveMembership(row.userId, user?.lastActiveOrgId ?? null),
+      this.resolveActiveMembership(row.userId, user.lastActiveOrgId ?? null),
       this.createLoginSession(row.userId, context),
     ]);
 
@@ -538,6 +547,14 @@ export class AuthTokensService {
     });
 
     if (existingAccount) {
+      const accountUser = await this.db.query.users.findFirst({
+        where: eq(users.id, existingAccount.userId),
+        columns: { isActive: true, deletedAt: true },
+      });
+      if (!accountUser || !accountUser.isActive || accountUser.deletedAt !== null) {
+        void this.logLoginEvent(existingAccount.userId, null, "google_oauth.login", false, "account_inactive", context);
+        throw new UnauthorizedException("Authentication failed");
+      }
       const sessionId = await this.createLoginSession(
         existingAccount.userId,
         context,
@@ -555,10 +572,14 @@ export class AuthTokensService {
 
     const existingUser = await this.db.query.users.findFirst({
       where: sql`lower(${users.email}) = ${normalizedEmail}`,
-      columns: { id: true, emailVerified: true },
+      columns: { id: true, emailVerified: true, isActive: true, deletedAt: true },
     });
 
     if (existingUser) {
+      if (!existingUser.isActive || existingUser.deletedAt !== null) {
+        void this.logLoginEvent(existingUser.id, null, "google_oauth.login", false, "account_inactive", context);
+        throw new UnauthorizedException("Authentication failed");
+      }
       await this.db
         .insert(accounts)
         .values({
