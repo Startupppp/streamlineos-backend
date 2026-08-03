@@ -9,10 +9,16 @@ export interface AuthResult {
   permissions?: string[];
 }
 
+export interface MfaState {
+  enforced: boolean;
+  satisfied: boolean;
+}
+
 export interface AccessSnapshot {
   permissions: string[];
   scopes: Record<string, DataScope>;
   modules: Record<string, boolean>;
   isOrgOwner: boolean;
+  mfa: MfaState;
   version: number;
 }

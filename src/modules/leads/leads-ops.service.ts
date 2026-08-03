@@ -411,7 +411,6 @@ export class LeadsOpsService {
               .where(and(
                 inArray(users.id, permittedUserIds),
                 eq(users.isActive, true),
-                eq(users.hasDashboardAccess, true),
               ))
           : [];
 
@@ -479,7 +478,6 @@ export class LeadsOpsService {
           .where(and(
             inArray(users.id, permittedDistributeIds),
             eq(users.isActive, true),
-            eq(users.hasDashboardAccess, true),
           ))
       : [];
 

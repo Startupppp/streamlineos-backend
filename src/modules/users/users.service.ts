@@ -286,7 +286,6 @@ export class UsersService {
         twitterUrl: users.twitterUrl,
         githubUrl: users.githubUrl,
         websiteUrl: users.websiteUrl,
-        hasDashboardAccess: users.hasDashboardAccess,
         totpEnabled: users.totpEnabled,
         joiningDate: users.joiningDate,
         dateOfBirth: users.dateOfBirth,

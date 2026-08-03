@@ -799,6 +799,13 @@
       "when": 1784993525608,
       "tag": "0388_drop_users_team",
       "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "7",
+      "when": 1784993525609,
+      "tag": "0389_drop_users_has_dashboard_access",
+      "breakpoints": true
     }
   ]
 }

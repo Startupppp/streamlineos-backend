@@ -169,7 +169,6 @@ async function seed(db: Db): Promise<SeedSummary> {
       lastName: "Owner",
       emailVerified: now,
       isActive: true,
-      hasDashboardAccess: true,
       userStatus: "active",
       lastActiveOrgId: DEMO_ORG_ID,
       activatedAt: now,
@@ -178,7 +177,6 @@ async function seed(db: Db): Promise<SeedSummary> {
       target: users.email,
       set: {
         isActive: true,
-        hasDashboardAccess: true,
         userStatus: "active",
         emailVerified: now,
         lastActiveOrgId: DEMO_ORG_ID,
@@ -210,7 +208,6 @@ async function seed(db: Db): Promise<SeedSummary> {
         lastName: m.lastName,
         emailVerified: now,
         isActive: m.userStatus !== "suspended",
-        hasDashboardAccess: true,
         userStatus: m.userStatus,
         lastActiveOrgId: DEMO_ORG_ID,
         activatedAt: now,

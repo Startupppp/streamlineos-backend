@@ -116,7 +116,6 @@ export class EmployeesService {
           image: users.image,
           isActive: users.isActive,
           joiningDate: users.joiningDate,
-          hasDashboardAccess: users.hasDashboardAccess,
           reportingTo: users.reportingTo,
           monthlySalary: users.monthlySalary,
         })
@@ -153,7 +152,6 @@ export class EmployeesService {
         image: row.image,
         isActive: row.isActive,
         joiningDate: row.joiningDate,
-        hasDashboardAccess: row.hasDashboardAccess,
         reportingTo: row.reportingTo,
         monthlySalary: row.monthlySalary,
       })),

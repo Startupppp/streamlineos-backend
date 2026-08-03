@@ -185,7 +185,6 @@ export const updateEmployeeSchema = z.object({
   phone: z.string().optional(),
   image: z.string().optional(),
   isActive: z.boolean().optional(),
-  hasDashboardAccess: z.boolean().optional(),
   role: z.string().optional(),
   gender: z.enum(["MALE", "FEMALE", "OTHER"]).optional(),
   taxId: z.string().optional(),

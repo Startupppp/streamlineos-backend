@@ -61,7 +61,6 @@ export class AuthTokensService {
     orgId: string;
     isOwner: boolean;
     role: string;
-    mfaEnforced: boolean;
     orgOnboardingCompletedAt: Date | null;
   } | null> {
     const rows = await withIdentity(this.db, userId, async (tx) =>
@@ -70,7 +69,6 @@ export class AuthTokensService {
           orgId: organizationMembers.orgId,
           isOwner: organizationMembers.isOwner,
           role: organizationMembers.role,
-          mfaEnforced: organizations.mfaEnforced,
           orgOnboardingCompletedAt: organizations.onboardingCompletedAt,
         })
         .from(organizationMembers)
@@ -219,7 +217,6 @@ export class AuthTokensService {
         firstName: displayName,
         lastName: "",
         isActive: true,
-        hasDashboardAccess: true,
         emailVerified: null,
       })
       .onConflictDoNothing()
@@ -624,7 +621,6 @@ export class AuthTokensService {
         lastName,
         image: input.image || null,
         isActive: true,
-        hasDashboardAccess: true,
         emailVerified: new Date(),
       });
 

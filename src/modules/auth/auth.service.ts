@@ -6,7 +6,6 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
-import { AccessService } from "../access/access.service";
 import { seedSystemRolesForOrg } from "../rbac/seed-system-roles";
 import {
   DEFAULT_SKIP_MODULES,
@@ -57,7 +56,6 @@ export class AuthService {
     private readonly sessionService: SessionService,
     private readonly cache: CacheService,
     private readonly audit: AuditService,
-    private readonly access: AccessService,
     private readonly entitlements: EntitlementsService,
     private readonly authTokens: AuthTokensService,
     private readonly dispatch: NotificationDispatchService,
@@ -95,24 +93,23 @@ export class AuthService {
 
       await tx.insert(users).values({
         id: userId,
+        isActive: true,
         email: normalizedEmail,
+        lastActiveOrgId: orgId,
+        emailVerified: new Date(),
+        firstName: input.firstName,
+        lastName: input.lastName ?? "",
         name: input.lastName
           ? `${input.firstName} ${input.lastName}`
           : input.firstName,
-        firstName: input.firstName,
-        lastName: input.lastName ?? "",
-        isActive: true,
-        hasDashboardAccess: true,
-        emailVerified: new Date(),
-        lastActiveOrgId: orgId,
       });
 
       await tx.insert(organizationMembers).values({
-        id: ownerMembershipId,
         orgId,
         userId,
-        role: ORG_MEMBER_ROLES.OWNER,
         isOwner: true,
+        id: ownerMembershipId,
+        role: ORG_MEMBER_ROLES.OWNER,
       });
 
       const trialDays = getTrialDays();
@@ -162,16 +159,12 @@ export class AuthService {
     image: string | null;
     role: string | null;
     isActive: boolean;
-    hasDashboardAccess: boolean;
     branchId: string | null;
-    totpEnabled: boolean;
     orgId: string | null;
     isOrgOwner: boolean;
-    mfaEnforced: boolean;
     enabledModules: string[];
     orgOnboardingCompletedAt: string | null;
     userOnboardingCompletedAt: string | null;
-    permissions: string[];
     plan: string | null;
   }> {
     return this.cache.cached(
@@ -188,9 +181,7 @@ export class AuthService {
               name: true,
               image: true,
               isActive: true,
-              hasDashboardAccess: true,
               branchId: true,
-              totpEnabled: true,
               onboardingCompletedAt: true,
               lastActiveOrgId: true,
             },
@@ -209,17 +200,14 @@ export class AuthService {
           user.lastActiveOrgId ?? null,
         );
 
-        let mfaEnforced = false;
         let enabledModules: string[] = [];
         let orgOnboardingCompletedAt: string | null = null;
         let plan: string | null = null;
-        let permissions: string[] = [];
 
         const resolvedOrgId = membership?.orgId ?? null;
         const isOrgOwner = membership?.isOwner ?? false;
 
         if (membership) {
-          mfaEnforced = membership.mfaEnforced;
           orgOnboardingCompletedAt =
             membership.orgOnboardingCompletedAt?.toISOString() ?? null;
 
@@ -243,16 +231,6 @@ export class AuthService {
               enabledModules = moduleStatuses
                 .filter((m) => m.enabled)
                 .map((m) => m.moduleKey);
-
-              try {
-                const permMap = await this.access.resolveUserPermissions(
-                  membership.orgId,
-                  userId,
-                );
-                permissions = [...permMap.keys()];
-              } catch {
-                permissions = [];
-              }
             },
             { orgId: membership.orgId },
           );
@@ -267,17 +245,13 @@ export class AuthService {
           image: user.image ?? null,
           role: membership?.role ?? null,
           isActive: user.isActive,
-          hasDashboardAccess: user.hasDashboardAccess,
           branchId: user.branchId ?? null,
-          totpEnabled: user.totpEnabled,
           orgId: resolvedOrgId,
           isOrgOwner,
-          mfaEnforced,
           enabledModules,
           orgOnboardingCompletedAt,
           userOnboardingCompletedAt:
             user.onboardingCompletedAt?.toISOString() ?? null,
-          permissions,
           plan,
         };
       },

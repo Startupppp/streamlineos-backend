@@ -6,6 +6,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
+import { MfaPolicyService } from "../../access/mfa-policy.service";
 import {
   orgCustomDomains,
   orgHolidays,
@@ -55,12 +56,14 @@ export class OrganizationSettingsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly cache: CacheService,
+    private readonly mfaPolicy: MfaPolicyService,
   ) {}
 
   private async invalidateSettingsCache(orgId: string): Promise<void> {
     await Promise.all([
       this.cache.invalidate(CACHE_KEYS.orgSettings(orgId)),
       this.cache.invalidatePattern(CACHE_KEYS.orgProfilePattern(orgId)),
+      this.mfaPolicy.invalidateOrg(orgId),
     ]);
   }
 
@@ -210,16 +213,10 @@ export class OrganizationSettingsService {
       metadata: { ...updateData, ...(hasDomainsUpdate ? { allowedEmailDomains: input.allowedEmailDomains } : {}) },
     });
 
-    await this.cache.invalidate(CACHE_KEYS.orgSettings(orgId));
-
-    const members = await this.db
-      .select({ userId: organizationMembers.userId })
-      .from(organizationMembers)
-      .where(eq(organizationMembers.orgId, orgId));
-
-    await Promise.allSettled(
-      members.map((m) => this.cache.invalidate(CACHE_KEYS.userSession(m.userId))),
-    );
+    await Promise.all([
+      this.cache.invalidate(CACHE_KEYS.orgSettings(orgId)),
+      this.mfaPolicy.invalidateOrg(orgId),
+    ]);
 
     return { success: true };
   }

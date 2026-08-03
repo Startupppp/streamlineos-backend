@@ -70,7 +70,6 @@ export class EmployeeMutationsService {
             image: true,
             isActive: true,
             joiningDate: true,
-            hasDashboardAccess: true,
             reportingTo: true,
             monthlySalary: true,
             bio: true,
@@ -136,7 +135,6 @@ export class EmployeeMutationsService {
       image: u.image,
       isActive: u.isActive,
       joiningDate: u.joiningDate,
-      hasDashboardAccess: u.hasDashboardAccess,
       reportingTo: u.reportingTo,
       monthlySalary: u.monthlySalary,
       bio: u.bio ?? null,
@@ -225,10 +223,6 @@ export class EmployeeMutationsService {
     if (body.phone !== undefined) updateData.phone = body.phone;
     if (body.image !== undefined) updateData.image = body.image;
     if (body.isActive !== undefined) updateData.isActive = body.isActive;
-    if (body.hasDashboardAccess !== undefined) {
-      if (!isOwnerOrAdmin) throw new ForbiddenException("Only admins can toggle dashboard access.");
-      updateData.hasDashboardAccess = body.hasDashboardAccess;
-    }
     if (body.bio !== undefined) updateData.bio = body.bio;
     if (body.linkedinUrl !== undefined) updateData.linkedinUrl = body.linkedinUrl || null;
     if (body.twitterUrl !== undefined) updateData.twitterUrl = body.twitterUrl || null;

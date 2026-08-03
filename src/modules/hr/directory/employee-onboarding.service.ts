@@ -123,7 +123,6 @@ export class EmployeeOnboardingService {
           joiningDate: body.joiningDate ? formatDateOnly(new Date(body.joiningDate)) : undefined,
           dateOfBirth: body.dateOfBirth ? formatDateOnly(new Date(body.dateOfBirth)) : undefined,
           isActive: true,
-          hasDashboardAccess: true,
         };
         if (body.taxId) updateData.taxId = encrypt(body.taxId);
         if (body.monthlySalary !== undefined) updateData.monthlySalary = body.monthlySalary.toString();
@@ -232,7 +231,6 @@ export class EmployeeOnboardingService {
             ? encryptBankDetails(toBankDetails(body.bankDetails))
             : undefined,
           isActive: true,
-          hasDashboardAccess: true,
         })
         .returning();
 

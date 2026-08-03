@@ -41,6 +41,7 @@ import {
 import { isPlanGatedModule } from "../../common/rbac/module-vocabulary";
 import type { AccessSnapshot, DataScope } from "./access.types";
 import { EntitlementsService, MODULE_CATALOG } from "./entitlements.service";
+import { MfaPolicyService } from "./mfa-policy.service";
 
 const MEMBERS_WITH_PERM_DEFAULT_CAP = 50;
 
@@ -173,6 +174,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly entitlements: EntitlementsService,
+    private readonly mfaPolicy: MfaPolicyService,
   ) {}
 
   onModuleInit(): void {
@@ -427,7 +429,10 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     userId: string,
     ctx: CurrentUserContext,
   ): Promise<AccessSnapshot> {
-    const version = await this.getPermissionsVersion(orgId);
+    const [version, mfa] = await Promise.all([
+      this.getPermissionsVersion(orgId),
+      this.mfaPolicy.resolve(orgId, userId),
+    ]);
 
     if (ctx.isOrgOwner) {
       const scopes = allCatalogScopes();
@@ -436,6 +441,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
         scopes,
         modules: await this.resolveModuleFlags(orgId, EMPTY_DENIED_MODULES),
         isOrgOwner: ctx.isOrgOwner,
+        mfa,
         version,
       };
     }
@@ -457,6 +463,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       scopes,
       modules,
       isOrgOwner: ctx.isOrgOwner,
+      mfa,
       version,
     };
   }

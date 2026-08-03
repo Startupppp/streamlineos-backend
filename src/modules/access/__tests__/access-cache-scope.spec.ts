@@ -3,6 +3,7 @@ import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import type { Db } from "../../../db/drizzle.module";
 import type { CacheService } from "../../../common/cache/cache.service";
 import type { EntitlementsService } from "../entitlements.service";
+import { makeMfaPolicyStub } from "../../../../test/helpers/mfa-policy-stub";
 
 describe("CACHE_KEYS.accessPerms — org-scoping", () => {
   it("includes orgId so that keys for different orgs are distinct", () => {
@@ -85,6 +86,7 @@ function buildService(
     defaultDb as unknown as Db,
     cache,
     entitlements,
+    makeMfaPolicyStub(),
   );
 }
 
@@ -125,6 +127,7 @@ describe("AccessService.resolveUserPermissions — org-scoped Redis cache key", 
       db as unknown as Db,
       cache as unknown as CacheService,
       entitlements,
+      makeMfaPolicyStub(),
     );
 
     await svc.resolveUserPermissions("org-alpha", "user-1");
@@ -172,11 +175,13 @@ describe("AccessService.resolveUserPermissions — org-scoped Redis cache key", 
       buildDbForOrg(10) as unknown as Db,
       cache as unknown as CacheService,
       entitlements,
+      makeMfaPolicyStub(),
     );
     const svcB = new AccessService(
       buildDbForOrg(20) as unknown as Db,
       cache as unknown as CacheService,
       entitlements,
+      makeMfaPolicyStub(),
     );
 
     await svcA.resolveUserPermissions("org-a", "user-shared");

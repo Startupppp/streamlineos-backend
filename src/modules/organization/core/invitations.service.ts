@@ -491,7 +491,6 @@ export class InvitationsService {
           firstName,
           lastName,
           emailVerified: new Date(),
-          hasDashboardAccess: true,
           lastActiveOrgId: invitation.orgId,
         });
         const inserted = await tx

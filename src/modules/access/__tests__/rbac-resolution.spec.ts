@@ -9,6 +9,7 @@ import {
 import type { Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import type { EntitlementsService } from "../entitlements.service";
+import { makeMfaPolicyStub } from "../../../../test/helpers/mfa-policy-stub";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { OwnershipService } from "../../ownership/ownership.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -76,6 +77,7 @@ function buildService(db: unknown): AccessService {
     db as unknown as Db,
     cache as unknown as CacheService,
     entitlements as unknown as EntitlementsService,
+    makeMfaPolicyStub(),
   );
 }
 

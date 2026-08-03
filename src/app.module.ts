@@ -5,9 +5,11 @@ import {
   TenantContextService,
 } from "./common/tenant";
 import { Reflector } from "@nestjs/core";
+
 import { DeprecationInterceptor } from "./common/deprecation/deprecation.interceptor";
 import { ConfigModule } from "./config/config.module";
 import { JwtAuthGuard } from "./common/auth/jwt-auth.guard";
+import { MfaGuard } from "./common/auth/mfa.guard";
 import { DrizzleModule } from "./db/drizzle.module";
 import { CacheModule } from "./common/cache/cache.module";
 import { AuditModule } from "./common/audit/audit.module";
@@ -91,12 +93,12 @@ import { ZodValidationInterceptor } from "./common/validation/zod-validation.int
     DrizzleModule,
     CacheModule,
     AuditModule,
-    RateLimitModule,
     LeadsModule,
-    ContactsModule,
+    BlogModule,
     CsatModule,
     SurveysModule,
-    BlogModule,
+    ContactsModule,
+    RateLimitModule,
     AuditLogModule,
     GoalsModule,
     ExpensesModule,
@@ -167,6 +169,7 @@ import { ZodValidationInterceptor } from "./common/validation/zod-validation.int
     Reflector,
     TenantContextService,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: MfaGuard },
     { provide: APP_INTERCEPTOR, useClass: DeprecationInterceptor },
     { provide: APP_INTERCEPTOR, useClass: ZodValidationInterceptor },
     { provide: APP_INTERCEPTOR, useClass: TenantContextInterceptor },

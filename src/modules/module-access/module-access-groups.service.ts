@@ -28,7 +28,7 @@ import {
   ROLE_RANK,
   toGrantableSet,
 } from "../../common/rbac/grantability";
-import { moduleAccessDenied } from "./module-access-errors";
+import { moduleAccessDenied, moduleOwnershipTransferDenied } from "./module-access-errors";
 import { resolveActorRankContext } from "./module-access.helpers";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
@@ -133,6 +133,17 @@ export class ModuleAccessGroupsService {
     if (!scope || scope === "none") {
       throw moduleAccessDenied(action);
     }
+  }
+
+  private async assertOwnershipTransferRights(
+    actor: CurrentUserContext,
+    moduleKey: string,
+  ): Promise<void> {
+    this.assertKnownModule(moduleKey);
+    if (actor.isOrgOwner) return;
+    const ownerUserId = await this.resolveModuleOwnerUserId(actor.orgId, moduleKey);
+    if (ownerUserId !== null && ownerUserId === actor.userId) return;
+    throw moduleOwnershipTransferDenied();
   }
 
   private modulePermissionKeys(moduleKey: string): Set<string> {
@@ -706,7 +717,7 @@ export class ModuleAccessGroupsService {
     moduleKey: string,
     input: InitiateOwnershipTransferInput,
   ): Promise<{ success: true }> {
-    await this.assertAccess(actor, moduleKey, "manage");
+    await this.assertOwnershipTransferRights(actor, moduleKey);
 
     const [actorMembership, toMembership] = await Promise.all([
       this.db.query.organizationMembers.findFirst({
@@ -1102,7 +1113,7 @@ export class ModuleAccessGroupsService {
     actor: CurrentUserContext,
     moduleKey: string,
   ): Promise<{ success: true }> {
-    await this.assertAccess(actor, moduleKey, "manage");
+    await this.assertOwnershipTransferRights(actor, moduleKey);
 
     const [transfer] = await this.db
       .select({ id: ownershipTransfers.id, fromMembershipId: ownershipTransfers.fromMembershipId })

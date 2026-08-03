@@ -15,6 +15,7 @@ import type { EntitlementsService } from "./entitlements.service";
 import { bumpPermissionsVersion, type DbOrTx } from "../../common/rbac/access-invalidate";
 import { ALL_PERMISSION_NAMES } from "../rbac/permissions";
 import { logger } from "../../common/logger/logger.service";
+import { makeMfaPolicyStub } from "../../../test/helpers/mfa-policy-stub";
 
 describe("broadest", () => {
   it("ranks none < own < team < all", () => {
@@ -244,6 +245,7 @@ function buildService(db: unknown): AccessService {
     db as unknown as Db,
     cache as unknown as CacheService,
     entitlements as unknown as EntitlementsService,
+    makeMfaPolicyStub(),
   );
 }
 
@@ -496,6 +498,7 @@ describe("AccessService.resolveUserPermissions — version bump invalidates loca
       db as unknown as Db,
       cache as unknown as CacheService,
       entitlements as unknown as EntitlementsService,
+      makeMfaPolicyStub(),
     );
     svc.onModuleInit();
 
@@ -624,6 +627,7 @@ describe("AccessService.resolveUserPermissions — unknown permission keys are o
       db1 as unknown as Db,
       cache as unknown as CacheService,
       entitlements as unknown as EntitlementsService,
+      makeMfaPolicyStub(),
     );
 
     await svc.resolveUserPermissions("org-dedup", "user-dedup");
@@ -700,6 +704,7 @@ describe("AccessService.membersWithPermission", () => {
       db as unknown as Db,
       cache as unknown as CacheService,
       entitlements as unknown as EntitlementsService,
+      makeMfaPolicyStub(),
     );
   }
 
@@ -886,6 +891,7 @@ describe("AccessService.membersWithPermission — distribution cap", () => {
         db as unknown as Db,
         cache as unknown as CacheService,
         entitlements as unknown as EntitlementsService,
+        makeMfaPolicyStub(),
       ),
       cachedMock,
     };

@@ -4,6 +4,9 @@ export const CACHE_KEYS = {
 
   rolesList: (orgId: string) => `org:roles:${orgId}`,
 
+  mfaOrgPolicy: (orgId: string) => `mfa:org-policy:${orgId}`,
+  mfaUserTotp: (userId: string) => `mfa:user-totp:${userId}`,
+
   accessVersion: (orgId: string) => `access:version:${orgId}`,
   accessPerms: (orgId: string, userId: string, version: number) =>
     `access:perms:${orgId}:${userId}:v${version}`,
