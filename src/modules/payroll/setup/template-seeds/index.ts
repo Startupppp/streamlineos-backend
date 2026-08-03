@@ -12,8 +12,6 @@ import {
   AU_STANDARD_SEED,
 } from "./country-standard-seeds";
 
-export { OT_MULTIPLIER_DEFAULT } from "./hourly-manufacturing-seeds";
-
 export const PAYROLL_TEMPLATE_SEEDS: PayrollTemplateSeed[] = [
   INDIAN_STANDARD_SEED,
   INDIAN_STARTUP_SEED,

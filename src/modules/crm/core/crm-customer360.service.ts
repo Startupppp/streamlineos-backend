@@ -9,9 +9,6 @@ import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { CrmCustomer360SectionsService } from "./crm-customer360-sections.service";
 import type { Customer360Response, Customer360Section } from "./crm-customer360-sections.service";
 
-export type { Customer360Response, Customer360Section } from "./crm-customer360-sections.service";
-
-
 @Injectable()
 export class CrmCustomer360Service {
   constructor(

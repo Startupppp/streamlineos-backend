@@ -420,6 +420,13 @@ export class OnboardingController {
     return this.requirements.ensureDocumentTypes(u.orgId, body.country);
   }
 
+  @Get("me")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:onboarding:tasks:view")
+  getMyTasks(@CurrentUser() u: CurrentUserContext) {
+    return this.onboarding.getUserTasks(u, u.userId);
+  }
+
   @Get(":userId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:onboarding:tasks:view")

@@ -5,7 +5,6 @@ import { ToolAccessService } from "./tool-access.service";
 import { AiConfirmationService } from "../confirmation/ai-confirmation.service";
 import { MailService } from "../../mail/mail.service";
 import { MailAiService } from "../../mail/mail-ai.service";
-import { MailAccountsService } from "../../mail/mail-accounts.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 export interface MailCopilotContext {
@@ -18,7 +17,6 @@ export class MailCopilotTools {
     private readonly mail: MailService,
     private readonly mailAi: MailAiService,
     private readonly toolAccess: ToolAccessService,
-    private readonly mailAccounts: MailAccountsService,
     private readonly confirmation: AiConfirmationService,
   ) {}
 

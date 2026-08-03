@@ -1,5 +1,4 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { ModuleRef } from "@nestjs/core";
 import { tool } from "ai";
 import { z } from "zod";
 import { and, eq, ilike } from "drizzle-orm";
@@ -20,7 +19,6 @@ export class ProjectsCopilotTools {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly toolAccess: ToolAccessService,
     private readonly confirmation: AiConfirmationService,
-    private readonly moduleRef: ModuleRef,
   ) {}
 
   buildTools(ctx: ProjectsCopilotContext) {

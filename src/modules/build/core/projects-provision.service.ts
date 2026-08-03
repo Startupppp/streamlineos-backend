@@ -51,7 +51,7 @@ export class ProjectsProvisionService {
           key: projectKey,
           name: input.name,
           description: input.description,
-          managerId: input.managerId,
+          managerId: input.managerId ?? creatorUserId,
           clientId: input.clientId,
           startDate: input.startDate ? new Date(input.startDate) : undefined,
           endDate: input.endDate ? new Date(input.endDate) : undefined,

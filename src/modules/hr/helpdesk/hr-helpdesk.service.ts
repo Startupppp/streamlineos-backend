@@ -37,10 +37,10 @@ export class HrHelpdeskService {
   async list(orgId: string, userId: string, isAdmin: boolean, filters: ListInput) {
     const conditions: SQL[] = [eq(helpdeskTickets.orgId, orgId)];
 
-    if (filters.userId) {
-      conditions.push(eq(helpdeskTickets.userId, filters.userId));
-    } else if (!isAdmin) {
+    if (!isAdmin) {
       conditions.push(eq(helpdeskTickets.userId, userId));
+    } else if (filters.userId) {
+      conditions.push(eq(helpdeskTickets.userId, filters.userId));
     }
 
     if (filters.status) conditions.push(eq(helpdeskTickets.status, filters.status));

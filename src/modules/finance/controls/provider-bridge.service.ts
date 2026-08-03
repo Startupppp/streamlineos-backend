@@ -1,6 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
-import { DRIZZLE } from "../../../db/drizzle.constants";
-import { type Db } from "../../../db/drizzle.module";
+import { Injectable } from "@nestjs/common";
 import { FinancePostingService } from "../../accounting/core/finance-posting.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
@@ -17,10 +15,7 @@ export interface RecordProviderPaymentInput {
 
 @Injectable()
 export class ProviderBridgeService {
-  constructor(
-    @Inject(DRIZZLE) private readonly db: Db,
-    private readonly finPosting: FinancePostingService,
-  ) {}
+  constructor(private readonly finPosting: FinancePostingService) {}
 
   async recordProviderPayment(
     orgId: string,

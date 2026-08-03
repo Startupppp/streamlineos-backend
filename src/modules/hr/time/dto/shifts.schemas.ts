@@ -68,11 +68,12 @@ export const createSwapRequestSchema = z
     path: ["targetDate"],
   });
 
-const SWAP_STATUSES = ["PENDING", "APPROVED", "REJECTED"] as const;
+const SWAP_DECISIONS = ["APPROVED", "REJECTED"] as const;
 
 export const updateSwapStatusSchema = z.object({
-  status: z.enum(SWAP_STATUSES),
+  status: z.enum(SWAP_DECISIONS),
 });
 
 export type AssignShiftInput = z.infer<typeof assignShiftSchema>;
+export type CreateSwapRequestInput = z.infer<typeof createSwapRequestSchema>;
 export type UpdateSwapStatusInput = z.infer<typeof updateSwapStatusSchema>;

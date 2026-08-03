@@ -37,13 +37,6 @@ export const completeSchema = z.object({
   completedAt: z.string().datetime({ offset: true }).optional(),
 });
 
-export const overdueSchema = z.object({
-  countOnly: z
-    .string()
-    .optional()
-    .transform((v) => v === "true"),
-});
-
 export const analyticsSchema = z.object({
   days: z.coerce.number().int().min(1).max(90).default(30),
 });

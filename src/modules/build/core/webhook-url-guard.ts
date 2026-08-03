@@ -1,5 +1,1 @@
-export {
-  checkWebhookUrl,
-  type WebhookUrlCheck,
-  type WebhookUrlRejection,
-} from "../../../common/security/ssrf-guard";
+export { checkWebhookUrl } from "../../../common/security/ssrf-guard";

@@ -26,10 +26,8 @@ import { isForbidden, type DashboardActor } from "./dashboard.errors";
 import {
   createAnnouncementSchema,
   deleteAnnouncementSchema,
-  myIssuesSchema,
   type CreateAnnouncementInput,
   type DeleteAnnouncementInput,
-  type MyIssuesInput,
 } from "./dto/dashboard.schemas";
 
 @Controller("dashboard")
@@ -119,10 +117,7 @@ export class DashboardController {
   @Get("my-issues")
   @UseGuards(ModuleGuard)
   @RequireModule("build")
-  myIssues(
-    @Query(new ZodValidationPipe(myIssuesSchema)) query: MyIssuesInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
+  myIssues(@CurrentUser() u: CurrentUserContext) {
     return this.project.getMyIssues(u.orgId, u.userId);
   }
 
@@ -145,7 +140,7 @@ export class DashboardController {
 
   @Get("personal")
   personal(@CurrentUser() u: CurrentUserContext) {
-    return this.hr.getPersonalDashboard(u.orgId, u.userId);
+    return this.hr.getPersonalDashboard(u);
   }
 
   @Get("recent-activity")

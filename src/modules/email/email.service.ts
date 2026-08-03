@@ -35,7 +35,7 @@ import {
   getSignBulkJobCompletedEmailTemplate,
 } from "./templates";
 
-export type { EmailOptions, EmailAttachment } from "./email.provider";
+export type { EmailOptions } from "./email.provider";
 
 @Injectable()
 export class EmailService extends EmailSendersBase {

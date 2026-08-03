@@ -16,8 +16,6 @@ export type RetrievedSource =
   | { kind: "article"; id: number; title: string; slug: string; spaceId: number | null; contentText: string; updatedAt: Date }
   | { kind: "page"; id: number; title: string; spaceId: number | null; contentText: string; updatedAt: Date };
 
-export type { RetrievedSource as RetrievedArticle };
-
 @Injectable()
 export class KbSearchService {
   constructor(

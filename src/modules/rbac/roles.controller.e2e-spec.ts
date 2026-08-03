@@ -4,6 +4,7 @@ import request from "supertest";
 import { AppModule } from "../../app.module";
 import { AllExceptionsFilter } from "../../common/http/all-exceptions.filter";
 import { signToken } from "../../../test/helpers/sign-token";
+import { stubMembershipState } from "../../../test/helpers/membership-state";
 
 describe("/roles (e2e)", () => {
   let app: INestApplication;
@@ -14,14 +15,21 @@ describe("/roles (e2e)", () => {
   beforeAll(async () => {
     process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
     process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const moduleRef = await stubMembershipState(
+      Test.createTestingModule({ imports: [AppModule] }),
+      {
+        owner_rbac_1: { role: "OWNER", isOwner: true },
+        member_rbac_1: { role: "MEMBER" },
+        manager_rbac_1: { role: "MANAGER" },
+      },
+    ).compile();
     app = moduleRef.createNestApplication();
     app.useGlobalFilters(new AllExceptionsFilter());
     await app.init();
 
-    ownerToken = await signToken({ orgId: "org_rbac_01", role: "OWNER", isOrgOwner: true });
-    memberToken = await signToken({ orgId: "org_rbac_01", role: "MEMBER", isOrgOwner: false, permissions: [] });
-    _rbacManagerToken = await signToken({ orgId: "org_rbac_01", role: "MANAGER", isOrgOwner: false, permissions: ["settings:rbac:manage"] });
+    ownerToken = await signToken({ sub: "owner_rbac_1", orgId: "org_rbac_01" });
+    memberToken = await signToken({ sub: "member_rbac_1", orgId: "org_rbac_01" });
+    _rbacManagerToken = await signToken({ sub: "manager_rbac_1", orgId: "org_rbac_01" });
   });
 
   afterAll(async () => app.close());

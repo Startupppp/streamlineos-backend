@@ -1,17 +1,5 @@
 import { z } from "zod";
 
-export const VALID_API_KEY_SCOPES = [
-  "leads:read",
-  "leads:write",
-  "deals:read",
-  "deals:write",
-  "contacts:read",
-  "contacts:write",
-  "hr:read",
-  "hr:write",
-  "*",
-] as const;
-
 export const createApiKeySchema = z.object({
   name: z.string().min(1).max(100),
   description: z.string().optional(),

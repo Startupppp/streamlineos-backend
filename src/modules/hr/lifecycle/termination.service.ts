@@ -27,7 +27,6 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { EmailService } from "../../email/email.service";
 import { AutomationService } from "../../automation/automation.service";
 import { HrAutomationEngineService } from "../automations/hr-automation-engine.service";
-import { HrTemplateRenderService } from "../templates/hr-template-render.service";
 import { SessionsService } from "../../sessions/sessions.service";
 import { getTerminationEmailTemplate } from "../../email/templates/hr";
 import { formatDdMmmYyyy } from "../../../common/date";
@@ -46,7 +45,6 @@ export class TerminationService {
     private readonly email: EmailService,
     private readonly automation: AutomationService,
     private readonly hrAutomation: HrAutomationEngineService,
-    private readonly templateRender: HrTemplateRenderService,
     private readonly sessions: SessionsService,
   ) {}
 

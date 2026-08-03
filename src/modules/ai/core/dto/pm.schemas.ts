@@ -20,8 +20,6 @@ export const PmSummaryOutputSchema = z.object({
   highlights: z.array(z.string()).describe("Up to 3 notable progress points"),
   atRisk: z.boolean().describe("Whether the project risks missing its goals"),
 });
-export type PmSummaryOutput = z.infer<typeof PmSummaryOutputSchema>;
-
 const RiskItemSchema = z.object({
   title: z.string().describe("Short risk title, max 10 words"),
   severity: z.enum(["high", "medium", "low"]),

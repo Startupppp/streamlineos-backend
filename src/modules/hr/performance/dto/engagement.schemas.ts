@@ -110,5 +110,4 @@ export type CreateFeedbackInput = z.infer<typeof createFeedbackSchema>;
 export type SubmitFeedbackInput = z.infer<typeof submitFeedbackSchema>;
 export type CreateRecognitionInput = z.infer<typeof createRecognitionSchema>;
 export type CreateEnpsInput = z.infer<typeof createEnpsSchema>;
-export type CreateSurveyInput = z.infer<typeof createSurveySchema>;
 export type UpdateSurveyInput = z.infer<typeof updateSurveySchema>;

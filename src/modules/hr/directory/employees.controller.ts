@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  ForbiddenException,
   Get,
   HttpCode,
   NotFoundException,
@@ -96,10 +97,25 @@ export class EmployeesController {
     }, scope);
   }
 
+  private async resolveTargetUserId(
+    u: CurrentUserContext,
+    requested: string | undefined,
+  ): Promise<string> {
+    if (!requested || requested === u.userId) return u.userId;
+    const scope = await resolveEmployeesScope(this.access, u);
+    if (scope !== "all") {
+      throw new ForbiddenException("Not allowed to view another employee's records");
+    }
+    return requested;
+  }
+
   @Get("stats")
   @RequirePermission("hr:employees:view")
-  stats(@Query("userId") userId: string | undefined, @CurrentUser() u: CurrentUserContext) {
-    const targetId = userId ?? u.userId;
+  async stats(
+    @Query("userId") userId: string | undefined,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const targetId = await this.resolveTargetUserId(u, userId);
     return this.employees.getStats(u.orgId, targetId);
   }
 
@@ -145,14 +161,20 @@ export class EmployeesController {
 
   @Get("projects")
   @RequirePermission("hr:employees:view")
-  projects(@Query("userId") userId: string | undefined, @CurrentUser() u: CurrentUserContext) {
-    return this.employees.getProjects(u.orgId, userId || u.userId);
+  async projects(
+    @Query("userId") userId: string | undefined,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.employees.getProjects(u.orgId, await this.resolveTargetUserId(u, userId));
   }
 
   @Get("tickets")
   @RequirePermission("hr:employees:view")
-  tickets(@Query("userId") userId: string | undefined, @CurrentUser() u: CurrentUserContext) {
-    return this.employees.getTickets(u.orgId, userId || u.userId);
+  async tickets(
+    @Query("userId") userId: string | undefined,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.employees.getTickets(u.orgId, await this.resolveTargetUserId(u, userId));
   }
 
   @Get(":employeeId/reports-to-me")

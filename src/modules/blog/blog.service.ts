@@ -316,6 +316,3 @@ export class BlogService {
   }
 }
 
-export type CreateCategoryResult = Awaited<
-  ReturnType<BlogService["createCategory"]>
->;

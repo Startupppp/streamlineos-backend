@@ -1,6 +1,5 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
 import { invAuditEvents } from "../../../db/schema";
-import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 
 interface AuditInsertInput {
@@ -16,7 +15,6 @@ interface AuditInsertInput {
 
 @Injectable()
 export class InventoryAuditService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async insert(
     tx: Parameters<Parameters<Db["transaction"]>[0]>[0] | Db,

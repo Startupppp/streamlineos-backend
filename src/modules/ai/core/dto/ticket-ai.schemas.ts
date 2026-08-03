@@ -67,8 +67,6 @@ export const TicketChecklistOutputSchema = z.object({
     .describe("4-10 checklist items tailored to the ticket, deduplicated against existing items"),
 });
 
-export const extractMeetingActionsBodySchema = z.object({});
-
 const ProposedActionItemSchema = z.object({
   title: z.string().describe("Action item title, max 200 chars"),
   ownerName: z.string().describe("Resolved assignee name from the notes, empty string if unclear"),

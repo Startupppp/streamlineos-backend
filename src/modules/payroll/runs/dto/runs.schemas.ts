@@ -50,13 +50,6 @@ export const listRunEmployeesQuerySchema = z.object({
 });
 export type ListRunEmployeesQuery = z.infer<typeof listRunEmployeesQuerySchema>;
 
-export const adjustmentSchema = z.object({
-  amount: z.string().regex(/^\d+(\.\d{1,2})?$/, "Must be decimal string"),
-  note: z.string().min(1).max(500),
-  code: z.string().min(1).max(50).optional(),
-  name: z.string().min(1).max(100).optional(),
-});
-
 export const patchInputSchema = z.object({
   scheduledDays: z.string().optional(),
   paidDays: z.string().optional(),

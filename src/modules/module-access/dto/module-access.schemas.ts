@@ -65,7 +65,10 @@ export const listMembersQuerySchema = z.object({
 
 export const addFlatMemberSchema = z.object({
   userId: z.string().min(1),
-  groupIds: z.array(z.number().int().positive()).max(50).optional(),
+  groupIds: z
+    .array(z.number().int().positive())
+    .min(1, "Select at least one group to grant module access")
+    .max(50),
 });
 
 export const updateMemberGroupsSchema = z.object({

@@ -72,8 +72,6 @@ export interface SignAuditRecordInput extends SignAuditActor {
   eventPayload?: Record<string, unknown>;
 }
 
-export const SYSTEM_ACTOR: SignAuditActor = { actorType: "system" };
-
 /**
  * Append-only writer for the SignOS audit trail. No other code in this module
  * should ever UPDATE or DELETE a sign_audit_events row.

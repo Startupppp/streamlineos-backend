@@ -34,6 +34,7 @@ import {
   legacyApiTokenPrefix,
 } from "./api-token-hash";
 import { organizationMembers, userApiTokens, users } from "../../db/schema";
+import { MembershipStateService } from "./membership-state.service";
 
 interface OrgContext {
   orgId: string;
@@ -49,32 +50,6 @@ interface OrgContextEntry {
 
 const ORG_CTX_TTL_MS = 60_000;
 const REVOCATION_CACHE_TTL_MS = 5_000;
-
-interface MembershipState {
-  active: boolean;
-  isOwner: boolean;
-  role: string;
-}
-
-interface MembershipStateEntry {
-  value: MembershipState;
-  expiresAt: number;
-}
-
-const MEMBERSHIP_STATUS_TTL_MS = 15_000;
-const membershipStatusCache = new Map<string, MembershipStateEntry>();
-
-/** Bust the cached active-membership and account-status checks so a status change takes effect immediately. */
-export function bustMembershipStatusCache(userId: string, orgId?: string): void {
-  membershipStatusCache.delete(`${userId}:account`);
-  if (orgId) {
-    membershipStatusCache.delete(`${userId}:${orgId}`);
-    return;
-  }
-  for (const key of Array.from(membershipStatusCache.keys())) {
-    if (key.startsWith(`${userId}:`)) membershipStatusCache.delete(key);
-  }
-}
 
 function extractClaims(payload: JWTPayload): BackendClaims | null {
   const parsed = backendJwtPayloadSchema.safeParse(payload);
@@ -96,6 +71,7 @@ export class JwtAuthGuard implements CanActivate {
     private readonly reflector: Reflector,
     @Inject(DRIZZLE) private readonly db: Db,
     @Inject(REDIS) private readonly redis: Redis | null,
+    private readonly membership: MembershipStateService,
   ) {
     const raw = process.env.BACKEND_JWT_SECRET;
     this.jwtSecretKey = raw ? new TextEncoder().encode(raw) : null;
@@ -185,7 +161,7 @@ export class JwtAuthGuard implements CanActivate {
         throw new ForbiddenException("Organization not found");
       }
 
-      const accountActive = await this.checkUserAccountActive(claims.sub);
+      const accountActive = await this.membership.isAccountActive(claims.sub);
       if (!accountActive) {
         throw new UnauthorizedException("Unauthorized");
       }
@@ -194,12 +170,12 @@ export class JwtAuthGuard implements CanActivate {
       let isOrgOwner = false;
 
       if (orgId) {
-        const membership = await this.resolveMembershipState(claims.sub, orgId);
-        if (!membership.active) {
+        const state = await this.membership.resolve(claims.sub, orgId);
+        if (!state.active) {
           throw new UnauthorizedException("Unauthorized");
         }
-        role = membership.role;
-        isOrgOwner = membership.isOwner;
+        role = state.role;
+        isOrgOwner = state.isOwner;
       }
 
       req.user = {
@@ -221,87 +197,6 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     throw new UnauthorizedException("Unauthorized");
-  }
-
-  private async resolveMembershipState(
-    userId: string,
-    orgId: string,
-  ): Promise<MembershipState> {
-    const key = `${userId}:${orgId}`;
-    const cached = membershipStatusCache.get(key);
-    if (cached && cached.expiresAt > Date.now()) return cached.value;
-
-    let state: MembershipState = { active: true, isOwner: false, role: "" };
-    try {
-      const rows = await runInTenantTransaction(
-        this.db,
-        (tx) =>
-          tx
-            .select({
-              status: organizationMembers.status,
-              isOwner: organizationMembers.isOwner,
-              role: organizationMembers.role,
-              userIsActive: users.isActive,
-              userDeletedAt: users.deletedAt,
-            })
-            .from(organizationMembers)
-            .innerJoin(users, eq(users.id, organizationMembers.userId))
-            .where(
-              and(
-                eq(organizationMembers.userId, userId),
-                eq(organizationMembers.orgId, orgId),
-              ),
-            )
-            .orderBy(desc(organizationMembers.joinedAt))
-            .limit(1),
-        { orgId },
-      );
-      const row = rows[0];
-      if (row) {
-        const active =
-          row.status !== "SUSPENDED" &&
-          row.status !== "LEFT" &&
-          row.userIsActive &&
-          row.userDeletedAt === null;
-        state = { active, isOwner: row.isOwner, role: row.role };
-      }
-    } catch {
-      state = { active: true, isOwner: false, role: "" };
-    }
-
-    membershipStatusCache.set(key, {
-      value: state,
-      expiresAt: Date.now() + MEMBERSHIP_STATUS_TTL_MS,
-    });
-    return state;
-  }
-
-  private async checkUserAccountActive(userId: string): Promise<boolean> {
-    const key = `${userId}:account`;
-    const cached = membershipStatusCache.get(key);
-    if (cached && cached.expiresAt > Date.now()) return cached.value.active;
-
-    let active = true;
-    try {
-      const rows = await this.db
-        .select({
-          isActive: users.isActive,
-          deletedAt: users.deletedAt,
-        })
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1);
-      const row = rows[0];
-      if (row && (!row.isActive || row.deletedAt !== null)) active = false;
-    } catch {
-      active = true;
-    }
-
-    membershipStatusCache.set(key, {
-      value: { active, isOwner: false, role: "" },
-      expiresAt: Date.now() + MEMBERSHIP_STATUS_TTL_MS,
-    });
-    return active;
   }
 
   private async resolveOrgContext(userId: string): Promise<OrgContext | null> {

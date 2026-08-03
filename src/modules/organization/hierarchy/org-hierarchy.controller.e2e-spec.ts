@@ -4,6 +4,7 @@ import request from "supertest";
 import { AppModule } from "../../../app.module";
 import { AllExceptionsFilter } from "../../../common/http/all-exceptions.filter";
 import { signToken } from "../../../../test/helpers/sign-token";
+import { stubMembershipState } from "../../../../test/helpers/membership-state";
 
 const ORG_ID = "org_test_001";
 const USER_ID = "user_test_001";
@@ -16,13 +17,19 @@ describe("/org-hierarchy (e2e)", () => {
   beforeAll(async () => {
     process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
     process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const moduleRef = await stubMembershipState(
+      Test.createTestingModule({ imports: [AppModule] }),
+      {
+        [USER_ID]: { role: "OWNER", isOwner: true },
+        user_test_002: { role: "MEMBER" },
+      },
+    ).compile();
     app = moduleRef.createNestApplication();
     app.useGlobalFilters(new AllExceptionsFilter());
     await app.init();
 
-    ownerToken = await signToken({ sub: USER_ID, orgId: ORG_ID, role: "OWNER", isOrgOwner: true });
-    memberToken = await signToken({ sub: "user_test_002", orgId: ORG_ID, role: "MEMBER", isOrgOwner: false, permissions: [] });
+    ownerToken = await signToken({ sub: USER_ID, orgId: ORG_ID });
+    memberToken = await signToken({ sub: "user_test_002", orgId: ORG_ID });
   });
 
   afterAll(async () => app.close());

@@ -40,6 +40,8 @@ export class MeService {
       ...(input.firstName !== undefined && input.lastName !== undefined
         ? { name: `${input.firstName} ${input.lastName}` }
         : {}),
+      ...(input.name !== undefined ? { name: input.name } : {}),
+      ...(input.image !== undefined ? { image: input.image } : {}),
       ...(input.phone !== undefined ? { phone: input.phone } : {}),
       ...(input.whatsappNumber !== undefined ? { whatsappNumber: input.whatsappNumber } : {}),
       ...(input.emergencyContact !== undefined ? { emergencyContact: input.emergencyContact } : {}),

@@ -43,8 +43,10 @@ export const CACHE_KEYS = {
   clientsHealth: (orgId: string) => `clients:health:${orgId}`,
   churnAlerts: (orgId: string) => `clients:churn:${orgId}`,
 
-  quotasList: (orgId: string) => `sales:quotas:${orgId}`,
-  commissionsList: (orgId: string) => `sales:commissions:${orgId}`,
+  quotasList: (orgId: string, filters: string) => `sales:quotas:${orgId}:${filters}`,
+  quotasListPattern: (orgId: string) => `sales:quotas:${orgId}:*`,
+  commissionsList: (orgId: string, filters: string) => `sales:commissions:${orgId}:${filters}`,
+  commissionsListPattern: (orgId: string) => `sales:commissions:${orgId}:*`,
 
   searchResults: (orgId: string, userId: string, hash: string) =>
     `search:${orgId}:${userId}:${hash}`,

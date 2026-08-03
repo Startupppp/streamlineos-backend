@@ -4,6 +4,7 @@ import request from "supertest";
 import { AppModule } from "../../../../app.module";
 import { AllExceptionsFilter } from "../../../../common/http/all-exceptions.filter";
 import { signToken } from "../../../../../test/helpers/sign-token";
+import { stubMembershipState } from "../../../../../test/helpers/membership-state";
 
 describe("/inventory/stock/transfers (e2e)", () => {
   let app: INestApplication;
@@ -13,12 +14,18 @@ describe("/inventory/stock/transfers (e2e)", () => {
   beforeAll(async () => {
     process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
     process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const moduleRef = await stubMembershipState(
+      Test.createTestingModule({ imports: [AppModule] }),
+      {
+        owner_1: { role: "OWNER", isOwner: true },
+        member_1: { role: "MEMBER" },
+      },
+    ).compile();
     app = moduleRef.createNestApplication();
     app.useGlobalFilters(new AllExceptionsFilter());
     await app.init();
-    ownerToken = await signToken({ orgId: "org_inv_xfr", isOrgOwner: true, enabledModules: ["inventory"] });
-    noPermToken = await signToken({ orgId: "org_inv_xfr", isOrgOwner: false, permissions: [], enabledModules: ["inventory"] });
+    ownerToken = await signToken({ sub: "owner_1", orgId: "org_inv_xfr" });
+    noPermToken = await signToken({ sub: "member_1", orgId: "org_inv_xfr" });
   });
 
   afterAll(async () => app.close());

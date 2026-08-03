@@ -5,7 +5,6 @@ const PRIORITIES = ["LOW", "NORMAL", "HIGH", "CRITICAL"] as const;
 const CATEGORIES = ["SECURITY", "CRM", "HRMS", "BILLING", "AI", "PROJECTS", "WORKFLOW", "MARKETING", "SYSTEM"] as const;
 const CHANNELS = ["IN_APP", "EMAIL", "PUSH", "SMS", "WHATSAPP", "WEBHOOK"] as const;
 const STATUSES = ["DRAFT", "SCHEDULED", "QUEUED", "SENDING", "SENT", "CANCELLED", "FAILED"] as const;
-const _AUDIENCE_TYPES = ["all", "roles", "departments", "users"] as const;
 
 const audienceSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("all") }),

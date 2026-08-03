@@ -4,6 +4,7 @@ import request from "supertest";
 import { AppModule } from "../../app.module";
 import { AllExceptionsFilter } from "../../common/http/all-exceptions.filter";
 import { signToken } from "../../../test/helpers/sign-token";
+import { stubMembershipState } from "../../../test/helpers/membership-state";
 import { AccessService } from "../access/access.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 
@@ -16,7 +17,10 @@ describe("ChatActions auth (e2e, no DB required)", () => {
   beforeAll(async () => {
     process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
     process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-    const ref = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const ref = await stubMembershipState(
+      Test.createTestingModule({ imports: [AppModule] }),
+      { member_1: { role: "MEMBER" } },
+    ).compile();
     app = ref.createNestApplication();
     app.useGlobalFilters(new AllExceptionsFilter());
     await app.init();
@@ -38,7 +42,7 @@ describe("ChatActions auth (e2e, no DB required)", () => {
   });
 
   it("403 on POST /chat/actions/create-task-from-message without projects:tickets:create", async () => {
-    const token = await signToken({ permissions: [], enabledModules: ["projects", "chat"], isOrgOwner: false });
+    const token = await signToken({ sub: "member_1" });
     const res = await request(app.getHttpServer())
       .post("/chat/actions/create-task-from-message")
       .set("Authorization", `Bearer ${token}`)
@@ -48,7 +52,7 @@ describe("ChatActions auth (e2e, no DB required)", () => {
   });
 
   it("403 on POST /chat/actions/assign-ticket without projects:tickets:assign", async () => {
-    const token = await signToken({ permissions: [], enabledModules: ["projects", "chat"], isOrgOwner: false });
+    const token = await signToken({ sub: "member_1" });
     const res = await request(app.getHttpServer())
       .post("/chat/actions/assign-ticket")
       .set("Authorization", `Bearer ${token}`)
@@ -58,7 +62,7 @@ describe("ChatActions auth (e2e, no DB required)", () => {
   });
 
   it("403 on POST /chat/actions/set-due-date without projects:tickets:update", async () => {
-    const token = await signToken({ permissions: [], enabledModules: ["projects", "chat"], isOrgOwner: false });
+    const token = await signToken({ sub: "member_1" });
     const res = await request(app.getHttpServer())
       .post("/chat/actions/set-due-date")
       .set("Authorization", `Bearer ${token}`)
@@ -68,7 +72,7 @@ describe("ChatActions auth (e2e, no DB required)", () => {
   });
 
   it("403 on POST /chat/actions/ticket-status without projects:tickets:update", async () => {
-    const token = await signToken({ permissions: [], enabledModules: ["projects", "chat"], isOrgOwner: false });
+    const token = await signToken({ sub: "member_1" });
     const res = await request(app.getHttpServer())
       .post("/chat/actions/ticket-status")
       .set("Authorization", `Bearer ${token}`)
@@ -125,12 +129,14 @@ describeWithDb("ChatActions membership-forbidden path (e2e, mocked)", () => {
     process.env.DATABASE_URL ??= process.env.RBAC_E2E_DATABASE_URL ?? "postgres://u:p@localhost:5432/db";
     process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
 
-    const ref = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(AccessService)
-      .useValue(mockAccessServiceAllowed)
-      .overrideProvider(DRIZZLE)
-      .useValue(mockDbNoMembership)
-      .compile();
+    const ref = await stubMembershipState(
+      Test.createTestingModule({ imports: [AppModule] })
+        .overrideProvider(AccessService)
+        .useValue(mockAccessServiceAllowed)
+        .overrideProvider(DRIZZLE)
+        .useValue(mockDbNoMembership),
+      { member_1: { role: "MEMBER" }, owner_1: { role: "OWNER", isOwner: true } },
+    ).compile();
 
     app = ref.createNestApplication();
     app.useGlobalFilters(new AllExceptionsFilter());
@@ -157,11 +163,7 @@ describeWithDb("ChatActions membership-forbidden path (e2e, mocked)", () => {
   });
 
   it("403 CHAT_ACTION_FORBIDDEN on POST /chat/actions/create-task-from-message when caller is not a project member", async () => {
-    const token = await signToken({
-      permissions: ["build:tickets:create"],
-      enabledModules: ["projects", "chat"],
-      isOrgOwner: false,
-    });
+    const token = await signToken({ sub: "member_1" });
     const res = await request(app.getHttpServer())
       .post("/chat/actions/create-task-from-message")
       .set("Authorization", `Bearer ${token}`)
@@ -175,11 +177,7 @@ describeWithDb("ChatActions membership-forbidden path (e2e, mocked)", () => {
   });
 
   it("403 CHAT_ACTION_FORBIDDEN on POST /chat/actions/assign-ticket when caller is not a project member", async () => {
-    const token = await signToken({
-      permissions: ["build:tickets:assign"],
-      enabledModules: ["projects", "chat"],
-      isOrgOwner: false,
-    });
+    const token = await signToken({ sub: "member_1" });
     const res = await request(app.getHttpServer())
       .post("/chat/actions/assign-ticket")
       .set("Authorization", `Bearer ${token}`)
@@ -193,11 +191,7 @@ describeWithDb("ChatActions membership-forbidden path (e2e, mocked)", () => {
   });
 
   it("403 CHAT_ACTION_FORBIDDEN on POST /chat/actions/set-due-date when caller is not a project member", async () => {
-    const token = await signToken({
-      permissions: ["build:tickets:update"],
-      enabledModules: ["projects", "chat"],
-      isOrgOwner: false,
-    });
+    const token = await signToken({ sub: "member_1" });
     const res = await request(app.getHttpServer())
       .post("/chat/actions/set-due-date")
       .set("Authorization", `Bearer ${token}`)
@@ -211,11 +205,7 @@ describeWithDb("ChatActions membership-forbidden path (e2e, mocked)", () => {
   });
 
   it("org owners skip the membership DB check entirely on POST /chat/actions/create-task-from-message", async () => {
-    const token = await signToken({
-      permissions: ["build:tickets:create"],
-      enabledModules: ["projects", "chat"],
-      isOrgOwner: true,
-    });
+    const token = await signToken({ sub: "owner_1" });
     await request(app.getHttpServer())
       .post("/chat/actions/create-task-from-message")
       .set("Authorization", `Bearer ${token}`)

@@ -11,7 +11,6 @@ import {
   orgCustomDomains,
   orgHolidays,
   organizationAllowedEmailDomains,
-  organizationMembers,
   organizations,
 } from "../../../db/schema";
 import type {

@@ -22,7 +22,7 @@ import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { stableHash } from "../../common/cache/cache-hash";
 import { bumpPermissionsVersion, type DbOrTx } from "../../common/rbac/access-invalidate";
 import { assignModuleOwnerRole, revokeModuleOwnerRole } from "./module-owner-role.helper";
-import { bustMembershipStatusCache } from "../../common/auth/jwt-auth.guard";
+import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
 import type {
   DeclineTransferInput,
   InitiateModuleTransferInput,

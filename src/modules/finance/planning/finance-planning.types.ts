@@ -1,13 +1,3 @@
-export interface BudgetLineRow {
-  accountId: number;
-  accountCode: string;
-  accountName: string;
-  periodKey: string;
-  amount: string;
-  departmentId: number | null;
-  projectId: number | null;
-}
-
 export interface BvaAccountPeriodRow {
   accountId: number;
   accountCode: string;
@@ -65,9 +55,3 @@ export interface ScenarioCompareResponse {
   weeks: ScenarioCompareRow[];
 }
 
-export interface PlannedSpendItem {
-  label: string;
-  amount: number;
-  startWeek: number;
-  recurringWeekly: boolean;
-}

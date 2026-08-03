@@ -9,6 +9,7 @@ import { Reflector } from "@nestjs/core";
 import { DeprecationInterceptor } from "./common/deprecation/deprecation.interceptor";
 import { ConfigModule } from "./config/config.module";
 import { JwtAuthGuard } from "./common/auth/jwt-auth.guard";
+import { AuthContextModule } from "./common/auth/auth-context.module";
 import { MfaGuard } from "./common/auth/mfa.guard";
 import { DrizzleModule } from "./db/drizzle.module";
 import { CacheModule } from "./common/cache/cache.module";
@@ -121,6 +122,7 @@ import { ZodValidationInterceptor } from "./common/validation/zod-validation.int
     DashboardModule,
     PublicModule,
     RbacModule,
+    AuthContextModule,
     AccessModule,
     DealsModule,
     OrganizationRootModule,

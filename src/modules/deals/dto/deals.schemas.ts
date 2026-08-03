@@ -126,10 +126,6 @@ export const createCompetitorSchema = z.object({
 
 export const updateCompetitorSchema = createCompetitorSchema.omit({ competitorKey: true }).partial();
 
-export const patchNextStepSchema = z.object({
-  nextStep: z.string().max(500).nullable(),
-});
-
 export const createForecastSnapshotSchema = z.object({
   period: z.string().min(1),
 });

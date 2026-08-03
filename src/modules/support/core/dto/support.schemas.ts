@@ -560,16 +560,6 @@ export const kbAskSchema = z.object({
 });
 export type KbAskInput = z.infer<typeof kbAskSchema>;
 
-export const improveReplySchema = z.object({
-  content: z.string().trim().min(1).max(10000),
-  macroId: z.number().int().positive().optional(),
-});
-
-export const translateDraftSchema = z.object({
-  language: z.string().trim().min(2).max(50),
-  content: z.string().trim().max(10000).optional(),
-});
-
 export const supportAiReportFiltersSchema = z.object({
   cursor: z.coerce.number().int().min(0).default(0),
   limit: z.coerce.number().int().min(1).max(100).default(50),

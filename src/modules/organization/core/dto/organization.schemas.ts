@@ -87,11 +87,6 @@ export const securitySettingsSchema = z.object({
   maxConcurrentSessions: z.number().int().min(1).max(100).nullable().optional(),
 });
 
-export const inviteMemberSchema = z.object({
-  email: z.string().email(),
-  role: z.enum(ORG_MEMBER_ROLE_VALUES),
-});
-
 export const updateMemberRoleSchema = z.object({
   role: z.enum(ORG_MEMBER_ROLE_VALUES),
 });

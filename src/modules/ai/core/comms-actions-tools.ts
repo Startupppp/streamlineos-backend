@@ -1,5 +1,4 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { ModuleRef } from "@nestjs/core";
 import { tool } from "ai";
 import { z } from "zod";
 import { and, eq, sql } from "drizzle-orm";
@@ -8,7 +7,6 @@ import { type Db } from "../../../db/drizzle.module";
 import { users, organizationMembers } from "../../../db/schema";
 import { ToolAccessService } from "./tool-access.service";
 import { AiConfirmationService } from "../confirmation/ai-confirmation.service";
-import { EmailOutboxService } from "../../email/email-outbox.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 export interface CommsActionsContext {
@@ -21,8 +19,6 @@ export class CommsActionsTools {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly toolAccess: ToolAccessService,
     private readonly confirmation: AiConfirmationService,
-    private readonly emailOutbox: EmailOutboxService,
-    private readonly moduleRef: ModuleRef,
   ) {}
 
   buildTools(ctx: CommsActionsContext) {

@@ -1,1 +1,1 @@
-export { OT_MULTIPLIER_DEFAULT, PAYROLL_TEMPLATE_SEEDS } from "./template-seeds";
+export { PAYROLL_TEMPLATE_SEEDS } from "./template-seeds";

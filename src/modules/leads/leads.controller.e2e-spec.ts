@@ -4,6 +4,7 @@ import request from "supertest";
 import { AppModule } from "../../app.module";
 import { AllExceptionsFilter } from "../../common/http/all-exceptions.filter";
 import { signToken } from "../../../test/helpers/sign-token";
+import { stubMembershipState } from "../../../test/helpers/membership-state";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import {
@@ -24,7 +25,10 @@ describe("Leads PermissionGuard wiring (e2e, no DB required)", () => {
   beforeAll(async () => {
     process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
     process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-    const ref = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const ref = await stubMembershipState(
+      Test.createTestingModule({ imports: [AppModule] }),
+      { member_1: { role: "MEMBER" } },
+    ).compile();
     app = ref.createNestApplication();
     app.useGlobalFilters(new AllExceptionsFilter());
     await app.init();
@@ -38,14 +42,14 @@ describe("Leads PermissionGuard wiring (e2e, no DB required)", () => {
   });
 
   it("403 on GET /leads when the crm module is disabled for the org", async () => {
-    const token = await signToken({ enabledModules: ["hr"], isOrgOwner: false });
+    const token = await signToken({ sub: "member_1" });
     const res = await request(app.getHttpServer()).get("/leads").set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toEqual({ error: "Module not available on this plan" });
   });
 
   it("403 on POST /leads when the crm module is disabled for the org", async () => {
-    const token = await signToken({ enabledModules: ["hr"], isOrgOwner: false });
+    const token = await signToken({ sub: "member_1" });
     const res = await request(app.getHttpServer())
       .post("/leads")
       .set("Authorization", `Bearer ${token}`)
@@ -55,7 +59,7 @@ describe("Leads PermissionGuard wiring (e2e, no DB required)", () => {
   });
 
   it("403 on DELETE /leads/1 when the crm module is disabled for the org", async () => {
-    const token = await signToken({ enabledModules: ["hr"], isOrgOwner: false });
+    const token = await signToken({ sub: "member_1" });
     const res = await request(app.getHttpServer())
       .delete("/leads/1")
       .set("Authorization", `Bearer ${token}`);
@@ -197,7 +201,15 @@ describeWithDb(
     beforeAll(async () => {
       process.env.DATABASE_URL = RBAC_E2E_DATABASE_URL;
       process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-      const ref = await Test.createTestingModule({ imports: [AppModule] }).compile();
+      const ref = await stubMembershipState(
+        Test.createTestingModule({ imports: [AppModule] }),
+        {
+          [U.denied]: { role: "VIEWER_NONE" },
+          [U.own]: { role: "SALES_REP" },
+          [U.owner]: { role: "OWNER", isOwner: true },
+          [U.sales]: { role: "SALES" },
+        },
+      ).compile();
       app = ref.createNestApplication();
       app.useGlobalFilters(new AllExceptionsFilter());
       await app.init();
@@ -212,25 +224,13 @@ describeWithDb(
     });
 
     it("denies a user whose role has no crm:leads:view grant (403)", async () => {
-      const token = await signToken({
-        sub: U.denied,
-        orgId: ORG_ID,
-        role: "VIEWER_NONE",
-        enabledModules: ["crm"],
-        isOrgOwner: false,
-      });
+      const token = await signToken({ sub: U.denied, orgId: ORG_ID });
       const res = await request(app.getHttpServer()).get("/leads").set("Authorization", `Bearer ${token}`);
       expect(res.status).toBe(403);
     });
 
     it("own-scope user sees only leads assigned to themselves", async () => {
-      const token = await signToken({
-        sub: U.own,
-        orgId: ORG_ID,
-        role: "SALES_REP",
-        enabledModules: ["crm"],
-        isOrgOwner: false,
-      });
+      const token = await signToken({ sub: U.own, orgId: ORG_ID });
       const res = await request(app.getHttpServer()).get("/leads").set("Authorization", `Bearer ${token}`);
       expect(res.status).toBe(200);
       const returned = res.body.leads as Array<{ id: number; assignedToId: string | null }>;
@@ -239,12 +239,7 @@ describeWithDb(
     });
 
     it("org owner sees all leads in the org", async () => {
-      const token = await signToken({
-        sub: U.owner,
-        orgId: ORG_ID,
-        enabledModules: ["crm"],
-        isOrgOwner: true,
-      });
+      const token = await signToken({ sub: U.owner, orgId: ORG_ID });
       const res = await request(app.getHttpServer()).get("/leads").set("Authorization", `Bearer ${token}`);
       expect(res.status).toBe(200);
       const ids = (res.body.leads as Array<{ id: number }>).map((lead) => lead.id);
@@ -252,13 +247,7 @@ describeWithDb(
     });
 
     it("parity: a SALES user keeps access and stays narrowed to their own leads", async () => {
-      const token = await signToken({
-        sub: U.sales,
-        orgId: ORG_ID,
-        role: "SALES",
-        enabledModules: ["crm"],
-        isOrgOwner: false,
-      });
+      const token = await signToken({ sub: U.sales, orgId: ORG_ID });
       const res = await request(app.getHttpServer()).get("/leads").set("Authorization", `Bearer ${token}`);
       expect(res.status).toBe(200);
       const returned = res.body.leads as Array<{ id: number; assignedToId: string | null }>;

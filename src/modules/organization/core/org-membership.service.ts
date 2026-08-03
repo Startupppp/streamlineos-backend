@@ -27,7 +27,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { bumpPermissionsVersion, type DbOrTx } from "../../../common/rbac/access-invalidate";
 import { ROLE_RANK } from "../../../common/rbac/grantability";
-import { bustMembershipStatusCache } from "../../../common/auth/jwt-auth.guard";
+import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
 import { SessionsService } from "../../sessions/sessions.service";
 import { stableHash } from "../../../common/cache/cache-hash";
 import type { ListMembersInput } from "./dto/organization.schemas";

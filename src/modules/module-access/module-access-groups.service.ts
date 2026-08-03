@@ -596,11 +596,49 @@ export class ModuleAccessGroupsService {
     moduleKey: string,
   ): Promise<ModuleMemberCandidate[]> {
     await this.assertAccess(actor, moduleKey, "view");
-    return this.cache.cached(
-      CACHE_KEYS.moduleAccessCandidates(actor.orgId),
-      () => this.fetchMemberCandidates(actor.orgId),
-      CACHE_TTL.MEDIUM,
-    );
+    const [candidates, alreadyMembers] = await Promise.all([
+      this.cache.cached(
+        CACHE_KEYS.moduleAccessCandidates(actor.orgId),
+        () => this.fetchMemberCandidates(actor.orgId),
+        CACHE_TTL.MEDIUM,
+      ),
+      this.fetchModuleMemberUserIds(actor.orgId, moduleKey),
+    ]);
+    return candidates.filter((candidate) => !alreadyMembers.has(candidate.userId));
+  }
+
+  private async fetchModuleMemberUserIds(
+    orgId: string,
+    moduleKey: string,
+  ): Promise<Set<string>> {
+    const moduleRoleRows = await this.db
+      .select({ id: roles.id })
+      .from(roles)
+      .where(and(eq(roles.orgId, orgId), eq(roles.moduleKey, moduleKey)))
+      .limit(200);
+    if (moduleRoleRows.length === 0) return new Set();
+
+    const rows = await this.db
+      .selectDistinct({ userId: organizationMembers.userId })
+      .from(roleAssignments)
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, roleAssignments.orgId),
+          eq(organizationMembers.id, roleAssignments.organizationMembershipId),
+        ),
+      )
+      .where(
+        and(
+          eq(roleAssignments.orgId, orgId),
+          inArray(
+            roleAssignments.roleId,
+            moduleRoleRows.map((role) => role.id),
+          ),
+        ),
+      );
+
+    return new Set(rows.map((row) => row.userId));
   }
 
   private async fetchMemberCandidates(orgId: string): Promise<ModuleMemberCandidate[]> {
@@ -930,10 +968,6 @@ export class ModuleAccessGroupsService {
     });
     if (!member) throw new BadRequestException("User is not a member of this organization");
 
-    if (!input.groupIds || input.groupIds.length === 0) {
-      return { success: true };
-    }
-
     const validGroups = await this.db
       .select({ id: roles.id })
       .from(roles)
@@ -950,7 +984,7 @@ export class ModuleAccessGroupsService {
     }
 
     await this.db.transaction(async (tx): Promise<void> => {
-      for (const groupId of input.groupIds!) {
+      for (const groupId of input.groupIds) {
         await tx
           .insert(roleAssignments)
           .values({

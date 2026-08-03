@@ -37,15 +37,6 @@ export {
   getTicketChangesRequestedEmailTemplate,
 } from "./project";
 
-export {
-  renderButton,
-  renderKeyValueRows,
-  renderCallout,
-  renderBadge,
-  renderFallbackLink,
-  renderOtpCode,
-} from "./components";
-export type { Tone, ButtonVariant } from "./components";
 
 export {
   getClientInvestmentEmailTemplate,
@@ -68,7 +59,6 @@ export {
 } from "./interviews";
 
 export { getPayslipEmailTemplate } from "./payroll";
-export type { PayslipEmailParams } from "./payroll";
 
 export {
   getContactAdminNotificationEmail,
@@ -76,19 +66,13 @@ export {
   getContactReplyEmail,
   getTrialReminderEmail,
 } from "./platform";
-export type {
-  ContactAdminEmailParams,
-  ContactAutoreplyEmailParams,
-  ContactReplyEmailParams,
-  TrialReminderEmailParams,
-} from "./platform";
 
 export {
   getWeeklyAttendanceReportTemplate,
   getMonthlyExpenseReportTemplate,
   getWeeklyRecapEmailTemplate,
 } from "./reports";
-export type { MonthlyExpenseReportRow, WeeklyRecapData } from "./reports";
+export type { MonthlyExpenseReportRow } from "./reports";
 
 export {
   getTaskAssignedEmailTemplate,

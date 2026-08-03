@@ -31,7 +31,7 @@ import {
   assertTargetNotOwner,
 } from "../../common/rbac/assert-target-not-owner";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
-import { bustMembershipStatusCache } from "../../common/auth/jwt-auth.guard";
+import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
 import { SessionsService } from "../sessions/sessions.service";
 
 @Injectable()

@@ -14,10 +14,6 @@ export const summarizeNodeConfigSchema = z.object({
   fields: z.array(z.string().min(1)).min(1),
 });
 
-export const summarizeNodeOutputSchema = z.object({
-  summary: z.string(),
-});
-
 export const extractNodeConfigSchema = z.object({
   fields: z
     .array(
@@ -44,17 +40,5 @@ export const routingSuggestionNodeOutputSchema = z.object({
   reasoning: z.string(),
   proposalToken: z.string(),
 });
-
-export type ClassifyNodeConfig = z.infer<typeof classifyNodeConfigSchema>;
-export type ClassifyNodeOutput = z.infer<typeof classifyNodeOutputSchema>;
-
-export type SummarizeNodeConfig = z.infer<typeof summarizeNodeConfigSchema>;
-export type SummarizeNodeOutput = z.infer<typeof summarizeNodeOutputSchema>;
-
-export type ExtractNodeConfig = z.infer<typeof extractNodeConfigSchema>;
-export type ExtractNodeOutput = z.infer<typeof extractNodeOutputSchema>;
-
-export type RoutingSuggestionNodeConfig = z.infer<typeof routingSuggestionNodeConfigSchema>;
-export type RoutingSuggestionNodeOutput = z.infer<typeof routingSuggestionNodeOutputSchema>;
 
 export type AiNodeType = "classify" | "summarize" | "extract" | "routing_suggestion";

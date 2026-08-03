@@ -4,6 +4,7 @@ import request from "supertest";
 import { AppModule } from "../../../app.module";
 import { AllExceptionsFilter } from "../../../common/http/all-exceptions.filter";
 import { signToken } from "../../../../test/helpers/sign-token";
+import { stubMembershipState } from "../../../../test/helpers/membership-state";
 import { ProjectsAiService } from "./services/projects-ai.service";
 import { AccessService } from "../../access/access.service";
 
@@ -20,7 +21,10 @@ describe("ProjectsAI auth (e2e, no DB required)", () => {
     savedOpenAiKey = process.env.OPENAI_API_KEY;
     delete process.env.OPENAI_API_KEY;
 
-    const ref = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const ref = await stubMembershipState(
+      Test.createTestingModule({ imports: [AppModule] }),
+      { owner_1: { role: "OWNER", isOwner: true } },
+    ).compile();
     app = ref.createNestApplication();
     app.useGlobalFilters(new AllExceptionsFilter());
     await app.init();
@@ -48,7 +52,7 @@ describe("ProjectsAI auth (e2e, no DB required)", () => {
   });
 
   it("402 on POST /ai/projects/1/summary when plan lacks ai.project-manager (FREE plan)", async () => {
-    const token = await signToken({ plan: "FREE", isOrgOwner: true });
+    const token = await signToken({ sub: "owner_1" });
     const res = await request(app.getHttpServer())
       .post("/ai/projects/1/summary")
       .set("Authorization", `Bearer ${token}`);
@@ -57,7 +61,7 @@ describe("ProjectsAI auth (e2e, no DB required)", () => {
   });
 
   it("402 on POST /ai/projects/1/plan when plan lacks ai.project-manager", async () => {
-    const token = await signToken({ plan: "STARTER", isOrgOwner: true });
+    const token = await signToken({ sub: "owner_1" });
     const res = await request(app.getHttpServer())
       .post("/ai/projects/1/plan")
       .set("Authorization", `Bearer ${token}`)
@@ -67,7 +71,7 @@ describe("ProjectsAI auth (e2e, no DB required)", () => {
   });
 
   it("503 on POST /ai/projects/1/risks when OPENAI_API_KEY is not set (PROFESSIONAL plan)", async () => {
-    const token = await signToken({ plan: "PROFESSIONAL", isOrgOwner: true });
+    const token = await signToken({ sub: "owner_1" });
     const res = await request(app.getHttpServer())
       .post("/ai/projects/1/risks")
       .set("Authorization", `Bearer ${token}`);
@@ -76,7 +80,7 @@ describe("ProjectsAI auth (e2e, no DB required)", () => {
   });
 
   it("503 on POST /ai/projects/1/ask when OPENAI_API_KEY is not set", async () => {
-    const token = await signToken({ plan: "PROFESSIONAL", isOrgOwner: true });
+    const token = await signToken({ sub: "owner_1" });
     const res = await request(app.getHttpServer())
       .post("/ai/projects/1/ask")
       .set("Authorization", `Bearer ${token}`)
@@ -132,12 +136,14 @@ describeWithDb("ProjectsAI RBAC / mocked service (e2e)", () => {
     savedOpenAiKey = process.env.OPENAI_API_KEY;
     process.env.OPENAI_API_KEY = "test-key";
 
-    const ref = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(ProjectsAiService)
-      .useValue(mockProjectsAiService)
-      .overrideProvider(AccessService)
-      .useValue(mockAccessService)
-      .compile();
+    const ref = await stubMembershipState(
+      Test.createTestingModule({ imports: [AppModule] })
+        .overrideProvider(ProjectsAiService)
+        .useValue(mockProjectsAiService)
+        .overrideProvider(AccessService)
+        .useValue(mockAccessService),
+      { user_1: { role: "MEMBER" } },
+    ).compile();
 
     app = ref.createNestApplication();
     app.useGlobalFilters(new AllExceptionsFilter());
@@ -171,7 +177,7 @@ describeWithDb("ProjectsAI RBAC / mocked service (e2e)", () => {
 
   it("403 on POST /ai/projects/1/summary when projects:ai:use is absent", async () => {
     mockAccessService.resolveUserPermissions.mockResolvedValue(new Map());
-    const token = await signToken({ permissions: [], enabledModules: ["projects"], isOrgOwner: false });
+    const token = await signToken({ sub: "user_1" });
     const res = await request(app.getHttpServer())
       .post("/ai/projects/1/summary")
       .set("Authorization", `Bearer ${token}`);
@@ -181,7 +187,7 @@ describeWithDb("ProjectsAI RBAC / mocked service (e2e)", () => {
 
   it("403 on POST /ai/projects/1/ask when projects:ai:use is absent", async () => {
     mockAccessService.resolveUserPermissions.mockResolvedValue(new Map());
-    const token = await signToken({ permissions: [], enabledModules: ["projects"], isOrgOwner: false });
+    const token = await signToken({ sub: "user_1" });
     const res = await request(app.getHttpServer())
       .post("/ai/projects/1/ask")
       .set("Authorization", `Bearer ${token}`)
@@ -191,12 +197,7 @@ describeWithDb("ProjectsAI RBAC / mocked service (e2e)", () => {
   });
 
   it("200 + delegates to service on POST /ai/projects/1/summary with projects:ai:use granted", async () => {
-    const token = await signToken({
-      permissions: ["build:ai:use"],
-      enabledModules: ["projects"],
-      isOrgOwner: false,
-      plan: "PROFESSIONAL",
-    });
+    const token = await signToken({ sub: "user_1" });
     const res = await request(app.getHttpServer())
       .post("/ai/projects/1/summary")
       .set("Authorization", `Bearer ${token}`);
@@ -210,12 +211,7 @@ describeWithDb("ProjectsAI RBAC / mocked service (e2e)", () => {
   });
 
   it("200 + delegates to service on POST /ai/projects/1/ask with projects:ai:use granted", async () => {
-    const token = await signToken({
-      permissions: ["build:ai:use"],
-      enabledModules: ["projects"],
-      isOrgOwner: false,
-      plan: "PROFESSIONAL",
-    });
+    const token = await signToken({ sub: "user_1" });
     const res = await request(app.getHttpServer())
       .post("/ai/projects/1/ask")
       .set("Authorization", `Bearer ${token}`)
@@ -228,12 +224,7 @@ describeWithDb("ProjectsAI RBAC / mocked service (e2e)", () => {
   it.todo("400 on non-numeric projectId (controller uses string param with no ParseIntPipe; NaN passes through to service; would need a pipe added to enforce this)");
 
   it("400 on POST /ai/projects/1/plan with empty prompt", async () => {
-    const token = await signToken({
-      permissions: ["build:ai:use"],
-      enabledModules: ["projects"],
-      isOrgOwner: false,
-      plan: "PROFESSIONAL",
-    });
+    const token = await signToken({ sub: "user_1" });
     const res = await request(app.getHttpServer())
       .post("/ai/projects/1/plan")
       .set("Authorization", `Bearer ${token}`)

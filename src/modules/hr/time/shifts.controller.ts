@@ -1,5 +1,4 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, ParseIntPipe, UseGuards, HttpCode } from "@nestjs/common";
-import { z } from "zod";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -11,31 +10,15 @@ import { ShiftsService } from "./shifts.service";
 import {
   createShiftSchema,
   updateShiftSchema,
+  assignShiftSchema,
+  createSwapRequestSchema,
+  updateSwapStatusSchema,
   type CreateShiftInput,
   type UpdateShiftInput,
+  type AssignShiftInput,
+  type CreateSwapRequestInput,
+  type UpdateSwapStatusInput,
 } from "./dto/shifts.schemas";
-
-const assignShiftSchema = z.object({
-  userId: z.string().min(1),
-  shiftId: z.number().int().positive(),
-  effectiveFrom: z.string().min(1),
-  effectiveTo: z.string().optional(),
-});
-
-const createSwapSchema = z.object({
-  targetUserId: z.string().min(1),
-  requestDate: z.string().min(1),
-  targetDate: z.string().min(1),
-  reason: z.string().max(500).optional(),
-});
-
-const updateSwapStatusSchema = z.object({
-  status: z.enum(["APPROVED", "REJECTED"]),
-});
-
-type AssignShiftInput = z.infer<typeof assignShiftSchema>;
-type CreateSwapInput = z.infer<typeof createSwapSchema>;
-type UpdateSwapStatusInput = z.infer<typeof updateSwapStatusSchema>;
 
 @RequireModule("hr")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -103,7 +86,7 @@ export class ShiftsController {
   @RequirePermission("hr:attendance:view")
   createSwap(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(createSwapSchema)) body: CreateSwapInput,
+    @Body(new ZodValidationPipe(createSwapRequestSchema)) body: CreateSwapRequestInput,
   ) {
     return this.service.createSwapRequest(u.orgId, { ...body, requesterId: u.userId });
   }

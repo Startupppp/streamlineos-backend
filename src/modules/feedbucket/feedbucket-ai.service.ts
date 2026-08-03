@@ -14,7 +14,6 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { feedbucketSubmissions } from "../../db/schema";
 import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
-import { AiUsageService } from "../ai/core/services/ai-usage.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { ProjectsTicketsService } from "../build/core/projects-tickets.service";
@@ -120,7 +119,6 @@ export class FeedbucketAiService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly gateway: AiGatewayService,
-    private readonly aiUsage: AiUsageService,
     private readonly audit: AuditService,
     private readonly rateLimiter: RateLimitService,
     private readonly ticketsService: ProjectsTicketsService,

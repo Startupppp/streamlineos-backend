@@ -10,6 +10,7 @@ import request from "supertest";
 import { AppModule } from "../../../app.module";
 import { AllExceptionsFilter } from "../../../common/http/all-exceptions.filter";
 import { signToken } from "../../../../test/helpers/sign-token";
+import { stubMembershipState } from "../../../../test/helpers/membership-state";
 import { ModuleAccessService } from "../module-access.service";
 import { ModuleAccessGroupsService } from "../module-access-groups.service";
 import { AccessService } from "../../access/access.service";
@@ -78,14 +79,19 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
     process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
     process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
 
-    const ref = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(ModuleAccessService)
-      .useValue(mockModuleAccessService)
-      .overrideProvider(ModuleAccessGroupsService)
-      .useValue(mockModuleAccessGroupsService)
-      .overrideProvider(AccessService)
-      .useValue(mockAccessService)
-      .compile();
+    const ref = await stubMembershipState(
+      Test.createTestingModule({ imports: [AppModule] })
+        .overrideProvider(ModuleAccessService)
+        .useValue(mockModuleAccessService)
+        .overrideProvider(ModuleAccessGroupsService)
+        .useValue(mockModuleAccessGroupsService)
+        .overrideProvider(AccessService)
+        .useValue(mockAccessService),
+      {
+        owner_ma_1: { isOwner: true },
+        member_ma_1: { isOwner: false },
+      },
+    ).compile();
 
     app = ref.createNestApplication();
     app.useGlobalFilters(new AllExceptionsFilter());
@@ -153,7 +159,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
 
   describe("Authorization — who may read module access screens", () => {
     it("org owner can read catalog without any explicit permission grant", async () => {
-      const token = await signToken({ isOrgOwner: true });
+      const token = await signToken({ sub: "owner_ma_1" });
       const res = await request(app.getHttpServer())
         .get("/module-access/hr/catalog")
         .set("Authorization", `Bearer ${token}`);
@@ -162,7 +168,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
     });
 
     it("platform admin can read catalog without any explicit permission grant", async () => {
-      const token = await signToken({ isOrgOwner: false});
+      const token = await signToken({ sub: "member_ma_1" });
       const res = await request(app.getHttpServer())
         .get("/module-access/hr/catalog")
         .set("Authorization", `Bearer ${token}`);
@@ -171,7 +177,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
 
     it("org admin (settings:rbac:manage) can read catalog", async () => {
       mockModuleAccessService.listCatalog.mockResolvedValue(stubCatalog);
-      const token = await signToken({ isOrgOwner: false});
+      const token = await signToken({ sub: "member_ma_1" });
       const res = await request(app.getHttpServer())
         .get("/module-access/hr/catalog")
         .set("Authorization", `Bearer ${token}`);
@@ -180,7 +186,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
 
     it("module admin (hr:access:view) can read catalog", async () => {
       mockModuleAccessService.listCatalog.mockResolvedValue(stubCatalog);
-      const token = await signToken({ isOrgOwner: false});
+      const token = await signToken({ sub: "member_ma_1" });
       const res = await request(app.getHttpServer())
         .get("/module-access/hr/catalog")
         .set("Authorization", `Bearer ${token}`);
@@ -191,7 +197,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
       mockModuleAccessService.listCatalog.mockRejectedValue(
         new ForbiddenException("You do not have access to manage this module's roles"),
       );
-      const token = await signToken({ isOrgOwner: false});
+      const token = await signToken({ sub: "member_ma_1" });
       const res = await request(app.getHttpServer())
         .get("/module-access/hr/catalog")
         .set("Authorization", `Bearer ${token}`);
@@ -202,7 +208,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
       mockModuleAccessGroupsService.listGroups.mockRejectedValue(
         new ForbiddenException("You do not have access to manage this module's roles"),
       );
-      const token = await signToken({ isOrgOwner: false});
+      const token = await signToken({ sub: "member_ma_1" });
       const res = await request(app.getHttpServer())
         .get("/module-access/hr/groups")
         .set("Authorization", `Bearer ${token}`);
@@ -215,7 +221,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
       mockModuleAccessGroupsService.listGroups.mockRejectedValue(
         new ForbiddenException("You do not have access to manage this module's roles"),
       );
-      const token = await signToken({ isOrgOwner: false});
+      const token = await signToken({ sub: "member_ma_1" });
       const res = await request(app.getHttpServer())
         .get("/module-access/crm/groups")
         .set("Authorization", `Bearer ${token}`);
@@ -226,7 +232,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
       mockModuleAccessGroupsService.addGroupMember.mockRejectedValue(
         new ForbiddenException("You do not have access to manage this module's roles"),
       );
-      const token = await signToken({ isOrgOwner: false});
+      const token = await signToken({ sub: "member_ma_1" });
       const res = await request(app.getHttpServer())
         .post(`/module-access/crm/groups/${GROUP_ID}/members`)
         .set("Authorization", `Bearer ${token}`)
@@ -238,7 +244,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
       mockModuleAccessService.setRolePermissions.mockRejectedValue(
         new ForbiddenException("You do not have access to manage this module's roles"),
       );
-      const token = await signToken({ isOrgOwner: false});
+      const token = await signToken({ sub: "member_ma_1" });
       const res = await request(app.getHttpServer())
         .put(`/module-access/crm/roles/${ROLE_ID}/permissions`)
         .set("Authorization", `Bearer ${token}`)
@@ -254,7 +260,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
           `Permission "crm:leads:view" is not part of the hr module`,
         ),
       );
-      const token = await signToken({ isOrgOwner: true });
+      const token = await signToken({ sub: "owner_ma_1" });
       const res = await request(app.getHttpServer())
         .put(`/module-access/hr/roles/${ROLE_ID}/permissions`)
         .set("Authorization", `Bearer ${token}`)
@@ -269,7 +275,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
           `Permission "inventory:products:view" is not part of the hr module`,
         ),
       );
-      const token = await signToken({ isOrgOwner: true });
+      const token = await signToken({ sub: "owner_ma_1" });
       const res = await request(app.getHttpServer())
         .put(`/module-access/hr/groups/${GROUP_ID}/permissions`)
         .set("Authorization", `Bearer ${token}`)
@@ -284,7 +290,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
           "You cannot grant permissions you do not hold: hr:employees:delete",
         ),
       );
-      const token = await signToken({ isOrgOwner: false});
+      const token = await signToken({ sub: "member_ma_1" });
       const res = await request(app.getHttpServer())
         .put(`/module-access/hr/roles/${ROLE_ID}/permissions`)
         .set("Authorization", `Bearer ${token}`)
@@ -299,7 +305,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
       mockModuleAccessService.listCatalog.mockRejectedValue(
         new NotFoundException(`Access is not separately managed for module "billing"`),
       );
-      const token = await signToken({ isOrgOwner: true });
+      const token = await signToken({ sub: "owner_ma_1" });
       const res = await request(app.getHttpServer())
         .get("/module-access/billing/catalog")
         .set("Authorization", `Bearer ${token}`);
@@ -310,7 +316,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
       mockModuleAccessGroupsService.createGroup.mockRejectedValue(
         new NotFoundException(`Access is not separately managed for module "billing"`),
       );
-      const token = await signToken({ isOrgOwner: true });
+      const token = await signToken({ sub: "owner_ma_1" });
       const res = await request(app.getHttpServer())
         .post("/module-access/billing/groups")
         .set("Authorization", `Bearer ${token}`)
@@ -328,7 +334,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
           return Promise.resolve(stubCatalog);
         },
       );
-      const token = await signToken({ orgId: ORG_A, isOrgOwner: true });
+      const token = await signToken({ sub: "owner_ma_1", orgId: ORG_A });
       await request(app.getHttpServer())
         .get("/module-access/hr/catalog")
         .set("Authorization", `Bearer ${token}`);
@@ -342,7 +348,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
       mockModuleAccessGroupsService.listGroups.mockRejectedValue(
         new ForbiddenException("You do not have access to manage this module's roles"),
       );
-      const token = await signToken({ orgId: "org-beta", isOrgOwner: false});
+      const token = await signToken({ sub: "member_ma_1", orgId: "org-beta" });
       const res = await request(app.getHttpServer())
         .get("/module-access/hr/groups")
         .set("Authorization", `Bearer ${token}`);
@@ -357,7 +363,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
           return Promise.resolve({ success: true });
         },
       );
-      const token = await signToken({ orgId: ORG_A, isOrgOwner: true });
+      const token = await signToken({ sub: "owner_ma_1", orgId: ORG_A });
       await request(app.getHttpServer())
         .post(`/module-access/hr/groups/${GROUP_ID}/members`)
         .set("Authorization", `Bearer ${token}`)
@@ -373,7 +379,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
 
   describe("Group lifecycle — create/rename/delete success paths", () => {
     it("POST /module-access/hr/groups → 201 with group data", async () => {
-      const token = await signToken({ isOrgOwner: true });
+      const token = await signToken({ sub: "owner_ma_1" });
       const res = await request(app.getHttpServer())
         .post("/module-access/hr/groups")
         .set("Authorization", `Bearer ${token}`)
@@ -383,7 +389,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
     });
 
     it("DELETE /module-access/hr/groups/:id → 200 on successful deletion", async () => {
-      const token = await signToken({ isOrgOwner: true });
+      const token = await signToken({ sub: "owner_ma_1" });
       const res = await request(app.getHttpServer())
         .delete(`/module-access/hr/groups/${GROUP_ID}`)
         .set("Authorization", `Bearer ${token}`);
@@ -397,7 +403,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
           "Cannot delete a group with active member assignments. Remove all members first.",
         ),
       );
-      const token = await signToken({ isOrgOwner: true });
+      const token = await signToken({ sub: "owner_ma_1" });
       const res = await request(app.getHttpServer())
         .delete(`/module-access/hr/groups/${GROUP_ID}`)
         .set("Authorization", `Bearer ${token}`);
@@ -408,7 +414,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
       mockModuleAccessGroupsService.renameGroup.mockRejectedValue(
         new ForbiddenException("System groups cannot be renamed"),
       );
-      const token = await signToken({ isOrgOwner: true });
+      const token = await signToken({ sub: "owner_ma_1" });
       const res = await request(app.getHttpServer())
         .patch(`/module-access/hr/groups/${GROUP_ID}`)
         .set("Authorization", `Bearer ${token}`)
@@ -419,7 +425,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
 
   describe("Ownership transfer within module-access screen", () => {
     it("POST /module-access/hr/ownership/transfer → 201 when module admin initiates transfer", async () => {
-      const token = await signToken({ isOrgOwner: true });
+      const token = await signToken({ sub: "owner_ma_1" });
       const res = await request(app.getHttpServer())
         .post("/module-access/hr/ownership/transfer")
         .set("Authorization", `Bearer ${token}`)
@@ -432,7 +438,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
       mockModuleAccessGroupsService.cancelOwnershipTransfer.mockRejectedValue(
         new NotFoundException("No pending transfer found for this module"),
       );
-      const token = await signToken({ isOrgOwner: true });
+      const token = await signToken({ sub: "owner_ma_1" });
       const res = await request(app.getHttpServer())
         .delete("/module-access/hr/ownership/transfer")
         .set("Authorization", `Bearer ${token}`);
@@ -442,7 +448,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
 
   describe("Input validation", () => {
     it("POST /module-access/hr/groups → 400 when name is missing", async () => {
-      const token = await signToken({ isOrgOwner: true });
+      const token = await signToken({ sub: "owner_ma_1" });
       const res = await request(app.getHttpServer())
         .post("/module-access/hr/groups")
         .set("Authorization", `Bearer ${token}`)
@@ -452,7 +458,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
     });
 
     it("PUT /module-access/hr/roles/:id/permissions → 400 when items array is missing", async () => {
-      const token = await signToken({ isOrgOwner: true });
+      const token = await signToken({ sub: "owner_ma_1" });
       const res = await request(app.getHttpServer())
         .put(`/module-access/hr/roles/${ROLE_ID}/permissions`)
         .set("Authorization", `Bearer ${token}`)
@@ -462,7 +468,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
     });
 
     it("POST /module-access/hr/ownership/transfer → 400 when toUserId is missing", async () => {
-      const token = await signToken({ isOrgOwner: true });
+      const token = await signToken({ sub: "owner_ma_1" });
       const res = await request(app.getHttpServer())
         .post("/module-access/hr/ownership/transfer")
         .set("Authorization", `Bearer ${token}`)
@@ -472,7 +478,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
     });
 
     it("GET /module-access/invalid key!/catalog → 400 due to moduleKey regex failure", async () => {
-      const token = await signToken({ isOrgOwner: true });
+      const token = await signToken({ sub: "owner_ma_1" });
       const res = await request(app.getHttpServer())
         .get("/module-access/INVALID%20KEY/catalog")
         .set("Authorization", `Bearer ${token}`);

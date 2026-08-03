@@ -99,10 +99,6 @@ export const listTerminationsQuerySchema = z.object({
   status: z.enum(["DRAFT", "PENDING_FINAL", "APPROVED", "REJECTED", "SENT", "COMPLETED"]).optional(),
 });
 
-export const terminationLetterQuerySchema = z.object({
-  format: z.string().optional(),
-});
-
 export const attendanceAnalyticsQuerySchema = z.object({
   year: z.coerce.number().int().optional(),
   month: z.coerce.number().int().optional(),

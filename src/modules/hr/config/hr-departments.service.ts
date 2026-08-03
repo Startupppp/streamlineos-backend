@@ -1,15 +1,10 @@
-import { ConflictException, Inject, Injectable } from "@nestjs/common";
-import { DRIZZLE } from "../../../db/drizzle.constants";
-import { type Db } from "../../../db/drizzle.module";
+import { ConflictException, Injectable } from "@nestjs/common";
 import { OrgHierarchyService } from "../../organization/hierarchy/org-hierarchy.service";
 import { nextDepartmentCode, toDepartmentCode } from "../../organization/hierarchy/lib/department-code";
 
 @Injectable()
 export class HrDepartmentsService {
-  constructor(
-    @Inject(DRIZZLE) private readonly db: Db,
-    private readonly orgHierarchy: OrgHierarchyService,
-  ) {}
+  constructor(private readonly orgHierarchy: OrgHierarchyService) {}
 
   async list(orgId: string) {
     const { data } = await this.orgHierarchy.listDepartments(orgId, {

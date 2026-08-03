@@ -10,6 +10,7 @@ import request from "supertest";
 import { AppModule } from "../../../app.module";
 import { AllExceptionsFilter } from "../../../common/http/all-exceptions.filter";
 import { signToken } from "../../../../test/helpers/sign-token";
+import { stubMembershipState } from "../../../../test/helpers/membership-state";
 import { OwnershipService } from "../ownership.service";
 import { AccessService } from "../../access/access.service";
 
@@ -59,12 +60,17 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
     process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
     process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
 
-    const ref = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(OwnershipService)
-      .useValue(mockOwnershipService)
-      .overrideProvider(AccessService)
-      .useValue(mockAccessService)
-      .compile();
+    const ref = await stubMembershipState(
+      Test.createTestingModule({ imports: [AppModule] })
+        .overrideProvider(OwnershipService)
+        .useValue(mockOwnershipService)
+        .overrideProvider(AccessService)
+        .useValue(mockAccessService),
+      {
+        owner_os_1: { isOwner: true },
+        member_os_1: { isOwner: false },
+      },
+    ).compile();
 
     app = ref.createNestApplication();
     app.useGlobalFilters(new AllExceptionsFilter());
@@ -121,7 +127,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
 
   describe("Permission guard", () => {
     it("GET /ownership/modules → 403 when caller holds no permissions", async () => {
-      const token = await signToken({ isOrgOwner: false});
+      const token = await signToken({ sub: "member_os_1" });
       const res = await request(app.getHttpServer())
         .get("/ownership/modules")
         .set("Authorization", `Bearer ${token}`);
@@ -129,7 +135,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
     });
 
     it("GET /ownership/transfers → 403 when caller holds no permissions", async () => {
-      const token = await signToken({ isOrgOwner: false});
+      const token = await signToken({ sub: "member_os_1" });
       const res = await request(app.getHttpServer())
         .get("/ownership/transfers")
         .set("Authorization", `Bearer ${token}`);
@@ -137,7 +143,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
     });
 
     it("POST /ownership/transfers/:id/accept → 403 when caller lacks ownership:transfer:respond", async () => {
-      const token = await signToken({ isOrgOwner: false});
+      const token = await signToken({ sub: "member_os_1" });
       const res = await request(app.getHttpServer())
         .post(`/ownership/transfers/${TRANSFER_ID}/accept`)
         .set("Authorization", `Bearer ${token}`);
@@ -145,7 +151,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
     });
 
     it("DELETE /ownership/transfers/:id → 403 when caller lacks ownership:modules:manage", async () => {
-      const token = await signToken({ isOrgOwner: false});
+      const token = await signToken({ sub: "member_os_1" });
       const res = await request(app.getHttpServer())
         .delete(`/ownership/transfers/${TRANSFER_ID}`)
         .set("Authorization", `Bearer ${token}`);
@@ -153,7 +159,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
     });
 
     it("GET /ownership/modules → 200 for org owner (bypasses permission guard)", async () => {
-      const token = await signToken({ isOrgOwner: true });
+      const token = await signToken({ sub: "owner_os_1" });
       const res = await request(app.getHttpServer())
         .get("/ownership/modules")
         .set("Authorization", `Bearer ${token}`);
@@ -162,7 +168,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
     });
 
     it("GET /ownership/transfers → 200 for org owner (bypasses permission guard)", async () => {
-      const token = await signToken({ isOrgOwner: true });
+      const token = await signToken({ sub: "owner_os_1" });
       const res = await request(app.getHttpServer())
         .get("/ownership/transfers")
         .set("Authorization", `Bearer ${token}`);
@@ -174,7 +180,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       mockAccessService.resolveUserPermissions.mockResolvedValue(
         new Map<string, string>([["ownership:modules:view", "all"]]),
       );
-      const token = await signToken({ isOrgOwner: false});
+      const token = await signToken({ sub: "member_os_1" });
       const res = await request(app.getHttpServer())
         .get("/ownership/modules")
         .set("Authorization", `Bearer ${token}`);
@@ -187,7 +193,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       mockAccessService.resolveUserPermissions.mockResolvedValue(
         new Map<string, string>([["ownership:org:transfer", "all"]]),
       );
-      const token = await signToken({ isOrgOwner: false});
+      const token = await signToken({ sub: "member_os_1" });
       const res = await request(app.getHttpServer())
         .post("/ownership/org/transfer")
         .set("Authorization", `Bearer ${token}`)
@@ -200,7 +206,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       mockAccessService.resolveUserPermissions.mockResolvedValue(
         new Map<string, string>([["ownership:modules:manage", "all"]]),
       );
-      const token = await signToken({ isOrgOwner: false});
+      const token = await signToken({ sub: "member_os_1" });
       const res = await request(app.getHttpServer())
         .put("/ownership/modules/hr/owner")
         .set("Authorization", `Bearer ${token}`)
@@ -224,7 +230,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       mockOwnershipService.initiateOrgTransfer.mockRejectedValue(
         new BadRequestException("Target membership must be ACTIVE to receive ownership"),
       );
-      const token = await signToken({ isOrgOwner: true });
+      const token = await signToken({ sub: "owner_os_1" });
       const res = await request(app.getHttpServer())
         .post("/ownership/org/transfer")
         .set("Authorization", `Bearer ${token}`)
@@ -237,7 +243,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       mockOwnershipService.initiateOrgTransfer.mockRejectedValue(
         new ConflictException("A pending org ownership transfer already exists"),
       );
-      const token = await signToken({ isOrgOwner: true });
+      const token = await signToken({ sub: "owner_os_1" });
       const res = await request(app.getHttpServer())
         .post("/ownership/org/transfer")
         .set("Authorization", `Bearer ${token}`)
@@ -252,7 +258,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       mockOwnershipService.initiateModuleTransfer.mockRejectedValue(
         new ConflictException(`A pending transfer for module "hr" already exists`),
       );
-      const token = await signToken({ isOrgOwner: false});
+      const token = await signToken({ sub: "member_os_1" });
       const res = await request(app.getHttpServer())
         .post("/ownership/modules/hr/transfer")
         .set("Authorization", `Bearer ${token}`)
@@ -267,7 +273,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       mockOwnershipService.acceptTransfer.mockRejectedValue(
         new ForbiddenException("Only the designated recipient may accept this transfer"),
       );
-      const token = await signToken({ isOrgOwner: false});
+      const token = await signToken({ sub: "member_os_1" });
       const res = await request(app.getHttpServer())
         .post(`/ownership/transfers/${TRANSFER_ID}/accept`)
         .set("Authorization", `Bearer ${token}`);
@@ -282,7 +288,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       mockOwnershipService.acceptTransfer.mockRejectedValue(
         new BadRequestException("Initiator is no longer the organization owner; transfer is invalid"),
       );
-      const token = await signToken({ isOrgOwner: false});
+      const token = await signToken({ sub: "member_os_1" });
       const res = await request(app.getHttpServer())
         .post(`/ownership/transfers/${TRANSFER_ID}/accept`)
         .set("Authorization", `Bearer ${token}`);
@@ -297,7 +303,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       mockOwnershipService.acceptTransfer.mockRejectedValue(
         new BadRequestException("Transfer has expired"),
       );
-      const token = await signToken({ isOrgOwner: false});
+      const token = await signToken({ sub: "member_os_1" });
       const res = await request(app.getHttpServer())
         .post(`/ownership/transfers/${TRANSFER_ID}/accept`)
         .set("Authorization", `Bearer ${token}`);
@@ -306,7 +312,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
     });
 
     it("PUT /ownership/modules/hr/owner → 200 when org owner force-reassigns a module owner", async () => {
-      const token = await signToken({ isOrgOwner: true });
+      const token = await signToken({ sub: "owner_os_1" });
       const res = await request(app.getHttpServer())
         .put("/ownership/modules/hr/owner")
         .set("Authorization", `Bearer ${token}`)
@@ -319,7 +325,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       mockOwnershipService.forceSetModuleOwner.mockRejectedValue(
         new BadRequestException("Target membership must be ACTIVE to receive module ownership"),
       );
-      const token = await signToken({ isOrgOwner: true });
+      const token = await signToken({ sub: "owner_os_1" });
       const res = await request(app.getHttpServer())
         .put("/ownership/modules/hr/owner")
         .set("Authorization", `Bearer ${token}`)
@@ -338,7 +344,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
           return Promise.resolve({ success: true });
         },
       );
-      const token = await signToken({ orgId: ORG_A, isOrgOwner: true });
+      const token = await signToken({ sub: "owner_os_1", orgId: ORG_A });
       await request(app.getHttpServer())
         .put("/ownership/modules/hr/owner")
         .set("Authorization", `Bearer ${token}`)
@@ -359,7 +365,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
           return Promise.resolve(stubListResponse);
         },
       );
-      const token = await signToken({ orgId: ORG_A, isOrgOwner: true });
+      const token = await signToken({ sub: "owner_os_1", orgId: ORG_A });
       const res = await request(app.getHttpServer())
         .get("/ownership/transfers")
         .set("Authorization", `Bearer ${token}`);
@@ -374,7 +380,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       mockOwnershipService.acceptTransfer.mockRejectedValue(
         new NotFoundException("Transfer not found"),
       );
-      const token = await signToken({ orgId: "org-alpha", isOrgOwner: false});
+      const token = await signToken({ sub: "member_os_1", orgId: "org-alpha" });
       const res = await request(app.getHttpServer())
         .post(`/ownership/transfers/${TRANSFER_ID}/accept`)
         .set("Authorization", `Bearer ${token}`);
@@ -389,7 +395,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
           return Promise.resolve([]);
         },
       );
-      const token = await signToken({ orgId: ORG_A, isOrgOwner: true });
+      const token = await signToken({ sub: "owner_os_1", orgId: ORG_A });
       await request(app.getHttpServer())
         .get("/ownership/modules")
         .set("Authorization", `Bearer ${token}`);
@@ -399,7 +405,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
 
   describe("Input validation", () => {
     it("PUT /ownership/modules/hr/owner → 400 when ownerMembershipId is missing", async () => {
-      const token = await signToken({ isOrgOwner: true });
+      const token = await signToken({ sub: "owner_os_1" });
       const res = await request(app.getHttpServer())
         .put("/ownership/modules/hr/owner")
         .set("Authorization", `Bearer ${token}`)
@@ -409,7 +415,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
     });
 
     it("PUT /ownership/modules/hr/owner → 400 when ownerMembershipId is not a positive integer", async () => {
-      const token = await signToken({ isOrgOwner: true });
+      const token = await signToken({ sub: "owner_os_1" });
       const res = await request(app.getHttpServer())
         .put("/ownership/modules/hr/owner")
         .set("Authorization", `Bearer ${token}`)
@@ -419,7 +425,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
     });
 
     it("POST /ownership/org/transfer → 400 when toMembershipId is not a positive integer", async () => {
-      const token = await signToken({ isOrgOwner: true });
+      const token = await signToken({ sub: "owner_os_1" });
       const res = await request(app.getHttpServer())
         .post("/ownership/org/transfer")
         .set("Authorization", `Bearer ${token}`)
@@ -429,7 +435,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
     });
 
     it("POST /ownership/org/transfer → 400 when expiresInHours exceeds maximum", async () => {
-      const token = await signToken({ isOrgOwner: true });
+      const token = await signToken({ sub: "owner_os_1" });
       const res = await request(app.getHttpServer())
         .post("/ownership/org/transfer")
         .set("Authorization", `Bearer ${token}`)

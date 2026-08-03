@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, BadRequestException } from "@nestjs/common";
+import { Inject, Injectable, BadRequestException } from "@nestjs/common";
 import { randomUUID } from "crypto";
 import { inArray, eq, and } from "drizzle-orm";
 import { notifications, notificationDeliveries, notificationQueue, notificationTemplates, users } from "../../db/schema";
@@ -39,8 +39,6 @@ export interface DispatchResult {
 
 @Injectable()
 export class NotificationDispatchService {
-  private readonly logger = new Logger(NotificationDispatchService.name);
-
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly registry: NotificationEventRegistryService,

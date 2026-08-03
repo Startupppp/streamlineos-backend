@@ -76,7 +76,6 @@ export const plannedSpendItemSchema = z.object({
   startWeek: z.number().int().min(0).max(51),
   recurringWeekly: z.boolean().default(false),
 });
-export type PlannedSpendItem = z.infer<typeof plannedSpendItemSchema>;
 
 export const scenarioAssumptionsSchema = z.object({
   collectionRatePct: z.number().min(0).max(100).default(90),

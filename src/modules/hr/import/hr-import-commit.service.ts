@@ -1,6 +1,5 @@
-import { Injectable, Inject } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
-import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
   hrPeople,
@@ -35,7 +34,7 @@ type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 @Injectable()
 export class HrImportCommitService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor() {}
 
   async commitRow(
     tx: Tx,

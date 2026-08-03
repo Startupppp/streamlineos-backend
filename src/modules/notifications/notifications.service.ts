@@ -2,7 +2,6 @@ import { Inject, Injectable } from "@nestjs/common";
 import { notifications } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { CacheService } from "../../common/cache/cache.service";
 import type {
   ListInput,
   SnoozeInput,
@@ -16,21 +15,18 @@ import type {
   AnnounceInput,
   CreateNotificationInput,
   NotificationCategoryValue,
-  NotificationTicketContext,
 } from "./notifications.types";
 
 export type {
   AnnounceInput,
   CreateNotificationInput,
   NotificationCategoryValue,
-  NotificationTicketContext,
 };
 
 @Injectable()
 export class NotificationsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly cache: CacheService,
     private readonly notifEvents: NotificationEventService,
     private readonly webPush: WebPushService,
     private readonly read: NotificationsReadService,

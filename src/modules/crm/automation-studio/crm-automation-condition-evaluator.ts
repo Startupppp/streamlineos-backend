@@ -1,13 +1,5 @@
 import { evaluateNormalizedConditions, type NormalizedCondition } from "../../automation/shared-condition-evaluator";
 
-export type StudioEventPayload = {
-  entityType: string;
-  entityId: string;
-  data: Record<string, unknown>;
-  actorId?: string;
-  depth?: number;
-};
-
 export interface StudioCondition {
   field: string;
   operator: "eq" | "neq" | "gt" | "lt" | "contains" | "in" | "changed_to";

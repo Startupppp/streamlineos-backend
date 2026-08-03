@@ -1,6 +1,5 @@
 import { z } from "zod";
 
-const _EXPENSE_STATUSES = ["PENDING", "APPROVED", "REJECTED", "PAID"] as const;
 const ALL_EXPENSE_STATUSES = [
   "DRAFT",
   "SUBMITTED",

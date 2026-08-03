@@ -2,7 +2,7 @@ import { CanActivate, ExecutionContext, Inject, Injectable, UnauthorizedExceptio
 import { createHash } from "node:crypto";
 import { and, desc, eq, gt, isNull, or } from "drizzle-orm";
 import type { Request } from "express";
-import { agentTokens, organizationMembers, organizations, subscriptions, users } from "../../db/schema";
+import { agentTokens, organizationMembers, organizations, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { withPublicToken } from "../../common/tenant/with-public-token";

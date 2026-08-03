@@ -12,18 +12,6 @@ export const dateRangeSchema = z.object({
   to: isoDate,
 });
 
-export const statementQuerySchema = z.object({
-  from: isoDate,
-  to: isoDate,
-  format: z.enum(["json", "csv"]).default("json"),
-});
-
-export const analyticsDateRangeSchema = z.object({
-  from: isoDate,
-  to: isoDate,
-  format: z.enum(["json", "csv"]).default("json"),
-});
-
 export const budgetVsActualQuerySchema = z.object({
   budgetId: z.coerce.number().int().positive(),
   from: isoDate,
