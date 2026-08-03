@@ -72,7 +72,10 @@ export const addFlatMemberSchema = z.object({
 });
 
 export const updateMemberGroupsSchema = z.object({
-  groupIds: z.array(z.number().int().positive()).max(50),
+  groupIds: z
+    .array(z.number().int().positive())
+    .min(1, "A member needs at least one group — remove them from the module instead")
+    .max(50),
 });
 
 export const auditLogQuerySchema = z.object({
