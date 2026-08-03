@@ -30,12 +30,10 @@ export class ProviderBridgeService {
     const user: CurrentUserContext = {
       userId: actorUserId,
       orgId,
-      branchId: null,
       role: "SYSTEM",
       permissions: [],
-      enabledModules: [],
-      plan: null,
       isOrgOwner: false,
+      tokenScopes: null,
       sessionId: "provider-webhook",
     };
     const gross = Number(input.grossAmount);

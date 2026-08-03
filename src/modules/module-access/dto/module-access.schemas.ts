@@ -60,6 +60,7 @@ export const initiateOwnershipTransferSchema = z.object({
 export const listMembersQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  userId: z.string().min(1).max(64).optional(),
 });
 
 export const addFlatMemberSchema = z.object({

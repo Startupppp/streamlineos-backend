@@ -16,13 +16,11 @@ function makeActor(overrides: Partial<CurrentUserContext> = {}): CurrentUserCont
   return {
     userId: "u-actor",
     orgId: "org-1",
-    branchId: null,
     role: "MEMBER",
     permissions: [],
-    enabledModules: [],
-    plan: null,
     isOrgOwner: false,
     sessionId: "s-1",
+    tokenScopes: null,
     ...overrides,
   };
 }

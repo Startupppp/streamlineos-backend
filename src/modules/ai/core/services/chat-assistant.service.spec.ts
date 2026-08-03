@@ -19,13 +19,11 @@ import type { AiUsageService } from "./ai-usage.service";
 const ACTOR = {
   userId: "user_1",
   orgId: "org_1",
-  branchId: null,
   role: "ADMIN",
   permissions: [],
-  enabledModules: [],
-  plan: "PROFESSIONAL",
   isOrgOwner: false,
   sessionId: "sess_1",
+  tokenScopes: null,
 };
 
 function makeLedger(overrides: Partial<AiCreditLedger> = {}): jest.Mocked<AiCreditLedger> {

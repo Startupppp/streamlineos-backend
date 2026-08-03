@@ -10,13 +10,11 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 const ACTOR: CurrentUserContext = {
   userId: "user-1",
   orgId: "org-1",
-  branchId: null,
   role: "ADMIN",
   permissions: [],
-  enabledModules: [],
-  plan: "PROFESSIONAL",
   isOrgOwner: false,
   sessionId: "sess-1",
+  tokenScopes: null,
 };
 
 const MOCK_MESSAGES = [

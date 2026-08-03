@@ -6,13 +6,11 @@ function ctx(orgId: string): CurrentUserContext {
   return {
     userId: "user-1",
     orgId,
-    branchId: null,
     role: "EMPLOYEE",
     permissions: [],
-    enabledModules: ["HR"],
-    plan: "PROFESSIONAL",
     isOrgOwner: false,
     sessionId: "sess-1",
+    tokenScopes: null,
   };
 }
 

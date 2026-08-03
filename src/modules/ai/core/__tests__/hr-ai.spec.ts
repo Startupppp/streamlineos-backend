@@ -18,13 +18,11 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 const USER_CTX: CurrentUserContext = {
   userId: "user1",
   orgId: "org1",
-  branchId: null,
   role: "ADMIN",
   permissions: [],
-  enabledModules: [],
-  plan: "PROFESSIONAL",
   isOrgOwner: false,
   sessionId: "sess1",
+  tokenScopes: null,
 };
 
 class PassAuthGuard implements CanActivate {

@@ -10,13 +10,11 @@ const mockAccess = {
 const makeUser = (overrides: Partial<CurrentUserContext> = {}): CurrentUserContext => ({
   userId: "user-1",
   orgId: "org-1",
-  branchId: null,
   role: "EMPLOYEE",
   permissions: [],
-  enabledModules: [],
-  plan: null,
   isOrgOwner: false,
   sessionId: "session-1",
+  tokenScopes: null,
   ...overrides,
 });
 

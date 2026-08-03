@@ -5,6 +5,7 @@ import type { Db } from "../../../../db/drizzle.module";
 import { moduleSetupChecklistItems, moduleSetupChecklists } from "../../../../db/schema";
 import { OnboardingAnalyticsService } from "./onboarding-analytics.service";
 import { HrChecklistReconciliationService } from "./hr-checklist-reconciliation.service";
+import { EntitlementsService } from "../../../access/entitlements.service";
 
 type ChecklistWithItems = typeof moduleSetupChecklists.$inferSelect & {
   items: (typeof moduleSetupChecklistItems.$inferSelect)[];
@@ -148,7 +149,13 @@ export class ModuleChecklistService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly analytics: OnboardingAnalyticsService,
     private readonly hrReconciliation: HrChecklistReconciliationService,
+    private readonly entitlements: EntitlementsService,
   ) {}
+
+  private async resolveVisibleModuleKeys(orgId: string): Promise<string[]> {
+    const statuses = await this.entitlements.listModules(orgId).catch(() => []);
+    return statuses.filter((m) => m.enabled).map((m) => m.moduleKey);
+  }
 
   /** Idempotently creates a checklist + seeded items for each module key. Safe to call repeatedly. */
   async ensureChecklistsForModules(orgId: string, moduleKeys: readonly string[]) {
@@ -226,7 +233,8 @@ export class ModuleChecklistService {
    * that predate this feature (never routed through org-setup's seeding) self-heal on first read
    * instead of silently returning nothing.
    */
-  async listChecklists(orgId: string, visibleModuleKeys: string[], includeHr: boolean) {
+  async listChecklists(orgId: string, includeHr: boolean) {
+    const visibleModuleKeys = await this.resolveVisibleModuleKeys(orgId);
     await this.ensureChecklistsForModules(orgId, visibleModuleKeys);
     const checklists = await this.db.query.moduleSetupChecklists.findMany({
       where: eq(moduleSetupChecklists.orgId, orgId),
@@ -239,7 +247,8 @@ export class ModuleChecklistService {
     return Promise.all(visible.map((c) => (c.moduleKey === "hr" ? this.reconcileAndReload(orgId, c) : this.reload(c))));
   }
 
-  async getChecklist(orgId: string, moduleKey: string, visibleModuleKeys: string[]) {
+  async getChecklist(orgId: string, moduleKey: string) {
+    const visibleModuleKeys = await this.resolveVisibleModuleKeys(orgId);
     if (!visibleModuleKeys.includes(moduleKey)) {
       throw new NotFoundException(`Module setup checklist not found: ${moduleKey}`);
     }
@@ -298,8 +307,8 @@ export class ModuleChecklistService {
     return { progress, status, requiredIncomplete };
   }
 
-  async completeItem(orgId: string, moduleKey: string, itemKey: string, userId: string, visibleModuleKeys: string[]) {
-    const checklist = await this.getChecklist(orgId, moduleKey, visibleModuleKeys);
+  async completeItem(orgId: string, moduleKey: string, itemKey: string, userId: string) {
+    const checklist = await this.getChecklist(orgId, moduleKey);
     const item = checklist.items.find((i) => i.itemKey === itemKey);
     if (!item) throw new NotFoundException(`Checklist item not found: ${itemKey}`);
 
@@ -312,8 +321,8 @@ export class ModuleChecklistService {
     return this.recomputeProgress(checklist.id);
   }
 
-  async skipItem(orgId: string, moduleKey: string, itemKey: string, userId: string, visibleModuleKeys: string[], reason?: string) {
-    const checklist = await this.getChecklist(orgId, moduleKey, visibleModuleKeys);
+  async skipItem(orgId: string, moduleKey: string, itemKey: string, userId: string, reason?: string) {
+    const checklist = await this.getChecklist(orgId, moduleKey);
     const item = checklist.items.find((i) => i.itemKey === itemKey);
     if (!item) throw new NotFoundException(`Checklist item not found: ${itemKey}`);
     if (item.required) {
@@ -334,8 +343,8 @@ export class ModuleChecklistService {
    * later), not "attest everything is done" — real completion is independently tracked via
    * status/progress, so this intentionally does not require required items to be complete.
    */
-  async dismissChecklist(orgId: string, moduleKey: string, userId: string, visibleModuleKeys: string[]) {
-    const checklist = await this.getChecklist(orgId, moduleKey, visibleModuleKeys);
+  async dismissChecklist(orgId: string, moduleKey: string, userId: string) {
+    const checklist = await this.getChecklist(orgId, moduleKey);
 
     const [updated] = await this.db
       .update(moduleSetupChecklists)
@@ -352,8 +361,8 @@ export class ModuleChecklistService {
    * skipped. Items already "done" are left as-is — real-data-backed completion is never lost —
    * and will self-correct on the next read if the underlying record is later removed.
    */
-  async restartChecklist(orgId: string, moduleKey: string, userId: string, visibleModuleKeys: string[]) {
-    const checklist = await this.getChecklist(orgId, moduleKey, visibleModuleKeys);
+  async restartChecklist(orgId: string, moduleKey: string, userId: string) {
+    const checklist = await this.getChecklist(orgId, moduleKey);
 
     await this.db
       .update(moduleSetupChecklists)

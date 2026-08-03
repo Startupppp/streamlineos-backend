@@ -234,16 +234,13 @@ export class InvoicesPaymentService {
       const baseAmountSettled = (allocatedAmount * settledRate).toFixed(4);
 
       const permissions: string[] = [];
-      const enabledModules: string[] = [];
       const user: CurrentUserContext = {
         userId,
         orgId,
-        branchId: null,
         role: "system",
         permissions,
-        enabledModules,
-        plan: null,
         isOrgOwner: false,
+        tokenScopes: null,
         sessionId: "",
       };
 

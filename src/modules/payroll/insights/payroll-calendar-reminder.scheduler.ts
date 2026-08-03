@@ -9,6 +9,7 @@ import {
 } from "../../../db/schema";
 import { PayrollNotificationsService } from "./payroll-notifications.service";
 import { logger } from "../../../common/logger/logger.service";
+import { isTransientDbError } from "../../../common/db/transient-error";
 import { forEachOrg } from "../../../common/tenant";
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -28,6 +29,8 @@ function msUntilNextEightAM(): number {
 export class PayrollCalendarReminderScheduler implements OnModuleInit, OnModuleDestroy {
   private timeout: ReturnType<typeof setTimeout> | undefined;
   private interval: ReturnType<typeof setInterval> | undefined;
+  private running = false;
+  private transientStreak = 0;
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
@@ -35,11 +38,11 @@ export class PayrollCalendarReminderScheduler implements OnModuleInit, OnModuleD
   ) {}
 
   onModuleInit(): void {
-    void this.run();
+    void this.safeRun();
     this.timeout = setTimeout(() => {
-      void this.run();
+      void this.safeRun();
       this.interval = setInterval(() => {
-        void this.run();
+        void this.safeRun();
       }, ONE_DAY_MS);
     }, msUntilNextEightAM());
   }
@@ -90,6 +93,35 @@ export class PayrollCalendarReminderScheduler implements OnModuleInit, OnModuleD
         lastError: error,
       })
       .where(eq(payrollSchedulerState.jobName, JOB_NAME));
+  }
+
+  private async safeRun(): Promise<void> {
+    if (this.running) return;
+    this.running = true;
+    try {
+      await this.run();
+      if (this.transientStreak > 0) {
+        logger.warn(
+          `PayrollCalendarReminderScheduler recovered after ${this.transientStreak} transient DB connection failure(s)`,
+        );
+        this.transientStreak = 0;
+      }
+    } catch (error) {
+      if (isTransientDbError(error)) {
+        this.transientStreak += 1;
+        if (this.transientStreak === 1) {
+          logger.warn(
+            "PayrollCalendarReminderScheduler: transient DB connection issue (will retry on the next scheduled run; suppressing repeats until recovery)",
+          );
+        }
+      } else {
+        logger.error("PayrollCalendarReminderScheduler: run failed", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    } finally {
+      this.running = false;
+    }
   }
 
   async run(): Promise<void> {
@@ -148,8 +180,8 @@ export class PayrollCalendarReminderScheduler implements OnModuleInit, OnModuleD
       await this.markFinished(null);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
-      logger.error("PayrollCalendarReminderScheduler: run failed", { error: msg });
       await this.markFinished(msg).catch(() => undefined);
+      throw error;
     }
   }
 }

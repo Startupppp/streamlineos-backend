@@ -119,12 +119,10 @@ export class InvoicesLifecycleService {
       const ctx: CurrentUserContext = {
         userId,
         orgId,
-        branchId: null,
         role: "system",
         permissions: [],
-        enabledModules: [],
-        plan: null,
         isOrgOwner: false,
+        tokenScopes: null,
         sessionId: "",
       };
       await this.financePosting.reverseJournal(ctx, existingEntry.id, `Void invoice ${invoice.invoiceNumber}`);

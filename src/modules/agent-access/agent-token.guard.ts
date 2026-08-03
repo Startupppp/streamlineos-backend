@@ -64,7 +64,7 @@ export class AgentTokenGuard implements CanActivate {
         const [user, memberRows] = await Promise.all([
           tx.query.users.findFirst({
             where: eq(users.id, row.userId),
-            columns: { id: true, branchId: true, lastActiveOrgId: true },
+            columns: { id: true },
           }),
           tx
             .select({
@@ -83,25 +83,14 @@ export class AgentTokenGuard implements CanActivate {
         const member = memberRows[0];
         if (!member) return null;
 
-        const [subRows, moduleStatuses] = await Promise.all([
-          tx
-            .select({ plan: subscriptions.plan })
-            .from(subscriptions)
-            .where(eq(subscriptions.orgId, row.orgId))
-            .limit(1),
-          this.entitlements.listModules(row.orgId).catch(() => []),
-        ]);
-
         return {
           userId: row.userId,
           orgId: row.orgId,
-          branchId: user.branchId ?? null,
           role: member.role,
           permissions: [],
-          enabledModules: moduleStatuses.filter((m) => m.enabled).map((m) => m.moduleKey),
-          plan: subRows[0]?.plan ?? null,
           isOrgOwner: member.isOwner,
           sessionId: `agent-token:${row.id}`,
+          tokenScopes: null,
         };
       },
       { orgId: row.orgId },

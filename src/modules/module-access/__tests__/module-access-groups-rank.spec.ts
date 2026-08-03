@@ -12,13 +12,11 @@ function actor(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext 
   return {
     userId: "u1",
     orgId: "org-1",
-    branchId: null,
     role: "MEMBER",
     permissions: [],
-    enabledModules: [],
-    plan: null,
     isOrgOwner: false,
     sessionId: "s1",
+    tokenScopes: null,
     ...overrides,
   };
 }

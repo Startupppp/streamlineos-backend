@@ -6,13 +6,11 @@ function makeCtx(partial: Partial<CurrentUserContext> = {}): CurrentUserContext 
   return {
     userId: "user-1",
     orgId: "org-1",
-    branchId: null,
     role: "ENGINEERING",
     permissions: [],
-    enabledModules: ["hr", "crm"],
-    plan: null,
     isOrgOwner: false,
     sessionId: "session-1",
+    tokenScopes: null,
     ...partial,
   };
 }
@@ -115,6 +113,43 @@ describe("authorize", () => {
       scope: "all",
       permissions: ["directory:people:view"],
     });
+  });
+
+  it("denies with FORBIDDEN when tokenScopes does not include the permission key, even for an org owner", async () => {
+    const resolver = makeResolver(new Map(), []);
+    const result = await authorize(
+      resolver,
+      makeCtx({ isOrgOwner: true, tokenScopes: ["crm:leads:view"] }),
+      "hr:employees:view",
+    );
+    expect(result).toEqual({ allow: false, scope: "none", reason: "FORBIDDEN" });
+  });
+
+  it("tokenScopes null bypasses the token scope gate and behaves identically to an unrestricted session", async () => {
+    const resolver = makeResolver(new Map([["hr:employees:view", "team"]]), ["hr"]);
+    const result = await authorize(resolver, makeCtx({ tokenScopes: null }), "hr:employees:view");
+    expect(result).toEqual({ allow: true, scope: "team", permissions: ["hr:employees:view"] });
+  });
+
+  it("intersects the returned permissions array with tokenScopes when non-null", async () => {
+    const resolver = makeResolver(
+      new Map<string, DataScope>([
+        ["hr:employees:view", "team"],
+        ["hr:analytics:read", "all"],
+        ["hr:payroll:view", "all"],
+      ]),
+      ["hr"],
+    );
+    const result = await authorize(
+      resolver,
+      makeCtx({ tokenScopes: ["hr:employees:view", "hr:analytics:read"] }),
+      "hr:employees:view",
+    );
+    expect(result.allow).toBe(true);
+    expect(result.permissions).toEqual(
+      expect.arrayContaining(["hr:employees:view", "hr:analytics:read"]),
+    );
+    expect(result.permissions).not.toContain("hr:payroll:view");
   });
 });
 

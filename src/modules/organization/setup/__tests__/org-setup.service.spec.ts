@@ -17,13 +17,11 @@ function ownerActor(orgId = "org-1"): CurrentUserContext {
   return {
     userId: "user-1",
     orgId,
-    branchId: null,
     role: "OWNER",
     permissions: [],
-    enabledModules: [],
-    plan: null,
     isOrgOwner: true,
     sessionId: "s1",
+    tokenScopes: null,
   };
 }
 

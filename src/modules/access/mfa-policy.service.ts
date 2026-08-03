@@ -17,12 +17,6 @@ export class MfaPolicyService {
     private readonly cache: CacheService,
   ) {}
 
-  /**
-   * An infrastructure failure cannot prove the policy applies, so it resolves
-   * as undetermined rather than locking every member out of the product. This
-   * matches how `JwtAuthGuard` already treats an unreadable membership check,
-   * and a database outage gives an attacker no session they did not have.
-   */
   async resolve(orgId: string, userId: string): Promise<MfaState> {
     try {
       const [enforced, satisfied] = await Promise.all([

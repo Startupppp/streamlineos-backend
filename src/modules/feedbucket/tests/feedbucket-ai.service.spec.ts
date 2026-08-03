@@ -89,17 +89,15 @@ const baseGatewaySuccess: AiInvokeWithUsageResult<FeedbackAnalysis> = {
   aiUsage: { model: "gpt-4o", promptTokens: 50, completionTokens: 100, totalTokens: 150, credits: 1, costUsd: 0.002 },
 };
 
-function makeUser(orgId = ORG_A, plan = "PROFESSIONAL") {
+function makeUser(orgId = ORG_A) {
   return {
     userId: USER_A,
     orgId,
-    branchId: null,
     role: "ADMIN",
     permissions: [],
-    enabledModules: [],
-    plan,
     isOrgOwner: false,
     sessionId: "sess_1",
+    tokenScopes: null,
   };
 }
 

@@ -11,14 +11,6 @@ import { ALLOW_WITHOUT_MFA } from "./allow-without-mfa.decorator";
 import type { CurrentUserContext } from "./backend-claims";
 import { MfaPolicyService } from "../../modules/access/mfa-policy.service";
 
-/**
- * Enforces the organization's "require two-factor authentication" policy on the
- * server. Runs after `JwtAuthGuard`, so `req.user` is already resolved.
- *
- * Org owners are NOT exempt: MFA enforcement is a security policy, not a
- * permission, and an owner bypass would let the account with the most authority
- * opt itself out of the control it just turned on.
- */
 @Injectable()
 export class MfaGuard implements CanActivate {
   constructor(

@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, count, countDistinct, eq, ilike, inArray, ne } from "drizzle-orm";
+import { and, asc, count, countDistinct, eq, ilike, inArray, ne, type SQL } from "drizzle-orm";
 import {
   moduleOwnerships,
   organizationMembers,
@@ -773,14 +773,14 @@ export class ModuleAccessGroupsService {
   async listMembers(
     actor: CurrentUserContext,
     moduleKey: string,
-    { page, pageSize }: ListMembersQuery,
+    { page, pageSize, userId }: ListMembersQuery,
   ): Promise<{ data: FlatModuleMember[]; pagination: Pagination }> {
     await this.assertAccess(actor, moduleKey, "view");
     const limit = Math.min(pageSize, 100);
     const version = await this.access.getPermissionsVersion(actor.orgId);
     return this.cache.cached(
-      CACHE_KEYS.moduleAccessMembers(actor.orgId, moduleKey, page, limit, version),
-      () => this.fetchMembers(actor.orgId, moduleKey, page, limit),
+      CACHE_KEYS.moduleAccessMembers(actor.orgId, moduleKey, page, limit, version, userId),
+      () => this.fetchMembers(actor.orgId, moduleKey, page, limit, userId),
       CACHE_TTL.VERY_LONG,
     );
   }
@@ -790,6 +790,7 @@ export class ModuleAccessGroupsService {
     moduleKey: string,
     page: number,
     limit: number,
+    userId?: string,
   ): Promise<{ data: FlatModuleMember[]; pagination: Pagination }> {
     const offset = (page - 1) * limit;
 
@@ -804,9 +805,26 @@ export class ModuleAccessGroupsService {
     }
 
     const moduleRoleIds = moduleRoleRows.map((r) => r.id);
+
+    let membershipFilter: SQL | undefined;
+    if (userId !== undefined) {
+      const target = await this.db.query.organizationMembers.findFirst({
+        where: and(
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.userId, userId),
+        ),
+        columns: { id: true },
+      });
+      if (!target) {
+        return { data: [], pagination: { page, pageSize: limit, total: 0, totalPages: 0 } };
+      }
+      membershipFilter = eq(roleAssignments.organizationMembershipId, target.id);
+    }
+
     const baseWhere = and(
       eq(roleAssignments.orgId, orgId),
       inArray(roleAssignments.roleId, moduleRoleIds),
+      membershipFilter,
     );
 
     const [totalResult, memberRows] = await Promise.all([

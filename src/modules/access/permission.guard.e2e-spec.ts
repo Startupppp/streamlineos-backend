@@ -45,13 +45,11 @@ class PermissionGuardTestController {
 const user: CurrentUserContext = {
   userId: "user-1",
   orgId: "org-1",
-  branchId: null,
   role: "ADMIN",
   permissions: [],
-  enabledModules: [],
-  plan: null,
   isOrgOwner: false,
   sessionId: "session-1",
+  tokenScopes: null,
 };
 
 function attachUser(req: Request, _res: Response, next: NextFunction): void {

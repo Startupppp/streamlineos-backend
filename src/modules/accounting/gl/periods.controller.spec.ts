@@ -19,13 +19,11 @@ const ORG_ID = "org-abc";
 const USER_CTX: CurrentUserContext = {
   userId: "u1",
   orgId: ORG_ID,
-  branchId: null,
   role: "ADMIN",
   permissions: [],
-  enabledModules: [],
-  plan: null,
   isOrgOwner: false,
   sessionId: "sess1",
+  tokenScopes: null,
 };
 
 class HeaderCheckAuthGuard implements CanActivate {

@@ -278,7 +278,9 @@ export const CACHE_KEYS = {
     page: number,
     pageSize: number,
     version: number,
-  ) => `module-access:members:${orgId}:${moduleKey}:v${version}:${page}:${pageSize}`,
+    userId?: string,
+  ) =>
+    `module-access:members:${orgId}:${moduleKey}:v${version}:${page}:${pageSize}:${userId ?? "all"}`,
   moduleAccessOwnership: (orgId: string, moduleKey: string) =>
     `module-access:ownership:${orgId}:${moduleKey}`,
 

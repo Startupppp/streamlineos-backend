@@ -434,8 +434,15 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       this.mfaPolicy.resolve(orgId, userId),
     ]);
 
+    const tokenScopes = ctx.tokenScopes;
+
     if (ctx.isOrgOwner) {
-      const scopes = allCatalogScopes();
+      const catalog = allCatalogScopes();
+      const scopes: Record<string, DataScope> = {};
+      for (const [key, scope] of Object.entries(catalog)) {
+        if (tokenScopes && !tokenScopes.includes(key)) continue;
+        scopes[key] = scope;
+      }
       return {
         permissions: Object.keys(scopes),
         scopes,
@@ -451,6 +458,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     const permissions: string[] = [];
     for (const [key, scope] of resolved) {
       if (scope === "none") continue;
+      if (tokenScopes && !tokenScopes.includes(key)) continue;
       scopes[key] = scope;
       permissions.push(key);
     }

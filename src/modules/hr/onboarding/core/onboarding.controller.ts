@@ -128,7 +128,7 @@ export class OnboardingController {
   @RequirePermission("onboarding:module-checklists:view")
   async listModuleChecklists(@CurrentUser() u: CurrentUserContext) {
     const includeHr = await this.hasHrChecklistAccess(u);
-    return this.checklists.listChecklists(u.orgId, u.enabledModules, includeHr);
+    return this.checklists.listChecklists(u.orgId, includeHr);
   }
 
   @Get("module-checklists/:moduleKey")
@@ -139,7 +139,7 @@ export class OnboardingController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (this.isHrModuleKey(moduleKey)) await this.assertHrChecklistAccess(u, "view");
-    return this.checklists.getChecklist(u.orgId, moduleKey, u.enabledModules);
+    return this.checklists.getChecklist(u.orgId, moduleKey);
   }
 
   @Post("module-checklists/:moduleKey/items/:itemKey/complete")
@@ -156,7 +156,6 @@ export class OnboardingController {
       moduleKey,
       itemKey,
       u.userId,
-      u.enabledModules,
     );
   }
 
@@ -176,7 +175,6 @@ export class OnboardingController {
       moduleKey,
       itemKey,
       u.userId,
-      u.enabledModules,
       body.reason,
     );
   }
@@ -193,7 +191,6 @@ export class OnboardingController {
       u.orgId,
       moduleKey,
       u.userId,
-      u.enabledModules,
     );
   }
 
@@ -209,7 +206,6 @@ export class OnboardingController {
       u.orgId,
       moduleKey,
       u.userId,
-      u.enabledModules,
     );
   }
 

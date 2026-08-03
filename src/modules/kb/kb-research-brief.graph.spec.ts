@@ -57,13 +57,11 @@ const sourceA = {
 const userCtx: CurrentUserContext = {
   orgId: "org1",
   userId: "user1",
-  branchId: null,
   role: "member",
   permissions: [],
-  enabledModules: [],
-  plan: null,
   isOrgOwner: false,
   sessionId: "",
+  tokenScopes: null,
 };
 
 const actor = { orgId: "org1", userId: "user1" };

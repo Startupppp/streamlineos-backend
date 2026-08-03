@@ -62,13 +62,11 @@ const mockSearch = {
 const user = {
   userId: "user1",
   orgId: "org1",
-  branchId: null,
   role: "member",
   permissions: [],
-  enabledModules: [],
-  plan: null,
   isOrgOwner: false,
   sessionId: "sess-1",
+  tokenScopes: null,
 };
 const input = { question: "How do I reset my password?" };
 

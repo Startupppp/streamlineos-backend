@@ -412,12 +412,10 @@ export class RolesService {
     const privilegedActor: CurrentUserContext = {
       userId: "",
       orgId,
-      branchId: null,
       role: "ORG_ADMIN",
       permissions: [],
-      enabledModules: [],
-      plan: null,
       isOrgOwner: true,
+      tokenScopes: null,
       sessionId: "",
     };
 

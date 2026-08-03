@@ -172,12 +172,6 @@ export const accounts = pgTable("accounts", {
   primaryKey({ columns: [table.provider, table.providerAccountId] }),
 ]);
 
-export const sessions = pgTable("sessions", {
-  sessionToken: text("session_token").primaryKey(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  expires: timestamp("expires").notNull(),
-});
-
 export const verificationTokens = pgTable("verification_tokens", {
   identifier: text("identifier").notNull(),
   token: text("token").notNull(),
@@ -344,7 +338,6 @@ export const organizationMembersRelations = relations(organizationMembers, ({ on
 export const usersRelations = relations(users, ({ one, many }) => ({
   organizations: many(organizationMembers),
   accounts: many(accounts),
-  sessions: many(sessions),
   manager: one(users, {
     fields: [users.reportingTo],
     references: [users.id],
@@ -359,12 +352,6 @@ export const accountsRelations = relations(accounts, ({ one }) => ({
   }),
 }));
 
-export const sessionsRelations = relations(sessions, ({ one }) => ({
-  user: one(users, {
-    fields: [sessions.userId],
-    references: [users.id],
-  }),
-}));
 
 export const rolesRelations = relations(roles, ({ one }) => ({
   organization: one(organizations, {
@@ -445,14 +432,17 @@ export const userApiTokens = pgTable("user_api_tokens", {
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),
   tokenHash: text("token_hash").notNull(),
+  hashAlg: text("hash_alg").default("bcrypt").notNull(),
   prefix: text("prefix").notNull(),
   scopes: text("scopes").array().default([]).notNull(),
   expiresAt: timestamp("expires_at"),
   lastUsedAt: timestamp("last_used_at"),
+  revokedAt: timestamp("revoked_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uniq_user_api_tokens_hash").on(table.tokenHash),
   index("idx_user_api_tokens_user").on(table.userId),
+  index("idx_user_api_tokens_legacy_lookup").on(table.prefix, table.hashAlg),
 ]);
 
 export const userApiTokensRelations = relations(userApiTokens, ({ one }) => ({

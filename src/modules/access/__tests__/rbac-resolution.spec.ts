@@ -122,13 +122,11 @@ describe("AccessService.getAccessSnapshot — org owner receives every catalog p
     const ctx: CurrentUserContext = {
       userId: USER,
       orgId: ORG_A,
-      branchId: null,
       role: "OWNER",
       permissions: [],
-      enabledModules: [],
-      plan: null,
       isOrgOwner: true,
       sessionId: "session-owner",
+      tokenScopes: null,
     };
 
     const svc = buildService(db);

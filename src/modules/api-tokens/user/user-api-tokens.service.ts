@@ -1,10 +1,14 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
-import { randomBytes, randomUUID } from "node:crypto";
-import * as bcrypt from "bcryptjs";
+import { and, eq, isNull } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import { userApiTokens } from "../../../db/schema/common/auth";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
+import {
+  apiTokenDisplayPrefix,
+  generateApiToken,
+  hashApiToken,
+} from "../../../common/auth/api-token-hash";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import type { CreateUserApiTokenInput } from "./dto/user-api-tokens.schemas";
 
@@ -16,9 +20,7 @@ export class UserApiTokensService {
   ) {}
 
   async create(userId: string, orgId: string, input: CreateUserApiTokenInput) {
-    const rawToken = randomBytes(32).toString("hex");
-    const prefix = rawToken.slice(0, 8);
-    const tokenHash = await bcrypt.hash(rawToken, 12);
+    const rawToken = generateApiToken();
 
     const [row] = await this.db
       .insert(userApiTokens)
@@ -26,8 +28,9 @@ export class UserApiTokensService {
         id: randomUUID(),
         userId,
         name: input.name,
-        tokenHash,
-        prefix,
+        tokenHash: hashApiToken(rawToken),
+        hashAlg: "sha256",
+        prefix: apiTokenDisplayPrefix(rawToken),
         scopes: input.scopes,
         expiresAt: input.expiresAt ?? null,
       })
@@ -70,51 +73,26 @@ export class UserApiTokensService {
         createdAt: userApiTokens.createdAt,
       })
       .from(userApiTokens)
-      .where(eq(userApiTokens.userId, userId));
+      .where(
+        and(eq(userApiTokens.userId, userId), isNull(userApiTokens.revokedAt)),
+      );
   }
 
   async revoke(userId: string, tokenId: string) {
-    const [existing] = await this.db
-      .select({ id: userApiTokens.id })
-      .from(userApiTokens)
-      .where(and(eq(userApiTokens.id, tokenId), eq(userApiTokens.userId, userId)));
+    const [revoked] = await this.db
+      .update(userApiTokens)
+      .set({ revokedAt: new Date() })
+      .where(
+        and(
+          eq(userApiTokens.id, tokenId),
+          eq(userApiTokens.userId, userId),
+          isNull(userApiTokens.revokedAt),
+        ),
+      )
+      .returning({ id: userApiTokens.id });
 
-    if (!existing) throw new NotFoundException("API token not found");
-
-    await this.db
-      .delete(userApiTokens)
-      .where(and(eq(userApiTokens.id, tokenId), eq(userApiTokens.userId, userId)));
+    if (!revoked) throw new NotFoundException("API token not found");
 
     return { success: true };
-  }
-
-  async validatePat(rawToken: string): Promise<string | null> {
-    const prefix = rawToken.slice(0, 8);
-
-    const rows = await this.db
-      .select({
-        id: userApiTokens.id,
-        userId: userApiTokens.userId,
-        tokenHash: userApiTokens.tokenHash,
-        expiresAt: userApiTokens.expiresAt,
-      })
-      .from(userApiTokens)
-      .where(eq(userApiTokens.prefix, prefix));
-
-    for (const row of rows) {
-      if (row.expiresAt && row.expiresAt < new Date()) continue;
-
-      const valid = await bcrypt.compare(rawToken, row.tokenHash);
-      if (!valid) continue;
-
-      await this.db
-        .update(userApiTokens)
-        .set({ lastUsedAt: new Date() })
-        .where(eq(userApiTokens.id, row.id));
-
-      return row.userId;
-    }
-
-    return null;
   }
 }

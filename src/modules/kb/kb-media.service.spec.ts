@@ -35,12 +35,10 @@ function makeUser(orgId = "org-42"): CurrentUserContext {
     userId: "user-1",
     orgId,
     isOrgOwner: false,
-    branchId: null,
     role: "member",
     permissions: [],
-    enabledModules: [],
-    plan: null,
     sessionId: "sess-1",
+    tokenScopes: null,
   };
 }
 

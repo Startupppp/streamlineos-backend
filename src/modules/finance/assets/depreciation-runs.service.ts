@@ -350,12 +350,10 @@ export class DepreciationRunsService {
         const systemUser: CurrentUserContext = {
           userId: "system",
           orgId: oId,
-          branchId: null,
           role: "SYSTEM",
           permissions: [],
-          enabledModules: [],
-          plan: null,
           isOrgOwner: false,
+          tokenScopes: null,
           sessionId: "cron",
         };
         const run = await this.runDepreciation(systemUser, periodKey);

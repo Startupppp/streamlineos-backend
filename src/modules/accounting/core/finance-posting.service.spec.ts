@@ -10,13 +10,11 @@ import type { PostJournalInput } from "./finance-posting.types";
 const USER: CurrentUserContext = {
   userId: "u1",
   orgId: "org1",
-  branchId: null,
   role: "ADMIN",
   permissions: [],
-  enabledModules: [],
-  plan: null,
   isOrgOwner: false,
   sessionId: "sess1",
+  tokenScopes: null,
 };
 
 function makeBalancedInput(overrides: Partial<PostJournalInput> = {}): PostJournalInput {

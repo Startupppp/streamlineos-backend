@@ -10,13 +10,11 @@ function ctx(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {
   return {
     userId: "user-1",
     orgId: "org-1",
-    branchId: null,
     role: "EMPLOYEE",
     permissions: [],
-    enabledModules: ["HR", "CRM"],
-    plan: "PROFESSIONAL",
     isOrgOwner: false,
     sessionId: "sess-1",
+    tokenScopes: null,
     ...overrides,
   };
 }
@@ -89,7 +87,7 @@ describe("OnboardingController — HR-only module-checklist gating", () => {
     it("allows moduleKey=HR through when the caller has hr:employees:view", async () => {
       access.resolveUserPermissions.mockResolvedValue(new Map([["hr:employees:view", "all"]]));
       await controller.getModuleChecklist("HR", ctx());
-      expect(checklists.getChecklist).toHaveBeenCalledWith("org-1", "HR", ["HR", "CRM"]);
+      expect(checklists.getChecklist).toHaveBeenCalledWith("org-1", "HR");
     });
 
     it("allows moduleKey=HR through when the caller has hr:employees:manage (implies view)", async () => {
@@ -108,7 +106,7 @@ describe("OnboardingController — HR-only module-checklist gating", () => {
     it("does not run the HR check at all for other modules (no regression)", async () => {
       await controller.getModuleChecklist("CRM", ctx());
       expect(access.resolveUserPermissions).not.toHaveBeenCalled();
-      expect(checklists.getChecklist).toHaveBeenCalledWith("org-1", "CRM", ["HR", "CRM"]);
+      expect(checklists.getChecklist).toHaveBeenCalledWith("org-1", "CRM");
     });
   });
 
@@ -146,7 +144,7 @@ describe("OnboardingController — HR-only module-checklist gating", () => {
     it("restartModuleChecklist: manage permission is allowed", async () => {
       access.resolveUserPermissions.mockResolvedValue(new Map([["hr:employees:manage", "all"]]));
       await controller.restartModuleChecklist("HR", ctx());
-      expect(checklists.restartChecklist).toHaveBeenCalledWith("org-1", "HR", "user-1", ["HR", "CRM"]);
+      expect(checklists.restartChecklist).toHaveBeenCalledWith("org-1", "HR", "user-1");
     });
   });
 
@@ -154,19 +152,19 @@ describe("OnboardingController — HR-only module-checklist gating", () => {
     it("passes includeHr=false when the caller lacks hr:employees:* permission", async () => {
       access.resolveUserPermissions.mockResolvedValue(new Map());
       await controller.listModuleChecklists(ctx());
-      expect(checklists.listChecklists).toHaveBeenCalledWith("org-1", ["HR", "CRM"], false);
+      expect(checklists.listChecklists).toHaveBeenCalledWith("org-1", false);
     });
 
     it("passes includeHr=true when the caller has hr:employees:view", async () => {
       access.resolveUserPermissions.mockResolvedValue(new Map([["hr:employees:view", "all"]]));
       await controller.listModuleChecklists(ctx());
-      expect(checklists.listChecklists).toHaveBeenCalledWith("org-1", ["HR", "CRM"], true);
+      expect(checklists.listChecklists).toHaveBeenCalledWith("org-1", true);
     });
 
     it("passes includeHr=true for an org owner without hitting the DB", async () => {
       await controller.listModuleChecklists(ctx({ isOrgOwner: true }));
       expect(access.resolveUserPermissions).not.toHaveBeenCalled();
-      expect(checklists.listChecklists).toHaveBeenCalledWith("org-1", ["HR", "CRM"], true);
+      expect(checklists.listChecklists).toHaveBeenCalledWith("org-1", true);
     });
   });
 

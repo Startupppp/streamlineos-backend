@@ -16,6 +16,10 @@ export async function authorize(
 ): Promise<AuthResult> {
   if (!ctx) return { allow: false, scope: "none", reason: "UNAUTHENTICATED" };
 
+  if (ctx.tokenScopes && !ctx.tokenScopes.includes(permissionKey)) {
+    return { allow: false, scope: "none", reason: "FORBIDDEN" };
+  }
+
   if (ctx.isOrgOwner) return { allow: true, scope: "all" };
 
   const resolved = await access.resolveUserPermissions(ctx.orgId, ctx.userId);
@@ -32,10 +36,12 @@ export async function authorize(
   const scope = resolved.get(permissionKey);
   if (!scope || scope === "none") return { allow: false, scope: "none", reason: "FORBIDDEN" };
 
+  const tokenScopes = ctx.tokenScopes;
   const granted: string[] = [];
   for (const [key, grantedScope] of resolved) {
-    if (grantedScope !== "none") granted.push(key);
+    if (grantedScope === "none") continue;
+    if (tokenScopes && !tokenScopes.includes(key)) continue;
+    granted.push(key);
   }
   return { allow: true, scope, permissions: granted };
 }
-

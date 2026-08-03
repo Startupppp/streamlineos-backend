@@ -54,13 +54,11 @@ const BASE_BOARD = {
 const makeUser = (overrides: Partial<CurrentUserContext> = {}): CurrentUserContext => ({
   userId: "user-1",
   orgId: "org-1",
-  branchId: null,
   role: "MEMBER",
   permissions: [],
-  enabledModules: [],
-  plan: null,
   isOrgOwner: false,
   sessionId: "sess-1",
+  tokenScopes: null,
   ...overrides,
 });
 

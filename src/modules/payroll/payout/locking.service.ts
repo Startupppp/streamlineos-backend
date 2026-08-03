@@ -79,7 +79,7 @@ export class LockingService {
       await this.generate.postPayrollLock(orgId, runId, tx);
       await this.writeTdsYtdLedger(tx, orgId, runId, run.month);
       await this.payrollPosting.postFinalized(
-        { userId, orgId, branchId: null, role: "system", permissions: [], enabledModules: [], plan: null, isOrgOwner: true, sessionId: "system" },
+        { userId, orgId, role: "system", permissions: [], isOrgOwner: true, sessionId: "system", tokenScopes: null },
         runId,
         run.month,
         run.grossTotal ?? "0",

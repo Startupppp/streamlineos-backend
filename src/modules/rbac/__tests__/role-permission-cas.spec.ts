@@ -13,13 +13,11 @@ jest.mock("../../../common/rbac/access-invalidate", () => ({
 const ownerActor: CurrentUserContext = {
   userId: "u1",
   orgId: "org-1",
-  branchId: null,
   role: "OWNER",
   permissions: [],
-  enabledModules: [],
-  plan: null,
   isOrgOwner: true,
   sessionId: "s1",
+  tokenScopes: null,
 };
 
 const baseRole = {

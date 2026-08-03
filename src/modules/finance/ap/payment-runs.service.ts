@@ -541,16 +541,13 @@ export class PaymentRunsService {
       const baseAmountSettled = (capture.amount * settledRate).toFixed(4);
 
       const permissions: string[] = [];
-      const enabledModules: string[] = [];
       const user: CurrentUserContext = {
         userId: capture.userId,
         orgId,
-        branchId: null,
         role: "system",
         permissions,
-        enabledModules,
-        plan: null,
         isOrgOwner: false,
+        tokenScopes: null,
         sessionId: "",
       };
 

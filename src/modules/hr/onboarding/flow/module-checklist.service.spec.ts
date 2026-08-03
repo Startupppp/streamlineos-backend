@@ -57,30 +57,31 @@ describe("ModuleChecklistService — lazy checklist self-heal on read", () => {
       mockDb as never,
       { track: jest.fn() } as unknown as OnboardingAnalyticsService,
       { reconcile: jest.fn() } as unknown as HrChecklistReconciliationService,
+      { listModules: jest.fn().mockResolvedValue([
+        { moduleKey: "crm", enabled: true },
+        { moduleKey: "hr", enabled: true },
+      ]) } as never,
     );
 
-    // ensureChecklistsForModules itself (idempotent insert-if-missing) is pre-existing,
-    // unchanged behavior — this spec only verifies the NEW call sites in listChecklists/
-    // getChecklist invoke it correctly, so it's stubbed rather than exercised end-to-end.
     ensureSpy = jest.spyOn(service, "ensureChecklistsForModules").mockResolvedValue(undefined);
   });
 
   it("listChecklists: calls ensureChecklistsForModules with every visible module key before querying", async () => {
-    await service.listChecklists(ORG_ID, ["crm", "hr"], true);
+    await service.listChecklists(ORG_ID, true);
     expect(ensureSpy).toHaveBeenCalledWith(ORG_ID, ["crm", "hr"]);
     expect(ensureSpy.mock.invocationCallOrder[0]).toBeLessThan(findMany.mock.invocationCallOrder[0]);
   });
 
   it("listChecklists: still returns results correctly after the self-heal call (no regression)", async () => {
     findMany.mockResolvedValue([{ id: 1, orgId: ORG_ID, moduleKey: "crm", items: [] }]);
-    const result = await service.listChecklists(ORG_ID, ["crm"], false);
+    const result = await service.listChecklists(ORG_ID, false);
     expect(result).toHaveLength(1);
     expect(result[0].moduleKey).toBe("crm");
   });
 
   it("getChecklist: calls ensureChecklistsForModules scoped to just the requested module key", async () => {
     findFirst.mockResolvedValue({ id: 1, orgId: ORG_ID, moduleKey: "crm", items: [] });
-    await service.getChecklist(ORG_ID, "crm", ["crm", "hr"]);
+    await service.getChecklist(ORG_ID, "crm");
     expect(ensureSpy).toHaveBeenCalledWith(ORG_ID, ["crm"]);
     expect(ensureSpy.mock.invocationCallOrder[0]).toBeLessThan(findFirst.mock.invocationCallOrder[0]);
   });
@@ -90,21 +91,21 @@ describe("ModuleChecklistService — lazy checklist self-heal on read", () => {
     // ensureChecklistsForModules (run unconditionally before the single findFirst below)
     // is what would have inserted it — so by the time findFirst runs, the row exists.
     findFirst.mockResolvedValue({ id: 2, orgId: ORG_ID, moduleKey: "crm", items: [] });
-    const result = await service.getChecklist(ORG_ID, "crm", ["crm"]);
+    const result = await service.getChecklist(ORG_ID, "crm");
     expect(ensureSpy).toHaveBeenCalledWith(ORG_ID, ["crm"]);
     expect(result.id).toBe(2);
   });
 
   it("getChecklist: still throws NotFoundException if no row exists even after the self-heal call runs", async () => {
     findFirst.mockResolvedValue(undefined);
-    await expect(service.getChecklist(ORG_ID, "crm", ["crm"])).rejects.toThrow(
+    await expect(service.getChecklist(ORG_ID, "crm")).rejects.toThrow(
       "Module setup checklist not found: crm",
     );
     expect(ensureSpy).toHaveBeenCalledWith(ORG_ID, ["crm"]);
   });
 
   it("getChecklist: still 404s for a module key the caller can't see, without calling ensure", async () => {
-    await expect(service.getChecklist(ORG_ID, "payments", ["crm"])).rejects.toThrow(
+    await expect(service.getChecklist(ORG_ID, "payments")).rejects.toThrow(
       "Module setup checklist not found: payments",
     );
     expect(ensureSpy).not.toHaveBeenCalled();
@@ -144,6 +145,10 @@ describe("ModuleChecklistService — syncItemMetadataFromSeed (fixes stale actio
       mockDb as never,
       { track: jest.fn() } as unknown as OnboardingAnalyticsService,
       { reconcile: jest.fn().mockResolvedValue(false) } as unknown as HrChecklistReconciliationService,
+      { listModules: jest.fn().mockResolvedValue([
+        { moduleKey: "crm", enabled: true },
+        { moduleKey: "hr", enabled: true },
+      ]) } as never,
     );
     jest.spyOn(service, "ensureChecklistsForModules").mockResolvedValue(undefined);
   });
@@ -157,7 +162,7 @@ describe("ModuleChecklistService — syncItemMetadataFromSeed (fixes stale actio
       .mockResolvedValueOnce({ id: 1, orgId: ORG_ID, moduleKey: "crm", items: [staleItem] })
       .mockResolvedValueOnce({ id: 1, orgId: ORG_ID, moduleKey: "crm", items: [{ ...staleItem, actionHref: "/crm/deals" }] });
 
-    const result = await service.getChecklist(ORG_ID, "crm", ["crm"]);
+    const result = await service.getChecklist(ORG_ID, "crm");
 
     expect(updateSetCalls).toHaveLength(1);
     expect(updateSetCalls[0]).toMatchObject({ actionHref: "/crm/deals" });
@@ -168,7 +173,7 @@ describe("ModuleChecklistService — syncItemMetadataFromSeed (fixes stale actio
     const upToDateItem = baseItem({ itemKey: "create_pipeline", actionHref: "/crm/deals" });
     findFirst.mockResolvedValue({ id: 1, orgId: ORG_ID, moduleKey: "crm", items: [upToDateItem] });
 
-    await service.getChecklist(ORG_ID, "crm", ["crm"]);
+    await service.getChecklist(ORG_ID, "crm");
 
     expect(updateSetCalls).toHaveLength(0);
   });
@@ -177,7 +182,7 @@ describe("ModuleChecklistService — syncItemMetadataFromSeed (fixes stale actio
     const orphanedItem = baseItem({ itemKey: "some_removed_step", actionHref: "/crm/whatever" });
     findFirst.mockResolvedValue({ id: 1, orgId: ORG_ID, moduleKey: "crm", items: [orphanedItem] });
 
-    await service.getChecklist(ORG_ID, "crm", ["crm"]);
+    await service.getChecklist(ORG_ID, "crm");
 
     expect(updateSetCalls).toHaveLength(0);
   });
@@ -188,7 +193,7 @@ describe("ModuleChecklistService — syncItemMetadataFromSeed (fixes stale actio
       .mockResolvedValueOnce({ id: 1, orgId: ORG_ID, moduleKey: "hr", items: [staleItem] })
       .mockResolvedValueOnce({ id: 1, orgId: ORG_ID, moduleKey: "hr", items: [{ ...staleItem, actionHref: "/settings/organization" }] });
 
-    const result = await service.getChecklist(ORG_ID, "hr", ["hr"]);
+    const result = await service.getChecklist(ORG_ID, "hr");
 
     expect(updateSetCalls.some((c) => c.actionHref === "/settings/organization")).toBe(true);
     expect(result.items[0].actionHref).toBe("/settings/organization");

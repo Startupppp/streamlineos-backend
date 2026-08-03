@@ -28,7 +28,7 @@ import { runWithTenantContext, withTenant } from "../../common/tenant";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
-import { SessionService } from "./session.service";
+import { SessionsService } from "../sessions/sessions.service";
 import { AuthTokensService } from "./auth-tokens.service";
 import { addDays } from "date-fns";
 import type { RegisterInput } from "./dto/auth.schemas";
@@ -53,7 +53,7 @@ function slugify(name: string): string {
 export class AuthService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly sessionService: SessionService,
+    private readonly sessions: SessionsService,
     private readonly cache: CacheService,
     private readonly audit: AuditService,
     private readonly entitlements: EntitlementsService,
@@ -141,12 +141,14 @@ export class AuthService {
   }
 
   async logout(sessionId: string, userId: string): Promise<void> {
-    await this.sessionService.revoke(sessionId, userId);
+    await this.sessions.revokeCurrent(userId, sessionId);
     this.audit.log({ action: "auth.logout", userId });
   }
 
   async logoutAll(userId: string, exceptSessionId?: string): Promise<void> {
-    await this.sessionService.revokeAll(userId, exceptSessionId);
+    await (exceptSessionId
+      ? this.sessions.revokeAllOthers(userId, exceptSessionId)
+      : this.sessions.revokeAllForUser(userId));
     this.audit.log({ action: "auth.logout_all", userId });
   }
 

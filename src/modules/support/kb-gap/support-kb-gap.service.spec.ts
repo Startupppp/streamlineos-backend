@@ -336,13 +336,11 @@ describe("SupportKbGapService", () => {
       const actorCtx = {
         userId: "actor-123",
         orgId: "org1",
-        branchId: null,
         role: "support_agent",
         permissions: ["kb:articles:create"],
-        enabledModules: ["kb"],
-        plan: "PAID",
         isOrgOwner: false,
         sessionId: "sess-abc",
+        tokenScopes: null,
       };
       await service.proposeDraft("org1", 1, "actor-123", actorCtx);
 

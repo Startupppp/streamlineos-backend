@@ -18,13 +18,11 @@ function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
   return {
     userId: "user-1",
     orgId: "org-1",
-    branchId: null,
     role: "HR",
     permissions: [],
-    enabledModules: [],
-    plan: null,
     isOrgOwner: false,
     sessionId: "session-1",
+    tokenScopes: null,
     ...overrides,
   };
 }

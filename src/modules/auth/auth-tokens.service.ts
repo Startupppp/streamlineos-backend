@@ -29,7 +29,7 @@ import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { EmailService } from "../email/email.service";
-import { SessionService } from "./session.service";
+import { SessionsService } from "../sessions/sessions.service";
 import { hashToken } from "../../common/security/token.util";
 import { getTenantContext, withIdentity, withTenant } from "../../common/tenant";
 import { logger } from "../../common/logger/logger.service";
@@ -51,7 +51,7 @@ export class AuthTokensService {
     private readonly cache: CacheService,
     private readonly audit: AuditService,
     private readonly email: EmailService,
-    private readonly session: SessionService,
+    private readonly sessions: SessionsService,
   ) {}
 
   async resolveActiveMembership(
@@ -61,6 +61,7 @@ export class AuthTokensService {
     orgId: string;
     isOwner: boolean;
     role: string;
+    maxConcurrentSessions: number | null;
     orgOnboardingCompletedAt: Date | null;
   } | null> {
     const rows = await withIdentity(this.db, userId, async (tx) =>
@@ -69,6 +70,7 @@ export class AuthTokensService {
           orgId: organizationMembers.orgId,
           isOwner: organizationMembers.isOwner,
           role: organizationMembers.role,
+          maxConcurrentSessions: organizations.maxConcurrentSessions,
           orgOnboardingCompletedAt: organizations.onboardingCompletedAt,
         })
         .from(organizationMembers)
@@ -377,12 +379,20 @@ export class AuthTokensService {
     userId: string,
     context: { userAgent?: string; ipAddress?: string },
   ): Promise<string> {
-    return this.session.create({
+    const sessionId = await this.sessions.create({
       userId,
       userAgent: context.userAgent,
       ipAddress: context.ipAddress,
       expiresAt: addDays(new Date(), 30),
     });
+
+    const membership = await this.resolveActiveMembership(userId, null);
+    const cap = membership?.maxConcurrentSessions ?? null;
+    if (cap !== null) {
+      await this.sessions.enforceMaxSessions(userId, cap, sessionId);
+    }
+
+    return sessionId;
   }
 
   async verifyMagicLink(

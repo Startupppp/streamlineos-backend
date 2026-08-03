@@ -138,12 +138,10 @@ export class SupportKbGapService {
     const ctx: CurrentUserContext = userCtx ?? {
       orgId,
       userId: actorUserId,
-      branchId: null,
       role: "support",
       permissions: [],
-      enabledModules: [],
-      plan: null,
       isOrgOwner: false,
+      tokenScopes: null,
       sessionId: "",
     };
     const article = await this.kbArticles.create(ctx, {
