@@ -148,7 +148,7 @@ export class OrganizationController {
   @Delete("members/:memberId")
   @HttpCode(204)
   @UseGuards(PermissionGuard)
-  @RequirePermission("settings:manage")
+  @RequirePermission("settings:organization:manage")
   async removeMember(@Param("memberId") memberId: string, @CurrentUser() u: CurrentUserContext): Promise<void> {
     if (memberId === u.userId) {
       throw new BadRequestException("You cannot remove yourself from the organization");
@@ -159,7 +159,7 @@ export class OrganizationController {
   @Patch("members/:memberId/suspend")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
-  @RequirePermission("settings:manage")
+  @RequirePermission("settings:organization:manage")
   suspendMember(@Param("memberId") memberId: string, @CurrentUser() u: CurrentUserContext) {
     if (memberId === u.userId) {
       throw new BadRequestException("You cannot suspend yourself");
@@ -170,7 +170,7 @@ export class OrganizationController {
   @Patch("members/:memberId/reactivate")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
-  @RequirePermission("settings:manage")
+  @RequirePermission("settings:organization:manage")
   reactivateMember(@Param("memberId") memberId: string, @CurrentUser() u: CurrentUserContext) {
     return this.organization.reactivateMember(u.orgId, u.userId, memberId);
   }

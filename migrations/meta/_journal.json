@@ -813,6 +813,13 @@
       "when": 1784993525610,
       "tag": "0390_api_token_hardening",
       "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "7",
+      "when": 1784993525611,
+      "tag": "0391_org_scoped_member_lifecycle",
+      "breakpoints": true
     }
   ]
 }

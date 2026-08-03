@@ -1,4 +1,9 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { and, count, desc, eq, gte, ilike, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -20,7 +25,10 @@ import type {
   UpdateMembershipInput,
   UpdatePreferencesInput,
 } from "./dto/users.schemas";
-import { withClientInfo, withDeviceClientInfo } from "../../common/http/parse-user-agent";
+import {
+  withClientInfo,
+  withDeviceClientInfo,
+} from "../../common/http/parse-user-agent";
 import { syncOrgUnitPlacement } from "../../common/org/sync-org-unit-placement";
 
 @Injectable()
@@ -38,7 +46,8 @@ export class UserProfileService {
       ),
       columns: { userId: true },
     });
-    if (!membership) throw new NotFoundException("User not found in this organization");
+    if (!membership)
+      throw new NotFoundException("User not found in this organization");
   }
 
   async getUserSessions(orgId: string, userId: string) {
@@ -46,17 +55,26 @@ export class UserProfileService {
     const rows = await this.db
       .select()
       .from(userSessions)
-      .where(and(eq(userSessions.userId, userId), eq(userSessions.isRevoked, false)))
+      .where(
+        and(eq(userSessions.userId, userId), eq(userSessions.isRevoked, false)),
+      )
       .orderBy(desc(userSessions.createdAt));
     return rows.map(withClientInfo);
   }
 
-  async revokeSession(orgId: string, userId: string, sessionId: string, actorUserId: string) {
+  async revokeSession(
+    orgId: string,
+    userId: string,
+    sessionId: string,
+    actorUserId: string,
+  ) {
     await this.assertMember(orgId, userId);
     await this.db
       .update(userSessions)
       .set({ isRevoked: true })
-      .where(and(eq(userSessions.id, sessionId), eq(userSessions.userId, userId)));
+      .where(
+        and(eq(userSessions.id, sessionId), eq(userSessions.userId, userId)),
+      );
     this.audit.log({
       action: "user.session.revoked",
       userId: actorUserId,
@@ -70,7 +88,10 @@ export class UserProfileService {
 
   async revokeAllSessions(orgId: string, userId: string, actorUserId: string) {
     await this.assertMember(orgId, userId);
-    await this.db.update(userSessions).set({ isRevoked: true }).where(eq(userSessions.userId, userId));
+    await this.db
+      .update(userSessions)
+      .set({ isRevoked: true })
+      .where(eq(userSessions.userId, userId));
     this.audit.log({
       action: "user.sessions.revoked_all",
       userId: actorUserId,
@@ -91,7 +112,12 @@ export class UserProfileService {
     return rows.map(withDeviceClientInfo);
   }
 
-  async removeDevice(orgId: string, userId: string, deviceId: string, actorUserId: string) {
+  async removeDevice(
+    orgId: string,
+    userId: string,
+    deviceId: string,
+    actorUserId: string,
+  ) {
     await this.assertMember(orgId, userId);
     await this.db
       .delete(devices)
@@ -161,7 +187,8 @@ export class UserProfileService {
     };
   }
 
-  async getPreferences(userId: string) {
+  async getPreferences(orgId: string, userId: string) {
+    await this.assertMember(orgId, userId);
     const prefs = await this.db.query.userPreferences.findFirst({
       where: eq(userPreferences.userId, userId),
     });
@@ -180,7 +207,12 @@ export class UserProfileService {
     return prefs;
   }
 
-  async updatePreferences(userId: string, data: UpdatePreferencesInput) {
+  async updatePreferences(
+    orgId: string,
+    userId: string,
+    data: UpdatePreferencesInput,
+  ) {
+    await this.assertMember(orgId, userId);
     const existing = await this.db.query.userPreferences.findFirst({
       where: eq(userPreferences.userId, userId),
     });
@@ -191,8 +223,10 @@ export class UserProfileService {
     if (data.timezone !== undefined) updateData.timezone = data.timezone;
     if (data.dateFormat !== undefined) updateData.dateFormat = data.dateFormat;
     if (data.timeFormat !== undefined) updateData.timeFormat = data.timeFormat;
-    if (data.numberFormat !== undefined) updateData.numberFormat = data.numberFormat;
-    if (data.weekStartDay !== undefined) updateData.weekStartDay = data.weekStartDay;
+    if (data.numberFormat !== undefined)
+      updateData.numberFormat = data.numberFormat;
+    if (data.weekStartDay !== undefined)
+      updateData.weekStartDay = data.weekStartDay;
     if (data.notificationPreferences !== undefined)
       updateData.notificationPreferences = data.notificationPreferences;
     if (data.dashboardPreferences !== undefined)
@@ -213,14 +247,19 @@ export class UserProfileService {
         timeFormat: data.timeFormat ?? "12h",
         notificationPreferences:
           data.notificationPreferences ?? ({} as Record<string, boolean>),
-        dashboardPreferences: data.dashboardPreferences ?? ({} as Record<string, unknown>),
+        dashboardPreferences:
+          data.dashboardPreferences ?? ({} as Record<string, unknown>),
       });
     }
 
     return { success: true };
   }
 
-  async getLoginHistory(orgId: string, userId: string, params: ListLoginHistoryInput) {
+  async getLoginHistory(
+    orgId: string,
+    userId: string,
+    params: ListLoginHistoryInput,
+  ) {
     await this.assertMember(orgId, userId);
 
     const { page, limit, success: successFilter } = params;
@@ -239,7 +278,10 @@ export class UserProfileService {
         .orderBy(desc(loginHistory.createdAt))
         .limit(limit)
         .offset(offset),
-      this.db.select({ total: count() }).from(loginHistory).where(and(...conditions)),
+      this.db
+        .select({ total: count() })
+        .from(loginHistory)
+        .where(and(...conditions)),
     ]);
 
     return {
@@ -258,17 +300,27 @@ export class UserProfileService {
 
     const [rows, placement] = await Promise.all([
       this.db
-        .select({ unitId: orgUnitMembers.orgUnitId, kind: orgUnits.kind, name: orgUnits.name })
+        .select({
+          unitId: orgUnitMembers.orgUnitId,
+          kind: orgUnits.kind,
+          name: orgUnits.name,
+        })
         .from(orgUnitMembers)
         .innerJoin(orgUnits, eq(orgUnitMembers.orgUnitId, orgUnits.id))
-        .where(and(eq(orgUnitMembers.userId, userId), eq(orgUnitMembers.orgId, orgId))),
+        .where(
+          and(
+            eq(orgUnitMembers.userId, userId),
+            eq(orgUnitMembers.orgId, orgId),
+          ),
+        ),
       this.db.query.users.findFirst({
         where: eq(users.id, userId),
         columns: { reportingTo: true },
       }),
     ]);
 
-    const byKind = (kind: string) => rows.find((r) => r.kind === kind)?.unitId ?? null;
+    const byKind = (kind: string) =>
+      rows.find((r) => r.kind === kind)?.unitId ?? null;
 
     return {
       userId,
@@ -289,20 +341,35 @@ export class UserProfileService {
   ) {
     await this.assertMember(orgId, userId);
 
+    if (data.managerUserId) {
+      const manager = await this.db.query.organizationMembers.findFirst({
+        where: and(
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.userId, data.managerUserId),
+          eq(organizationMembers.status, "ACTIVE"),
+        ),
+        columns: { userId: true },
+      });
+      if (!manager)
+        throw new BadRequestException(
+          "Manager must be an active member of this organization",
+        );
+    }
+
     await this.db.transaction(async (tx) => {
-      // `users.branchId` / `users.orgDepartmentId` are denormalised copies that several read paths still filter and render from (branch detail lists, the JWT context, HR analytics, workflow approver routing)
       const scalarPlacement: Partial<{
         reportingTo: string | null;
         branchId: string | null;
         orgDepartmentId: string | null;
       }> = {};
-      if (data.managerUserId !== undefined) scalarPlacement.reportingTo = data.managerUserId;
+      if (data.managerUserId !== undefined)
+        scalarPlacement.reportingTo = data.managerUserId;
       if (data.branchId !== undefined) scalarPlacement.branchId = data.branchId;
-      if (data.departmentId !== undefined) scalarPlacement.orgDepartmentId = data.departmentId;
+      if (data.departmentId !== undefined)
+        scalarPlacement.orgDepartmentId = data.departmentId;
 
-      if (Object.keys(scalarPlacement).length > 0) 
+      if (Object.keys(scalarPlacement).length > 0)
         await tx.update(users).set(scalarPlacement).where(eq(users.id, userId));
-      
 
       await syncOrgUnitPlacement(tx, orgId, userId, {
         BUSINESS_UNIT: data.businessUnitId,
@@ -331,7 +398,10 @@ export class UserProfileService {
     const { page, limit, actorUserId, action, from, to } = params;
     const offset = (page - 1) * limit;
 
-    const conditions = [eq(auditLogs.orgId, orgId), eq(auditLogs.targetType, "user")];
+    const conditions = [
+      eq(auditLogs.orgId, orgId),
+      eq(auditLogs.targetType, "user"),
+    ];
     if (actorUserId) conditions.push(eq(auditLogs.actorUserId, actorUserId));
     if (action) conditions.push(ilike(auditLogs.action, `%${action}%`));
     if (from) conditions.push(gte(auditLogs.createdAt, new Date(from)));
@@ -356,7 +426,10 @@ export class UserProfileService {
         .orderBy(desc(auditLogs.createdAt))
         .limit(limit)
         .offset(offset),
-      this.db.select({ total: count() }).from(auditLogs).where(and(...conditions)),
+      this.db
+        .select({ total: count() })
+        .from(auditLogs)
+        .where(and(...conditions)),
     ]);
 
     return {
@@ -414,7 +487,10 @@ export class UserProfileService {
         .orderBy(desc(auditLogs.createdAt))
         .limit(limit)
         .offset(offset),
-      this.db.select({ total: count() }).from(auditLogs).where(and(...conditions)),
+      this.db
+        .select({ total: count() })
+        .from(auditLogs)
+        .where(and(...conditions)),
     ]);
 
     return {

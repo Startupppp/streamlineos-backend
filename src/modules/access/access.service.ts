@@ -380,10 +380,15 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
             eq(organizationMembers.orgId, orgId),
             eq(organizationMembers.userId, userId),
           ),
-          columns: { userId: true },
+          columns: { userId: true, status: true },
         });
         if (!member)
           throw new NotFoundException("User is not a member of this organization");
+        if (member.status !== "ACTIVE") {
+          throw new BadRequestException(
+            "Module access can only be changed for active members",
+          );
+        }
 
         await tx
           .insert(userModuleAccess)

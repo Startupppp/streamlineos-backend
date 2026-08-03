@@ -20,6 +20,6 @@ import { InvitationsService } from "./invitations.service";
     OrganizationSettingsService,
     InvitationsService,
   ],
-  exports: [InvitationsService],
+  exports: [InvitationsService, OrgMembershipService],
 })
 export class OrganizationModule {}

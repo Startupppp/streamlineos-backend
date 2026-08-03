@@ -9,14 +9,16 @@ import type { InviteActor } from "./invitations.service";
 import { assertMayGrantRole } from "../../../common/rbac/assert-may-grant-role";
 import { assertTargetNotOwner } from "../../../common/rbac/assert-target-not-owner";
 import { AccessService } from "../../access/access.service";
-import { and, count, desc, eq, ilike, inArray, lte, or } from "drizzle-orm";
+import { and, count, desc, eq, ilike, inArray, isNull, lte, or } from "drizzle-orm";
 import {
+  agentTokens,
   moduleOwnerships,
   roleAssignments,
   roles,
   orgUnitMembers,
   orgUnits,
   organizationMembers,
+  userApiTokens,
   users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -25,6 +27,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
+import { bustUsersStatsCache } from "../../../common/cache/bust-users-stats";
 import { bumpPermissionsVersion, type DbOrTx } from "../../../common/rbac/access-invalidate";
 import { ROLE_RANK } from "../../../common/rbac/grantability";
 import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
@@ -33,6 +36,24 @@ import { stableHash } from "../../../common/cache/cache-hash";
 import type { ListMembersInput } from "./dto/organization.schemas";
 
 const PG_FK_VIOLATION = "23503";
+
+export type MemberLifecycleStatus = "active" | "suspended" | "archived";
+
+export function membershipStatusToUserStatus(
+  status: "INVITED" | "ACTIVE" | "SUSPENDED" | "LEFT",
+): MemberLifecycleStatus {
+  if (status === "SUSPENDED") return "suspended";
+  if (status === "LEFT") return "archived";
+  return "active";
+}
+
+export function userStatusToMembershipStatus(
+  status: MemberLifecycleStatus,
+): "ACTIVE" | "SUSPENDED" | "LEFT" {
+  if (status === "suspended") return "SUSPENDED";
+  if (status === "archived") return "LEFT";
+  return "ACTIVE";
+}
 
 @Injectable()
 export class OrgMembershipService {
@@ -44,10 +65,35 @@ export class OrgMembershipService {
     private readonly access: AccessService,
   ) {}
 
+  private async revokeOrgAgentTokensAndBustMembership(
+    orgId: string,
+    memberUserId: string,
+  ): Promise<void> {
+    bustMembershipStatusCache(memberUserId, orgId);
+    const now = new Date();
+    await this.db
+      .update(agentTokens)
+      .set({ revokedAt: now })
+      .where(
+        and(
+          eq(agentTokens.userId, memberUserId),
+          eq(agentTokens.orgId, orgId),
+          isNull(agentTokens.revokedAt),
+        ),
+      );
+  }
+
   private async revokeMemberAccess(orgId: string, memberUserId: string): Promise<void> {
     await this.cache.invalidate(CACHE_KEYS.userSession(memberUserId));
-    bustMembershipStatusCache(memberUserId, orgId);
+    await this.revokeOrgAgentTokensAndBustMembership(orgId, memberUserId);
     await this.sessions.revokeAllForUser(memberUserId);
+    const now = new Date();
+    await this.db
+      .update(userApiTokens)
+      .set({ revokedAt: now })
+      .where(
+        and(eq(userApiTokens.userId, memberUserId), isNull(userApiTokens.revokedAt)),
+      );
   }
 
   private async invalidateMemberListCaches(orgId: string): Promise<void> {
@@ -56,6 +102,7 @@ export class OrgMembershipService {
       this.cache.invalidatePattern(CACHE_KEYS.orgMembersSimplePattern(orgId)),
       this.cache.invalidate(CACHE_KEYS.rbacDiscoveryMembers(orgId)),
       this.cache.invalidate(CACHE_KEYS.moduleAccessCandidates(orgId)),
+      bustUsersStatsCache(this.cache, orgId),
     ]);
   }
 
@@ -98,15 +145,17 @@ export class OrgMembershipService {
 
   async listMembers(orgId: string, input: ListMembersInput) {
     const { page, limit, search, userIds } = input;
+    const includeInactive = input.includeInactive === true;
     const hash = stableHash({
       page,
       limit,
       search: search ?? null,
       userIds: userIds ? [...userIds].sort() : null,
+      includeInactive,
     });
     return this.cache.cached(
       CACHE_KEYS.orgMembersList(orgId, hash),
-      () => this.fetchMembers(orgId, page, limit, search, userIds),
+      () => this.fetchMembers(orgId, page, limit, search, userIds, includeInactive),
       60,
     );
   }
@@ -117,9 +166,13 @@ export class OrgMembershipService {
     limit: number,
     search: string | undefined,
     userIds: string[] | undefined,
+    includeInactive: boolean,
   ) {
     const offset = (page - 1) * limit;
     const baseConditions = [eq(organizationMembers.orgId, orgId)];
+    if (!includeInactive) {
+      baseConditions.push(eq(organizationMembers.status, "ACTIVE"));
+    }
     if (userIds && userIds.length > 0) {
       baseConditions.push(inArray(organizationMembers.userId, userIds));
     }
@@ -252,7 +305,13 @@ export class OrgMembershipService {
     return { success: true };
   }
 
-  async suspendMember(orgId: string, actorUserId: string, memberUserId: string) {
+  async setMemberLifecycleStatus(
+    orgId: string,
+    actorUserId: string,
+    memberUserId: string,
+    status: MemberLifecycleStatus,
+    options?: { reason?: string; auditAction?: string },
+  ) {
     const member = await this.db.query.organizationMembers.findFirst({
       where: and(
         eq(organizationMembers.userId, memberUserId),
@@ -261,31 +320,68 @@ export class OrgMembershipService {
       columns: { isOwner: true, status: true, id: true },
     });
     if (!member) throw new NotFoundException("Member not found");
-    if (member.isOwner) {
-      throw new BadRequestException("Cannot suspend the organization owner");
+
+    const current = membershipStatusToUserStatus(member.status);
+    if (status !== "active" && member.isOwner) {
+      throw new BadRequestException(
+        `The organization owner cannot be ${status}. Transfer ownership to another member first.`,
+      );
     }
-    if (member.status === "SUSPENDED") {
+    if (current === "archived" && status === "suspended") {
+      throw new BadRequestException("Cannot suspend an archived user. Restore the user first.");
+    }
+    if (status === "suspended" && current === "suspended") {
       throw new ConflictException("Member is already suspended");
     }
+    if (status === "archived" && current === "archived") {
+      throw new ConflictException("Member is already archived");
+    }
+    if (status === "active" && current === "active") {
+      return { success: true };
+    }
+
+    const membershipStatus = userStatusToMembershipStatus(status);
+    const now = new Date();
+    const membershipUpdate =
+      status === "active"
+        ? {
+            status: membershipStatus,
+            activatedAt: now,
+            suspendedAt: null,
+            leftAt: null,
+          }
+        : status === "suspended"
+          ? {
+              status: membershipStatus,
+              suspendedAt: now,
+              leftAt: null,
+            }
+          : {
+              status: membershipStatus,
+              leftAt: now,
+              suspendedAt: null,
+            };
 
     await this.db.transaction(async (tx) => {
-      const ownedModuleKeys = await this.queryOwnedModuleKeys(tx, orgId, member.id);
-      if (ownedModuleKeys.length > 0) {
-        throw new BadRequestException(
-          `Transfer module ownership before suspending this member. Owned modules: ${ownedModuleKeys.join(", ")}.`,
-        );
-      }
+      if (status !== "active") {
+        const ownedModuleKeys = await this.queryOwnedModuleKeys(tx, orgId, member.id);
+        if (ownedModuleKeys.length > 0) {
+          throw new BadRequestException(
+            `Transfer module ownership before this action. Owned modules: ${ownedModuleKeys.join(", ")}.`,
+          );
+        }
 
-      const privilegedRoles = await this.queryPrivilegedRoleNames(tx, orgId, member.id);
-      if (privilegedRoles.length > 0) {
-        throw new BadRequestException(
-          `Remove administrative role(s) before suspending this member: ${privilegedRoles.join(", ")}.`,
-        );
+        const privilegedRoles = await this.queryPrivilegedRoleNames(tx, orgId, member.id);
+        if (privilegedRoles.length > 0) {
+          throw new BadRequestException(
+            `Remove administrative role(s) before this action: ${privilegedRoles.join(", ")}.`,
+          );
+        }
       }
 
       await tx
         .update(organizationMembers)
-        .set({ status: "SUSPENDED", suspendedAt: new Date() })
+        .set(membershipUpdate)
         .where(
           and(
             eq(organizationMembers.userId, memberUserId),
@@ -295,18 +391,33 @@ export class OrgMembershipService {
       await bumpPermissionsVersion(tx, orgId);
     });
 
-    await this.revokeMemberAccess(orgId, memberUserId);
+    if (status !== "active") {
+      await this.revokeMemberAccess(orgId, memberUserId);
+    } else {
+      await this.cache.invalidate(CACHE_KEYS.userSession(memberUserId));
+      bustMembershipStatusCache(memberUserId, orgId);
+    }
     await this.invalidateMemberListCaches(orgId);
 
     this.audit.log({
-      action: "org.member_suspended",
+      action: options?.auditAction ?? `user.status.${status}`,
       userId: actorUserId,
       orgId,
       targetId: memberUserId,
       targetType: "user",
+      actorUserId,
+      resourceType: "user",
+      resourceId: memberUserId,
+      metadata: { status, reason: options?.reason },
     });
 
     return { success: true };
+  }
+
+  async suspendMember(orgId: string, actorUserId: string, memberUserId: string) {
+    return this.setMemberLifecycleStatus(orgId, actorUserId, memberUserId, "suspended", {
+      auditAction: "org.member_suspended",
+    });
   }
 
   async reactivateMember(orgId: string, actorUserId: string, memberUserId: string) {
@@ -321,33 +432,9 @@ export class OrgMembershipService {
     if (member.status !== "SUSPENDED") {
       throw new ConflictException("Member is not suspended");
     }
-
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(organizationMembers)
-        .set({ status: "ACTIVE", activatedAt: new Date(), suspendedAt: null })
-        .where(
-          and(
-            eq(organizationMembers.userId, memberUserId),
-            eq(organizationMembers.orgId, orgId),
-          ),
-        );
-      await bumpPermissionsVersion(tx, orgId);
+    return this.setMemberLifecycleStatus(orgId, actorUserId, memberUserId, "active", {
+      auditAction: "org.member_reactivated",
     });
-
-    await this.cache.invalidate(CACHE_KEYS.userSession(memberUserId));
-    bustMembershipStatusCache(memberUserId, orgId);
-    await this.invalidateMemberListCaches(orgId);
-
-    this.audit.log({
-      action: "org.member_reactivated",
-      userId: actorUserId,
-      orgId,
-      targetId: memberUserId,
-      targetType: "user",
-    });
-
-    return { success: true };
   }
 
   async updateMemberRole(
@@ -453,7 +540,12 @@ export class OrgMembershipService {
         const [remaining] = await tx
           .select({ orgId: organizationMembers.orgId })
           .from(organizationMembers)
-          .where(eq(organizationMembers.userId, userId))
+          .where(
+            and(
+              eq(organizationMembers.userId, userId),
+              eq(organizationMembers.status, "ACTIVE"),
+            ),
+          )
           .orderBy(desc(organizationMembers.joinedAt))
           .limit(1);
         const fallbackOrgId = remaining?.orgId ?? null;
@@ -464,8 +556,12 @@ export class OrgMembershipService {
         return fallbackOrgId;
       });
 
-      await this.cache.invalidate(CACHE_KEYS.userSession(userId));
-      await this.invalidateMemberListCaches(orgId);
+      await Promise.all([
+        this.revokeOrgAgentTokensAndBustMembership(orgId, userId),
+        this.cache.invalidate(CACHE_KEYS.userSession(userId)),
+        this.cache.invalidate(CACHE_KEYS.orgProfile(orgId, userId)),
+        this.invalidateMemberListCaches(orgId),
+      ]);
       this.audit.log({
         action: "org.member_left",
         userId,

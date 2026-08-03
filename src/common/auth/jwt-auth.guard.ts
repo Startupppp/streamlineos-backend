@@ -26,7 +26,6 @@ import { backendJwtPayloadSchema } from "./backend-claims-schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { withIdentity } from "../tenant/with-identity";
-import { runInTenantTransaction } from "../tenant/run-in-tenant-transaction";
 import { REDIS } from "../../common/cache/cache.service";
 import {
   hashApiToken,
@@ -230,7 +229,12 @@ export class JwtAuthGuard implements CanActivate {
             isOwner: organizationMembers.isOwner,
           })
           .from(organizationMembers)
-          .where(eq(organizationMembers.userId, userId))
+          .where(
+            and(
+              eq(organizationMembers.userId, userId),
+              eq(organizationMembers.status, "ACTIVE"),
+            ),
+          )
           .orderBy(desc(organizationMembers.joinedAt)),
       ),
     ]);
@@ -254,29 +258,27 @@ export class JwtAuthGuard implements CanActivate {
     const matched = await this.findApiToken(rawToken);
     if (!matched) return null;
 
+    const accountActive = await this.membership.isAccountActive(matched.userId);
+    if (!accountActive) return null;
+
+    const resolved = await this.resolveOrgContext(matched.userId);
+    if (!resolved) return null;
+
+    const state = await this.membership.resolve(matched.userId, resolved.orgId);
+    if (!state.active) return null;
+
     void this.db
       .update(userApiTokens)
       .set({ lastUsedAt: new Date() })
       .where(eq(userApiTokens.id, matched.id))
       .catch(() => undefined);
 
-    const [user, resolved] = await Promise.all([
-      this.db.query.users.findFirst({
-        where: eq(users.id, matched.userId),
-        columns: { id: true, isActive: true, deletedAt: true },
-      }),
-      this.resolveOrgContext(matched.userId),
-    ]);
-
-    if (!user || !resolved) return null;
-    if (!user.isActive || user.deletedAt !== null) return null;
-
     return {
       userId: matched.userId,
       orgId: resolved.orgId,
-      role: resolved.role,
+      role: state.role,
       permissions: [],
-      isOrgOwner: resolved.isOwner,
+      isOrgOwner: state.isOwner,
       sessionId: `pat:${matched.id}`,
       tokenScopes: matched.scopes.length > 0 ? matched.scopes : null,
     };

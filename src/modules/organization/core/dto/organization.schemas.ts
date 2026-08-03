@@ -27,6 +27,10 @@ export const listMembersSchema = z.object({
     .min(1)
     .transform((v) => v.split(",").map((id) => id.trim()).filter(Boolean).slice(0, 50))
     .optional(),
+  includeInactive: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((v) => v === "true"),
 });
 
 export const updateOrgSettingsSchema = z.object({

@@ -196,6 +196,9 @@ describe("OrgMembershipService — module-ownership guards", () => {
         transaction: jest.fn().mockImplementation(
           async (fn: (tx: unknown) => Promise<unknown>) => fn(tx),
         ),
+        update: jest.fn().mockReturnValue({
+          set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+        }),
       };
       const svc = await buildService(db);
 
@@ -203,6 +206,7 @@ describe("OrgMembershipService — module-ownership guards", () => {
 
       expect(result).toEqual({ success: true });
       expect(revokeAllForUser).toHaveBeenCalledWith(MEMBER_ID);
+      expect(db.update).toHaveBeenCalled();
       expect(auditLog).toHaveBeenCalledWith(
         expect.objectContaining({ action: "org.member_removed" }),
       );

@@ -19,7 +19,7 @@ interface CacheEntry {
 const MEMBERSHIP_STATUS_TTL_MS = 15_000;
 const membershipStatusCache = new Map<string, CacheEntry>();
 
-const UNKNOWN: MembershipState = { active: true, isOwner: false, role: "" };
+const UNKNOWN: MembershipState = { active: false, isOwner: false, role: "" };
 
 export function bustMembershipStatusCache(userId: string, orgId?: string): void {
   membershipStatusCache.delete(`${userId}:account`);
@@ -70,8 +70,7 @@ export class MembershipStateService {
       if (row) {
         state = {
           active:
-            row.status !== "SUSPENDED" &&
-            row.status !== "LEFT" &&
+            row.status === "ACTIVE" &&
             row.userIsActive &&
             row.userDeletedAt === null,
           isOwner: row.isOwner,
@@ -94,7 +93,7 @@ export class MembershipStateService {
     const cached = membershipStatusCache.get(key);
     if (cached && cached.expiresAt > Date.now()) return cached.value.active;
 
-    let active = true;
+    let active = false;
     try {
       const rows = await this.db
         .select({ isActive: users.isActive, deletedAt: users.deletedAt })
@@ -102,9 +101,9 @@ export class MembershipStateService {
         .where(eq(users.id, userId))
         .limit(1);
       const row = rows[0];
-      if (row && (!row.isActive || row.deletedAt !== null)) active = false;
+      if (row) active = row.isActive && row.deletedAt === null;
     } catch {
-      active = true;
+      active = false;
     }
 
     membershipStatusCache.set(key, {

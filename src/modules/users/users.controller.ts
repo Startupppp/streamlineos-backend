@@ -23,15 +23,10 @@ import {
   type BulkUpdateUsersInput, type ListAuditInput, type ImportUsersRow, type CreateUserInput,
   changeInviteRoleSchema,
   type ChangeInviteRoleInput,
+  listInvitationsSchema,
+  type ListInvitationsInput,
 } from "./dto/users.schemas";
 import { z } from "zod";
-
-const listInvitationsSchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(20),
-  includeAccepted: z.enum(["true", "false"]).optional().transform((v) => v === "true"),
-});
-type ListInvitationsInput = z.infer<typeof listInvitationsSchema>;
 
 @Controller("users")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -79,6 +74,8 @@ export class UsersController {
       page: query.page,
       limit: query.limit,
       includeAccepted: query.includeAccepted,
+      status: query.status,
+      q: query.q,
     });
   }
 
@@ -286,8 +283,8 @@ export class UsersController {
 
   @RequirePermission("settings:view")
   @Get(":userId/preferences")
-  getPreferences(@Param("userId") userId: string) {
-    return this.userProfile.getPreferences(userId);
+  getPreferences(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
+    return this.userProfile.getPreferences(u.orgId, userId);
   }
 
   @RequirePermission("settings:organization:manage")
@@ -295,8 +292,9 @@ export class UsersController {
   updatePreferences(
     @Param("userId") userId: string,
     @Body(new ZodValidationPipe(updatePreferencesSchema)) body: UpdatePreferencesInput,
+    @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.userProfile.updatePreferences(userId, body);
+    return this.userProfile.updatePreferences(u.orgId, userId, body);
   }
 
   @RequirePermission("settings:organization:manage")

@@ -257,6 +257,7 @@ export const CACHE_KEYS = {
   orgMembersListPattern: (orgId: string) => `org:members:list:${orgId}:*`,
   orgMembersSimple: (orgId: string, hash: string) => `org:members-simple:${orgId}:${hash}`,
   orgMembersSimplePattern: (orgId: string) => `org:members-simple:${orgId}:*`,
+  usersStats: (orgId: string) => `users:stats:${orgId}`,
 
   permissionsMatrix: (orgId: string, version: number) => `rbac:matrix:${orgId}:v${version}`,
   rolePerms: (orgId: string, roleId: number, version: number) =>

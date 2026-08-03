@@ -255,7 +255,7 @@ export const SHARED_PERMISSIONS: Permission[] = [
     name: "settings:organization:manage",
     resource: "settings:organization",
     action: "manage",
-    description: "Manage organization onboarding and setup",
+    description: "Manage members, invitations, and organization structure",
     scopable: false,
   },
   {

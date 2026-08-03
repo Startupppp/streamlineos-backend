@@ -64,7 +64,7 @@ export class AgentTokenGuard implements CanActivate {
         const [user, memberRows] = await Promise.all([
           tx.query.users.findFirst({
             where: eq(users.id, row.userId),
-            columns: { id: true },
+            columns: { id: true, isActive: true, deletedAt: true },
           }),
           tx
             .select({
@@ -74,11 +74,17 @@ export class AgentTokenGuard implements CanActivate {
             })
             .from(organizationMembers)
             .innerJoin(organizations, eq(organizations.id, organizationMembers.orgId))
-            .where(and(eq(organizationMembers.userId, row.userId), eq(organizationMembers.orgId, row.orgId)))
+            .where(
+              and(
+                eq(organizationMembers.userId, row.userId),
+                eq(organizationMembers.orgId, row.orgId),
+                eq(organizationMembers.status, "ACTIVE"),
+              ),
+            )
             .orderBy(desc(organizationMembers.joinedAt)),
         ]);
 
-        if (!user) return null;
+        if (!user || !user.isActive || user.deletedAt !== null) return null;
 
         const member = memberRows[0];
         if (!member) return null;

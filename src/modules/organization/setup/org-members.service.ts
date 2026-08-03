@@ -17,7 +17,7 @@ export class OrgMembersService {
   async listMembers(orgId: string, options: ListMembersOptions = {}) {
     const conditions: SQL[] = [
       eq(organizationMembers.orgId, orgId),
-      eq(users.isActive, true),
+      eq(organizationMembers.status, "ACTIVE"),
     ];
 
     const term = options.search?.trim();

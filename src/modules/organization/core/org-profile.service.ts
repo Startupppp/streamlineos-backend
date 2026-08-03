@@ -1,4 +1,10 @@
-import { BadRequestException, ConflictException, Inject, Injectable } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+} from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { organizationMembers, organizations, subscriptions, users } from "../../../db/schema";
@@ -34,7 +40,12 @@ export class OrgProfileService {
         joinedAt: organizationMembers.joinedAt,
       })
       .from(organizationMembers)
-      .where(eq(organizationMembers.userId, userId))
+      .where(
+        and(
+          eq(organizationMembers.userId, userId),
+          eq(organizationMembers.status, "ACTIVE"),
+        ),
+      )
       .orderBy(desc(organizationMembers.joinedAt));
 
     if (memberships.length === 0) return [];
@@ -70,12 +81,28 @@ export class OrgProfileService {
         eq(organizationMembers.userId, userId),
         eq(organizationMembers.orgId, targetOrgId),
       ),
-      columns: { role: true },
+      columns: { role: true, status: true },
     });
-    if (!membership)
+    if (!membership) {
       throw new BadRequestException(
         "You are not a member of this organization",
       );
+    }
+    if (membership.status === "SUSPENDED") {
+      throw new ConflictException(
+        "Your membership in this organization is suspended. Ask an admin to restore access.",
+      );
+    }
+    if (membership.status === "LEFT") {
+      throw new ForbiddenException(
+        "You are no longer a member of this organization",
+      );
+    }
+    if (membership.status !== "ACTIVE") {
+      throw new ForbiddenException(
+        "You are not an active member of this organization",
+      );
+    }
 
     const [org] = await this.db
       .select({
@@ -190,7 +217,14 @@ export class OrgProfileService {
         role: organizationMembers.role,
       })
       .from(users)
-      .innerJoin(organizationMembers, and(eq(organizationMembers.userId, users.id), eq(organizationMembers.orgId, orgId)))
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.userId, users.id),
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.status, "ACTIVE"),
+        ),
+      )
       .where(eq(users.id, userId));
 
     if (!user) return null;
@@ -215,6 +249,7 @@ export class OrgProfileService {
         and(
           eq(organizationMembers.userId, userId),
           eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.status, "ACTIVE"),
         ),
       );
 

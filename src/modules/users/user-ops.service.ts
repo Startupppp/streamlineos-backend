@@ -1,9 +1,25 @@
-import { HttpException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  HttpException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import type { OrgUnitKind } from "../../db/schema/common/organization";
 import type { InviteActor } from "../organization/core/invitations.service";
 import { EmailService } from "../email/email.service";
 import { AccessService } from "../access/access.service";
-import { and, count, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  gt,
+  gte,
+  inArray,
+  isNull,
+  sql,
+} from "drizzle-orm";
 import { randomUUID, randomBytes } from "node:crypto";
 import { addHours } from "date-fns";
 import { hashToken } from "../../common/security/token.util";
@@ -11,6 +27,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { InvitationsService } from "../organization/core/invitations.service";
 import {
   invitations,
@@ -25,6 +42,7 @@ import { UsersService } from "./users.service";
 import { syncStructuralRoleAssignment } from "../../common/rbac/sync-structural-role";
 import { assertMayGrantRole } from "../../common/rbac/assert-may-grant-role";
 import { assertNoOwnerAmongTargets } from "../../common/rbac/assert-target-not-owner";
+import { membershipStatusToUserStatus } from "../organization/core/org-membership.service";
 
 @Injectable()
 export class UserOpsService {
@@ -46,7 +64,7 @@ export class UserOpsService {
         firstName: users.firstName,
         lastName: users.lastName,
         role: organizationMembers.role,
-        isActive: users.isActive,
+        membershipStatus: organizationMembers.status,
         emailVerified: users.emailVerified,
         departmentId: users.orgDepartmentId,
         designation: users.designation,
@@ -60,64 +78,121 @@ export class UserOpsService {
       .orderBy(desc(organizationMembers.joinedAt));
 
     const headers = [
-      "id", "email", "firstName", "lastName", "role", "isActive",
-      "emailVerified", "departmentId", "designation", "phone", "joinedAt", "createdAt",
-    ];
+      "id",
+      "email",
+      "firstName",
+      "lastName",
+      "role",
+      "status",
+      "emailVerified",
+      "departmentId",
+      "designation",
+      "phone",
+      "joinedAt",
+      "createdAt",
+    ] as const;
+
+    const csvCell = (
+      val: string | boolean | Date | null | undefined,
+    ): string => {
+      if (val === null || val === undefined) return "";
+      if (val instanceof Date) return val.toISOString();
+      return String(val).replace(/,/g, ";");
+    };
+
     const rows = data.map((u) =>
-      headers
-        .map((h) => {
-          const val = (u as Record<string, unknown>)[h];
-          if (val === null || val === undefined) return "";
-          if (val instanceof Date) return val.toISOString();
-          return String(val).replace(/,/g, ";");
-        })
-        .join(","),
+      [
+        csvCell(u.id),
+        csvCell(u.email),
+        csvCell(u.firstName),
+        csvCell(u.lastName),
+        csvCell(u.role),
+        csvCell(membershipStatusToUserStatus(u.membershipStatus)),
+        csvCell(u.emailVerified),
+        csvCell(u.departmentId),
+        csvCell(u.designation),
+        csvCell(u.phone),
+        csvCell(u.joinedAt),
+        csvCell(u.createdAt),
+      ].join(","),
     );
 
     return [headers.join(","), ...rows].join("\n");
   }
 
   async getStats(orgId: string) {
-    const cacheKey = `users:stats:${orgId}`;
-
     return this.cache.cached(
-      cacheKey,
+      CACHE_KEYS.usersStats(orgId),
       async () => {
-        const [totalResult, activeResult, suspendedResult, pendingResult, newThisMonthResult] =
-          await Promise.all([
-            this.db
-              .select({ count: count() })
-              .from(organizationMembers)
-              .where(eq(organizationMembers.orgId, orgId)),
-            this.db
-              .select({ count: count() })
-              .from(organizationMembers)
-              .innerJoin(users, eq(organizationMembers.userId, users.id))
-              .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true))),
-            this.db
-              .select({ count: count() })
-              .from(organizationMembers)
-              .innerJoin(users, eq(organizationMembers.userId, users.id))
-              .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, false))),
-            this.db
-              .select({ count: count() })
-              .from(invitations)
-              .where(and(eq(invitations.orgId, orgId), isNull(invitations.acceptedAt))),
-            this.db
-              .select({ count: count() })
-              .from(organizationMembers)
-              .where(
-                and(
-                  eq(organizationMembers.orgId, orgId),
-                  gte(organizationMembers.joinedAt, sql`DATE_TRUNC('month', NOW())`),
+        const [
+          totalResult,
+          activeResult,
+          suspendedResult,
+          archivedResult,
+          pendingResult,
+          newThisMonthResult,
+        ] = await Promise.all([
+          this.db
+            .select({ count: count() })
+            .from(organizationMembers)
+            .where(eq(organizationMembers.orgId, orgId)),
+          this.db
+            .select({ count: count() })
+            .from(organizationMembers)
+            .where(
+              and(
+                eq(organizationMembers.orgId, orgId),
+                inArray(organizationMembers.status, ["ACTIVE", "INVITED"]),
+              ),
+            ),
+          this.db
+            .select({ count: count() })
+            .from(organizationMembers)
+            .where(
+              and(
+                eq(organizationMembers.orgId, orgId),
+                eq(organizationMembers.status, "SUSPENDED"),
+              ),
+            ),
+          this.db
+            .select({ count: count() })
+            .from(organizationMembers)
+            .where(
+              and(
+                eq(organizationMembers.orgId, orgId),
+                eq(organizationMembers.status, "LEFT"),
+              ),
+            ),
+          this.db
+            .select({ count: count() })
+            .from(invitations)
+            .where(
+              and(
+                eq(invitations.orgId, orgId),
+                eq(invitations.status, "PENDING"),
+                isNull(invitations.acceptedAt),
+                gt(invitations.expiresAt, new Date()),
+              ),
+            ),
+          this.db
+            .select({ count: count() })
+            .from(organizationMembers)
+            .where(
+              and(
+                eq(organizationMembers.orgId, orgId),
+                gte(
+                  organizationMembers.joinedAt,
+                  sql`DATE_TRUNC('month', NOW())`,
                 ),
               ),
-          ]);
+            ),
+        ]);
 
         return {
           total: totalResult[0]?.count ?? 0,
           active: activeResult[0]?.count ?? 0,
           suspended: suspendedResult[0]?.count ?? 0,
+          archived: archivedResult[0]?.count ?? 0,
           pendingInvitations: pendingResult[0]?.count ?? 0,
           newThisMonth: newThisMonthResult[0]?.count ?? 0,
         };
@@ -133,10 +208,16 @@ export class UserOpsService {
     actorUserId: string,
     fallbackError: string,
   ) {
-    const results: Array<{ userId: string; success: boolean; error?: string }> = [];
+    const results: Array<{ userId: string; success: boolean; error?: string }> =
+      [];
     for (const userId of userIds) {
       try {
-        await this.usersSvc.updateUserStatus(orgId, userId, status, actorUserId);
+        await this.usersSvc.updateUserStatus(
+          orgId,
+          userId,
+          status,
+          actorUserId,
+        );
         results.push({ userId, success: true });
       } catch (err) {
         results.push({
@@ -154,29 +235,76 @@ export class UserOpsService {
   }
 
   async bulkSuspend(orgId: string, userIds: string[], actorUserId: string) {
-    return this.bulkUpdateStatus(orgId, userIds, "suspended", actorUserId, "Failed to suspend");
+    return this.bulkUpdateStatus(
+      orgId,
+      userIds,
+      "suspended",
+      actorUserId,
+      "Failed to suspend",
+    );
   }
 
   async bulkArchive(orgId: string, userIds: string[], actorUserId: string) {
-    return this.bulkUpdateStatus(orgId, userIds, "archived", actorUserId, "Failed to archive");
+    return this.bulkUpdateStatus(
+      orgId,
+      userIds,
+      "archived",
+      actorUserId,
+      "Failed to archive",
+    );
   }
 
   async bulkRestore(orgId: string, userIds: string[], actorUserId: string) {
-    return this.bulkUpdateStatus(orgId, userIds, "active", actorUserId, "Failed to restore");
+    return this.bulkUpdateStatus(
+      orgId,
+      userIds,
+      "active",
+      actorUserId,
+      "Failed to restore",
+    );
   }
 
-  private assertMayGrantRole(orgId: string, actor: InviteActor, role: string): Promise<void> {
+  private assertMayGrantRole(
+    orgId: string,
+    actor: InviteActor,
+    role: string,
+  ): Promise<void> {
     return assertMayGrantRole(this.access, orgId, actor, role);
   }
 
-  async bulkUpdateUsers(orgId: string, data: BulkUpdateUsersInput, actor: InviteActor) {
+  async bulkUpdateUsers(
+    orgId: string,
+    data: BulkUpdateUsersInput,
+    actor: InviteActor,
+  ) {
     const actorUserId = actor.userId;
-    const { userIds, role, departmentId, branchId, teamId, managerUserId } = data;
+    const { userIds, role, departmentId, branchId, teamId, managerUserId } =
+      data;
+
+    if (managerUserId) {
+      const manager = await this.db.query.organizationMembers.findFirst({
+        where: and(
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.userId, managerUserId),
+          eq(organizationMembers.status, "ACTIVE"),
+        ),
+        columns: { userId: true },
+      });
+      if (!manager)
+        throw new BadRequestException(
+          "Manager must be an active member of this organization",
+        );
+    }
 
     const memberRows = await this.db
       .select({ userId: organizationMembers.userId })
       .from(organizationMembers)
-      .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.userId, userIds)));
+      .where(
+        and(
+          eq(organizationMembers.orgId, orgId),
+          inArray(organizationMembers.userId, userIds),
+        ),
+      );
     const scopedIds = memberRows.map((r) => r.userId);
 
     if (scopedIds.length === 0) {
@@ -189,13 +317,19 @@ export class UserOpsService {
     if (managerUserId !== undefined) userUpdate.reportingTo = managerUserId;
 
     if (Object.keys(userUpdate).length > 0) {
-      await this.db.update(users).set(userUpdate).where(inArray(users.id, scopedIds));
+      await this.db
+        .update(users)
+        .set(userUpdate)
+        .where(inArray(users.id, scopedIds));
     }
 
     const unitMoves: Array<{ kind: OrgUnitKind; unitId: string | null }> = [];
-    if (branchId !== undefined) unitMoves.push({ kind: "BRANCH", unitId: branchId ?? null });
-    if (departmentId !== undefined) unitMoves.push({ kind: "DEPARTMENT", unitId: departmentId ?? null });
-    if (teamId !== undefined) unitMoves.push({ kind: "TEAM", unitId: teamId ?? null });
+    if (branchId !== undefined)
+      unitMoves.push({ kind: "BRANCH", unitId: branchId ?? null });
+    if (departmentId !== undefined)
+      unitMoves.push({ kind: "DEPARTMENT", unitId: departmentId ?? null });
+    if (teamId !== undefined)
+      unitMoves.push({ kind: "TEAM", unitId: teamId ?? null });
 
     if (unitMoves.length > 0) {
       await this.db.transaction(async (tx) => {
@@ -211,18 +345,23 @@ export class UserOpsService {
                 eq(orgUnits.kind, kind),
               ),
             );
-          for (const row of existing) 
-            await tx.delete(orgUnitMembers).where(eq(orgUnitMembers.id, row.id));
-          
+          for (const row of existing)
+            await tx
+              .delete(orgUnitMembers)
+              .where(eq(orgUnitMembers.id, row.id));
 
-          if (unitId !== null) 
-            for (const userId of scopedIds) 
+          if (unitId !== null)
+            for (const userId of scopedIds)
               await tx
                 .insert(orgUnitMembers)
-                .values({ id: randomUUID(), orgId, orgUnitId: unitId, userId, role: "member" })
+                .values({
+                  id: randomUUID(),
+                  orgId,
+                  orgUnitId: unitId,
+                  userId,
+                  role: "member",
+                })
                 .onConflictDoNothing();
-            
-          
         }
       });
     }
@@ -252,14 +391,22 @@ export class UserOpsService {
       userId: actorUserId,
       orgId,
       targetType: "user",
-      metadata: { userIds: scopedIds, changes: { role, departmentId, branchId, teamId, managerUserId } },
+      metadata: {
+        userIds: scopedIds,
+        changes: { role, departmentId, branchId, teamId, managerUserId },
+      },
     });
 
     return { success: true, updated: scopedIds.length };
   }
 
   async sendSigninLink(orgId: string, userId: string, actorUserId: string) {
-    await this.usersSvc.getUser(orgId, userId);
+    const member = await this.usersSvc.getUser(orgId, userId);
+    if (member.userStatus !== "active") {
+      throw new BadRequestException(
+        "Sign-in links can only be sent to active members",
+      );
+    }
 
     const user = await this.db.query.users.findFirst({
       where: eq(users.id, userId),
@@ -308,7 +455,11 @@ export class UserOpsService {
           row.email,
           row.role ?? "MEMBER",
         );
-        results.push({ email: row.email, success: true, invitationId: result.invitationId });
+        results.push({
+          email: row.email,
+          success: true,
+          invitationId: result.invitationId,
+        });
       } catch (err) {
         results.push({
           email: row.email,

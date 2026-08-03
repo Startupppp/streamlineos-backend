@@ -8,7 +8,7 @@ import {
   Logger,
 } from "@nestjs/common";
 import { randomUUID, randomBytes, createHash } from "node:crypto";
-import { and, count, desc, eq, gt, isNull, lt, inArray, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, ilike, isNull, lt, inArray, or, sql } from "drizzle-orm";
 import { addDays, addMinutes } from "date-fns";
 import { hashToken } from "../../../common/security/token.util";
 import { withPublicToken } from "../../../common/tenant/with-public-token";
@@ -21,6 +21,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
+import { bustUsersStatsCache } from "../../../common/cache/bust-users-stats";
 import { EmailService } from "../../email/email.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import {
@@ -102,8 +103,16 @@ export class InvitationsService {
           eq(organizationMembers.userId, existingUser.id),
           eq(organizationMembers.orgId, orgId),
         ),
+        columns: { status: true },
       });
-      if (existingMember) throw new ConflictException("User is already a member");
+      if (existingMember) {
+        if (existingMember.status === "SUSPENDED" || existingMember.status === "LEFT") {
+          throw new ConflictException(
+            "This person was archived/suspended in this organization. Restore them from Users instead of inviting again.",
+          );
+        }
+        throw new ConflictException("User is already a member");
+      }
     }
 
     const [org, allowedDomainRows] = await Promise.all([
@@ -190,6 +199,7 @@ export class InvitationsService {
         metadata: { email, role },
       });
 
+      await bustUsersStatsCache(this.cache, orgId);
       return { success: true, invitationId: pendingInvitation.id, organizationName: org?.name ?? "", resent: true };
     }
 
@@ -249,6 +259,7 @@ export class InvitationsService {
       metadata: { email, role },
     });
 
+    await bustUsersStatsCache(this.cache, orgId);
     return { success: true, invitationId, organizationName: org?.name ?? "", resent: false };
   }
 
@@ -285,16 +296,47 @@ export class InvitationsService {
 
   async listPaginated(
     orgId: string,
-    params?: { page?: number; limit?: number; includeAccepted?: boolean },
+    params?: {
+      page?: number;
+      limit?: number;
+      includeAccepted?: boolean;
+      status?: "pending" | "accepted" | "expired" | "revoked";
+      q?: string;
+    },
   ) {
     const page = params?.page ?? 1;
     const limit = Math.min(params?.limit ?? 20, 100);
     const offset = (page - 1) * limit;
+    const now = new Date();
 
     const conditions = [eq(invitations.orgId, orgId)];
-    if (!params?.includeAccepted) {
+    if (params?.status === "pending") {
       conditions.push(eq(invitations.status, "PENDING"));
       conditions.push(isNull(invitations.acceptedAt));
+      conditions.push(gt(invitations.expiresAt, now));
+    } else if (params?.status === "accepted") {
+      conditions.push(eq(invitations.status, "ACCEPTED"));
+    } else if (params?.status === "revoked") {
+      conditions.push(eq(invitations.status, "REVOKED"));
+    } else if (params?.status === "expired") {
+      const expiredFilter = or(
+        eq(invitations.status, "EXPIRED"),
+        and(
+          eq(invitations.status, "PENDING"),
+          isNull(invitations.acceptedAt),
+          lt(invitations.expiresAt, now),
+        ),
+      );
+      if (expiredFilter) conditions.push(expiredFilter);
+    } else if (!params?.includeAccepted) {
+      conditions.push(eq(invitations.status, "PENDING"));
+      conditions.push(isNull(invitations.acceptedAt));
+    }
+
+    const q = params?.q?.trim();
+    if (q) {
+      const escaped = q.replace(/[%_\\]/g, (m) => `\\${m}`);
+      conditions.push(ilike(invitations.email, `${escaped}%`));
     }
 
     const [data, countResult] = await Promise.all([
@@ -401,9 +443,19 @@ export class InvitationsService {
           eq(organizationMembers.userId, existingUser.id),
           eq(organizationMembers.orgId, invitation.orgId),
         ),
+        columns: { status: true },
       });
-      if (existingMembership)
+      if (existingMembership) {
+        if (
+          existingMembership.status === "SUSPENDED" ||
+          existingMembership.status === "LEFT"
+        ) {
+          throw new ConflictException(
+            "Your membership in this organization is archived or suspended. Ask an admin to restore you from Users.",
+          );
+        }
         throw new ConflictException("You are already a member of this organization");
+      }
 
       const autoLoginToken = randomBytes(32).toString("hex");
       await runInTenantTransaction(this.db, async (tx) => {
@@ -459,6 +511,7 @@ export class InvitationsService {
         this.cache.invalidatePattern(CACHE_KEYS.orgMembersSimplePattern(invitation.orgId)),
         this.cache.invalidate(CACHE_KEYS.rbacDiscoveryMembers(invitation.orgId)),
         this.cache.invalidate(CACHE_KEYS.moduleAccessCandidates(invitation.orgId)),
+        bustUsersStatsCache(this.cache, invitation.orgId),
       ]);
 
       return { ok: true, autoLoginToken };
@@ -538,6 +591,7 @@ export class InvitationsService {
       this.cache.invalidatePattern(CACHE_KEYS.orgMembersSimplePattern(invitation.orgId)),
       this.cache.invalidate(CACHE_KEYS.rbacDiscoveryMembers(invitation.orgId)),
       this.cache.invalidate(CACHE_KEYS.moduleAccessCandidates(invitation.orgId)),
+      bustUsersStatsCache(this.cache, invitation.orgId),
     ]);
 
     return { ok: true, autoLoginToken };
@@ -619,6 +673,7 @@ export class InvitationsService {
       metadata: { email: invitation.email },
     });
 
+    await bustUsersStatsCache(this.cache, orgId);
     return { success: true };
   }
 
@@ -726,6 +781,7 @@ export class InvitationsService {
       metadata: { email: invitation.email },
     });
 
+    await bustUsersStatsCache(this.cache, orgId);
     return { success: true };
   }
 
@@ -754,6 +810,8 @@ export class InvitationsService {
       }
       return rows;
     });
+    const orgIds = [...new Set(updated.map((r) => r.orgId))];
+    await Promise.all(orgIds.map((orgId) => bustUsersStatsCache(this.cache, orgId)));
     return { expired: updated.length };
   }
 }
