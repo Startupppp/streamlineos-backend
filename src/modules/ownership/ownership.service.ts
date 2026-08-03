@@ -43,7 +43,7 @@ export class OwnershipService {
 
   private async invalidateUserAccess(orgId: string, userId: string): Promise<void> {
     await this.cache.invalidate(CACHE_KEYS.userSession(userId));
-    bustMembershipStatusCache(userId, orgId);
+    await bustMembershipStatusCache(this.cache, userId, orgId);
   }
 
   private async fetchMembershipByUser(

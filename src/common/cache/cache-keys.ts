@@ -1,6 +1,10 @@
 export const CACHE_KEYS = {
   dashboardStats: (orgId: string) => `dashboard:stats:${orgId}`,
   userSession: (userId: string) => `user:session:${userId}`,
+  membershipStatus: (userId: string, orgId: string) =>
+    `membership:status:${userId}:${orgId}`,
+  membershipStatusPattern: (userId: string) => `membership:status:${userId}:*`,
+  membershipAccount: (userId: string) => `membership:account:${userId}`,
 
   rolesList: (orgId: string) => `org:roles:${orgId}`,
 

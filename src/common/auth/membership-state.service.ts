@@ -4,6 +4,8 @@ import { organizationMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { runInTenantTransaction } from "../tenant/run-in-tenant-transaction";
+import { CacheService } from "../cache/cache.service";
+import { CACHE_KEYS } from "../cache/cache-keys";
 
 export interface MembershipState {
   active: boolean;
@@ -11,35 +13,34 @@ export interface MembershipState {
   role: string;
 }
 
-interface CacheEntry {
-  value: MembershipState;
-  expiresAt: number;
-}
-
-const MEMBERSHIP_STATUS_TTL_MS = 15_000;
-const membershipStatusCache = new Map<string, CacheEntry>();
+const MEMBERSHIP_STATUS_TTL_SECONDS = 15;
 
 const UNKNOWN: MembershipState = { active: false, isOwner: false, role: "" };
 
-export function bustMembershipStatusCache(userId: string, orgId?: string): void {
-  membershipStatusCache.delete(`${userId}:account`);
+export async function bustMembershipStatusCache(
+  cache: CacheService,
+  userId: string,
+  orgId?: string,
+): Promise<void> {
+  await cache.invalidate(CACHE_KEYS.membershipAccount(userId));
   if (orgId) {
-    membershipStatusCache.delete(`${userId}:${orgId}`);
+    await cache.invalidate(CACHE_KEYS.membershipStatus(userId, orgId));
     return;
   }
-  for (const key of Array.from(membershipStatusCache.keys())) {
-    if (key.startsWith(`${userId}:`)) membershipStatusCache.delete(key);
-  }
+  await cache.invalidatePattern(CACHE_KEYS.membershipStatusPattern(userId));
 }
 
 @Injectable()
 export class MembershipStateService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly cache: CacheService,
+  ) {}
 
   async resolve(userId: string, orgId: string): Promise<MembershipState> {
-    const key = `${userId}:${orgId}`;
-    const cached = membershipStatusCache.get(key);
-    if (cached && cached.expiresAt > Date.now()) return cached.value;
+    const key = CACHE_KEYS.membershipStatus(userId, orgId);
+    const cached = await this.cache.get<MembershipState>(key);
+    if (cached) return cached;
 
     let state = UNKNOWN;
     try {
@@ -81,17 +82,14 @@ export class MembershipStateService {
       state = UNKNOWN;
     }
 
-    membershipStatusCache.set(key, {
-      value: state,
-      expiresAt: Date.now() + MEMBERSHIP_STATUS_TTL_MS,
-    });
+    await this.cache.set(key, state, MEMBERSHIP_STATUS_TTL_SECONDS);
     return state;
   }
 
   async isAccountActive(userId: string): Promise<boolean> {
-    const key = `${userId}:account`;
-    const cached = membershipStatusCache.get(key);
-    if (cached && cached.expiresAt > Date.now()) return cached.value.active;
+    const key = CACHE_KEYS.membershipAccount(userId);
+    const cached = await this.cache.get<MembershipState>(key);
+    if (cached) return cached.active;
 
     let active = false;
     try {
@@ -106,10 +104,11 @@ export class MembershipStateService {
       active = false;
     }
 
-    membershipStatusCache.set(key, {
-      value: { ...UNKNOWN, active },
-      expiresAt: Date.now() + MEMBERSHIP_STATUS_TTL_MS,
-    });
+    await this.cache.set(
+      key,
+      { ...UNKNOWN, active },
+      MEMBERSHIP_STATUS_TTL_SECONDS,
+    );
     return active;
   }
 }

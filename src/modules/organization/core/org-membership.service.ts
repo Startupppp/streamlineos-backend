@@ -16,7 +16,6 @@ import {
   roleAssignments,
   roles,
   orgUnitMembers,
-  orgUnits,
   organizationMembers,
   userApiTokens,
   users,
@@ -69,7 +68,7 @@ export class OrgMembershipService {
     orgId: string,
     memberUserId: string,
   ): Promise<void> {
-    bustMembershipStatusCache(memberUserId, orgId);
+    await bustMembershipStatusCache(this.cache, memberUserId, orgId);
     const now = new Date();
     await this.db
       .update(agentTokens)
@@ -269,15 +268,14 @@ export class OrgMembershipService {
             ),
           );
 
-        await tx.delete(orgUnitMembers).where(
-          and(
-            eq(orgUnitMembers.userId, memberUserId),
-            inArray(
-              orgUnitMembers.orgUnitId,
-              tx.select({ id: orgUnits.id }).from(orgUnits).where(eq(orgUnits.orgId, orgId)),
+        await tx
+          .delete(orgUnitMembers)
+          .where(
+            and(
+              eq(orgUnitMembers.userId, memberUserId),
+              eq(orgUnitMembers.orgId, orgId),
             ),
-          ),
-        );
+          );
 
         await bumpPermissionsVersion(tx, orgId);
       });
@@ -395,7 +393,7 @@ export class OrgMembershipService {
       await this.revokeMemberAccess(orgId, memberUserId);
     } else {
       await this.cache.invalidate(CACHE_KEYS.userSession(memberUserId));
-      bustMembershipStatusCache(memberUserId, orgId);
+      await bustMembershipStatusCache(this.cache, memberUserId, orgId);
     }
     await this.invalidateMemberListCaches(orgId);
 
@@ -487,6 +485,7 @@ export class OrgMembershipService {
     await Promise.all([
       this.invalidateMemberListCaches(orgId),
       this.cache.invalidate(CACHE_KEYS.orgProfile(orgId, memberUserId)),
+      bustMembershipStatusCache(this.cache, memberUserId, orgId),
     ]);
 
     this.audit.log({
@@ -537,6 +536,18 @@ export class OrgMembershipService {
               eq(organizationMembers.userId, userId),
             ),
           );
+
+        await tx
+          .delete(orgUnitMembers)
+          .where(
+            and(
+              eq(orgUnitMembers.userId, userId),
+              eq(orgUnitMembers.orgId, orgId),
+            ),
+          );
+
+        await bumpPermissionsVersion(tx, orgId);
+
         const [remaining] = await tx
           .select({ orgId: organizationMembers.orgId })
           .from(organizationMembers)

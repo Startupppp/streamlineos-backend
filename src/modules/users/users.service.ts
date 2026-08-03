@@ -558,7 +558,7 @@ export class UsersService {
       .set({ isActive: false, userStatus: "deleted", deletedAt: new Date() })
       .where(eq(users.id, userId));
 
-    bustMembershipStatusCache(userId);
+    await bustMembershipStatusCache(this.cache, userId);
     await this.invalidateMembershipCaches(orgId);
 
     this.audit.log({
