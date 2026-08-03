@@ -13,8 +13,20 @@ import { validateEnv } from "./config/env.validation";
 import { AllExceptionsFilter } from "./common/http/all-exceptions.filter";
 import { correlationIdMiddleware } from "./common/http/correlation-id.middleware";
 import { ResponseTransformInterceptor } from "./common/interceptors/response-transform.interceptor";
+import { logger } from "./common/logger/logger.service";
 
 setDefaultResultOrder("ipv4first");
+
+function describeError(error: unknown): string {
+  if (error instanceof Error) return error.stack ?? error.message;
+  return String(error);
+}
+
+process.on("unhandledRejection", (reason: unknown) => {
+  logger.error("Unhandled promise rejection — process kept alive", {
+    error: describeError(reason),
+  });
+});
 
 async function bootstrap(): Promise<void> {
   const config = validateEnv();
@@ -69,4 +81,7 @@ async function bootstrap(): Promise<void> {
   await app.listen(config.PORT);
 }
 
-void bootstrap();
+bootstrap().catch((error: unknown) => {
+  logger.error("Fatal: application bootstrap failed", { error: describeError(error) });
+  process.exit(1);
+});
