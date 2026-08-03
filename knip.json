@@ -15,6 +15,13 @@
     "eslint.config.mjs"
   ],
   "project": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.mjs", "evals/**/*.ts"],
-  "ignore": ["migrations/**", "dist/**", "src/@types/**"],
+  "ignore": [
+    "migrations/**",
+    "dist/**",
+    "src/@types/**",
+    "src/common/validation/validate.decorator.ts",
+    "src/modules/rbac/permissions/**"
+  ],
+  "ignoreDependencies": ["multer", "@types/multer"],
   "ignoreExportsUsedInFile": true
 }

@@ -383,7 +383,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
           columns: { userId: true },
         });
         if (!member)
-          throw new NotFoundException("User is not a member of this workspace");
+          throw new NotFoundException("User is not a member of this organization");
 
         await tx
           .insert(userModuleAccess)
