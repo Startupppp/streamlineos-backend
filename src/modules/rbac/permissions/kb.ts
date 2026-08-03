@@ -1,0 +1,138 @@
+import type { Permission } from "./types";
+
+export const KB_PERMISSIONS: Permission[] = [
+  {
+    name: "kb:articles:view",
+    resource: "kb:articles",
+    action: "view",
+    description: "View knowledge base articles",
+    scopable: true,
+  },
+  {
+    name: "kb:articles:create",
+    resource: "kb:articles",
+    action: "create",
+    description: "Create knowledge base articles",
+  },
+  {
+    name: "kb:articles:update",
+    resource: "kb:articles",
+    action: "update",
+    description: "Update knowledge base articles",
+  },
+  {
+    name: "kb:articles:delete",
+    resource: "kb:articles",
+    action: "delete",
+    description: "Delete knowledge base articles",
+  },
+  {
+    name: "kb:articles:manage",
+    resource: "kb:articles",
+    action: "manage",
+    description: "Manage knowledge base articles",
+  },
+  {
+    name: "kb:categories:manage",
+    resource: "kb:categories",
+    action: "manage",
+    description: "Manage knowledge base categories",
+  },
+  {
+    name: "kb:spaces:view",
+    resource: "kb:spaces",
+    action: "view",
+    description: "View knowledge base spaces",
+    scopable: true,
+  },
+  {
+    name: "kb:spaces:manage",
+    resource: "kb:spaces",
+    action: "manage",
+    description: "Manage knowledge base spaces",
+  },
+  {
+    name: "kb:analytics:view",
+    resource: "kb:analytics",
+    action: "view",
+    description: "View knowledge base analytics",
+  },
+  {
+    name: "kb:ai:generate",
+    resource: "kb:ai",
+    action: "generate",
+    description: "Generate AI answers from the knowledge base",
+  },
+  {
+    name: "kb:pages:view",
+    resource: "kb:pages",
+    action: "view",
+    description: "View wiki pages",
+  },
+  {
+    name: "kb:pages:create",
+    resource: "kb:pages",
+    action: "create",
+    description: "Create wiki pages",
+  },
+  {
+    name: "kb:pages:update",
+    resource: "kb:pages",
+    action: "update",
+    description: "Update wiki pages",
+  },
+  {
+    name: "kb:pages:delete",
+    resource: "kb:pages",
+    action: "delete",
+    description: "Delete wiki pages (soft-delete subtree)",
+  },
+  {
+    name: "kb:pages:purge",
+    resource: "kb:pages",
+    action: "purge",
+    description: "Permanently delete wiki pages and empty the trash",
+  },
+  {
+    name: "kb:pages:manage",
+    resource: "kb:pages",
+    action: "manage",
+    description: "Lock/unlock pages and manage wiki workspace",
+  },
+  {
+    name: "kb:templates:manage",
+    resource: "kb:templates",
+    action: "manage",
+    description: "Create and delete wiki page templates",
+  },
+  {
+    name: "kb:reviews:view",
+    resource: "kb:reviews",
+    action: "view",
+    description: "View page review requests",
+  },
+  {
+    name: "kb:reviews:manage",
+    resource: "kb:reviews",
+    action: "manage",
+    description: "Create, approve, and reject page review requests",
+  },
+  {
+    name: "kb:pages:import",
+    resource: "kb:pages",
+    action: "import",
+    description: "Import pages from markdown, html, or zip",
+  },
+  {
+    name: "kb:pages:export",
+    resource: "kb:pages",
+    action: "export",
+    description: "Export pages to markdown or html",
+  },
+  {
+    name: "kb:settings:manage",
+    resource: "kb:settings",
+    action: "manage",
+    description: "Manage knowledge base settings",
+  },
+];

@@ -1,6 +1,6 @@
-import { pgTable, pgEnum, text, serial, integer, jsonb, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, serial, integer, jsonb, timestamp, index, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations } from "../auth";
+import { organizations, users } from "../common/auth";
 import { clientAccounts } from "./contacts";
 
 export const clientHealthStatusEnum = pgEnum("client_health_status", ["healthy", "at_risk", "critical"]);
@@ -31,11 +31,12 @@ export const healthScoreConfig = pgTable("health_score_config", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull().unique(),
   weights: jsonb("weights").$type<HealthScoreWeights>().notNull(),
   thresholds: jsonb("thresholds").$type<HealthScoreThresholds>().notNull(),
-  updatedBy: text("updated_by"),
+  updatedBy: text("updated_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_health_score_config_org").on(table.orgId),
+  unique("uniq_health_score_config_org_id").on(table.orgId, table.id),
 ]);
 
 export const clientHealthScores = pgTable("client_health_scores", {
@@ -49,6 +50,7 @@ export const clientHealthScores = pgTable("client_health_scores", {
 }, (table) => [
   index("idx_client_health_scores_account").on(table.orgId, table.clientAccountId),
   index("idx_client_health_scores_computed").on(table.orgId, table.computedAt),
+  unique("uniq_client_health_scores_org_id").on(table.orgId, table.id),
 ]);
 
 export const healthScoreConfigRelations = relations(healthScoreConfig, ({ one }) => ({

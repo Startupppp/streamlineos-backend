@@ -17,10 +17,10 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
-import { compareDecimals, formatDecimal } from "../accounting/money.util";
+import { compareDecimals, formatDecimal } from "../accounting/core/money.util";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
-import { FinancePostingService } from "../accounting/finance-posting.service";
-import type { PostJournalLine } from "../accounting/finance-posting.types";
+import { FinancePostingService } from "../accounting/core/finance-posting.service";
+import type { PostJournalLine } from "../accounting/core/finance-posting.types";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
 function normalizeMerchant(merchant: string | null | undefined): string {
@@ -269,7 +269,7 @@ export class ExpenseLifecycleService {
     });
 
     if (openApprovalRequest) {
-      if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      if (!u.isOrgOwner) {
         throw new BadRequestException("This expense requires a pending approval to be granted first");
       }
       await this.db

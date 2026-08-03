@@ -11,7 +11,7 @@ function headerString(value: string | string[] | undefined): string | undefined 
   return value;
 }
 
-@Controller("hr/sessions")
+@Controller("sessions")
 @UseGuards(JwtAuthGuard)
 export class SessionsController {
   constructor(private readonly sessions: SessionsService) {}

@@ -54,6 +54,7 @@ import {
   type UpdateClientStatusInput,
 } from "./dto/clients.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { Deprecated } from "../../common/deprecation/deprecated.decorator";
 
 @RequireModule("crm")
 @Controller("clients")
@@ -67,6 +68,7 @@ export class ClientsController {
     private readonly access: AccessService,
   ) {}
 
+  @Deprecated({ sunset: "2026-10-25", link: "/crm/organizations" })
   @Get()
   @RequirePermission("crm:clients:read")
   async listAccounts(
@@ -77,6 +79,7 @@ export class ClientsController {
     return this.accounts.getClientAccounts(u.orgId, scope, u.userId, query);
   }
 
+  @Deprecated({ sunset: "2026-10-25", link: "/crm/organizations" })
   @Get("list")
   @RequirePermission("crm:clients:read")
   async listClients(@CurrentUser() u: CurrentUserContext) {
@@ -245,6 +248,7 @@ export class ClientsController {
     return this.onboarding.createTemplate(u.orgId, u.userId, body);
   }
 
+  @Deprecated({ sunset: "2026-10-25", link: "/crm/organizations/:organizationId" })
   @Get(":clientId")
   @RequirePermission("crm:clients:read")
   async getClientAccount(
@@ -261,6 +265,7 @@ export class ClientsController {
     return account;
   }
 
+  @Deprecated({ sunset: "2026-10-25", link: "/crm/organizations/:organizationId" })
   @Patch(":clientId")
   @RequirePermission("crm:clients:update")
   async updateClientStatus(
@@ -273,6 +278,7 @@ export class ClientsController {
     return updated;
   }
 
+  @Deprecated({ sunset: "2026-10-25", link: "/crm/organizations/:organizationId/timeline" })
   @Get(":clientId/activities")
   @RequirePermission("crm:clients:read")
   getClientActivities(
@@ -295,6 +301,7 @@ export class ClientsController {
     return activity;
   }
 
+  @Deprecated({ sunset: "2026-10-25", link: "/crm/organizations/:organizationId/timeline" })
   @Get(":clientId/timeline")
   @RequirePermission("crm:clients:read")
   async getClientTimeline(

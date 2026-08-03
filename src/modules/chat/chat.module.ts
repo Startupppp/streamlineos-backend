@@ -1,5 +1,5 @@
 import { Module } from "@nestjs/common";
-import { BillingModule } from "../billing/billing.module";
+import { BillingModule } from "../billing/core/billing.module";
 import { ChatActionsController } from "./chat-actions.controller";
 import { ChatChannelsController } from "./chat-channels.controller";
 import { ChatMessagesController } from "./chat-messages.controller";
@@ -13,6 +13,7 @@ import { ChatInviteLinksController } from "./chat-invite-links.controller";
 import { ChatOrgSettingsController } from "./chat-org-settings.controller";
 import { ChatSummarizeController } from "./chat-summarize.controller";
 import { ChatChannelsService } from "./chat-channels.service";
+import { ChatChannelMembersService } from "./chat-channel-members.service";
 import { ChatMessagesService } from "./chat-messages.service";
 import { ChatPresenceService } from "./chat-presence.service";
 import { ChatTypingService } from "./chat-typing.service";
@@ -32,6 +33,7 @@ import { RealtimeModule } from "../realtime/realtime.module";
   controllers: [ChatActionsController, ChatChannelsController, ChatMessagesController, ChatPresenceController, ChatPinsController, ChatHuddlesController, ChatSearchController, ChatSavedController, ChatLinkPreviewController, ChatInviteLinksController, ChatOrgSettingsController, ChatSummarizeController],
   providers: [
     ChatChannelsService,
+    ChatChannelMembersService,
     ChatMessagesService,
     ChatPresenceService,
     ChatTypingService,

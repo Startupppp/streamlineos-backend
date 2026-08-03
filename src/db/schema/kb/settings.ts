@@ -1,6 +1,6 @@
-import { pgTable, serial, text, integer, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, timestamp, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 
 export const kbSettings = pgTable(
   "kb_settings",
@@ -13,6 +13,7 @@ export const kbSettings = pgTable(
   },
   (table) => [
     uniqueIndex("uniq_kb_settings_org").on(table.orgId),
+    unique("uniq_kb_settings_org_id").on(table.orgId, table.id),
   ],
 );
 

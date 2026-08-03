@@ -3,7 +3,7 @@ import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { AutomationService } from "./automation.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { AutomationEmailService } from "./automation-email.service";
-import { PlanLimitsService } from "../billing/plan-limits.service";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { AiNodeExecutorService } from "./ai-workflow-nodes/ai-node-executor.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 
@@ -12,6 +12,11 @@ const mockDb = {
     automationRules: { findMany: jest.fn(), findFirst: jest.fn() },
     automationRuns: { findMany: jest.fn() },
   },
+  select: jest.fn().mockReturnValue({
+    from: jest.fn().mockReturnValue({
+      where: jest.fn().mockResolvedValue([{ total: 0 }]),
+    }),
+  }),
   insert: jest.fn().mockReturnThis(),
   values: jest.fn().mockReturnThis(),
   onConflictDoNothing: jest.fn().mockResolvedValue(undefined),

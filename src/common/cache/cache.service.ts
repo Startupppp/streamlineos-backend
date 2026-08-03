@@ -24,6 +24,15 @@ export class CacheService {
     return data;
   }
 
+  async get<T>(key: string): Promise<T | null> {
+    if (!this.redis) return null;
+    try {
+      return await this.redis.get<T>(key);
+    } catch {
+      return null;
+    }
+  }
+
   async set(key: string, value: unknown, ttlSeconds: number): Promise<void> {
     if (!this.redis) return;
     try {

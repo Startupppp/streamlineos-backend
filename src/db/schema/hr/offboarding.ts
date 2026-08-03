@@ -1,11 +1,11 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, unique, uniqueIndex, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
   resignationStatusEnum, terminationStatusEnum, exitChecklistStatusEnum,
   onboardingDocumentStatusEnum, docAuditActionEnum,
-} from "../enums";
-import { organizations, users } from "../auth";
-import { orgDepartments } from "../organization";
+} from "../common/enums";
+import { organizations, users } from "../common/auth";
+import { orgUnits } from "../common/organization";
 import { candidates } from "./hiring";
 
 export const documentTemplates = pgTable("document_templates", {
@@ -22,6 +22,7 @@ export const documentTemplates = pgTable("document_templates", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_document_templates_org_id").on(table.orgId, table.id),
   index("idx_doc_templates_org").on(table.orgId, table.type),
 ]);
 
@@ -43,6 +44,7 @@ export const candidateDocuments = pgTable("candidate_documents", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_candidate_documents_org_id").on(table.orgId, table.id),
   index("idx_candidate_docs_candidate").on(table.candidateId),
   index("idx_candidate_docs_external").on(table.externalDocId),
 ]);
@@ -59,6 +61,7 @@ export const documentTemplateVersions = pgTable("document_template_versions", {
   archivedAt: timestamp("archived_at").defaultNow().notNull(),
   archivedBy: text("archived_by").notNull().references(() => users.id),
 }, (table) => [
+  unique("uniq_document_template_versions_org_id").on(table.orgId, table.id),
   index("idx_dtv_template_id").on(table.templateId),
 ]);
 
@@ -66,13 +69,14 @@ export const onboardingTemplates = pgTable("onboarding_templates", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),
-  departmentId: text("department_id").references(() => orgDepartments.id, { onDelete: "set null" }),
+  departmentId: text("department_id").references(() => orgUnits.id, { onDelete: "set null" }),
   description: text("description"),
   isActive: boolean("is_active").notNull().default(true),
   createdBy: text("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_onboarding_templates_org_id").on(table.orgId, table.id),
   index("idx_onboarding_templates_org").on(table.orgId),
 ]);
 
@@ -103,6 +107,7 @@ export const onboardingTasks = pgTable("onboarding_tasks", {
   dependsOnTaskIds: jsonb("depends_on_task_ids").$type<number[]>().default([]),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_onboarding_tasks_org_id").on(table.orgId, table.id),
   index("idx_onboarding_tasks_user").on(table.userId, table.orgId),
   index("idx_onboarding_tasks_status").on(table.orgId, table.status),
 ]);
@@ -117,12 +122,28 @@ export const documentTypes = pgTable("document_types", {
   isMandatory: boolean("is_mandatory").default(true).notNull(),
   isActive: boolean("is_active").default(true).notNull(),
   sortOrder: integer("sort_order").default(0).notNull(),
-  applicableRoles: text("applicable_roles").array().default([]),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_document_types_org_id").on(table.orgId, table.id),
   index("idx_doc_types_org").on(table.orgId),
   index("idx_doc_types_org_country").on(table.orgId, table.countryCode),
+]);
+
+export const documentTypeRoles = pgTable("document_type_roles", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  documentTypeId: integer("document_type_id").notNull(),
+  roleSlug: text("role_slug").notNull(),
+}, (table) => [
+  uniqueIndex("uniq_document_type_roles_type_slug").on(table.documentTypeId, table.roleSlug),
+  index("idx_document_type_roles_org").on(table.orgId),
+  index("idx_document_type_roles_type").on(table.documentTypeId),
+  foreignKey({
+    columns: [table.orgId, table.documentTypeId],
+    foreignColumns: [documentTypes.orgId, documentTypes.id],
+  }).onDelete("cascade"),
+  unique("uniq_document_type_roles_org_id").on(table.orgId, table.id),
 ]);
 
 export const onboardingDocuments = pgTable("onboarding_documents", {
@@ -142,6 +163,7 @@ export const onboardingDocuments = pgTable("onboarding_documents", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_onboarding_documents_org_id").on(table.orgId, table.id),
   index("idx_onboarding_docs_user").on(table.userId),
   index("idx_onboarding_docs_org").on(table.orgId),
 ]);
@@ -155,7 +177,9 @@ export const documentAuditLogs = pgTable("document_audit_logs", {
   remarks: text("remarks"),
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+  unique("uniq_document_audit_logs_org_id").on(table.orgId, table.id),
+]);
 
 export const resignations = pgTable("resignations", {
   id: serial("id").primaryKey(),
@@ -172,9 +196,9 @@ export const resignations = pgTable("resignations", {
   hrReviewedBy: text("hr_reviewed_by").references(() => users.id),
   hrReviewedAt: timestamp("hr_reviewed_at"),
   hrRemarks: text("hr_remarks"),
-  ceoReviewedBy: text("ceo_reviewed_by").references(() => users.id),
-  ceoReviewedAt: timestamp("ceo_reviewed_at"),
-  ceoRemarks: text("ceo_remarks"),
+  finalReviewedBy: text("final_reviewed_by").references(() => users.id),
+  finalReviewedAt: timestamp("final_reviewed_at"),
+  finalRemarks: text("final_remarks"),
   willingForExitInterview: boolean("willing_for_exit_interview").default(true).notNull(),
   companyFeedback: text("company_feedback"),
   exitInterviewNotes: text("exit_interview_notes"),
@@ -184,19 +208,28 @@ export const resignations = pgTable("resignations", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_resignations_org_id").on(table.orgId, table.id),
   index("idx_resignations_org").on(table.orgId),
   index("idx_resignations_user").on(table.userId),
 ]);
 
 export const exitChecklists = pgTable("exit_checklists", {
   id: serial("id").primaryKey(),
-  resignationId: integer("resignation_id").references(() => resignations.id, { onDelete: "cascade" }).notNull(),
+  orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  resignationId: integer("resignation_id").notNull(),
   item: text("item").notNull(),
   assignedTo: text("assigned_to").references(() => users.id),
   status: exitChecklistStatusEnum("status").default("PENDING").notNull(),
   completedAt: timestamp("completed_at"),
   notes: text("notes"),
-});
+}, (table) => [
+  unique("uniq_exit_checklists_org_id").on(table.orgId, table.id),
+  index("idx_exit_checklists_org_resignation").on(table.orgId, table.resignationId),
+  foreignKey({
+    columns: [table.orgId, table.resignationId],
+    foreignColumns: [resignations.orgId, resignations.id],
+  }).onDelete("cascade"),
+]);
 
 export const terminations = pgTable("terminations", {
   id: serial("id").primaryKey(),
@@ -212,14 +245,15 @@ export const terminations = pgTable("terminations", {
   internalNotes: text("internal_notes"),
   status: terminationStatusEnum("status").default("DRAFT").notNull(),
   initiatedBy: text("initiated_by").references(() => users.id),
-  ceoReviewedBy: text("ceo_reviewed_by").references(() => users.id),
-  ceoReviewedAt: timestamp("ceo_reviewed_at"),
-  ceoRemarks: text("ceo_remarks"),
+  finalReviewedBy: text("final_reviewed_by").references(() => users.id),
+  finalReviewedAt: timestamp("final_reviewed_at"),
+  finalRemarks: text("final_remarks"),
   emailSentAt: timestamp("email_sent_at"),
   emailStatus: text("email_status"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_terminations_org_id").on(table.orgId, table.id),
   index("idx_terminations_org").on(table.orgId),
   index("idx_terminations_user").on(table.userId),
   index("idx_terminations_status").on(table.status),
@@ -238,6 +272,7 @@ export const alumniProfiles = pgTable("alumni_profiles", {
   rehireEligibility: boolean("rehire_eligibility").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_alumni_profiles_org_id").on(table.orgId, table.id),
   index("idx_alumni_org").on(table.orgId),
 ]);
 
@@ -255,6 +290,7 @@ export const backgroundVerifications = pgTable("background_verifications", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_background_verifications_org_id").on(table.orgId, table.id),
   index("idx_bgv_user").on(table.userId),
 ]);
 
@@ -272,6 +308,7 @@ export const certifications = pgTable("certifications", {
   reminderSent: boolean("reminder_sent").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_certifications_org_id").on(table.orgId, table.id),
   index("idx_certifications_user").on(table.userId),
   index("idx_certifications_expiry").on(table.expiryDate),
 ]);
@@ -314,7 +351,7 @@ export const resignationsRelations = relations(resignations, ({ one, many }) => 
   user: one(users, { fields: [resignations.userId], references: [users.id] }),
   approver: one(users, { fields: [resignations.approvedBy], references: [users.id], relationName: "resignationApprover" }),
   hrReviewer: one(users, { fields: [resignations.hrReviewedBy], references: [users.id], relationName: "resignationHrReviewer" }),
-  ceoReviewer: one(users, { fields: [resignations.ceoReviewedBy], references: [users.id], relationName: "resignationCeoReviewer" }),
+  finalReviewer: one(users, { fields: [resignations.finalReviewedBy], references: [users.id], relationName: "resignationFinalReviewer" }),
   interviewer: one(users, { fields: [resignations.exitInterviewConductedBy], references: [users.id], relationName: "exitInterviewer" }),
   checklists: many(exitChecklists),
 }));
@@ -327,7 +364,7 @@ export const exitChecklistsRelations = relations(exitChecklists, ({ one }) => ({
 export const terminationsRelations = relations(terminations, ({ one }) => ({
   user: one(users, { fields: [terminations.userId], references: [users.id] }),
   initiator: one(users, { fields: [terminations.initiatedBy], references: [users.id], relationName: "terminationInitiator" }),
-  ceoReviewer: one(users, { fields: [terminations.ceoReviewedBy], references: [users.id], relationName: "terminationCeoReviewer" }),
+  finalReviewer: one(users, { fields: [terminations.finalReviewedBy], references: [users.id], relationName: "terminationFinalReviewer" }),
 }));
 
 export const alumniProfilesRelations = relations(alumniProfiles, ({ one }) => ({
@@ -340,4 +377,16 @@ export const backgroundVerificationsRelations = relations(backgroundVerification
 
 export const certificationsRelations = relations(certifications, ({ one }) => ({
   user: one(users, { fields: [certifications.userId], references: [users.id] }),
+}));
+
+export const documentTypesRelations = relations(documentTypes, ({ one, many }) => ({
+  organization: one(organizations, { fields: [documentTypes.orgId], references: [organizations.id] }),
+  roles: many(documentTypeRoles),
+}));
+
+export const documentTypeRolesRelations = relations(documentTypeRoles, ({ one }) => ({
+  documentType: one(documentTypes, {
+    fields: [documentTypeRoles.orgId, documentTypeRoles.documentTypeId],
+    references: [documentTypes.orgId, documentTypes.id],
+  }),
 }));

@@ -8,6 +8,7 @@ import {
   HttpException,
   HttpStatus,
   Inject,
+  Logger,
   NotFoundException,
   Param,
   Post,
@@ -28,7 +29,7 @@ import { FeedbucketAiService } from "./feedbucket-ai.service";
 import { StorageService } from "../storage/storage.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
-import { ProjectsTicketsService } from "../projects/projects-tickets.service";
+import { ProjectsTicketsService } from "../build/core/projects-tickets.service";
 import { validateMagicBytes } from "../storage/file-signatures";
 import { publicSubmitSchema, publicAiAssistSchema } from "./feedbucket.schemas";
 import {
@@ -38,6 +39,7 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 
 const ALLOWED_IMAGE_MIMES = new Set([
   "image/jpeg",
@@ -106,6 +108,7 @@ function parseMultipartField(raw: unknown, fieldName: string): unknown {
 @Public()
 @Controller("public/feedbucket")
 export class FeedbucketPublicController {
+  private readonly logger = new Logger(FeedbucketPublicController.name);
   constructor(
     private readonly publicService: FeedbucketPublicService,
     private readonly aiService: FeedbucketAiService,
@@ -238,55 +241,61 @@ export class FeedbucketPublicController {
     const screenshotUrl = screenshotUpload?.url;
     const recordingUrl = recordingUpload?.url;
 
-    const submissionId = await this.publicService.createSubmission(
-      widget,
-      dto,
-      screenshotUrl,
+    await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const submissionId = await this.publicService.createSubmission(
+          widget,
+          dto,
+          screenshotUrl,
+        );
+
+        if (screenshot && screenshotUpload)
+          await tx.insert(feedbucketAttachments).values({
+            submissionId,
+            orgId: widget.orgId,
+            fileUrl: screenshotUpload.url,
+            fileSize: screenshotUpload.size,
+            fileName: screenshot.originalname,
+            mimeType: screenshotUpload.mimeType,
+          });
+
+        if (recording && recordingUpload)
+          await tx.insert(feedbucketAttachments).values({
+            orgId: widget.orgId,
+            submissionId,
+            fileUrl: recordingUpload.url,
+            mimeType: recordingUpload.mimeType,
+            fileName: recording.originalname,
+            fileSize: recordingUpload.size,
+          });
+
+        if (widget.autoCreateTicket && widget.projectId)
+          void this.autoLinkTicket(widget, submissionId, dto.type, dto.message, {
+            screenshot,
+            screenshotUrl,
+            recordingUrl,
+          });
+
+        if (widget.createdBy) {
+          void this.notifications
+            .create({
+              orgId: widget.orgId,
+              userId: widget.createdBy,
+              type: "INFO",
+              category: "SYSTEM",
+              sourceModule: "feedbucket",
+              title: "New Feedback Received",
+              message: `New ${dto.type} feedback received via widget "${widget.name}"`,
+              link: widget.projectId
+                ? `/projects/${widget.projectId}/feedbucket/${submissionId}`
+                : `/projects/feedbucket`,
+            })
+            .catch(() => undefined);
+        }
+      },
+      { orgId: widget.orgId },
     );
-
-    if (screenshot && screenshotUpload)
-      await this.db.insert(feedbucketAttachments).values({
-        submissionId,
-        orgId: widget.orgId,
-        fileUrl: screenshotUpload.url,
-        fileSize: screenshotUpload.size,
-        fileName: screenshot.originalname,
-        mimeType: screenshotUpload.mimeType,
-      });
-
-    if (recording && recordingUpload)
-      await this.db.insert(feedbucketAttachments).values({
-        orgId: widget.orgId,
-        submissionId,
-        fileUrl: recordingUpload.url,
-        mimeType: recordingUpload.mimeType,
-        fileName: recording.originalname,
-        fileSize: recordingUpload.size,
-      });
-
-    if (widget.autoCreateTicket && widget.projectId)
-      void this.autoLinkTicket(widget, submissionId, dto.type, dto.message, {
-        screenshot,
-        screenshotUrl,
-        recordingUrl,
-      });
-
-    if (widget.createdBy) {
-      void this.notifications
-        .create({
-          orgId: widget.orgId,
-          userId: widget.createdBy,
-          type: "INFO",
-          category: "SYSTEM",
-          sourceModule: "feedbucket",
-          title: "New Feedback Received",
-          message: `New ${dto.type} feedback received via widget "${widget.name}"`,
-          link: widget.projectId
-            ? `/projects/${widget.projectId}/feedbucket/${submissionId}`
-            : `/projects/feedbucket`,
-        })
-        .catch(() => undefined);
-    }
 
     return { ok: true };
   }
@@ -365,16 +374,21 @@ export class FeedbucketPublicController {
 
     let result: { suggestedType: string; title: string; description: string };
     try {
-      result = await this.aiService.analyzePublic({
-        orgId: widget.orgId,
-        actorUserId,
-        widgetId: widget.id,
-        type: dto.type ?? "other",
-        message: dto.message ?? "",
-        pageUrl: dto.pageUrl,
-        screenshotBuffer: screenshot?.buffer ?? null,
-        networkLogs: dto.networkLogs,
-      });
+      result = await runInTenantTransaction(
+        this.db,
+        () =>
+          this.aiService.analyzePublic({
+            orgId: widget.orgId,
+            actorUserId,
+            widgetId: widget.id,
+            type: dto.type ?? "other",
+            message: dto.message ?? "",
+            pageUrl: dto.pageUrl,
+            screenshotBuffer: screenshot?.buffer ?? null,
+            networkLogs: dto.networkLogs,
+          }),
+        { orgId: widget.orgId },
+      );
     } catch (err) {
       if (
         err instanceof HttpException &&
@@ -452,6 +466,8 @@ export class FeedbucketPublicController {
             eq(feedbucketSubmissions.orgId, widget.orgId),
           ),
         );
-    } catch {}
+    } catch (err) {
+      this.logger.warn(`linkFeedbackToTicket failed for submission ${submissionId}: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 }

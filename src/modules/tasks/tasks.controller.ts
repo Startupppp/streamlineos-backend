@@ -41,7 +41,7 @@ import {
 } from "./dto/task.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 
-@RequireModule("projects")
+@RequireModule("build")
 @Controller("tasks")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class TasksController {

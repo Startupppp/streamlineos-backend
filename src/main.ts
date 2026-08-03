@@ -1,55 +1,71 @@
 import "reflect-metadata";
-import { setDefaultResultOrder } from "node:dns";
 import { NestFactory } from "@nestjs/core";
 import type { LogLevel } from "@nestjs/common";
+import { setDefaultResultOrder } from "node:dns";
 import type { NestExpressApplication } from "@nestjs/platform-express";
+
 import helmet from "helmet";
 import compression from "compression";
 import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
+
 import { AppModule } from "./app.module";
 import { validateEnv } from "./config/env.validation";
 import { AllExceptionsFilter } from "./common/http/all-exceptions.filter";
 import { correlationIdMiddleware } from "./common/http/correlation-id.middleware";
 import { ResponseTransformInterceptor } from "./common/interceptors/response-transform.interceptor";
+import { logger } from "./common/logger/logger.service";
 
 setDefaultResultOrder("ipv4first");
 
+function describeError(error: unknown): string {
+  if (error instanceof Error) return error.stack ?? error.message;
+  return String(error);
+}
+
+process.on("unhandledRejection", (reason: unknown) => {
+  logger.error("Unhandled promise rejection — process kept alive", {
+    error: describeError(reason),
+  });
+});
+
 async function bootstrap(): Promise<void> {
   const config = validateEnv();
-  const logLevels: LogLevel[] =
-    config.NODE_ENV === "development"
-      ? ["error", "warn", "log", "debug", "verbose"]
-      : ["fatal", "error", "warn"];
+
+  const isDevelopment = config.NODE_ENV === "development";
+
+  const productionLogLevels: LogLevel[] = ["fatal"];
+  const developmentLogLevels: LogLevel[] = ["log", "debug", "verbose"];
+
+  const logLevels: LogLevel[] = [
+    "warn",
+    "error",
+    ...(isDevelopment ? developmentLogLevels : productionLogLevels),
+  ];
+
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
-    bufferLogs: false,
     rawBody: true,
     bodyParser: false,
+    bufferLogs: false,
     logger: logLevels,
   });
-  app.useBodyParser("json", { limit: "3mb" });
-  app.useBodyParser("urlencoded", { extended: true, limit: "1mb" });
+
   app.use(helmet());
   app.use(compression());
+  app.enableShutdownHooks();
   app.use(correlationIdMiddleware);
-  const isLocalDevOrigin = (origin: string): boolean =>
-    /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(origin);
-  app.enableCors({
-    origin:
-      config.NODE_ENV === "development"
-        ? (origin, callback) => {
-            callback(
-              null,
-              !origin ||
-                isLocalDevOrigin(origin) ||
-                config.corsOrigins.includes(origin),
-            );
-          }
-        : config.corsOrigins,
-    credentials: true,
-  });
+  app.useBodyParser("json", { limit: "3mb" });
   app.useGlobalFilters(new AllExceptionsFilter());
   app.useGlobalInterceptors(new ResponseTransformInterceptor());
-  app.enableShutdownHooks();
+  app.useBodyParser("urlencoded", { extended: true, limit: "1mb" });
+
+  app.enableCors({
+    origin: isDevelopment
+      ? (origin, callback) => {
+          callback(null, !origin || config.corsOrigins.includes(origin));
+        }
+      : config.corsOrigins,
+    credentials: true,
+  });
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle("StreamlineOS API")
@@ -57,10 +73,15 @@ async function bootstrap(): Promise<void> {
     .setVersion("1.0")
     .addBearerAuth()
     .build();
+
   const document = SwaggerModule.createDocument(app, swaggerConfig);
+
   SwaggerModule.setup("api/docs", app, document);
 
   await app.listen(config.PORT);
 }
 
-void bootstrap();
+bootstrap().catch((error: unknown) => {
+  logger.error("Fatal: application bootstrap failed", { error: describeError(error) });
+  process.exit(1);
+});

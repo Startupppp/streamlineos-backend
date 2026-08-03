@@ -20,6 +20,8 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { AccessService } from "../access/access.service";
 import { KbPagesService } from "./kb-pages.service";
+import { KbPageVersionsService } from "./kb-page-versions.service";
+import { KbPageVisitsService } from "./kb-page-visits.service";
 import { KbPageTreeService } from "./kb-page-tree.service";
 import {
   createPageSchema,
@@ -46,6 +48,8 @@ import {
 export class KbPagesController {
   constructor(
     private readonly pages: KbPagesService,
+    private readonly versions: KbPageVersionsService,
+    private readonly visits: KbPageVisitsService,
     private readonly tree: KbPageTreeService,
     private readonly access: AccessService,
   ) {}
@@ -62,13 +66,13 @@ export class KbPagesController {
   @Get("pages/recent")
   @RequirePermission("kb:pages:view")
   async getRecent(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
-    return this.pages.getRecent(u);
+    return this.visits.getRecent(u);
   }
 
   @Get("pages/favorites")
   @RequirePermission("kb:pages:view")
   async getFavorites(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
-    return this.pages.getFavorites(u);
+    return this.visits.getFavorites(u);
   }
 
   @Get("pages/trash")
@@ -181,7 +185,7 @@ export class KbPagesController {
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.pages.addFavorite(u, pageId);
+    return this.visits.addFavorite(u, pageId);
   }
 
   @Delete("pages/:pageId/favorite")
@@ -190,7 +194,7 @@ export class KbPagesController {
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.pages.removeFavorite(u, pageId);
+    return this.visits.removeFavorite(u, pageId);
   }
 
   @Post("pages/:pageId/visit")
@@ -200,7 +204,7 @@ export class KbPagesController {
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.pages.recordVisit(u, pageId);
+    return this.visits.recordVisit(u, pageId);
   }
 
   @Get("pages/:pageId/backlinks")
@@ -209,7 +213,7 @@ export class KbPagesController {
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.pages.getBacklinks(u, pageId);
+    return this.visits.getBacklinks(u, pageId);
   }
 
   @Get("pages/:pageId/versions")
@@ -218,7 +222,7 @@ export class KbPagesController {
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.pages.listVersions(u, pageId);
+    return this.versions.listVersions(u, pageId);
   }
 
   @Get("pages/:pageId/versions/:versionNumber")
@@ -228,7 +232,7 @@ export class KbPagesController {
     @Param("versionNumber", ParseIntPipe) versionNumber: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.pages.getVersion(u, pageId, versionNumber);
+    return this.versions.getVersion(u, pageId, versionNumber);
   }
 
   @Post("pages/:pageId/versions/:versionNumber/restore")
@@ -240,7 +244,7 @@ export class KbPagesController {
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     const canManage = await this.resolveCanManage(u);
-    return this.pages.restoreVersion(u, pageId, versionNumber, canManage);
+    return this.versions.restoreVersion(u, pageId, versionNumber, canManage);
   }
 
   @Patch("pages/:pageId/lock")
@@ -316,7 +320,7 @@ export class KbPagesController {
   }
 
   private async resolveCanManage(u: CurrentUserContext): Promise<boolean> {
-    if (u.isOrgOwner || u.isPlatformAdmin) return true;
+    if (u.isOrgOwner) return true;
     const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
     return perms.has("kb:pages:manage");
   }

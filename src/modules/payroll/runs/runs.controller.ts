@@ -14,6 +14,8 @@ import {
   BadRequestException,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { ModuleGuard } from "../../../common/rbac/module.guard";
+import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
@@ -37,8 +39,9 @@ import {
   type AddRunAdjustmentInput,
 } from "./dto/runs.schemas";
 
+@RequireModule("payroll")
 @Controller("payroll/runs")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class RunsController {
   constructor(
     private readonly runsService: RunsService,
@@ -49,7 +52,7 @@ export class RunsController {
 
   @Post()
   @HttpCode(201)
-  @RequirePermission("payroll:runs:update")
+  @RequirePermission("payroll:runs:create")
   async create(
     @Body(new ZodValidationPipe(createRunSchema)) body: CreateRunInput,
     @CurrentUser() u: CurrentUserContext,

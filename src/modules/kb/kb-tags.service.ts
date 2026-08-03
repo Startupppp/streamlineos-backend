@@ -2,7 +2,7 @@ import { ConflictException, Inject, Injectable, NotFoundException } from "@nestj
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { kbArticles, kbArticleTags, kbTags } from "../../db/schema";
+import { kbArticleTags, kbTags } from "../../db/schema";
 import { kbSlugify } from "./kb.util";
 import type { CreateTagInput, SetArticleTagsInput } from "./dto/kb-tags.schemas";
 
@@ -78,11 +78,6 @@ export class KbTagsService {
               .where(and(eq(kbTags.orgId, orgId), inArray(kbTags.id, input.tagIds)))
               .orderBy(asc(kbTags.name))
           : [];
-
-      await tx
-        .update(kbArticles)
-        .set({ tags: resolvedTags.length > 0 ? resolvedTags.map((t) => t.name) : null })
-        .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)));
 
       return resolvedTags;
     });

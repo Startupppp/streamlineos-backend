@@ -10,7 +10,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { chatChannelMembers, chatMessages, users } from "../../db/schema";
-import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
+import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
 
 const SUMMARIZE_LIMIT = 50;
 

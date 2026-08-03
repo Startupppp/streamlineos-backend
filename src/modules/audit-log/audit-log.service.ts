@@ -3,11 +3,25 @@ import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { auditLogs, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { CacheService } from "../../common/cache/cache.service";
 import type { ListInput } from "./dto/audit-log.schemas";
+
+const AUDIT_DISTINCT_TTL_SECONDS = 300;
+
+function auditActionsKey(orgId: string): string {
+  return `audit:actions:${orgId}`;
+}
+
+function auditTargetTypesKey(orgId: string): string {
+  return `audit:target-types:${orgId}`;
+}
 
 @Injectable()
 export class AuditLogService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly cache: CacheService,
+  ) {}
 
   async list(orgId: string, filters: ListInput) {
     const { page, pageSize, action, targetType, dateFrom, dateTo } = filters;
@@ -60,25 +74,29 @@ export class AuditLogService {
     };
   }
 
-  async listActions(orgId: string) {
-    const rows = await this.db
-      .selectDistinct({ action: auditLogs.action })
-      .from(auditLogs)
-      .where(eq(auditLogs.orgId, orgId))
-      .orderBy(auditLogs.action);
-
-    return rows.map((r) => r.action);
+  async listActions(orgId: string): Promise<string[]> {
+    return this.cache.cached(auditActionsKey(orgId), async () => {
+      const rows = await this.db
+        .selectDistinct({ action: auditLogs.action })
+        .from(auditLogs)
+        .where(eq(auditLogs.orgId, orgId))
+        .orderBy(auditLogs.action);
+      return rows.map((r) => r.action);
+    }, AUDIT_DISTINCT_TTL_SECONDS);
   }
 
-  async listTargetTypes(orgId: string) {
-    const rows = await this.db
-      .selectDistinct({ targetType: auditLogs.targetType })
-      .from(auditLogs)
-      .where(eq(auditLogs.orgId, orgId))
-      .orderBy(auditLogs.targetType);
-
-    return rows
-      .filter((r) => r.targetType !== null)
-      .map((r) => r.targetType as string);
+  async listTargetTypes(orgId: string): Promise<string[]> {
+    return this.cache.cached(auditTargetTypesKey(orgId), async () => {
+      const rows = await this.db
+        .selectDistinct({ targetType: auditLogs.targetType })
+        .from(auditLogs)
+        .where(eq(auditLogs.orgId, orgId))
+        .orderBy(auditLogs.targetType);
+      const result: string[] = [];
+      for (const r of rows) {
+        if (r.targetType !== null) result.push(r.targetType);
+      }
+      return result;
+    }, AUDIT_DISTINCT_TTL_SECONDS);
   }
 }

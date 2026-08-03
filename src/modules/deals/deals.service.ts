@@ -1,22 +1,24 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, inArray, type SQL } from "drizzle-orm";
-import { applyScope } from "../access/apply-scope";
-import type { DataScope } from "../access/access.types";
-import { deals, dealActivities, dealApprovals, organizationMembers, chatChannels, chatChannelMembers, users } from "../../db/schema";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
+import { and, eq, inArray } from "drizzle-orm";
+import { deals, dealActivities, dealApprovals, chatChannels, chatChannelMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
-import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
+import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { EmailService } from "../email/email.service";
 import { AutomationService } from "../automation/automation.service";
 import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";
-import { CrmBlueprintsService } from "../crm-metadata/crm-blueprints.service";
-import { CrmMetadataService } from "../crm-metadata/crm-metadata.service";
-import { CrmValidationService } from "../crm-metadata/crm-validation.service";
-import { CrmAutomationBusService } from "../crm-automation-studio/crm-automation-bus.service";
-import { PlanLimitsService } from "../billing/plan-limits.service";
-import { toCsv } from "../inv-import-export/csv.util";
+import { CrmBlueprintsService } from "../crm/metadata/crm-blueprints.service";
+import { CrmMetadataService } from "../crm/metadata/crm-metadata.service";
+import { CrmValidationService } from "../crm/metadata/crm-validation.service";
+import { CrmAutomationBusService } from "../crm/automation-studio/crm-automation-bus.service";
+import { DealsCrudService } from "./deals-crud.service";
+import { DealsActivitiesService } from "./deals-activities.service";
+import { DealsImportExportService } from "./deals-import-export.service";
+import type { DataScope } from "../access/access.types";
 import type {
   BulkImportDealsInput,
   CreateDealInput,
@@ -46,8 +48,50 @@ export class DealsService {
     private readonly crmMetadata: CrmMetadataService,
     private readonly crmValidation: CrmValidationService,
     private readonly bus: CrmAutomationBusService,
-    private readonly planLimits: PlanLimitsService,
+    private readonly crud: DealsCrudService,
+    private readonly activities: DealsActivitiesService,
+    private readonly importExport: DealsImportExportService,
   ) {}
+
+  listDeals(orgId: string, userId: string, query: ListDealsInput, scope: DataScope) {
+    return this.crud.listDeals(orgId, userId, query, scope);
+  }
+
+  createDeal(orgId: string, userId: string, input: CreateDealInput) {
+    return this.crud.createDeal(orgId, userId, input);
+  }
+
+  getDeal(orgId: string, dealId: number) {
+    return this.crud.getDeal(orgId, dealId);
+  }
+
+  deleteDeal(orgId: string, userId: string, dealId: number) {
+    return this.crud.deleteDeal(orgId, userId, dealId);
+  }
+
+  cloneDeal(orgId: string, dealId: number) {
+    return this.crud.cloneDeal(orgId, dealId);
+  }
+
+  listActivities(orgId: string, dealId: number) {
+    return this.activities.listActivities(orgId, dealId);
+  }
+
+  addActivity(orgId: string, userId: string, dealId: number, input: LogActivityInput) {
+    return this.activities.addActivity(orgId, userId, dealId, input);
+  }
+
+  updateCustomData(orgId: string, dealId: number, input: PatchCustomDataInput) {
+    return this.activities.updateCustomData(orgId, dealId, input);
+  }
+
+  bulkImport(orgId: string, userId: string, input: BulkImportDealsInput) {
+    return this.importExport.bulkImport(orgId, userId, input);
+  }
+
+  exportCsv(orgId: string) {
+    return this.importExport.exportCsv(orgId);
+  }
 
   private async resolvePipelineStageMap(orgId: string, pipelineId: string | null): Promise<Map<string, { stageType: string; isTerminal: boolean; probability: number }>> {
     const metadata = await this.crmMetadata.getAggregate(orgId);
@@ -133,103 +177,11 @@ export class DealsService {
     );
   }
 
-  listDeals(orgId: string, userId: string, query: ListDealsInput, scope: DataScope) {
-    const hash = Buffer.from(JSON.stringify({ ...query, userId, scope })).toString("base64");
-    return this.cache.cached(
-      CACHE_KEYS.dealsList(orgId, hash),
-      () => {
-        const conditions: SQL[] = [
-          eq(deals.orgId, orgId),
-          applyScope(scope, userId, { ownerColumn: deals.assignedToId }),
-        ];
-        if (query.stage) conditions.push(eq(deals.stage, query.stage));
-        if (query.assignedToId) conditions.push(eq(deals.assignedToId, query.assignedToId));
-
-        return this.db.query.deals.findMany({
-          where: and(...conditions),
-          with: {
-            assignedTo: { columns: { id: true, name: true, image: true } },
-            lead: { columns: { id: true, name: true } },
-            client: { columns: { id: true, name: true } },
-          },
-          orderBy: [desc(deals.updatedAt)],
-          limit: query.limit ?? 50,
-          offset: query.offset ?? 0,
-        });
-      },
-      CACHE_TTL.SHORT,
-    );
-  }
-
-  async createDeal(orgId: string, userId: string, input: CreateDealInput) {
-    await this.planLimits.assertWithinLimit(orgId, "crmDeals");
-
-    if (input.assignedToId && input.assignedToId !== userId) {
-      const member = await this.db.query.organizationMembers.findFirst({
-        where: and(eq(organizationMembers.userId, input.assignedToId), eq(organizationMembers.orgId, orgId)),
-        columns: { userId: true },
-      });
-      if (!member) throw new BadRequestException("Assigned user is not a member of this organization");
-    }
-
-    const validationRecord: Record<string, unknown> = {
-      name: input.name,
-      value: input.value ?? null,
-      stage: input.stage ?? null,
-      contactEmail: input.contactEmail ?? null,
-      contactPhone: input.contactPhone ?? null,
-    };
-    const validation = await this.crmValidation.evaluate(orgId, "deal", validationRecord, {
-      stageKey: input.stage ?? undefined,
-    });
-    if (!validation.valid) {
-      throw new BadRequestException(validation.errors.map((e) => e.message).join("; "));
-    }
-
-    const [deal] = await this.db
-      .insert(deals)
-      .values({
-        orgId,
-        name: input.name,
-        value: String(input.value ?? 0),
-        stage: input.stage,
-        probability: input.probability ?? 0,
-        contactPerson: input.contactPerson || null,
-        contactEmail: input.contactEmail || null,
-        contactPhone: input.contactPhone || null,
-        assignedToId: input.assignedToId || userId,
-        expectedCloseDate: input.expectedCloseDate || null,
-        notes: input.notes || null,
-        leadId: input.leadId || null,
-        clientId: input.clientId || null,
-      })
-      .returning();
-
-    await Promise.all([
-      this.cache.invalidate(CACHE_KEYS.dealsForecast(orgId)),
-      this.cache.invalidate(CACHE_KEYS.salesDashboard(orgId)),
-      this.cache.invalidatePattern(`deals:list:${orgId}:*`),
-    ]);
-
-    if (deal) {
-      this.audit.log({
-        action: "deal.created",
-        userId,
-        orgId,
-        targetId: String(deal.id),
-        targetType: "deal",
-        metadata: { name: deal.name, stage: deal.stage, value: deal.value },
-      });
-      void this.bus.emit(orgId, "deal.created", { entityType: "deal", entityId: String(deal.id), data: { name: deal.name, stage: deal.stage, value: deal.value }, actorId: userId }).catch(() => undefined);
-    }
-
-    return deal;
-  }
-
   async updateDeal(orgId: string, userId: string, dealId: number, input: UpdateDealInput): Promise<UpdateDealOutcome> {
     const updateData: Partial<typeof deals.$inferInsert> = { updatedAt: new Date() };
     let stageChanged = false;
     let previousStage: string | null = null;
+    let wonStageDetected = false;
 
     if (input.stage !== undefined) {
       const existing = await this.db.query.deals.findFirst({
@@ -276,6 +228,7 @@ export class DealsService {
       if (stageInfo?.stageType === "won") {
         updateData.actualCloseDate = new Date().toISOString().split("T")[0];
         updateData.probability = 100;
+        wonStageDetected = true;
       } else if (stageInfo?.stageType === "lost") {
         updateData.actualCloseDate = new Date().toISOString().split("T")[0];
         updateData.probability = 0;
@@ -322,11 +275,36 @@ export class DealsService {
     if (input.lostReason !== undefined) updateData.lostReason = input.lostReason;
     if (input.notes !== undefined) updateData.notes = input.notes;
 
-    const [updated] = await this.db
-      .update(deals)
-      .set(updateData)
-      .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId)))
-      .returning();
+    const updated = await this.db.transaction(async (tx) => {
+      const [row] = await (tx as Db)
+        .update(deals)
+        .set(updateData)
+        .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId)))
+        .returning();
+      if (!row) return undefined;
+
+      if (wonStageDetected && stageChanged) {
+        await OutboxWriter.emit(tx, {
+          eventId: randomUUID(),
+          organizationId: orgId,
+          aggregateType: "deal",
+          aggregateId: String(dealId),
+          aggregateVersion: row.updatedAt ? new Date(row.updatedAt).getTime() : Date.now(),
+          eventType: "deal.closed",
+          payload: {
+            dealId,
+            orgId,
+            dealName: row.name,
+            dealValue: row.value ?? "0",
+            closedAt: row.actualCloseDate ?? new Date().toISOString().split("T")[0],
+            actorUserId: userId,
+          },
+          occurredAt: new Date(),
+        });
+      }
+
+      return row;
+    });
 
     if (!updated) return { ok: false, reason: "not_found" };
 
@@ -381,241 +359,5 @@ export class DealsService {
     }
 
     return { ok: true, deal: updated, stageChanged, previousStage };
-  }
-
-  getDeal(orgId: string, dealId: number) {
-    return this.db.query.deals.findFirst({
-      where: and(eq(deals.id, dealId), eq(deals.orgId, orgId)),
-      with: {
-        assignedTo: { columns: { id: true, name: true, image: true } },
-        lead: { columns: { id: true, name: true, email: true, phone: true } },
-        client: { columns: { id: true, name: true } },
-      },
-    });
-  }
-
-  async deleteDeal(orgId: string, userId: string, dealId: number) {
-    await this.db.delete(deals).where(and(eq(deals.id, dealId), eq(deals.orgId, orgId)));
-
-    await Promise.all([
-      this.cache.invalidatePattern(`deals:list:${orgId}:*`),
-      this.cache.invalidate(CACHE_KEYS.dealsForecast(orgId)),
-    ]);
-
-    this.audit.log({
-      action: "deal.deleted",
-      userId,
-      orgId,
-      targetId: String(dealId),
-      targetType: "deal",
-    });
-
-    return { deleted: true };
-  }
-
-  async cloneDeal(orgId: string, dealId: number) {
-    await this.planLimits.assertWithinLimit(orgId, "crmDeals");
-
-    const existing = await this.db.query.deals.findFirst({
-      where: and(eq(deals.id, dealId), eq(deals.orgId, orgId)),
-    });
-    if (!existing) throw new NotFoundException("Deal not found");
-
-    const [cloned] = await this.db
-      .insert(deals)
-      .values({
-        orgId,
-        leadId: existing.leadId,
-        clientId: existing.clientId,
-        name: `${existing.name} (Copy)`,
-        value: existing.value ?? "0",
-        stage: "LEAD",
-        probability: existing.probability ?? 0,
-        contactPerson: existing.contactPerson,
-        contactEmail: existing.contactEmail,
-        contactPhone: existing.contactPhone,
-        assignedToId: existing.assignedToId,
-        notes: existing.notes,
-      })
-      .returning();
-
-    return cloned;
-  }
-
-  listActivities(orgId: string, dealId: number) {
-    return this.db
-      .select()
-      .from(dealActivities)
-      .where(and(eq(dealActivities.dealId, dealId), eq(dealActivities.orgId, orgId)))
-      .orderBy(desc(dealActivities.createdAt))
-      .limit(50);
-  }
-
-  async addActivity(orgId: string, userId: string, dealId: number, input: LogActivityInput) {
-    const [deal] = await this.db
-      .select({ id: deals.id })
-      .from(deals)
-      .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId)));
-    if (!deal) throw new NotFoundException("Deal not found");
-
-    const [activity] = await this.db
-      .insert(dealActivities)
-      .values({
-        orgId,
-        dealId,
-        type: input.type,
-        subject: input.subject ?? null,
-        notes: input.notes ?? null,
-        duration: input.duration ?? null,
-        previousValue: input.previousValue ?? null,
-        newValue: input.newValue ?? null,
-        userId,
-      })
-      .returning();
-
-    await this.db
-      .update(deals)
-      .set({ lastContactDate: new Date(), updatedAt: new Date() })
-      .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId)));
-
-    return activity;
-  }
-
-  async updateCustomData(orgId: string, dealId: number, input: PatchCustomDataInput) {
-    const [existing] = await this.db
-      .select({ id: deals.id })
-      .from(deals)
-      .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId)))
-      .limit(1);
-    if (!existing) throw new NotFoundException("Deal not found");
-
-    const [updated] = await this.db
-      .update(deals)
-      .set({ customData: input.customData, updatedAt: new Date() })
-      .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId)))
-      .returning();
-
-    return { customData: updated.customData };
-  }
-
-  async bulkImport(orgId: string, userId: string, input: BulkImportDealsInput) {
-    await this.planLimits.assertWithinLimit(orgId, "crmDeals", input.deals.length);
-
-    const ownerEmails = Array.from(
-      new Set(
-        input.deals
-          .map((d) => d.ownerEmail?.trim().toLowerCase())
-          .filter((e): e is string => !!e),
-      ),
-    );
-
-    const emailToUserId = new Map<string, string>();
-    if (ownerEmails.length > 0) {
-      // Load org members once and match case-insensitively (CSV emails vary in case).
-      const members = await this.db
-        .select({ userId: organizationMembers.userId, email: users.email })
-        .from(organizationMembers)
-        .innerJoin(users, eq(users.id, organizationMembers.userId))
-        .where(eq(organizationMembers.orgId, orgId));
-      for (const m of members) {
-        if (m.email) emailToUserId.set(m.email.toLowerCase(), m.userId);
-      }
-    }
-
-    let created = 0;
-    let failed = 0;
-
-    for (const row of input.deals) {
-      try {
-        const ownerEmail = row.ownerEmail?.trim().toLowerCase();
-        const assignedToId =
-          (ownerEmail ? emailToUserId.get(ownerEmail) : undefined) ?? userId;
-
-        const noteParts: string[] = [];
-        if (row.companyName?.trim()) noteParts.push(`Company: ${row.companyName.trim()}`);
-        if (row.description?.trim()) noteParts.push(row.description.trim());
-        const notes = noteParts.length > 0 ? noteParts.join("\n") : undefined;
-
-        const expectedCloseDate = row.expectedCloseDate?.trim() || undefined;
-        // Normalize loose date strings (YYYY-MM-DD preferred)
-        let closeDate: string | undefined;
-        if (expectedCloseDate) {
-          if (/^\d{4}-\d{2}-\d{2}$/.test(expectedCloseDate)) {
-            closeDate = expectedCloseDate;
-          } else {
-            const parsed = new Date(expectedCloseDate);
-            if (!Number.isNaN(parsed.getTime())) {
-              closeDate = parsed.toISOString().split("T")[0];
-            }
-          }
-        }
-
-        await this.createDeal(orgId, userId, {
-          name: row.name.trim(),
-          value: row.value,
-          stage: row.stage?.trim() || undefined,
-          contactEmail: row.contactEmail?.trim() || undefined,
-          assignedToId,
-          expectedCloseDate: closeDate,
-          notes,
-        });
-        created++;
-      } catch {
-        failed++;
-      }
-    }
-
-    return { created, failed };
-  }
-
-  async exportCsv(orgId: string): Promise<string> {
-    const rows = await this.db
-      .select({
-        id: deals.id,
-        name: deals.name,
-        value: deals.value,
-        stage: deals.stage,
-        probability: deals.probability,
-        contactEmail: deals.contactEmail,
-        contactPerson: deals.contactPerson,
-        expectedCloseDate: deals.expectedCloseDate,
-        notes: deals.notes,
-        assigneeName: users.name,
-        createdAt: deals.createdAt,
-      })
-      .from(deals)
-      .leftJoin(users, eq(deals.assignedToId, users.id))
-      .where(eq(deals.orgId, orgId))
-      .orderBy(desc(deals.updatedAt));
-
-    const headers = [
-      "id",
-      "name",
-      "value",
-      "stage",
-      "probability",
-      "contactEmail",
-      "contactPerson",
-      "expectedCloseDate",
-      "assignee",
-      "notes",
-      "createdAt",
-    ];
-    return toCsv(
-      headers,
-      rows.map((r) => ({
-        id: r.id,
-        name: r.name,
-        value: r.value ?? "0",
-        stage: r.stage,
-        probability: r.probability ?? 0,
-        contactEmail: r.contactEmail ?? "",
-        contactPerson: r.contactPerson ?? "",
-        expectedCloseDate: r.expectedCloseDate ?? "",
-        assignee: r.assigneeName ?? "",
-        notes: r.notes ?? "",
-        createdAt: r.createdAt?.toISOString() ?? "",
-      })),
-    );
   }
 }

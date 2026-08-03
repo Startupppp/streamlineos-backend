@@ -27,7 +27,6 @@ export const magicLinkVerifySchema = z.object({
 
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type VerifyEmailInput = z.infer<typeof verifyEmailSchema>;
-export type ResendVerificationInput = z.infer<typeof resendVerificationSchema>;
 export type MagicLinkRequestInput = z.infer<typeof magicLinkRequestSchema>;
 export type MagicLinkVerifyInput = z.infer<typeof magicLinkVerifySchema>;
 

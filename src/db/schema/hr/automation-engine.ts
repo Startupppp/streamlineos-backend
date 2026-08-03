@@ -8,17 +8,13 @@ import {
   integer,
   index,
   uniqueIndex,
-  pgEnum,
+  unique,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 
-export const hrAutomationRunStatusEnum = pgEnum("hr_automation_run_status", [
-  "success",
-  "partial",
-  "failed",
-  "skipped",
-]);
+export const HR_AUTOMATION_RUN_STATUSES = ["success", "partial", "failed", "skipped"] as const;
 
 export const hrAutomationRules = pgTable(
   "hr_automation_rules",
@@ -42,6 +38,7 @@ export const hrAutomationRules = pgTable(
     deletedAt: timestamp("deleted_at"),
   },
   (table) => [
+    unique("uniq_hr_automation_rules_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_hr_automation_rules_org_name").on(table.orgId, table.name),
     index("idx_hr_automation_rules_org_event").on(table.orgId, table.triggerEvent),
     index("idx_hr_automation_rules_org_enabled").on(table.orgId, table.isEnabled),
@@ -58,15 +55,16 @@ export const hrAutomationRuns = pgTable(
     ruleId: integer("rule_id").references(() => hrAutomationRules.id, { onDelete: "cascade" }).notNull(),
     triggerEvent: text("trigger_event").notNull(),
     eventPayload: jsonb("event_payload").$type<Record<string, unknown>>(),
-    status: hrAutomationRunStatusEnum("status").notNull(),
+    status: text("status").notNull(),
     actionResults: jsonb("action_results").$type<HrActionResult[]>(),
     error: text("error"),
     durationMs: integer("duration_ms"),
-    triggeredByRunId: integer("triggered_by_run_id"),
+    triggeredByRunId: integer("triggered_by_run_id").references((): AnyPgColumn => hrAutomationRuns.id, { onDelete: "set null" }),
     depth: integer("depth").notNull().default(0),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+    unique("uniq_hr_automation_runs_org_id").on(table.orgId, table.id),
     index("idx_hr_automation_runs_org_rule_created").on(table.orgId, table.ruleId, table.createdAt),
     index("idx_hr_automation_runs_org_status").on(table.orgId, table.status),
   ],

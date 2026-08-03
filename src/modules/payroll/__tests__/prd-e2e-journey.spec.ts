@@ -2,7 +2,6 @@
  * PRD §18.4 E2E scenarios — lightweight journey (no AppModule boot).
  * Full HTTP e2e OOMs under Nest AppModule; these encode the same contracts.
  */
-import { GoneException } from "@nestjs/common";
 import { canTransitionRun, PAYROLL_LOCKED_STATUSES } from "../payroll.types";
 import { calcStatutory } from "../runs/lib/statutory";
 import {
@@ -13,7 +12,6 @@ import {
   validateLabourCodeWageDefinition,
 } from "../runs/lib/statutory-registry";
 import { createRunSchema } from "../runs/dto/runs.schemas";
-import { BankTransfersService } from "../../hr-payroll/bank-transfers.service";
 import { PayrollJobsWorkerService } from "../jobs/payroll-jobs-worker.service";
 
 const rounding = { mode: "NEAREST" as const, precision: 0 as const };
@@ -117,12 +115,7 @@ describe("PRD E2E scenarios 1–12 (contract journey)", () => {
     expect(true).toBe(true);
   });
 
-  it("12. Legacy bank writes disabled; filings export-only labels", async () => {
-    const bank = new BankTransfersService({ insert: jest.fn() } as never);
-    await expect(
-      bank.create("o", "u", { month: "2026-07", totalAmount: 1, employeeCount: 1, entries: [] } as never),
-    ).rejects.toThrow(GoneException);
-
+  it("12. Filings are export-only labels", () => {
     const label = "Export prepared — external filing required";
     expect(label).toMatch(/external filing/i);
   });

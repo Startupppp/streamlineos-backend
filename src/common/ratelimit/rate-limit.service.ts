@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import { Redis } from "@upstash/redis";
 import { REDIS } from "../cache/cache.service";
 
@@ -52,6 +52,10 @@ const TIERS: Record<string, Tier> = {
   "ai:vision": { limit: 10, windowSecs: 60 },
   "ai:public-kb-ask": { limit: 10, windowSecs: 60 },
   "kb:ask": { limit: 20, windowSecs: 60 },
+  "module-access:ownership-transfer": { limit: 5, windowSecs: 3600 },
+  "module-access:group-mutate": { limit: 30, windowSecs: 60 },
+  "ownership:transfer": { limit: 5, windowSecs: 3600 },
+  "ownership:force-set": { limit: 10, windowSecs: 3600 },
 };
 
 const DEV_LIMIT_MULTIPLIER = process.env.NODE_ENV === "production" ? 1 : 10;
@@ -63,6 +67,7 @@ export interface RateLimitResult {
 
 @Injectable()
 export class RateLimitService {
+  private readonly logger = new Logger(RateLimitService.name);
   private readonly mem = new Map<string, number[]>();
   constructor(@Inject(REDIS) private readonly redis: Redis | null) {}
 
@@ -86,7 +91,9 @@ export class RateLimitService {
           return { allowed: false, retryAfterSecs: ttl };
         }
         return { allowed: true, retryAfterSecs: 0 };
-      } catch {}
+      } catch (err) {
+        this.logger.warn(`Redis rate-limit failed for ${tier}:${identifier}, falling back to in-memory: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
     const memKey = `${tier}:${identifier}`;
     const raw = this.mem.get(memKey);

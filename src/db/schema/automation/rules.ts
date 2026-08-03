@@ -1,8 +1,8 @@
-import { pgTable, pgEnum, text, serial, timestamp, boolean, jsonb, integer, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 
-export const automationTriggerEnum = pgEnum("automation_trigger", [
+export const AUTOMATION_TRIGGERS = [
   "lead.created",
   "lead.status_changed",
   "lead.assigned",
@@ -58,13 +58,11 @@ export const automationTriggerEnum = pgEnum("automation_trigger", [
   "sign.envelope.expired",
   "sign.recipient.completed",
   "sign.bulk_send.completed",
-]);
+] as const;
 
-export const automationRunStatusEnum = pgEnum("automation_run_status", [
-  "success",
-  "failed",
-  "skipped",
-]);
+export type AutomationTriggerEvent = (typeof AUTOMATION_TRIGGERS)[number];
+
+export const AUTOMATION_RUN_STATUSES = ["success", "failed", "skipped"] as const;
 
 export interface AutomationCondition {
   field: string;
@@ -92,7 +90,7 @@ export const automationRules = pgTable("automation_rules", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),
   description: text("description"),
-  triggerEvent: automationTriggerEnum("trigger_event").notNull(),
+  triggerEvent: text("trigger_event").notNull(),
   conditions: jsonb("conditions").$type<AutomationCondition[]>().default([]).notNull(),
   actions: jsonb("actions").$type<AutomationAction[]>().default([]).notNull(),
   isEnabled: boolean("is_enabled").default(true).notNull(),
@@ -103,6 +101,7 @@ export const automationRules = pgTable("automation_rules", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_automation_rules_org_trigger_enabled").on(table.orgId, table.triggerEvent, table.isEnabled),
+  unique("uniq_automation_rules_org_id").on(table.orgId, table.id),
 ]);
 
 export const automationRuns = pgTable("automation_runs", {
@@ -110,13 +109,14 @@ export const automationRuns = pgTable("automation_runs", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   ruleId: integer("rule_id").references(() => automationRules.id, { onDelete: "cascade" }).notNull(),
   triggerEvent: text("trigger_event").notNull(),
-  status: automationRunStatusEnum("status").notNull(),
+  status: text("status").notNull(),
   payload: jsonb("payload").$type<Record<string, unknown>>(),
   result: jsonb("result").$type<Record<string, unknown>>(),
   error: text("error"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_automation_runs_rule").on(table.ruleId),
+  unique("uniq_automation_runs_org_id").on(table.orgId, table.id),
 ]);
 
 export const automationRulesRelations = relations(automationRules, ({ one, many }) => ({

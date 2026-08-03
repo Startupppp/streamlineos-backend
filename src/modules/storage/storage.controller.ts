@@ -24,11 +24,39 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AuditService } from "../../common/audit/audit.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { documents, organizationMembers, onboardingDocuments, expenses, reimbursements, handbookVersions } from "../../db/schema";
+import {
+  documents,
+  organizationMembers,
+  onboardingDocuments,
+  expenses,
+  reimbursements,
+  handbookVersions,
+  payslipPublications,
+  candidateDocumentsVault,
+} from "../../db/schema";
 import { StorageService, type FileStreamResult } from "./storage.service";
 import { validateMagicBytes } from "./file-signatures";
 
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
+
+const SENSITIVE_KEY_PREFIXES = [
+  "payroll/",
+  "payslips/",
+  "hr-documents/",
+  "hr/",
+  "onboarding/",
+  "candidate-vault/",
+  "candidates/",
+  "esign/",
+  "e-sign/",
+  "signatures/",
+  "bank-batches/",
+];
+
+function isSensitiveKey(fileKey: string): boolean {
+  const normalized = fileKey.replace(/^\/+/, "").toLowerCase();
+  return SENSITIVE_KEY_PREFIXES.some((prefix) => normalized.startsWith(prefix));
+}
 
 const ALLOWED_UPLOAD_TYPES = [
   "image/jpeg",
@@ -126,7 +154,9 @@ export class StorageController {
     const orgId = member?.orgId ?? u.orgId;
 
     const fileOwnerOrgId = await this.resolveFileOwnerOrgId(fileKey);
-    if (fileOwnerOrgId !== null && fileOwnerOrgId !== orgId) {
+    if (fileOwnerOrgId !== null) {
+      if (fileOwnerOrgId !== orgId) throw new ForbiddenException("Access denied");
+    } else if (isSensitiveKey(fileKey)) {
       throw new ForbiddenException("Access denied");
     }
 
@@ -166,6 +196,13 @@ export class StorageController {
     });
     if (!member) throw new ForbiddenException("Forbidden");
 
+    if (isSensitiveKey(keyParam)) {
+      const fileOwnerOrgId = await this.resolveFileOwnerOrgId(keyParam);
+      if (fileOwnerOrgId !== (member.orgId ?? u.orgId)) {
+        throw new ForbiddenException("Access denied");
+      }
+    }
+
     const stream = await this.openStream(keyParam, "Not found");
     res.setHeader("Content-Type", stream.contentType || this.storage.getMimeType(keyParam));
     res.setHeader("Cache-Control", "public, max-age=86400, immutable");
@@ -173,23 +210,34 @@ export class StorageController {
   }
 
   /**
-   * The `documents` table doesn't track every file type — onboarding documents, expense/
-   * reimbursement receipts, and handbook attachments live in their own tables with no
-   * central registry. Storage keys aren't org-namespaced, so this is the only place cross-org
-   * ownership can be checked; silently skipping a table here reopens the isolation gap for
-   * that file type. Returns the owning orgId, or null if the key isn't tracked anywhere.
+   * Storage keys aren't org-namespaced, so this is the only place cross-org ownership can be
+   * checked. Omitting a table here means files of that type cannot be proven to belong to any
+   * org: callers treat an unresolved sensitive key as a denial, so a missing table locks its
+   * own file type out rather than exposing it. Returns the owning orgId, or null if untracked.
    */
   private async resolveFileOwnerOrgId(fileKey: string): Promise<string | null> {
     const like = `%${fileKey}%`;
-    const [doc, onboardingDoc, expense, reimbursement, handbookVersion] = await Promise.all([
-      this.db.query.documents.findFirst({ where: ilike(documents.fileUrl, like) }),
-      this.db.query.onboardingDocuments.findFirst({ where: ilike(onboardingDocuments.fileUrl, like) }),
-      this.db.query.expenses.findFirst({ where: ilike(expenses.receiptUrl, like) }),
-      this.db.query.reimbursements.findFirst({ where: ilike(reimbursements.receiptUrl, like) }),
-      this.db.query.handbookVersions.findFirst({ where: ilike(handbookVersions.documentUrl, like) }),
-    ]);
+    const [doc, onboardingDoc, expense, reimbursement, handbookVersion, payslip, vaultDoc] =
+      await Promise.all([
+        this.db.query.documents.findFirst({ where: ilike(documents.fileUrl, like) }),
+        this.db.query.onboardingDocuments.findFirst({ where: ilike(onboardingDocuments.fileUrl, like) }),
+        this.db.query.expenses.findFirst({ where: ilike(expenses.receiptUrl, like) }),
+        this.db.query.reimbursements.findFirst({ where: ilike(reimbursements.receiptUrl, like) }),
+        this.db.query.handbookVersions.findFirst({ where: ilike(handbookVersions.documentUrl, like) }),
+        this.db.query.payslipPublications.findFirst({ where: ilike(payslipPublications.pdfUrl, like) }),
+        this.db.query.candidateDocumentsVault.findFirst({
+          where: ilike(candidateDocumentsVault.fileUrl, like),
+        }),
+      ]);
     return (
-      doc?.orgId ?? onboardingDoc?.orgId ?? expense?.orgId ?? reimbursement?.orgId ?? handbookVersion?.orgId ?? null
+      doc?.orgId ??
+      onboardingDoc?.orgId ??
+      expense?.orgId ??
+      reimbursement?.orgId ??
+      handbookVersion?.orgId ??
+      payslip?.orgId ??
+      vaultDoc?.orgId ??
+      null
     );
   }
 

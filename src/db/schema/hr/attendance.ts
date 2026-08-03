@@ -1,7 +1,7 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { wfhRequestStatusEnum, ticketPriorityEnum, ticketStatusEnum, deviceStatusEnum } from "../enums";
-import { organizations, users } from "../auth";
+import { wfhRequestStatusEnum, ticketPriorityEnum, ticketStatusEnum, deviceStatusEnum } from "../common/enums";
+import { organizations, users } from "../common/auth";
 
 export const attendance = pgTable("attendance", {
   id: serial("id").primaryKey(),
@@ -20,6 +20,7 @@ export const attendance = pgTable("attendance", {
   locationVerified: boolean("location_verified").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_attendance_org_id").on(table.orgId, table.id),
   index("idx_attendance_org_date_status").on(table.orgId, table.date, table.status),
   index("idx_attendance_org_user_date").on(table.orgId, table.userId, table.date),
 ]);
@@ -34,7 +35,9 @@ export const holidays = pgTable("holidays", {
   notificationSent: boolean("notification_sent").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
-});
+}, (table) => [
+  unique("uniq_holidays_org_id").on(table.orgId, table.id),
+]);
 
 export const wfhRequests = pgTable("wfh_requests", {
   id: serial("id").primaryKey(),
@@ -48,7 +51,8 @@ export const wfhRequests = pgTable("wfh_requests", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  uniqueIndex("uniq_wfh_requests_user_date").on(table.userId, table.date),
+  unique("uniq_wfh_requests_org_id").on(table.orgId, table.id),
+  uniqueIndex("uniq_wfh_requests_org_user_date").on(table.orgId, table.userId, table.date),
   index("idx_wfh_requests_org_status").on(table.orgId, table.status),
   index("idx_wfh_requests_org_user_status").on(table.orgId, table.userId, table.status),
 ]);
@@ -70,6 +74,7 @@ export const helpdeskTickets = pgTable("helpdesk_tickets", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_helpdesk_tickets_org_id").on(table.orgId, table.id),
   index("idx_helpdesk_tickets_org_status").on(table.orgId, table.status),
   index("idx_helpdesk_tickets_org_user").on(table.orgId, table.userId),
   index("idx_helpdesk_tickets_org_assignee").on(table.orgId, table.assigneeId),
@@ -83,6 +88,7 @@ export const hrHelpdeskRouting = pgTable("hr_helpdesk_routing", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_hr_helpdesk_routing_org_id").on(table.orgId, table.id),
   index("idx_hr_helpdesk_routing_org").on(table.orgId),
   uniqueIndex("uniq_helpdesk_routing_org_category").on(table.orgId, table.category),
 ]);
@@ -95,6 +101,7 @@ export const hrHelpdeskComments = pgTable("hr_helpdesk_comments", {
   body: text("body").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_hr_helpdesk_comments_org_id").on(table.orgId, table.id),
   index("idx_hr_helpdesk_comments_ticket").on(table.ticketId),
 ]);
 
@@ -113,7 +120,10 @@ export const employeeDevices = pgTable("employee_devices", {
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
-});
+}, (table) => [
+  unique("uniq_employee_devices_org_id").on(table.orgId, table.id),
+  index("idx_employee_devices_org_user").on(table.orgId, table.userId),
+]);
 
 export const holidaysRelations = relations(holidays, ({ one }) => ({
   organization: one(organizations, { fields: [holidays.orgId], references: [organizations.id] }),

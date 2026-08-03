@@ -1,9 +1,12 @@
-import { pgTable, text, serial, timestamp, decimal, integer, boolean, date, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, decimal, integer, boolean, date, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { invShipmentStatusEnum, invPackageStatusEnum, invLoadStatusEnum } from "../enums";
-import { organizations, users } from "../auth";
+import { invShipmentStatusEnum, invPackageStatusEnum, invLoadStatusEnum } from "../common/enums";
+import { organizations, users } from "../common/auth";
 import { invProductVariants } from "./core";
 import { invWarehouses } from "./warehouses";
+import { invSalesOrders, invSoLines } from "./sales-orders";
+import { invLots, invSerialNumbers } from "./traceability";
+import { invStockTransfers } from "./stock";
 
 export const invCarriers = pgTable("inv_carriers", {
   id: serial("id").primaryKey(),
@@ -16,6 +19,7 @@ export const invCarriers = pgTable("inv_carriers", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_carriers_org_code").on(table.orgId, table.code),
+  unique("uniq_inv_carriers_org_id").on(table.orgId, table.id),
   index("idx_inv_carriers_org").on(table.orgId),
 ]);
 
@@ -23,7 +27,7 @@ export const invShipments = pgTable("inv_shipments", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   shipmentNumber: text("shipment_number").notNull(),
-  soId: integer("so_id"),
+  soId: integer("so_id").references(() => invSalesOrders.id, { onDelete: "set null" }),
   warehouseId: integer("warehouse_id").references(() => invWarehouses.id, { onDelete: "set null" }),
   carrierId: integer("carrier_id").references(() => invCarriers.id, { onDelete: "set null" }),
   trackingNumber: text("tracking_number"),
@@ -36,19 +40,21 @@ export const invShipments = pgTable("inv_shipments", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_shipments_org_number").on(table.orgId, table.shipmentNumber),
+  unique("uniq_inv_shipments_org_id").on(table.orgId, table.id),
   index("idx_inv_shipments_org_status").on(table.orgId, table.status),
 ]);
 
 export const invShipmentLines = pgTable("inv_shipment_lines", {
   id: serial("id").primaryKey(),
   shipmentId: integer("shipment_id").references(() => invShipments.id, { onDelete: "cascade" }).notNull(),
-  soLineId: integer("so_line_id"),
+  soLineId: integer("so_line_id").references(() => invSoLines.id, { onDelete: "set null" }),
   productVariantId: integer("product_variant_id").references(() => invProductVariants.id).notNull(),
   quantity: decimal("quantity", { precision: 18, scale: 4 }).notNull(),
-  lotId: integer("lot_id"),
-  serialId: integer("serial_id"),
+  lotId: integer("lot_id").references(() => invLots.id, { onDelete: "set null" }),
+  serialId: integer("serial_id").references(() => invSerialNumbers.id, { onDelete: "set null" }),
 }, (table) => [
   index("idx_inv_ship_lines_ship").on(table.shipmentId),
+  index("idx_inv_shipment_lines_variant").on(table.productVariantId),
 ]);
 
 export const invPackages = pgTable("inv_packages", {
@@ -66,6 +72,7 @@ export const invPackages = pgTable("inv_packages", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_packages_org_number").on(table.orgId, table.packageNumber),
+  unique("uniq_inv_packages_org_id").on(table.orgId, table.id),
   index("idx_inv_packages_org_status").on(table.orgId, table.status),
 ]);
 
@@ -73,11 +80,12 @@ export const invPackageLines = pgTable("inv_package_lines", {
   id: serial("id").primaryKey(),
   packageId: integer("package_id").references(() => invPackages.id, { onDelete: "cascade" }).notNull(),
   productVariantId: integer("product_variant_id").references(() => invProductVariants.id).notNull(),
-  lotId: integer("lot_id"),
-  serialId: integer("serial_id"),
+  lotId: integer("lot_id").references(() => invLots.id, { onDelete: "set null" }),
+  serialId: integer("serial_id").references(() => invSerialNumbers.id, { onDelete: "set null" }),
   quantity: decimal("quantity", { precision: 18, scale: 4 }).notNull(),
 }, (table) => [
   index("idx_inv_pkg_lines_pkg").on(table.packageId),
+  index("idx_inv_package_lines_variant").on(table.productVariantId),
 ]);
 
 export const invLoads = pgTable("inv_loads", {
@@ -97,6 +105,7 @@ export const invLoads = pgTable("inv_loads", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_loads_org_number").on(table.orgId, table.loadNumber),
+  unique("uniq_inv_loads_org_id").on(table.orgId, table.id),
   index("idx_inv_loads_org_status").on(table.orgId, table.status),
 ]);
 
@@ -104,7 +113,7 @@ export const invLoadLines = pgTable("inv_load_lines", {
   id: serial("id").primaryKey(),
   loadId: integer("load_id").references(() => invLoads.id, { onDelete: "cascade" }).notNull(),
   shipmentId: integer("shipment_id").references(() => invShipments.id, { onDelete: "set null" }),
-  transferId: integer("transfer_id"),
+  transferId: integer("transfer_id").references(() => invStockTransfers.id, { onDelete: "set null" }),
 }, (table) => [
   index("idx_inv_load_lines_load").on(table.loadId),
 ]);

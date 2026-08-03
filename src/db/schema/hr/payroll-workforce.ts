@@ -1,13 +1,14 @@
-import { pgTable, text, serial, timestamp, boolean, decimal, date, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, decimal, date, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
   salaryComponentTypeEnum, salaryComponentCalcMethodEnum,
   payrollWorkerTypeEnum, payFrequencyEnum, taxRegimeTypeEnum,
   salaryProfileStatusEnum, payrollLoanAdjustmentTypeEnum,
-} from "../enums";
-import { organizations, users } from "../auth";
+} from "../common/enums";
+import { organizations, users } from "../common/auth";
 import { salaryLoans } from "./payroll";
 import { payrollRuns } from "./payroll-runs";
+import { payrollPolicyVersions } from "./payroll-policies";
 
 export const salaryComponents = pgTable("salary_components", {
   id: serial("id").primaryKey(),
@@ -31,6 +32,7 @@ export const salaryComponents = pgTable("salary_components", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_salary_components_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_salary_components_org_code").on(table.orgId, table.code),
   index("idx_salary_components_org_active").on(table.orgId, table.isActive),
 ]);
@@ -47,14 +49,19 @@ export const employeeSalaryProfiles = pgTable("employee_salary_profiles", {
   taxRegime: taxRegimeTypeEnum("tax_regime"),
   costCenter: text("cost_center"),
   annualCtc: decimal("annual_ctc", { precision: 15, scale: 2 }).notNull(),
+  basicSalary: decimal("basic_salary", { precision: 15, scale: 2 }),
+  hraPercentage: decimal("hra_percentage", { precision: 5, scale: 2 }),
+  allowances: decimal("allowances", { precision: 15, scale: 2 }).default("0").notNull(),
+  deductions: decimal("deductions", { precision: 15, scale: 2 }).default("0").notNull(),
   status: salaryProfileStatusEnum("status").default("ACTIVE").notNull(),
   effectiveFrom: date("effective_from").notNull(),
   effectiveTo: date("effective_to"),
-  policyVersionId: integer("policy_version_id"),
+  policyVersionId: integer("policy_version_id").references(() => payrollPolicyVersions.id, { onDelete: "set null" }),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_employee_salary_profiles_org_id").on(table.orgId, table.id),
   index("idx_employee_salary_profiles_org_user_effective").on(table.orgId, table.userId, table.effectiveFrom),
   index("idx_employee_salary_profiles_org_status").on(table.orgId, table.status),
   uniqueIndex("uniq_esp_org_user_effective_from").on(table.orgId, table.userId, table.effectiveFrom),
@@ -73,6 +80,7 @@ export const employeeSalaryProfileComponents = pgTable("employee_salary_profile_
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_employee_salary_profile_components_org_id").on(table.orgId, table.id),
   index("idx_employee_salary_profile_components_profile").on(table.profileId),
   index("idx_employee_salary_profile_components_org").on(table.orgId),
   uniqueIndex("uniq_esp_components_profile_component").on(table.profileId, table.componentId),
@@ -89,6 +97,7 @@ export const payrollLoanAdjustments = pgTable("payroll_loan_adjustments", {
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_payroll_loan_adjustments_org_id").on(table.orgId, table.id),
   index("idx_payroll_loan_adjustments_org_loan").on(table.orgId, table.loanId),
   index("idx_payroll_loan_adjustments_run").on(table.runId),
 ]);

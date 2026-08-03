@@ -1,6 +1,6 @@
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import * as schema from "../db/schema";
 import {
   users,
@@ -8,17 +8,15 @@ import {
   organizationMembers,
   roles,
   permissions,
-} from "../db/schema/auth";
+} from "../db/schema/common/auth";
 import {
+  roleAssignments,
   rolePermissionGrants,
-  userRoles,
   accessVersions,
-} from "../db/schema/access";
-import { orgDepartments, orgTeams, orgLocations } from "../db/schema/organization";
-import { departments } from "../db/schema/hr/employees";
-import { subscriptions } from "../db/schema/shared";
+} from "../db/schema/common/access";
+import { orgUnits } from "../db/schema/common/organization";
+import { subscriptions } from "../db/schema/common/shared";
 import { hrPeople, hrEmployments, hrReportingLines } from "../db/schema/hr/core-people";
-import { hrTeams, hrLocations } from "../db/schema/hr/core-org";
 import { leaveTypes, leaveRequests } from "../db/schema/hr/leaves";
 import { leavePolicies } from "../db/schema/hr/leave-policies";
 import { attendance, holidays, helpdeskTickets } from "../db/schema/hr/attendance";
@@ -33,7 +31,7 @@ import {
   hrWorkflowInstances,
   hrWorkflowStepActions,
 } from "../db/schema/hr/workflow-engine";
-import { PERMISSIONS, ROLE_DEFAULT_PERMISSIONS } from "../modules/rbac/permissions.constants";
+import { PERMISSIONS, ROLE_DEFAULT_PERMISSIONS } from "../modules/rbac/permissions";
 
 type Db = PostgresJsDatabase<typeof schema>;
 
@@ -43,14 +41,14 @@ const ORG_SLUG = "enterprise-demo-workspace";
 const ADMIN_EMAIL = "admin@enterprise-demo.streamlineos.in";
 
 const PEOPLE = [
-  { id: "e1000001-0000-4000-8000-000000000003", email: "priya.mgr@enterprise-demo.in", first: "Priya", last: "Sharma", role: "ENGINEERING", emp: "EMP-MGR-01", worker: "FULL_TIME" as const, status: "ACTIVE" as const, designation: "Engineering Manager", dept: "Engineering", isManager: true },
+  { id: "e1000001-0000-4000-8000-000000000003", email: "priya.mgr@enterprise-demo.in", first: "Priya", last: "Sharma", emp: "EMP-MGR-01", worker: "FULL_TIME" as const, status: "ACTIVE" as const, designation: "Engineering Manager", dept: "Engineering", isManager: true },
   { id: "e1000001-0000-4000-8000-000000000004", email: "rahul.mgr@enterprise-demo.in", first: "Rahul", last: "Mehta", role: "HR", emp: "EMP-MGR-02", worker: "FULL_TIME" as const, status: "ACTIVE" as const, designation: "HR Manager", dept: "People Operations", isManager: true },
-  { id: "e1000001-0000-4000-8000-000000000005", email: "anita@enterprise-demo.in", first: "Anita", last: "Kapoor", role: "ENGINEERING", emp: "EMP-001", worker: "FULL_TIME" as const, status: "ACTIVE" as const, designation: "Software Engineer", dept: "Engineering", manager: "priya.mgr@enterprise-demo.in" },
-  { id: "e1000001-0000-4000-8000-000000000006", email: "vikram@enterprise-demo.in", first: "Vikram", last: "Singh", role: "ENGINEERING", emp: "EMP-002", worker: "FULL_TIME" as const, status: "ACTIVE" as const, designation: "Software Engineer", dept: "Engineering", manager: "priya.mgr@enterprise-demo.in" },
-  { id: "e1000001-0000-4000-8000-000000000007", email: "neha@enterprise-demo.in", first: "Neha", last: "Gupta", role: "ENGINEERING", emp: "EMP-003", worker: "FULL_TIME" as const, status: "ACTIVE" as const, designation: "Product Analyst", dept: "Engineering", manager: "priya.mgr@enterprise-demo.in" },
-  { id: "e1000001-0000-4000-8000-000000000008", email: "alex.contractor@enterprise-demo.in", first: "Alex", last: "Turner", role: "ENGINEERING", emp: "CTR-001", worker: "CONTRACTOR" as const, status: "ACTIVE" as const, designation: "DevOps Consultant", dept: "Engineering", manager: "priya.mgr@enterprise-demo.in" },
-  { id: "e1000001-0000-4000-8000-000000000009", email: "meera.intern@enterprise-demo.in", first: "Meera", last: "Patel", role: "ENGINEERING", emp: "INT-001", worker: "INTERN" as const, status: "ACTIVE" as const, designation: "Engineering Intern", dept: "Engineering", manager: "priya.mgr@enterprise-demo.in" },
-  { id: "e1000001-0000-4000-8000-00000000000a", email: "sanjay.exited@enterprise-demo.in", first: "Sanjay", last: "Reddy", role: "ENGINEERING", emp: "EMP-004", worker: "FULL_TIME" as const, status: "EXITED" as const, designation: "Former Analyst", dept: "Engineering", inactive: true },
+  { id: "e1000001-0000-4000-8000-000000000005", email: "anita@enterprise-demo.in", first: "Anita", last: "Kapoor", emp: "EMP-001", worker: "FULL_TIME" as const, status: "ACTIVE" as const, designation: "Software Engineer", dept: "Engineering", manager: "priya.mgr@enterprise-demo.in" },
+  { id: "e1000001-0000-4000-8000-000000000006", email: "vikram@enterprise-demo.in", first: "Vikram", last: "Singh", emp: "EMP-002", worker: "FULL_TIME" as const, status: "ACTIVE" as const, designation: "Software Engineer", dept: "Engineering", manager: "priya.mgr@enterprise-demo.in" },
+  { id: "e1000001-0000-4000-8000-000000000007", email: "neha@enterprise-demo.in", first: "Neha", last: "Gupta", emp: "EMP-003", worker: "FULL_TIME" as const, status: "ACTIVE" as const, designation: "Product Analyst", dept: "Engineering", manager: "priya.mgr@enterprise-demo.in" },
+  { id: "e1000001-0000-4000-8000-000000000008", email: "alex.contractor@enterprise-demo.in", first: "Alex", last: "Turner", emp: "CTR-001", worker: "CONTRACTOR" as const, status: "ACTIVE" as const, designation: "DevOps Consultant", dept: "Engineering", manager: "priya.mgr@enterprise-demo.in" },
+  { id: "e1000001-0000-4000-8000-000000000009", email: "meera.intern@enterprise-demo.in", first: "Meera", last: "Patel", emp: "INT-001", worker: "INTERN" as const, status: "ACTIVE" as const, designation: "Engineering Intern", dept: "Engineering", manager: "priya.mgr@enterprise-demo.in" },
+  { id: "e1000001-0000-4000-8000-00000000000a", email: "sanjay.exited@enterprise-demo.in", first: "Sanjay", last: "Reddy", emp: "EMP-004", worker: "FULL_TIME" as const, status: "EXITED" as const, designation: "Former Analyst", dept: "Engineering", inactive: true },
 ] as const;
 
 function normalizeDatabaseUrl(url: string): string {
@@ -99,7 +97,17 @@ async function seedRbac(db: Db, orgId: string, memberUserId: string, memberRole:
 
   const ownerRole = orgRoles.find((r) => r.slug === memberRole);
   if (ownerRole) {
-    await db.insert(userRoles).values({ orgId, userId: memberUserId, roleId: ownerRole.id }).onConflictDoNothing();
+    const [memberRow] = await db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, memberUserId)))
+      .limit(1);
+    if (memberRow !== undefined) {
+      await db
+        .insert(roleAssignments)
+        .values({ orgId, organizationMembershipId: memberRow.id, roleId: ownerRole.id })
+        .onConflictDoNothing();
+    }
   }
   await db.insert(accessVersions).values({ orgId, permissionsVersion: 1 }).onConflictDoNothing({ target: accessVersions.orgId });
 }
@@ -107,14 +115,19 @@ async function seedRbac(db: Db, orgId: string, memberUserId: string, memberRole:
 async function seed(db: Db): Promise<Record<string, unknown>> {
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
+  const [ownerSeqRow] = await db.execute(
+    sql`SELECT nextval(pg_get_serial_sequence('organization_members', 'id')) AS id`,
+  );
+  const ownerMembershipId = Number(ownerSeqRow?.id);
+
   await db.insert(organizations).values({
     id: ORG_ID,
+    ownerMembershipId,
     name: "Enterprise Demo Co",
     slug: ORG_SLUG,
     industry: "Technology",
     companySize: "51-200",
     country: "IN",
-    enabledModules: ["HR", "CRM", "PROJECTS", "SUPPORT", "ACCOUNTING"],
     onboardingCompletedAt: now,
     status: "ACTIVE",
   }).onConflictDoNothing({ target: organizations.id });
@@ -127,8 +140,6 @@ async function seed(db: Db): Promise<Record<string, unknown>> {
     lastName: "Admin",
     emailVerified: now,
     isActive: true,
-    hasDashboardAccess: true,
-    role: "OWNER",
     userStatus: "active",
     lastActiveOrgId: ORG_ID,
     activatedAt: now,
@@ -138,9 +149,9 @@ async function seed(db: Db): Promise<Record<string, unknown>> {
   });
 
   await db.insert(organizationMembers).values({
+    id: ownerMembershipId,
     userId: ADMIN_ID,
     orgId: ORG_ID,
-    role: "OWNER",
     isOwner: true,
   }).onConflictDoNothing();
 
@@ -162,8 +173,6 @@ async function seed(db: Db): Promise<Record<string, unknown>> {
       lastName: p.last,
       emailVerified: now,
       isActive: !("inactive" in p && p.inactive),
-      hasDashboardAccess: true,
-      role: p.role,
       userStatus: p.status === "EXITED" ? "inactive" : "active",
       lastActiveOrgId: ORG_ID,
       activatedAt: now,
@@ -172,62 +181,46 @@ async function seed(db: Db): Promise<Record<string, unknown>> {
     await db.insert(organizationMembers).values({
       userId: p.id,
       orgId: ORG_ID,
-      role: p.role,
       isOwner: false,
     }).onConflictDoNothing();
   }
 
-  const deptNames = ["Engineering", "People Operations"] as const;
-  const deptIds = new Map<string, number>();
-  for (const name of deptNames) {
-    const [row] = await db.insert(departments).values({
-      orgId: ORG_ID,
-      name,
-      managerId: name === "Engineering" ? PEOPLE[0].id : PEOPLE[1].id,
-    }).onConflictDoNothing().returning({ id: departments.id });
-    if (row) deptIds.set(name, row.id);
-  }
-  const existingDepts = await db
-    .select({ id: departments.id, name: departments.name })
-    .from(departments)
-    .where(eq(departments.orgId, ORG_ID));
-  for (const d of existingDepts) deptIds.set(d.name, d.id);
-
   for (const d of [
-    { name: "Engineering", code: "ENG" },
-    { name: "People Operations", code: "HR" },
+    { name: "Engineering", code: "ENG", headUserId: PEOPLE[0].id },
+    { name: "People Operations", code: "HR", headUserId: PEOPLE[1].id },
   ]) {
-    await db.insert(orgDepartments).values({ orgId: ORG_ID, name: d.name, code: d.code, status: "ACTIVE" }).onConflictDoNothing();
+    await db.insert(orgUnits).values({ orgId: ORG_ID, kind: "DEPARTMENT", name: d.name, code: d.code, headUserId: d.headUserId }).onConflictDoNothing();
   }
+  const deptUnitRows = await db
+    .select({ id: orgUnits.id, name: orgUnits.name })
+    .from(orgUnits)
+    .where(and(eq(orgUnits.orgId, ORG_ID), eq(orgUnits.kind, "DEPARTMENT")));
+  const deptIds = new Map<string, string>(deptUnitRows.map((r) => [r.name, r.id]));
   for (const t of [
-    { name: "Platform Team", code: "PLAT" },
-    { name: "Talent Team", code: "TA" },
+    { name: "Platform Team", code: "PLAT", leadId: PEOPLE[0].id },
+    { name: "Talent Team", code: "TA", leadId: PEOPLE[1].id },
   ]) {
-    await db.insert(orgTeams).values({ orgId: ORG_ID, name: t.name, code: t.code, status: "ACTIVE" }).onConflictDoNothing();
-    await db.insert(hrTeams).values({ orgId: ORG_ID, name: t.name, code: t.code, leadUserId: t.code === "PLAT" ? PEOPLE[0].id : PEOPLE[1].id }).onConflictDoNothing();
+    await db.insert(orgUnits).values({ orgId: ORG_ID, kind: "TEAM", name: t.name, code: t.code, headUserId: t.leadId }).onConflictDoNothing();
   }
   for (const loc of [
     { name: "Mumbai HQ", code: "BOM", city: "Mumbai" },
     { name: "Bangalore Tech Park", code: "BLR", city: "Bangalore" },
   ]) {
-    await db.insert(orgLocations).values({
+    await db.insert(orgUnits).values({
       orgId: ORG_ID,
-      name: loc.name,
-      type: "OFFICE",
-      address: `${loc.city}, India`,
-      status: "ACTIVE",
-    }).onConflictDoNothing();
-    await db.insert(hrLocations).values({
-      orgId: ORG_ID,
+      kind: "LOCATION",
       name: loc.name,
       code: loc.code,
-      type: "OFFICE",
-      address: { city: loc.city, country: "IN" },
+      metadata: { city: loc.city, country: "IN", locationType: "OFFICE" as const },
     }).onConflictDoNothing();
   }
 
-  const hrLocRows = await db.select({ id: hrLocations.id, name: hrLocations.name }).from(hrLocations).where(eq(hrLocations.orgId, ORG_ID));
-  const locId = hrLocRows[0]?.id ?? null;
+  const locRows = await db
+    .select({ id: orgUnits.id })
+    .from(orgUnits)
+    .where(and(eq(orgUnits.orgId, ORG_ID), eq(orgUnits.kind, "LOCATION")))
+    .limit(1);
+  const locId = locRows[0]?.id ?? null;
   const employmentIds = new Map<string, number>();
 
   for (const p of PEOPLE) {
@@ -340,7 +333,7 @@ async function seed(db: Db): Promise<Record<string, unknown>> {
   const [job] = await db.insert(jobPostings).values({
     orgId: ORG_ID,
     title: "Senior Software Engineer",
-    departmentId: deptIds.get("Engineering") ?? null,
+    orgDepartmentId: deptIds.get("Engineering") ?? null,
     location: "Mumbai / Remote",
     type: "FULL_TIME",
     description: "Build scalable HR and enterprise products.",
@@ -476,7 +469,7 @@ async function seed(db: Db): Promise<Record<string, unknown>> {
     adminEmail: ADMIN_EMAIL,
     plan: "ENTERPRISE",
     employees: PEOPLE.length,
-    departments: deptNames.length,
+    departments: 2,
     teams: 2,
     managers: 2,
     locations: 2,

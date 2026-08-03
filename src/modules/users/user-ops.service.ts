@@ -1,4 +1,8 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { HttpException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import type { OrgUnitKind } from "../../db/schema/common/organization";
+import type { InviteActor } from "../organization/core/invitations.service";
+import { EmailService } from "../email/email.service";
+import { AccessService } from "../access/access.service";
 import { and, count, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { randomUUID, randomBytes } from "node:crypto";
 import { addHours } from "date-fns";
@@ -7,15 +11,20 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
-import { InvitationsService } from "../organization/invitations.service";
+import { InvitationsService } from "../organization/core/invitations.service";
 import {
   invitations,
   magicLinkTokens,
   organizationMembers,
   users,
+  orgUnitMembers,
+  orgUnits,
 } from "../../db/schema";
 import type { BulkUpdateUsersInput, ImportUsersRow } from "./dto/users.schemas";
 import { UsersService } from "./users.service";
+import { syncStructuralRoleAssignment } from "../../common/rbac/sync-structural-role";
+import { assertMayGrantRole } from "../../common/rbac/assert-may-grant-role";
+import { assertNoOwnerAmongTargets } from "../../common/rbac/assert-target-not-owner";
 
 @Injectable()
 export class UserOpsService {
@@ -25,6 +34,8 @@ export class UserOpsService {
     private readonly cache: CacheService,
     private readonly invitationsSvc: InvitationsService,
     private readonly usersSvc: UsersService,
+    private readonly access: AccessService,
+    private readonly email: EmailService,
   ) {}
 
   async exportUsers(orgId: string): Promise<string> {
@@ -37,7 +48,7 @@ export class UserOpsService {
         role: organizationMembers.role,
         isActive: users.isActive,
         emailVerified: users.emailVerified,
-        departmentId: users.departmentId,
+        departmentId: users.orgDepartmentId,
         designation: users.designation,
         phone: users.phone,
         joinedAt: organizationMembers.joinedAt,
@@ -115,14 +126,24 @@ export class UserOpsService {
     );
   }
 
-  async bulkSuspend(orgId: string, userIds: string[], actorUserId: string) {
+  private async bulkUpdateStatus(
+    orgId: string,
+    userIds: string[],
+    status: "active" | "suspended" | "archived",
+    actorUserId: string,
+    fallbackError: string,
+  ) {
     const results: Array<{ userId: string; success: boolean; error?: string }> = [];
     for (const userId of userIds) {
       try {
-        await this.usersSvc.updateUserStatus(orgId, userId, "suspended", actorUserId);
+        await this.usersSvc.updateUserStatus(orgId, userId, status, actorUserId);
         results.push({ userId, success: true });
-      } catch {
-        results.push({ userId, success: false, error: "Failed to suspend" });
+      } catch (err) {
+        results.push({
+          userId,
+          success: false,
+          error: err instanceof HttpException ? err.message : fallbackError,
+        });
       }
     }
     return {
@@ -130,43 +151,26 @@ export class UserOpsService {
       succeeded: results.filter((r) => r.success).length,
       failed: results.filter((r) => !r.success).length,
     };
+  }
+
+  async bulkSuspend(orgId: string, userIds: string[], actorUserId: string) {
+    return this.bulkUpdateStatus(orgId, userIds, "suspended", actorUserId, "Failed to suspend");
   }
 
   async bulkArchive(orgId: string, userIds: string[], actorUserId: string) {
-    const results: Array<{ userId: string; success: boolean; error?: string }> = [];
-    for (const userId of userIds) {
-      try {
-        await this.usersSvc.updateUserStatus(orgId, userId, "archived", actorUserId);
-        results.push({ userId, success: true });
-      } catch {
-        results.push({ userId, success: false, error: "Failed to archive" });
-      }
-    }
-    return {
-      results,
-      succeeded: results.filter((r) => r.success).length,
-      failed: results.filter((r) => !r.success).length,
-    };
+    return this.bulkUpdateStatus(orgId, userIds, "archived", actorUserId, "Failed to archive");
   }
 
   async bulkRestore(orgId: string, userIds: string[], actorUserId: string) {
-    const results: Array<{ userId: string; success: boolean; error?: string }> = [];
-    for (const userId of userIds) {
-      try {
-        await this.usersSvc.updateUserStatus(orgId, userId, "active", actorUserId);
-        results.push({ userId, success: true });
-      } catch {
-        results.push({ userId, success: false, error: "Failed to restore" });
-      }
-    }
-    return {
-      results,
-      succeeded: results.filter((r) => r.success).length,
-      failed: results.filter((r) => !r.success).length,
-    };
+    return this.bulkUpdateStatus(orgId, userIds, "active", actorUserId, "Failed to restore");
   }
 
-  async bulkUpdateUsers(orgId: string, data: BulkUpdateUsersInput, actorUserId: string) {
+  private assertMayGrantRole(orgId: string, actor: InviteActor, role: string): Promise<void> {
+    return assertMayGrantRole(this.access, orgId, actor, role);
+  }
+
+  async bulkUpdateUsers(orgId: string, data: BulkUpdateUsersInput, actor: InviteActor) {
+    const actorUserId = actor.userId;
     const { userIds, role, departmentId, branchId, teamId, managerUserId } = data;
 
     const memberRows = await this.db
@@ -180,25 +184,67 @@ export class UserOpsService {
     }
 
     const userUpdate: Record<string, unknown> = {};
-    if (departmentId !== undefined) userUpdate.departmentId = departmentId;
+    if (departmentId !== undefined) userUpdate.orgDepartmentId = departmentId;
     if (branchId !== undefined) userUpdate.branchId = branchId;
     if (managerUserId !== undefined) userUpdate.reportingTo = managerUserId;
-    if (teamId !== undefined) userUpdate.team = teamId;
 
     if (Object.keys(userUpdate).length > 0) {
       await this.db.update(users).set(userUpdate).where(inArray(users.id, scopedIds));
     }
 
+    const unitMoves: Array<{ kind: OrgUnitKind; unitId: string | null }> = [];
+    if (branchId !== undefined) unitMoves.push({ kind: "BRANCH", unitId: branchId ?? null });
+    if (departmentId !== undefined) unitMoves.push({ kind: "DEPARTMENT", unitId: departmentId ?? null });
+    if (teamId !== undefined) unitMoves.push({ kind: "TEAM", unitId: teamId ?? null });
+
+    if (unitMoves.length > 0) {
+      await this.db.transaction(async (tx) => {
+        for (const { kind, unitId } of unitMoves) {
+          const existing = await tx
+            .select({ id: orgUnitMembers.id })
+            .from(orgUnitMembers)
+            .innerJoin(orgUnits, eq(orgUnits.id, orgUnitMembers.orgUnitId))
+            .where(
+              and(
+                eq(orgUnitMembers.orgId, orgId),
+                inArray(orgUnitMembers.userId, scopedIds),
+                eq(orgUnits.kind, kind),
+              ),
+            );
+          for (const row of existing) 
+            await tx.delete(orgUnitMembers).where(eq(orgUnitMembers.id, row.id));
+          
+
+          if (unitId !== null) 
+            for (const userId of scopedIds) 
+              await tx
+                .insert(orgUnitMembers)
+                .values({ id: randomUUID(), orgId, orgUnitId: unitId, userId, role: "member" })
+                .onConflictDoNothing();
+            
+          
+        }
+      });
+    }
+
     if (role) {
-      await this.db
-        .update(organizationMembers)
-        .set({ role })
-        .where(
-          and(
-            eq(organizationMembers.orgId, orgId),
-            inArray(organizationMembers.userId, scopedIds),
-          ),
-        );
+      await this.assertMayGrantRole(orgId, actor, role);
+      await this.db.transaction(async (tx) => {
+        await assertNoOwnerAmongTargets(tx, orgId, scopedIds);
+        const rows = await tx
+          .update(organizationMembers)
+          .set({ role })
+          .where(
+            and(
+              eq(organizationMembers.orgId, orgId),
+              inArray(organizationMembers.userId, scopedIds),
+            ),
+          )
+          .returning({ id: organizationMembers.id });
+        for (const row of rows) {
+          await syncStructuralRoleAssignment(tx, orgId, row.id, role);
+        }
+      });
     }
 
     this.audit.log({
@@ -231,6 +277,8 @@ export class UserOpsService {
       expiresAt: addHours(new Date(), 24),
     });
 
+    await this.email.sendMagicLinkEmail(user.email, rawToken);
+
     this.audit.log({
       action: "user.signin_link_sent",
       userId: actorUserId,
@@ -243,7 +291,8 @@ export class UserOpsService {
     return { success: true, email: user.email };
   }
 
-  async importUsers(orgId: string, rows: ImportUsersRow[], actorUserId: string) {
+  async importUsers(orgId: string, rows: ImportUsersRow[], actor: InviteActor) {
+    const actorUserId = actor.userId;
     const results: Array<{
       email: string;
       success: boolean;
@@ -255,7 +304,7 @@ export class UserOpsService {
       try {
         const result = await this.invitationsSvc.invite(
           orgId,
-          actorUserId,
+          actor,
           row.email,
           row.role ?? "MEMBER",
         );

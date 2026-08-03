@@ -3,8 +3,8 @@ import { relations } from "drizzle-orm";
 import {
   leadEmailDirectionEnum, leadTaskStatusEnum, scoringOperatorEnum,
   assignmentRuleTypeEnum,
-} from "../enums";
-import { organizations, users } from "../auth";
+} from "../common/enums";
+import { organizations, users } from "../common/auth";
 import { crmCampaigns } from "./campaigns";
 
 export const leads = pgTable("leads", {
@@ -59,6 +59,11 @@ export const leads = pgTable("leads", {
   index("idx_leads_source").on(table.source),
   index("idx_leads_score").on(table.score),
   index("idx_leads_deleted").on(table.deletedAt),
+  index("idx_leads_name_trgm").using("gin", table.name.op("gin_trgm_ops")),
+  index("idx_leads_email_trgm").using("gin", table.email.op("gin_trgm_ops")),
+  index("idx_leads_phone_trgm").using("gin", table.phone.op("gin_trgm_ops")),
+  index("idx_leads_company_trgm").using("gin", table.company.op("gin_trgm_ops")),
+  unique("uniq_leads_org_id").on(table.orgId, table.id),
 ]);
 
 export const leadActivities = pgTable("lead_activities", {
@@ -80,6 +85,7 @@ export const leadActivities = pgTable("lead_activities", {
   index("idx_lead_activities_lead").on(table.leadId),
   index("idx_lead_activities_user").on(table.userId),
   index("idx_lead_activities_org_date").on(table.orgId, table.date),
+  unique("uniq_lead_activities_org_id").on(table.orgId, table.id),
 ]);
 
 export const leadNotes = pgTable("lead_notes", {
@@ -92,6 +98,7 @@ export const leadNotes = pgTable("lead_notes", {
 }, (table) => [
   index("idx_lead_notes_lead").on(table.leadId),
   index("idx_lead_notes_org_created").on(table.orgId, table.createdAt),
+  unique("uniq_lead_notes_org_id").on(table.orgId, table.id),
 ]);
 
 export const leadTasks = pgTable("lead_tasks", {
@@ -106,6 +113,7 @@ export const leadTasks = pgTable("lead_tasks", {
 }, (table) => [
   index("idx_lead_tasks_lead").on(table.leadId),
   index("idx_lead_tasks_org_status").on(table.orgId, table.status),
+  unique("uniq_lead_tasks_org_id").on(table.orgId, table.id),
 ]);
 
 export const leadEmails = pgTable("lead_emails", {
@@ -123,6 +131,7 @@ export const leadEmails = pgTable("lead_emails", {
 }, (table) => [
   index("idx_lead_emails_lead").on(table.leadId),
   index("idx_lead_emails_org_sent").on(table.orgId, table.sentAt),
+  unique("uniq_lead_emails_org_id").on(table.orgId, table.id),
 ]);
 
 export const leadScoringRules = pgTable("lead_scoring_rules", {
@@ -136,6 +145,7 @@ export const leadScoringRules = pgTable("lead_scoring_rules", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_lead_scoring_rules_org").on(table.orgId),
+  unique("uniq_lead_scoring_rules_org_id").on(table.orgId, table.id),
 ]);
 
 export interface AssignmentConfig {
@@ -159,6 +169,7 @@ export const leadAssignmentRules = pgTable("lead_assignment_rules", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_lead_assignment_rules_org").on(table.orgId),
+  unique("uniq_lead_assignment_rules_org_id").on(table.orgId, table.id),
 ]);
 
 export const assignmentRuleState = pgTable("assignment_rule_state", {
@@ -182,6 +193,7 @@ export const leadImportBatches = pgTable("lead_import_batches", {
   completedAt: timestamp("completed_at"),
 }, (table) => [
   index("idx_lead_batches_org").on(table.orgId),
+  unique("uniq_lead_import_batches_org_id").on(table.orgId, table.id),
 ]);
 
 export const webLeadForms = pgTable("web_lead_forms", {
@@ -201,6 +213,7 @@ export const webLeadForms = pgTable("web_lead_forms", {
 }, (table) => [
   index("web_lead_forms_org_id_idx").on(table.orgId),
   uniqueIndex("web_lead_forms_token_idx").on(table.publicToken),
+  unique("uniq_web_lead_forms_org_id").on(table.orgId, table.id),
 ]);
 
 export const leadsRelations = relations(leads, ({ one, many }) => ({

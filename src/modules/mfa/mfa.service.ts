@@ -8,6 +8,7 @@ import { users, mfaBackupCodes } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
+import { MfaPolicyService } from "../access/mfa-policy.service";
 import type { VerifyMfaInput, DisableMfaInput } from "./dto/mfa.schemas";
 
 const ALGORITHM = "aes-256-gcm";
@@ -85,6 +86,7 @@ export class MfaService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly dispatch: NotificationDispatchService,
+    private readonly mfaPolicy: MfaPolicyService,
   ) {}
 
   async setup(userId: string) {
@@ -155,6 +157,7 @@ export class MfaService {
       .update(users)
       .set({ totpEnabled: true })
       .where(eq(users.id, userId));
+    await this.mfaPolicy.invalidateUser(userId);
 
     return { enabled: true };
   }
@@ -176,6 +179,7 @@ export class MfaService {
       .update(users)
       .set({ totpEnabled: false, totpSecret: null })
       .where(eq(users.id, userId));
+    await this.mfaPolicy.invalidateUser(userId);
 
     void this.dispatch.emit({
       eventKey: "security.mfa.disabled",
@@ -215,6 +219,7 @@ export class MfaService {
         .where(eq(users.id, targetUserId));
       await tx.delete(mfaBackupCodes).where(eq(mfaBackupCodes.userId, targetUserId));
     });
+    await this.mfaPolicy.invalidateUser(targetUserId);
 
     return { reset: true };
   }

@@ -5,9 +5,10 @@ import {
   integer,
   timestamp,
   index,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations } from "../auth";
+import { organizations, users } from "../common/auth";
 import { kbArticles } from "./kb";
 
 export const kbArticleAttachments = pgTable(
@@ -21,11 +22,12 @@ export const kbArticleAttachments = pgTable(
     fileUrl: text("file_url"),
     fileSize: integer("file_size"),
     mimeType: text("mime_type"),
-    uploadedBy: text("uploaded_by"),
+    uploadedBy: text("uploaded_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
     index("idx_kb_article_attachments_article").on(table.articleId),
+    unique("uniq_kb_article_attachments_org_id").on(table.orgId, table.id),
   ],
 );
 

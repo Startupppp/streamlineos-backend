@@ -1,9 +1,10 @@
-import { pgTable, text, serial, timestamp, decimal, integer, boolean, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, decimal, integer, boolean, jsonb, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { invAiInsightStatusEnum } from "../enums";
-import { organizations } from "../auth";
+import { invAiInsightStatusEnum } from "../common/enums";
+import { organizations } from "../common/auth";
 import { invProductVariants } from "./core";
 import { invWarehouses } from "./warehouses";
+import { invVendors } from "./purchase-orders";
 
 export const invReorderRules = pgTable("inv_reorder_rules", {
   id: serial("id").primaryKey(),
@@ -13,7 +14,7 @@ export const invReorderRules = pgTable("inv_reorder_rules", {
   minQty: decimal("min_qty", { precision: 18, scale: 4 }).notNull(),
   maxQty: decimal("max_qty", { precision: 18, scale: 4 }),
   reorderQty: decimal("reorder_qty", { precision: 18, scale: 4 }),
-  vendorId: integer("vendor_id"),
+  vendorId: integer("vendor_id").references(() => invVendors.id, { onDelete: "set null" }),
   leadTimeDays: integer("lead_time_days"),
   safetyStock: decimal("safety_stock", { precision: 18, scale: 4 }).default("0"),
   isActive: boolean("is_active").default(true).notNull(),
@@ -21,6 +22,7 @@ export const invReorderRules = pgTable("inv_reorder_rules", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_reorder_org_variant_wh").on(table.orgId, table.productVariantId, table.warehouseId),
+  unique("uniq_inv_reorder_rules_org_id").on(table.orgId, table.id),
   index("idx_inv_reorder_org").on(table.orgId),
   index("idx_inv_reorder_variant").on(table.productVariantId),
 ]);
@@ -36,6 +38,7 @@ export const invAiInsights = pgTable("inv_ai_insights", {
   status: invAiInsightStatusEnum("status").default("NEW").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_inv_ai_insights_org_id").on(table.orgId, table.id),
   index("idx_inv_ai_insights_org_status").on(table.orgId, table.status),
 ]);
 

@@ -1,5 +1,5 @@
 jest.mock("../../email/app-url", () => ({ appUrl: "https://test.example.com" }));
-jest.mock("../../projects/projects-tickets.service");
+jest.mock("../../build/core/projects-tickets.service");
 jest.mock("../feedbucket-public.service");
 jest.mock("../feedbucket-ai.service");
 jest.mock("../../storage/storage.service");

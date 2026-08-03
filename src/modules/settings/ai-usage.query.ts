@@ -1,6 +1,6 @@
 import { desc, eq, sql, sum } from "drizzle-orm";
 import { aiUsageLogs } from "../../db/schema";
-import { aiFeedback } from "../../db/schema/ai-feedback";
+import { aiFeedback } from "../../db/schema/ai/ai-feedback";
 import { supportAiSuggestions } from "../../db/schema/support/support-ai";
 import { type Db } from "../../db/drizzle.module";
 

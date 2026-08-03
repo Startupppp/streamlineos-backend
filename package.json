@@ -12,22 +12,28 @@
     "start": "node --max-old-space-size=8192 ./node_modules/@nestjs/cli/bin/nest.js start",
     "start:dev": "node --max-old-space-size=8192 --env-file=.env ./node_modules/@nestjs/cli/bin/nest.js start --builder swc --watch",
     "start:prod": "node --max-old-space-size=8192 --env-file-if-exists=.env dist/main.js",
-    "db:push": "drizzle-kit push --config drizzle.config.ts",
+    "db:push": "node scripts/guard-db-push.mjs",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "db:migrate": "drizzle-kit migrate --config drizzle.config.ts",
+    "db:bootstrap": "node src/scripts/db-bootstrap.mjs",
+    "db:bootstrap-role": "node src/scripts/db-bootstrap-app-role.mjs",
+    "db:setup": "node src/scripts/db-setup.mjs",
+    "db:verify-rls": "node src/scripts/db-verify-rls.mjs",
+    "seed:marketplace-apps": "node --env-file=.env -r ts-node/register src/db/seeds/marketplace-apps.seed.ts",
+    "purge:user": "node src/scripts/purge-user.mjs",
+    "e2e:smoke": "node src/scripts/e2e-smoke.mjs",
+    "backfill:member-roles": "node src/scripts/backfill-member-role-assignments.mjs",
     "db:studio": "drizzle-kit studio --config drizzle.config.ts",
     "setup:r2": "node --env-file=.env -r ts-node/register src/scripts/setup-r2-buckets.ts",
-    "backfill:rbac": "node --env-file=.env -r ts-node/register src/scripts/backfill-rbac-access.ts",
+    "backfill:system-roles": "node --env-file=.env -r ts-node/register src/scripts/backfill-system-roles.ts",
     "backfill:crm-metadata": "node --env-file=.env -r ts-node/register src/scripts/backfill-crm-metadata.ts",
-    "backfill:org-departments": "node --env-file=.env -r ts-node/register src/scripts/backfill-org-departments.ts",
     "backfill:person-employment": "node --env-file=.env -r ts-node/register src/scripts/backfill-person-employment.ts",
     "seed:payroll-templates": "node --env-file=.env -r ts-node/register src/scripts/seed-payroll-templates.ts",
     "seed:enterprise": "node --env-file=.env -r ts-node/register src/scripts/seed-enterprise-workspace.ts",
     "seed:demo-coupons": "node --env-file=.env -r ts-node/register src/db/seeds/demo-coupons.seed.ts",
     "seed:ai-credit-packs": "node --env-file=.env -r ts-node/register src/db/seeds/ai-credit-packs.seed.ts",
     "seed:demo": "node --env-file=.env -r ts-node/register src/scripts/seed-demo.ts",
-    "seed:platform-admin": "node --env-file=.env -r ts-node/register src/scripts/seed-platform-admin.ts",
-    "seed:permissions": "node scripts/seed-permissions.mjs",
+    "seed:permissions": "node --env-file=.env -r ts-node/register src/scripts/seed-permissions.ts",
     "mcp": "node scripts/mcp-server.mjs",
     "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\"",
     "test": "jest",
@@ -84,7 +90,6 @@
     "@nestjs/testing": "^10.4.15",
     "@swc/cli": "^0.5.2",
     "@swc/core": "^1.15.43",
-    "@types/bcryptjs": "^3.0.0",
     "@types/compression": "^1.8.1",
     "@types/express": "^5.0.0",
     "@types/fluent-ffmpeg": "^2.1.28",
@@ -100,11 +105,10 @@
     "drizzle-kit": "^0.31.8",
     "eslint": "^9.0.0",
     "jest": "^29.7.0",
+    "knip": "^6.31.0",
     "supertest": "^7.0.0",
     "ts-jest": "^29.2.5",
-    "ts-loader": "^9.5.1",
     "ts-node": "^10.9.2",
-    "tsconfig-paths": "^4.2.0",
     "typescript": "^5.6.3",
     "typescript-eslint": "^8.64.0"
   },
@@ -114,25 +118,31 @@
       "json",
       "ts"
     ],
-    "rootDir": "src",
+    "rootDir": ".",
+    "roots": [
+      "<rootDir>/src",
+      "<rootDir>/evals"
+    ],
     "testRegex": ".*\\.spec\\.ts$",
     "testPathIgnorePatterns": [
-      "e2e-spec"
+      "e2e-spec",
+      "node_modules",
+      "dist"
     ],
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },
     "setupFiles": [
-      "<rootDir>/test/jest-setup.ts"
+      "<rootDir>/src/test/jest-setup.ts"
     ],
     "collectCoverageFrom": [
-      "**/*.(t|j)s"
+      "src/**/*.(t|j)s"
     ],
-    "coverageDirectory": "../coverage",
+    "coverageDirectory": "./coverage",
     "testEnvironment": "node",
     "workerIdleMemoryLimit": "1GB",
     "moduleNameMapper": {
-      "^src/(.*)$": "<rootDir>/$1"
+      "^src/(.*)$": "<rootDir>/src/$1"
     }
   }
 }

@@ -8,13 +8,14 @@ import {
   payrollRuns,
   payrollLineItems,
 } from "../../../db/schema";
-import { AiGatewayService } from "../../ai/gateway/ai-gateway.service";
+import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import {
   PAYROLL_AI_CAPABILITY,
   FORBIDDEN_PAYROLL_AI_ACTIONS,
   buildPayslipEvidenceCitations,
   type EvidenceCitation,
 } from "./payroll-ai-guardrails";
+import type { AiUsageMeta } from "../../ai/core/gateway/ai-gateway.types";
 
 const FEATURE_KEY = "payroll.explain-payslip" as const;
 
@@ -25,6 +26,8 @@ export interface PayslipExplanation {
   citations: EvidenceCitation[];
   capability: typeof PAYROLL_AI_CAPABILITY;
   forbiddenActions: typeof FORBIDDEN_PAYROLL_AI_ACTIONS;
+  /** Token/credit usage for this call — surfaced via the shared AiUsageChip (§16). */
+  aiUsage: AiUsageMeta;
 }
 
 function buildSystemPrompt(): string {
@@ -94,7 +97,7 @@ export class PayrollAiExplainService {
         taxable: payrollLineItems.taxable,
       })
       .from(payrollLineItems)
-      .where(eq(payrollLineItems.runEmployeeId, pub.runEmployeeId));
+      .where(and(eq(payrollLineItems.orgId, orgId), eq(payrollLineItems.runEmployeeId, pub.runEmployeeId)));
 
     const earnings = lineItems.filter((l) => l.category === "EARNING");
     const deductions = lineItems.filter((l) => l.category === "DEDUCTION");
@@ -116,7 +119,7 @@ export class PayrollAiExplainService {
       employerContributions: employerContribs.map((c) => ({ name: c.name, amount: c.amount })),
     };
 
-    const result = await this.gateway.invokeText({
+    const result = await this.gateway.invokeTextWithUsage({
       actor: { orgId, userId },
       feature: FEATURE_KEY,
       tier: "fast",
@@ -139,6 +142,7 @@ export class PayrollAiExplainService {
       citations: buildPayslipEvidenceCitations(evidence),
       capability: PAYROLL_AI_CAPABILITY,
       forbiddenActions: FORBIDDEN_PAYROLL_AI_ACTIONS,
+      aiUsage: result.aiUsage,
     };
   }
 

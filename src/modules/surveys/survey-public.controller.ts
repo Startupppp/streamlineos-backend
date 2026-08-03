@@ -90,14 +90,15 @@ export class SurveyPublicController {
   @Public()
   @Get("live/:sessionCode")
   async getLiveSession(@Param("sessionCode") sessionCode: string) {
-    const session = await this.liveSessions.getByCode(sessionCode);
-    if (session.status === "ended") throw new NotFoundException("This live session has ended");
-    const question = await this.liveSessions.getCurrentQuestion(session);
-    const currentQuestion = question && {
-      ...question,
-      choices: question.choices.map(({ isCorrect: _isCorrect, ...choice }) => choice),
-    };
-    return { ...session, currentQuestion };
+    return this.liveSessions.withLiveSession(sessionCode, async (session) => {
+      if (session.status === "ended") throw new NotFoundException("This live session has ended");
+      const question = await this.liveSessions.getCurrentQuestion(session);
+      const currentQuestion = question && {
+        ...question,
+        choices: question.choices.map(({ isCorrect: _, ...choice }) => choice),
+      };
+      return { ...session, currentQuestion };
+    });
   }
 
   @Public()
@@ -109,8 +110,7 @@ export class SurveyPublicController {
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("survey:public-start", this.getIp(req));
-    const session = await this.liveSessions.getByCode(sessionCode);
-    return this.liveParticipants.join(session, body);
+    return this.liveSessions.withLiveSession(sessionCode, (session) => this.liveParticipants.join(session, body));
   }
 
   @Public()
@@ -121,7 +121,6 @@ export class SurveyPublicController {
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("survey:public-submit", this.getIp(req));
-    const session = await this.liveSessions.getByCode(sessionCode);
-    return this.liveParticipants.submitAnswer(session, body);
+    return this.liveSessions.withLiveSession(sessionCode, (session) => this.liveParticipants.submitAnswer(session, body));
   }
 }

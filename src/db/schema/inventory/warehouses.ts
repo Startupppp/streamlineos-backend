@@ -1,13 +1,13 @@
-import { pgTable, text, serial, timestamp, boolean, decimal, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, decimal, integer, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { invLocationTypeEnum } from "../enums";
-import { organizations, users } from "../auth";
-import { orgBranches } from "../organization";
+import { invLocationTypeEnum } from "../common/enums";
+import { organizations, users } from "../common/auth";
+import { orgUnits } from "../common/organization";
 
 export const invWarehouses = pgTable("inv_warehouses", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  branchId: text("branch_id").references(() => orgBranches.id, { onDelete: "set null" }),
+  branchId: text("branch_id").references(() => orgUnits.id, { onDelete: "set null" }),
   name: text("name").notNull(),
   code: text("code").notNull(),
   address: text("address"),
@@ -22,6 +22,7 @@ export const invWarehouses = pgTable("inv_warehouses", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_warehouses_org_code").on(table.orgId, table.code),
+  unique("uniq_inv_warehouses_org_id").on(table.orgId, table.id),
   index("idx_inv_warehouses_org").on(table.orgId),
   index("idx_inv_warehouses_branch").on(table.branchId),
 ]);
@@ -43,14 +44,16 @@ export const invLocations = pgTable("inv_locations", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_locations_warehouse_code").on(table.warehouseId, table.code),
+  unique("uniq_inv_locations_org_id").on(table.orgId, table.id),
   index("idx_inv_locations_org").on(table.orgId),
   index("idx_inv_locations_warehouse").on(table.warehouseId),
   index("idx_inv_locations_parent").on(table.parentLocationId),
+  foreignKey({ columns: [table.parentLocationId], foreignColumns: [table.id], name: "fk_inv_locations_parent" }).onDelete("set null"),
 ]);
 
 export const invWarehousesRelations = relations(invWarehouses, ({ one, many }) => ({
   organization: one(organizations, { fields: [invWarehouses.orgId], references: [organizations.id] }),
-  branch: one(orgBranches, { fields: [invWarehouses.branchId], references: [orgBranches.id] }),
+  branch: one(orgUnits, { fields: [invWarehouses.branchId], references: [orgUnits.id] }),
   manager: one(users, { fields: [invWarehouses.managerUserId], references: [users.id], relationName: "warehouseManager" }),
   creator: one(users, { fields: [invWarehouses.createdBy], references: [users.id], relationName: "warehouseCreator" }),
   locations: many(invLocations),

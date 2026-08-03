@@ -8,18 +8,6 @@ export const visitSchema = z.object({
 
 export type VisitInput = z.infer<typeof visitSchema>;
 
-export const messageStatusSchema = z.enum(["NEW", "READ", "REPLIED", "ARCHIVED"]);
-export type MessageStatus = z.infer<typeof messageStatusSchema>;
-
-export const markStatusBodySchema = z.object({
-  status: messageStatusSchema,
-});
-
-export const markRepliedBodySchema = z.object({
-  replyBody: z.string().min(1).max(10_000),
-  repliedById: z.string().min(1),
-});
-
 export const listMessagesQuerySchema = z.object({
   status: z.enum(["NEW", "READ", "REPLIED", "ARCHIVED", "ALL"]).optional(),
   topic: z.string().optional(),
@@ -38,13 +26,3 @@ export const contactFormSchema = z.object({
 });
 export type ContactFormInput = z.infer<typeof contactFormSchema>;
 
-export const replyMessageSchema = z.object({
-  body: z.string().min(1).max(10_000),
-  repliedById: z.string().min(1),
-});
-export type ReplyMessageInput = z.infer<typeof replyMessageSchema>;
-
-export const grantPlatformAdminSchema = z.object({
-  email: z.string().email().trim().toLowerCase(),
-});
-export type GrantPlatformAdminInput = z.infer<typeof grantPlatformAdminSchema>;

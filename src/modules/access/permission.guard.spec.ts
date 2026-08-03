@@ -25,14 +25,11 @@ class GuardTestController {
 const user: CurrentUserContext = {
   userId: "user-1",
   orgId: "org-1",
-  branchId: null,
   role: "ADMIN",
   permissions: [],
-  enabledModules: [],
-  plan: null,
-  isPlatformAdmin: false,
   isOrgOwner: false,
   sessionId: "session-1",
+  tokenScopes: null,
 };
 
 describe("PermissionGuard", () => {

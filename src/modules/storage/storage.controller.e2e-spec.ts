@@ -4,13 +4,19 @@ import request from "supertest";
 import { AppModule } from "../../app.module";
 import { AllExceptionsFilter } from "../../common/http/all-exceptions.filter";
 import { signToken } from "../../../test/helpers/sign-token";
+import { stubMembershipState } from "../../../test/helpers/membership-state";
 
 describe("Storage auth/RBAC (e2e)", () => {
   let app: INestApplication;
   beforeAll(async () => {
     process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
     process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-    const ref = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const ref = await stubMembershipState(
+      Test.createTestingModule({ imports: [AppModule] }),
+      {
+        sales_1: { role: "SALES" },
+      },
+    ).compile();
     app = ref.createNestApplication();
     app.useGlobalFilters(new AllExceptionsFilter());
     await app.init();
@@ -57,7 +63,7 @@ describe("Storage auth/RBAC (e2e)", () => {
   ];
 
   it.each(vaultRoutes)("403 on %s %s for a non-privileged role", async (method, path) => {
-    const token = await signToken({ role: "SALES", isOrgOwner: false, isPlatformAdmin: false });
+    const token = await signToken({ sub: "sales_1" });
     const res = await callRoute(method, path).set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toEqual({ error: "Forbidden" });

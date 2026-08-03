@@ -13,12 +13,11 @@ import { and, eq, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { feedbucketSubmissions } from "../../db/schema";
-import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
-import { AiUsageService } from "../ai/services/ai-usage.service";
+import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
-import { ProjectsTicketsService } from "../projects/projects-tickets.service";
-import { requireFeature } from "../ai/billing/feature-gates";
+import { ProjectsTicketsService } from "../build/core/projects-tickets.service";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import {
   FeedbackAnalysisSchema,
   type FeedbackAnalysis,
@@ -31,8 +30,8 @@ import {
   buildBugDescription,
 } from "./feedbucket-ai.prompts";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import type { FeedbucketConsoleEntry, FeedbucketMetadata, FeedbucketNetworkEntry } from "../../db/schema/feedbucket";
-import type { AiUsageMeta } from "../ai/gateway/ai-gateway.types";
+import type { FeedbucketConsoleEntry, FeedbucketMetadata, FeedbucketNetworkEntry } from "../../db/schema/build/feedback";
+import type { AiUsageMeta } from "../ai/core/gateway/ai-gateway.types";
 
 const FEATURE_KEY = "feedbucket.analyze" as const;
 const PUBLIC_FEATURE_KEY = "feedbucket.assist" as const;
@@ -120,10 +119,10 @@ export class FeedbucketAiService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly gateway: AiGatewayService,
-    private readonly aiUsage: AiUsageService,
     private readonly audit: AuditService,
     private readonly rateLimiter: RateLimitService,
     private readonly ticketsService: ProjectsTicketsService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   private async loadSubmission(orgId: string, submissionId: number) {
@@ -280,7 +279,7 @@ export class FeedbucketAiService {
   }
 
   async analyze(u: CurrentUserContext, submissionId: number, force = false): Promise<FeedbackAnalysis & { aiUsage?: AiUsageMeta }> {
-    requireFeature(u.plan, "ai.feedbucket");
+    await this.planLimits.assertFeature(u.orgId, "ai.feedbucket");
 
     const submission = await this.loadSubmission(u.orgId, submissionId);
     this.assertProjectAccess(submission, u.orgId);
@@ -343,7 +342,7 @@ export class FeedbucketAiService {
     u: CurrentUserContext,
     submissionId: number,
   ): Promise<{ ticketId: number; ticketType: string }> {
-    requireFeature(u.plan, "ai.feedbucket");
+    await this.planLimits.assertFeature(u.orgId, "ai.feedbucket");
 
     const submission = await this.loadSubmission(u.orgId, submissionId);
     const projectId = this.assertProjectAccess(submission, u.orgId);

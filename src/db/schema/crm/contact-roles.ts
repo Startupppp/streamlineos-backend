@@ -1,6 +1,6 @@
-import { pgTable, text, boolean, timestamp, integer, index, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { pgTable, text, boolean, timestamp, integer, index, uniqueIndex, uuid, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 import { contacts } from "./contacts";
 
 export const crmContactRoles = pgTable("crm_contact_roles", {
@@ -24,6 +24,7 @@ export const crmContactRoles = pgTable("crm_contact_roles", {
     table.entityId,
     table.roleKey,
   ),
+  unique("uniq_crm_contact_roles_org_id").on(table.orgId, table.id),
 ]);
 
 export const crmContactRolesRelations = relations(crmContactRoles, ({ one }) => ({

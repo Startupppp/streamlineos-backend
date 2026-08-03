@@ -1,7 +1,7 @@
 import { Module } from "@nestjs/common";
-import { HrPayrollModule } from "../../hr-payroll/hr-payroll.module";
+import { HrPayrollModule } from "../../hr/payroll/hr-payroll.module";
 import { NotificationsModule } from "../../notifications/notifications.module";
-import { AiModule } from "../../ai/ai.module";
+import { AiModule } from "../../ai/core/ai.module";
 import { ReportsController } from "./reports.controller";
 import { ReportsService } from "./reports.service";
 import { JournalController } from "./journal.controller";
@@ -20,6 +20,7 @@ import { CalendarService } from "./calendar.service";
 import { TaxWindowsController } from "./tax-windows.controller";
 import { TaxWindowsService } from "./tax-windows.service";
 import { TaxAdminController } from "./tax-admin.controller";
+import { TaxAdminService } from "./tax-admin.service";
 import { FnfController } from "./fnf.controller";
 import { FnfInsightsService } from "./fnf.service";
 import { EssController } from "./ess.controller";
@@ -54,6 +55,7 @@ import { PayrollAiExplainService } from "./payroll-ai-explain.service";
     AccountingMappingsService,
     CalendarService,
     TaxWindowsService,
+    TaxAdminService,
     FnfInsightsService,
     EssService,
     PayrollNotificationsService,

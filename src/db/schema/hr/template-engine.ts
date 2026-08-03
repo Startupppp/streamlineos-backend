@@ -6,11 +6,14 @@ import {
   timestamp,
   integer,
   index,
+  unique,
   uniqueIndex,
   jsonb,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
+import { hrEmployments } from "./core-people";
 
 export const hrTemplateKindEnum = pgEnum("hr_template_kind", [
   "onboarding_checklist",
@@ -107,7 +110,7 @@ export const hrTemplates = pgTable("hr_templates", {
   description: text("description"),
   status: hrTemplateStatusEnum("status").default("draft").notNull(),
   version: integer("version").default(1).notNull(),
-  parentTemplateId: integer("parent_template_id"),
+  parentTemplateId: integer("parent_template_id").references((): AnyPgColumn => hrTemplates.id, { onDelete: "set null" }),
   content: jsonb("content").$type<Record<string, unknown>>().notNull().default({}),
   variablesUsed: text("variables_used").array().default([]).notNull(),
   letterType: hrLetterTypeEnum("letter_type"),
@@ -117,6 +120,7 @@ export const hrTemplates = pgTable("hr_templates", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_hr_templates_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_hr_templates_org_kind_name_ver").on(table.orgId, table.kind, table.name, table.version),
   index("idx_hr_templates_org_kind").on(table.orgId, table.kind),
   index("idx_hr_templates_org_status").on(table.orgId, table.status),
@@ -127,12 +131,13 @@ export const hrTemplateRenders = pgTable("hr_template_renders", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   templateId: integer("template_id").references(() => hrTemplates.id, { onDelete: "cascade" }).notNull(),
   templateVersion: integer("template_version").notNull(),
-  renderedForEmployeeId: integer("rendered_for_employee_id"),
+  renderedForEmployeeId: integer("rendered_for_employee_id").references(() => hrEmployments.id, { onDelete: "set null" }),
   renderedBy: text("rendered_by").references(() => users.id).notNull(),
   contextSnapshot: jsonb("context_snapshot").$type<Record<string, unknown>>().notNull().default({}),
   outputHtml: text("output_html").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_hr_template_renders_org_id").on(table.orgId, table.id),
   index("idx_hr_template_renders_org_template").on(table.orgId, table.templateId, table.createdAt),
 ]);
 

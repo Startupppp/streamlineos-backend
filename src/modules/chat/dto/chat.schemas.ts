@@ -102,7 +102,6 @@ export const pinMessageSchema = z.object({
 });
 
 export const addMemberSchema = z.object({ userId: z.string().min(1) });
-export const removeMemberSchema = z.object({ userId: z.string().min(1) });
 
 export const muteChannelSchema = z.object({
   duration: z.enum(["15m", "1h", "8h", "24h", "forever"]),
@@ -132,7 +131,6 @@ export type PollQuery = z.infer<typeof pollQuerySchema>;
 export type SearchQuery = z.infer<typeof searchQuerySchema>;
 export type PinMessageInput = z.infer<typeof pinMessageSchema>;
 export type AddMemberInput = z.infer<typeof addMemberSchema>;
-export type RemoveMemberInput = z.infer<typeof removeMemberSchema>;
 
 export const ticketStatusActionSchema = z.object({
   channelId: z.number().int().positive(),

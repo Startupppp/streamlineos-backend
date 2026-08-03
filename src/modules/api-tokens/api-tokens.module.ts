@@ -1,11 +1,11 @@
 import { Module } from "@nestjs/common";
-import { ApiTokensController } from "./api-tokens.controller";
-import { ApiTokensService } from "./api-tokens.service";
-import { NotificationsModule } from "../notifications/notifications.module";
+import { ApiTokensModule } from "./core/api-tokens.module";
+import { UserApiTokensModule } from "./user/user-api-tokens.module";
+
+const API_TOKENS_MODULES = [ApiTokensModule, UserApiTokensModule];
 
 @Module({
-  imports: [NotificationsModule],
-  controllers: [ApiTokensController],
-  providers: [ApiTokensService],
+  imports: API_TOKENS_MODULES,
+  exports: API_TOKENS_MODULES,
 })
-export class ApiTokensModule {}
+export class ApiTokensRootModule {}

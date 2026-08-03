@@ -4,10 +4,11 @@ import { kbPages, kbImportJobs, kbExportJobs } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
-import { PlanLimitsService } from "../billing/plan-limits.service";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { ExportPageInput, ImportPagesInput } from "./dto/kb-import-export.schemas";
 import { toMarkdown, toHtml } from "./kb-export-serializer";
+import { assertPageAccessible } from "./kb-page-access.util";
 
 type ImportJobRow = typeof kbImportJobs.$inferSelect;
 type ExportJobRow = typeof kbExportJobs.$inferSelect;
@@ -38,6 +39,7 @@ export class KbImportExportService {
     pageId: number,
     input: ExportPageInput,
   ): Promise<ExportResult> {
+    await assertPageAccessible(this.db, user, pageId);
     const page = await this.db.query.kbPages.findFirst({
       where: and(
         eq(kbPages.id, pageId),

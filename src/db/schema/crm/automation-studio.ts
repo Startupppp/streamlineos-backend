@@ -1,7 +1,7 @@
-import { pgTable, text, timestamp, boolean, jsonb, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, jsonb, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
 import { relations } from "drizzle-orm";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 import { crmAutomationRules } from "./automation-rules";
 
 export const crmAutomationRuns = pgTable("crm_automation_runs", {
@@ -19,6 +19,7 @@ export const crmAutomationRuns = pgTable("crm_automation_runs", {
   finishedAt: timestamp("finished_at"),
 }, (table) => [
   index("idx_crm_automation_runs_org_rule").on(table.orgId, table.ruleId, table.startedAt),
+  unique("uniq_crm_automation_runs_org_id").on(table.orgId, table.id),
 ]);
 
 export const crmSequences = pgTable("crm_sequences", {
@@ -34,6 +35,7 @@ export const crmSequences = pgTable("crm_sequences", {
   deletedAt: timestamp("deleted_at"),
 }, (table) => [
   uniqueIndex("uniq_crm_sequences_org_name").on(table.orgId, table.name),
+  unique("uniq_crm_sequences_org_id").on(table.orgId, table.id),
 ]);
 
 export const crmSequenceSteps = pgTable("crm_sequence_steps", {
@@ -62,6 +64,7 @@ export const crmSequenceEnrollments = pgTable("crm_sequence_enrollments", {
 }, (table) => [
   uniqueIndex("uniq_crm_seq_enrollment").on(table.orgId, table.sequenceId, table.entityType, table.entityId),
   index("idx_crm_seq_enrollment_due").on(table.orgId, table.status, table.nextRunAt),
+  unique("uniq_crm_seq_enrollments_org_id").on(table.orgId, table.id),
 ]);
 
 export interface RunStepLog {

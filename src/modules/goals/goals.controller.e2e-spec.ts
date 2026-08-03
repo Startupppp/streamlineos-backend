@@ -65,12 +65,12 @@ describe("Goals auth/RBAC (e2e)", () => {
       error: "Forbidden",
       code: "RBAC_DENIED",
       verb: "view",
-      subject: "projects:goals",
+      subject: "build:goals",
     });
   });
 
   it("403 on POST /goals without projects:goals manage", async () => {
-    const token = await signToken({ permissions: ["projects:goals:view"], enabledModules: [] });
+    const token = await signToken({ permissions: ["build:goals:view"], enabledModules: [] });
     const res = await request(app.getHttpServer())
       .post("/goals")
       .set("Authorization", `Bearer ${token}`);
@@ -78,7 +78,7 @@ describe("Goals auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({
       code: "RBAC_DENIED",
       verb: "manage",
-      subject: "projects:goals",
+      subject: "build:goals",
     });
   });
 });

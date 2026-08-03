@@ -24,9 +24,6 @@ import { ChatReplyRemindersService } from "./chat-reply-reminders.service";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import type { SendMessageInput } from "./dto/chat.schemas";
 
-const CEO = "CEO";
-const HR = "HR";
-
 type PersistedMessage = {
   id: number;
   channelId: number;
@@ -244,23 +241,27 @@ export class ChatMessagesService {
         const userId = message.senderId;
         if (matches.some(m => m === "channel" || m === "everyone" || m === "here")) {
           const memberIds = channelMembers.map(m => m.userId).filter(id => id !== userId);
-          for (const memberId of memberIds) {
+          if (memberIds.length > 0) {
             await this.notifications.publishMentionNotification(orgId, channelId, {
               id: message.id, content: body.content!, senderId: userId, senderName: senderName ?? "Someone",
-            }, [memberId]);
+            }, memberIds);
           }
         }
+        const individualMentionIds: string[] = [];
         for (const member of channelMembers) {
           if (!member.user || member.userId === userId) continue;
           const memberName = member.user.name?.toLowerCase() ?? "";
           if (matches.some(m => memberName.includes(m) || m.includes(memberName.split(" ")[0]))) {
-            await this.notifications.publishMentionNotification(orgId, channelId, {
-              id: message.id,
-              content: body.content!,
-              senderId: userId,
-              senderName: senderName ?? "Someone",
-            }, [member.userId]);
+            individualMentionIds.push(member.userId);
           }
+        }
+        if (individualMentionIds.length > 0) {
+          await this.notifications.publishMentionNotification(orgId, channelId, {
+            id: message.id,
+            content: body.content!,
+            senderId: userId,
+            senderName: senderName ?? "Someone",
+          }, individualMentionIds);
         }
       }
     }
@@ -295,7 +296,7 @@ export class ChatMessagesService {
     return { ok: true };
   }
 
-  async remove(messageId: number, userId: string, role: string, orgId: string) {
+  async remove(messageId: number, userId: string, isOrgAdmin: boolean, orgId: string) {
     const message = await this.db.query.chatMessages.findFirst({
       where: and(eq(chatMessages.id, messageId), eq(chatMessages.isDeleted, false)),
     });
@@ -304,8 +305,7 @@ export class ChatMessagesService {
       throw new ForbiddenException("You are not a member of this channel");
     }
 
-    const isAdmin = role === CEO || role === HR;
-    if (!isAdmin && message.senderId !== userId) {
+    if (!isOrgAdmin && message.senderId !== userId) {
       throw new ForbiddenException("You can only delete your own messages");
     }
 
@@ -397,6 +397,14 @@ export class ChatMessagesService {
     metadata: Record<string, unknown>,
   ): Promise<void> {
     const [message] = await this.db.transaction(async (tx) => {
+      const [channel] = await tx
+        .select({ id: chatChannels.id })
+        .from(chatChannels)
+        .where(and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, orgId)))
+        .limit(1);
+
+      if (!channel) throw new NotFoundException("Channel not found");
+
       const [created] = await tx
         .insert(chatMessages)
         .values({

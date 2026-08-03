@@ -15,6 +15,7 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { Public } from "../../common/auth/public.decorator";
+import { AllowWithoutMfa } from "../../common/auth/allow-without-mfa.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
@@ -93,6 +94,7 @@ export class AuthController {
 
   @Post("logout")
   @HttpCode(200)
+  @AllowWithoutMfa()
   logout(@CurrentUser() u: CurrentUserContext) {
     return this.authService.logout(u.sessionId ?? "", u.userId);
   }

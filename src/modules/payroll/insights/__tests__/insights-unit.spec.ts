@@ -38,11 +38,11 @@ function makeLineItem(overrides: {
   };
 }
 
-function makeRunEmployee(net: string, id = 100): Record<string, unknown> {
+function _makeRunEmployee(net: string, id = 100): Record<string, unknown> {
   return { id, net, runId: 10, orgId: "org1", userId: "u1", profileId: 1 };
 }
 
-function makeMockDb(lineItems: unknown[], runEmployees: unknown[], costCenters: unknown[]) {
+function _makeMockDb(lineItems: unknown[], runEmployees: unknown[], costCenters: unknown[]) {
   const selectFns = {
     lineItems,
     runEmployees,

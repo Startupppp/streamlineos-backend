@@ -5,9 +5,10 @@ import {
   integer,
   timestamp,
   index,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { kbSpaces } from "./spaces";
 
 export const KB_SOURCE_KINDS = ["file", "note"] as const;
@@ -49,6 +50,7 @@ export const kbSources = pgTable(
   (table) => [
     index("idx_kb_sources_org").on(table.orgId),
     index("idx_kb_sources_org_space").on(table.orgId, table.spaceId),
+    unique("uniq_kb_sources_org_id").on(table.orgId, table.id),
   ],
 );
 

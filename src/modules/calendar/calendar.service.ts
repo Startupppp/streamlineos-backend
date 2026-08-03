@@ -1,17 +1,12 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { and, eq, gte, lte, isNotNull, inArray } from "drizzle-orm";
+import { and, eq, gte, lte, inArray } from "drizzle-orm";
 import {
   calendarEvents,
   eventAttendees,
   leaveRequests,
-  interviews,
-  tasks,
-  holidays,
   users,
-  tickets,
-  projects,
-  projectMembers,
   userIntegrationConnections,
+  organizationMembers,
 } from "../../db/schema";
 import { ExternalCalendarSyncService } from "./external-calendar-sync.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -19,45 +14,10 @@ import { type Db } from "../../db/drizzle.module";
 import type { CreateEventInput, RsvpInput, UpdateEventInput } from "./dto/calendar.schemas";
 import { EmailService } from "../email/email.service";
 import { getCalendarInviteEmail } from "../email/templates/calendar";
-
-export interface LinkedTicket {
-  id: number;
-  key: string;
-  title: string;
-  projectId: number;
-  status: string;
-}
-
-export interface CalendarEventItem {
-  id: string;
-  title: string;
-  start: Date;
-  end: Date;
-  allDay?: boolean;
-  color?: string | null;
-  category: string;
-  source: "event" | "leave" | "interview" | "task" | "holiday";
-  location?: string | null;
-  meetingUrl?: string | null;
-  description?: string | null;
-  creatorName?: string | null;
-  entityId?: string | null;
-  entityType?: string | null;
-  myRsvpStatus?: string | null;
-  projectId?: number | null;
-  linkedTicket?: LinkedTicket | null;
-}
-
-export interface OooConflict {
-  userId: string;
-  userName: string | null;
-  leaveStart: string;
-  leaveEnd: string;
-}
-
-function dateOnly(date: Date): string {
-  return date.toISOString().slice(0, 10);
-}
+import { CalendarEventsAggregateService } from "./calendar-events-aggregate.service";
+import type { CalendarEventItem, OooConflict } from "./calendar.types";
+import { dateOnly } from "./calendar.types";
+import { assertUsersInOrg } from "../../common/tenant/org-membership";
 
 @Injectable()
 export class CalendarService {
@@ -67,282 +27,16 @@ export class CalendarService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly sync: ExternalCalendarSyncService,
     private readonly email: EmailService,
+    private readonly eventsAggregate: CalendarEventsAggregateService,
   ) {}
 
-  async getEvents(
+  getEvents(
     orgId: string,
     userId: string,
     start: Date,
     end: Date,
   ): Promise<CalendarEventItem[]> {
-    const [eventsData, leavesData, interviewsData, tasksData, holidaysData, projectTicketsData] =
-      await Promise.all([
-        this.db.query.calendarEvents.findMany({
-          where: and(
-            eq(calendarEvents.orgId, orgId),
-            gte(calendarEvents.startDate, start),
-            lte(calendarEvents.startDate, end),
-          ),
-          with: { creator: { columns: { name: true } } },
-          orderBy: (t, { asc }) => [asc(t.startDate)],
-        }),
-
-        this.db
-          .select({
-            id: leaveRequests.id,
-            userId: leaveRequests.userId,
-            startDate: leaveRequests.startDate,
-            endDate: leaveRequests.endDate,
-            reason: leaveRequests.reason,
-            userName: users.name,
-          })
-          .from(leaveRequests)
-          .innerJoin(users, eq(leaveRequests.userId, users.id))
-          .where(
-            and(
-              eq(leaveRequests.orgId, orgId),
-              eq(leaveRequests.status, "APPROVED"),
-              lte(leaveRequests.startDate, dateOnly(end)),
-              gte(leaveRequests.endDate, dateOnly(start)),
-            ),
-          ),
-
-        this.db
-          .select({
-            id: interviews.id,
-            scheduledAt: interviews.scheduledAt,
-            duration: interviews.duration,
-            type: interviews.type,
-            interviewerId: interviews.interviewerId,
-            location: interviews.location,
-            meetingLink: interviews.meetingLink,
-          })
-          .from(interviews)
-          .where(
-            and(
-              eq(interviews.orgId, orgId),
-              gte(interviews.scheduledAt, start),
-              lte(interviews.scheduledAt, end),
-            ),
-          ),
-
-        this.db
-          .select({
-            id: tasks.id,
-            title: tasks.title,
-            dueDate: tasks.dueDate,
-            status: tasks.status,
-            assigneeId: tasks.assigneeId,
-          })
-          .from(tasks)
-          .where(
-            and(
-              eq(tasks.orgId, orgId),
-              isNotNull(tasks.dueDate),
-              gte(tasks.dueDate, start),
-              lte(tasks.dueDate, end),
-            ),
-          ),
-
-        this.db
-          .select({
-            id: holidays.id,
-            name: holidays.name,
-            date: holidays.date,
-            message: holidays.message,
-          })
-          .from(holidays)
-          .where(
-            and(
-              eq(holidays.orgId, orgId),
-              gte(holidays.date, dateOnly(start)),
-              lte(holidays.date, dateOnly(end)),
-            ),
-          ),
-
-        this.db
-          .select({
-            id: tickets.id,
-            title: tickets.title,
-            dueDate: tickets.dueDate,
-            status: tickets.status,
-            ticketNumber: tickets.ticketNumber,
-            projectId: projects.id,
-            projectKey: projects.key,
-          })
-          .from(tickets)
-          .innerJoin(projects, eq(tickets.projectId, projects.id))
-          .innerJoin(projectMembers, eq(projectMembers.projectId, projects.id))
-          .where(
-            and(
-              eq(tickets.orgId, orgId),
-              eq(projectMembers.userId, userId),
-              isNotNull(tickets.dueDate),
-              gte(tickets.dueDate, dateOnly(start)),
-              lte(tickets.dueDate, dateOnly(end)),
-            ),
-          ),
-      ]);
-
-    const eventIds = eventsData.map((e) => e.id);
-    const ticketEntityIds: number[] = [];
-    for (const ev of eventsData) {
-      if (ev.entityType === "ticket" && ev.entityId != null) {
-        const parsed = parseInt(ev.entityId, 10);
-        if (!Number.isNaN(parsed)) ticketEntityIds.push(parsed);
-      }
-    }
-
-    const rsvpMap = new Map<number, string>();
-    const linkedTicketMap = new Map<number, LinkedTicket>();
-
-    await Promise.all([
-      (async () => {
-        if (eventIds.length === 0) return;
-        const rows = await this.db
-          .select({ eventId: eventAttendees.eventId, status: eventAttendees.status })
-          .from(eventAttendees)
-          .where(
-            and(eq(eventAttendees.userId, userId), inArray(eventAttendees.eventId, eventIds)),
-          );
-        for (const row of rows) {
-          rsvpMap.set(row.eventId, row.status ?? "pending");
-        }
-      })(),
-      (async () => {
-        if (ticketEntityIds.length === 0) return;
-        const rows = await this.db
-          .select({
-            id: tickets.id,
-            ticketNumber: tickets.ticketNumber,
-            title: tickets.title,
-            projectId: projects.id,
-            status: tickets.status,
-            projectKey: projects.key,
-          })
-          .from(tickets)
-          .innerJoin(projects, eq(tickets.projectId, projects.id))
-          .where(and(eq(tickets.orgId, orgId), inArray(tickets.id, ticketEntityIds)));
-        for (const row of rows) {
-          linkedTicketMap.set(row.id, {
-            id: row.id,
-            key: `${row.projectKey}-${row.ticketNumber}`,
-            title: row.title,
-            projectId: row.projectId,
-            status: row.status,
-          });
-        }
-      })(),
-    ]);
-
-    const result: CalendarEventItem[] = [];
-
-    for (const ev of eventsData) {
-      let linkedTicket: LinkedTicket | null | undefined;
-      if (ev.entityType === "ticket" && ev.entityId != null) {
-        const parsed = parseInt(ev.entityId, 10);
-        linkedTicket = Number.isNaN(parsed) ? null : (linkedTicketMap.get(parsed) ?? null);
-      }
-      result.push({
-        id: `event-${ev.id}`,
-        title: ev.title,
-        start: ev.startDate,
-        end: ev.endDate,
-        allDay: ev.allDay ?? false,
-        color: ev.color,
-        category: ev.category,
-        source: "event",
-        location: ev.location,
-        meetingUrl: ev.meetingUrl,
-        description: ev.description,
-        creatorName: ev.creator?.name ?? null,
-        entityId: ev.entityId,
-        entityType: ev.entityType,
-        myRsvpStatus: rsvpMap.get(ev.id) ?? null,
-        linkedTicket,
-      });
-    }
-
-    for (const lv of leavesData) {
-      result.push({
-        id: `leave-${lv.id}`,
-        title: `${lv.userName ?? "Employee"} — OOO`,
-        start: new Date(lv.startDate),
-        end: new Date(lv.endDate),
-        allDay: true,
-        color: "green",
-        category: "leave",
-        source: "leave",
-        description: lv.reason ?? null,
-        creatorName: lv.userName ?? null,
-      });
-    }
-
-    for (const iv of interviewsData) {
-      const ivEnd = new Date(iv.scheduledAt);
-      ivEnd.setMinutes(ivEnd.getMinutes() + (iv.duration ?? 60));
-      result.push({
-        id: `interview-${iv.id}`,
-        title: `Interview (${iv.type ?? "Video"})`,
-        start: iv.scheduledAt,
-        end: ivEnd,
-        allDay: false,
-        color: "orange",
-        category: "interview",
-        source: "interview",
-        location: iv.location ?? iv.meetingLink ?? null,
-      });
-    }
-
-    for (const tk of tasksData) {
-      if (!tk.dueDate) continue;
-      result.push({
-        id: `task-${tk.id}`,
-        title: tk.title,
-        start: tk.dueDate,
-        end: tk.dueDate,
-        allDay: true,
-        color: tk.status === "completed" ? "gray" : "red",
-        category: "task",
-        source: "task",
-      });
-    }
-
-    for (const pt of projectTicketsData) {
-      if (!pt.dueDate) continue;
-      const ptDate = new Date(pt.dueDate);
-      result.push({
-        id: `ticket-${pt.id}`,
-        title: `${pt.projectKey}-${pt.ticketNumber}: ${pt.title}`,
-        start: ptDate,
-        end: ptDate,
-        allDay: true,
-        color: "blue",
-        category: "task",
-        source: "task",
-        entityType: "ticket",
-        entityId: String(pt.id),
-        projectId: pt.projectId,
-      });
-    }
-
-    for (const hd of holidaysData) {
-      const hdDate = new Date(hd.date);
-      result.push({
-        id: `holiday-${hd.id}`,
-        title: hd.name,
-        start: hdDate,
-        end: hdDate,
-        allDay: true,
-        color: "purple",
-        category: "holiday",
-        source: "holiday",
-        description: hd.message ?? null,
-      });
-    }
-
-    result.sort((a, b) => a.start.getTime() - b.start.getTime());
-    return result;
+    return this.eventsAggregate.getEvents(orgId, userId, start, end);
   }
 
   private async getOooConflicts(
@@ -378,6 +72,8 @@ export class CalendarService {
     const endDate = new Date(input.endDate);
     const attendeeIds = input.attendeeIds ?? [];
 
+    await assertUsersInOrg(this.db, orgId, attendeeIds);
+
     const [event, oooConflicts] = await Promise.all([
       this.db
         .insert(calendarEvents)
@@ -412,7 +108,7 @@ export class CalendarService {
     if (event && input.syncConnectionId) {
       try {
         const conn = await this.ownedActiveConnection(orgId, userId, input.syncConnectionId);
-        const attendeeEmailList = await this.attendeeEmails(attendeeIds);
+        const attendeeEmailList = await this.attendeeEmails(orgId, attendeeIds);
         const pushed = await this.sync.pushCreate(userId, conn, {
           title: input.title,
           description: input.description ?? null,
@@ -439,6 +135,7 @@ export class CalendarService {
     }
     if (event) {
       void this.dispatchInviteEmails({
+        orgId,
         organizerId: userId,
         attendeeIds,
         title: input.title,
@@ -458,6 +155,7 @@ export class CalendarService {
   }
 
   private async dispatchInviteEmails(params: {
+    orgId: string;
     organizerId: string;
     attendeeIds: string[];
     title: string;
@@ -482,7 +180,14 @@ export class CalendarService {
           lastName: users.lastName,
         })
         .from(users)
-        .where(inArray(users.id, recipientIds)),
+        .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
+        .where(
+          and(
+            inArray(users.id, recipientIds),
+            eq(organizationMembers.orgId, params.orgId),
+            eq(organizationMembers.status, "ACTIVE"),
+          ),
+        ),
       this.db
         .select({
           name: users.name,
@@ -536,7 +241,10 @@ export class CalendarService {
     if (input.category !== undefined) updateData.category = input.category;
     if (input.entityType !== undefined) updateData.entityType = input.entityType ?? null;
     if (input.entityId !== undefined) updateData.entityId = input.entityId ?? null;
-    if (input.attendeeIds !== undefined) updateData.attendeeIds = input.attendeeIds;
+    if (input.attendeeIds !== undefined) {
+      await assertUsersInOrg(this.db, orgId, input.attendeeIds);
+      updateData.attendeeIds = input.attendeeIds;
+    }
     if (input.isRecurring !== undefined) updateData.isRecurring = input.isRecurring;
     if (input.recurringRule !== undefined) updateData.recurringRule = input.recurringRule ?? null;
     if (input.agenda !== undefined) updateData.agenda = input.agenda ?? null;
@@ -642,9 +350,19 @@ export class CalendarService {
     return { id: row.id, toolkit: row.toolkit, composioConnectedAccountId: row.composioConnectedAccountId };
   }
 
-  private async attendeeEmails(attendeeIds: string[]): Promise<string[]> {
+  private async attendeeEmails(orgId: string, attendeeIds: string[]): Promise<string[]> {
     if (attendeeIds.length === 0) return [];
-    const rows = await this.db.select({ email: users.email }).from(users).where(inArray(users.id, attendeeIds));
+    const rows = await this.db
+      .select({ email: users.email })
+      .from(users)
+      .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
+      .where(
+        and(
+          inArray(users.id, attendeeIds),
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.status, "ACTIVE"),
+        ),
+      );
     return rows.map((r) => r.email);
   }
 

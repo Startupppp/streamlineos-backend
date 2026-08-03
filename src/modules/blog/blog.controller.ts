@@ -1,87 +1,24 @@
 import {
-  Body,
-  ConflictException,
   Controller,
-  Delete,
   Get,
-  HttpCode,
   NotFoundException,
   Param,
-  Patch,
-  Post,
   Query,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { Public } from "../../common/auth/public.decorator";
-import { PermissionGuard } from "../access/permission.guard";
-import { RequirePermission } from "../access/require-permission.decorator";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
-import { BlogService, isDuplicateCategory } from "./blog.service";
+import { BlogService } from "./blog.service";
 import {
-  categoryCreateSchema,
-  categoryUpdateSchema,
   feedSchema,
-  postCreateSchema,
-  postUpdateSchema,
-  type CategoryCreateInput,
-  type CategoryUpdateInput,
   type FeedInput,
-  type PostCreateInput,
-  type PostUpdateInput,
-} from "./dto/blog.schemas";
+  } from "./dto/blog.schemas";
 
 @Controller("blog")
 @UseGuards(JwtAuthGuard)
 export class BlogController {
   constructor(private readonly blog: BlogService) {}
-
-  @Get("posts")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("blog:posts:manage")
-  listPosts() {
-    return this.blog.listAdminPosts();
-  }
-
-  @Post("posts")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("blog:posts:manage")
-  @HttpCode(201)
-  createPost(
-    @Body(new ZodValidationPipe(postCreateSchema)) body: PostCreateInput,
-  ) {
-    return this.blog.createPost(body);
-  }
-
-  @Get("posts/:postId")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("blog:posts:manage")
-  async getPost(@Param("postId") postId: string) {
-    const post = await this.blog.getAdminPostById(postId);
-    if (!post) throw new NotFoundException("Post not found");
-    return post;
-  }
-
-  @Patch("posts/:postId")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("blog:posts:manage")
-  async updatePost(
-    @Param("postId") postId: string,
-    @Body(new ZodValidationPipe(postUpdateSchema)) body: PostUpdateInput,
-  ) {
-    const updated = await this.blog.updatePost(postId, body);
-    if (!updated) throw new NotFoundException("Post not found");
-    return updated;
-  }
-
-  @Delete("posts/:postId")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("blog:posts:manage")
-  async deletePost(@Param("postId") postId: string) {
-    const deleted = await this.blog.deletePost(postId);
-    if (!deleted) throw new NotFoundException("Post not found");
-    return deleted;
-  }
 
   @Public()
   @Get("by-slug/:slug")
@@ -101,41 +38,6 @@ export class BlogController {
   @Get("categories")
   listCategories() {
     return this.blog.getCategories();
-  }
-
-  @Post("categories")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("blog:categories:manage")
-  @HttpCode(201)
-  async createCategory(
-    @Body(new ZodValidationPipe(categoryCreateSchema)) body: CategoryCreateInput,
-  ) {
-    const result = await this.blog.createCategory(body);
-    if (isDuplicateCategory(result)) {
-      throw new ConflictException("A category with that name already exists");
-    }
-    return result;
-  }
-
-  @Patch("categories/:categoryId")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("blog:categories:manage")
-  async updateCategory(
-    @Param("categoryId") categoryId: string,
-    @Body(new ZodValidationPipe(categoryUpdateSchema)) body: CategoryUpdateInput,
-  ) {
-    const updated = await this.blog.updateCategory(categoryId, body);
-    if (!updated) throw new NotFoundException("Category not found");
-    return updated;
-  }
-
-  @Delete("categories/:categoryId")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("blog:categories:manage")
-  async deleteCategory(@Param("categoryId") categoryId: string) {
-    const deleted = await this.blog.deleteCategory(categoryId);
-    if (!deleted) throw new NotFoundException("Category not found");
-    return deleted;
   }
 
   @Public()

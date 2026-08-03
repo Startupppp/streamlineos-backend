@@ -69,7 +69,7 @@ export class ExpensesController {
   ) {}
 
   private async canApprove(u: CurrentUserContext): Promise<boolean> {
-    if (u.isOrgOwner || u.isPlatformAdmin) return true;
+    if (u.isOrgOwner) return true;
     const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
     return perms.has("hr:expenses:approve");
   }
@@ -90,7 +90,7 @@ export class ExpensesController {
     @Body(new ZodValidationPipe(createExpenseSchema)) body: CreateExpenseInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.expensesWrite.create(u.orgId, u.userId, await this.canApprove(u), body);
+    return this.expensesWrite.create(u.orgId, u.userId, body);
   }
 
   @Patch(":expenseId")

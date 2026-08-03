@@ -1,5 +1,6 @@
-import { pgTable, serial, text, integer, jsonb, timestamp, index } from "drizzle-orm/pg-core";
-import { organizations, users } from "../auth";
+import { pgTable, serial, text, integer, jsonb, timestamp, index, unique } from "drizzle-orm/pg-core";
+import { organizations, users } from "../common/auth";
+import { kbSpaces } from "./spaces";
 
 export const KB_RESEARCH_BRIEF_STATUSES = ["queued", "running", "completed", "failed"] as const;
 export type KbResearchBriefStatus = (typeof KB_RESEARCH_BRIEF_STATUSES)[number];
@@ -11,7 +12,7 @@ export const kbResearchBriefs = pgTable(
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
     topic: text("topic").notNull(),
-    spaceId: integer("space_id"),
+    spaceId: integer("space_id").references(() => kbSpaces.id, { onDelete: "set null" }),
     status: text("status").$type<KbResearchBriefStatus>().notNull().default("queued"),
     jobId: integer("job_id"),
     sourceCount: integer("source_count").notNull().default(0),
@@ -26,5 +27,6 @@ export const kbResearchBriefs = pgTable(
     index("idx_kb_research_briefs_org").on(table.orgId),
     index("idx_kb_research_briefs_org_user").on(table.orgId, table.userId),
     index("idx_kb_research_briefs_job").on(table.jobId),
+    unique("uniq_kb_research_briefs_org_id").on(table.orgId, table.id),
   ],
 );

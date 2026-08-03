@@ -9,13 +9,17 @@ import {
   index,
   uniqueIndex,
   foreignKey,
+  customType,
+  unique,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { relations, sql } from "drizzle-orm";
+import { organizations, users } from "../common/auth";
 import { kbSpaces } from "../kb/spaces";
 
 export const kbArticleStatusEnum = pgEnum("kb_article_status", ["draft", "in_review", "published", "archived"]);
 export const kbArticleVisibilityEnum = pgEnum("kb_article_visibility", ["public", "internal"]);
+
+const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
 
 export const kbCategories = pgTable(
   "kb_categories",
@@ -42,6 +46,7 @@ export const kbCategories = pgTable(
       foreignColumns: [table.id],
       name: "fk_kb_categories_parent",
     }).onDelete("set null"),
+    unique("uniq_kb_categories_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -59,12 +64,14 @@ export const kbArticles = pgTable(
     contentText: text("content_text").default("").notNull(),
     status: kbArticleStatusEnum("status").default("draft").notNull(),
     visibility: kbArticleVisibilityEnum("visibility").default("internal").notNull(),
-    authorId: text("author_id"),
+    authorId: text("author_id").references(() => users.id, { onDelete: "set null" }),
     ownerId: text("owner_id").references(() => users.id, { onDelete: "set null" }),
     views: integer("views").default(0).notNull(),
     helpfulCount: integer("helpful_count").default(0).notNull(),
     notHelpfulCount: integer("not_helpful_count").default(0).notNull(),
-    tags: text("tags").array(),
+    fts: tsvector("fts").generatedAlwaysAs(
+      sql`setweight(to_tsvector('english', coalesce(title, '')), 'A') || setweight(to_tsvector('english', coalesce(excerpt, '')), 'B') || setweight(to_tsvector('english', coalesce(content_text, '')), 'C')`,
+    ),
     seoTitle: text("seo_title"),
     seoDescription: text("seo_description"),
     reviewIntervalDays: integer("review_interval_days"),
@@ -81,6 +88,8 @@ export const kbArticles = pgTable(
     index("idx_kb_articles_space").on(table.spaceId),
     index("idx_kb_articles_org_updated").on(table.orgId, table.updatedAt),
     index("idx_kb_articles_org_status_views").on(table.orgId, table.status, table.views),
+    index("idx_kb_articles_fts").using("gin", table.fts),
+    unique("uniq_kb_articles_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -98,6 +107,7 @@ export const kbArticleFeedback = pgTable(
   (table) => [
     index("idx_kb_article_feedback_article").on(table.articleId),
     uniqueIndex("uniq_kb_article_feedback_org_article_visitor").on(table.orgId, table.articleId, table.visitorId),
+    unique("uniq_kb_article_feedback_org_id").on(table.orgId, table.id),
   ],
 );
 

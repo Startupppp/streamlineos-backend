@@ -29,8 +29,9 @@ import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { EmailService } from "../email/email.service";
-import { SessionService } from "./session.service";
+import { SessionsService } from "../sessions/sessions.service";
 import { hashToken } from "../../common/security/token.util";
+import { getTenantContext, withIdentity, withTenant } from "../../common/tenant";
 import { logger } from "../../common/logger/logger.service";
 import { addDays, addHours, addMinutes, subDays } from "date-fns";
 import type {
@@ -50,7 +51,7 @@ export class AuthTokensService {
     private readonly cache: CacheService,
     private readonly audit: AuditService,
     private readonly email: EmailService,
-    private readonly session: SessionService,
+    private readonly sessions: SessionsService,
   ) {}
 
   async resolveActiveMembership(
@@ -59,22 +60,24 @@ export class AuthTokensService {
   ): Promise<{
     orgId: string;
     isOwner: boolean;
-    mfaEnforced: boolean;
-    enabledModules: string[] | null;
+    role: string;
+    maxConcurrentSessions: number | null;
     orgOnboardingCompletedAt: Date | null;
   } | null> {
-    const rows = await this.db
-      .select({
-        orgId: organizationMembers.orgId,
-        isOwner: organizationMembers.isOwner,
-        mfaEnforced: organizations.mfaEnforced,
-        enabledModules: organizations.enabledModules,
-        orgOnboardingCompletedAt: organizations.onboardingCompletedAt,
-      })
-      .from(organizationMembers)
-      .innerJoin(organizations, eq(organizations.id, organizationMembers.orgId))
-      .where(eq(organizationMembers.userId, userId))
-      .orderBy(desc(organizationMembers.joinedAt));
+    const rows = await withIdentity(this.db, userId, async (tx) =>
+      tx
+        .select({
+          orgId: organizationMembers.orgId,
+          isOwner: organizationMembers.isOwner,
+          role: organizationMembers.role,
+          maxConcurrentSessions: organizations.maxConcurrentSessions,
+          orgOnboardingCompletedAt: organizations.onboardingCompletedAt,
+        })
+        .from(organizationMembers)
+        .innerJoin(organizations, eq(organizations.id, organizationMembers.orgId))
+        .where(and(eq(organizationMembers.userId, userId), eq(organizationMembers.status, "ACTIVE")))
+        .orderBy(desc(organizationMembers.joinedAt)),
+    );
 
     if (preferredOrgId) {
       const preferred = rows.find((r) => r.orgId === preferredOrgId);
@@ -92,19 +95,28 @@ export class AuthTokensService {
     context: { ipAddress?: string; userAgent?: string },
   ): Promise<void> {
     if (!userId) return;
-    await this.db
-      .insert(loginHistory)
-      .values({
-        id: randomUUID(),
-        userId,
-        orgId,
-        event,
-        ipAddress: context.ipAddress,
-        userAgent: context.userAgent,
-        success,
-        failureReason,
-      })
-      .catch(() => {});
+    const values = {
+      id: randomUUID(),
+      userId,
+      orgId,
+      event,
+      ipAddress: context.ipAddress,
+      userAgent: context.userAgent,
+      success,
+      failureReason,
+    };
+
+    try {
+      if (orgId && !getTenantContext()) {
+        await withTenant(this.db, { orgId, audience: "INTERNAL" }, async (tx) => {
+          await tx.insert(loginHistory).values(values);
+        });
+        return;
+      }
+      await this.db.insert(loginHistory).values(values);
+    } catch (error: unknown) {
+      logger.error("login history write failed", { error, event, userId });
+    }
   }
 
   async verifyEmail(
@@ -206,9 +218,7 @@ export class AuthTokensService {
         name: displayName,
         firstName: displayName,
         lastName: "",
-        role: "OWNER",
         isActive: true,
-        hasDashboardAccess: true,
         emailVerified: null,
       })
       .onConflictDoNothing()
@@ -305,10 +315,11 @@ export class AuthTokensService {
 
     const user = await this.db.query.users.findFirst({
       where: sql`lower(${users.email}) = ${normalizedEmail}`,
-      columns: { id: true },
+      columns: { id: true, isActive: true, deletedAt: true },
     });
 
     if (!user) throw new UnauthorizedException("Invalid or expired code");
+    if (!user.isActive || user.deletedAt !== null) throw new UnauthorizedException("Invalid or expired code");
 
     const row = await this.db.query.emailOtpCodes.findFirst({
       where: and(
@@ -368,12 +379,20 @@ export class AuthTokensService {
     userId: string,
     context: { userAgent?: string; ipAddress?: string },
   ): Promise<string> {
-    return this.session.create({
+    const sessionId = await this.sessions.create({
       userId,
       userAgent: context.userAgent,
       ipAddress: context.ipAddress,
       expiresAt: addDays(new Date(), 30),
     });
+
+    const membership = await this.resolveActiveMembership(userId, null);
+    const cap = membership?.maxConcurrentSessions ?? null;
+    if (cap !== null) {
+      await this.sessions.enforceMaxSessions(userId, cap, sessionId);
+    }
+
+    return sessionId;
   }
 
   async verifyMagicLink(
@@ -432,8 +451,16 @@ export class AuthTokensService {
 
     const user = await this.db.query.users.findFirst({
       where: eq(users.id, row.userId),
-      columns: { lastActiveOrgId: true },
+      columns: { lastActiveOrgId: true, isActive: true, deletedAt: true },
     });
+
+    if (!user || !user.isActive || user.deletedAt !== null) {
+      await this.logLoginEvent(row.userId, null, "magic_link.verify", false, "account_inactive", context);
+      throw new UnauthorizedException({
+        code: "AUTH_TOKEN_INVALID",
+        message: "Invalid or expired credentials",
+      });
+    }
 
     await this.db
       .update(users)
@@ -441,7 +468,7 @@ export class AuthTokensService {
       .where(and(eq(users.id, row.userId), isNull(users.emailVerified)));
 
     const [membership, sessionId] = await Promise.all([
-      this.resolveActiveMembership(row.userId, user?.lastActiveOrgId ?? null),
+      this.resolveActiveMembership(row.userId, user.lastActiveOrgId ?? null),
       this.createLoginSession(row.userId, context),
     ]);
 
@@ -527,6 +554,14 @@ export class AuthTokensService {
     });
 
     if (existingAccount) {
+      const accountUser = await this.db.query.users.findFirst({
+        where: eq(users.id, existingAccount.userId),
+        columns: { isActive: true, deletedAt: true },
+      });
+      if (!accountUser || !accountUser.isActive || accountUser.deletedAt !== null) {
+        void this.logLoginEvent(existingAccount.userId, null, "google_oauth.login", false, "account_inactive", context);
+        throw new UnauthorizedException("Authentication failed");
+      }
       const sessionId = await this.createLoginSession(
         existingAccount.userId,
         context,
@@ -544,10 +579,14 @@ export class AuthTokensService {
 
     const existingUser = await this.db.query.users.findFirst({
       where: sql`lower(${users.email}) = ${normalizedEmail}`,
-      columns: { id: true, emailVerified: true },
+      columns: { id: true, emailVerified: true, isActive: true, deletedAt: true },
     });
 
     if (existingUser) {
+      if (!existingUser.isActive || existingUser.deletedAt !== null) {
+        void this.logLoginEvent(existingUser.id, null, "google_oauth.login", false, "account_inactive", context);
+        throw new UnauthorizedException("Authentication failed");
+      }
       await this.db
         .insert(accounts)
         .values({
@@ -591,9 +630,7 @@ export class AuthTokensService {
         firstName,
         lastName,
         image: input.image || null,
-        role: "OWNER",
         isActive: true,
-        hasDashboardAccess: true,
         emailVerified: new Date(),
       });
 

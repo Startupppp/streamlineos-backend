@@ -6,14 +6,11 @@ function ctx(orgId: string): CurrentUserContext {
   return {
     userId: "user-1",
     orgId,
-    branchId: null,
     role: "EMPLOYEE",
     permissions: [],
-    enabledModules: ["HR"],
-    plan: "PROFESSIONAL",
-    isPlatformAdmin: false,
     isOrgOwner: false,
     sessionId: "sess-1",
+    tokenScopes: null,
   };
 }
 
@@ -31,6 +28,8 @@ describe("StorageController.download — cross-org file isolation", () => {
     expenses?: { orgId: string };
     reimbursements?: { orgId: string };
     handbookVersions?: { orgId: string };
+    payslipPublications?: { orgId: string };
+    candidateDocumentsVault?: { orgId: string };
   }) {
     return {
       query: {
@@ -40,6 +39,10 @@ describe("StorageController.download — cross-org file isolation", () => {
         expenses: { findFirst: jest.fn().mockResolvedValue(records.expenses ?? null) },
         reimbursements: { findFirst: jest.fn().mockResolvedValue(records.reimbursements ?? null) },
         handbookVersions: { findFirst: jest.fn().mockResolvedValue(records.handbookVersions ?? null) },
+        payslipPublications: { findFirst: jest.fn().mockResolvedValue(records.payslipPublications ?? null) },
+        candidateDocumentsVault: {
+          findFirst: jest.fn().mockResolvedValue(records.candidateDocumentsVault ?? null),
+        },
       },
     };
   }
@@ -83,12 +86,49 @@ describe("StorageController.download — cross-org file isolation", () => {
     expect(res.json).toHaveBeenCalledWith({ url: "https://signed.example.com/file" });
   });
 
-  it("allows a download when the key isn't tracked in any known table (unchanged prior behavior)", async () => {
+  it("allows a download when a NON-sensitive key isn't tracked in any known table", async () => {
     const db = buildDb({});
     const controller = new StorageController(db as never, buildStorage() as never, audit as never);
     const res = mockRes();
 
     await controller.download(undefined, "key123", undefined, undefined, ctx("org-A"), res);
+
+    expect(res.json).toHaveBeenCalledWith({ url: "https://signed.example.com/file" });
+  });
+
+  it("403s a cross-org payslip download", async () => {
+    const db = buildDb({ payslipPublications: { orgId: "org-B" } });
+    const controller = new StorageController(db as never, buildStorage() as never, audit as never);
+
+    await expect(
+      controller.download(undefined, "payroll/run-9/payslip.pdf", undefined, undefined, ctx("org-A"), mockRes()),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it("403s a cross-org candidate-vault download", async () => {
+    const db = buildDb({ candidateDocumentsVault: { orgId: "org-B" } });
+    const controller = new StorageController(db as never, buildStorage() as never, audit as never);
+
+    await expect(
+      controller.download(undefined, "candidates/cv.pdf", undefined, undefined, ctx("org-A"), mockRes()),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it("403s an UNTRACKED sensitive key instead of failing open", async () => {
+    const db = buildDb({});
+    const controller = new StorageController(db as never, buildStorage() as never, audit as never);
+
+    await expect(
+      controller.download(undefined, "payroll/unregistered.pdf", undefined, undefined, ctx("org-A"), mockRes()),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it("allows a same-org payslip download", async () => {
+    const db = buildDb({ payslipPublications: { orgId: "org-A" } });
+    const controller = new StorageController(db as never, buildStorage() as never, audit as never);
+    const res = mockRes();
+
+    await controller.download(undefined, "payroll/run-9/payslip.pdf", undefined, undefined, ctx("org-A"), res);
 
     expect(res.json).toHaveBeenCalledWith({ url: "https://signed.example.com/file" });
   });

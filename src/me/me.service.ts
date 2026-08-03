@@ -7,7 +7,7 @@ import {
   decrypt,
   decryptBankDetails,
   encryptBankDetails,
-} from "../modules/onboarding/crypto.helpers";
+} from "../modules/hr/onboarding/core/crypto.helpers";
 import type { UpdateProfileInput } from "./dto/me.schemas";
 import { withClientInfo, withDeviceClientInfo } from "../common/http/parse-user-agent";
 
@@ -20,7 +20,6 @@ export class MeService {
       where: eq(users.id, userId),
       columns: {
         totpSecret: false,
-        googleRefreshToken: false,
       },
     });
 
@@ -41,6 +40,8 @@ export class MeService {
       ...(input.firstName !== undefined && input.lastName !== undefined
         ? { name: `${input.firstName} ${input.lastName}` }
         : {}),
+      ...(input.name !== undefined ? { name: input.name } : {}),
+      ...(input.image !== undefined ? { image: input.image } : {}),
       ...(input.phone !== undefined ? { phone: input.phone } : {}),
       ...(input.whatsappNumber !== undefined ? { whatsappNumber: input.whatsappNumber } : {}),
       ...(input.emergencyContact !== undefined ? { emergencyContact: input.emergencyContact } : {}),

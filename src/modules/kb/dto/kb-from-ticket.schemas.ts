@@ -5,3 +5,8 @@ export const fromTicketSchema = z.object({
 });
 
 export type FromTicketInput = z.infer<typeof fromTicketSchema>;
+
+export const kbFromTicketDraftSchema = z.object({
+  title: z.string(),
+  content: z.string(),
+});

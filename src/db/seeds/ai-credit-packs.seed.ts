@@ -2,7 +2,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "../schema";
 import { aiCreditPacks } from "../schema";
-import { DEFAULT_AI_CREDIT_PACKS } from "../../modules/billing/ai-credit-packs.constants";
+import { DEFAULT_AI_CREDIT_PACKS } from "../../modules/billing/core/ai-credit-packs.constants";
 
 function normalizeDatabaseUrl(url: string): string {
   if (!/\.neon\.tech/i.test(url)) return url;

@@ -5,9 +5,10 @@ import {
   integer,
   timestamp,
   index,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { kbArticles } from "../support/kb";
 
 export const KB_RESTRICTION_LEVELS = ["view", "edit"] as const;
@@ -28,6 +29,8 @@ export const kbArticleRestrictions = pgTable(
   (table) => [
     index("idx_kb_article_restrictions_article").on(table.articleId),
     index("idx_kb_article_restrictions_user").on(table.userId),
+    index("idx_kb_article_restrictions_org_article").on(table.orgId, table.articleId),
+    unique("uniq_kb_article_restrictions_org_id").on(table.orgId, table.id),
   ],
 );
 

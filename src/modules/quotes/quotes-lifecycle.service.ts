@@ -1,12 +1,12 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, eq, ilike, sql } from "drizzle-orm";
-import { clientAccounts, deals, invoiceItems, invoices, quoteLineItems, quotes, users } from "../../db/schema";
+import { and, count, eq, sql } from "drizzle-orm";
+import { clientAccounts, deals, invoiceItems, invoices, quotes, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
-import { CrmAutomationBusService } from "../crm-automation-studio/crm-automation-bus.service";
-import { PlanLimitsService } from "../billing/plan-limits.service";
+import { CrmAutomationBusService } from "../crm/automation-studio/crm-automation-bus.service";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import type { ExportInput } from "./dto/quote.schemas";
 
 export type SendNotDraft = { error: "not_draft" };

@@ -126,10 +126,6 @@ export const createCompetitorSchema = z.object({
 
 export const updateCompetitorSchema = createCompetitorSchema.omit({ competitorKey: true }).partial();
 
-export const patchNextStepSchema = z.object({
-  nextStep: z.string().max(500).nullable(),
-});
-
 export const createForecastSnapshotSchema = z.object({
   period: z.string().min(1),
 });
@@ -171,7 +167,6 @@ export type UpdateDealInput = z.infer<typeof updateDealSchema>;
 export type ResolveApprovalInput = z.infer<typeof resolveApprovalSchema>;
 export type RequestApprovalInput = z.infer<typeof requestApprovalSchema>;
 export type SubmitApprovalInput = z.infer<typeof submitApprovalSchema>;
-export type DealStage = z.infer<typeof dealStageSchema>;
 export type LogActivityInput = z.infer<typeof logActivitySchema>;
 export type PatchCustomDataInput = z.infer<typeof patchCustomDataSchema>;
 export type CreateApprovalRuleInput = z.infer<typeof createApprovalRuleSchema>;
@@ -180,7 +175,6 @@ export type CreateMeetingInput = z.infer<typeof createMeetingSchema>;
 export type UpdateMeetingInput = z.infer<typeof updateMeetingSchema>;
 export type CreateCompetitorInput = z.infer<typeof createCompetitorSchema>;
 export type UpdateCompetitorInput = z.infer<typeof updateCompetitorSchema>;
-export type PatchNextStepInput = z.infer<typeof patchNextStepSchema>;
 export type CreateForecastSnapshotInput = z.infer<typeof createForecastSnapshotSchema>;
 export type CompareForecastSnapshotsInput = z.infer<typeof compareForecastSnapshotsSchema>;
 export type ForecastSnapshotsQueryInput = z.infer<typeof forecastSnapshotsQuerySchema>;

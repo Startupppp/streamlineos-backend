@@ -7,9 +7,10 @@ import {
   integer,
   jsonb,
   index,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 
 export const hrImportEntityEnum = pgEnum("hr_import_entity", [
   "employees",
@@ -54,6 +55,7 @@ export const hrImportJobs = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+    unique("uniq_hr_import_jobs_org_id").on(table.orgId, table.id),
     index("idx_hr_import_jobs_org").on(table.orgId, table.createdAt),
   ],
 );

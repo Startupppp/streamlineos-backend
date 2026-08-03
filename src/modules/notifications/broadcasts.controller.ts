@@ -58,7 +58,7 @@ export class BroadcastsController {
     @Body(new ZodValidationPipe(updateBroadcastSchema)) dto: UpdateBroadcastInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.broadcastsService.update(u.orgId, u.userId, broadcastId, dto);
+    return this.broadcastsService.update(u.orgId, broadcastId, u.userId, dto);
   }
 
   @Post(":broadcastId/publish")
@@ -78,7 +78,7 @@ export class BroadcastsController {
     @Param("broadcastId", ParseIntPipe) broadcastId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.broadcastsService.cancel(u.orgId, u.userId, broadcastId);
+    return this.broadcastsService.cancel(u.orgId, broadcastId, u.userId);
   }
 
   @Delete(":broadcastId")
@@ -87,6 +87,6 @@ export class BroadcastsController {
     @Param("broadcastId", ParseIntPipe) broadcastId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.broadcastsService.remove(u.orgId, u.userId, broadcastId);
+    return this.broadcastsService.remove(u.orgId, broadcastId, u.userId);
   }
 }

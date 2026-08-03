@@ -12,7 +12,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
-import { getTodayString } from "./date.helpers";
+import { getTodayString } from "../../common/date";
 import { type DashboardForbidden } from "./dashboard.errors";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AccessService } from "../access/access.service";
@@ -83,8 +83,9 @@ export class DashboardLeaveService {
       return { error: "forbidden", message: "Forbidden" } as DashboardForbidden;
     }
 
-    const role = u.role ?? "";
-    const key = `dashboard:pending-approvals:${orgId}:${role}`;
+    const isApprover =
+      u.isOrgOwner || u.permissions.includes("hr:leaves:approve");
+    const key = `dashboard:pending-approvals:${orgId}:${isApprover ? "approver" : "self"}`;
 
     return this.cache.cached(
       key,
@@ -94,8 +95,7 @@ export class DashboardLeaveService {
           .from(leaveRequests)
           .where(and(eq(leaveRequests.orgId, orgId), eq(leaveRequests.status, "PENDING")));
 
-        const resignationStatuses =
-          role === "HR" ? ["SUBMITTED", "PENDING_HR"] : ["HR_APPROVED"];
+        const resignationStatuses = isApprover ? ["SUBMITTED", "PENDING_HR"] : ["HR_APPROVED"];
 
         const [resignationCount] = await this.db
           .select({ count: sql<number>`count(*)::int` })

@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, Logger } from "@nestjs/common";
 import { eq, and, desc, sql, count, or, inArray, isNull } from "drizzle-orm";
 import type { DataScope } from "../access/access.types";
 import { Redis } from "@upstash/redis";
@@ -8,7 +8,6 @@ import {
   incentives,
   incentiveConfig,
   notifications,
-  organizationMembers,
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -22,16 +21,17 @@ import type {
   UpdateClientStatusInput,
   UpdateRenewalInput,
 } from "./dto/clients.schemas";
-
-const CUSTOMER_SUPPORT = "CUSTOMER_SUPPORT";
+import { AccessService } from "../access/access.service";
 
 @Injectable()
 export class ClientAccountsService {
+  private readonly logger = new Logger(ClientAccountsService.name);
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     @Inject(REDIS) private readonly redis: Redis | null,
     private readonly audit: AuditService,
     private readonly clientsEmail: ClientsEmailService,
+    private readonly access: AccessService,
   ) {}
 
   async getClientAccounts(
@@ -204,10 +204,7 @@ export class ClientAccountsService {
       : "";
 
     const hrMemberRows = recordInvestment
-      ? await this.db
-          .select({ userId: organizationMembers.userId })
-          .from(organizationMembers)
-          .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.role, "HR")))
+      ? await this.access.membersWithPermission(orgId, "hr:employees:manage")
       : [];
 
     const updated = await this.db.transaction(async (tx) => {
@@ -300,15 +297,16 @@ export class ClientAccountsService {
   }
 
   async getCrmAssignmentStats(orgId: string) {
-    const csMembers = await this.db
-      .select({ userId: organizationMembers.userId, name: users.name, image: users.image })
-      .from(organizationMembers)
-      .innerJoin(users, eq(users.id, organizationMembers.userId))
-      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.role, CUSTOMER_SUPPORT)));
+    const csMemberIds = (await this.access.membersWithPermission(orgId, "support:tickets:manage", { limit: 500 })).map((m) => m.userId);
 
-    if (csMembers.length === 0) {
+    if (csMemberIds.length === 0) {
       return { members: [], unassignedCount: 0 };
     }
+
+    const csMembers = await this.db
+      .select({ userId: users.id, name: users.name, image: users.image })
+      .from(users)
+      .where(inArray(users.id, csMemberIds));
 
     const memberIds = csMembers.map((m) => m.userId);
 
@@ -353,12 +351,16 @@ export class ClientAccountsService {
       try {
         const acquired = await this.redis.set(lockKey, "1", { ex: 60, nx: true });
         if (!acquired) return;
-      } catch {}
+      } catch (err) {
+        this.logger.warn(`Redis lock acquire failed for client backfill ${orgId}: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
     try {
       await this.backfillConvertedLeadsToClientAccounts(orgId, userId);
       await this.backfillCrmAssignments(orgId);
-    } catch {}
+    } catch (err) {
+      this.logger.warn(`Client account backfill failed for org ${orgId}: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   private async backfillConvertedLeadsToClientAccounts(orgId: string, fallbackSalesRepId: string): Promise<void> {
@@ -393,10 +395,7 @@ export class ClientAccountsService {
   }
 
   private async backfillCrmAssignments(orgId: string): Promise<void> {
-    const csMembers = await this.db
-      .select({ userId: organizationMembers.userId })
-      .from(organizationMembers)
-      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.role, CUSTOMER_SUPPORT)));
+    const csMembers = await this.access.membersWithPermission(orgId, "support:tickets:manage", { limit: 500 });
 
     if (csMembers.length === 0) return;
 

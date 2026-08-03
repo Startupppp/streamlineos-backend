@@ -1,8 +1,10 @@
+import { createHash } from "node:crypto";
 import { KbIndexingService } from "./kb-indexing.service";
-import { EmbeddingsService } from "../ai/providers/embeddings.service";
-import { StorageService } from "../storage/storage.service";
 
 const EMBEDDING_DIM = 1536;
+
+const sha256 = (text: string): string =>
+  createHash("sha256").update(text).digest("hex");
 
 const makeEmbeddings = (configured = true) => ({
   isConfigured: jest.fn().mockReturnValue(configured),
@@ -26,15 +28,16 @@ const makeTx = (): MockTx => ({
   values: jest.fn().mockResolvedValue(undefined),
 });
 
-const makeDb = (existingChunks: { content: string }[] = [], tx?: MockTx) => {
+const makeDb = (storedHash: string | null, tx?: MockTx) => {
   const txObj = tx ?? makeTx();
+  const hashRows = storedHash === null ? [] : [{ contentHash: storedHash }];
 
   return {
     db: {
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
-            orderBy: jest.fn().mockResolvedValue(existingChunks),
+            limit: jest.fn().mockResolvedValue(hashRows),
           }),
         }),
       }),
@@ -49,9 +52,9 @@ const makeDb = (existingChunks: { content: string }[] = [], tx?: MockTx) => {
 };
 
 describe("KbIndexingService — content-hash guard", () => {
-  it("skips re-embedding when article content is unchanged", async () => {
+  it("skips re-embedding when the stored hash matches the current article text", async () => {
     const text = "Hello world content unchanged";
-    const { db } = makeDb([{ content: text }]);
+    const { db } = makeDb(sha256(text));
     (db.query.kbArticles.findFirst as jest.Mock).mockResolvedValue({
       status: "published",
       contentText: text,
@@ -64,7 +67,7 @@ describe("KbIndexingService — content-hash guard", () => {
     expect(embeddings.embedQuery).not.toHaveBeenCalled();
   });
 
-  it("re-embeds when article content has changed", async () => {
+  it("re-embeds when the stored hash differs from the current article text", async () => {
     const oldText = "old content";
     const newText = "new content that is different";
 
@@ -72,7 +75,7 @@ describe("KbIndexingService — content-hash guard", () => {
     tx.delete = jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) });
     tx.insert = jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) });
 
-    const { db } = makeDb([{ content: oldText }], tx);
+    const { db } = makeDb(sha256(oldText), tx);
     (db.query.kbArticles.findFirst as jest.Mock).mockResolvedValue({
       status: "published",
       contentText: newText,
@@ -85,9 +88,29 @@ describe("KbIndexingService — content-hash guard", () => {
     expect(embeddings.embedQuery).toHaveBeenCalled();
   });
 
-  it("skips re-embedding for pages when content is unchanged", async () => {
+  it("re-embeds when no hash is stored yet (existing chunks predate the column)", async () => {
+    const text = "content indexed before the hash column existed";
+
+    const tx = makeTx();
+    tx.delete = jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) });
+    tx.insert = jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) });
+
+    const { db } = makeDb(null, tx);
+    (db.query.kbArticles.findFirst as jest.Mock).mockResolvedValue({
+      status: "published",
+      contentText: text,
+    });
+
+    const embeddings = makeEmbeddings();
+    const svc = new KbIndexingService(db as never, embeddings as never, makeStorage() as never);
+    await svc.indexArticle("org-1", 1);
+
+    expect(embeddings.embedQuery).toHaveBeenCalled();
+  });
+
+  it("skips re-embedding for pages when the stored hash matches", async () => {
     const text = "page content that has not changed";
-    const { db } = makeDb([{ content: text }]);
+    const { db } = makeDb(sha256(text));
     (db.query.kbPages.findFirst as jest.Mock).mockResolvedValue({
       status: "published",
       visibility: "org",

@@ -2,11 +2,11 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { AiNodeExecutorService } from "./ai-workflow-nodes/ai-node-executor.service";
 import type { AiNodeType } from "./ai-workflow-nodes/ai-node-types";
 import { createHmac } from "node:crypto";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, like, sql } from "drizzle-orm";
 import {
   automationRules,
   automationRuns,
-  automationTriggerEnum,
+  AUTOMATION_TRIGGERS,
   organizationMembers,
   tasks,
   webhookEndpoints,
@@ -22,14 +22,14 @@ import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { AutomationEmailService } from "./automation-email.service";
-import { PlanLimitsService } from "../billing/plan-limits.service";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { evaluateConditions, type EventPayload } from "./automation.evaluator";
 import type { CreateAutomationRuleInput, UpdateAutomationRuleInput } from "./dto/automation.schemas";
 
-export type AutomationTrigger = (typeof automationTriggerEnum.enumValues)[number];
+export type AutomationTrigger = (typeof AUTOMATION_TRIGGERS)[number];
 
 function isValidTrigger(value: string): value is AutomationTrigger {
-  return (automationTriggerEnum.enumValues as readonly string[]).includes(value);
+  return (AUTOMATION_TRIGGERS as readonly string[]).includes(value);
 }
 
 interface RuleDefinition {
@@ -131,7 +131,7 @@ export class AutomationService {
     const signature = createHmac("sha256", endpoint.secret).update(body).digest("hex");
 
     let statusCode: number | null = null;
-    let responseBody: string | null = null;
+    let responseBody: string | null;
     let success = false;
 
     try {
@@ -389,13 +389,43 @@ export class AutomationService {
     return { runId: run.id, matched, status, actionResults };
   }
 
-  listRules(orgId: string, triggerPrefix?: string) {
-    return this.db.query.automationRules.findMany({
-      where: (fields, { and: andOp, eq: eqOp, like }) =>
-        triggerPrefix
-          ? andOp(eqOp(fields.orgId, orgId), like(fields.triggerEvent, `${triggerPrefix}%`))
-          : eqOp(fields.orgId, orgId),
-    });
+  async listRules(
+    orgId: string,
+    triggerPrefixOrParams?: string | { page?: number; limit?: number; triggerPrefix?: string },
+  ) {
+    const triggerPrefix =
+      typeof triggerPrefixOrParams === "string"
+        ? triggerPrefixOrParams
+        : triggerPrefixOrParams?.triggerPrefix;
+    const pageNum = typeof triggerPrefixOrParams === "object" ? (triggerPrefixOrParams.page ?? 1) : 1;
+    const limit = Math.min(
+      typeof triggerPrefixOrParams === "object" ? (triggerPrefixOrParams.limit ?? 20) : 100,
+      100,
+    );
+    const offset = (pageNum - 1) * limit;
+    const where = triggerPrefix
+      ? and(eq(automationRules.orgId, orgId), like(automationRules.triggerEvent, `${triggerPrefix}%`))
+      : eq(automationRules.orgId, orgId);
+
+    const [data, countRows] = await Promise.all([
+      this.db.query.automationRules.findMany({
+        where,
+        orderBy: (fields, { desc: descOp }) => [descOp(fields.createdAt)],
+        limit,
+        offset,
+      }),
+      this.db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(automationRules)
+        .where(where),
+    ]);
+
+    const total = countRows[0]?.total ?? 0;
+
+    return {
+      data,
+      pagination: { page: pageNum, limit, total, totalPages: Math.ceil(total / limit) },
+    };
   }
 
   async createRule(orgId: string, userId: string, input: CreateAutomationRuleInput) {
@@ -451,7 +481,7 @@ export class AutomationService {
         ? and(eq(automationRuns.orgId, orgId), eq(automationRuns.ruleId, ruleId))
         : eq(automationRuns.orgId, orgId),
       orderBy: (fields, { desc: descOp }) => [descOp(fields.createdAt)],
-      limit: 200,
+      limit: 100,
     });
   }
 }

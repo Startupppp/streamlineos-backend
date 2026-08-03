@@ -1,4 +1,5 @@
 import postgres from 'postgres';
+import type { MediaCompressionService } from "../../../common/media/media-compression.service";
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { and, eq, inArray, count } from 'drizzle-orm';
 import * as schema from '../../../db/schema';
@@ -19,7 +20,7 @@ import {
   payrollRunEvents,
   employeeSalaryProfiles,
 } from '../../../db/schema';
-import { encryptBankDetails } from '../../onboarding/crypto.helpers';
+import { encryptBankDetails } from '../../hr/onboarding/core/crypto.helpers';
 import { DEFAULT_PAYROLL_TOGGLES } from '../payroll.types';
 import { PayoutBatchesService } from '../payout/payout-batches.service';
 import { ProfilesService } from '../runs/profiles.service';
@@ -122,8 +123,8 @@ d('Payroll DB Integration', () => {
     });
 
     await db.insert(organizations).values([
-      { id: ORG_A, name: `E2E Org A`, slug: `${P}slug-a` },
-      { id: ORG_B, name: `E2E Org B`, slug: `${P}slug-b` },
+      { id: ORG_A, name: `E2E Org A`, slug: `${P}slug-a`, ownerMembershipId: 9001 },
+      { id: ORG_B, name: `E2E Org B`, slug: `${P}slug-b`, ownerMembershipId: 9002 },
     ]);
 
     await db.insert(users).values([
@@ -290,7 +291,7 @@ d('Payroll DB Integration', () => {
   describe('Scenario 1 — Idempotency replay', () => {
     it('returns the same batch on a second call with an identical idempotency key', async () => {
       const auditSvc = new AuditService(db);
-      const storageSvc = new StorageService();
+      const storageSvc = new StorageService({} as unknown as MediaCompressionService);
       const svc = new PayoutBatchesService(db, auditSvc, storageSvc, { postFinalized: async () => undefined } as unknown as PayrollPostingService);
 
       const idemKey = `${P}idem-key-001`;
@@ -416,7 +417,7 @@ d('Payroll DB Integration', () => {
 
     it('rejects fetching another org member bank details for a user outside the caller org', async () => {
       const auditSvc = new AuditService(db);
-      const storageSvc = new StorageService();
+      const storageSvc = new StorageService({} as unknown as MediaCompressionService);
       const svc = new PayoutBatchesService(db, auditSvc, storageSvc, { postFinalized: async () => undefined } as unknown as PayrollPostingService);
 
       await expect(svc.getBankDetails(ORG_A, USER_B, USER_A)).rejects.toThrow(ForbiddenException);
@@ -424,7 +425,7 @@ d('Payroll DB Integration', () => {
 
     it('allows fetching bank details for a confirmed member of the caller org', async () => {
       const auditSvc = new AuditService(db);
-      const storageSvc = new StorageService();
+      const storageSvc = new StorageService({} as unknown as MediaCompressionService);
       const svc = new PayoutBatchesService(db, auditSvc, storageSvc, { postFinalized: async () => undefined } as unknown as PayrollPostingService);
 
       const result = await svc.getBankDetails(ORG_A, USER_A, USER_A);

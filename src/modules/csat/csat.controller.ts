@@ -39,19 +39,19 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("support")
 @Controller("csat")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class CsatController {
   constructor(private readonly csat: CsatService) {}
 
   @Get()
+  @RequirePermission("support:csat:view")
   list(@CurrentUser() u: CurrentUserContext) {
     return this.csat.listSurveys(u.orgId);
   }
 
   @Post()
   @HttpCode(201)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("csat:write")
+  @RequirePermission("support:csat:manage")
   create(
     @Body(new ZodValidationPipe(createSchema)) body: CreateInput,
     @CurrentUser() u: CurrentUserContext,
@@ -60,6 +60,7 @@ export class CsatController {
   }
 
   @Get(":surveyId")
+  @RequirePermission("support:csat:view")
   async get(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -70,8 +71,7 @@ export class CsatController {
   }
 
   @Patch(":surveyId")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("csat:write")
+  @RequirePermission("support:csat:manage")
   async update(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Body(new ZodValidationPipe(patchSchema)) body: PatchInput,
@@ -83,8 +83,7 @@ export class CsatController {
   }
 
   @Delete(":surveyId")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("csat:write")
+  @RequirePermission("support:csat:manage")
   async remove(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -95,6 +94,7 @@ export class CsatController {
   }
 
   @Get(":surveyId/responses")
+  @RequirePermission("support:csat:view")
   async listResponses(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Query(new ZodValidationPipe(listResponsesSchema)) query: ListResponsesInput,

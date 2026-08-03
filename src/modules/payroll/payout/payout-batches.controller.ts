@@ -11,11 +11,14 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { ModuleGuard } from "../../../common/rbac/module.guard";
+import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { PayoutBatchesService } from "./payout-batches.service";
 import { PayoutValidationService } from "./payout-validation.service";
 import {
@@ -33,8 +36,9 @@ import {
   type BankReturnImportInput,
 } from "./dto/payout.schemas";
 
+@RequireModule("payroll")
 @Controller("payroll/runs/:runId/payout")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class PayoutRunController {
   constructor(
     private readonly batches: PayoutBatchesService,
@@ -63,8 +67,9 @@ export class PayoutRunController {
   }
 }
 
+@RequireModule("payroll")
 @Controller("payroll/payout")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class PayoutBatchesController {
   constructor(private readonly batches: PayoutBatchesService) {}
 
@@ -123,6 +128,7 @@ export class PayoutBatchesController {
   @Post("batches/:batchId/import-return")
   @HttpCode(200)
   @RequirePermission("payroll:bank:manage")
+  @Idempotent("payroll.bank-return.import")
   importReturn(
     @Param("batchId", ParseIntPipe) batchId: number,
     @Body(new ZodValidationPipe(bankReturnImportSchema)) body: BankReturnImportInput,
@@ -156,8 +162,9 @@ export class PayoutBatchesController {
   }
 }
 
+@RequireModule("payroll")
 @Controller("payroll/employees/:employeeUserId")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class PayoutEmployeeBankController {
   constructor(private readonly batches: PayoutBatchesService) {}
 

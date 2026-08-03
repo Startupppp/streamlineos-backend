@@ -1,5 +1,5 @@
 import { getBrandName } from "../branding";
-import { TEMPLATE_MAP } from "./test-catalog";
+import { TEMPLATE_MAP } from "./registry";
 
 describe("Email template catalog smoke-check", () => {
   const entries = Object.entries(TEMPLATE_MAP);

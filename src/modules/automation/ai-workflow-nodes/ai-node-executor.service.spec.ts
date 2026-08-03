@@ -2,13 +2,12 @@ import { HttpException, HttpStatus, ServiceUnavailableException } from "@nestjs/
 import { Test, type TestingModule } from "@nestjs/testing";
 import { AiNodeExecutorService } from "./ai-node-executor.service";
 import { WorkflowAiNodeHandler } from "./ai-job-handlers/workflow-ai-node.handler";
-import { AiGatewayService } from "../../ai/gateway/ai-gateway.service";
+import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { AuditService } from "../../../common/audit/audit.service";
-import { FeatureFlagsService } from "../../feature-flags/feature-flags.service";
-import { AiConfirmationService } from "../../ai-confirmation/ai-confirmation.service";
-import { AiJobsService } from "../../ai-jobs/ai-jobs.service";
-import { AiJobHandlerRegistry } from "../../ai-jobs/ai-job-handler";
-import type { AiInvokeResult } from "../../ai/gateway/ai-gateway.types";
+import { AiConfirmationService } from "../../ai/confirmation/ai-confirmation.service";
+import { AiJobsService } from "../../ai/jobs/ai-jobs.service";
+import { AiJobHandlerRegistry } from "../../ai/jobs/ai-job-handler";
+import type { AiInvokeResult } from "../../ai/core/gateway/ai-gateway.types";
 import type { AiNodeType } from "./ai-node-types";
 
 const ORG_ID = "org-test-1";
@@ -20,7 +19,6 @@ const mockGateway = {
   invokeText: jest.fn(),
 };
 const mockAudit = { log: jest.fn() };
-const mockFlags = { evaluate: jest.fn() };
 const mockConfirmation = { propose: jest.fn() };
 const mockJobs = { fail: jest.fn(), complete: jest.fn(), enqueue: jest.fn() };
 
@@ -46,7 +44,6 @@ async function buildModule(): Promise<{ executor: AiNodeExecutorService; handler
       WorkflowAiNodeHandler,
       { provide: AiGatewayService, useValue: mockGateway },
       { provide: AuditService, useValue: mockAudit },
-      { provide: FeatureFlagsService, useValue: mockFlags },
       { provide: AiConfirmationService, useValue: mockConfirmation },
       { provide: AiJobsService, useValue: mockJobs },
       { provide: AiJobHandlerRegistry, useValue: { register: jest.fn() } },
@@ -61,12 +58,10 @@ async function buildModule(): Promise<{ executor: AiNodeExecutorService; handler
 
 describe("AiNodeExecutorService", () => {
   let executor: AiNodeExecutorService;
-  let handler: WorkflowAiNodeHandler;
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    mockFlags.evaluate.mockResolvedValue(true);
-    ({ executor, handler } = await buildModule());
+    ({ executor } = await buildModule());
   });
 
   // classify
@@ -206,25 +201,7 @@ describe("AiNodeExecutorService", () => {
   });
 
   // feature flag disabled
-  describe("feature flag gate", () => {
-    it("returns ok=false without calling the gateway when the feature flag is disabled", async () => {
-      mockFlags.evaluate.mockResolvedValueOnce(false);
 
-      const result = await executor.executeNode(
-        ORG_ID,
-        USER_ID,
-        "classify",
-        { labels: ["a", "b"], field: "status" },
-        { status: "open" },
-      );
-
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.error).toMatch(/feature flag/i);
-      expect(mockGateway.invokeStructured).not.toHaveBeenCalled();
-      expect(mockGateway.invokeText).not.toHaveBeenCalled();
-    });
-  });
 
   // quota_exceeded propagation
   describe("quota_exceeded from gateway", () => {
@@ -262,7 +239,6 @@ describe("WorkflowAiNodeHandler", () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    mockFlags.evaluate.mockResolvedValue(true);
     ({ executor, handler } = await buildModule());
   });
 

@@ -48,7 +48,7 @@ export class WebhooksDispatchService {
     const signature = createHmac("sha256", endpoint.secret).update(body).digest("hex");
 
     let statusCode: number | null = null;
-    let responseBody: string | null = null;
+    let responseBody: string | null;
     let success = false;
 
     try {

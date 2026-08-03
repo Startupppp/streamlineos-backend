@@ -5,14 +5,28 @@ describe("validateEnv", () => {
     NODE_ENV: "test",
     DATABASE_URL: "postgres://u:p@localhost:5432/db",
     BACKEND_JWT_SECRET: "x".repeat(44),
+    PORTAL_JWT_SECRET: "y".repeat(44),
     CORS_ORIGINS: "https://app.example.com",
     APP_URL: "https://app.example.com",
+    ENCRYPTION_KEY: "e".repeat(64),
   };
 
   it("parses a valid environment", () => {
     const cfg = validateEnv(base);
     expect(cfg.PORT).toBe(1500);
     expect(cfg.corsOrigins).toEqual(["https://app.example.com"]);
+  });
+
+  it("throws when ENCRYPTION_KEY is missing", () => {
+    expect(() => validateEnv({ ...base, ENCRYPTION_KEY: undefined })).toThrow(
+      /ENCRYPTION_KEY/,
+    );
+  });
+
+  it("throws when ENCRYPTION_KEY is too short to protect PII at rest", () => {
+    expect(() => validateEnv({ ...base, ENCRYPTION_KEY: "short" })).toThrow(
+      /ENCRYPTION_KEY/,
+    );
   });
 
   it("throws when BACKEND_JWT_SECRET is too short", () => {
@@ -45,6 +59,48 @@ describe("validateEnv", () => {
 
   it("allows deployment-only secrets to be omitted outside production", () => {
     expect(validateEnv(base).NODE_ENV).toBe("test");
+  });
+
+  it("requires APP_DATABASE_URL in production so the app cannot run as the owner", () => {
+    expect(() =>
+      validateEnv({
+        ...base,
+        NODE_ENV: "production",
+        CRON_SECRET: "x".repeat(32),
+        INTERNAL_API_SECRET: "x".repeat(32),
+        CONTACT_NOTIFICATION_EMAIL: "contact@example.com",
+      }),
+    ).toThrow(/APP_DATABASE_URL/);
+  });
+
+  it("rejects APP_DATABASE_URL pointing at the same role as DATABASE_URL", () => {
+    expect(() =>
+      validateEnv({
+        ...base,
+        NODE_ENV: "production",
+        CRON_SECRET: "x".repeat(32),
+        INTERNAL_API_SECRET: "x".repeat(32),
+        CONTACT_NOTIFICATION_EMAIL: "contact@example.com",
+        APP_DATABASE_URL: base.DATABASE_URL,
+      }),
+    ).toThrow(/must not equal DATABASE_URL/);
+  });
+
+  it("accepts a distinct APP_DATABASE_URL in production", () => {
+    expect(
+      validateEnv({
+        ...base,
+        NODE_ENV: "production",
+        CRON_SECRET: "x".repeat(32),
+        INTERNAL_API_SECRET: "x".repeat(32),
+        CONTACT_NOTIFICATION_EMAIL: "contact@example.com",
+        APP_DATABASE_URL: "postgres://streamline_app:p@localhost:5432/db",
+      }).APP_DATABASE_URL,
+    ).toBe("postgres://streamline_app:p@localhost:5432/db");
+  });
+
+  it("does not require APP_DATABASE_URL outside production", () => {
+    expect(validateEnv(base).APP_DATABASE_URL).toBeUndefined();
   });
 
   it("requires CONTACT_NOTIFICATION_EMAIL in production", () => {

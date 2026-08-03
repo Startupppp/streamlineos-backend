@@ -13,10 +13,10 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { EmailService } from "../email/email.service";
-import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
+import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
 import { getWeeklyRecapEmailTemplate } from "../email/templates/reports";
 import { logger } from "../../common/logger/logger.service";
-import { WEEKLY_RECAP_RECIPIENT_ROLES } from "../hr-lifecycle/hr-role-constants";
+import { forEachOrg } from "../../common/tenant";
 
 interface RecapData {
   orgId: string;
@@ -40,105 +40,105 @@ export class CronWeeklyRecapService {
     private readonly gateway: AiGatewayService,
   ) {}
 
-  async sendWeeklyCeoRecaps(): Promise<{
+  async sendWeeklyExecRecaps(): Promise<{
     results: { orgId: string; sent: boolean; error?: string }[];
     generatedAt: string;
   }> {
-    const allOrgs = await this.db
-      .select({ id: organizations.id, name: organizations.name })
-      .from(organizations);
-
     const results: { orgId: string; sent: boolean; error?: string }[] = [];
     const weekStart = subDays(new Date(), 7);
     const weekRange = `${format(weekStart, "MMM d")} — ${format(new Date(), "MMM d, yyyy")}`;
 
-    for (const org of allOrgs) {
+    await forEachOrg(this.db, "cron-weekly-recap", async (tx, orgId) => {
       try {
-        const owners = await this.db
+        const [orgRow] = await tx
+          .select({ name: organizations.name })
+          .from(organizations)
+          .where(eq(organizations.id, orgId));
+
+        if (!orgRow) return;
+
+        const owners = await tx
           .select({ email: users.email, name: users.name })
           .from(organizationMembers)
           .innerJoin(users, eq(users.id, organizationMembers.userId))
           .where(
             and(
-              eq(organizationMembers.orgId, org.id),
-              eq(organizationMembers.role, WEEKLY_RECAP_RECIPIENT_ROLES[0]),
+              eq(organizationMembers.orgId, orgId),
+              eq(organizationMembers.isOwner, true),
+              eq(organizationMembers.status, "ACTIVE"),
               eq(users.isActive, true),
             ),
           );
 
         if (owners.length === 0) {
-          results.push({ orgId: org.id, sent: false, error: "No active CEO" });
-          continue;
+          results.push({ orgId, sent: false, error: "No active FINAL" });
+          return;
         }
 
-        const [
-          [employeeCount],
-          [newLeadCount],
-          [convertedCount],
-          [activityCount],
-          [openTicketCount],
-          [closedTicketCount],
-          [pendingLeaveCount],
-          pipelineRaw,
-        ] = await Promise.all([
-          this.db
-            .select({ count: count() })
-            .from(organizationMembers)
-            .innerJoin(users, eq(users.id, organizationMembers.userId))
-            .where(and(eq(organizationMembers.orgId, org.id), eq(users.isActive, true))),
-          this.db
-            .select({ count: count() })
-            .from(leads)
-            .where(and(eq(leads.orgId, org.id), gte(leads.createdAt, weekStart))),
-          this.db
-            .select({ count: count() })
-            .from(leads)
-            .where(
-              and(eq(leads.orgId, org.id), eq(leads.status, "CONVERTED"), gte(leads.updatedAt, weekStart)),
-            ),
-          this.db
-            .select({ count: count() })
-            .from(leadActivities)
-            .innerJoin(leads, eq(leads.id, leadActivities.leadId))
-            .where(and(eq(leads.orgId, org.id), gte(leadActivities.createdAt, weekStart))),
-          this.db
-            .select({ count: count() })
-            .from(tickets)
-            .where(
-              and(eq(tickets.orgId, org.id), sql`${tickets.status} NOT IN ('DONE', 'CANCELLED')`),
-            ),
-          this.db
-            .select({ count: count() })
-            .from(tickets)
-            .where(
-              and(eq(tickets.orgId, org.id), eq(tickets.status, "DONE"), gte(tickets.updatedAt, weekStart)),
-            ),
-          this.db
-            .select({ count: count() })
-            .from(leaveRequests)
-            .where(and(eq(leaveRequests.orgId, org.id), eq(leaveRequests.status, "PENDING"))),
-          this.db
-            .select({ status: leads.status, count: count() })
-            .from(leads)
-            .where(eq(leads.orgId, org.id))
-            .groupBy(leads.status),
-        ]);
+        const [employeeCount] = await tx
+          .select({ count: count() })
+          .from(organizationMembers)
+          .innerJoin(users, eq(users.id, organizationMembers.userId))
+          .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)));
 
-        const leaderboardRaw = await this.db
+        const [newLeadCount] = await tx
+          .select({ count: count() })
+          .from(leads)
+          .where(and(eq(leads.orgId, orgId), gte(leads.createdAt, weekStart)));
+
+        const [convertedCount] = await tx
+          .select({ count: count() })
+          .from(leads)
+          .where(
+            and(eq(leads.orgId, orgId), eq(leads.status, "CONVERTED"), gte(leads.updatedAt, weekStart)),
+          );
+
+        const [activityCount] = await tx
+          .select({ count: count() })
+          .from(leadActivities)
+          .innerJoin(leads, eq(leads.id, leadActivities.leadId))
+          .where(and(eq(leads.orgId, orgId), gte(leadActivities.createdAt, weekStart)));
+
+        const [openTicketCount] = await tx
+          .select({ count: count() })
+          .from(tickets)
+          .where(
+            and(eq(tickets.orgId, orgId), sql`${tickets.status} NOT IN ('DONE', 'CANCELLED')`),
+          );
+
+        const [closedTicketCount] = await tx
+          .select({ count: count() })
+          .from(tickets)
+          .where(
+            and(eq(tickets.orgId, orgId), eq(tickets.status, "DONE"), gte(tickets.updatedAt, weekStart)),
+          );
+
+        const [pendingLeaveCount] = await tx
+          .select({ count: count() })
+          .from(leaveRequests)
+          .where(and(eq(leaveRequests.orgId, orgId), eq(leaveRequests.status, "PENDING")));
+
+        const pipelineRaw = await tx
+          .select({ status: leads.status, count: count() })
+          .from(leads)
+          .where(eq(leads.orgId, orgId))
+          .groupBy(leads.status);
+
+        const leaderboardRaw = await tx
           .select({
             name: users.name,
             converted: sql<number>`COUNT(CASE WHEN ${leads.status} = 'CONVERTED' THEN 1 END)::int`,
           })
           .from(leads)
           .innerJoin(users, eq(users.id, leads.assignedToId))
-          .where(and(eq(leads.orgId, org.id), sql`${leads.assignedToId} IS NOT NULL`))
+          .where(and(eq(leads.orgId, orgId), sql`${leads.assignedToId} IS NOT NULL`))
           .groupBy(leads.assignedToId, users.name)
           .orderBy(sql`COUNT(CASE WHEN ${leads.status} = 'CONVERTED' THEN 1 END) DESC`)
           .limit(5);
 
         const recapData: RecapData = {
-          orgId: org.id,
-          orgName: org.name,
+          orgId,
+          orgName: orgRow.name,
           totalEmployees: employeeCount?.count ?? 0,
           newLeads: newLeadCount?.count ?? 0,
           convertedLeads: convertedCount?.count ?? 0,
@@ -153,7 +153,7 @@ export class CronWeeklyRecapService {
           pipelineSummary: pipelineRaw.map((r) => ({ status: r.status ?? "", count: r.count })),
         };
 
-        const aiNarrative = await this.generateNarrative(recapData, weekRange, org.id);
+        const aiNarrative = await this.generateNarrative(recapData, weekRange, orgId);
         const html = getWeeklyRecapEmailTemplate({
           orgName: recapData.orgName,
           weekRange,
@@ -173,17 +173,17 @@ export class CronWeeklyRecapService {
           if (!owner.email) continue;
           await this.email.sendEmail({
             to: owner.email,
-            subject: `Your week at ${org.name} — ${weekRange}`,
+            subject: `Your week at ${orgRow.name} — ${weekRange}`,
             html,
           });
         }
 
-        results.push({ orgId: org.id, sent: true });
+        results.push({ orgId, sent: true });
       } catch (error) {
-        logger.error("Weekly CEO recap failed for org", { orgId: org.id, error });
-        results.push({ orgId: org.id, sent: false, error: String(error) });
+        logger.error("Weekly FINAL recap failed for org", { orgId, error });
+        results.push({ orgId, sent: false, error: String(error) });
       }
-    }
+    });
 
     return { results, generatedAt: new Date().toISOString() };
   }
@@ -205,14 +205,14 @@ export class CronWeeklyRecapService {
         ? data.pipelineSummary.map((s) => `${s.status}: ${s.count}`).join(", ")
         : "No pipeline data";
 
-    const system = `You are an executive business analyst writing concise weekly performance narratives for a CEO of an Indian investment and financial services firm. Your writing style is professional, confident, and insight-driven — not just descriptive. Highlight what matters most, flag any concerns worth attention, and frame numbers in context. Write in plain text only (no markdown, no bullet points, no headers). Output exactly 3 to 4 paragraphs separated by a single blank line.`;
+    const system = `You are an executive business analyst writing concise weekly performance narratives for a FINAL of an Indian investment and financial services firm. Your writing style is professional, confident, and insight-driven — not just descriptive. Highlight what matters most, flag any concerns worth attention, and frame numbers in context. Write in plain text only (no markdown, no bullet points, no headers). Output exactly 3 to 4 paragraphs separated by a single blank line.`;
 
-    const user = `Write a weekly performance narrative for ${data.orgName} covering the week of ${weekRange}.\n\nKey metrics:\n- Total active employees: ${data.totalEmployees}\n- New leads this week: ${data.newLeads}\n- Leads converted this week: ${data.convertedLeads} (${conversionRate}% conversion rate)\n- Sales activities logged: ${data.totalActivities}\n- Open tickets: ${data.openTickets}\n- Tickets closed this week: ${data.closedTickets}\n- Pending leave requests: ${data.pendingLeaves}\n\nTop performers (by conversions): ${topPerformersList}\n\nLead pipeline breakdown: ${pipelineBreakdown}\n\nFocus on: overall business momentum, sales team effectiveness, operational health, and any areas requiring the CEO's immediate attention.`;
+    const user = `Write a weekly performance narrative for ${data.orgName} covering the week of ${weekRange}.\n\nKey metrics:\n- Total active employees: ${data.totalEmployees}\n- New leads this week: ${data.newLeads}\n- Leads converted this week: ${data.convertedLeads} (${conversionRate}% conversion rate)\n- Sales activities logged: ${data.totalActivities}\n- Open tickets: ${data.openTickets}\n- Tickets closed this week: ${data.closedTickets}\n- Pending leave requests: ${data.pendingLeaves}\n\nTop performers (by conversions): ${topPerformersList}\n\nLead pipeline breakdown: ${pipelineBreakdown}\n\nFocus on: overall business momentum, sales team effectiveness, operational health, and any areas requiring the FINAL's immediate attention.`;
 
     try {
       const result = await this.gateway.invokeText({
         actor: { orgId, userId: null },
-        feature: "ceo.weekly-recap",
+        feature: "final.weekly-recap",
         tier: "standard",
         maxTokens: 1024,
         prompt: { system, user },
@@ -224,5 +224,4 @@ export class CronWeeklyRecapService {
       return "";
     }
   }
-
 }

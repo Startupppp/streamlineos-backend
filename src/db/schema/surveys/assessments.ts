@@ -1,6 +1,6 @@
 import { pgTable, pgEnum, text, serial, integer, boolean, timestamp, index, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 import { surveyForms, surveyVersions } from "./forms";
 import { surveyParticipants } from "./distribution";
 import { surveyResponseSessions } from "./responses";
@@ -30,6 +30,7 @@ export const surveyAssessmentAttempts = pgTable("survey_assessment_attempts", {
   expiresAt: timestamp("expires_at"),
 }, (table) => [
   index("idx_survey_assessment_attempts_survey_participant").on(table.surveyId, table.participantId),
+  unique("uniq_survey_assessment_attempts_org_id").on(table.orgId, table.id),
 ]);
 
 export const surveyCertificates = pgTable("survey_certificates", {
@@ -45,6 +46,7 @@ export const surveyCertificates = pgTable("survey_certificates", {
 }, (table) => [
   index("idx_survey_certificates_survey_participant").on(table.surveyId, table.participantId),
   unique("uq_survey_certificates_number").on(table.certificateNumber),
+  unique("uniq_survey_certificates_org_id").on(table.orgId, table.id),
 ]);
 
 export const surveyAssessmentAttemptsRelations = relations(surveyAssessmentAttempts, ({ one, many }) => ({

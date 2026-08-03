@@ -35,9 +35,9 @@ describe("Branches auth/RBAC (e2e)", () => {
 
   const authedRoutes: ReadonlyArray<[Method, string]> = [
     ["get", "/branches"],
-    ["get", "/branches/1"],
-    ["patch", "/branches/1"],
-    ["delete", "/branches/1"],
+    ["get", "/branches/00000000-0000-4000-8000-000000000001"],
+    ["patch", "/branches/00000000-0000-4000-8000-000000000001"],
+    ["delete", "/branches/00000000-0000-4000-8000-000000000001"],
   ];
 
   it.each(authedRoutes)("401 on %s %s without a token", async (method, path) => {
@@ -46,15 +46,14 @@ describe("Branches auth/RBAC (e2e)", () => {
     expect(res.body).toEqual({ error: "Unauthorized" });
   });
 
-  const authOnlyGetRoutes: ReadonlyArray<string> = ["/branches", "/branches/1"];
+  const permGatedGetRoutes: ReadonlyArray<string> = ["/branches", "/branches/00000000-0000-4000-8000-000000000001"];
 
-  it.each(authOnlyGetRoutes)(
-    "does NOT enforce an ability gate on GET %s (auth-only)",
+  it.each(permGatedGetRoutes)(
+    "403 on GET %s without branch:view permission",
     async (path) => {
       const token = await signToken({ permissions: [], enabledModules: [] });
       const res = await callRoute("get", path).set("Authorization", `Bearer ${token}`);
-      expect(res.status).not.toBe(401);
-      expect(res.status).not.toBe(403);
+      expect(res.status).toBe(403);
     },
   );
 });

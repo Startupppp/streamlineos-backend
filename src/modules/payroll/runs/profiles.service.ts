@@ -307,10 +307,31 @@ export class ProfilesService {
     if (body.taxRegime !== undefined) updateData.taxRegime = body.taxRegime;
     if (body.costCenter !== undefined) updateData.costCenter = body.costCenter;
 
-    await this.db
-      .update(employeeSalaryProfiles)
-      .set(updateData)
-      .where(and(eq(employeeSalaryProfiles.id, profileId), eq(employeeSalaryProfiles.orgId, orgId)));
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(employeeSalaryProfiles)
+        .set(updateData)
+        .where(and(eq(employeeSalaryProfiles.id, profileId), eq(employeeSalaryProfiles.orgId, orgId)));
+
+      if (body.components && body.components.length > 0) {
+        await tx
+          .delete(employeeSalaryProfileComponents)
+          .where(and(eq(employeeSalaryProfileComponents.profileId, profileId), eq(employeeSalaryProfileComponents.orgId, orgId)));
+
+        await tx.insert(employeeSalaryProfileComponents).values(
+          body.components.map((c, idx) => ({
+            orgId,
+            profileId,
+            componentId: c.componentId,
+            calcMethodOverride: c.calcMethodOverride,
+            amount: c.amount,
+            percent: c.percent,
+            formulaOverride: c.formulaOverride,
+            sortOrder: idx,
+          })),
+        );
+      }
+    });
 
     this.audit.log({
       action: "payroll.salary_profile_updated",
@@ -325,25 +346,6 @@ export class ProfilesService {
       },
     });
 
-    if (body.components && body.components.length > 0) {
-      await this.db
-        .delete(employeeSalaryProfileComponents)
-        .where(and(eq(employeeSalaryProfileComponents.profileId, profileId), eq(employeeSalaryProfileComponents.orgId, orgId)));
-
-      await this.db.insert(employeeSalaryProfileComponents).values(
-        body.components.map((c, idx) => ({
-          orgId,
-          profileId,
-          componentId: c.componentId,
-          calcMethodOverride: c.calcMethodOverride,
-          amount: c.amount,
-          percent: c.percent,
-          formulaOverride: c.formulaOverride,
-          sortOrder: idx,
-        })),
-      );
-    }
-
     return { ok: true };
   }
 
@@ -352,6 +354,7 @@ export class ProfilesService {
       .select()
       .from(employeeSalaryProfiles)
       .where(and(eq(employeeSalaryProfiles.orgId, orgId), eq(employeeSalaryProfiles.userId, employeeUserId)))
-      .orderBy(desc(employeeSalaryProfiles.effectiveFrom));
+      .orderBy(desc(employeeSalaryProfiles.effectiveFrom))
+      .limit(100);
   }
 }

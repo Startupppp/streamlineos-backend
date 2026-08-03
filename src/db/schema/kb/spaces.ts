@@ -8,10 +8,11 @@ import {
   timestamp,
   index,
   uniqueIndex,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
-import { kbAudienceEnum, kbSpaceRoleEnum } from "../enums";
+import { organizations, users } from "../common/auth";
+import { kbAudienceEnum, kbSpaceRoleEnum } from "../common/enums";
 
 export const kbSpaces = pgTable(
   "kb_spaces",
@@ -38,6 +39,7 @@ export const kbSpaces = pgTable(
   (table) => [
     index("idx_kb_spaces_org").on(table.orgId),
     uniqueIndex("uniq_kb_spaces_org_slug").on(table.orgId, table.slug),
+    unique("uniq_kb_spaces_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -57,6 +59,8 @@ export const kbSpaceMembers = pgTable(
     index("idx_kb_space_members_space").on(table.spaceId),
     index("idx_kb_space_members_user").on(table.userId),
     index("idx_kb_space_members_org_role").on(table.orgId, table.role),
+    index("idx_kb_space_members_org_space").on(table.orgId, table.spaceId),
+    unique("uniq_kb_space_members_org_id").on(table.orgId, table.id),
   ],
 );
 

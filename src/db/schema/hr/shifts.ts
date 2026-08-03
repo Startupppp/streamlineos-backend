@@ -1,5 +1,5 @@
-import { pgTable, text, serial, timestamp, boolean, time, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
-import { organizations, users } from "../auth";
+import { pgTable, text, serial, timestamp, boolean, time, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { organizations, users } from "../common/auth";
 
 export const shiftTemplates = pgTable("shift_templates", {
   id: serial("id").primaryKey(),
@@ -15,6 +15,7 @@ export const shiftTemplates = pgTable("shift_templates", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_shift_templates_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_shift_templates_org_name").on(table.orgId, table.name),
   index("idx_shift_templates_org_active").on(table.orgId, table.isActive),
 ]);
@@ -29,6 +30,7 @@ export const employeeShiftAssignments = pgTable("employee_shift_assignments", {
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_employee_shift_assignments_org_id").on(table.orgId, table.id),
   index("idx_shift_assignments_user").on(table.userId, table.isActive),
   index("idx_shift_assignments_org").on(table.orgId),
 ]);
@@ -45,6 +47,7 @@ export const shiftSwapRequests = pgTable("shift_swap_requests", {
   approverId: text("approver_id").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_shift_swap_requests_org_id").on(table.orgId, table.id),
   index("idx_shift_swaps_org_status").on(table.orgId, table.status),
   index("idx_shift_swaps_requester").on(table.requesterId),
 ]);

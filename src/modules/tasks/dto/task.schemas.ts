@@ -37,13 +37,6 @@ export const completeSchema = z.object({
   completedAt: z.string().datetime({ offset: true }).optional(),
 });
 
-export const overdueSchema = z.object({
-  countOnly: z
-    .string()
-    .optional()
-    .transform((v) => v === "true"),
-});
-
 export const analyticsSchema = z.object({
   days: z.coerce.number().int().min(1).max(90).default(30),
 });
@@ -77,7 +70,6 @@ export type ListInput = z.infer<typeof listSchema>;
 export type CreateInput = z.infer<typeof createSchema>;
 export type UpdateInput = z.infer<typeof updateSchema>;
 export type CompleteInput = z.infer<typeof completeSchema>;
-export type OverdueInput = z.infer<typeof overdueSchema>;
 export type AnalyticsInput = z.infer<typeof analyticsSchema>;
 export type SequenceListInput = z.infer<typeof sequenceListSchema>;
 export type SequenceCreateInput = z.infer<typeof sequenceCreateSchema>;

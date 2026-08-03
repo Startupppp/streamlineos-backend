@@ -6,9 +6,10 @@ import {
   timestamp,
   uniqueIndex,
   primaryKey,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 import { kbArticles } from "../support/kb";
 
 export const kbTags = pgTable(
@@ -22,6 +23,7 @@ export const kbTags = pgTable(
   },
   (table) => [
     uniqueIndex("uniq_kb_tags_org_slug").on(table.orgId, table.slug),
+    unique("uniq_kb_tags_org_id").on(table.orgId, table.id),
   ],
 );
 

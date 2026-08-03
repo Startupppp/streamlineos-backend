@@ -4,7 +4,7 @@ import { map } from "rxjs/operators";
 
 @Injectable()
 export class ResponseTransformInterceptor implements NestInterceptor {
-  intercept(_ctx: ExecutionContext, next: CallHandler): Observable<unknown> {
+  intercept(_: ExecutionContext, next: CallHandler): Observable<unknown> {
     return next.handle().pipe(
       map((data: unknown) => {
         if (data !== null && typeof data === "object" && "success" in (data as Record<string, unknown>)) {

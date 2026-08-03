@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import {
   apiKeys,
   automationRules,
@@ -15,14 +15,16 @@ import {
   gitConnections,
   organizations,
   organizationMembers,
-  users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { queryAiUsage } from "./ai-usage.query";
-import { ALL_ROLES, PERMISSIONS } from "../rbac/permissions.constants";
-import { PlanLimitsService } from "../billing/plan-limits.service";
+import { PERMISSIONS } from "../rbac/permissions";
+import { AccessService } from "../access/access.service";
+import { assertMayGrantRole } from "../../common/rbac/assert-may-grant-role";
+import { syncStructuralRoleAssignment } from "../../common/rbac/sync-structural-role";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import {
   VALID_API_KEY_SCOPES,
   generateApiKey,
@@ -37,6 +39,7 @@ import type {
   CreateCustomFieldInput,
   CreateGitConnectionInput,
   FeatureFlagInput,
+  ListAutomationsQueryInput,
   UpdateAutomationInput,
   UpdateCustomFieldInput,
   UpdateGitConnectionInput,
@@ -47,6 +50,7 @@ export class SettingsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly planLimits: PlanLimitsService,
+    private readonly access: AccessService,
   ) {}
 
   getPermissions() {
@@ -54,14 +58,14 @@ export class SettingsService {
   }
 
   getAiUsage(u: CurrentUserContext) {
-    if (!(u.isOrgOwner || u.isPlatformAdmin)) {
+    if (!u.isOrgOwner) {
       throw new ForbiddenException("Forbidden");
     }
     return queryAiUsage(this.db, u.orgId);
   }
 
   async listApiKeys(u: CurrentUserContext) {
-    if (!(u.isOrgOwner || u.isPlatformAdmin)) {
+    if (!u.isOrgOwner) {
       throw new ForbiddenException("Only admins can manage API keys.");
     }
     return this.db.query.apiKeys.findMany({
@@ -73,7 +77,7 @@ export class SettingsService {
   }
 
   async createApiKey(u: CurrentUserContext, input: CreateApiKeyInput) {
-    if (!(u.isOrgOwner || u.isPlatformAdmin)) {
+    if (!u.isOrgOwner) {
       throw new ForbiddenException("Only admins can create API keys.");
     }
 
@@ -104,7 +108,7 @@ export class SettingsService {
   }
 
   async revokeApiKey(u: CurrentUserContext, keyId: string) {
-    if (!(u.isOrgOwner || u.isPlatformAdmin)) {
+    if (!u.isOrgOwner) {
       throw new ForbiddenException("Only admins can revoke API keys.");
     }
 
@@ -117,24 +121,43 @@ export class SettingsService {
     return { success: true };
   }
 
-  listAutomations(orgId: string) {
-    return this.db
-      .select({
-        id: automationRules.id,
-        name: automationRules.name,
-        description: automationRules.description,
-        triggerEvent: automationRules.triggerEvent,
-        conditions: automationRules.conditions,
-        actions: automationRules.actions,
-        isEnabled: automationRules.isEnabled,
-        runCount: automationRules.runCount,
-        lastRunAt: automationRules.lastRunAt,
-        createdAt: automationRules.createdAt,
-        updatedAt: automationRules.updatedAt,
-      })
-      .from(automationRules)
-      .where(eq(automationRules.orgId, orgId))
-      .orderBy(desc(automationRules.createdAt));
+  async listAutomations(orgId: string, params: ListAutomationsQueryInput) {
+    const limit = Math.min(params.limit, 100);
+    const offset = (params.page - 1) * limit;
+    const where = eq(automationRules.orgId, orgId);
+
+    const [data, countRows] = await Promise.all([
+      this.db
+        .select({
+          id: automationRules.id,
+          name: automationRules.name,
+          description: automationRules.description,
+          triggerEvent: automationRules.triggerEvent,
+          conditions: automationRules.conditions,
+          actions: automationRules.actions,
+          isEnabled: automationRules.isEnabled,
+          runCount: automationRules.runCount,
+          lastRunAt: automationRules.lastRunAt,
+          createdAt: automationRules.createdAt,
+          updatedAt: automationRules.updatedAt,
+        })
+        .from(automationRules)
+        .where(where)
+        .orderBy(desc(automationRules.createdAt))
+        .limit(limit)
+        .offset(offset),
+      this.db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(automationRules)
+        .where(where),
+    ]);
+
+    const total = countRows[0]?.total ?? 0;
+
+    return {
+      data,
+      pagination: { page: params.page, limit, total, totalPages: Math.ceil(total / limit) },
+    };
   }
 
   async createAutomation(orgId: string, userId: string, input: CreateAutomationInput) {
@@ -228,7 +251,7 @@ export class SettingsService {
       .select()
       .from(customFieldDefinitions)
       .where(where)
-      .orderBy(asc(customFieldDefinitions.sortOrder), asc(customFieldDefinitions.createdAt));
+      .orderBy(asc(customFieldDefinitions.displayOrder), asc(customFieldDefinitions.createdAt));
 
     return { fields };
   }
@@ -241,7 +264,7 @@ export class SettingsService {
         and(
           eq(customFieldDefinitions.orgId, orgId),
           eq(customFieldDefinitions.entityType, input.entityType),
-          eq(customFieldDefinitions.name, input.name),
+          eq(customFieldDefinitions.key, input.name),
         ),
       )
       .limit(1);
@@ -257,14 +280,13 @@ export class SettingsService {
       .values({
         orgId,
         entityType: input.entityType,
-        name: input.name,
+        key: input.name,
         label: input.label,
         fieldType: input.fieldType,
         options: input.options ?? null,
         isRequired: input.isRequired ?? false,
         isActive: true,
-        sortOrder: input.sortOrder ?? 0,
-        createdBy: userId,
+        displayOrder: input.sortOrder ?? 0,
       })
       .returning();
 
@@ -314,7 +336,7 @@ export class SettingsService {
   }
 
   async updateFeatureFlag(u: CurrentUserContext, input: FeatureFlagInput) {
-    if (!(u.isOrgOwner || u.isPlatformAdmin)) {
+    if (!u.isOrgOwner) {
       throw new ForbiddenException("Forbidden");
     }
 
@@ -436,8 +458,8 @@ export class SettingsService {
   }
 
   async updateUserRole(u: CurrentUserContext, targetUserId: string, role: string) {
-    if (!(u.isOrgOwner || u.isPlatformAdmin)) {
-      throw new ForbiddenException("Only Owner, CEO, or CTO can change user roles");
+    if (!u.isOrgOwner) {
+      throw new ForbiddenException("Only the organization owner can change member roles");
     }
 
     const member = await this.db.query.organizationMembers.findFirst({
@@ -445,19 +467,20 @@ export class SettingsService {
         eq(organizationMembers.userId, targetUserId),
         eq(organizationMembers.orgId, u.orgId),
       ),
+      columns: { id: true, isOwner: true },
     });
     if (!member) throw new NotFoundException("User not found in this organization");
 
-    if (!ALL_ROLES.includes(role)) {
-      throw new BadRequestException(`Invalid role. Valid roles: ${ALL_ROLES.join(", ")}`);
+    if (member.isOwner) {
+      throw new BadRequestException(
+        "The organization owner's role cannot be changed here. Use the ownership transfer flow instead.",
+      );
     }
 
-    if (targetUserId === u.userId && !u.isOrgOwner) {
-      throw new ForbiddenException("You cannot change your own role");
-    }
+    // Rejects OWNER outright so a second owner cannot be minted outside the transfer flow
+    await assertMayGrantRole(this.access, u.orgId, u, role);
 
     await this.db.transaction(async (tx) => {
-      await tx.update(users).set({ role }).where(eq(users.id, targetUserId));
       await tx
         .update(organizationMembers)
         .set({ role })
@@ -467,6 +490,7 @@ export class SettingsService {
             eq(organizationMembers.orgId, u.orgId),
           ),
         );
+      await syncStructuralRoleAssignment(tx, u.orgId, member.id, role);
     });
 
     return { success: true, userId: targetUserId, role };

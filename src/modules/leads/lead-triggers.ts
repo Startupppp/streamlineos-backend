@@ -9,7 +9,7 @@ import {
 } from "../../db/schema";
 import type { Db } from "../../db/drizzle.module";
 import type { AssignmentConfig } from "../../db/schema/crm/leads";
-import { TerritoryMatchService } from "../crm/territory-match.service";
+import { TerritoryMatchService } from "../crm/core/territory-match.service";
 import { resolveLeadStatusSemantics } from "./lead-status-semantics";
 
 async function advanceRoundRobinState(db: Db, ruleId: number, userIds: string[]): Promise<string> {

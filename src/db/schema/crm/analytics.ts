@@ -1,11 +1,11 @@
-import { pgTable, text, serial, timestamp, boolean, decimal, date, integer, index, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, decimal, date, integer, index, jsonb, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
   crmPersonRoleEnum, crmHealthEnum, crmDealStageEnum,
   crmSupportTicketStatusEnum, crmSupportTicketPriorityEnum, crmActivityTypeEnum,
   slaAppliesToEnum, slaPriorityEnum,
-} from "../enums";
-import { organizations, users } from "../auth";
+} from "../common/enums";
+import { organizations, users } from "../common/auth";
 
 export const crmPeople = pgTable("crm_people", {
   id: serial("id").primaryKey(),
@@ -23,7 +23,9 @@ export const crmPeople = pgTable("crm_people", {
   bio: text("bio"),
   skills: text("skills").array(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (t) => [
+  unique("uniq_crm_people_org_id").on(t.orgId, t.id),
+]);
 
 export const crmCompanies = pgTable("crm_companies", {
   id: serial("id").primaryKey(),
@@ -36,7 +38,9 @@ export const crmCompanies = pgTable("crm_companies", {
   customerSince: text("customer_since"),
   csmId: integer("csm_id").references(() => crmPeople.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (t) => [
+  unique("uniq_crm_companies_org_id").on(t.orgId, t.id),
+]);
 
 export const crmDeals = pgTable("crm_deals", {
   id: serial("id").primaryKey(),
@@ -49,7 +53,9 @@ export const crmDeals = pgTable("crm_deals", {
   salesRepId: integer("sales_rep_id").references(() => crmPeople.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
-});
+}, (t) => [
+  unique("uniq_crm_deals_org_id").on(t.orgId, t.id),
+]);
 
 export const crmActivities = pgTable("crm_activities", {
   id: serial("id").primaryKey(),
@@ -61,7 +67,9 @@ export const crmActivities = pgTable("crm_activities", {
   personId: integer("person_id").references(() => crmPeople.id),
   category: text("category").notNull().default("sales"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (t) => [
+  unique("uniq_crm_activities_org_id").on(t.orgId, t.id),
+]);
 
 export const crmSupportTickets = pgTable("crm_support_tickets", {
   id: serial("id").primaryKey(),
@@ -72,7 +80,9 @@ export const crmSupportTickets = pgTable("crm_support_tickets", {
   assigneeId: integer("assignee_id").references(() => crmPeople.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   resolvedAt: timestamp("resolved_at"),
-});
+}, (t) => [
+  unique("uniq_crm_support_tickets_org_id").on(t.orgId, t.id),
+]);
 
 export const crmMonthlyMetrics = pgTable("crm_monthly_metrics", {
   id: serial("id").primaryKey(),
@@ -84,7 +94,9 @@ export const crmMonthlyMetrics = pgTable("crm_monthly_metrics", {
   csat: decimal("csat", { precision: 4, scale: 2 }).default("0").notNull(),
   ticketVolume: integer("ticket_volume").default(0).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (t) => [
+  unique("uniq_crm_monthly_metrics_org_id").on(t.orgId, t.id),
+]);
 
 export const crmTeamPerformance = pgTable("crm_team_performance", {
   id: serial("id").primaryKey(),
@@ -93,7 +105,9 @@ export const crmTeamPerformance = pgTable("crm_team_performance", {
   month: text("month").notNull(),
   value: decimal("value", { precision: 15, scale: 2 }).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (t) => [
+  unique("uniq_crm_team_performance_org_id").on(t.orgId, t.id),
+]);
 
 export const crmEmailTemplates = pgTable("crm_email_templates", {
   id: serial("id").primaryKey(),
@@ -106,6 +120,7 @@ export const crmEmailTemplates = pgTable("crm_email_templates", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_crm_email_templates_org").on(table.orgId),
+  unique("uniq_crm_email_templates_org_id").on(table.orgId, table.id),
 ]);
 
 export interface SlaConditions {
@@ -134,22 +149,7 @@ export const crmSla = pgTable("crm_sla_policies", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_crm_sla_org").on(table.orgId),
-]);
-
-export const crmViews = pgTable("crm_views", {
-  id: serial("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  createdBy: text("created_by").references(() => users.id).notNull(),
-  name: text("name").notNull(),
-  entityType: text("entity_type").notNull(),
-  filters: jsonb("filters").$type<Record<string, unknown>>().default({}),
-  sortBy: text("sort_by"),
-  sortDir: text("sort_dir").default("asc").notNull(),
-  isPublic: boolean("is_public").default(false).notNull(),
-  isPinned: boolean("is_pinned").default(false).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_crm_views_org").on(table.orgId),
+  unique("uniq_crm_sla_policies_org_id").on(table.orgId, table.id),
 ]);
 
 export const crmPeopleRelations = relations(crmPeople, ({ one, many }) => ({
@@ -192,9 +192,4 @@ export const crmEmailTemplatesRelations = relations(crmEmailTemplates, ({ one })
 
 export const crmSlaRelations = relations(crmSla, ({ one }) => ({
   organization: one(organizations, { fields: [crmSla.orgId], references: [organizations.id] }),
-}));
-
-export const crmViewsRelations = relations(crmViews, ({ one }) => ({
-  organization: one(organizations, { fields: [crmViews.orgId], references: [organizations.id] }),
-  creator: one(users, { fields: [crmViews.createdBy], references: [users.id] }),
 }));

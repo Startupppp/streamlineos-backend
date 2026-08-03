@@ -3,8 +3,8 @@ import { and, eq } from "drizzle-orm";
 import { kbResearchBriefs, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
-import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
-import { AiJobHandlerRegistry, type AiJobHandler, type AiJobContext } from "../ai-jobs/ai-job-handler";
+import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
+import { AiJobHandlerRegistry, type AiJobHandler, type AiJobContext } from "../ai/jobs/ai-job-handler";
 import { KbSearchService } from "./kb-search.service";
 import { KbEventsService } from "./kb-events.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -83,13 +83,10 @@ export class KbResearchBriefHandler implements AiJobHandler, OnModuleInit {
     return {
       orgId: job.orgId,
       userId: job.userId ?? "",
-      branchId: null,
       role: member?.role ?? "member",
       permissions: [],
-      enabledModules: [],
-      plan: null,
-      isPlatformAdmin: false,
       isOrgOwner: member?.isOwner ?? false,
+      tokenScopes: null,
       sessionId: "",
     };
   }

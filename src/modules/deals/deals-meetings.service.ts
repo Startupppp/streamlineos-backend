@@ -20,6 +20,7 @@ export class DealsMeetingsService {
       where: and(eq(dealMeetings.dealId, dealId), eq(dealMeetings.orgId, orgId)),
       with: { creator: { columns: { id: true, name: true } } },
       orderBy: [desc(dealMeetings.scheduledAt)],
+      limit: 100,
     });
 
     if (!meetings.length) return [];

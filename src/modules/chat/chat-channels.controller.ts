@@ -21,6 +21,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { ChatChannelsService } from "./chat-channels.service";
+import { ChatChannelMembersService } from "./chat-channel-members.service";
 import { ChatTypingService } from "./chat-typing.service";
 import {
   addMemberSchema,
@@ -46,6 +47,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from "@nestjs/swagg
 export class ChatChannelsController {
   constructor(
     private readonly channels: ChatChannelsService,
+    private readonly members: ChatChannelMembersService,
     private readonly typing: ChatTypingService,
   ) {}
 
@@ -109,7 +111,7 @@ export class ChatChannelsController {
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const channel = await this.channels.getChannel(channelId, u.userId);
+    const channel = await this.members.getChannel(channelId, u.userId, u.orgId);
     if (!channel) throw new NotFoundException("Channel not found");
     return channel;
   }
@@ -123,18 +125,18 @@ export class ChatChannelsController {
     @Body(new ZodValidationPipe(updateChannelSchema)) body: UpdateChannelInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.channels.updateChannel(channelId, u.userId, body);
+    return this.members.updateChannel(channelId, u.userId, body, u.orgId);
   }
 
   @ApiOperation({ summary: "List members of a channel" })
   @ApiResponse({ status: 200, description: "OK" })
   @Get(":channelId/members")
   @RequirePermission("chat:channels:read")
-  members(
+  listMembers(
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.channels.listMembers(channelId, u.userId);
+    return this.members.listMembers(channelId, u.userId);
   }
 
   @ApiOperation({ summary: "Add a member to a channel" })
@@ -147,7 +149,7 @@ export class ChatChannelsController {
     @Body(new ZodValidationPipe(addMemberSchema)) body: AddMemberInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.channels.addMember(channelId, body.userId, u.userId);
+    return this.members.addMember(channelId, body.userId, u.userId);
   }
 
   @ApiOperation({ summary: "Remove a member from a channel" })
@@ -160,7 +162,7 @@ export class ChatChannelsController {
     @Param("userId") targetUserId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.channels.removeMember(channelId, targetUserId, u.userId);
+    return this.members.removeMember(channelId, targetUserId, u.userId);
   }
 
   @ApiOperation({ summary: "Join a public channel" })
@@ -172,7 +174,7 @@ export class ChatChannelsController {
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.channels.joinPublicChannel(channelId, u.userId);
+    return this.members.joinPublicChannel(channelId, u.userId, u.orgId);
   }
 
   @ApiOperation({ summary: "Leave a channel" })
@@ -184,7 +186,7 @@ export class ChatChannelsController {
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.channels.leaveChannel(channelId, u.userId);
+    return this.members.leaveChannel(channelId, u.userId);
   }
 
   @ApiOperation({ summary: "Archive a channel for the current user" })
@@ -193,7 +195,7 @@ export class ChatChannelsController {
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
   archive(@Param("channelId", ParseIntPipe) channelId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.channels.archiveChannel(channelId, u.userId);
+    return this.members.archiveChannel(channelId, u.userId);
   }
 
   @ApiOperation({ summary: "Unarchive a channel for the current user" })
@@ -202,7 +204,7 @@ export class ChatChannelsController {
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
   unarchive(@Param("channelId", ParseIntPipe) channelId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.channels.unarchiveChannel(channelId, u.userId);
+    return this.members.unarchiveChannel(channelId, u.userId);
   }
 
   @ApiOperation({ summary: "Mark a channel as read up to now" })
@@ -214,7 +216,7 @@ export class ChatChannelsController {
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.channels.markRead(channelId, u.userId, u.orgId);
+    return this.members.markRead(channelId, u.userId, u.orgId);
   }
 
   @ApiOperation({ summary: "Mark a channel as unread" })
@@ -223,7 +225,7 @@ export class ChatChannelsController {
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
   markUnread(@Param("channelId", ParseIntPipe) channelId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.channels.markChannelUnread(channelId, u.userId);
+    return this.members.markChannelUnread(channelId, u.userId);
   }
 
   @ApiOperation({ summary: "Mute a channel for the current user" })
@@ -236,7 +238,7 @@ export class ChatChannelsController {
     @Body(new ZodValidationPipe(muteChannelSchema)) body: MuteChannelInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.channels.muteChannel(channelId, u.userId, body.duration);
+    return this.members.muteChannel(channelId, u.userId, body.duration);
   }
 
   @ApiOperation({ summary: "Unmute a channel for the current user" })
@@ -248,7 +250,7 @@ export class ChatChannelsController {
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.channels.unmuteChannel(channelId, u.userId);
+    return this.members.unmuteChannel(channelId, u.userId);
   }
 
   @ApiOperation({ summary: "Add a channel to the current user's favorites" })
@@ -257,7 +259,7 @@ export class ChatChannelsController {
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
   favorite(@Param("channelId", ParseIntPipe) channelId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.channels.favoriteChannel(channelId, u.userId);
+    return this.members.favoriteChannel(channelId, u.userId);
   }
 
   @ApiOperation({ summary: "Remove a channel from the current user's favorites" })
@@ -266,7 +268,7 @@ export class ChatChannelsController {
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
   unfavorite(@Param("channelId", ParseIntPipe) channelId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.channels.unfavoriteChannel(channelId, u.userId);
+    return this.members.unfavoriteChannel(channelId, u.userId);
   }
 
   @ApiOperation({ summary: "Set the current user's notification preference for a channel" })
@@ -279,7 +281,7 @@ export class ChatChannelsController {
     @Body(new ZodValidationPipe(notificationPreferenceSchema)) body: NotificationPreferenceInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.channels.setNotificationPreference(channelId, u.userId, body.preference);
+    return this.members.setNotificationPreference(channelId, u.userId, body.preference);
   }
 
   @ApiOperation({ summary: "List files shared in a channel with cursor pagination" })
@@ -291,7 +293,7 @@ export class ChatChannelsController {
     @Query("cursor") cursor: string | undefined,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.channels.listChannelFiles(
+    return this.members.listChannelFiles(
       channelId,
       u.userId,
       cursor !== undefined ? parseInt(cursor, 10) : undefined,
@@ -332,6 +334,6 @@ export class ChatChannelsController {
     @Body(new ZodValidationPipe(z.object({ role: z.enum(["ADMIN", "MEMBER"]) }))) body: { role: string },
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.channels.updateMemberRole(channelId, targetUserId, u.userId, body.role);
+    return this.members.updateMemberRole(channelId, targetUserId, u.userId, body.role);
   }
 }

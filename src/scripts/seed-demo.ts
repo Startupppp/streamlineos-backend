@@ -1,7 +1,7 @@
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { createHash } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import * as schema from "../db/schema";
 import {
   users,
@@ -9,15 +9,9 @@ import {
   organizationMembers,
   roles,
   invitations,
-} from "../db/schema/auth";
-import {
-  orgBranches,
-  orgDepartments,
-  orgTeams,
-  orgLocations,
-} from "../db/schema/organization";
-import { departments } from "../db/schema/hr/employees";
-import { subscriptions, auditLogs } from "../db/schema/shared";
+} from "../db/schema/common/auth";
+import { orgUnits } from "../db/schema/common/organization";
+import { subscriptions, auditLogs } from "../db/schema/common/shared";
 
 type Db = PostgresJsDatabase<typeof schema>;
 
@@ -143,16 +137,21 @@ async function seed(db: Db): Promise<SeedSummary> {
   const trialEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
   const invExpiry = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
+  const [ownerSeqRow] = await db.execute(
+    sql`SELECT nextval(pg_get_serial_sequence('organization_members', 'id')) AS id`,
+  );
+  const ownerMembershipId = Number(ownerSeqRow?.id);
+
   const orgRows = await db
     .insert(organizations)
     .values({
       id: DEMO_ORG_ID,
+      ownerMembershipId,
       name: "Demo Workspace",
       slug: DEMO_ORG_SLUG,
       industry: "Technology",
       companySize: "11-50",
       country: "IN",
-      enabledModules: ["HR", "CRM", "PROJECTS"],
       onboardingCompletedAt: now,
       status: "ACTIVE",
     })
@@ -170,22 +169,14 @@ async function seed(db: Db): Promise<SeedSummary> {
       lastName: "Owner",
       emailVerified: now,
       isActive: true,
-      hasDashboardAccess: true,
-      role: "OWNER",
       userStatus: "active",
-      loginAttempts: 0,
-      lockedUntil: null,
       lastActiveOrgId: DEMO_ORG_ID,
       activatedAt: now,
     })
     .onConflictDoUpdate({
       target: users.email,
       set: {
-        loginAttempts: 0,
-        lockedUntil: null,
         isActive: true,
-        hasDashboardAccess: true,
-        role: "OWNER",
         userStatus: "active",
         emailVerified: now,
         lastActiveOrgId: DEMO_ORG_ID,
@@ -199,9 +190,9 @@ async function seed(db: Db): Promise<SeedSummary> {
   await db
     .insert(organizationMembers)
     .values({
+      id: ownerMembershipId,
       userId: actualDemoUserId,
       orgId: DEMO_ORG_ID,
-      role: "OWNER",
       isOwner: true,
     })
     .onConflictDoNothing();
@@ -217,10 +208,7 @@ async function seed(db: Db): Promise<SeedSummary> {
         lastName: m.lastName,
         emailVerified: now,
         isActive: m.userStatus !== "suspended",
-        hasDashboardAccess: true,
-        role: m.role,
         userStatus: m.userStatus,
-        loginAttempts: 0,
         lastActiveOrgId: DEMO_ORG_ID,
         activatedAt: now,
         archivedAt: m.userStatus === "suspended" ? now : null,
@@ -236,7 +224,6 @@ async function seed(db: Db): Promise<SeedSummary> {
         .values({
           userId: memberId,
           orgId: DEMO_ORG_ID,
-          role: m.role,
           isOwner: false,
         })
         .onConflictDoNothing();
@@ -275,89 +262,97 @@ async function seed(db: Db): Promise<SeedSummary> {
 
   for (const b of BRANCH_CONFIGS) {
     const rows = await db
-      .insert(orgBranches)
+      .insert(orgUnits)
       .values({
         orgId: DEMO_ORG_ID,
+        kind: "BRANCH",
         name: b.name,
         code: b.code,
-        city: b.city,
-        state: b.state,
-        country: b.country,
+        metadata: { city: b.city, state: b.state, country: b.country },
         status: "ACTIVE",
       })
       .onConflictDoNothing()
-      .returning({ id: orgBranches.id });
+      .returning({ id: orgUnits.id });
     summary.branchesInserted += rows.length;
   }
 
   for (const d of DEPT_CONFIGS) {
     const rows = await db
-      .insert(orgDepartments)
+      .insert(orgUnits)
       .values({
         orgId: DEMO_ORG_ID,
+        kind: "DEPARTMENT",
         name: d.name,
         code: d.code,
         description: d.description,
         status: "ACTIVE",
       })
       .onConflictDoNothing()
-      .returning({ id: orgDepartments.id });
+      .returning({ id: orgUnits.id });
     summary.orgDeptsInserted += rows.length;
   }
 
   for (const t of TEAM_CONFIGS) {
     const rows = await db
-      .insert(orgTeams)
+      .insert(orgUnits)
       .values({
         orgId: DEMO_ORG_ID,
+        kind: "TEAM",
         name: t.name,
         code: t.code,
         description: t.description,
-        status: "ACTIVE",
       })
       .onConflictDoNothing()
-      .returning({ id: orgTeams.id });
+      .returning({ id: orgUnits.id });
     summary.orgTeamsInserted += rows.length;
   }
 
   const existingLocations = await db
-    .select({ id: orgLocations.id })
-    .from(orgLocations)
-    .where(eq(orgLocations.orgId, DEMO_ORG_ID));
+    .select({ id: orgUnits.id })
+    .from(orgUnits)
+    .where(and(eq(orgUnits.orgId, DEMO_ORG_ID), eq(orgUnits.kind, "LOCATION")));
 
   if (existingLocations.length === 0) {
     const locationValues = [
       {
         orgId: DEMO_ORG_ID,
+        kind: "LOCATION" as const,
         name: "Mumbai HQ Office",
-        type: "OFFICE" as const,
-        address: "BKC, Bandra East, Mumbai 400051",
-        status: "ACTIVE" as const,
+        code: "MUMB",
+        metadata: { city: "Mumbai", locationType: "OFFICE" as const, address: "BKC, Bandra East, Mumbai 400051" },
       },
       {
         orgId: DEMO_ORG_ID,
+        kind: "LOCATION" as const,
         name: "Bangalore Tech Park",
-        type: "OFFICE" as const,
-        address: "Outer Ring Road, Marathahalli, Bangalore 560037",
-        status: "ACTIVE" as const,
+        code: "BANG",
+        metadata: { city: "Bangalore", locationType: "OFFICE" as const, address: "Outer Ring Road, Marathahalli, Bangalore 560037" },
       },
     ];
-    const locRows = await db.insert(orgLocations).values(locationValues).returning({ id: orgLocations.id });
+    const locRows = await db.insert(orgUnits).values(locationValues).returning({ id: orgUnits.id });
     summary.orgLocationsInserted = locRows.length;
   }
 
-  for (const name of HR_DEPT_NAMES) {
-    const rows = await db
-      .insert(departments)
-      .values({
+  const deptCodeMap: Record<string, string> = {
+    Engineering: "ENG",
+    "Human Resources": "HR",
+    Sales: "SALES",
+    Design: "DESIGN",
+  };
+  const deptRows = await db
+    .insert(orgUnits)
+    .values(
+      HR_DEPT_NAMES.map((name) => ({
         orgId: DEMO_ORG_ID,
+        kind: "DEPARTMENT" as const,
         name,
-        managerId: actualDemoUserId,
-      })
-      .onConflictDoNothing()
-      .returning({ id: departments.id });
-    summary.hrDeptsInserted += rows.length;
-  }
+        code: deptCodeMap[name] ?? name.substring(0, 6).toUpperCase(),
+        headUserId: actualDemoUserId,
+      })),
+    )
+    .onConflictDoNothing()
+    .returning({ id: orgUnits.id });
+  summary.hrDeptsInserted = deptRows.length;
 
   const invRows = await db
     .insert(invitations)
@@ -365,7 +360,7 @@ async function seed(db: Db): Promise<SeedSummary> {
       {
         id: "d0000001-0000-4000-8000-000000000101",
         email: "invited1@demo.streamlineos.in",
-        token: hashToken("demo-invite-raw-token-alpha-2026"),
+        tokenHash: hashToken("demo-invite-raw-token-alpha-2026"),
         orgId: DEMO_ORG_ID,
         role: "HR",
         invitedBy: actualDemoUserId,
@@ -374,7 +369,7 @@ async function seed(db: Db): Promise<SeedSummary> {
       {
         id: "d0000001-0000-4000-8000-000000000102",
         email: "invited2@demo.streamlineos.in",
-        token: hashToken("demo-invite-raw-token-beta-2026"),
+        tokenHash: hashToken("demo-invite-raw-token-beta-2026"),
         orgId: DEMO_ORG_ID,
         role: "ENGINEERING",
         invitedBy: actualDemoUserId,

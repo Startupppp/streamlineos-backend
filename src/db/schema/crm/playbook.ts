@@ -1,6 +1,6 @@
-import { pgTable, text, serial, integer, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, timestamp, index, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 
 export const playbookEntries = pgTable("playbook_entries", {
   id: serial("id").primaryKey(),
@@ -14,6 +14,7 @@ export const playbookEntries = pgTable("playbook_entries", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_playbook_entries_org").on(table.orgId),
+  unique("uniq_playbook_entries_org_id").on(table.orgId, table.id),
 ]);
 
 export const playbookEntriesRelations = relations(playbookEntries, ({ one }) => ({

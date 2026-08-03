@@ -6,7 +6,7 @@ describe("PublishingService — single PDF render per employee", () => {
     const sendEmail = jest.fn().mockResolvedValue(undefined);
 
     const simulatePublishOneEmployee = async (emailPayslips: boolean) => {
-      let renderedPdfBuffer: Buffer | null = null;
+      let renderedPdfBuffer: Buffer | null;
       try {
         renderedPdfBuffer = await generatePayslipPdf();
         await uploadFile(renderedPdfBuffer);
@@ -32,7 +32,7 @@ describe("PublishingService — single PDF render per employee", () => {
     const sendEmail = jest.fn();
 
     const simulatePublishOneEmployee = async (emailPayslips: boolean) => {
-      let renderedPdfBuffer: Buffer | null = null;
+      let renderedPdfBuffer: Buffer | null;
       try {
         renderedPdfBuffer = await generatePayslipPdf();
         await uploadFile(renderedPdfBuffer);
@@ -59,7 +59,7 @@ describe("PublishingService — single PDF render per employee", () => {
     const sendEmail = jest.fn();
 
     const simulatePublishOneEmployee = async (emailPayslips: boolean) => {
-      let renderedPdfBuffer: Buffer | null = null;
+      let renderedPdfBuffer: Buffer | null;
       try {
         renderedPdfBuffer = await generatePayslipPdf();
         await uploadFile(renderedPdfBuffer);

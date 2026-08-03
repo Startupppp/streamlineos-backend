@@ -316,12 +316,3 @@ export class BlogService {
   }
 }
 
-export type CreateCategoryResult = Awaited<
-  ReturnType<BlogService["createCategory"]>
->;
-
-export function isDuplicateCategory(
-  result: CreateCategoryResult,
-): result is { error: "duplicate" } {
-  return result !== null && "error" in result && result.error === "duplicate";
-}

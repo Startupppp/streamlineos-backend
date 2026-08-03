@@ -6,9 +6,10 @@ import {
   timestamp,
   index,
   vector,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 import { kbArticles } from "./kb";
 import { kbArticleAttachments } from "./kb-attachments";
 import { kbPages } from "../kb/pages";
@@ -38,6 +39,7 @@ export const kbArticleChunks = pgTable(
     source: text("source").notNull(),
     chunkIndex: integer("chunk_index").notNull(),
     content: text("content").notNull(),
+    contentHash: text("content_hash"),
     tokens: integer("tokens"),
     embedding: vector("embedding", {
       dimensions: KB_EMBEDDING_DIMENSIONS,
@@ -50,6 +52,11 @@ export const kbArticleChunks = pgTable(
     index("idx_kb_chunks_org_article").on(table.orgId, table.articleId),
     index("idx_kb_chunks_org_page").on(table.orgId, table.pageId),
     index("idx_kb_chunks_org_source").on(table.orgId, table.sourceId),
+    index("idx_kb_chunks_embedding_hnsw").using(
+      "hnsw",
+      table.embedding.op("vector_cosine_ops"),
+    ),
+    unique("uniq_kb_article_chunks_org_id").on(table.orgId, table.id),
   ],
 );
 

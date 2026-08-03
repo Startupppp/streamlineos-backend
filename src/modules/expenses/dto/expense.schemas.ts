@@ -1,6 +1,5 @@
 import { z } from "zod";
 
-const EXPENSE_STATUSES = ["PENDING", "APPROVED", "REJECTED", "PAID"] as const;
 const ALL_EXPENSE_STATUSES = [
   "DRAFT",
   "SUBMITTED",
@@ -67,7 +66,7 @@ export const emailReportFiltersSchema = z.object({
 
 export const emailReportSchema = z.object({
   filters: emailReportFiltersSchema,
-  sendTo: z.enum(["CEO", "HR", "BOTH"]).default("BOTH"),
+  sendTo: z.enum(["ADMINS", "APPROVERS", "BOTH"]).default("BOTH"),
 });
 
 export const createCategorySchema = z.object({
@@ -172,7 +171,6 @@ export const updateExpensePatchSchema = z.union([
   updateExpenseDetailsSchema,
 ]);
 
-export type ExpenseStatus = (typeof EXPENSE_STATUSES)[number];
 export type AllExpenseStatus = (typeof ALL_EXPENSE_STATUSES)[number];
 export type ListInput = z.infer<typeof listSchema>;
 export type PageDataInput = z.infer<typeof pageDataSchema>;
@@ -182,7 +180,5 @@ export type EmailReportFilters = z.infer<typeof emailReportFiltersSchema>;
 export type EmailReportInput = z.infer<typeof emailReportSchema>;
 export type CreateCategoryInput = z.infer<typeof createCategorySchema>;
 export type CreateExpenseInput = z.infer<typeof createExpenseSchema>;
-export type UpdateExpenseStatusInput = z.infer<typeof updateExpenseStatusSchema>;
-export type UpdateExpenseDetailsInput = z.infer<typeof updateExpenseDetailsSchema>;
 export type RejectExpenseInput = z.infer<typeof rejectExpenseSchema>;
 export type UpdateExpensePatchInput = z.infer<typeof updateExpensePatchSchema>;

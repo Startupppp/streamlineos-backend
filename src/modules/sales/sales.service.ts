@@ -102,7 +102,10 @@ export class SalesService {
 
   listCommissions(orgId: string, filters: CommissionListInput) {
     return this.cache.cached(
-      CACHE_KEYS.commissionsList(orgId),
+      CACHE_KEYS.commissionsList(
+        orgId,
+        `${filters.userId ?? "*"}:${filters.status ?? "*"}:${filters.limit ?? 25}`,
+      ),
       async () => {
         const conditions = [eq(commissions.orgId, orgId)];
         if (filters.userId) conditions.push(eq(commissions.userId, filters.userId));
@@ -170,7 +173,7 @@ export class SalesService {
 
     if (!updated) return { error: "not_found" } as CommissionNotFound;
 
-    await this.cache.invalidate(CACHE_KEYS.commissionsList(orgId));
+    await this.cache.invalidatePattern(CACHE_KEYS.commissionsListPattern(orgId));
 
     const [deal] = await this.db
       .select({ name: deals.name })
@@ -192,7 +195,7 @@ export class SalesService {
 
   listQuotas(orgId: string, filters: QuotaListInput) {
     return this.cache.cached(
-      CACHE_KEYS.quotasList(orgId),
+      CACHE_KEYS.quotasList(orgId, `${filters.userId ?? "*"}:${filters.period ?? "*"}`),
       async () => {
         const conditions = [eq(salesQuotas.orgId, orgId)];
         if (filters.userId) conditions.push(eq(salesQuotas.userId, filters.userId));
@@ -231,11 +234,11 @@ export class SalesService {
 
   async createQuota(
     orgId: string,
-    actor: { isOrgOwner: boolean; isPlatformAdmin: boolean; role: string; permissions: string[] },
+    actor: { isOrgOwner: boolean; permissions: string[] },
     setById: string,
     input: QuotaCreateInput,
   ) {
-    if (!actor.isOrgOwner && !actor.isPlatformAdmin && !actor.permissions.includes("crm:targets:manage") && actor.role !== "BRANCH_MANAGER") {
+    if (!actor.isOrgOwner && !actor.permissions.includes("crm:targets:manage")) {
       return { error: "forbidden", message: "Only managers can set quotas" } as SalesForbidden;
     }
 
@@ -253,7 +256,7 @@ export class SalesService {
       })
       .returning();
 
-    await this.cache.invalidate(CACHE_KEYS.quotasList(orgId));
+    await this.cache.invalidatePattern(CACHE_KEYS.quotasListPattern(orgId));
     return quota;
   }
 

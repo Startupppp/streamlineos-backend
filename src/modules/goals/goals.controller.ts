@@ -40,14 +40,14 @@ import {
 } from "./dto/goal.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 
-@RequireModule("projects")
+@RequireModule("build")
 @Controller("goals")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class GoalsController {
   constructor(private readonly goals: GoalsService) {}
 
   @Get()
-  @RequirePermission("projects:goals:view")
+  @RequirePermission("build:goals:view")
   list(
     @Query(new ZodValidationPipe(listSchema)) filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
@@ -56,7 +56,7 @@ export class GoalsController {
   }
 
   @Post()
-  @RequirePermission("projects:goals:manage")
+  @RequirePermission("build:goals:manage")
   @HttpCode(201)
   create(
     @Body(new ZodValidationPipe(createSchema)) body: CreateInput,
@@ -66,13 +66,13 @@ export class GoalsController {
   }
 
   @Get("stats")
-  @RequirePermission("projects:goals:view")
+  @RequirePermission("build:goals:view")
   getStats(@CurrentUser() u: CurrentUserContext) {
     return this.goals.getStats(u.orgId);
   }
 
   @Get(":goalId")
-  @RequirePermission("projects:goals:view")
+  @RequirePermission("build:goals:view")
   async get(
     @Param("goalId", ParseIntPipe) goalId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -83,7 +83,7 @@ export class GoalsController {
   }
 
   @Patch(":goalId")
-  @RequirePermission("projects:goals:manage")
+  @RequirePermission("build:goals:manage")
   async update(
     @Param("goalId", ParseIntPipe) goalId: number,
     @Body(new ZodValidationPipe(updateSchema)) body: UpdateInput,
@@ -95,7 +95,7 @@ export class GoalsController {
   }
 
   @Delete(":goalId")
-  @RequirePermission("projects:goals:manage")
+  @RequirePermission("build:goals:manage")
   @HttpCode(204)
   async remove(
     @Param("goalId", ParseIntPipe) goalId: number,
@@ -106,7 +106,7 @@ export class GoalsController {
   }
 
   @Post(":goalId/check-in")
-  @RequirePermission("projects:goals:manage")
+  @RequirePermission("build:goals:manage")
   async checkIn(
     @Param("goalId", ParseIntPipe) goalId: number,
     @Body(new ZodValidationPipe(checkInSchema)) body: CheckInInput,
@@ -118,7 +118,7 @@ export class GoalsController {
   }
 
   @Get(":goalId/links")
-  @RequirePermission("projects:goals:view")
+  @RequirePermission("build:goals:view")
   getLinks(
     @Param("goalId", ParseIntPipe) goalId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -127,7 +127,7 @@ export class GoalsController {
   }
 
   @Post(":goalId/links")
-  @RequirePermission("projects:goals:manage")
+  @RequirePermission("build:goals:manage")
   @HttpCode(201)
   async createLink(
     @Param("goalId", ParseIntPipe) goalId: number,
@@ -142,7 +142,7 @@ export class GoalsController {
   }
 
   @Delete(":goalId/links")
-  @RequirePermission("projects:goals:manage")
+  @RequirePermission("build:goals:manage")
   async removeLink(
     @Param("goalId", ParseIntPipe) goalId: number,
     @Query(new ZodValidationPipe(deleteLinkSchema)) query: DeleteLinkInput,

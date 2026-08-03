@@ -5,30 +5,37 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { AccessService } from "../access/access.service";
+import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
+import { seedSystemRolesForOrg } from "../rbac/seed-system-roles";
+import {
+  DEFAULT_SKIP_MODULES,
+  provisionOrgModules,
+} from "../../common/org/provision-org-modules";
+import { EntitlementsService } from "../access/entitlements.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { eq, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import {
   organizationMembers,
   organizations,
-  roles,
   subscriptions,
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
+import { runWithTenantContext, withTenant } from "../../common/tenant";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
-import { SessionService } from "./session.service";
+import { SessionsService } from "../sessions/sessions.service";
 import { AuthTokensService } from "./auth-tokens.service";
 import { addDays } from "date-fns";
 import type { RegisterInput } from "./dto/auth.schemas";
 import {
   getTrialDays,
   TRIAL_PLAN,
-} from "../billing/plan-entitlements.constants";
+} from "../billing/core/plan-entitlements.constants";
 
 function slugify(name: string): string {
   return (
@@ -46,10 +53,10 @@ function slugify(name: string): string {
 export class AuthService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly sessionService: SessionService,
+    private readonly sessions: SessionsService,
     private readonly cache: CacheService,
     private readonly audit: AuditService,
-    private readonly access: AccessService,
+    private readonly entitlements: EntitlementsService,
     private readonly authTokens: AuthTokensService,
     private readonly dispatch: NotificationDispatchService,
   ) {}
@@ -62,38 +69,47 @@ export class AuthService {
       columns: { id: true },
     });
 
-    if (existing) {
-      return { success: true };
-    }
+    if (existing) return { success: true };
 
     const userId = randomUUID();
     const orgId = randomUUID();
 
-    await this.db.transaction(async (tx) => {
+    await withTenant(this.db, { orgId, audience: "INTERNAL" }, async (tx) => {
+      const seqRows = await tx.execute(
+        sql`SELECT nextval(pg_get_serial_sequence('organization_members', 'id')) AS id`,
+      );
+
+      const ownerMembershipId = Number(seqRows[0]?.id);
+
+      if (!Number.isInteger(ownerMembershipId))
+        throw new Error("Failed to allocate owner membership id");
+
       await tx.insert(organizations).values({
         id: orgId,
+        ownerMembershipId,
         name: input.companyName,
         slug: slugify(input.companyName),
       });
 
       await tx.insert(users).values({
         id: userId,
+        isActive: true,
         email: normalizedEmail,
-        name: input.lastName ? `${input.firstName} ${input.lastName}` : input.firstName,
+        lastActiveOrgId: orgId,
+        emailVerified: new Date(),
         firstName: input.firstName,
         lastName: input.lastName ?? "",
-        role: "OWNER",
-        isActive: true,
-        hasDashboardAccess: true,
-        emailVerified: new Date(),
-        lastActiveOrgId: orgId,
+        name: input.lastName
+          ? `${input.firstName} ${input.lastName}`
+          : input.firstName,
       });
 
       await tx.insert(organizationMembers).values({
         orgId,
         userId,
-        role: "owner",
         isOwner: true,
+        id: ownerMembershipId,
+        role: ORG_MEMBER_ROLES.OWNER,
       });
 
       const trialDays = getTrialDays();
@@ -105,10 +121,14 @@ export class AuthService {
         currentPeriodStart: new Date(),
         currentPeriodEnd: addDays(new Date(), trialDays),
       });
-
-      const adminRole = { name: "Administrator", slug: "ADMIN", isSystem: false };
-      await tx.insert(roles).values({ ...adminRole, orgId });
     });
+
+    await withTenant(this.db, { orgId, audience: "INTERNAL" }, async (tx) =>
+      runWithTenantContext({ orgId, audience: "INTERNAL", tx }, async () => {
+        await seedSystemRolesForOrg(this.db, orgId);
+        await provisionOrgModules(tx, orgId, DEFAULT_SKIP_MODULES, userId);
+      }),
+    );
 
     this.audit.log({
       action: "user.registered",
@@ -121,12 +141,14 @@ export class AuthService {
   }
 
   async logout(sessionId: string, userId: string): Promise<void> {
-    await this.sessionService.revoke(sessionId, userId);
+    await this.sessions.revokeCurrent(userId, sessionId);
     this.audit.log({ action: "auth.logout", userId });
   }
 
   async logoutAll(userId: string, exceptSessionId?: string): Promise<void> {
-    await this.sessionService.revokeAll(userId, exceptSessionId);
+    await (exceptSessionId
+      ? this.sessions.revokeAllOthers(userId, exceptSessionId)
+      : this.sessions.revokeAllForUser(userId));
     this.audit.log({ action: "auth.logout_all", userId });
   }
 
@@ -139,17 +161,12 @@ export class AuthService {
     image: string | null;
     role: string | null;
     isActive: boolean;
-    hasDashboardAccess: boolean;
-    branchId: number | null;
-    totpEnabled: boolean;
+    branchId: string | null;
     orgId: string | null;
     isOrgOwner: boolean;
-    isPlatformAdmin: boolean;
-    mfaEnforced: boolean;
     enabledModules: string[];
     orgOnboardingCompletedAt: string | null;
     userOnboardingCompletedAt: string | null;
-    permissions: string[];
     plan: string | null;
   }> {
     return this.cache.cached(
@@ -165,52 +182,60 @@ export class AuthService {
               lastName: true,
               name: true,
               image: true,
-              role: true,
               isActive: true,
-              hasDashboardAccess: true,
               branchId: true,
-              totpEnabled: true,
               onboardingCompletedAt: true,
               lastActiveOrgId: true,
-              isPlatformAdmin: true,
             },
           })
           .catch(() => {
-            throw new HttpException("Service temporarily unavailable", HttpStatus.SERVICE_UNAVAILABLE);
+            throw new HttpException(
+              "Service temporarily unavailable",
+              HttpStatus.SERVICE_UNAVAILABLE,
+            );
           });
 
         if (!user) throw new NotFoundException("User not found");
 
-        const membership = await this.authTokens.resolveActiveMembership(userId, user.lastActiveOrgId ?? null);
+        const membership = await this.authTokens.resolveActiveMembership(
+          userId,
+          user.lastActiveOrgId ?? null,
+        );
 
-        let mfaEnforced = false;
         let enabledModules: string[] = [];
         let orgOnboardingCompletedAt: string | null = null;
         let plan: string | null = null;
-        let permissions: string[] = [];
 
         const resolvedOrgId = membership?.orgId ?? null;
         const isOrgOwner = membership?.isOwner ?? false;
 
         if (membership) {
-          mfaEnforced = membership.mfaEnforced;
-          enabledModules = membership.enabledModules ?? [];
-          orgOnboardingCompletedAt = membership.orgOnboardingCompletedAt?.toISOString() ?? null;
+          orgOnboardingCompletedAt =
+            membership.orgOnboardingCompletedAt?.toISOString() ?? null;
 
-          const sub = await this.db.query.subscriptions.findFirst({
-            where: eq(subscriptions.orgId, membership.orgId),
-            columns: { plan: true, status: true },
-          });
-          if (sub) {
-            plan = sub.status === "ACTIVE" || sub.status === "TRIAL" ? sub.plan : "FREE";
-          }
+          await runInTenantTransaction(
+            this.db,
+            async (tx) => {
+              const [sub, moduleStatuses] = await Promise.all([
+                tx.query.subscriptions.findFirst({
+                  where: eq(subscriptions.orgId, membership.orgId),
+                  columns: { plan: true, status: true },
+                }),
+                this.entitlements.listModules(membership.orgId).catch(() => []),
+              ]);
 
-          try {
-            const permMap = await this.access.resolveUserPermissions(membership.orgId, userId);
-            permissions = [...permMap.keys()];
-          } catch {
-            permissions = [];
-          }
+              if (sub) {
+                plan =
+                  sub.status === "ACTIVE" || sub.status === "TRIAL"
+                    ? sub.plan
+                    : "FREE";
+              }
+              enabledModules = moduleStatuses
+                .filter((m) => m.enabled)
+                .map((m) => m.moduleKey);
+            },
+            { orgId: membership.orgId },
+          );
         }
 
         return {
@@ -220,19 +245,15 @@ export class AuthService {
           lastName: user.lastName ?? null,
           name: user.name ?? null,
           image: user.image ?? null,
-          role: user.role ?? null,
+          role: membership?.role ?? null,
           isActive: user.isActive,
-          hasDashboardAccess: user.hasDashboardAccess,
           branchId: user.branchId ?? null,
-          totpEnabled: user.totpEnabled,
           orgId: resolvedOrgId,
           isOrgOwner,
-          isPlatformAdmin: user.isPlatformAdmin,
-          mfaEnforced,
           enabledModules,
           orgOnboardingCompletedAt,
-          userOnboardingCompletedAt: user.onboardingCompletedAt?.toISOString() ?? null,
-          permissions,
+          userOnboardingCompletedAt:
+            user.onboardingCompletedAt?.toISOString() ?? null,
           plan,
         };
       },

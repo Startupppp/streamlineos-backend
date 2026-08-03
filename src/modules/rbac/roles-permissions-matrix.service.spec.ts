@@ -1,10 +1,9 @@
-import { RolesService } from "./roles.service";
-import { ROLE_DEFAULT_PERMISSIONS } from "./permissions.constants";
-import { DRIZZLE } from "../../db/drizzle.constants";
+import { RolePermissionService } from "./role-permission.service";
+import { ROLE_DEFAULT_PERMISSIONS } from "./permissions";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
-import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
+import { AccessService } from "../access/access.service";
 
 type RoleRow = { id: number; name: string; slug: string };
 type GrantRow = { roleId: number; permissionKey: string };
@@ -19,7 +18,6 @@ interface RoleSelectChain {
 interface GrantSelectChain {
   from: jest.Mock;
   where: jest.Mock;
-  limit: jest.Mock;
 }
 
 function buildRoleChain(resolvedValue: RoleRow[]): RoleSelectChain {
@@ -38,11 +36,9 @@ function buildRoleChain(resolvedValue: RoleRow[]): RoleSelectChain {
 function buildGrantChain(resolvedValue: GrantRow[]): GrantSelectChain {
   const chain: GrantSelectChain = {
     from: jest.fn(),
-    where: jest.fn(),
-    limit: jest.fn().mockResolvedValue(resolvedValue),
+    where: jest.fn().mockResolvedValue(resolvedValue),
   };
   chain.from.mockReturnValue(chain);
-  chain.where.mockReturnValue(chain);
   return chain;
 }
 
@@ -69,15 +65,18 @@ function makeAudit(): AuditService {
   return { log: jest.fn() } as Partial<AuditService> as AuditService;
 }
 
-function makeDispatch(): NotificationDispatchService {
-  return { emit: jest.fn() } as unknown as NotificationDispatchService;
+function makeAccess(): AccessService {
+  return {
+    resolveUserPermissions: jest.fn().mockResolvedValue(new Map()),
+    getPermissionsVersion: jest.fn().mockResolvedValue(1),
+  } as unknown as AccessService;
 }
 
-function makeService(db: Db): RolesService {
-  return new RolesService(db, makeCache(), makeAudit(), makeDispatch());
+function makeService(db: Db): RolePermissionService {
+  return new RolePermissionService(db, makeCache(), makeAudit(), makeAccess());
 }
 
-describe("RolesService.getPermissionsMatrix", () => {
+describe("RolePermissionService.getPermissionsMatrix", () => {
   it("returns an entry per role with permissions from grants when grants exist", async () => {
     const orgRoles: RoleRow[] = [
       { id: 1, name: "Admin", slug: "OWNER" },
@@ -113,6 +112,31 @@ describe("RolesService.getPermissionsMatrix", () => {
     });
   });
 
+  it("returns grants for every requested role with no silent truncation", async () => {
+    const roles: RoleRow[] = [
+      { id: 1, name: "Admin", slug: "ADMIN" },
+      { id: 2, name: "Manager", slug: "MANAGER" },
+      { id: 3, name: "Employee", slug: "EMPLOYEE" },
+    ];
+    const grants: GrantRow[] = [
+      { roleId: 1, permissionKey: "hr:employees:view" },
+      { roleId: 1, permissionKey: "hr:employees:create" },
+      { roleId: 2, permissionKey: "hr:employees:view" },
+      { roleId: 3, permissionKey: "hr:employees:view" },
+    ];
+
+    const { db } = buildMockDb(roles, grants);
+    const result = await makeService(db).getPermissionsMatrix("org-1");
+
+    expect(result).toHaveLength(3);
+    expect(result.map((r) => r.roleId)).toEqual(expect.arrayContaining([1, 2, 3]));
+    expect(result.find((r) => r.roleId === 1)?.permissions).toEqual(
+      expect.arrayContaining(["hr:employees:view", "hr:employees:create"]),
+    );
+    expect(result.find((r) => r.roleId === 2)?.permissions).toEqual(["hr:employees:view"]);
+    expect(result.find((r) => r.roleId === 3)?.permissions).toEqual(["hr:employees:view"]);
+  });
+
   it("falls back to ROLE_DEFAULT_PERMISSIONS when no grants exist for a custom slug with no default", async () => {
     const orgRoles: RoleRow[] = [
       { id: 10, name: "Custom", slug: "CUSTOM_SLUG" },
@@ -133,9 +157,9 @@ describe("RolesService.getPermissionsMatrix", () => {
     });
   });
 
-  it("falls back to ROLE_DEFAULT_PERMISSIONS when no grants and role has no jsonb", async () => {
+  it("falls back to ROLE_DEFAULT_PERMISSIONS when no grants and role slug has a catalog entry", async () => {
     const orgRoles: RoleRow[] = [
-      { id: 5, name: "HR Manager", slug: "HR" },
+      { id: 5, name: "Member", slug: "MEMBER" },
     ];
     const grants: GrantRow[] = [];
 
@@ -147,9 +171,9 @@ describe("RolesService.getPermissionsMatrix", () => {
     expect(result).toHaveLength(1);
     expect(result[0]).toEqual({
       roleId: 5,
-      roleName: "HR Manager",
-      roleSlug: "HR",
-      permissions: ROLE_DEFAULT_PERMISSIONS["HR"],
+      roleName: "Member",
+      roleSlug: "MEMBER",
+      permissions: ROLE_DEFAULT_PERMISSIONS["MEMBER"],
     });
   });
 
@@ -200,7 +224,7 @@ describe("RolesService.getPermissionsMatrix", () => {
     expect(adminEntry?.permissions).toEqual(["settings:rbac:manage"]);
 
     const engineerEntry = result.find((r) => r.roleId === 2);
-    expect(engineerEntry?.permissions).toEqual(ROLE_DEFAULT_PERMISSIONS["ENGINEERING"]);
+    expect(engineerEntry?.permissions).toEqual([]);
   });
 });
 

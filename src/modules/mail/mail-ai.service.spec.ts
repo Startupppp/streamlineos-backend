@@ -2,22 +2,19 @@ jest.mock("@composio/core", () => ({ Composio: jest.fn() }));
 
 import { HttpException, HttpStatus, ServiceUnavailableException } from "@nestjs/common";
 import { MailAiService } from "./mail-ai.service";
-import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
+import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
 import type { MailService } from "./mail.service";
-import type { AiInvokeResult, AiInvokeWithUsageResult, AiUsageMeta } from "../ai/gateway/ai-gateway.types";
+import type { AiInvokeResult, AiInvokeWithUsageResult, AiUsageMeta } from "../ai/core/gateway/ai-gateway.types";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
 const ACTOR: CurrentUserContext = {
   userId: "user-1",
   orgId: "org-1",
-  branchId: null,
   role: "ADMIN",
   permissions: [],
-  enabledModules: [],
-  plan: "PROFESSIONAL",
-  isPlatformAdmin: false,
   isOrgOwner: false,
   sessionId: "sess-1",
+  tokenScopes: null,
 };
 
 const MOCK_MESSAGES = [

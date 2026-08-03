@@ -14,12 +14,6 @@ export const dispatchSchema = z.object({
 
 export type DispatchInput = z.infer<typeof dispatchSchema>;
 
-export const resendInvitationSchema = z.object({
-  invitationId: z.string().min(1),
-});
-
-export type ResendInvitationInput = z.infer<typeof resendInvitationSchema>;
-
 export const emailTemplateTestSchema = z.object({
   templateId: z.string().min(1),
   testEmail: z.string().email(),

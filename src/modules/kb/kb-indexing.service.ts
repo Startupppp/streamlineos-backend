@@ -1,13 +1,24 @@
 import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { createHash } from "node:crypto";
 import { Readable } from "stream";
-import { and, asc, count, eq, isNotNull, isNull, sql } from "drizzle-orm";
-import { kbArticles, kbArticleAttachments, kbArticleChunks, kbPages } from "../../db/schema";
+import { and, count, eq, isNull, sql } from "drizzle-orm";
+import {
+  kbArticles,
+  kbArticleAttachments,
+  kbArticleChunks,
+  kbPages,
+} from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { EmbeddingsService, EMBEDDING_MODEL } from "../ai/providers/embeddings.service";
+import {
+  EmbeddingsService,
+  EMBEDDING_MODEL,
+} from "../ai/core/providers/embeddings.service";
 import { StorageService } from "../storage/storage.service";
-import { extractAttachmentText, isExtractableMime } from "./kb-attachment-extract.util";
+import {
+  extractAttachmentText,
+  isExtractableMime,
+} from "./kb-attachment-extract.util";
 
 export function isPageIndexable(page: {
   status: string;
@@ -41,21 +52,25 @@ export class KbIndexingService {
     source: "article_body" | "page_body",
     newText: string,
   ): Promise<boolean> {
-    const idCondition = "articleId" in filter
-      ? eq(kbArticleChunks.articleId, filter.articleId)
-      : eq(kbArticleChunks.pageId, filter.pageId);
+    const idCondition =
+      "articleId" in filter
+        ? eq(kbArticleChunks.articleId, filter.articleId)
+        : eq(kbArticleChunks.pageId, filter.pageId);
 
-    const existing = await this.db
-      .select({ content: kbArticleChunks.content })
+    const [existing] = await this.db
+      .select({ contentHash: kbArticleChunks.contentHash })
       .from(kbArticleChunks)
-      .where(and(eq(kbArticleChunks.orgId, orgId), idCondition, eq(kbArticleChunks.source, source)))
-      .orderBy(asc(kbArticleChunks.chunkIndex));
+      .where(
+        and(
+          eq(kbArticleChunks.orgId, orgId),
+          idCondition,
+          eq(kbArticleChunks.source, source),
+        ),
+      )
+      .limit(1);
 
-    if (existing.length === 0) return false;
-
-    const existingHash = this.sha256(existing.map((r) => r.content).join(""));
-    const newHash = this.sha256(newText);
-    return existingHash === newHash;
+    if (!existing?.contentHash) return false;
+    return existing.contentHash === this.sha256(newText);
   }
 
   private chunkText(text: string): string[] {
@@ -72,7 +87,7 @@ export class KbIndexingService {
       let chunkEnd = end;
 
       if (end < text.length) {
-        let lastSpace = text.lastIndexOf(" ", end);
+        const lastSpace = text.lastIndexOf(" ", end);
         if (lastSpace > pos && lastSpace > pos + chunkSize - 200) {
           chunkEnd = lastSpace;
         }
@@ -100,15 +115,26 @@ export class KbIndexingService {
       },
     });
 
-    if (!article || article.status !== "published" || !article.contentText?.trim() || !this.embeddings.isConfigured()) {
+    if (
+      !article ||
+      article.status !== "published" ||
+      !article.contentText?.trim() ||
+      !this.embeddings.isConfigured()
+    ) {
       await this.removeArticleChunks(orgId, articleId);
       return;
     }
 
-    const unchanged = await this.isContentUnchanged(orgId, { articleId: articleId }, "article_body", article.contentText);
+    const unchanged = await this.isContentUnchanged(
+      orgId,
+      { articleId: articleId },
+      "article_body",
+      article.contentText,
+    );
     if (unchanged) return;
 
     const chunks = this.chunkText(article.contentText);
+    const contentHash = this.sha256(article.contentText);
 
     await this.db.transaction(async (tx) => {
       await tx
@@ -123,7 +149,9 @@ export class KbIndexingService {
 
       if (chunks.length === 0) return;
 
-      const embeddings = await Promise.all(chunks.map((chunk) => this.embeddings.embedQuery(chunk)));
+      const embeddings = await Promise.all(
+        chunks.map((chunk) => this.embeddings.embedQuery(chunk)),
+      );
 
       const valuesToInsert = chunks.map((chunk, index) => ({
         orgId,
@@ -133,6 +161,7 @@ export class KbIndexingService {
         source: "article_body" as const,
         chunkIndex: index,
         content: chunk,
+        contentHash,
         tokens: Math.ceil(chunk.length / 4),
         embedding: embeddings[index],
         embeddingModel: EMBEDDING_MODEL,
@@ -153,15 +182,26 @@ export class KbIndexingService {
       },
     });
 
-    if (!page || !isPageIndexable(page) || !page.contentText?.trim() || !this.embeddings.isConfigured()) {
+    if (
+      !page ||
+      !isPageIndexable(page) ||
+      !page.contentText?.trim() ||
+      !this.embeddings.isConfigured()
+    ) {
       await this.removePageChunks(orgId, pageId);
       return;
     }
 
-    const unchanged = await this.isContentUnchanged(orgId, { pageId }, "page_body", page.contentText);
+    const unchanged = await this.isContentUnchanged(
+      orgId,
+      { pageId },
+      "page_body",
+      page.contentText,
+    );
     if (unchanged) return;
 
     const chunks = this.chunkText(page.contentText);
+    const contentHash = this.sha256(page.contentText);
 
     await this.db.transaction(async (tx) => {
       await tx
@@ -176,7 +216,9 @@ export class KbIndexingService {
 
       if (chunks.length === 0) return;
 
-      const embeddings = await Promise.all(chunks.map((chunk) => this.embeddings.embedQuery(chunk)));
+      const embeddings = await Promise.all(
+        chunks.map((chunk) => this.embeddings.embedQuery(chunk)),
+      );
 
       const valuesToInsert = chunks.map((chunk, index) => ({
         orgId,
@@ -186,6 +228,7 @@ export class KbIndexingService {
         source: "page_body" as const,
         chunkIndex: index,
         content: chunk,
+        contentHash,
         tokens: Math.ceil(chunk.length / 4),
         embedding: embeddings[index],
         embeddingModel: EMBEDDING_MODEL,
@@ -198,16 +241,30 @@ export class KbIndexingService {
   async removeArticleChunks(orgId: string, articleId: number): Promise<void> {
     await this.db
       .delete(kbArticleChunks)
-      .where(and(eq(kbArticleChunks.articleId, articleId), eq(kbArticleChunks.orgId, orgId)));
+      .where(
+        and(
+          eq(kbArticleChunks.articleId, articleId),
+          eq(kbArticleChunks.orgId, orgId),
+        ),
+      );
   }
 
   async removePageChunks(orgId: string, pageId: number): Promise<void> {
     await this.db
       .delete(kbArticleChunks)
-      .where(and(eq(kbArticleChunks.pageId, pageId), eq(kbArticleChunks.orgId, orgId)));
+      .where(
+        and(
+          eq(kbArticleChunks.pageId, pageId),
+          eq(kbArticleChunks.orgId, orgId),
+        ),
+      );
   }
 
-  async indexSource(orgId: string, sourceId: number, text: string): Promise<number> {
+  async indexSource(
+    orgId: string,
+    sourceId: number,
+    text: string,
+  ): Promise<number> {
     if (!this.embeddings.isConfigured()) return 0;
     const chunks = this.chunkText(text);
 
@@ -224,7 +281,9 @@ export class KbIndexingService {
 
       if (chunks.length === 0) return;
 
-      const embeddings = await Promise.all(chunks.map((c) => this.embeddings.embedQuery(c)));
+      const embeddings = await Promise.all(
+        chunks.map((c) => this.embeddings.embedQuery(c)),
+      );
 
       const valuesToInsert = chunks.map((chunk, index) => ({
         orgId,
@@ -249,13 +308,20 @@ export class KbIndexingService {
   async removeSourceChunks(orgId: string, sourceId: number): Promise<void> {
     await this.db
       .delete(kbArticleChunks)
-      .where(and(eq(kbArticleChunks.sourceId, sourceId), eq(kbArticleChunks.orgId, orgId)));
+      .where(
+        and(
+          eq(kbArticleChunks.sourceId, sourceId),
+          eq(kbArticleChunks.orgId, orgId),
+        ),
+      );
   }
 
   private async streamToBuffer(stream: Readable): Promise<Buffer> {
     const chunks: Buffer[] = [];
     for await (const chunk of stream) {
-      chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : (chunk as Buffer));
+      chunks.push(
+        typeof chunk === "string" ? Buffer.from(chunk) : (chunk as Buffer),
+      );
     }
     return Buffer.concat(chunks);
   }
@@ -269,7 +335,13 @@ export class KbIndexingService {
         eq(kbArticleAttachments.id, attachmentId),
         eq(kbArticleAttachments.orgId, orgId),
       ),
-      columns: { id: true, articleId: true, fileKey: true, mimeType: true, fileName: true },
+      columns: {
+        id: true,
+        articleId: true,
+        fileKey: true,
+        mimeType: true,
+        fileName: true,
+      },
     });
 
     if (!attachment || !this.embeddings.isConfigured()) {
@@ -279,17 +351,23 @@ export class KbIndexingService {
 
     if (!isExtractableMime(attachment.mimeType)) {
       await this.removeAttachmentChunks(orgId, attachmentId);
-      return { chunks: 0, warning: `${attachment.fileName}: unsupported file type` };
+      return {
+        chunks: 0,
+        warning: `${attachment.fileName}: unsupported file type`,
+      };
     }
 
-    let text = "";
+    let text: string;
     try {
       const { body } = await this.storage.getFileStream(attachment.fileKey);
       const buffer = await this.streamToBuffer(body);
       text = await extractAttachmentText(buffer, attachment.mimeType);
     } catch (err) {
       this.logger.error(`Attachment extract failed (${attachmentId}): ${err}`);
-      return { chunks: 0, warning: `${attachment.fileName}: could not read file` };
+      return {
+        chunks: 0,
+        warning: `${attachment.fileName}: could not read file`,
+      };
     }
 
     const chunks = this.chunkText(text);
@@ -307,7 +385,9 @@ export class KbIndexingService {
 
       if (chunks.length === 0) return;
 
-      const embeddings = await Promise.all(chunks.map((c) => this.embeddings.embedQuery(c)));
+      const embeddings = await Promise.all(
+        chunks.map((c) => this.embeddings.embedQuery(c)),
+      );
 
       const valuesToInsert = chunks.map((chunk, index) => ({
         orgId,
@@ -327,15 +407,24 @@ export class KbIndexingService {
 
     return {
       chunks: chunks.length,
-      warning: chunks.length === 0 ? `${attachment.fileName}: no extractable text` : null,
+      warning:
+        chunks.length === 0
+          ? `${attachment.fileName}: no extractable text`
+          : null,
     };
   }
 
-  async removeAttachmentChunks(orgId: string, attachmentId: number): Promise<void> {
+  async removeAttachmentChunks(
+    orgId: string,
+    attachmentId: number,
+  ): Promise<void> {
     await this.db
       .delete(kbArticleChunks)
       .where(
-        and(eq(kbArticleChunks.attachmentId, attachmentId), eq(kbArticleChunks.orgId, orgId)),
+        and(
+          eq(kbArticleChunks.attachmentId, attachmentId),
+          eq(kbArticleChunks.orgId, orgId),
+        ),
       );
   }
 
@@ -350,11 +439,13 @@ export class KbIndexingService {
       return { chunks: 0, warning: null };
     }
 
-    let text = "";
+    let text: string;
     try {
       text = await extractAttachmentText(buffer, mimeType);
     } catch (err) {
-      this.logger.error(`Page document extract failed (page ${pageId}, ${fileName}): ${err}`);
+      this.logger.error(
+        `Page document extract failed (page ${pageId}, ${fileName}): ${err}`,
+      );
       return { chunks: 0, warning: `${fileName}: could not read file` };
     }
 
@@ -363,7 +454,9 @@ export class KbIndexingService {
       return { chunks: 0, warning: `${fileName}: no extractable text` };
     }
 
-    const embeddings = await Promise.all(chunks.map((c) => this.embeddings.embedQuery(c)));
+    const embeddings = await Promise.all(
+      chunks.map((c) => this.embeddings.embedQuery(c)),
+    );
 
     const valuesToInsert = chunks.map((chunk, index) => ({
       orgId,
@@ -383,25 +476,43 @@ export class KbIndexingService {
     return { chunks: chunks.length, warning: null };
   }
 
-  async reindexAll(
-    orgId: string,
-  ): Promise<{ total: number; indexed: number; totalChunks: number; failures: { articleId: number; error: string }[] }> {
+  async reindexAll(orgId: string): Promise<{
+    total: number;
+    indexed: number;
+    totalChunks: number;
+    failures: { articleId: number; error: string }[];
+  }> {
     const articles = await this.db.query.kbArticles.findMany({
-      where: and(eq(kbArticles.orgId, orgId), eq(kbArticles.status, "published")),
+      where: and(
+        eq(kbArticles.orgId, orgId),
+        eq(kbArticles.status, "published"),
+      ),
       columns: { id: true },
     });
 
+    const REINDEX_CONCURRENCY = 4;
     const failures: { articleId: number; error: string }[] = [];
     let indexed = 0;
-    for (const article of articles) {
-      try {
-        await this.reindexArticle(orgId, article.id);
-        indexed += 1;
-      } catch (err) {
-        failures.push({
-          articleId: article.id,
-          error: err instanceof Error ? err.message : "unknown error",
-        });
+    for (let i = 0; i < articles.length; i += REINDEX_CONCURRENCY) {
+      const batch = articles.slice(i, i + REINDEX_CONCURRENCY);
+      const results = await Promise.all(
+        batch.map(async (article) => {
+          try {
+            await this.reindexArticle(orgId, article.id);
+            return { ok: true as const };
+          } catch (err) {
+            return {
+              ok: false as const,
+              articleId: article.id,
+              error: err instanceof Error ? err.message : "unknown error",
+            };
+          }
+        }),
+      );
+      for (const result of results) {
+        if (result.ok) indexed += 1;
+        else
+          failures.push({ articleId: result.articleId, error: result.error });
       }
     }
 
@@ -410,7 +521,12 @@ export class KbIndexingService {
       .from(kbArticleChunks)
       .where(eq(kbArticleChunks.orgId, orgId));
 
-    return { total: articles.length, indexed, totalChunks: row?.chunks ?? 0, failures };
+    return {
+      total: articles.length,
+      indexed,
+      totalChunks: row?.chunks ?? 0,
+      failures,
+    };
   }
 
   async reindexAllPages(orgId?: string): Promise<{ reindexed: number }> {
@@ -444,10 +560,17 @@ export class KbIndexingService {
     const [row] = await this.db
       .select({
         chunks: count(),
-        lastIndexedAt: sql<string | null>`max(${kbArticleChunks.createdAt})::text`,
+        lastIndexedAt: sql<
+          string | null
+        >`max(${kbArticleChunks.createdAt})::text`,
       })
       .from(kbArticleChunks)
-      .where(and(eq(kbArticleChunks.articleId, articleId), eq(kbArticleChunks.orgId, orgId)));
+      .where(
+        and(
+          eq(kbArticleChunks.articleId, articleId),
+          eq(kbArticleChunks.orgId, orgId),
+        ),
+      );
 
     return {
       chunks: row?.chunks ?? 0,
@@ -484,7 +607,12 @@ export class KbIndexingService {
     const [row] = await this.db
       .select({ chunks: count() })
       .from(kbArticleChunks)
-      .where(and(eq(kbArticleChunks.articleId, articleId), eq(kbArticleChunks.orgId, orgId)));
+      .where(
+        and(
+          eq(kbArticleChunks.articleId, articleId),
+          eq(kbArticleChunks.orgId, orgId),
+        ),
+      );
 
     return { chunks: row?.chunks ?? 0, warnings };
   }

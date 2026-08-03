@@ -10,8 +10,6 @@ export const RECORD_LINK_TARGET_TYPES = [
   "hr_employee",
 ] as const;
 
-export type RecordLinkTargetType = (typeof RECORD_LINK_TARGET_TYPES)[number];
-
 export const createRecordLinkSchema = z.object({
   targetType: z.enum(RECORD_LINK_TARGET_TYPES),
   targetId: z.string().min(1).max(64),

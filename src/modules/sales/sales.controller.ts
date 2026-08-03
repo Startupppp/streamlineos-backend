@@ -21,7 +21,8 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
-import { subMonths } from "./date.helpers";
+import { subMonths } from "../../common/date";
+import { AccessService } from "../access/access.service";
 import { SalesService, isForbidden, isNotFound, isConflict } from "./sales.service";
 import { SalesDashboardService, type DateRange } from "./sales-dashboard.service";
 import { SalesAnalyticsService, isRepNotFound } from "./sales-analytics.service";
@@ -72,7 +73,21 @@ export class SalesController {
     private readonly sales: SalesService,
     private readonly dashboard: SalesDashboardService,
     private readonly analytics: SalesAnalyticsService,
+    private readonly access: AccessService,
   ) {}
+
+  private async scopeToSelfUnlessManager(
+    u: CurrentUserContext,
+    requested: string | undefined,
+  ): Promise<string | undefined> {
+    if (u.isOrgOwner) return requested;
+    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+    if (perms.has("sales:manage")) return requested;
+    if (requested && requested !== u.userId) {
+      throw new ForbiddenException("Not allowed to view another rep's records");
+    }
+    return u.userId;
+  }
 
   @Get("commission-rules")
   @RequirePermission("sales:view")
@@ -92,11 +107,12 @@ export class SalesController {
 
   @Get("commissions")
   @RequirePermission("crm:incentives:read")
-  listCommissions(
+  async listCommissions(
     @Query(new ZodValidationPipe(commissionListSchema)) query: CommissionListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.sales.listCommissions(u.orgId, query);
+    const userId = await this.scopeToSelfUnlessManager(u, query.userId);
+    return this.sales.listCommissions(u.orgId, { ...query, userId });
   }
 
   @Patch("commissions/:commissionId")
@@ -115,11 +131,12 @@ export class SalesController {
 
   @Get("quotas")
   @RequirePermission("crm:targets:view")
-  listQuotas(
+  async listQuotas(
     @Query(new ZodValidationPipe(quotaListSchema)) query: QuotaListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.sales.listQuotas(u.orgId, query);
+    const userId = await this.scopeToSelfUnlessManager(u, query.userId);
+    return this.sales.listQuotas(u.orgId, { ...query, userId });
   }
 
   @Post("quotas")

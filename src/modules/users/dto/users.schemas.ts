@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ORG_MEMBER_ROLES, ORG_MEMBER_ROLE_VALUES} from "../../../common/rbac/org-roles";
 
 export const listUsersSchema = z.object({
   page: z.coerce.number().int().positive().default(1),
@@ -6,8 +7,8 @@ export const listUsersSchema = z.object({
   search: z.string().optional(),
   status: z.enum(["active", "suspended", "archived"]).optional(),
   role: z.string().optional(),
-  departmentId: z.coerce.number().int().optional(),
-  branchId: z.coerce.number().int().optional(),
+  departmentId: z.string().optional(),
+  branchId: z.string().optional(),
   teamId: z.string().optional(),
   managerUserId: z.string().optional(),
   sortBy: z.enum(["name", "joinedAt", "status"]).default("joinedAt"),
@@ -27,15 +28,15 @@ export const updateUserSchema = z.object({
   lastName: z.string().min(1).optional(),
   designation: z.string().optional(),
   phone: z.string().optional(),
-  departmentId: z.coerce.number().int().optional(),
-  role: z.string().optional(),
+  departmentId: z.string().optional(),
+  role: z.enum(ORG_MEMBER_ROLE_VALUES).optional(),
   bio: z.string().optional(),
   linkedinUrl: z.string().url().optional().or(z.literal("")),
   twitterUrl: z.string().url().optional().or(z.literal("")),
   githubUrl: z.string().url().optional().or(z.literal("")),
   websiteUrl: z.string().url().optional().or(z.literal("")),
   reportingTo: z.string().optional(),
-  team: z.string().optional(),
+  teamId: z.string().optional().nullable(),
   emergencyContact: emergencyContactSchema,
 });
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;
@@ -56,13 +57,13 @@ const inviteEmailSchema = z
 
 export const inviteUserSchema = z.object({
   email: inviteEmailSchema,
-  role: z.string().default("ENGINEERING"),
+  role: z.enum(ORG_MEMBER_ROLE_VALUES).default(ORG_MEMBER_ROLES.MEMBER),
 });
 export type InviteUserInput = z.infer<typeof inviteUserSchema>;
 
 export const bulkInviteSchema = z.object({
   emails: z.array(inviteEmailSchema).min(1).max(50),
-  role: z.string().default("ENGINEERING"),
+  role: z.enum(ORG_MEMBER_ROLE_VALUES).default(ORG_MEMBER_ROLES.MEMBER),
 });
 export type BulkInviteInput = z.infer<typeof bulkInviteSchema>;
 
@@ -74,11 +75,6 @@ export const updatePreferencesSchema = z.object({
   timeFormat: z.enum(["12h", "24h"]).optional(),
   numberFormat: z.string().optional(),
   weekStartDay: z.enum(["sunday", "monday", "saturday"]).optional(),
-  accentColor: z.string().optional(),
-  density: z.enum(["compact", "comfortable", "spacious"]).optional(),
-  fontSize: z.enum(["small", "medium", "large"]).optional(),
-  reducedMotion: z.boolean().optional(),
-  highContrast: z.boolean().optional(),
   notificationPreferences: z.record(z.string(), z.boolean()).optional(),
   dashboardPreferences: z.record(z.string(), z.unknown()).optional(),
 });
@@ -86,11 +82,10 @@ export type UpdatePreferencesInput = z.infer<typeof updatePreferencesSchema>;
 
 export const updateMembershipSchema = z.object({
   businessUnitId: z.string().optional().nullable(),
-  branchId: z.number().int().optional().nullable(),
-  departmentId: z.number().int().optional().nullable(),
+  branchId: z.string().optional().nullable(),
+  departmentId: z.string().optional().nullable(),
   teamId: z.string().optional().nullable(),
   managerUserId: z.string().optional().nullable(),
-  isPrimary: z.boolean().optional(),
 });
 export type UpdateMembershipInput = z.infer<typeof updateMembershipSchema>;
 
@@ -111,7 +106,7 @@ export const importUsersRowSchema = z.object({
   email: z.string().email(),
   firstName: z.string().min(1).optional(),
   lastName: z.string().min(1).optional(),
-  role: z.string().default("MEMBER"),
+  role: z.enum(ORG_MEMBER_ROLE_VALUES).default(ORG_MEMBER_ROLES.MEMBER),
   designation: z.string().optional(),
   phone: z.string().optional(),
 });
@@ -119,9 +114,9 @@ export type ImportUsersRow = z.infer<typeof importUsersRowSchema>;
 
 export const bulkUpdateUsersSchema = z.object({
   userIds: z.array(z.string()).min(1).max(200),
-  role: z.string().optional(),
-  departmentId: z.number().int().optional().nullable(),
-  branchId: z.number().int().optional().nullable(),
+  role: z.enum(ORG_MEMBER_ROLE_VALUES).optional(),
+  departmentId: z.string().optional().nullable(),
+  branchId: z.string().optional().nullable(),
   teamId: z.string().optional().nullable(),
   managerUserId: z.string().optional().nullable(),
 });
@@ -131,11 +126,11 @@ export const createUserSchema = z.object({
   email: z.string().email(),
   firstName: z.string().min(1).optional(),
   lastName: z.string().min(1).optional(),
-  role: z.string().default("MEMBER"),
+  role: z.enum(ORG_MEMBER_ROLE_VALUES).default(ORG_MEMBER_ROLES.MEMBER),
   designation: z.string().optional(),
   phone: z.string().optional(),
-  departmentId: z.coerce.number().int().optional(),
-  branchId: z.coerce.number().int().optional(),
+  departmentId: z.string().optional(),
+  branchId: z.string().optional(),
   sendInvite: z.boolean().default(true),
 });
 export type CreateUserInput = z.infer<typeof createUserSchema>;
@@ -149,3 +144,8 @@ export const listAuditSchema = z.object({
   to: z.string().optional(),
 });
 export type ListAuditInput = z.infer<typeof listAuditSchema>;
+
+export const changeInviteRoleSchema = z.object({
+  role: z.enum(ORG_MEMBER_ROLE_VALUES),
+});
+export type ChangeInviteRoleInput = z.infer<typeof changeInviteRoleSchema>;

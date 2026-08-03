@@ -1,14 +1,26 @@
 import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from "@nestjs/common";
 import { ModuleRef } from "@nestjs/core";
+import { and, eq, isNotNull, lt } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
+import { payrollJobs } from "../../../db/schema";
 import { PayrollJobsService, type PayrollJobType } from "./payroll-jobs.service";
 import { GenerateService } from "../runs/generate.service";
 import { PublishingService } from "../payout/publishing.service";
 import { PayrollFilingsService } from "../filings/filings.service";
+import { isTransientDbError } from "../../../common/db/transient-error";
+import { forEachOrg, withTenant, runWithTenantContext } from "../../../common/tenant";
+
+type ClaimedPayrollJob = typeof payrollJobs.$inferSelect;
 
 const POLL_MS = 5_000;
 const BATCH_SIZE = 5;
+/**
+ * Modelled on NotificationDeliveryWorker (10 min). Payroll generation for a large
+ * org can take several minutes, so we use a wider window before assuming a crash.
+ */
+const STALE_LOCK_MS = 15 * 60 * 1_000;
+const RECLAIM_INTERVAL_MS = 60_000;
 
 /**
  * In-process durable worker for payroll jobs.
@@ -20,6 +32,8 @@ export class PayrollJobsWorkerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PayrollJobsWorkerService.name);
   private timer: ReturnType<typeof setInterval> | undefined;
   private running = false;
+  private transientStreak = 0;
+  private lastReclaimAt = 0;
 
   constructor(
     private readonly jobs: PayrollJobsService,
@@ -28,9 +42,7 @@ export class PayrollJobsWorkerService implements OnModuleInit, OnModuleDestroy {
     @Optional() private readonly generate?: GenerateService,
     @Optional() private readonly publishing?: PublishingService,
     @Optional() private readonly filings?: PayrollFilingsService,
-  ) {
-    void this.db;
-  }
+  ) {}
 
   onModuleInit(): void {
     // Lazy resolve to avoid circular DI hard-failures at bootstrap
@@ -47,28 +59,88 @@ export class PayrollJobsWorkerService implements OnModuleInit, OnModuleDestroy {
 
   /** Exposed for cron/manual flush and tests. */
   async flush(limit = BATCH_SIZE): Promise<{ claimed: number; completed: number; failed: number }> {
-    const claimed = await this.jobs.claimPending(limit);
+    await this.reclaimStale();
+
+    const claimed: ClaimedPayrollJob[] = [];
+    await forEachOrg(this.db, "payroll-jobs-claim", async () => {
+      const remaining = limit - claimed.length;
+      if (remaining <= 0) return;
+      claimed.push(...(await this.jobs.claimPending(remaining)));
+    });
+
     let completed = 0;
     let failed = 0;
     for (const job of claimed) {
       try {
-        await this.jobs.setProgress(job.orgId, job.id, 10);
-        const result = await this.execute(job.jobType as PayrollJobType, {
-          orgId: job.orgId,
-          actorId: job.createdBy ?? "system",
-          resourceId: job.resourceId,
-          payload: (job.payload ?? {}) as Record<string, unknown>,
+        await this.inTenant(job.orgId, async () => {
+          await this.jobs.setProgress(job.orgId, job.id, 10);
+          const result = await this.execute(job.jobType as PayrollJobType, {
+            orgId: job.orgId,
+            actorId: job.createdBy ?? "system",
+            resourceId: job.resourceId,
+            payload: (job.payload ?? {}) as Record<string, unknown>,
+          });
+          await this.jobs.succeed(job.orgId, job.id, result);
         });
-        await this.jobs.succeed(job.orgId, job.id, result);
         completed += 1;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         this.logger.error(`Payroll job ${job.id} (${job.jobType}) failed: ${msg}`);
-        await this.jobs.fail(job.orgId, job.id, msg);
+        try {
+          await this.inTenant(job.orgId, () => this.jobs.fail(job.orgId, job.id, msg));
+        } catch (markErr) {
+          this.logger.error(
+            `Payroll job ${job.id} could not be marked FAILED: ${
+              markErr instanceof Error ? markErr.message : String(markErr)
+            }`,
+          );
+        }
         failed += 1;
       }
     }
     return { claimed: claimed.length, completed, failed };
+  }
+
+  /**
+   * Reclaim RUNNING jobs whose lock has aged past STALE_LOCK_MS, resetting them to
+   * PENDING so the next flush can re-claim them. Mirrors NotificationDeliveryWorker's
+   * stale-lock reclaim pattern (staleBefore = now − STALE_LOCK_MS on lockedAt).
+   */
+  private inTenant<T>(orgId: string, fn: () => Promise<T>): Promise<T> {
+    return withTenant(this.db, { orgId, audience: "INTERNAL" }, (tx) =>
+      runWithTenantContext({ orgId, audience: "INTERNAL", tx }, fn),
+    );
+  }
+
+  private async reclaimStale(): Promise<void> {
+    const now = Date.now();
+    if (now - this.lastReclaimAt < RECLAIM_INTERVAL_MS) return;
+    this.lastReclaimAt = now;
+
+    const staleBefore = new Date(now - STALE_LOCK_MS);
+    let reclaimed = 0;
+
+    await forEachOrg(this.db, "payroll-stale-lock-reclaim", async (tx, orgId) => {
+      const rows = await tx
+        .update(payrollJobs)
+        .set({ status: "PENDING", startedAt: null, progress: 0 })
+        .where(
+          and(
+            eq(payrollJobs.orgId, orgId),
+            eq(payrollJobs.status, "RUNNING"),
+            isNotNull(payrollJobs.startedAt),
+            lt(payrollJobs.startedAt, staleBefore),
+          ),
+        )
+        .returning({ id: payrollJobs.id });
+      reclaimed += rows.length;
+    });
+
+    if (reclaimed > 0) {
+      this.logger.warn(
+        `Payroll stale-lock reclaim: reset ${reclaimed} RUNNING job(s) locked before ${staleBefore.toISOString()} back to PENDING`,
+      );
+    }
   }
 
   private async tick(): Promise<void> {
@@ -76,10 +148,25 @@ export class PayrollJobsWorkerService implements OnModuleInit, OnModuleDestroy {
     this.running = true;
     try {
       await this.flush(BATCH_SIZE);
+      if (this.transientStreak > 0) {
+        this.logger.log(
+          `Payroll jobs worker recovered after ${this.transientStreak} transient DB connection failure(s)`,
+        );
+        this.transientStreak = 0;
+      }
     } catch (err) {
-      this.logger.error("Payroll jobs worker tick failed", {
-        error: err instanceof Error ? err.message : String(err),
-      });
+      if (isTransientDbError(err)) {
+        this.transientStreak += 1;
+        if (this.transientStreak === 1) {
+          this.logger.warn(
+            "Payroll jobs worker: transient DB connection issue (retrying each poll; suppressing repeats until recovery)",
+          );
+        }
+      } else {
+        this.logger.error("Payroll jobs worker tick failed", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
     } finally {
       this.running = false;
     }
@@ -168,8 +255,16 @@ export class PayrollJobsWorkerService implements OnModuleInit, OnModuleDestroy {
       }
       case "PREVIEW":
       case "EXPORT":
+        throw new Error(
+          `${jobType} jobs are not yet implemented — no handler is wired for this job type. ` +
+          `Job marked FAILED to prevent silent no-ops. Deploy a real handler before re-enqueueing.`,
+        );
       case "RECONCILE":
-        return { ok: true, note: `${jobType} acknowledged (no-op handler)` };
+        throw new Error(
+          "RECONCILE jobs are not yet implemented — bank-return matching requires a dedicated " +
+          "reconciliation engine (parser + persistence). A RECONCILE that returns success without " +
+          "reconciling is worse than failing loudly. Job marked FAILED. Deploy a real engine first.",
+        );
       default:
         throw new Error(`Unknown job type: ${jobType}`);
     }

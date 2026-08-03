@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
 import { NotificationsController } from "./notifications.controller";
 import { NotificationsService } from "./notifications.service";
+import { NotificationsReadService } from "./notifications-read.service";
+import { NotificationsLifecycleService } from "./notifications-lifecycle.service";
 import { NotificationEventService } from "./notification-event.service";
 import { NotificationTemplatesController } from "./notification-templates.controller";
 import { NotificationTemplatesService } from "./notification-templates.service";
@@ -34,6 +36,8 @@ import { NotificationPolicyController } from "./notification-policy.controller";
     NotificationPolicyController,
   ],
   providers: [
+    NotificationsReadService,
+    NotificationsLifecycleService,
     NotificationsService,
     NotificationEventService,
     NotificationTemplatesService,

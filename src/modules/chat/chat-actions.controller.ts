@@ -27,7 +27,7 @@ import {
   ChatActionTicketStatusFailedException,
   ProjectsTicketNotFoundException,
 } from "../../common/http/api-exceptions";
-import { resolveValidTicketStatuses } from "../projects/ticket-status.util";
+import { resolveValidTicketStatuses } from "../build/core/ticket-status.util";
 
 @RequireModule("chat")
 @Controller("chat/actions")
@@ -40,12 +40,12 @@ export class ChatActionsController {
   ) {}
 
   @Post("ticket-status")
-  @RequirePermission("projects:tickets:update")
+  @RequirePermission("build:tickets:update")
   async changeTicketStatus(
     @Body(new ZodValidationPipe(ticketStatusActionSchema)) body: TicketStatusActionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+    if (!u.isOrgOwner) {
       const membership = await this.db.query.projectMembers.findFirst({
         where: and(eq(projectMembers.projectId, body.projectId), eq(projectMembers.userId, u.userId)),
         columns: { projectId: true },
@@ -64,7 +64,7 @@ export class ChatActionsController {
       return { success: true, prevStatus: ticket.status, nextStatus: body.nextStatus };
     }
 
-    const valid = await resolveValidTicketStatuses(this.db, body.projectId, u.orgId, [body.nextStatus]);
+    const valid = await resolveValidTicketStatuses(this.db, body.projectId, u.orgId);
     if (!valid.has(body.nextStatus)) throw new ChatActionTicketStatusFailedException();
 
     await this.db
@@ -103,12 +103,12 @@ export class ChatActionsController {
   }
 
   @Post("create-task-from-message")
-  @RequirePermission("projects:tickets:create")
+  @RequirePermission("build:tickets:create")
   async createTaskFromMessage(
     @Body(new ZodValidationPipe(createTaskFromMessageSchema)) body: CreateTaskFromMessageInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+    if (!u.isOrgOwner) {
       const membership = await this.db.query.projectMembers.findFirst({
         where: and(eq(projectMembers.projectId, body.projectId), eq(projectMembers.userId, u.userId)),
         columns: { projectId: true },
@@ -205,12 +205,12 @@ export class ChatActionsController {
   }
 
   @Post("assign-ticket")
-  @RequirePermission("projects:tickets:assign")
+  @RequirePermission("build:tickets:assign")
   async assignTicket(
     @Body(new ZodValidationPipe(assignTicketFromChatSchema)) body: AssignTicketFromChatInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+    if (!u.isOrgOwner) {
       const membership = await this.db.query.projectMembers.findFirst({
         where: and(eq(projectMembers.projectId, body.projectId), eq(projectMembers.userId, u.userId)),
         columns: { projectId: true },
@@ -261,12 +261,12 @@ export class ChatActionsController {
   }
 
   @Post("set-due-date")
-  @RequirePermission("projects:tickets:update")
+  @RequirePermission("build:tickets:update")
   async setDueDate(
     @Body(new ZodValidationPipe(setDueDateFromChatSchema)) body: SetDueDateFromChatInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+    if (!u.isOrgOwner) {
       const membership = await this.db.query.projectMembers.findFirst({
         where: and(eq(projectMembers.projectId, body.projectId), eq(projectMembers.userId, u.userId)),
         columns: { projectId: true },

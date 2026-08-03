@@ -62,7 +62,7 @@ export class SurveysController {
   @Post(":surveyId/publish")
   @RequirePermission("surveys:publish")
   publish(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.forms.publish(u.orgId, surveyId, u.userId);
+    return this.forms.publish(u.orgId, surveyId);
   }
 
   @Post(":surveyId/pause")

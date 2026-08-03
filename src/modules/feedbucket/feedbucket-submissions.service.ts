@@ -6,7 +6,7 @@ import type { Db } from "../../db/drizzle.module";
 import type { DataScope } from "../access/access.types";
 import { applyFeedbucketScope } from "./feedbucket-scope";
 import type { ListSubmissionsQuery, UpdateSubmissionInput } from "./feedbucket.schemas";
-import type { ProjectsTicketsService } from "../projects/projects-tickets.service";
+import type { ProjectsTicketsService } from "../build/core/projects-tickets.service";
 
 @Injectable()
 export class FeedbucketSubmissionsService {
@@ -37,6 +37,7 @@ export class FeedbucketSubmissionsService {
     const [rows, countResult] = await Promise.all([
       this.db.query.feedbucketSubmissions.findMany({
         where,
+        columns: { consoleLogs: false, networkLogs: false },
         with: { widget: true, assignee: true },
         orderBy: [desc(feedbucketSubmissions.createdAt)],
         limit,

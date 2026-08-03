@@ -6,7 +6,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
-import { CrmMetadataService } from "../crm-metadata/crm-metadata.service";
+import { CrmMetadataService } from "../crm/metadata/crm-metadata.service";
 import type { CreateForecastSnapshotInput, CompareForecastSnapshotsInput, ForecastSnapshotsQueryInput } from "./dto/deals.schemas";
 
 export interface ForecastMonth {
@@ -198,18 +198,18 @@ export class DealsAnalyticsService {
       async () => {
         const { wonKeys, lostKeys } = await this.getTerminalStageKeys(orgId);
 
-        const allKeys = wonKeys.concat(lostKeys);
-        const wonKeysExpr = sql.join(wonKeys.map((k) => sql`${k}`), sql`, `);
-        const [bucketRows, lostByReason] = await Promise.all([
+        const bucketTotals = (stageKeys: string[]) =>
           this.db
             .select({
-              bucket: sql<string>`CASE WHEN ${deals.stage} = ANY(ARRAY[${wonKeysExpr}]) THEN 'won' ELSE 'lost' END`,
               count: sql<number>`count(*)::int`,
               totalValue: sql<number>`COALESCE(SUM(${deals.value}::numeric), 0)::float`,
             })
             .from(deals)
-            .where(and(eq(deals.orgId, orgId), inArray(deals.stage, allKeys)))
-            .groupBy(sql`CASE WHEN ${deals.stage} = ANY(ARRAY[${wonKeysExpr}]) THEN 'won' ELSE 'lost' END`),
+            .where(and(eq(deals.orgId, orgId), inArray(deals.stage, stageKeys)));
+
+        const [wonRows, lostRows, lostByReason] = await Promise.all([
+          bucketTotals(wonKeys),
+          bucketTotals(lostKeys),
           this.db
             .select({
               reason: sql<string>`COALESCE(${deals.lostReason}, 'Not specified')`,
@@ -218,12 +218,12 @@ export class DealsAnalyticsService {
             })
             .from(deals)
             .where(and(eq(deals.orgId, orgId), inArray(deals.stage, lostKeys)))
-            .groupBy(sql`COALESCE(${deals.lostReason}, 'Not specified')`)
-            .orderBy(sql`count(*) desc`),
+            .groupBy(sql`1`)
+            .orderBy(sql`2 desc`),
         ]);
 
-        const wonRow = bucketRows.find((r) => r.bucket === "won") ?? { count: 0, totalValue: 0 };
-        const lostRow = bucketRows.find((r) => r.bucket === "lost") ?? { count: 0, totalValue: 0 };
+        const wonRow = wonRows[0] ?? { count: 0, totalValue: 0 };
+        const lostRow = lostRows[0] ?? { count: 0, totalValue: 0 };
         const total = wonRow.count + lostRow.count;
         const winRate = total > 0 ? Math.round((wonRow.count / total) * 100) : 0;
 

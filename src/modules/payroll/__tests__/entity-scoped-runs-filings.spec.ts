@@ -5,7 +5,7 @@
 import {
   assertEntityCountryIsolation,
   describeCountryPack,
-} from "../../hr-global/lib/country-pack-registry";
+} from "../../hr/global/lib/country-pack-registry";
 import { IN_STATUTORY_RULE_BUNDLE_VERSION } from "../runs/lib/statutory-registry";
 import {
   createRunSchema,

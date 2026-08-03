@@ -6,7 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, isNull, isNotNull, lt, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, isNull, isNotNull, lt, sql, type SQL } from "drizzle-orm";
 import { pageVisibleTo } from "./kb-page-visibility";
 import { getAccessibleProjectIds } from "./kb-project-access.util";
 import { kbPages, kbPageLinks } from "../../db/schema";
@@ -15,12 +15,15 @@ import { type Db } from "../../db/drizzle.module";
 import { extractPageLinkIds } from "./kb-page-content.util";
 import { KbIndexingService } from "./kb-indexing.service";
 import { AuditService } from "../../common/audit/audit.service";
-import { PlanLimitsService } from "../billing/plan-limits.service";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { MovePageInput } from "./dto/kb-pages.schemas";
+import { assertPageAccessible } from "./kb-page-access.util";
 
 type PageRow = typeof kbPages.$inferSelect;
 type KbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+const MAX_TREE_NODES = 2000;
 
 export function isDescendant(
   allPages: Pick<PageRow, "id" | "parentPageId">[],
@@ -86,13 +89,15 @@ export class KbPageTreeService {
       })
       .from(kbPages)
       .where(and(...filters))
-      .orderBy(kbPages.sortOrder);
+      .orderBy(kbPages.sortOrder)
+      .limit(MAX_TREE_NODES);
 
     const childSet = new Set(rows.map((r) => r.parentPageId).filter((id): id is number => id !== null));
     return rows.map((r) => ({ ...r, hasChildren: childSet.has(r.id) }));
   }
 
   async softDelete(user: CurrentUserContext, pageId: number): Promise<{ deletedCount: number }> {
+    await assertPageAccessible(this.db, user, pageId);
     const orgId = user.orgId;
     const page = await this.db.query.kbPages.findFirst({
       where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)),
@@ -226,32 +231,22 @@ export class KbPageTreeService {
 
   async emptyTrash(user: CurrentUserContext): Promise<{ purgedCount: number }> {
     const orgId = user.orgId;
-    const trashedPages = await this.db
-      .select({ id: kbPages.id, title: kbPages.title })
-      .from(kbPages)
-      .where(and(eq(kbPages.orgId, orgId), isNotNull(kbPages.deletedAt)));
-
-    if (trashedPages.length === 0) return { purgedCount: 0 };
-
-    const ids = trashedPages.map((p) => p.id);
-    await this.db
+    const deleted = await this.db
       .delete(kbPages)
-      .where(
-        and(
-          eq(kbPages.orgId, orgId),
-          sql`${kbPages.id} = ANY(ARRAY[${sql.join(ids.map((id) => sql`${id}`), sql`, `)}]::int[])`,
-        ),
-      );
+      .where(and(eq(kbPages.orgId, orgId), isNotNull(kbPages.deletedAt)))
+      .returning({ id: kbPages.id });
+
+    if (deleted.length === 0) return { purgedCount: 0 };
 
     this.audit.log({
       action: "kb.trash.emptied",
       userId: user.userId,
       orgId,
       resourceType: "kb_page",
-      metadata: { purgedCount: ids.length },
+      metadata: { purgedCount: deleted.length },
     });
 
-    return { purgedCount: ids.length };
+    return { purgedCount: deleted.length };
   }
 
   async purgeExpired(orgId: string, olderThan: Date): Promise<number> {
@@ -290,6 +285,7 @@ export class KbPageTreeService {
   }
 
   async move(user: CurrentUserContext, pageId: number, input: MovePageInput): Promise<PageRow> {
+    await assertPageAccessible(this.db, user, pageId);
     const orgId = user.orgId;
 
     const page = await this.db.query.kbPages.findFirst({
@@ -358,6 +354,7 @@ export class KbPageTreeService {
   }
 
   async duplicate(user: CurrentUserContext, pageId: number): Promise<PageRow> {
+    await assertPageAccessible(this.db, user, pageId);
     const orgId = user.orgId;
     const root = await this.db.query.kbPages.findFirst({
       where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
@@ -453,20 +450,20 @@ export class KbPageTreeService {
     orgId: string,
     rootId: number,
   ): Promise<number[]> {
-    const allIds: number[] = [rootId];
-    const queue = [rootId];
-    while (queue.length > 0) {
-      const parentId = queue.shift()!;
-      const children = await tx
-        .select({ id: kbPages.id })
-        .from(kbPages)
-        .where(and(eq(kbPages.orgId, orgId), eq(kbPages.parentPageId, parentId)));
-      for (const child of children) {
-        allIds.push(child.id);
-        queue.push(child.id);
-      }
-    }
-    return allIds;
+    const rows = await tx.execute(sql`
+      WITH RECURSIVE subtree AS (
+        SELECT id, parent_page_id, 1 AS depth
+        FROM kb_pages
+        WHERE id = ${rootId} AND org_id = ${orgId}
+        UNION ALL
+        SELECT p.id, p.parent_page_id, s.depth + 1
+        FROM kb_pages p
+        INNER JOIN subtree s ON p.parent_page_id = s.id AND s.depth < 1000
+        WHERE p.org_id = ${orgId}
+      )
+      SELECT id FROM subtree
+    `);
+    return (rows as Array<Record<string, unknown>>).map((row) => Number(row.id));
   }
 
   private async buildSubtreeMap(
@@ -474,21 +471,25 @@ export class KbPageTreeService {
     orgId: string,
     rootId: number,
   ): Promise<Map<number, PageRow>> {
-    const map = new Map<number, PageRow>();
-    const queue = [rootId];
-    while (queue.length > 0) {
-      const parentId = queue.shift()!;
-      const page = await tx.query.kbPages.findFirst({
-        where: and(eq(kbPages.id, parentId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
-      });
-      if (!page) continue;
-      map.set(page.id, page);
-      const children = await tx
-        .select({ id: kbPages.id })
-        .from(kbPages)
-        .where(and(eq(kbPages.orgId, orgId), eq(kbPages.parentPageId, parentId), isNull(kbPages.deletedAt)));
-      for (const child of children) queue.push(child.id);
-    }
-    return map;
+    const idRows = await tx.execute(sql`
+      WITH RECURSIVE subtree AS (
+        SELECT id, parent_page_id, 1 AS depth
+        FROM kb_pages
+        WHERE id = ${rootId} AND org_id = ${orgId} AND deleted_at IS NULL
+        UNION ALL
+        SELECT p.id, p.parent_page_id, s.depth + 1
+        FROM kb_pages p
+        INNER JOIN subtree s ON p.parent_page_id = s.id AND s.depth < 1000
+        WHERE p.org_id = ${orgId} AND p.deleted_at IS NULL
+      )
+      SELECT id FROM subtree
+    `);
+    const ids = (idRows as Array<Record<string, unknown>>).map((row) => Number(row.id));
+    if (ids.length === 0) return new Map();
+    const pages = await tx
+      .select()
+      .from(kbPages)
+      .where(and(eq(kbPages.orgId, orgId), inArray(kbPages.id, ids), isNull(kbPages.deletedAt)));
+    return new Map(pages.map((p) => [p.id, p]));
   }
 }

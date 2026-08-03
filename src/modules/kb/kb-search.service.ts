@@ -5,7 +5,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { KbAccessService } from "./kb-access.service";
 import { KbEventsService } from "./kb-events.service";
-import { EmbeddingsService } from "../ai/providers/embeddings.service";
+import { EmbeddingsService } from "../ai/core/providers/embeddings.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { SearchInput } from "./dto/kb-ai.schemas";
 
@@ -15,8 +15,6 @@ const RRF_CONSTANT = 60;
 export type RetrievedSource =
   | { kind: "article"; id: number; title: string; slug: string; spaceId: number | null; contentText: string; updatedAt: Date }
   | { kind: "page"; id: number; title: string; spaceId: number | null; contentText: string; updatedAt: Date };
-
-export type { RetrievedSource as RetrievedArticle };
 
 @Injectable()
 export class KbSearchService {
@@ -53,7 +51,7 @@ export class KbSearchService {
     }
 
     const isAdmin = this.access.isAdmin(user);
-    const principal = this.access.getPrincipalIds(user);
+    const principal = await this.access.getPrincipalIds(user);
 
     const tsquery = sql`websearch_to_tsquery('english', ${input.q})`;
     const conditions: SQL[] = [
@@ -121,28 +119,38 @@ export class KbSearchService {
     if (!q) return [];
 
     const isAdmin = this.access.isAdmin(user);
-    const principal = this.access.getPrincipalIds(user);
+    const principal = await this.access.getPrincipalIds(user);
 
     const pool = Math.max(limit * 3, limit);
-    const lists: string[][] = [];
+    const hasSpaces = ids.length > 0;
 
-    if (ids.length > 0) {
-      const articleKeyword = await this.articleKeywordCandidates(user.orgId, ids, q, pool, principal, spaceId);
-      if (articleKeyword.length > 0) lists.push(articleKeyword.map((id) => `a:${id}`));
-
-      if (this.embeddings.isConfigured()) {
-        const articleVector = await this.articleVectorCandidates(user.orgId, ids, q, pool, principal, spaceId);
-        if (articleVector.length > 0) lists.push(articleVector.map((id) => `a:${id}`));
+    let vectorLiteral: string | null = null;
+    if (this.embeddings.isConfigured()) {
+      try {
+        vectorLiteral = this.embeddings.toVectorLiteral(await this.embeddings.embedQuery(q));
+      } catch {
+        vectorLiteral = null;
       }
     }
 
-    const pageKeyword = await this.pageKeywordCandidates(user.orgId, q, pool);
-    if (pageKeyword.length > 0) lists.push(pageKeyword.map((id) => `p:${id}`));
+    const [articleKeyword, articleVector, pageKeyword, pageVector] = await Promise.all([
+      hasSpaces
+        ? this.articleKeywordCandidates(user.orgId, ids, q, pool, principal, spaceId)
+        : Promise.resolve<number[]>([]),
+      hasSpaces && vectorLiteral
+        ? this.articleVectorCandidates(user.orgId, ids, vectorLiteral, pool, principal, spaceId)
+        : Promise.resolve<number[]>([]),
+      this.pageKeywordCandidates(user.orgId, q, pool),
+      vectorLiteral
+        ? this.pageVectorCandidates(user.orgId, vectorLiteral, pool)
+        : Promise.resolve<number[]>([]),
+    ]);
 
-    if (this.embeddings.isConfigured()) {
-      const pageVector = await this.pageVectorCandidates(user.orgId, q, pool);
-      if (pageVector.length > 0) lists.push(pageVector.map((id) => `p:${id}`));
-    }
+    const lists: string[][] = [];
+    if (articleKeyword.length > 0) lists.push(articleKeyword.map((id) => `a:${id}`));
+    if (articleVector.length > 0) lists.push(articleVector.map((id) => `a:${id}`));
+    if (pageKeyword.length > 0) lists.push(pageKeyword.map((id) => `p:${id}`));
+    if (pageVector.length > 0) lists.push(pageVector.map((id) => `p:${id}`));
 
     const fused = this.fuseKeys(lists).slice(0, limit);
     if (fused.length === 0) return [];
@@ -213,7 +221,7 @@ export class KbSearchService {
     spaceIds: number[],
     query: string,
     pool: number,
-    principal: { userId: string; role: string },
+    principal: { userId: string; roleSlugs: string[] },
     spaceId?: number,
   ): Promise<number[]> {
     const tsquery = sql`websearch_to_tsquery('english', ${query})`;
@@ -238,13 +246,12 @@ export class KbSearchService {
   private async articleVectorCandidates(
     orgId: string,
     spaceIds: number[],
-    query: string,
+    vector: string,
     pool: number,
-    principal: { userId: string; role: string },
+    principal: { userId: string; roleSlugs: string[] },
     spaceId?: number,
   ): Promise<number[]> {
     try {
-      const vector = this.embeddings.toVectorLiteral(await this.embeddings.embedQuery(query));
       const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
       const conditions: SQL[] = [
         eq(kbArticleChunks.orgId, orgId),
@@ -303,11 +310,10 @@ export class KbSearchService {
 
   private async pageVectorCandidates(
     orgId: string,
-    query: string,
+    vector: string,
     pool: number,
   ): Promise<number[]> {
     try {
-      const vector = this.embeddings.toVectorLiteral(await this.embeddings.embedQuery(query));
       const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
       const rows = await this.db
         .select({ pageId: kbArticleChunks.pageId })
@@ -347,7 +353,7 @@ export class KbSearchService {
 
   private articleRestrictionFilter(
     orgId: string,
-    principal: { userId: string; role: string },
+    principal: { userId: string; roleSlugs: string[] },
   ): SQL {
     const kar = kbArticleRestrictions;
     return sql`(
@@ -362,7 +368,11 @@ export class KbSearchService {
         WHERE ${kar.articleId} = ${kbArticles.id}
           AND ${kar.orgId} = ${orgId}
           AND ${kar.level} = 'view'
-          AND (${kar.userId} = ${principal.userId} OR ${kar.role} = ${principal.role})
+          AND (${kar.userId} = ${principal.userId} OR ${
+            principal.roleSlugs.length > 0
+              ? sql`${kar.role} = ANY(${principal.roleSlugs})`
+              : sql`false`
+          })
       )
     )`;
   }

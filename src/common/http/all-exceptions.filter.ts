@@ -1,7 +1,36 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from "@nestjs/common";
-import type { Response } from "express";
+import type { Request, Response } from "express";
 import { ZodError } from "zod";
 import { logger } from "../logger/logger.service";
+import { isTransientDbError } from "../db/transient-error";
+
+function describeUnhandled(exception: unknown): Record<string, unknown> {
+  if (!(exception instanceof Error)) return { message: String(exception) };
+  const record = exception as unknown as Record<string, unknown>;
+  const detail = record["detail"];
+  const hint = record["hint"];
+  const query = record["query"];
+  const column = record["column_name"];
+  const table = record["table_name"];
+  return {
+    message: exception.message,
+    stack: exception.stack,
+    ...(typeof detail === "string" ? { detail } : {}),
+    ...(typeof hint === "string" ? { hint } : {}),
+    ...(typeof column === "string" ? { column } : {}),
+    ...(typeof table === "string" ? { table } : {}),
+    ...(typeof query === "string" ? { query } : {}),
+  };
+}
+
+function describeRequest(host: ArgumentsHost): Record<string, unknown> {
+  try {
+    const req = host.switchToHttp().getRequest<Request>();
+    return { method: req.method, url: req.url };
+  } catch {
+    return {};
+  }
+}
 
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
@@ -54,7 +83,21 @@ export class AllExceptionsFilter implements ExceptionFilter {
       return;
     }
 
-    logger.error("Unhandled exception", { error: exception });
+    if (isTransientDbError(exception)) {
+      logger.warn("Transient database connection error — returning 503", {
+        error: exception instanceof Error ? exception.message : String(exception),
+      });
+      res.status(HttpStatus.SERVICE_UNAVAILABLE).json({
+        error: "The service is temporarily unavailable. Please try again.",
+      });
+      return;
+    }
+
+    logger.error("Unhandled exception", {
+      error: exception,
+      ...describeUnhandled(exception),
+      request: describeRequest(host),
+    });
     res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ error: "An unexpected error occurred" });
   }
 }

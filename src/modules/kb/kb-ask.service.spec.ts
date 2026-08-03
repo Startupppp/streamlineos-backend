@@ -1,7 +1,10 @@
-import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ServiceUnavailableException,
+} from "@nestjs/common";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { KbAskService } from "./kb-ask.service";
-import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
+import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
 import { KbEventsService } from "./kb-events.service";
 import { KbSearchService } from "./kb-search.service";
 
@@ -18,7 +21,14 @@ const makeGatewayOk = (text: string) => ({
   },
 });
 
-const makeGatewayFail = (kind: "quota_exceeded" | "provider_unavailable" | "not_configured" | "invalid_output", message = "error") => ({
+const makeGatewayFail = (
+  kind:
+    | "quota_exceeded"
+    | "provider_unavailable"
+    | "not_configured"
+    | "invalid_output",
+  message = "error",
+) => ({
   ok: false as const,
   kind,
   message,
@@ -33,7 +43,15 @@ const mockEvents = {
   record: jest.fn().mockResolvedValue(undefined),
 };
 
-const articleResult = { kind: "article" as const, id: 1, title: "Getting started", slug: "getting-started", spaceId: 1, contentText: "Some content", updatedAt: new Date("2024-01-01") };
+const articleResult = {
+  kind: "article" as const,
+  id: 1,
+  title: "Getting started",
+  slug: "getting-started",
+  spaceId: 1,
+  contentText: "Some content",
+  updatedAt: new Date("2024-01-01"),
+};
 
 const mockSearch = {
   retrieveTopArticles: jest.fn().mockResolvedValue([articleResult]),
@@ -44,14 +62,11 @@ const mockSearch = {
 const user = {
   userId: "user1",
   orgId: "org1",
-  branchId: null,
   role: "member",
   permissions: [],
-  enabledModules: [],
-  plan: null,
-  isPlatformAdmin: false,
   isOrgOwner: false,
   sessionId: "sess-1",
+  tokenScopes: null,
 };
 const input = { question: "How do I reset my password?" };
 
@@ -89,7 +104,9 @@ describe("KbAskService", () => {
   });
 
   it("charges org wallet via gateway (no KbCreditsService) and returns answer", async () => {
-    mockGateway.invokeTextWithUsage.mockResolvedValueOnce(makeGatewayOk("Here is how to reset your password."));
+    mockGateway.invokeTextWithUsage.mockResolvedValueOnce(
+      makeGatewayOk("Here is how to reset your password."),
+    );
 
     const result = await service.ask(user, input);
 
@@ -107,20 +124,32 @@ describe("KbAskService", () => {
   });
 
   it("throws BadRequestException on quota_exceeded", async () => {
-    mockGateway.invokeTextWithUsage.mockResolvedValueOnce(makeGatewayFail("quota_exceeded", "Insufficient AI credits"));
+    mockGateway.invokeTextWithUsage.mockResolvedValueOnce(
+      makeGatewayFail("quota_exceeded", "Insufficient AI credits"),
+    );
     await expect(service.ask(user, input)).rejects.toThrow(BadRequestException);
   });
 
   it("throws ServiceUnavailableException on provider_unavailable", async () => {
-    mockGateway.invokeTextWithUsage.mockResolvedValueOnce(makeGatewayFail("provider_unavailable"));
-    await expect(service.ask(user, input)).rejects.toThrow(ServiceUnavailableException);
+    mockGateway.invokeTextWithUsage.mockResolvedValueOnce(
+      makeGatewayFail("provider_unavailable"),
+    );
+    await expect(service.ask(user, input)).rejects.toThrow(
+      ServiceUnavailableException,
+    );
   });
 
   it("records ai_answer event after a successful response", async () => {
-    mockGateway.invokeTextWithUsage.mockResolvedValueOnce(makeGatewayOk("Reset via the login page."));
+    mockGateway.invokeTextWithUsage.mockResolvedValueOnce(
+      makeGatewayOk("Reset via the login page."),
+    );
 
     await service.ask(user, input);
 
-    expect(mockEvents.record).toHaveBeenCalledWith("org1", "ai_answer", expect.objectContaining({ actorId: "user1" }));
+    expect(mockEvents.record).toHaveBeenCalledWith(
+      "org1",
+      "ai_answer",
+      expect.objectContaining({ actorId: "user1" }),
+    );
   });
 });

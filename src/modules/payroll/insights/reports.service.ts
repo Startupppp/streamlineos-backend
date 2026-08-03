@@ -1,16 +1,15 @@
 import { Injectable, Inject } from "@nestjs/common";
-import { eq, and, inArray, sql } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
-  payrollRuns,
   payrollRunEmployees,
   payrollLineItems,
   employeeSalaryProfiles,
   payrollBankBatches,
   payrollBankBatchItems,
+  orgUnits,
   users,
-  departments,
 } from "../../../db/schema";
 import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
 import { findRunForMonth, getLineItemsForRun, type LineItemFilters, type RunRow } from "./lib/report-builders";
@@ -200,7 +199,7 @@ export class ReportsService {
 
     const aggRows = await this.db
       .select({
-        department: departments.name,
+        department: orgUnits.name,
         _count: sql<number>`COUNT(*)::int`,
         grossTotal: sql<string>`COALESCE(SUM(${payrollRunEmployees.gross}::numeric), 0)::text`,
         netTotal: sql<string>`COALESCE(SUM(${payrollRunEmployees.net}::numeric), 0)::text`,
@@ -208,9 +207,9 @@ export class ReportsService {
       })
       .from(payrollRunEmployees)
       .innerJoin(users, eq(payrollRunEmployees.userId, users.id))
-      .leftJoin(departments, eq(departments.id, users.departmentId))
+      .leftJoin(orgUnits, and(eq(orgUnits.id, users.orgDepartmentId), eq(orgUnits.kind, "DEPARTMENT")))
       .where(whereClause)
-      .groupBy(departments.name);
+      .groupBy(orgUnits.name);
 
     const allRows: DeptCostRow[] = aggRows
       .filter((r) => !filters.department || r.department === filters.department)

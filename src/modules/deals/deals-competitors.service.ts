@@ -15,7 +15,8 @@ export class DealsCompetitorsService {
       .select()
       .from(crmDealCompetitors)
       .where(and(eq(crmDealCompetitors.orgId, orgId), eq(crmDealCompetitors.dealId, dealId)))
-      .orderBy(crmDealCompetitors.createdAt);
+      .orderBy(crmDealCompetitors.createdAt)
+      .limit(100);
   }
 
   async create(orgId: string, dealId: number, input: CreateCompetitorInput) {

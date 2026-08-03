@@ -1,6 +1,6 @@
-import { pgTable, text, integer, jsonb, timestamp, index, uuid } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, jsonb, timestamp, index, uuid, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 import { leads } from "./leads";
 import { crmCampaigns } from "./campaigns";
 
@@ -18,6 +18,7 @@ export const crmLeadTouchpoints = pgTable("crm_lead_touchpoints", {
 }, (table) => [
   index("idx_crm_lead_touchpoints_org_lead_occurred").on(table.orgId, table.leadId, table.occurredAt),
   index("idx_crm_lead_touchpoints_org_occurred").on(table.orgId, table.occurredAt),
+  unique("uniq_crm_lead_touchpoints_org_id").on(table.orgId, table.id),
 ]);
 
 export const crmLeadTouchpointsRelations = relations(crmLeadTouchpoints, ({ one }) => ({

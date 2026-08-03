@@ -1,11 +1,5 @@
 export type NpsCategory = "promoter" | "passive" | "detractor";
 
-export function categoryForScore(score: number): NpsCategory {
-  if (score >= 9) return "promoter";
-  if (score >= 7) return "passive";
-  return "detractor";
-}
-
 export interface NpsBreakdown {
   promoters: number;
   passives: number;

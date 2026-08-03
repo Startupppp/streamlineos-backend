@@ -3,45 +3,26 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  OnModuleInit,
 } from "@nestjs/common";
-import { eq, sql } from "drizzle-orm";
-import { organizations, orgModules } from "../../db/schema";
+import { and, eq, isNull } from "drizzle-orm";
+import { moduleOwnerships, modulesCatalog, orgModules, organizations, pmWorkspaces } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { CacheService } from "../../common/cache/cache.service";
-import { PLAN_LOCKED_MODULES } from "../billing/plan-entitlements.constants";
-import { PlanLimitsService } from "../billing/plan-limits.service";
+import { PLAN_LOCKED_MODULES } from "../billing/core/plan-entitlements.constants";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
+import { MODULE_CATALOG } from "../../common/rbac/module-vocabulary";
+import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { ACCESS_MANAGED_MODULES } from "../rbac/permissions";
+import { assignModuleOwnerRole } from "../ownership/module-owner-role.helper";
 
-export const MODULE_CATALOG = [
-  "hr",
-  "crm",
-  "projects",
-  "accounting",
-  "inventory",
-  "kb",
-  "support",
-  "surveys",
-  "payroll",
-  "sign",
-] as const;
+export { MODULE_CATALOG };
 
-const MODULE_KEY_TO_ORG_MODULE: Readonly<Record<string, string>> = {
-  hr: "HR",
-  crm: "CRM",
-  projects: "PROJECTS",
-  inventory: "INVENTORY",
-  accounting: "FINANCE",
-  support: "HELPDESK",
-  surveys: "SURVEYS",
-  payroll: "PAYROLL",
-  sign: "SIGN",
-};
-
-const CORE_MODULE_KEYS: ReadonlySet<string> = new Set(
-  MODULE_CATALOG.filter((k) => !MODULE_KEY_TO_ORG_MODULE[k]),
-);
+const OWNERSHIP_MANAGED_MODULES = new Set<string>(ACCESS_MANAGED_MODULES);
 
 export interface ModuleStatus {
   moduleKey: string;
@@ -70,10 +51,14 @@ interface ModuleMapEntry {
 
 const MODULE_MAP_LOCAL_TTL_MS = 15_000;
 
+const FALLBACK_CORE_MODULE_KEYS: ReadonlySet<string> = new Set<string>(["kb", "chat"]);
+
 @Injectable()
-export class EntitlementsService {
+export class EntitlementsService implements OnModuleInit {
   private missingTableLogged = false;
+  private moduleTableUnavailable = false;
   private readonly moduleMapCache = new Map<string, ModuleMapEntry>();
+  private coreModuleKeys: ReadonlySet<string> = FALLBACK_CORE_MODULE_KEYS;
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
@@ -81,11 +66,24 @@ export class EntitlementsService {
     private readonly planLimits: PlanLimitsService,
   ) {}
 
+  async onModuleInit(): Promise<void> {
+    try {
+      const rows = await this.db.query.modulesCatalog.findMany({
+        where: eq(modulesCatalog.isCore, true),
+        columns: { moduleKey: true },
+      });
+      this.coreModuleKeys = new Set(rows.map((r) => r.moduleKey));
+    } catch {
+      logger.warn("entitlements: modules_catalog unavailable at init, using compile-time core fallback");
+    }
+  }
+
   private async safeRead<T>(read: () => Promise<T>, fallback: T): Promise<T> {
     try {
       return await read();
     } catch (error: unknown) {
       if (!isMissingRelationError(error)) throw error;
+      this.moduleTableUnavailable = true;
       if (!this.missingTableLogged) {
         this.missingTableLogged = true;
         logger.warn(
@@ -106,18 +104,23 @@ export class EntitlementsService {
     const key = `entitlements:modules:${orgId}`;
     const map = await this.cache.cached(
       key,
-      async () => {
-        const rows = await this.safeRead(
-          () =>
-            this.db.query.orgModules.findMany({
-              where: eq(orgModules.orgId, orgId),
-            }),
-          [],
-        );
-        const result: Record<string, boolean> = {};
-        for (const row of rows) result[row.moduleKey] = row.enabled;
-        return result;
-      },
+      () =>
+        runInTenantTransaction(
+          this.db,
+          async () => {
+            const rows = await this.safeRead(
+              () =>
+                this.db.query.orgModules.findMany({
+                  where: eq(orgModules.orgId, orgId),
+                }),
+              [],
+            );
+            const result: Record<string, boolean> = {};
+            for (const row of rows) result[row.moduleKey] = row.enabled;
+            return result;
+          },
+          { orgId },
+        ),
       30,
     );
     this.moduleMapCache.set(orgId, {
@@ -128,9 +131,11 @@ export class EntitlementsService {
   }
 
   async isModuleEnabled(orgId: string, moduleKey: string): Promise<boolean> {
+    if (this.coreModuleKeys.has(moduleKey)) return true;
     const map = await this.getModuleMap(orgId);
-    if (!(moduleKey in map)) return true;
-    return map[moduleKey] ?? true;
+    const enabled = map[moduleKey];
+    if (enabled === undefined) return this.moduleTableUnavailable;
+    return enabled;
   }
 
   async setModuleEnabled(
@@ -139,7 +144,7 @@ export class EntitlementsService {
     enabled: boolean,
     enabledBy: string,
   ): Promise<void> {
-    if (CORE_MODULE_KEYS.has(moduleKey)) {
+    if (this.coreModuleKeys.has(moduleKey)) {
       throw new BadRequestException(
         `Module "${moduleKey}" is always-on and cannot be toggled`,
       );
@@ -153,9 +158,7 @@ export class EntitlementsService {
         );
       }
     }
-    const orgModuleName = MODULE_KEY_TO_ORG_MODULE[moduleKey];
-
-    await this.db.transaction(async (tx) => {
+    await runInTenantTransaction(this.db, async (tx) => {
       await tx
         .insert(orgModules)
         .values({ orgId, moduleKey, enabled, enabledBy })
@@ -164,18 +167,52 @@ export class EntitlementsService {
           set: { enabled, enabledBy },
         });
 
-      if (orgModuleName) {
-        if (enabled) {
-          await tx.execute(
-            sql`UPDATE organizations SET enabled_modules = array_append(COALESCE(enabled_modules, '{}'), ${orgModuleName}) WHERE id = ${orgId} AND NOT (${orgModuleName} = ANY(COALESCE(enabled_modules, '{}')))`,
-          );
-        } else {
-          await tx.execute(
-            sql`UPDATE organizations SET enabled_modules = array_remove(COALESCE(enabled_modules, '{}'), ${orgModuleName}) WHERE id = ${orgId}`,
-          );
+      if (moduleKey === "build" && enabled) {
+        const [existing] = await tx
+          .select({ id: pmWorkspaces.pmWorkspaceId })
+          .from(pmWorkspaces)
+          .where(
+            and(
+              eq(pmWorkspaces.orgId, orgId),
+              eq(pmWorkspaces.isDefault, true),
+              isNull(pmWorkspaces.deletedAt),
+            ),
+          )
+          .limit(1);
+        if (!existing) {
+          await tx
+            .insert(pmWorkspaces)
+            .values({
+              orgId,
+              name: "Default Workspace",
+              slug: "default",
+              isDefault: true,
+              status: "active",
+            })
+            .onConflictDoNothing();
         }
       }
-    });
+
+      if (enabled && OWNERSHIP_MANAGED_MODULES.has(moduleKey)) {
+        const [orgRow] = await tx
+          .select({ ownerMembershipId: organizations.ownerMembershipId })
+          .from(organizations)
+          .where(eq(organizations.id, orgId))
+          .limit(1);
+
+        const ownerMembershipId = orgRow?.ownerMembershipId;
+        if (ownerMembershipId !== null && ownerMembershipId !== undefined) {
+          await tx
+            .insert(moduleOwnerships)
+            .values({ orgId, moduleKey, ownerMembershipId })
+            .onConflictDoNothing();
+
+          await assignModuleOwnerRole(tx, orgId, moduleKey, ownerMembershipId);
+        }
+      }
+
+      await bumpPermissionsVersion(tx, orgId);
+    }, { orgId });
 
     this.moduleMapCache.delete(orgId);
     await this.cache.invalidate(`entitlements:module:${orgId}:${moduleKey}`);
@@ -183,21 +220,31 @@ export class EntitlementsService {
     await this.cache.invalidate(CACHE_KEYS.userSession(enabledBy));
   }
 
+  /**
+   * Effective on/off state of every toggleable catalog module for an org.
+   *
+   * Deny-by-default: a module with no `org_modules` row is NOT enabled, so an
+   * org runs exactly what it turned on during setup or in Settings → Modules.
+   * This mirrors `isModuleEnabled` (the guard) so the modules a user is shown
+   * and the modules the API actually serves can never disagree.
+   */
+  async getEffectiveModuleMap(orgId: string): Promise<Record<string, boolean>> {
+    const map = await this.getModuleMap(orgId);
+    const effective: Record<string, boolean> = {};
+    for (const moduleKey of MODULE_CATALOG) {
+      effective[moduleKey] = this.coreModuleKeys.has(moduleKey)
+        ? true
+        : (map[moduleKey] ?? this.moduleTableUnavailable);
+    }
+    return effective;
+  }
+
   async listModules(orgId: string): Promise<ModuleStatus[]> {
-    const org = await this.db.query.organizations.findFirst({
-      where: eq(organizations.id, orgId),
-      columns: { enabledModules: true },
-    });
-    const orgArray = org?.enabledModules ?? null;
-    return MODULE_CATALOG.map((moduleKey): ModuleStatus => {
-      const orgName = MODULE_KEY_TO_ORG_MODULE[moduleKey];
-      if (!orgName) {
-        return { moduleKey, enabled: true, core: true };
-      }
-      if (orgArray === null) {
-        return { moduleKey, enabled: true };
-      }
-      return { moduleKey, enabled: orgArray.includes(orgName) };
-    });
+    const effective = await this.getEffectiveModuleMap(orgId);
+    return MODULE_CATALOG.map((moduleKey): ModuleStatus =>
+      this.coreModuleKeys.has(moduleKey)
+        ? { moduleKey, enabled: true, core: true }
+        : { moduleKey, enabled: effective[moduleKey] ?? false },
+    );
   }
 }

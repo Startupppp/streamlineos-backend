@@ -2,7 +2,7 @@ import { BadRequestException } from "@nestjs/common";
 import { KbImportExportService } from "./kb-import-export.service";
 import type { Db } from "../../db/drizzle.module";
 import type { AuditService } from "../../common/audit/audit.service";
-import type { PlanLimitsService } from "../billing/plan-limits.service";
+import type { PlanLimitsService } from "../billing/core/plan-limits.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { ImportPagesInput } from "./dto/kb-import-export.schemas";
 
@@ -12,7 +12,6 @@ function makeUser(): CurrentUserContext {
     orgId: "org-A",
     role: "member",
     isOrgOwner: false,
-    isPlatformAdmin: false,
     permissions: ["kb:pages:import"],
     enabledModules: ["kb"],
   } as unknown as CurrentUserContext;

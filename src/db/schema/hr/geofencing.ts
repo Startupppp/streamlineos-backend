@@ -1,5 +1,5 @@
-import { pgTable, text, serial, timestamp, decimal, integer, boolean, index } from "drizzle-orm/pg-core";
-import { organizations } from "../auth";
+import { pgTable, text, serial, timestamp, decimal, integer, boolean, index, unique } from "drizzle-orm/pg-core";
+import { organizations } from "../common/auth";
 
 export const geofences = pgTable("geofences", {
   id: serial("id").primaryKey(),
@@ -12,5 +12,6 @@ export const geofences = pgTable("geofences", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_geofences_org_id").on(table.orgId, table.id),
   index("idx_geofences_org_active").on(table.orgId, table.isActive),
 ]);

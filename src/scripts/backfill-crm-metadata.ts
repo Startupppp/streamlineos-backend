@@ -1,9 +1,8 @@
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { eq } from "drizzle-orm";
 import * as schema from "../db/schema";
 import { organizations } from "../db/schema";
-import { seedCrmDefaults } from "../modules/crm-metadata/crm-metadata-seed.service";
+import { seedCrmDefaults } from "../modules/crm/metadata/crm-metadata-seed.service";
 
 type Database = PostgresJsDatabase<typeof schema>;
 

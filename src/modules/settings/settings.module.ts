@@ -1,5 +1,5 @@
 import { Module } from "@nestjs/common";
-import { BillingModule } from "../billing/billing.module";
+import { BillingModule } from "../billing/core/billing.module";
 import { SettingsController } from "./settings.controller";
 import { SettingsService } from "./settings.service";
 

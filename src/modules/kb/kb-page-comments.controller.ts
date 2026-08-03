@@ -34,6 +34,8 @@ export class KbPageCommentsController {
   ) {}
 
   @Get("pages/:pageId/comments")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("kb:pages:view")
   async list(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -63,7 +65,7 @@ export class KbPageCommentsController {
     body: UpdatePageCommentInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    const perms = await this.access.resolveUserPermissions(u.userId, u.orgId);
+    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
     const isAdmin = perms.has("kb:pages:manage");
     return this.comments.update(u.orgId, commentId, u.userId, isAdmin, body);
   }
@@ -76,7 +78,7 @@ export class KbPageCommentsController {
     @Param("commentId", ParseIntPipe) commentId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<void> {
-    const perms = await this.access.resolveUserPermissions(u.userId, u.orgId);
+    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
     const isAdmin = perms.has("kb:pages:manage");
     await this.comments.remove(u.orgId, commentId, u.userId, isAdmin);
   }

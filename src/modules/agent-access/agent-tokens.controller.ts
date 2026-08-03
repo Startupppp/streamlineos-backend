@@ -3,14 +3,17 @@ import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { AgentTokensService } from "./agent-tokens.service";
 import { createAgentTokenSchema, type CreateAgentTokenInput } from "./dto/agent-tokens.schemas";
 
 @Controller("agent-tokens")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class AgentTokensController {
   constructor(private readonly svc: AgentTokensService) {}
 
+  @RequirePermission("settings:api-tokens:write")
   @Post()
   @HttpCode(201)
   create(
@@ -20,11 +23,13 @@ export class AgentTokensController {
     return this.svc.create(u.userId, u.orgId, body);
   }
 
+  @RequirePermission("settings:api-tokens:read")
   @Get()
   list(@CurrentUser() u: CurrentUserContext) {
     return this.svc.list(u.userId, u.orgId);
   }
 
+  @RequirePermission("settings:api-tokens:write")
   @Delete(":tokenId")
   @HttpCode(204)
   revoke(

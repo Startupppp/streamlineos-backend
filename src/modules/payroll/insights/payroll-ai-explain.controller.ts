@@ -8,6 +8,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { ModuleGuard } from "../../../common/rbac/module.guard";
+import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
@@ -16,8 +18,9 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { PayrollAiExplainService } from "./payroll-ai-explain.service";
 
+@RequireModule("payroll")
 @Controller("payroll/me/payslips")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class PayrollAiExplainController {
   constructor(private readonly explainService: PayrollAiExplainService) {}
 

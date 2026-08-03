@@ -66,7 +66,7 @@ export class DealsApprovalsController {
     @Res({ passthrough: true }) res: Response,
   ) {
     if ("approvalId" in body) {
-      if (!(u.isOrgOwner || u.isPlatformAdmin)) {
+      if (!u.isOrgOwner) {
         throw new ForbiddenException("Only admins can resolve approvals");
       }
       const updated = await this.approvals.resolveApproval(u.orgId, u.userId, body);

@@ -15,33 +15,32 @@ export const askSchema = z.object({
 });
 export type AskInput = z.infer<typeof askSchema>;
 
+export const kbAiAskBodySchema = z.object({
+  question: z.string().trim().min(3).max(500),
+});
+
 export const chatHistoryQuerySchema = z.object({
   cursor: z.coerce.number().int().positive().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(30),
 });
-export type ChatHistoryQueryInput = z.infer<typeof chatHistoryQuerySchema>;
 
 export const kbConversationCreateSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
 });
-export type KbConversationCreateInput = z.infer<typeof kbConversationCreateSchema>;
 
 export const kbConversationRenameSchema = z.object({
   title: z.string().trim().min(1).max(200),
 });
-export type KbConversationRenameInput = z.infer<typeof kbConversationRenameSchema>;
 
 export const kbConversationsListQuerySchema = z.object({
   cursor: z.coerce.number().int().positive().optional(),
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
-export type KbConversationsListQueryInput = z.infer<typeof kbConversationsListQuerySchema>;
 
 export const kbConversationMessagesQuerySchema = z.object({
   cursor: z.coerce.number().int().positive().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(30),
 });
-export type KbConversationMessagesQueryInput = z.infer<typeof kbConversationMessagesQuerySchema>;
 
 export const kbAiFeedbackSchema = z.object({
   rating: z.enum(["helpful", "not_helpful", "missing_source"]),
@@ -65,4 +64,3 @@ export type KbResearchBriefListInput = z.infer<typeof kbResearchBriefListSchema>
 export const kbResearchBriefRateSchema = z.object({
   rating: z.enum(["helpful", "not_helpful"]),
 });
-export type KbResearchBriefRateInput = z.infer<typeof kbResearchBriefRateSchema>;

@@ -2,14 +2,20 @@ import { CanActivate, ExecutionContext, Inject, Injectable, UnauthorizedExceptio
 import { createHash } from "node:crypto";
 import { and, desc, eq, gt, isNull, or } from "drizzle-orm";
 import type { Request } from "express";
-import { agentTokens, organizationMembers, organizations, subscriptions, users } from "../../db/schema";
+import { agentTokens, organizationMembers, organizations, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import { withPublicToken } from "../../common/tenant/with-public-token";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import { EntitlementsService } from "../access/entitlements.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
 @Injectable()
 export class AgentTokenGuard implements CanActivate {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly entitlements: EntitlementsService,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest<Request & { user?: CurrentUserContext }>();
@@ -26,71 +32,68 @@ export class AgentTokenGuard implements CanActivate {
     const hash = createHash("sha256").update(raw).digest("hex");
     const now = new Date();
 
-    const rows = await this.db
-      .select({
-        id: agentTokens.id,
-        userId: agentTokens.userId,
-        orgId: agentTokens.orgId,
-      })
-      .from(agentTokens)
-      .where(
-        and(
-          eq(agentTokens.tokenHash, hash),
-          isNull(agentTokens.revokedAt),
-          or(isNull(agentTokens.expiresAt), gt(agentTokens.expiresAt, now)),
-        ),
-      )
-      .limit(1);
-
-    const row = rows[0];
+    const row = await withPublicToken(this.db, hash, (tx) =>
+      tx
+        .select({
+          id: agentTokens.id,
+          userId: agentTokens.userId,
+          orgId: agentTokens.orgId,
+        })
+        .from(agentTokens)
+        .where(
+          and(
+            eq(agentTokens.tokenHash, hash),
+            isNull(agentTokens.revokedAt),
+            or(isNull(agentTokens.expiresAt), gt(agentTokens.expiresAt, now)),
+          ),
+        )
+        .limit(1)
+        .then((rows) => rows[0] ?? null),
+    );
     if (!row) return null;
 
-    void this.db
-      .update(agentTokens)
-      .set({ lastUsedAt: now })
-      .where(eq(agentTokens.id, row.id))
-      .catch(() => undefined);
+    return runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        void tx
+          .update(agentTokens)
+          .set({ lastUsedAt: now })
+          .where(eq(agentTokens.id, row.id))
+          .catch(() => undefined);
 
-    const [user, memberRows] = await Promise.all([
-      this.db.query.users.findFirst({
-        where: eq(users.id, row.userId),
-        columns: { id: true, branchId: true, role: true, lastActiveOrgId: true },
-      }),
-      this.db
-        .select({
-          orgId: organizationMembers.orgId,
-          role: organizationMembers.role,
-          isOwner: organizationMembers.isOwner,
-          enabledModules: organizations.enabledModules,
-        })
-        .from(organizationMembers)
-        .innerJoin(organizations, eq(organizations.id, organizationMembers.orgId))
-        .where(and(eq(organizationMembers.userId, row.userId), eq(organizationMembers.orgId, row.orgId)))
-        .orderBy(desc(organizationMembers.joinedAt)),
-    ]);
+        const [user, memberRows] = await Promise.all([
+          tx.query.users.findFirst({
+            where: eq(users.id, row.userId),
+            columns: { id: true },
+          }),
+          tx
+            .select({
+              orgId: organizationMembers.orgId,
+              role: organizationMembers.role,
+              isOwner: organizationMembers.isOwner,
+            })
+            .from(organizationMembers)
+            .innerJoin(organizations, eq(organizations.id, organizationMembers.orgId))
+            .where(and(eq(organizationMembers.userId, row.userId), eq(organizationMembers.orgId, row.orgId)))
+            .orderBy(desc(organizationMembers.joinedAt)),
+        ]);
 
-    if (!user) return null;
+        if (!user) return null;
 
-    const member = memberRows[0];
-    if (!member) return null;
+        const member = memberRows[0];
+        if (!member) return null;
 
-    const subRows = await this.db
-      .select({ plan: subscriptions.plan })
-      .from(subscriptions)
-      .where(eq(subscriptions.orgId, row.orgId))
-      .limit(1);
-
-    return {
-      userId: row.userId,
-      orgId: row.orgId,
-      branchId: user.branchId ?? null,
-      role: member.role,
-      permissions: [],
-      enabledModules: member.enabledModules ?? [],
-      plan: subRows[0]?.plan ?? null,
-      isPlatformAdmin: false,
-      isOrgOwner: member.isOwner,
-      sessionId: `agent-token:${row.id}`,
-    };
+        return {
+          userId: row.userId,
+          orgId: row.orgId,
+          role: member.role,
+          permissions: [],
+          isOrgOwner: member.isOwner,
+          sessionId: `agent-token:${row.id}`,
+          tokenScopes: null,
+        };
+      },
+      { orgId: row.orgId },
+    );
   }
 }

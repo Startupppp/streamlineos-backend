@@ -7,9 +7,10 @@ import {
   date,
   jsonb,
   index,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 import { hrEmployments, hrPeople } from "./core-people";
 import { hrTemplates } from "./template-engine";
 
@@ -28,6 +29,7 @@ export const hrProbationReviews = pgTable("hr_probation_reviews", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  unique("uniq_hr_probation_reviews_org_id").on(table.orgId, table.id),
   index("idx_hr_probation_reviews_org").on(table.orgId),
   index("idx_hr_probation_reviews_employment").on(table.employmentId),
   index("idx_hr_probation_reviews_status").on(table.orgId, table.status),

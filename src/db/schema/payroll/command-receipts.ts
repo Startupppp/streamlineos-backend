@@ -8,8 +8,9 @@ import {
   jsonb,
   index,
   uniqueIndex,
+  unique,
 } from "drizzle-orm/pg-core";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { payrollRuns } from "../hr/payroll-runs";
 
 export const payrollCommandStatusEnum = pgEnum("payroll_command_status", [
@@ -40,6 +41,7 @@ export const payrollCommandReceipts = pgTable(
     actorId: text("actor_id").references(() => users.id, { onDelete: "set null" }),
     startedAt: timestamp("started_at").defaultNow().notNull(),
     finishedAt: timestamp("finished_at"),
+    expiresAt: timestamp("expires_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -47,6 +49,7 @@ export const payrollCommandReceipts = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+    unique("uniq_payroll_cmd_receipts_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_payroll_command_receipts_org_cmd_key").on(
       table.orgId,
       table.command,
@@ -55,6 +58,7 @@ export const payrollCommandReceipts = pgTable(
     index("idx_payroll_command_receipts_org_run").on(table.orgId, table.runId),
     index("idx_payroll_command_receipts_org_status").on(table.orgId, table.status),
     index("idx_payroll_command_receipts_correlation").on(table.correlationId),
+    index("idx_payroll_command_receipts_expires").on(table.expiresAt),
   ],
 );
 

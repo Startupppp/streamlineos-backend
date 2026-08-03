@@ -70,4 +70,28 @@ export class RbacController {
   getAccessSnapshot(@CurrentUser() u: CurrentUserContext) {
     return this.access.getAccessSnapshot(u.orgId, u.userId, u);
   }
+
+  @Get("discovery/permissions")
+  getDiscoveryPermissions(@CurrentUser() u: CurrentUserContext) {
+    return this.rbac.getDiscoveryPermissions(u);
+  }
+
+  @Get("discovery/grantable")
+  getDiscoveryGrantable(@CurrentUser() u: CurrentUserContext) {
+    return this.rbac.getDiscoveryGrantable(u);
+  }
+
+  @Get("discovery/templates")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("settings:rbac:manage")
+  getDiscoveryTemplates(@CurrentUser() u: CurrentUserContext) {
+    return this.rbac.getDiscoveryTemplates(u);
+  }
+
+  @Get("discovery/members")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("settings:rbac:manage")
+  getDiscoveryMembers(@CurrentUser() u: CurrentUserContext) {
+    return this.rbac.getDiscoveryMembers(u.orgId);
+  }
 }

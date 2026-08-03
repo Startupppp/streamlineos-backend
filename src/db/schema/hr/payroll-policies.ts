@@ -1,7 +1,7 @@
-import { pgTable, text, serial, timestamp, jsonb, date, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, jsonb, date, integer, index, uniqueIndex, unique, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
-import { payrollPolicyStatusEnum, payFrequencyEnum, payrollCalendarEventTypeEnum } from "../enums";
-import { organizations, users } from "../auth";
+import { payrollPolicyStatusEnum, payFrequencyEnum, payrollCalendarEventTypeEnum } from "../common/enums";
+import { organizations, users } from "../common/auth";
 
 export const payrollPolicies = pgTable("payroll_policies", {
   id: serial("id").primaryKey(),
@@ -15,11 +15,12 @@ export const payrollPolicies = pgTable("payroll_policies", {
   payDay: integer("pay_day").default(28).notNull(),
   employeeCount: integer("employee_count"),
   startMonth: text("start_month").notNull(),
-  activeVersionId: integer("active_version_id"),
+  activeVersionId: integer("active_version_id").references((): AnyPgColumn => payrollPolicyVersions.id, { onDelete: "set null" }),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_payroll_policies_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_payroll_policies_org").on(table.orgId),
   index("idx_payroll_policies_org_status").on(table.orgId, table.status),
 ]);
@@ -39,6 +40,7 @@ export const payrollPolicyVersions = pgTable("payroll_policy_versions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_payroll_policy_versions_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_payroll_policy_versions_policy_version").on(table.policyId, table.version),
   index("idx_payroll_policy_versions_org_policy").on(table.orgId, table.policyId),
 ]);
@@ -52,6 +54,7 @@ export const payrollTemplateActivations = pgTable("payroll_template_activations"
   activatedBy: text("activated_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_payroll_template_activations_org_id").on(table.orgId, table.id),
   index("idx_payroll_template_activations_org").on(table.orgId, table.policyVersionId),
 ]);
 
@@ -67,6 +70,7 @@ export const payrollCalendarEvents = pgTable("payroll_calendar_events", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_payroll_calendar_events_org_id").on(table.orgId, table.id),
   index("idx_payroll_calendar_events_org_date").on(table.orgId, table.date),
 ]);
 
@@ -81,6 +85,7 @@ export const payrollAccountingMappings = pgTable("payroll_accounting_mappings", 
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_payroll_accounting_mappings_org_id").on(table.orgId, table.id),
   index("idx_payroll_accounting_mappings_org").on(table.orgId),
   uniqueIndex("uq_payroll_accounting_mappings_org_component").on(table.orgId, table.componentId).where(sql`${table.componentId} IS NOT NULL`),
   uniqueIndex("uq_payroll_accounting_mappings_org_category").on(table.orgId, table.category).where(sql`${table.componentId} IS NULL`),

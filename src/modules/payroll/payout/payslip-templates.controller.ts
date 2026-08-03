@@ -11,6 +11,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { ModuleGuard } from "../../../common/rbac/module.guard";
+import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
@@ -26,8 +28,9 @@ import {
   type PreviewTemplateInput,
 } from "./dto/payout.schemas";
 
+@RequireModule("payroll")
 @Controller("payroll/payslip-templates")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class PayslipTemplatesController {
   constructor(private readonly templates: PayslipTemplatesService) {}
 
@@ -42,7 +45,6 @@ export class PayslipTemplatesController {
   @RequirePermission("payroll:payslips:manage")
   preview(
     @Body(new ZodValidationPipe(previewTemplateSchema)) body: PreviewTemplateInput,
-    @CurrentUser() _u: CurrentUserContext,
   ) {
     return { html: this.templates.preview(body) };
   }

@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from "@nestjs/common";
 import { CurrentUser } from "../common/auth/current-user.decorator";
+import { AllowWithoutMfa } from "../common/auth/allow-without-mfa.decorator";
 import type { CurrentUserContext } from "../common/auth/backend-claims";
 import { ZodValidationPipe } from "../common/pipes/zod-validation.pipe";
 import { AccessService } from "../modules/access/access.service";
@@ -15,11 +16,13 @@ export class MeController {
   ) {}
 
   @Get()
+  @AllowWithoutMfa()
   me(@CurrentUser() user: CurrentUserContext): CurrentUserContext {
     return user;
   }
 
   @Get("access")
+  @AllowWithoutMfa()
   getAccess(@CurrentUser() u: CurrentUserContext): Promise<AccessSnapshot> {
     return this.access.getAccessSnapshot(u.orgId, u.userId, u);
   }

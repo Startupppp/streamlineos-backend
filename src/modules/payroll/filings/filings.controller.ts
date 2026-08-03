@@ -11,34 +11,25 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import type { Response } from "express";
-import { z } from "zod";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { ModuleGuard } from "../../../common/rbac/module.guard";
+import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { PayrollFilingsService } from "./filings.service";
+import {
+  prepareFilingSchema,
+  type PrepareFilingInput,
+  attachAcknowledgementSchema,
+  type AttachAcknowledgementInput,
+} from "./dto/filings.schemas";
 
-const prepareSchema = z.object({
-  filingType: z.enum(["PF_ECR", "ESI", "PT", "TDS_24Q", "FORM16", "LWF"]),
-  periodId: z.number().int().positive().optional(),
-  entityId: z.number().int().positive().optional(),
-  fiscalYear: z.string().optional(),
-  payload: z.record(z.string(), z.unknown()).optional(),
-  ruleVersion: z.string().optional(),
-  /** Prefer month of REGULAR run when runId omitted. */
-  month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
-  runId: z.number().int().positive().optional(),
-});
-
-const ackSchema = z.object({
-  challanRef: z.string().max(120).optional(),
-  acknowledgementRef: z.string().max(120).optional(),
-});
-
+@RequireModule("payroll")
 @Controller("payroll/filings")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class PayrollFilingsController {
   constructor(private readonly service: PayrollFilingsService) {}
 
@@ -119,7 +110,7 @@ export class PayrollFilingsController {
   @RequirePermission("payroll:tax:manage")
   prepare(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(prepareSchema)) body: z.infer<typeof prepareSchema>,
+    @Body(new ZodValidationPipe(prepareFilingSchema)) body: PrepareFilingInput,
   ) {
     return this.service.prepareExport(u.orgId, u.userId, body);
   }
@@ -129,7 +120,7 @@ export class PayrollFilingsController {
   ack(
     @CurrentUser() u: CurrentUserContext,
     @Param("filingId", ParseIntPipe) filingId: number,
-    @Body(new ZodValidationPipe(ackSchema)) body: z.infer<typeof ackSchema>,
+    @Body(new ZodValidationPipe(attachAcknowledgementSchema)) body: AttachAcknowledgementInput,
   ) {
     return this.service.attachAcknowledgement(u.orgId, filingId, body);
   }

@@ -50,10 +50,7 @@ export interface FilingExportArtifact {
 
 const HONESTY = "Export prepared — external filing required";
 
-const PF_CODES = ["EPF_EMPLOYEE", "EPF_EMPLOYER", "PF_EMP", "PF_ER", "PF_EE"] as const;
-const ESI_CODES = ["ESI_EMPLOYEE", "ESI_EMPLOYER", "ESI_EMP", "ESI_ER"] as const;
 const PT_CODES = ["PROFESSIONAL_TAX", "PT"] as const;
-const LWF_CODES = ["LWF_EMPLOYEE", "LWF_EMPLOYER", "LWF"] as const;
 const TDS_CODES = ["TDS"] as const;
 
 function amt(lines: Record<string, string>, codes: readonly string[]): number {
@@ -416,12 +413,3 @@ export function buildFilingExport(
     }
   }
 }
-
-/** Codes that participate in any statutory export (for line aggregation). */
-export const STATUTORY_EXPORT_LINE_CODES = [
-  ...PF_CODES,
-  ...ESI_CODES,
-  ...PT_CODES,
-  ...LWF_CODES,
-  ...TDS_CODES,
-] as const;

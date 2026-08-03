@@ -8,13 +8,16 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { AblyService } from "./ably.service";
 
 @Controller("chat")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class RealtimeController {
   constructor(private readonly ably: AblyService) {}
 
+  @RequirePermission("chat:messages:read")
   @Get("ably-token")
   async ablyToken(@CurrentUser() u: CurrentUserContext) {
     if (!this.ably.configured) {

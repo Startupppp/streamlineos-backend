@@ -1,0 +1,157 @@
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from "@nestjs/common";
+import type { Request } from "express";
+import { JwtAuthGuard } from "../../../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../../../access/permission.guard";
+import { RequirePermission } from "../../../access/require-permission.decorator";
+import { RequireModule } from "../../../../common/rbac/require-module.decorator";
+import { CurrentUser } from "../../../../common/auth/current-user.decorator";
+import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
+import { PositionsService } from "./positions.service";
+import {
+  createPositionSchema,
+  updatePositionSchema,
+  listPositionsSchema,
+  assignPositionSchema,
+  createReorgScenarioSchema,
+  updateReorgScenarioSchema,
+  listScenariosSchema,
+  type CreatePositionInput,
+  type UpdatePositionInput,
+  type ListPositionsInput,
+  type AssignPositionInput,
+  type CreateReorgScenarioInput,
+  type UpdateReorgScenarioInput,
+  type ListScenariosInput,
+} from "./positions.dto";
+
+@RequireModule("hr")
+@Controller("hr/governance")
+@UseGuards(JwtAuthGuard, PermissionGuard)
+export class PositionsController {
+  constructor(private readonly service: PositionsService) {}
+
+  @Get("positions")
+  @RequirePermission("hr:positions:view")
+  async list(
+    @CurrentUser() user: CurrentUserContext,
+    @Query(new ZodValidationPipe(listPositionsSchema)) query: ListPositionsInput,
+  ) {
+    return this.service.list(user.orgId, query);
+  }
+
+  @Get("positions/vacant")
+  @RequirePermission("hr:positions:view")
+  async listVacant(
+    @CurrentUser() user: CurrentUserContext,
+    @Query(new ZodValidationPipe(listPositionsSchema)) query: ListPositionsInput,
+  ) {
+    return this.service.listVacant(user.orgId, query);
+  }
+
+  @Post("positions")
+  @RequirePermission("hr:positions:manage")
+  async create(
+    @CurrentUser() user: CurrentUserContext,
+    @Body(new ZodValidationPipe(createPositionSchema)) body: CreatePositionInput,
+    @Req() req: Request,
+  ) {
+    return this.service.create(user.orgId, user.userId, body, req.ip);
+  }
+
+  @Patch("positions/:positionId")
+  @RequirePermission("hr:positions:manage")
+  async update(
+    @CurrentUser() user: CurrentUserContext,
+    @Param("positionId", ParseIntPipe) positionId: number,
+    @Body(new ZodValidationPipe(updatePositionSchema)) body: UpdatePositionInput,
+    @Req() req: Request,
+  ) {
+    return this.service.update(user.orgId, positionId, user.userId, body, req.ip);
+  }
+
+  @Delete("positions/:positionId")
+  @RequirePermission("hr:positions:manage")
+  @HttpCode(204)
+  async softDelete(
+    @CurrentUser() user: CurrentUserContext,
+    @Param("positionId", ParseIntPipe) positionId: number,
+    @Req() req: Request,
+  ) {
+    await this.service.softDelete(user.orgId, positionId, user.userId, req.ip);
+  }
+
+  @Post("positions/:positionId/assign")
+  @RequirePermission("hr:positions:manage")
+  async assignEmployee(
+    @CurrentUser() user: CurrentUserContext,
+    @Param("positionId", ParseIntPipe) positionId: number,
+    @Body(new ZodValidationPipe(assignPositionSchema)) body: AssignPositionInput,
+    @Req() req: Request,
+  ) {
+    return this.service.assignEmployee(user.orgId, positionId, user.userId, body, req.ip);
+  }
+
+  @Get("scenarios")
+  @RequirePermission("hr:positions:view")
+  async listScenarios(
+    @CurrentUser() user: CurrentUserContext,
+    @Query(new ZodValidationPipe(listScenariosSchema)) query: ListScenariosInput,
+  ) {
+    return this.service.listScenarios(user.orgId, query);
+  }
+
+  @Post("scenarios")
+  @RequirePermission("hr:positions:manage")
+  async createScenario(
+    @CurrentUser() user: CurrentUserContext,
+    @Body(new ZodValidationPipe(createReorgScenarioSchema)) body: CreateReorgScenarioInput,
+    @Req() req: Request,
+  ) {
+    return this.service.createScenario(user.orgId, user.userId, body, req.ip);
+  }
+
+  @Patch("scenarios/:scenarioId")
+  @RequirePermission("hr:positions:manage")
+  async updateScenario(
+    @CurrentUser() user: CurrentUserContext,
+    @Param("scenarioId", ParseIntPipe) scenarioId: number,
+    @Body(new ZodValidationPipe(updateReorgScenarioSchema)) body: UpdateReorgScenarioInput,
+    @Req() req: Request,
+  ) {
+    return this.service.updateScenario(user.orgId, scenarioId, user.userId, body, req.ip);
+  }
+
+  @Delete("scenarios/:scenarioId")
+  @RequirePermission("hr:positions:manage")
+  @HttpCode(204)
+  async deleteScenario(
+    @CurrentUser() user: CurrentUserContext,
+    @Param("scenarioId", ParseIntPipe) scenarioId: number,
+    @Req() req: Request,
+  ) {
+    await this.service.deleteScenario(user.orgId, scenarioId, user.userId, req.ip);
+  }
+
+  @Get("scenarios/:scenarioId/simulate")
+  @RequirePermission("hr:positions:view")
+  async simulateScenario(
+    @CurrentUser() user: CurrentUserContext,
+    @Param("scenarioId", ParseIntPipe) scenarioId: number,
+  ) {
+    return this.service.simulateScenario(user.orgId, scenarioId);
+  }
+}

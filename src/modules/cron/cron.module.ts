@@ -1,29 +1,33 @@
 import { Module } from "@nestjs/common";
-import { BillingModule } from "../billing/billing.module";
-import { AiModule } from "../ai/ai.module";
-import { CrmAutomationStudioModule } from "../crm-automation-studio/crm-automation-studio.module";
+import { BillingModule } from "../billing/core/billing.module";
+import { AiModule } from "../ai/core/ai.module";
+import { CrmAutomationStudioModule } from "../crm/automation-studio/crm-automation-studio.module";
 import { AutomationModule } from "../automation/automation.module";
 import { ChatModule } from "../chat/chat.module";
 import { EmailModule } from "../email/email.module";
 import { KbModule } from "../kb/kb.module";
-import { SupportModule } from "../support/support.module";
+import { SupportModule } from "../support/core/support.module";
 import { NotificationsModule } from "../notifications/notifications.module";
-import { HrAutomationsModule } from "../hr-automations/hr-automations.module";
-import { HrTimeModule } from "../hr-time/hr-time.module";
-import { HrWorkflowsModule } from "../hr-workflows/hr-workflows.module";
-import { HrCoreModule } from "../hr-core/hr-core.module";
-import { HrLifecycleModule } from "../hr-lifecycle/hr-lifecycle.module";
-import { HrGlobalModule } from "../hr-global/hr-global.module";
-import { AccountingGlModule } from "../accounting-gl/accounting-gl.module";
+import { HrAutomationsModule } from "../hr/automations/hr-automations.module";
+import { HrTimeModule } from "../hr/time/hr-time.module";
+import { HrWorkflowsModule } from "../hr/workflows/hr-workflows.module";
+import { HrCoreModule } from "../hr/core/hr-core.module";
+import { HrLifecycleModule } from "../hr/lifecycle/hr-lifecycle.module";
+import { HrGlobalModule } from "../hr/global/hr-global.module";
+import { AccountingGlModule } from "../accounting/gl/accounting-gl.module";
 import { InvoicesModule } from "../invoices/invoices.module";
-import { FinanceArModule } from "../finance-ar/finance-ar.module";
-import { FinanceApModule } from "../finance-ap/finance-ap.module";
-import { FinanceTaxModule } from "../finance-tax/finance-tax.module";
-import { FinanceAssetsModule } from "../finance-assets/finance-assets.module";
-import { AiJobsModule } from "../ai-jobs/ai-jobs.module";
-import { SupportKbGapModule } from "../support-kb-gap";
-import { TimesheetsCoreModule } from "../timesheets-core/timesheets-core.module";
-import { CronController } from "./cron.controller";
+import { FinanceArModule } from "../finance/ar/finance-ar.module";
+import { FinanceApModule } from "../finance/ap/finance-ap.module";
+import { FinanceTaxModule } from "../finance/tax/finance-tax.module";
+import { FinanceAssetsModule } from "../finance/assets/finance-assets.module";
+import { AiJobsModule } from "../ai/jobs/ai-jobs.module";
+import { SupportKbGapModule } from "../support/kb-gap";
+import { TimesheetsCoreModule } from "../timesheets/core/timesheets-core.module";
+import { CronBillingController } from "./cron-billing.controller";
+import { CronHrController } from "./cron-hr.controller";
+import { CronPlatformController } from "./cron-platform.controller";
+import { CronSupportController } from "./cron-support.controller";
+import { CronBuildController } from "./cron-build.controller";
 import { CronNotificationDeliveryService } from "./cron-notification-delivery.service";
 import { CronAttendanceService } from "./cron-attendance.service";
 import { CronBillingService } from "./cron-billing.service";
@@ -40,10 +44,45 @@ import { CronEmailOutboxService } from "./cron-email-outbox.service";
 import { CronSupportService } from "./cron-support.service";
 import { CronFinanceService } from "./cron-finance.service";
 import { CronCrmTasksService } from "./cron-crm-tasks.service";
+import { CronIdempotencyService } from "./cron-idempotency.service";
+import { CronBuildRetentionService } from "./cron-build-retention.service";
+import { CronOrganizationService } from "./cron-organization.service";
+import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
 
 @Module({
-  imports: [AutomationModule, AiModule, AiJobsModule, SupportKbGapModule, EmailModule, ChatModule, KbModule, SupportModule, NotificationsModule, HrAutomationsModule, HrTimeModule, HrWorkflowsModule, HrCoreModule, HrLifecycleModule, HrGlobalModule, AccountingGlModule, InvoicesModule, FinanceArModule, FinanceApModule, FinanceTaxModule, FinanceAssetsModule, CrmAutomationStudioModule, BillingModule, TimesheetsCoreModule],
-  controllers: [CronController],
+  imports: [
+    AutomationModule,
+    AiModule,
+    AiJobsModule,
+    SupportKbGapModule,
+    EmailModule,
+    ChatModule,
+    KbModule,
+    SupportModule,
+    NotificationsModule,
+    HrAutomationsModule,
+    HrTimeModule,
+    HrWorkflowsModule,
+    HrCoreModule,
+    HrLifecycleModule,
+    HrGlobalModule,
+    AccountingGlModule,
+    InvoicesModule,
+    FinanceArModule,
+    FinanceApModule,
+    FinanceTaxModule,
+    FinanceAssetsModule,
+    CrmAutomationStudioModule,
+    BillingModule,
+    TimesheetsCoreModule,
+  ],
+  controllers: [
+    CronBillingController,
+    CronHrController,
+    CronPlatformController,
+    CronSupportController,
+    CronBuildController,
+  ],
   providers: [
     CronAttendanceService,
     CronBillingService,
@@ -61,6 +100,10 @@ import { CronCrmTasksService } from "./cron-crm-tasks.service";
     CronNotificationDeliveryService,
     CronFinanceService,
     CronCrmTasksService,
+    CronIdempotencyService,
+    CronBuildRetentionService,
+    CronOrganizationService,
+    CronOrgPurgeWorkerService,
   ],
 })
 export class CronModule {}

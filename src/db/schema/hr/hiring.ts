@@ -1,12 +1,11 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, unique, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import {
   jobPostingStatusEnum, candidateStatusEnum, interviewTypeEnum,
   interviewResultEnum, applicationStatusEnum,
-} from "../enums";
-import { organizations, users } from "../auth";
-import { departments } from "./employees";
-import { orgDepartments } from "../organization";
+} from "../common/enums";
+import { organizations, users } from "../common/auth";
+import { orgUnits } from "../common/organization";
 
 export interface ScreeningQuestion {
   id: string;
@@ -27,6 +26,7 @@ export const hiringFlows = pgTable("hiring_flows", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_hiring_flows_org_id").on(table.orgId, table.id),
   index("idx_hiring_flows_org").on(table.orgId),
 ]);
 
@@ -46,6 +46,7 @@ export const hiringFlowRounds = pgTable("hiring_flow_rounds", {
   orderIndex: integer("order_index").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_hiring_flow_rounds_org_id").on(table.orgId, table.id),
   index("idx_hiring_flow_rounds_flow").on(table.flowId),
 ]);
 
@@ -53,8 +54,7 @@ export const jobPostings = pgTable("job_postings", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   title: text("title").notNull(),
-  departmentId: integer("department_id").references(() => departments.id),
-  orgDepartmentId: text("org_department_id").references(() => orgDepartments.id, {
+  orgDepartmentId: text("org_department_id").references(() => orgUnits.id, {
     onDelete: "set null",
   }),
   hiringFlowId: integer("hiring_flow_id").references(() => hiringFlows.id),
@@ -77,6 +77,7 @@ export const jobPostings = pgTable("job_postings", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_job_postings_org_id").on(table.orgId, table.id),
   index("idx_job_postings_org").on(table.orgId),
   index("idx_job_postings_status").on(table.status),
   index("idx_job_postings_org_status").on(table.orgId, table.status),
@@ -95,6 +96,7 @@ export const candidateSources = pgTable("candidate_sources", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_candidate_sources_org_id").on(table.orgId, table.id),
   index("idx_candidate_sources_org").on(table.orgId),
   uniqueIndex("uq_candidate_sources_org_platform").on(table.orgId, table.platform),
 ]);
@@ -135,6 +137,7 @@ export const candidates = pgTable("candidates", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_candidates_org_id").on(table.orgId, table.id),
   index("idx_candidates_org").on(table.orgId),
   index("idx_candidates_status").on(table.status),
   index("idx_candidates_email").on(table.email),
@@ -155,6 +158,7 @@ export const candidateApplications = pgTable("candidate_applications", {
   screeningAnswers: jsonb("screening_answers").$type<Record<string, string>>(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_candidate_applications_org_id").on(table.orgId, table.id),
   index("idx_applications_candidate").on(table.candidateId),
   index("idx_applications_job").on(table.jobPostingId),
 ]);
@@ -182,6 +186,7 @@ export const interviews = pgTable("interviews", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_interviews_org_id").on(table.orgId, table.id),
   index("idx_interviews_candidate").on(table.candidateId),
   index("idx_interviews_interviewer").on(table.interviewerId),
   index("idx_interviews_scheduled").on(table.scheduledAt),
@@ -198,6 +203,7 @@ export const scorecardTemplates = pgTable("scorecard_templates", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_scorecard_templates_org_id").on(table.orgId, table.id),
   index("idx_scorecard_templates_org").on(table.orgId),
 ]);
 
@@ -241,6 +247,7 @@ export const interviewBookingLinks = pgTable("interview_booking_links", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_interview_booking_links_org_id").on(table.orgId, table.id),
   index("idx_booking_links_token").on(table.token),
   index("idx_booking_links_candidate").on(table.candidateId),
 ]);
@@ -262,6 +269,7 @@ export const candidateReferrals = pgTable("candidate_referrals", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_candidate_referrals_org_id").on(table.orgId, table.id),
   index("idx_referrals_candidate").on(table.candidateId),
   index("idx_referrals_referred_by").on(table.referredBy),
   index("idx_referrals_org").on(table.orgId),
@@ -287,6 +295,7 @@ export const calibrationSessions = pgTable("calibration_sessions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_calibration_sessions_org_id").on(table.orgId, table.id),
   index("idx_calibration_sessions_candidate").on(table.candidateId),
   index("idx_calibration_sessions_org").on(table.orgId),
 ]);
@@ -298,6 +307,7 @@ export const interviewPanelMembers = pgTable("interview_panel_members", {
   userId: text("user_id").notNull().references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_interview_panel_members_org_id").on(table.orgId, table.id),
   uniqueIndex("uq_interview_panel_members_interview_user").on(table.interviewId, table.userId),
   index("idx_interview_panel_members_org_user").on(table.orgId, table.userId),
 ]);
@@ -318,6 +328,7 @@ export const calibrationParticipants = pgTable("calibration_participants", {
   userId: text("user_id").notNull().references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_calibration_participants_org_id").on(table.orgId, table.id),
   uniqueIndex("uq_calibration_participants_session_user").on(table.sessionId, table.userId),
   index("idx_calibration_participants_org_user").on(table.orgId, table.userId),
 ]);
@@ -337,6 +348,7 @@ export const candidateDocumentsVault = pgTable("candidate_documents_vault", {
   uploadedBy: text("uploaded_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_candidate_documents_vault_org_id").on(table.orgId, table.id),
   index("idx_vault_candidate").on(table.candidateId),
   index("idx_vault_org").on(table.orgId),
 ]);
@@ -357,6 +369,7 @@ export const interviewSlas = pgTable("interview_slas", {
   warningHours: integer("warning_hours").notNull().default(36),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_interview_slas_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_interview_sla_org_stage").on(table.orgId, table.stage),
 ]);
 
@@ -370,6 +383,7 @@ export const candidateSlaTracking = pgTable("candidate_sla_tracking", {
   status: text("status").notNull().default("ON_TRACK"),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_candidate_sla_tracking_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_sla_tracking_candidate_stage").on(table.candidateId, table.stage),
   index("idx_sla_tracking_org_status").on(table.orgId, table.status),
   index("idx_sla_tracking_candidate").on(table.candidateId),
@@ -390,6 +404,7 @@ export const interviewQuestions = pgTable("interview_questions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_interview_questions_org_id").on(table.orgId, table.id),
   index("idx_interview_questions_org").on(table.orgId),
   index("idx_interview_questions_category").on(table.orgId, table.category),
 ]);
@@ -412,6 +427,7 @@ export const candidateReferenceChecks = pgTable("candidate_reference_checks", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_candidate_reference_checks_org_id").on(table.orgId, table.id),
   index("idx_reference_checks_candidate").on(table.candidateId),
   index("idx_reference_checks_org").on(table.orgId),
 ]);
@@ -440,6 +456,7 @@ export const candidateOffers = pgTable("candidate_offers", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_candidate_offers_org_id").on(table.orgId, table.id),
   index("idx_candidate_offers_candidate").on(table.candidateId),
   index("idx_candidate_offers_org").on(table.orgId),
   index("idx_candidate_offers_org_status").on(table.orgId, table.offerStatus),
@@ -459,6 +476,7 @@ export const offerVersions = pgTable("offer_versions", {
   changedBy: text("changed_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_offer_versions_org_id").on(table.orgId, table.id),
   index("idx_offer_versions_offer").on(table.offerId),
 ]);
 
@@ -475,6 +493,7 @@ export const offerNegotiations = pgTable("offer_negotiations", {
   createdBy: text("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_offer_negotiations_org_id").on(table.orgId, table.id),
   index("idx_offer_negotiations_offer").on(table.offerId),
 ]);
 
@@ -502,8 +521,7 @@ export const hiringFlowRoundsRelations = relations(hiringFlowRounds, ({ one }) =
 
 export const jobPostingsRelations = relations(jobPostings, ({ one, many }) => ({
   organization: one(organizations, { fields: [jobPostings.orgId], references: [organizations.id] }),
-  department: one(departments, { fields: [jobPostings.departmentId], references: [departments.id] }),
-  orgDepartment: one(orgDepartments, { fields: [jobPostings.orgDepartmentId], references: [orgDepartments.id] }),
+  orgDepartment: one(orgUnits, { fields: [jobPostings.orgDepartmentId], references: [orgUnits.id] }),
   hiringFlow: one(hiringFlows, { fields: [jobPostings.hiringFlowId], references: [hiringFlows.id] }),
   postedByUser: one(users, { fields: [jobPostings.postedBy], references: [users.id] }),
   applications: many(candidateApplications),
@@ -618,6 +636,7 @@ export const pipelineAutomations = pgTable("pipeline_automations", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_pipeline_automations_org_id").on(table.orgId, table.id),
   index("idx_pipeline_automations_org").on(table.orgId),
   index("idx_pipeline_automations_trigger").on(table.trigger),
 ]);
@@ -637,6 +656,7 @@ export const offerLetterTemplates = pgTable("offer_letter_templates", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_offer_letter_templates_org_id").on(table.orgId, table.id),
   index("idx_offer_letter_templates_org").on(table.orgId),
 ]);
 
@@ -660,6 +680,7 @@ export const emailSequences = pgTable("email_sequences", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_email_sequences_org_id").on(table.orgId, table.id),
   index("idx_email_sequences_org").on(table.orgId),
 ]);
 
@@ -730,6 +751,7 @@ export const recruitmentVendors = pgTable("recruitment_vendors", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_recruitment_vendors_org_id").on(table.orgId, table.id),
   index("idx_recruitment_vendors_org").on(table.orgId),
   uniqueIndex("idx_recruitment_vendors_portal_token").on(table.portalToken),
 ]);
@@ -772,8 +794,7 @@ export type HeadcountRequestStatus = "DRAFT" | "SUBMITTED" | "APPROVED" | "REJEC
 export const headcountRequests = pgTable("headcount_requests", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  departmentId: integer("department_id").references((): AnyPgColumn => departments.id),
-  orgDepartmentId: text("org_department_id").references(() => orgDepartments.id, {
+  orgDepartmentId: text("org_department_id").references(() => orgUnits.id, {
     onDelete: "set null",
   }),
   requestedBy: text("requested_by").references(() => users.id).notNull(),
@@ -789,9 +810,9 @@ export const headcountRequests = pgTable("headcount_requests", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_headcount_requests_org_id").on(table.orgId, table.id),
   index("idx_headcount_requests_org").on(table.orgId),
   index("idx_headcount_requests_status").on(table.status),
-  index("idx_headcount_requests_dept").on(table.departmentId),
   index("idx_headcount_requests_org_dept").on(table.orgDepartmentId),
 ]);
 
@@ -799,8 +820,7 @@ export const headcountRequestsRelations = relations(headcountRequests, ({ one })
   organization: one(organizations, { fields: [headcountRequests.orgId], references: [organizations.id] }),
   requestedByUser: one(users, { fields: [headcountRequests.requestedBy], references: [users.id] }),
   approvedByUser: one(users, { fields: [headcountRequests.approvedBy], references: [users.id] }),
-  department: one(departments, { fields: [headcountRequests.departmentId], references: [departments.id] }),
-  orgDepartment: one(orgDepartments, { fields: [headcountRequests.orgDepartmentId], references: [orgDepartments.id] }),
+  orgDepartment: one(orgUnits, { fields: [headcountRequests.orgDepartmentId], references: [orgUnits.id] }),
   linkedJob: one(jobPostings, { fields: [headcountRequests.linkedJobPostingId], references: [jobPostings.id] }),
 }));
 
@@ -821,6 +841,7 @@ export const candidateMessages = pgTable("candidate_messages", {
   externalId: text("external_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_candidate_messages_org_id").on(table.orgId, table.id),
   index("idx_candidate_messages_org").on(table.orgId),
   index("idx_candidate_messages_candidate").on(table.candidateId),
   index("idx_candidate_messages_sent").on(table.sentAt),
@@ -856,6 +877,7 @@ export const recruiterActivityLog = pgTable("recruiter_activity_log", {
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_recruiter_activity_log_org_id").on(table.orgId, table.id),
   index("idx_recruiter_activity_org").on(table.orgId),
   index("idx_recruiter_activity_recruiter").on(table.recruiterId),
   index("idx_recruiter_activity_created").on(table.createdAt),
@@ -881,7 +903,7 @@ export interface ReportConfig {
     status?: string;
     dateFrom?: string;
     dateTo?: string;
-    departmentId?: number;
+    departmentId?: string;
   };
 }
 
@@ -896,6 +918,7 @@ export const scheduledReports = pgTable("scheduled_reports", {
   createdBy: text("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_scheduled_reports_org_id").on(table.orgId, table.id),
   index("idx_scheduled_reports_org").on(table.orgId),
 ]);
 

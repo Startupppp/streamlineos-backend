@@ -67,7 +67,7 @@ export class LockingService {
       await tx
         .update(payrollRuns)
         .set({ status: "LOCKED", lockedAt: now, lockedBy: userId })
-        .where(eq(payrollRuns.id, runId));
+        .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
 
       await tx.insert(payrollRunEvents).values({
         orgId,
@@ -78,6 +78,15 @@ export class LockingService {
 
       await this.generate.postPayrollLock(orgId, runId, tx);
       await this.writeTdsYtdLedger(tx, orgId, runId, run.month);
+      await this.payrollPosting.postFinalized(
+        { userId, orgId, role: "system", permissions: [], isOrgOwner: true, sessionId: "system", tokenScopes: null },
+        runId,
+        run.month,
+        run.grossTotal ?? "0",
+        run.deductionTotal ?? "0",
+        run.netTotal ?? "0",
+        run.employerCostTotal ?? "0",
+      );
     });
 
     this.audit.log({
@@ -88,16 +97,6 @@ export class LockingService {
       targetType: "payroll_run",
       metadata: { month: run.month },
     });
-
-    void this.payrollPosting.postFinalized(
-      { userId, orgId, branchId: null, role: "system", permissions: [], enabledModules: [], plan: null, isPlatformAdmin: false, isOrgOwner: true, sessionId: "system" },
-      runId,
-      run.month,
-      run.grossTotal ?? "0",
-      run.deductionTotal ?? "0",
-      run.netTotal ?? "0",
-      run.employerCostTotal ?? "0",
-    );
 
     return { success: true, lockedAt: now };
   }
@@ -184,7 +183,7 @@ export class LockingService {
       await tx
         .update(payrollRuns)
         .set({ status: "REOPENED", reopenedAt: now, reopenedBy: userId, reopenReason: reason })
-        .where(eq(payrollRuns.id, runId));
+        .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
 
       await tx.insert(payrollRunEvents).values({
         orgId,
@@ -226,7 +225,7 @@ export class LockingService {
       await tx
         .update(payrollRuns)
         .set({ status: "CLOSED", closedAt: now, closedBy: userId })
-        .where(eq(payrollRuns.id, runId));
+        .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
 
       await tx.insert(payrollRunEvents).values({
         orgId,

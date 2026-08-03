@@ -3,12 +3,12 @@ import { and, eq } from "drizzle-orm";
 import { kbArticles } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
+import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { KbAccessService } from "./kb-access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import type { AiUsageMeta } from "../ai/gateway/ai-gateway.types";
-import { throwOnAiFailure } from "../ai/services/gateway-result.util";
+import type { AiUsageMeta } from "../ai/core/gateway/ai-gateway.types";
+import { throwOnAiFailure } from "../ai/core/services/gateway-result.util";
 
 const MAX_ARTICLE_TEXT = 4000;
 
@@ -24,7 +24,7 @@ export class KbArticleAiService {
   private async assertArticle(user: CurrentUserContext, articleId: number) {
     const row = await this.db.query.kbArticles.findFirst({
       where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, user.orgId)),
-      columns: { id: true, orgId: true, spaceId: true, title: true, content: true },
+      columns: { id: true, orgId: true, spaceId: true, title: true, contentText: true },
     });
     if (!row) throw new NotFoundException("Article not found");
     await this.access.assertCanViewArticle(user, row);
@@ -33,7 +33,7 @@ export class KbArticleAiService {
 
   async summarize(user: CurrentUserContext, articleId: number): Promise<{ text: string; aiUsage?: AiUsageMeta }> {
     const article = await this.assertArticle(user, articleId);
-    const content = (article.content ?? "").slice(0, MAX_ARTICLE_TEXT);
+    const content = (article.contentText ?? "").slice(0, MAX_ARTICLE_TEXT);
 
     const result = await this.gateway.invokeTextWithUsage({
       actor: { orgId: user.orgId, userId: user.userId },
@@ -54,7 +54,7 @@ export class KbArticleAiService {
 
   async ask(user: CurrentUserContext, articleId: number, question: string): Promise<{ text: string; aiUsage?: AiUsageMeta }> {
     const article = await this.assertArticle(user, articleId);
-    const content = (article.content ?? "").slice(0, MAX_ARTICLE_TEXT);
+    const content = (article.contentText ?? "").slice(0, MAX_ARTICLE_TEXT);
 
     const result = await this.gateway.invokeTextWithUsage({
       actor: { orgId: user.orgId, userId: user.userId },
@@ -75,7 +75,7 @@ export class KbArticleAiService {
 
   async improve(user: CurrentUserContext, articleId: number): Promise<{ text: string; aiUsage?: AiUsageMeta }> {
     const article = await this.assertArticle(user, articleId);
-    const content = (article.content ?? "").slice(0, MAX_ARTICLE_TEXT);
+    const content = (article.contentText ?? "").slice(0, MAX_ARTICLE_TEXT);
 
     const result = await this.gateway.invokeTextWithUsage({
       actor: { orgId: user.orgId, userId: user.userId },
@@ -96,7 +96,7 @@ export class KbArticleAiService {
 
   async suggestRelated(user: CurrentUserContext, articleId: number): Promise<{ text: string; aiUsage?: AiUsageMeta }> {
     const article = await this.assertArticle(user, articleId);
-    const content = (article.content ?? "").slice(0, MAX_ARTICLE_TEXT);
+    const content = (article.contentText ?? "").slice(0, MAX_ARTICLE_TEXT);
 
     const result = await this.gateway.invokeTextWithUsage({
       actor: { orgId: user.orgId, userId: user.userId },

@@ -1,21 +1,27 @@
-import { pgTable, text, serial, timestamp, decimal, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, decimal, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
   invVendorReturnReasonEnum, invCustomerReturnDispositionEnum,
   invPickListStatusEnum, invCycleCountStatusEnum,
-} from "../enums";
-import { organizations, users } from "../auth";
-import { invProductVariants } from "./core";
+  invReturnStatusEnum,
+} from "../common/enums";
+import { organizations, users } from "../common/auth";
+import { clients } from "../crm/contacts";
+import { invProductVariants, invCategories } from "./core";
 import { invLocations, invWarehouses } from "./warehouses";
+import { invVendors, invPurchaseOrders, invGrns } from "./purchase-orders";
+import { invSalesOrders, invSoLines } from "./sales-orders";
+import { invShipments } from "./shipping";
+import { invLots, invSerialNumbers } from "./traceability";
 
 export const invVendorReturns = pgTable("inv_vendor_returns", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   returnNumber: text("return_number").notNull(),
-  vendorId: integer("vendor_id").notNull(),
-  poId: integer("po_id"),
-  grnId: integer("grn_id"),
-  status: text("status").default("DRAFT").notNull(),
+  vendorId: integer("vendor_id").references(() => invVendors.id, { onDelete: "restrict" }).notNull(),
+  poId: integer("po_id").references(() => invPurchaseOrders.id, { onDelete: "set null" }),
+  grnId: integer("grn_id").references(() => invGrns.id, { onDelete: "set null" }),
+  status: invReturnStatusEnum("status").default("DRAFT").notNull(),
   notes: text("notes"),
   createdBy: text("created_by").references(() => users.id).notNull(),
   approvedBy: text("approved_by").references(() => users.id),
@@ -25,6 +31,7 @@ export const invVendorReturns = pgTable("inv_vendor_returns", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_vret_org_number").on(table.orgId, table.returnNumber),
+  unique("uniq_inv_vendor_returns_org_id").on(table.orgId, table.id),
   index("idx_inv_vret_org_status").on(table.orgId, table.status),
 ]);
 
@@ -32,23 +39,24 @@ export const invVendorReturnLines = pgTable("inv_vendor_return_lines", {
   id: serial("id").primaryKey(),
   returnId: integer("return_id").references(() => invVendorReturns.id, { onDelete: "cascade" }).notNull(),
   productVariantId: integer("product_variant_id").references(() => invProductVariants.id).notNull(),
-  lotId: integer("lot_id"),
-  serialId: integer("serial_id"),
+  lotId: integer("lot_id").references(() => invLots.id, { onDelete: "set null" }),
+  serialId: integer("serial_id").references(() => invSerialNumbers.id, { onDelete: "set null" }),
   quantity: decimal("quantity", { precision: 18, scale: 4 }).notNull(),
   reason: invVendorReturnReasonEnum("reason").notNull(),
   unitCost: decimal("unit_cost", { precision: 18, scale: 4 }),
 }, (table) => [
   index("idx_inv_vret_lines_return").on(table.returnId),
+  index("idx_inv_vendor_return_lines_variant").on(table.productVariantId),
 ]);
 
 export const invCustomerReturns = pgTable("inv_customer_returns", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   returnNumber: text("return_number").notNull(),
-  soId: integer("so_id"),
-  shipmentId: integer("shipment_id"),
-  clientId: integer("client_id"),
-  status: text("status").default("DRAFT").notNull(),
+  soId: integer("so_id").references(() => invSalesOrders.id, { onDelete: "set null" }),
+  shipmentId: integer("shipment_id").references(() => invShipments.id, { onDelete: "set null" }),
+  clientId: integer("client_id").references(() => clients.id, { onDelete: "set null" }),
+  status: invReturnStatusEnum("status").default("DRAFT").notNull(),
   notes: text("notes"),
   createdBy: text("created_by").references(() => users.id).notNull(),
   approvedBy: text("approved_by").references(() => users.id),
@@ -58,6 +66,7 @@ export const invCustomerReturns = pgTable("inv_customer_returns", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_cret_org_number").on(table.orgId, table.returnNumber),
+  unique("uniq_inv_customer_returns_org_id").on(table.orgId, table.id),
   index("idx_inv_cret_org_status").on(table.orgId, table.status),
 ]);
 
@@ -65,20 +74,21 @@ export const invCustomerReturnLines = pgTable("inv_customer_return_lines", {
   id: serial("id").primaryKey(),
   returnId: integer("return_id").references(() => invCustomerReturns.id, { onDelete: "cascade" }).notNull(),
   productVariantId: integer("product_variant_id").references(() => invProductVariants.id).notNull(),
-  lotId: integer("lot_id"),
-  serialId: integer("serial_id"),
+  lotId: integer("lot_id").references(() => invLots.id, { onDelete: "set null" }),
+  serialId: integer("serial_id").references(() => invSerialNumbers.id, { onDelete: "set null" }),
   quantity: decimal("quantity", { precision: 18, scale: 4 }).notNull(),
   disposition: invCustomerReturnDispositionEnum("disposition"),
   notes: text("notes"),
 }, (table) => [
   index("idx_inv_cret_lines_return").on(table.returnId),
+  index("idx_inv_customer_return_lines_variant").on(table.productVariantId),
 ]);
 
 export const invPickLists = pgTable("inv_pick_lists", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   pickNumber: text("pick_number").notNull(),
-  soId: integer("so_id"),
+  soId: integer("so_id").references(() => invSalesOrders.id, { onDelete: "set null" }),
   warehouseId: integer("warehouse_id").references(() => invWarehouses.id, { onDelete: "restrict" }),
   status: invPickListStatusEnum("status").default("PENDING").notNull(),
   createdBy: text("created_by").references(() => users.id).notNull(),
@@ -87,21 +97,23 @@ export const invPickLists = pgTable("inv_pick_lists", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_pick_org_number").on(table.orgId, table.pickNumber),
+  unique("uniq_inv_pick_lists_org_id").on(table.orgId, table.id),
   index("idx_inv_pick_org_status").on(table.orgId, table.status),
 ]);
 
 export const invPickListLines = pgTable("inv_pick_list_lines", {
   id: serial("id").primaryKey(),
   pickListId: integer("pick_list_id").references(() => invPickLists.id, { onDelete: "cascade" }).notNull(),
-  soLineId: integer("so_line_id"),
+  soLineId: integer("so_line_id").references(() => invSoLines.id, { onDelete: "set null" }),
   productVariantId: integer("product_variant_id").references(() => invProductVariants.id).notNull(),
   locationId: integer("location_id").references(() => invLocations.id),
-  lotId: integer("lot_id"),
-  serialId: integer("serial_id"),
+  lotId: integer("lot_id").references(() => invLots.id, { onDelete: "set null" }),
+  serialId: integer("serial_id").references(() => invSerialNumbers.id, { onDelete: "set null" }),
   quantityToPick: decimal("quantity_to_pick", { precision: 18, scale: 4 }).notNull(),
   quantityPicked: decimal("quantity_picked", { precision: 18, scale: 4 }).default("0").notNull(),
 }, (table) => [
   index("idx_inv_pick_lines_pick").on(table.pickListId),
+  index("idx_inv_pick_list_lines_variant").on(table.productVariantId),
 ]);
 
 export const invCycleCounts = pgTable("inv_cycle_counts", {
@@ -110,7 +122,7 @@ export const invCycleCounts = pgTable("inv_cycle_counts", {
   countNumber: text("count_number").notNull(),
   warehouseId: integer("warehouse_id").references(() => invWarehouses.id, { onDelete: "restrict" }).notNull(),
   locationId: integer("location_id").references(() => invLocations.id),
-  categoryId: integer("category_id"),
+  categoryId: integer("category_id").references(() => invCategories.id, { onDelete: "set null" }),
   status: invCycleCountStatusEnum("status").default("PLANNED").notNull(),
   createdBy: text("created_by").references(() => users.id).notNull(),
   approvedBy: text("approved_by").references(() => users.id),
@@ -120,6 +132,7 @@ export const invCycleCounts = pgTable("inv_cycle_counts", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_cc_org_number").on(table.orgId, table.countNumber),
+  unique("uniq_inv_cycle_counts_org_id").on(table.orgId, table.id),
   index("idx_inv_cc_org_status").on(table.orgId, table.status),
 ]);
 
@@ -128,12 +141,13 @@ export const invCycleCountLines = pgTable("inv_cycle_count_lines", {
   cycleCountId: integer("cycle_count_id").references(() => invCycleCounts.id, { onDelete: "cascade" }).notNull(),
   productVariantId: integer("product_variant_id").references(() => invProductVariants.id).notNull(),
   locationId: integer("location_id").references(() => invLocations.id).notNull(),
-  lotId: integer("lot_id"),
+  lotId: integer("lot_id").references(() => invLots.id, { onDelete: "set null" }),
   systemQty: decimal("system_qty", { precision: 18, scale: 4 }).notNull(),
   countedQty: decimal("counted_qty", { precision: 18, scale: 4 }),
   varianceQty: decimal("variance_qty", { precision: 18, scale: 4 }),
 }, (table) => [
   index("idx_inv_cc_lines_count").on(table.cycleCountId),
+  index("idx_inv_cycle_count_lines_variant").on(table.productVariantId),
 ]);
 
 export const invPhysicalAudits = pgTable("inv_physical_audits", {
@@ -150,6 +164,7 @@ export const invPhysicalAudits = pgTable("inv_physical_audits", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_pa_org_number").on(table.orgId, table.auditNumber),
+  unique("uniq_inv_physical_audits_org_id").on(table.orgId, table.id),
   index("idx_inv_pa_org_status").on(table.orgId, table.status),
 ]);
 
@@ -158,12 +173,13 @@ export const invPhysicalAuditLines = pgTable("inv_physical_audit_lines", {
   auditId: integer("audit_id").references(() => invPhysicalAudits.id, { onDelete: "cascade" }).notNull(),
   productVariantId: integer("product_variant_id").references(() => invProductVariants.id).notNull(),
   locationId: integer("location_id").references(() => invLocations.id).notNull(),
-  lotId: integer("lot_id"),
+  lotId: integer("lot_id").references(() => invLots.id, { onDelete: "set null" }),
   systemQty: decimal("system_qty", { precision: 18, scale: 4 }).notNull(),
   countedQty: decimal("counted_qty", { precision: 18, scale: 4 }),
   varianceQty: decimal("variance_qty", { precision: 18, scale: 4 }),
 }, (table) => [
   index("idx_inv_pa_lines_audit").on(table.auditId),
+  index("idx_inv_physical_audit_lines_variant").on(table.productVariantId),
 ]);
 
 export const invVendorReturnsRelations = relations(invVendorReturns, ({ one, many }) => ({

@@ -19,11 +19,21 @@ const schema = z
       .default("development"),
     PORT: z.coerce.number().int().positive().default(1500),
     DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
+    /** The RLS-enforced application role. Falling back to DATABASE_URL bypasses every tenant policy. */
+    APP_DATABASE_URL: z.preprocess(emptyToUndefined, z.string().optional()),
+    /** Session-mode connection for migrations and db:verify-rls; only Neon can be derived automatically. */
+    DIRECT_DATABASE_URL: z.preprocess(emptyToUndefined, z.string().optional()),
     BACKEND_JWT_SECRET: z
       .string()
       .min(
         44,
         "BACKEND_JWT_SECRET must be at least 44 characters (256-bit base64)",
+      ),
+    PORTAL_JWT_SECRET: z
+      .string()
+      .min(
+        44,
+        "PORTAL_JWT_SECRET must be at least 44 characters (256-bit base64)",
       ),
     CORS_ORIGINS: z.string().min(1, "CORS_ORIGINS is required"),
     APP_URL: z.string().url("APP_URL must be a valid URL"),
@@ -44,7 +54,9 @@ const schema = z
     UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
     TURNSTILE_SECRET_KEY: z.string().optional(),
     ABLY_API_KEY: z.string().optional(),
-    ENCRYPTION_KEY: z.string().optional(),
+    ENCRYPTION_KEY: z
+      .string()
+      .min(32, "ENCRYPTION_KEY must be at least 32 characters — it protects PII at rest"),
     AI_CONFIRMATION_SECRET: z.string().optional(),
     COMPOSIO_API_KEY: z.string().optional(),
     COMPOSIO_AUTH_CONFIG_GOOGLE_CALENDAR: z.string().optional(),
@@ -121,6 +133,24 @@ const schema = z
         code: "custom",
         path: [variableName],
         message: `${variableName} is required in production`,
+      });
+    }
+
+    if (!config.APP_DATABASE_URL) {
+      context.addIssue({
+        code: "custom",
+        path: ["APP_DATABASE_URL"],
+        message:
+          "APP_DATABASE_URL is required in production — without it the app connects as the database owner, which has BYPASSRLS and silently disables every tenant isolation policy. Provision the role with `pnpm db:bootstrap-role`.",
+      });
+    }
+
+    if (config.APP_DATABASE_URL === config.DATABASE_URL) {
+      context.addIssue({
+        code: "custom",
+        path: ["APP_DATABASE_URL"],
+        message:
+          "APP_DATABASE_URL must not equal DATABASE_URL — they are the application role and the owner role, and pointing both at the owner defeats RLS.",
       });
     }
   });

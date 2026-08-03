@@ -1,6 +1,6 @@
-import { pgTable, text, serial, timestamp, boolean, decimal, jsonb, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, decimal, jsonb, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 
 export const kpiDefinitions = pgTable("kpi_definitions", {
   id: serial("id").primaryKey(),
@@ -14,6 +14,7 @@ export const kpiDefinitions = pgTable("kpi_definitions", {
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_kpi_definitions_org_id").on(table.orgId, table.id),
   index("idx_kpi_definitions_org").on(table.orgId, table.isActive),
 ]);
 
@@ -27,6 +28,7 @@ export const competencyFrameworks = pgTable("competency_frameworks", {
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_competency_frameworks_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_competency_frameworks_org_name").on(table.orgId, table.name),
 ]);
 

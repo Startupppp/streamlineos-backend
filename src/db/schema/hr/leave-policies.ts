@@ -1,5 +1,5 @@
-import { pgTable, text, serial, timestamp, boolean, decimal, integer, index } from "drizzle-orm/pg-core";
-import { organizations } from "../auth";
+import { pgTable, text, serial, timestamp, boolean, decimal, integer, index, unique } from "drizzle-orm/pg-core";
+import { organizations } from "../common/auth";
 import { leaveTypes } from "./leaves";
 
 export const leavePolicies = pgTable("leave_policies", {
@@ -21,5 +21,6 @@ export const leavePolicies = pgTable("leave_policies", {
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_leave_policies_org_id").on(table.orgId, table.id),
   index("idx_leave_policies_org_type").on(table.orgId, table.leaveTypeId),
 ]);

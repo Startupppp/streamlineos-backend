@@ -1,5 +1,5 @@
-import { pgTable, text, serial, timestamp, boolean, decimal, jsonb, index } from "drizzle-orm/pg-core";
-import { organizations, users } from "../auth";
+import { pgTable, text, serial, timestamp, boolean, decimal, jsonb, index, unique } from "drizzle-orm/pg-core";
+import { organizations, users } from "../common/auth";
 
 export const travelRequests = pgTable("travel_requests", {
   id: serial("id").primaryKey(),
@@ -25,6 +25,7 @@ export const travelRequests = pgTable("travel_requests", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_travel_requests_org_id").on(table.orgId, table.id),
   index("idx_travel_requests_org_status").on(table.orgId, table.status),
   index("idx_travel_requests_user").on(table.userId),
 ]);

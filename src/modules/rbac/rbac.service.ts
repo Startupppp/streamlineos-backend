@@ -1,19 +1,36 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
+import { CacheService } from "../../common/cache/cache.service";
+import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import {
+  organizationMembers,
+  roleAssignments,
   rolePermissionGrants,
-  rolePermissions,
-  userPermissions,
+  roles,
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
-import { PERMISSIONS, ROLE_DEFAULT_PERMISSIONS, type Permission } from "./permissions.constants";
-import type { AssignRolePermissionInput, RevokeRolePermissionInput } from "./dto/rbac.schemas";
+import {
+  assertPermissionsGrantable,
+  buildPermissionModuleMap,
+  ROLE_RANK,
+  toGrantableSet,
+} from "../../common/rbac/grantability";
+import { PERMISSIONS, ROLE_DEFAULT_PERMISSIONS, type Permission, isScopable } from "./permissions";
+import type {
+  AssignRolePermissionInput,
+  DiscoveryGrantableResult,
+  DiscoveryMemberEntry,
+  DiscoveryPermissionEntry,
+  DiscoveryTemplateEntry,
+  RevokeRolePermissionInput,
+} from "./dto/rbac.schemas";
 import { AccessService } from "../access/access.service";
 import { RolesService } from "./roles.service";
+import { ROLE_TEMPLATES } from "./role-templates.constants";
 
 const RBAC_MANAGE_KEY = "settings:rbac:manage";
 const CATALOG_KEYS = new Set(PERMISSIONS.map((p) => p.name));
@@ -24,6 +41,7 @@ export class RbacService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
     private readonly rolesService: RolesService,
+    private readonly cache: CacheService,
   ) {}
 
   getAllPermissions(): Permission[] {
@@ -31,58 +49,43 @@ export class RbacService {
   }
 
   async getUserPermissions(userId: string, orgId: string): Promise<string[]> {
-    const user = await this.db.query.users.findFirst({
-      where: eq(users.id, userId),
+    const membership = await this.db.query.organizationMembers.findFirst({
+      where: and(eq(organizationMembers.userId, userId), eq(organizationMembers.orgId, orgId)),
+      columns: { role: true },
     });
-    const role = user?.role;
+    const role = membership?.role;
 
-    const userPerms = await this.db.query.userPermissions.findMany({
-      where: and(
-        eq(userPermissions.userId, userId),
-        eq(userPermissions.orgId, orgId),
-        eq(userPermissions.granted, true),
-      ),
-      with: { permission: true },
-      limit: 500,
-    });
-
-    const rolePerms = role
-      ? await this.db.query.rolePermissions.findMany({
-          where: and(eq(rolePermissions.role, role), eq(rolePermissions.orgId, orgId)),
-          with: { permission: true },
-          limit: 500,
-        })
-      : [];
-
+    const rolePerms = role ? await this.grantsForRoleSlug(role, orgId) : [];
     const defaultPerms = role ? (ROLE_DEFAULT_PERMISSIONS[role] ?? []) : [];
 
     const permissionSet = new Set<string>();
 
-    userPerms.forEach((up) => {
-      if (up.permission?.name) permissionSet.add(up.permission.name);
-    });
-
-    rolePerms.forEach((rp) => {
-      if (rp.permission?.name) permissionSet.add(rp.permission.name);
-    });
-
+    rolePerms.forEach((key) => permissionSet.add(key));
     defaultPerms.forEach((perm) => permissionSet.add(perm));
 
     return Array.from(permissionSet);
   }
 
   async getRolePermissions(role: string, orgId: string): Promise<string[]> {
-    const perms = await this.db.query.rolePermissions.findMany({
-      where: and(eq(rolePermissions.role, role), eq(rolePermissions.orgId, orgId)),
-      with: { permission: true },
-      limit: 500,
-    });
+    const keys = await this.grantsForRoleSlug(role, orgId);
+    return Array.from(new Set(keys));
+  }
 
-    const result = new Set<string>();
-    for (const rp of perms) {
-      if (rp.permission?.name) result.add(rp.permission.name);
-    }
-    return Array.from(result);
+  private async grantsForRoleSlug(role: string, orgId: string): Promise<string[]> {
+    const rows = await this.db
+      .select({ permissionKey: rolePermissionGrants.permissionKey })
+      .from(rolePermissionGrants)
+      .innerJoin(roles, eq(rolePermissionGrants.roleId, roles.id))
+      .where(
+        and(
+          eq(rolePermissionGrants.orgId, orgId),
+          eq(roles.orgId, orgId),
+          eq(roles.slug, role),
+        ),
+      )
+      .limit(500);
+
+    return rows.map((row) => row.permissionKey);
   }
 
   async assignRolePermission(
@@ -94,6 +97,17 @@ export class RbacService {
 
     if (!CATALOG_KEYS.has(input.permissionKey)) {
       throw new BadRequestException(`Unknown permission key: ${input.permissionKey}`);
+    }
+
+    if (!actor.isOrgOwner) {
+      const resolved = await this.access.resolveUserPermissions(
+        actor.orgId,
+        actor.userId,
+      );
+      assertPermissionsGrantable(
+        { isOrgOwner: false, grantable: toGrantableSet(resolved) },
+        [input.permissionKey],
+      );
     }
 
     await this.db.transaction(async (tx) => {
@@ -153,9 +167,180 @@ export class RbacService {
   }
 
   private async checkActorAccess(actor: CurrentUserContext): Promise<boolean> {
-    if (actor.isPlatformAdmin || actor.isOrgOwner) return true;
+    if (actor.isOrgOwner) return true;
     const resolved = await this.access.resolveUserPermissions(actor.orgId, actor.userId);
     const scope = resolved.get(RBAC_MANAGE_KEY);
     return !!scope && scope !== "none";
+  }
+
+  private async resolveActorRankContext(
+    orgId: string,
+    userId: string,
+  ): Promise<{ bestRank: number; allowedModules: Set<string> | null }> {
+    const rows = await this.db
+      .select({ rank: roles.rank, moduleKey: roles.moduleKey })
+      .from(roleAssignments)
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(roleAssignments.organizationMembershipId, organizationMembers.id),
+          eq(roleAssignments.orgId, organizationMembers.orgId),
+        ),
+      )
+      .innerJoin(
+        roles,
+        and(eq(roleAssignments.roleId, roles.id), eq(roles.orgId, orgId)),
+      )
+      .where(
+        and(
+          eq(roleAssignments.orgId, orgId),
+          eq(organizationMembers.userId, userId),
+        ),
+      )
+      .limit(100);
+
+    if (rows.length === 0) {
+      return { bestRank: ROLE_RANK.FUNCTIONAL, allowedModules: null };
+    }
+
+    let bestRank: number = ROLE_RANK.FUNCTIONAL;
+    for (const row of rows) {
+      if (row.rank < bestRank) bestRank = row.rank;
+    }
+
+    const topRankRoles = rows.filter((r) => r.rank === bestRank);
+    const hasOrgWideRole = topRankRoles.some((r) => r.moduleKey === null);
+    if (hasOrgWideRole) {
+      return { bestRank, allowedModules: null };
+    }
+
+    const modules = new Set(
+      topRankRoles
+        .map((r) => r.moduleKey)
+        .filter((m): m is string => m !== null),
+    );
+    return { bestRank, allowedModules: modules };
+  }
+
+  async getDiscoveryPermissions(
+    actor: CurrentUserContext,
+  ): Promise<DiscoveryPermissionEntry[]> {
+    if (actor.isOrgOwner) {
+      return PERMISSIONS.map((p) => ({
+        name: p.name,
+        resource: p.resource,
+        action: p.action,
+        description: p.description,
+        moduleKey: p.name.indexOf(":") === -1 ? null : p.name.slice(0, p.name.indexOf(":")),
+        scopable: isScopable(p.name),
+      }));
+    }
+
+    const { allowedModules } = await this.resolveActorRankContext(actor.orgId, actor.userId);
+    return PERMISSIONS
+      .filter((p) => {
+        if (allowedModules === null) return true;
+        const mod = p.name.indexOf(":") === -1 ? null : p.name.slice(0, p.name.indexOf(":"));
+        return mod !== null && allowedModules.has(mod);
+      })
+      .map((p) => ({
+        name: p.name,
+        resource: p.resource,
+        action: p.action,
+        description: p.description,
+        moduleKey: p.name.indexOf(":") === -1 ? null : p.name.slice(0, p.name.indexOf(":")),
+        scopable: isScopable(p.name),
+      }));
+  }
+
+  async getDiscoveryGrantable(
+    actor: CurrentUserContext,
+  ): Promise<DiscoveryGrantableResult> {
+    if (actor.isOrgOwner) {
+      return {
+        grantableKeys: PERMISSIONS.map((p) => p.name),
+        assignableRanks: [ROLE_RANK.MODULE_ADMIN, ROLE_RANK.MODULE_CUSTOM, ROLE_RANK.FUNCTIONAL],
+        allowedModules: null,
+      };
+    }
+
+    const [resolved, { bestRank, allowedModules }] = await Promise.all([
+      this.access.resolveUserPermissions(actor.orgId, actor.userId),
+      this.resolveActorRankContext(actor.orgId, actor.userId),
+    ]);
+
+    const grantable = toGrantableSet(resolved);
+    const permMeta = buildPermissionModuleMap(PERMISSIONS.map((p) => p.name));
+
+    const grantableKeys = PERMISSIONS
+      .map((p) => p.name)
+      .filter((key) => {
+        if (!grantable.has(key)) return false;
+        if (allowedModules !== null) {
+          const mod = permMeta.get(key);
+          if (!mod || !allowedModules.has(mod)) return false;
+        }
+        return true;
+      });
+
+    const assignableRanks = ([ROLE_RANK.MODULE_ADMIN, ROLE_RANK.MODULE_CUSTOM, ROLE_RANK.FUNCTIONAL] as number[])
+      .filter((rank) => rank > bestRank);
+
+    return {
+      grantableKeys,
+      assignableRanks,
+      allowedModules: allowedModules !== null ? Array.from(allowedModules) : null,
+    };
+  }
+
+  getDiscoveryTemplates(actor: CurrentUserContext): DiscoveryTemplateEntry[] {
+    if (actor.isOrgOwner) {
+      return ROLE_TEMPLATES.map((t) => ({
+        id: t.id,
+        name: t.name,
+        slug: t.slug,
+        permissionCount: t.permissions.length,
+      }));
+    }
+
+    return ROLE_TEMPLATES.map((t) => ({
+      id: t.id,
+      name: t.name,
+      slug: t.slug,
+      permissionCount: t.permissions.length,
+    }));
+  }
+
+  async getDiscoveryMembers(orgId: string): Promise<DiscoveryMemberEntry[]> {
+    return this.cache.cached(
+      CACHE_KEYS.rbacDiscoveryMembers(orgId),
+      () => this.fetchDiscoveryMembers(orgId),
+      CACHE_TTL.MEDIUM,
+    );
+  }
+
+  private async fetchDiscoveryMembers(orgId: string): Promise<DiscoveryMemberEntry[]> {
+    const rows = await this.db
+      .select({
+        userId: organizationMembers.userId,
+        name: users.name,
+        email: users.email,
+      })
+      .from(organizationMembers)
+      .innerJoin(users, eq(organizationMembers.userId, users.id))
+      .where(
+        and(
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.status, "ACTIVE"),
+        ),
+      )
+      .orderBy(users.name)
+      .limit(500);
+
+    return rows.map((r) => ({
+      userId: r.userId,
+      name: r.name,
+      email: r.email,
+    }));
   }
 }

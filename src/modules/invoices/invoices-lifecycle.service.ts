@@ -1,11 +1,13 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import { and, eq, inArray, lte, sql } from "drizzle-orm";
 import { invoices, payments, finPaymentAllocations, organizationMembers, journalEntries } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { FinancePostingService } from "../accounting/finance-posting.service";
+import { OutboxWriter } from "../../common/outbox/outbox-writer";
+import { FinancePostingService } from "../accounting/core/finance-posting.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
-import { CrmAutomationBusService } from "../crm-automation-studio/crm-automation-bus.service";
+import { CrmAutomationBusService } from "../crm/automation-studio/crm-automation-bus.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
 type DbOrTx = Parameters<Parameters<Db["transaction"]>[0]>[0] | Db;
@@ -60,6 +62,21 @@ export class InvoicesLifecycleService {
         entityId: String(invoiceId),
         data: { invoiceId, paidAt: new Date().toISOString() },
       }).catch(() => undefined);
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        organizationId: invoice.orgId,
+        aggregateType: "invoice",
+        aggregateId: String(invoiceId),
+        aggregateVersion: Date.now(),
+        eventType: "accounting.invoice.paid",
+        payload: {
+          organization_id: invoice.orgId,
+          invoice_id: invoiceId,
+          total_cents: Math.round(Number(invoice.total) * 100),
+          paid_at: new Date().toISOString(),
+        },
+        occurredAt: new Date(),
+      });
     }
   }
 
@@ -102,13 +119,10 @@ export class InvoicesLifecycleService {
       const ctx: CurrentUserContext = {
         userId,
         orgId,
-        branchId: null,
         role: "system",
         permissions: [],
-        enabledModules: [],
-        plan: null,
-        isPlatformAdmin: false,
         isOrgOwner: false,
+        tokenScopes: null,
         sessionId: "",
       };
       await this.financePosting.reverseJournal(ctx, existingEntry.id, `Void invoice ${invoice.invoiceNumber}`);

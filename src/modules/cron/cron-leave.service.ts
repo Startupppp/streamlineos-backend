@@ -10,6 +10,7 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { forEachOrg } from "../../common/tenant";
 
 function toDateStr(date: Date): string {
   return date.toISOString().slice(0, 10);
@@ -31,32 +32,32 @@ export class CronLeaveService {
     const now = new Date();
     const currentMonth = now.getMonth() + 1;
 
-    const monthlyAccrual = await this.accrueMonthlyLeaves(now);
-    const monthlyExpiry = await this.expireUnusedMonthlyLeaves();
+    let totalAccruedCount = 0;
+    let totalExpiredCount = 0;
+    let totalYearlyResetCount: number | null = null;
 
-    const orgIds = (
-      await this.db.selectDistinct({ orgId: leaveTypes.orgId }).from(leaveTypes)
-    ).map((r) => r.orgId);
+    await forEachOrg(this.db, "monthly-leave-reset", async (_tx, orgId) => {
+      const accrual = await this.accrueMonthlyLeaves(now, orgId);
+      totalAccruedCount += accrual.accruedCount;
 
-    let yearlyReset: { resetCount: number } | null = null;
-    let totalResetCount = 0;
-    for (const orgId of orgIds) {
+      const expiry = await this.expireUnusedMonthlyLeaves(orgId);
+      totalExpiredCount += expiry.expiredCount;
+
       const yearStartMonth = await this.resolveLeaveYearStartMonth(orgId);
       if (yearStartMonth === currentMonth) {
         const result = await this.resetYearlyLeaveBalances(orgId, now.getFullYear());
-        totalResetCount += result.resetCount;
-        yearlyReset = { resetCount: totalResetCount };
+        totalYearlyResetCount = (totalYearlyResetCount ?? 0) + result.resetCount;
       }
-    }
+    });
 
-    return { monthlyAccrual, monthlyExpiry, yearlyReset };
+    return {
+      monthlyAccrual: { accruedCount: totalAccruedCount },
+      monthlyExpiry: { expiredCount: totalExpiredCount },
+      yearlyReset: totalYearlyResetCount !== null ? { resetCount: totalYearlyResetCount } : null,
+    };
   }
 
-  /**
-   * Prefer leave_policies.accrualRate for MONTHLY policies. No hardcoded rate.
-   * Orgs without an active monthly leave_policy receive no accrual.
-   */
-  private async accrueMonthlyLeaves(now: Date): Promise<{ accruedCount: number }> {
+  private async accrueMonthlyLeaves(now: Date, orgId: string): Promise<{ accruedCount: number }> {
     const year = now.getFullYear();
     const monthIdx = now.getMonth();
     const periodLabel = buildPeriodLabel(year, monthIdx);
@@ -71,7 +72,13 @@ export class CronLeaveService {
         probationRestricted: leavePolicies.probationRestricted,
       })
       .from(leavePolicies)
-      .where(and(eq(leavePolicies.accrualType, "MONTHLY"), eq(leavePolicies.isActive, true)));
+      .where(
+        and(
+          eq(leavePolicies.orgId, orgId),
+          eq(leavePolicies.accrualType, "MONTHLY"),
+          eq(leavePolicies.isActive, true),
+        ),
+      );
 
     if (monthlyPolicies.length === 0) return { accruedCount: 0 };
 
@@ -176,7 +183,7 @@ export class CronLeaveService {
     return Number.isFinite(month) && month >= 1 && month <= 12 ? month : 1;
   }
 
-  private async expireUnusedMonthlyLeaves(): Promise<{ expiredCount: number }> {
+  private async expireUnusedMonthlyLeaves(orgId: string): Promise<{ expiredCount: number }> {
     const now = new Date();
     const currentYear = now.getFullYear();
     const prevMonthIdx = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
@@ -192,7 +199,13 @@ export class CronLeaveService {
         orgId: leavePolicies.orgId,
       })
       .from(leavePolicies)
-      .where(and(eq(leavePolicies.accrualType, "MONTHLY"), eq(leavePolicies.isActive, true)));
+      .where(
+        and(
+          eq(leavePolicies.orgId, orgId),
+          eq(leavePolicies.accrualType, "MONTHLY"),
+          eq(leavePolicies.isActive, true),
+        ),
+      );
 
     if (monthlyPolicies.length === 0) return { expiredCount: 0 };
 
@@ -201,6 +214,7 @@ export class CronLeaveService {
 
     const positiveBalances = await this.db.query.leaveBalances.findMany({
       where: and(
+        eq(leaveBalances.orgId, orgId),
         inArray(leaveBalances.leaveTypeId, monthlyLeaveTypeIds),
         eq(leaveBalances.year, prevMonthYear),
         gt(leaveBalances.balance, "0"),
@@ -214,6 +228,7 @@ export class CronLeaveService {
       .from(leaveRequests)
       .where(
         and(
+          eq(leaveRequests.orgId, orgId),
           inArray(leaveRequests.leaveTypeId, monthlyLeaveTypeIds),
           eq(leaveRequests.status, "APPROVED"),
           gte(leaveRequests.startDate, monthStartStr),

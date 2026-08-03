@@ -8,15 +8,21 @@
   timestamp,
   index,
   uniqueIndex,
+  unique,
+  customType,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
-import { organizations, users } from "../auth";
-import { projects } from "../projects";
+import { organizations, users } from "../common/auth";
+import { projects } from "../build";
 import { kbSpaces } from "./spaces";
+import { kbArticles } from "../support/kb";
 
 export type KbPageContent =
   | Record<string, unknown>
   | Record<string, unknown>[];
+
+const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
 
 export const kbPages = pgTable(
   "kb_pages",
@@ -30,12 +36,15 @@ export const kbPages = pgTable(
     coverImage: text("cover_image"),
     content: jsonb("content").$type<KbPageContent>(),
     contentText: text("content_text"),
+    fts: tsvector("fts").generatedAlwaysAs(
+      sql`setweight(to_tsvector('english', coalesce(title, '')), 'A') || setweight(to_tsvector('english', coalesce(content_text, '')), 'B')`,
+    ),
     sortOrder: integer("sort_order").notNull().default(0),
     isLocked: boolean("is_locked").default(false).notNull(),
     createdById: text("created_by_id").references(() => users.id, { onDelete: "set null" }),
     lastEditedById: text("last_edited_by_id").references(() => users.id, { onDelete: "set null" }),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
-    deletedById: text("deleted_by_id"),
+    deletedById: text("deleted_by_id").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
     visibility: text("visibility").notNull().default("org").$type<"private" | "org" | "public">(),
@@ -48,10 +57,15 @@ export const kbPages = pgTable(
     verifiedUntil: timestamp("verified_until", { withTimezone: true }),
     nextReviewAt: timestamp("next_review_at", { withTimezone: true }),
     publicSlug: text("public_slug"),
-    sourceArticleId: integer("source_article_id"),
+    sourceArticleId: integer("source_article_id").references(() => kbArticles.id, { onDelete: "set null" }),
     projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
   },
   (table) => [
+    foreignKey({
+      columns: [table.parentPageId],
+      foreignColumns: [table.id],
+      name: "fk_kb_pages_parent",
+    }).onDelete("set null"),
     index("idx_kb_pages_org_parent_sort").on(table.orgId, table.parentPageId, table.sortOrder),
     index("idx_kb_pages_project_id").on(table.projectId),
     index("idx_kb_pages_org_deleted").on(table.orgId, table.deletedAt),
@@ -62,6 +76,8 @@ export const kbPages = pgTable(
     index("idx_kb_pages_org_next_review").on(table.orgId, table.nextReviewAt),
     uniqueIndex("uniq_kb_pages_org_public_slug").on(table.orgId, table.publicSlug).where(sql`${table.publicSlug} IS NOT NULL`),
     uniqueIndex("uniq_kb_pages_org_source_article").on(table.orgId, table.sourceArticleId).where(sql`${table.sourceArticleId} IS NOT NULL`),
+    index("idx_kb_pages_fts").using("gin", table.fts),
+    unique("uniq_kb_pages_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -78,6 +94,7 @@ export const kbPageFavorites = pgTable(
   (table) => [
     uniqueIndex("uniq_kb_page_favorites_page_user").on(table.pageId, table.userId),
     index("idx_kb_page_favorites_org_user").on(table.orgId, table.userId),
+    unique("uniq_kb_page_favorites_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -93,6 +110,7 @@ export const kbPageVisits = pgTable(
   (table) => [
     uniqueIndex("uniq_kb_page_visits_page_user").on(table.pageId, table.userId),
     index("idx_kb_page_visits_org_user_visited").on(table.orgId, table.userId, table.visitedAt),
+    unique("uniq_kb_page_visits_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -111,6 +129,7 @@ export const kbPageLinks = pgTable(
   (table) => [
     uniqueIndex("uniq_kb_page_links_source_target").on(table.sourcePageId, table.targetPageId),
     index("idx_kb_page_links_org_target").on(table.orgId, table.targetPageId),
+    unique("uniq_kb_page_links_org_id").on(table.orgId, table.id),
   ],
 );
 

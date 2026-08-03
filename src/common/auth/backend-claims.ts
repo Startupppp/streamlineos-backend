@@ -1,25 +1,18 @@
-﻿export interface BackendClaims {
+export const INTERNAL_TOKEN_AUDIENCE = "streamlineos-api" as const;
+export const INTERNAL_TOKEN_ISSUER = "streamlineos-web" as const;
+
+export interface BackendClaims {
   sub: string;
   orgId: string | null;
-  branchId: number | null;
-  role: string;
-  permissions: string[];
-  enabledModules: string[];
-  plan: string | null;
-  isPlatformAdmin: boolean;
-  isOrgOwner: boolean;
   sessionId: string;
 }
 
 export interface CurrentUserContext {
   userId: string;
   orgId: string;
-  branchId: number | null;
   role: string;
   permissions: string[];
-  enabledModules: string[];
-  plan: string | null;
-  isPlatformAdmin: boolean;
   isOrgOwner: boolean;
   sessionId: string;
+  tokenScopes: string[] | null;
 }

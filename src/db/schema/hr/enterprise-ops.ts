@@ -7,9 +7,10 @@ import {
   date,
   jsonb,
   index,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 
 export const hrAccommodationTypeEnum = pgEnum("hr_accommodation_type", [
   "equipment",
@@ -94,6 +95,7 @@ export const hrAccommodationRequests = pgTable("hr_accommodation_requests", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at"),
 }, (t) => [
+  unique("uniq_hr_accommodation_requests_org_id").on(t.orgId, t.id),
   index("idx_hr_acc_req_org").on(t.orgId),
   index("idx_hr_acc_req_user").on(t.userId),
 ]);
@@ -109,6 +111,7 @@ export const hrAccommodationTasks = pgTable("hr_accommodation_tasks", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (t) => [
+  unique("uniq_hr_accommodation_tasks_org_id").on(t.orgId, t.id),
   index("idx_hr_acc_task_org").on(t.orgId),
   index("idx_hr_acc_task_request").on(t.requestId),
 ]);
@@ -126,6 +129,7 @@ export const hrEmergencyEvents = pgTable("hr_emergency_events", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   resolvedAt: timestamp("resolved_at"),
 }, (t) => [
+  unique("uniq_hr_emergency_events_org_id").on(t.orgId, t.id),
   index("idx_hr_emerg_ev_org").on(t.orgId),
   index("idx_hr_emerg_ev_status").on(t.orgId, t.status),
 ]);
@@ -141,6 +145,7 @@ export const hrEmergencyResponses = pgTable("hr_emergency_responses", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (t) => [
+  unique("uniq_hr_emergency_responses_org_id").on(t.orgId, t.id),
   index("idx_hr_emerg_resp_event").on(t.eventId),
   index("idx_hr_emerg_resp_user").on(t.orgId, t.userId),
 ]);
@@ -159,6 +164,7 @@ export const hrAccessProvisioning = pgTable("hr_access_provisioning", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (t) => [
+  unique("uniq_hr_access_provisioning_org_id").on(t.orgId, t.id),
   index("idx_hr_acc_prov_org").on(t.orgId),
   index("idx_hr_acc_prov_user").on(t.orgId, t.userId),
   index("idx_hr_acc_prov_status").on(t.orgId, t.status),
@@ -173,6 +179,7 @@ export const hrAccessProvisioningTemplates = pgTable("hr_access_provisioning_tem
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (t) => [
+  unique("uniq_hr_access_provisioning_templates_org_id").on(t.orgId, t.id),
   index("idx_hr_acc_prov_tmpl_org").on(t.orgId),
 ]);
 
@@ -185,6 +192,7 @@ export const hrSimulations = pgTable("hr_simulations", {
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [
+  unique("uniq_hr_simulations_org_id").on(t.orgId, t.id),
   index("idx_hr_sim_org").on(t.orgId),
   index("idx_hr_sim_type").on(t.orgId, t.type),
 ]);
@@ -199,6 +207,7 @@ export const hrEventStream = pgTable("hr_event_stream", {
   actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "set null" }),
   occurredAt: timestamp("occurred_at").defaultNow().notNull(),
 }, (t) => [
+  unique("uniq_hr_event_stream_org_id").on(t.orgId, t.id),
   index("idx_hr_evstream_org").on(t.orgId),
   index("idx_hr_evstream_type").on(t.orgId, t.eventType),
   index("idx_hr_evstream_entity").on(t.orgId, t.entityType, t.entityId),

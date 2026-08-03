@@ -1,6 +1,6 @@
-import { pgTable, text, integer, boolean, timestamp, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, boolean, timestamp, jsonb, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 import { crmProducts } from "./products";
 
 export const crmPricebooks = pgTable("crm_pricebooks", {
@@ -17,6 +17,7 @@ export const crmPricebooks = pgTable("crm_pricebooks", {
 }, (table) => [
   uniqueIndex("uniq_crm_pricebooks_org_name").on(table.orgId, table.name),
   index("idx_crm_pricebooks_org").on(table.orgId),
+  unique("uniq_crm_pricebooks_org_id").on(table.orgId, table.id),
 ]);
 
 export const crmPricebookEntries = pgTable("crm_pricebook_entries", {
@@ -32,6 +33,7 @@ export const crmPricebookEntries = pgTable("crm_pricebook_entries", {
   uniqueIndex("uniq_crm_pb_entry").on(table.orgId, table.pricebookId, table.productId, table.minQuantity),
   index("idx_crm_pb_entries_pricebook").on(table.pricebookId),
   index("idx_crm_pb_entries_product").on(table.productId),
+  unique("uniq_crm_pricebook_entries_org_id").on(table.orgId, table.id),
 ]);
 
 export const crmQuoteSettings = pgTable("crm_quote_settings", {
@@ -45,6 +47,7 @@ export const crmQuoteSettings = pgTable("crm_quote_settings", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_crm_quote_settings_org").on(table.orgId),
+  unique("uniq_crm_quote_settings_org_id").on(table.orgId, table.id),
 ]);
 
 export const crmQuoteTemplates = pgTable("crm_quote_templates", {
@@ -60,6 +63,7 @@ export const crmQuoteTemplates = pgTable("crm_quote_templates", {
 }, (table) => [
   uniqueIndex("uniq_crm_quote_templates_org_name").on(table.orgId, table.name),
   index("idx_crm_quote_templates_org").on(table.orgId),
+  unique("uniq_crm_quote_templates_org_id").on(table.orgId, table.id),
 ]);
 
 export const crmPricebooksRelations = relations(crmPricebooks, ({ one, many }) => ({

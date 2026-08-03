@@ -27,9 +27,9 @@ import { EmailService } from "../../email/email.service";
 import { AccessService } from "../../access/access.service";
 import { PayrollNotificationsService } from "../insights/payroll-notifications.service";
 import { logger } from "../../../common/logger/logger.service";
-import { decryptBankDetails } from "../../../modules/hr-payroll/lib/encryption";
-import { generatePayslipPdf } from "../../../modules/hr-payroll/lib/payslip-pdf";
-import { renderPayslipHtml, buildPayslipPdfData } from "./lib/payslip-renderer";
+import { decryptBankDetails } from "../../../modules/hr/payroll/lib/encryption";
+import { generatePayslipPdf } from "../../../modules/hr/payroll/lib/payslip-pdf";
+import { buildPayslipPdfData } from "./lib/payslip-renderer";
 import { getPayslipEmailTemplate } from "../../email/templates/payroll";
 import type { CalculationSnapshot, PayrollToggles } from "../payroll.types";
 import type { PayslipTemplateConfig } from "./dto/payout.schemas";
@@ -115,6 +115,8 @@ export class PublishingService {
       .leftJoin(users, eq(payrollRunEmployees.userId, users.id))
       .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)));
 
+    const totalRunEmployeeCount = employees.length;
+
     if (userIds && userIds.length > 0) {
       employees = employees.filter(e => userIds.includes(e.userId));
     }
@@ -127,6 +129,18 @@ export class PublishingService {
     const config: PayslipTemplateConfig = rawTemplateConfig && typeof rawTemplateConfig === "object"
       ? { accent: "#0f2b7f", showEmployerContributions: false, showYtd: false, ...(rawTemplateConfig as Partial<PayslipTemplateConfig>) }
       : { accent: "#0f2b7f", showEmployerContributions: false, showYtd: false };
+
+    // Pre-fetch existing publications once to avoid an N+1 findFirst per employee.
+    const existingPubs = await this.db.query.payslipPublications.findMany({
+      where: and(eq(payslipPublications.runId, runId), eq(payslipPublications.orgId, orgId)),
+      columns: { runEmployeeId: true, attemptCount: true, status: true },
+    });
+    const attemptCountByRunEmployee = new Map(
+      existingPubs.map((p) => [p.runEmployeeId, p.attemptCount] as const),
+    );
+    const priorStatusByRunEmployee = new Map(
+      existingPubs.map((p) => [p.runEmployeeId, p.status] as const),
+    );
 
     for (const emp of employees) {
       if (!emp.calculationSnapshot) continue;
@@ -156,7 +170,7 @@ export class PublishingService {
       });
 
       let pdfUrl: string | null = null;
-      let renderedPdfBuffer: Buffer | null = null;
+      let renderedPdfBuffer: Buffer | null;
       let failureReason: string | null = null;
       try {
         renderedPdfBuffer = await generatePayslipPdf(pdfData);
@@ -183,14 +197,7 @@ export class PublishingService {
       const pubStatus = failureReason ? "FAILED" : "PUBLISHED";
       const now = new Date();
 
-      const existingPub = await this.db.query.payslipPublications.findFirst({
-        where: and(
-          eq(payslipPublications.runEmployeeId, emp.id),
-          eq(payslipPublications.orgId, orgId),
-        ),
-        columns: { id: true, attemptCount: true },
-      });
-      const nextAttempt = (existingPub?.attemptCount ?? 0) + 1;
+      const nextAttempt = (attemptCountByRunEmployee.get(emp.id) ?? 0) + 1;
 
       const [upsertedPub] = await this.db
         .insert(payslipPublications)
@@ -226,15 +233,16 @@ export class PublishingService {
         })
         .returning({ id: payslipPublications.id });
 
+      const wasAlreadyPublished = priorStatusByRunEmployee.get(emp.id) === "PUBLISHED";
       if (pubStatus === "PUBLISHED") {
         published++;
-        if (upsertedPub) {
+        if (upsertedPub && !wasAlreadyPublished) {
           this.notifications
             .notifyPayslipPublished(orgId, emp.userId, upsertedPub.id, run.month)
             .catch(e => logger.error("notifyPayslipPublished failed", { error: e }));
         }
 
-        if (emailPayslips && emp.email && renderedPdfBuffer) {
+        if (!wasAlreadyPublished && emailPayslips && emp.email && renderedPdfBuffer) {
           try {
             const monthLabel = fmtMonthYear(run.month);
             const netAmount = parseFloat(snapshot.totals.net).toLocaleString("en-IN", { minimumFractionDigits: 2 });
@@ -275,8 +283,7 @@ export class PublishingService {
       where: and(eq(payslipPublications.runId, runId), eq(payslipPublications.orgId, orgId)),
       columns: { status: true },
     });
-    const totalEmployees = employees.length;
-    const allPublished = allPublications.length >= totalEmployees &&
+    const allPublished = allPublications.length >= totalRunEmployeeCount &&
       allPublications.every(p => p.status === "PUBLISHED");
 
     if (allPublished) {
@@ -291,7 +298,7 @@ export class PublishingService {
           runId,
           type: "PAYSLIPS_PUBLISHED",
           actorId,
-          metadata: { publishedCount: published, total: totalEmployees },
+          metadata: { publishedCount: published, total: totalRunEmployeeCount },
         });
       });
 
@@ -301,7 +308,7 @@ export class PublishingService {
         orgId,
         targetId: String(runId),
         targetType: "payroll_run",
-        metadata: { publishedCount: published, total: totalEmployees },
+        metadata: { publishedCount: published, total: totalRunEmployeeCount },
       });
 
       runStatus = "PAYSLIPS_PUBLISHED";
@@ -406,7 +413,7 @@ export class PublishingService {
         columns: { isOwner: true },
       });
       const isOwner = memberRow?.isOwner === true;
-      if (!isOwner && !caller.isPlatformAdmin && !perms.has("payroll:payslips:view")) {
+      if (!isOwner && !perms.has("payroll:payslips:view")) {
         throw new ForbiddenException("Missing permission: payroll:payslips:view");
       }
     }

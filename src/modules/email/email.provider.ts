@@ -41,6 +41,7 @@ export interface EmailOptions {
   replyTo?: string;
   cc?: string | string[];
   bcc?: string | string[];
+  organizationId?: string | null;
 }
 
 class EmailSendError extends Error {
@@ -307,7 +308,6 @@ export async function dispatchEmail(options: EmailOptions): Promise<void> {
             await sendWithProvider(fallbackProvider, options);
             return;
           } catch (fallbackError) {
-            lastError = fallbackError;
             logger.error("Email fallback provider failed", {
               fallback: fallbackProvider,
               to: recipients,

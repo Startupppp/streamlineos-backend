@@ -7,11 +7,13 @@ import {
   jsonb,
   date,
   index,
+  unique,
   uniqueIndex,
   pgEnum,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 
 export const hrPolicyTypeEnum = pgEnum("hr_policy_type", [
   "leave",
@@ -62,7 +64,7 @@ export const hrPolicies = pgTable(
     description: text("description"),
     status: hrPolicyStatusEnum("status").default("draft").notNull(),
     version: integer("version").default(1).notNull(),
-    parentPolicyId: integer("parent_policy_id"),
+    parentPolicyId: integer("parent_policy_id").references((): AnyPgColumn => hrPolicies.id, { onDelete: "set null" }),
     effectiveFrom: date("effective_from").notNull(),
     effectiveTo: date("effective_to"),
     rules: jsonb("rules").$type<Record<string, unknown>>().notNull(),
@@ -76,6 +78,7 @@ export const hrPolicies = pgTable(
     deletedAt: timestamp("deleted_at"),
   },
   (table) => [
+    unique("uniq_hr_policies_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_hr_policies_org_type_name_version").on(
       table.orgId,
       table.policyType,
@@ -105,6 +108,7 @@ export const hrPolicyScopes = pgTable(
     scopeValue: text("scope_value").notNull(),
   },
   (table) => [
+    unique("uniq_hr_policy_scopes_org_id").on(table.orgId, table.id),
     index("idx_hr_policy_scopes_org_policy").on(table.orgId, table.policyId),
     index("idx_hr_policy_scopes_org_type_value").on(
       table.orgId,
@@ -114,38 +118,8 @@ export const hrPolicyScopes = pgTable(
   ],
 );
 
-export const hrPolicyAssignments = pgTable(
-  "hr_policy_assignments",
-  {
-    id: serial("id").primaryKey(),
-    orgId: text("org_id")
-      .references(() => organizations.id, { onDelete: "cascade" })
-      .notNull(),
-    policyId: integer("policy_id")
-      .references(() => hrPolicies.id, { onDelete: "cascade" })
-      .notNull(),
-    employeeId: text("employee_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
-    effectiveFrom: date("effective_from").notNull(),
-    effectiveTo: date("effective_to"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-  },
-  (table) => [
-    index("idx_hr_policy_assignments_org_policy").on(
-      table.orgId,
-      table.policyId,
-    ),
-    index("idx_hr_policy_assignments_org_employee").on(
-      table.orgId,
-      table.employeeId,
-    ),
-  ],
-);
-
 export const hrPoliciesRelations = relations(hrPolicies, ({ many }) => ({
   scopes: many(hrPolicyScopes),
-  assignments: many(hrPolicyAssignments),
 }));
 
 export const hrPolicyScopesRelations = relations(hrPolicyScopes, ({ one }) => ({
@@ -155,12 +129,3 @@ export const hrPolicyScopesRelations = relations(hrPolicyScopes, ({ one }) => ({
   }),
 }));
 
-export const hrPolicyAssignmentsRelations = relations(
-  hrPolicyAssignments,
-  ({ one }) => ({
-    policy: one(hrPolicies, {
-      fields: [hrPolicyAssignments.policyId],
-      references: [hrPolicies.id],
-    }),
-  }),
-);

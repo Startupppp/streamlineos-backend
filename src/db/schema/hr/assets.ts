@@ -1,7 +1,7 @@
-import { pgTable, text, serial, timestamp, decimal, date, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, decimal, date, index, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { assetStatusEnum } from "../enums";
-import { organizations, users } from "../auth";
+import { assetStatusEnum } from "../common/enums";
+import { organizations, users } from "../common/auth";
 
 export const assets = pgTable("assets", {
   id: serial("id").primaryKey(),
@@ -21,6 +21,7 @@ export const assets = pgTable("assets", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_assets_org_id").on(table.orgId, table.id),
   index("idx_assets_org_status").on(table.orgId, table.status),
   index("idx_assets_assigned").on(table.assignedTo),
 ]);

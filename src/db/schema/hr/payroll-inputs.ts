@@ -11,9 +11,10 @@ import {
   integer,
   index,
   uniqueIndex,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 
 export const hrPayrollInputStatusEnum = pgEnum("hr_payroll_input_status", [
   "open",
@@ -67,6 +68,7 @@ export const hrPayrollInputPeriods = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+    unique("uniq_hr_payroll_input_periods_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_hr_payroll_input_periods_org_key").on(table.orgId, table.periodKey),
     index("idx_hr_payroll_input_periods_org_status").on(table.orgId, table.status),
   ],
@@ -91,6 +93,7 @@ export const hrPayrollInputSnapshots = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+    unique("uniq_hr_payroll_input_snapshots_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_hr_payroll_input_snapshots_period_user_section").on(
       table.periodId,
       table.userId,
@@ -139,6 +142,7 @@ export const hrPayrollAdjustments = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+    unique("uniq_hr_payroll_adjustments_org_id").on(table.orgId, table.id),
     index("idx_hr_payroll_adjustments_org_status").on(table.orgId, table.status),
     index("idx_hr_payroll_adjustments_org_period").on(table.orgId, table.periodId),
     index("idx_hr_payroll_adjustments_org_user").on(table.orgId, table.userId),

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { Annotation, StateGraph, END, START } from "@langchain/langgraph";
-import type { AiGatewayService } from "../ai/gateway/ai-gateway.service";
+import type { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
 import type { KbSearchService, RetrievedSource } from "./kb-search.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 

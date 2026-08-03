@@ -1,6 +1,6 @@
 import { pgTable, pgEnum, text, serial, integer, jsonb, timestamp, index, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { surveyForms, surveyVersions } from "./forms";
 import { surveyQuestions } from "./structure";
 
@@ -22,6 +22,7 @@ export const surveyLiveSessions = pgTable("survey_live_sessions", {
 }, (table) => [
   unique("uq_survey_live_sessions_code").on(table.sessionCode),
   index("idx_survey_live_sessions_survey").on(table.surveyId),
+  unique("uniq_survey_live_sessions_org_id").on(table.orgId, table.id),
 ]);
 
 export const surveyLiveSessionsRelations = relations(surveyLiveSessions, ({ one }) => ({

@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { and, count, desc, eq, ilike, sql } from "drizzle-orm";
 import { clientAccounts, crmQuoteSettings, deals, quoteLineItems, quotes, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -8,7 +8,7 @@ import { AuditService } from "../../common/audit/audit.service";
 import type { CreateInput, ExportInput, ListInput, UpdateInput } from "./dto/quote.schemas";
 import { QuotesLifecycleService } from "./quotes-lifecycle.service";
 
-export { SendNotDraft, isSendNotDraft } from "./quotes-lifecycle.service";
+export { isSendNotDraft } from "./quotes-lifecycle.service";
 
 const LIST_TTL = 30;
 

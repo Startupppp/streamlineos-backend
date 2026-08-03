@@ -20,7 +20,7 @@ export class UserModuleAccessController {
   constructor(private readonly access: AccessService) {}
 
   @Get(":userId")
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("settings:view")
   getModuleAccess(
     @Param("userId") userId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -29,7 +29,7 @@ export class UserModuleAccessController {
   }
 
   @Patch(":userId")
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("settings:organization:manage")
   setModuleAccess(
     @Param("userId") userId: string,
     @Body(new ZodValidationPipe(setModuleAccessSchema))

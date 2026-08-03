@@ -12,6 +12,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { ModuleGuard } from "../../../common/rbac/module.guard";
+import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
@@ -25,8 +27,9 @@ import {
 } from "./dto/insights.schemas";
 import { CalendarService } from "./calendar.service";
 
+@RequireModule("payroll")
 @Controller("payroll/calendar")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard)
 export class CalendarController {
   constructor(private readonly calendarService: CalendarService) {}
 

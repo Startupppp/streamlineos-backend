@@ -1,5 +1,5 @@
-import { pgTable, text, serial, timestamp, boolean, decimal, index } from "drizzle-orm/pg-core";
-import { organizations } from "../auth";
+import { pgTable, text, serial, timestamp, boolean, decimal, index, unique } from "drizzle-orm/pg-core";
+import { organizations } from "../common/auth";
 
 export const salaryStructureTemplates = pgTable("salary_structure_templates", {
   id: serial("id").primaryKey(),
@@ -19,6 +19,7 @@ export const salaryStructureTemplates = pgTable("salary_structure_templates", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_salary_structure_templates_org_id").on(table.orgId, table.id),
   index("idx_salary_structure_templates_org").on(table.orgId),
   index("idx_salary_structure_templates_org_active").on(table.orgId, table.isActive),
 ]);

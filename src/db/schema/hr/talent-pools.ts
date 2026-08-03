@@ -1,6 +1,6 @@
-import { pgTable, text, serial, timestamp, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { candidates } from "./hiring";
 
 export const talentPools = pgTable("talent_pools", {
@@ -12,6 +12,7 @@ export const talentPools = pgTable("talent_pools", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_talent_pools_org_id").on(table.orgId, table.id),
   index("idx_talent_pools_org").on(table.orgId),
 ]);
 
@@ -24,6 +25,7 @@ export const talentPoolMembers = pgTable("talent_pool_members", {
   addedBy: text("added_by").references(() => users.id),
   addedAt: timestamp("added_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_talent_pool_members_org_id").on(table.orgId, table.id),
   uniqueIndex("uq_talent_pool_members_pool_candidate").on(table.poolId, table.candidateId),
   index("idx_talent_pool_members_pool").on(table.poolId),
   index("idx_talent_pool_members_candidate").on(table.candidateId),

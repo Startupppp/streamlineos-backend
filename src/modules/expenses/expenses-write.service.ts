@@ -16,6 +16,8 @@ import { AuditService } from "../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { EmailService } from "../email/email.service";
 import { AutomationService } from "../automation/automation.service";
+import { AccessService } from "../access/access.service";
+import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
 import {
   updateExpenseDetailsSchema,
   updateExpenseStatusSchema,
@@ -61,9 +63,10 @@ export class ExpensesWriteService {
     private readonly audit: AuditService,
     private readonly email: EmailService,
     private readonly automation: AutomationService,
+    private readonly access: AccessService,
   ) {}
 
-  async create(orgId: string, userId: string, _isAdmin: boolean, body: CreateExpenseInput) {
+  async create(orgId: string, userId: string, body: CreateExpenseInput) {
     const [expense] = await this.db
       .insert(expenses)
       .values({
@@ -278,22 +281,15 @@ export class ExpensesWriteService {
       throw new BadRequestException("No expenses found for the selected filters");
     }
 
-    const members = await this.db.query.organizationMembers.findMany({
-      where: eq(organizationMembers.orgId, orgId),
-      with: { user: { columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true } } },
-    });
+    const [adminEmails, hrEmails] = await Promise.all([
+      body.sendTo !== "APPROVERS" ? this.fetchAdminEmails(orgId) : Promise.resolve<string[]>([]),
+      body.sendTo !== "ADMINS" ? this.fetchExpenseApproverEmails(orgId) : Promise.resolve<string[]>([]),
+    ]);
 
-    const recipientEmails = members
-      .filter((m) => {
-        if (body.sendTo === "CEO") return m.role === "CEO";
-        if (body.sendTo === "HR") return m.role === "HR";
-        return m.role === "CEO" || m.role === "HR";
-      })
-      .map((m) => m.user?.email)
-      .filter((email): email is string => !!email);
+    const recipientEmails = [...new Set([...adminEmails, ...hrEmails])];
 
     if (recipientEmails.length === 0) {
-      throw new BadRequestException("No CEO/HR email addresses found");
+      throw new BadRequestException("No recipient email addresses found");
     }
 
     const org = await this.db.query.organizations.findFirst({
@@ -362,21 +358,13 @@ export class ExpensesWriteService {
         submittedAt: new Date().toISOString(),
       });
 
-      const hrMembers = await this.db
-        .select({ userId: organizationMembers.userId })
-        .from(organizationMembers)
-        .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.role, "HR")));
-      if (hrMembers.length === 0) return;
+      const approvers = await this.access.membersWithPermission(orgId, "hr:expenses:approve");
+      if (approvers.length === 0) return;
 
-      const hrUsers = await this.db
-        .select({ email: users.email, name: users.name })
-        .from(users)
-        .where(
-          inArray(
-            users.id,
-            hrMembers.map((m) => m.userId),
-          ),
-        );
+      const hrUsers = await this.db.query.users.findMany({
+        where: (u, { inArray: inArr }) => inArr(u.id, approvers.map((m) => m.userId)),
+        columns: { email: true, name: true },
+      });
 
       await Promise.all(
         hrUsers
@@ -449,5 +437,29 @@ export class ExpensesWriteService {
     } catch {
       return;
     }
+  }
+
+  private async fetchAdminEmails(orgId: string): Promise<string[]> {
+    const admins = await this.db.query.organizationMembers.findMany({
+      where: and(
+        eq(organizationMembers.orgId, orgId),
+        or(
+          eq(organizationMembers.isOwner, true),
+          eq(organizationMembers.role, ORG_MEMBER_ROLES.ORG_ADMIN),
+        ),
+      ),
+      with: { user: { columns: { email: true } } },
+    });
+    return admins.map((m) => m.user?.email).filter((e): e is string => !!e);
+  }
+
+  private async fetchExpenseApproverEmails(orgId: string): Promise<string[]> {
+    const approvers = await this.access.membersWithPermission(orgId, "hr:expenses:approve");
+    if (approvers.length === 0) return [];
+    const hrUsers = await this.db.query.users.findMany({
+      where: (u, { inArray: inArr }) => inArr(u.id, approvers.map((m) => m.userId)),
+      columns: { email: true },
+    });
+    return hrUsers.map((u) => u.email).filter((e): e is string => !!e);
   }
 }

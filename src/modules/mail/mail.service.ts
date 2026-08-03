@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
-import { ComposioToolError } from "../integrations/composio.gateway";
+import { ComposioToolError } from "../integrations/core/composio.gateway";
 import { GmailMailProvider } from "./providers/gmail-mail.provider";
 import { OutlookMailProvider } from "./providers/outlook-mail.provider";
 import {

@@ -1,6 +1,6 @@
-import { pgTable, text, serial, timestamp, integer, date, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, index, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { hrJobRoles } from "./core-org";
 import { successionReadinessEnum } from "./performance";
 
@@ -14,25 +14,9 @@ export const hrRoleSkillRequirements = pgTable("hr_role_skill_requirements", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_hr_role_skill_requirements_org_id").on(table.orgId, table.id),
   index("idx_role_skill_req_org").on(table.orgId),
   index("idx_role_skill_req_job_role").on(table.jobRoleId),
-]);
-
-export const hrMentorships = pgTable("hr_mentorships", {
-  id: serial("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  mentorId: text("mentor_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  menteeId: text("mentee_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  status: text("status").default("active").notNull(),
-  startedAt: date("started_at"),
-  endedAt: date("ended_at"),
-  goal: text("goal"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
-}, (table) => [
-  index("idx_mentorships_org").on(table.orgId),
-  index("idx_mentorships_mentor").on(table.mentorId),
-  index("idx_mentorships_mentee").on(table.menteeId),
 ]);
 
 export const hrSuccessionPlans = pgTable("hr_succession_plans", {
@@ -48,6 +32,7 @@ export const hrSuccessionPlans = pgTable("hr_succession_plans", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_hr_succession_plans_org_id").on(table.orgId, table.id),
   index("idx_succession_org").on(table.orgId),
   index("idx_succession_role").on(table.orgId, table.jobRoleId),
 ]);
@@ -55,12 +40,6 @@ export const hrSuccessionPlans = pgTable("hr_succession_plans", {
 export const hrRoleSkillRequirementsRelations = relations(hrRoleSkillRequirements, ({ one }) => ({
   organization: one(organizations, { fields: [hrRoleSkillRequirements.orgId], references: [organizations.id] }),
   jobRole: one(hrJobRoles, { fields: [hrRoleSkillRequirements.jobRoleId], references: [hrJobRoles.id] }),
-}));
-
-export const hrMentorshipsRelations = relations(hrMentorships, ({ one }) => ({
-  organization: one(organizations, { fields: [hrMentorships.orgId], references: [organizations.id] }),
-  mentor: one(users, { fields: [hrMentorships.mentorId], references: [users.id], relationName: "mentorshipMentor" }),
-  mentee: one(users, { fields: [hrMentorships.menteeId], references: [users.id], relationName: "mentorshipMentee" }),
 }));
 
 export const hrSuccessionPlansRelations = relations(hrSuccessionPlans, ({ one }) => ({

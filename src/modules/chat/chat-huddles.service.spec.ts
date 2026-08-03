@@ -6,7 +6,7 @@ import { AblyService } from "../realtime/ably.service";
 import { WebPushService } from "../realtime/web-push.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
-import { PlanLimitsService } from "../billing/plan-limits.service";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 
 const mockDb = {
   query: {

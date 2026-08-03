@@ -10,10 +10,11 @@ import {
   index,
   uniqueIndex,
   primaryKey,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
-import { supportTickets } from "../crm/billing";
+import { organizations, users } from "../common/auth";
+import { supportTickets } from "./tickets";
 
 export const supportSavedViewVisibilityEnum = pgEnum("support_saved_view_visibility", [
   "personal",
@@ -37,12 +38,13 @@ export const supportQueues = pgTable(
     filter: jsonb("filter").$type<Record<string, unknown>>().default({}).notNull(),
     sortOrder: integer("sort_order").default(0).notNull(),
     isDefault: boolean("is_default").default(false).notNull(),
-    createdBy: text("created_by"),
+    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
     index("idx_support_queues_org_sort").on(table.orgId, table.sortOrder),
+    unique("uniq_support_queues_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -61,6 +63,7 @@ export const supportSavedViews = pgTable(
   },
   (table) => [
     index("idx_support_saved_views_org_owner").on(table.orgId, table.ownerId),
+    unique("uniq_support_saved_views_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -76,6 +79,7 @@ export const supportTicketWatchers = pgTable(
   (table) => [
     uniqueIndex("uniq_support_ticket_watchers_ticket_user").on(table.ticketId, table.userId),
     index("idx_support_ticket_watchers_org_ticket").on(table.orgId, table.ticketId),
+    unique("uniq_support_ticket_watchers_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -90,6 +94,7 @@ export const supportTags = pgTable(
   },
   (table) => [
     uniqueIndex("uniq_support_tags_org_name").on(table.orgId, table.name),
+    unique("uniq_support_tags_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -114,12 +119,13 @@ export const supportTicketLinks = pgTable(
     ticketId: integer("ticket_id").references(() => supportTickets.id, { onDelete: "cascade" }).notNull(),
     linkedTicketId: integer("linked_ticket_id").references(() => supportTickets.id, { onDelete: "cascade" }).notNull(),
     relation: supportTicketLinkRelationEnum("relation").notNull(),
-    createdBy: text("created_by"),
+    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
     uniqueIndex("uniq_support_ticket_links_ticket_linked").on(table.ticketId, table.linkedTicketId),
     index("idx_support_ticket_links_org_ticket").on(table.orgId, table.ticketId),
+    unique("uniq_support_ticket_links_org_id").on(table.orgId, table.id),
   ],
 );
 

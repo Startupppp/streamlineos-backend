@@ -6,14 +6,11 @@ function makeCtx(partial: Partial<CurrentUserContext> = {}): CurrentUserContext 
   return {
     userId: "user-1",
     orgId: "org-1",
-    branchId: null,
     role: "ENGINEERING",
     permissions: [],
-    enabledModules: ["hr", "crm"],
-    plan: null,
-    isPlatformAdmin: false,
     isOrgOwner: false,
     sessionId: "session-1",
+    tokenScopes: null,
     ...partial,
   };
 }
@@ -32,13 +29,6 @@ describe("authorize", () => {
     expect(result).toEqual({ allow: false, scope: "none", reason: "UNAUTHENTICATED" });
   });
 
-  it("allows owners and platform admins everything at scope all", async () => {
-    const resolver = makeResolver(new Map(), []);
-    const owner = await authorize(resolver, makeCtx({ isOrgOwner: true }), "hr:employees:view");
-    expect(owner).toEqual({ allow: true, scope: "all" });
-    const admin = await authorize(resolver, makeCtx({ isPlatformAdmin: true }), "hr:employees:view");
-    expect(admin).toEqual({ allow: true, scope: "all" });
-  });
 
   it("allows when the resolved map grants the permission and returns its scope", async () => {
     const resolver = makeResolver(new Map([["hr:employees:view", "team"]]), ["hr"]);
@@ -95,6 +85,71 @@ describe("authorize", () => {
     };
     await authorize(resolver, makeCtx({ orgId: "org-legitimate" }), "hr:employees:view");
     expect(capturedOrgIds).toEqual(["org-legitimate"]);
+  });
+
+  it("allows the org owner with no grants and the module disabled", async () => {
+    const resolver = makeResolver(new Map(), []);
+    const result = await authorize(resolver, makeCtx({ isOrgOwner: true }), "hr:employees:manage");
+    expect(result).toEqual({ allow: true, scope: "all" });
+  });
+
+  it("allows an org admin with no module grant and the module disabled", async () => {
+    const resolver = makeResolver(new Map([["settings:manage", "all"]]), []);
+    const result = await authorize(resolver, makeCtx(), "hr:employees:manage");
+    expect(result).toEqual({ allow: true, scope: "all" });
+  });
+
+  it("still denies a plain member whose module access was revoked", async () => {
+    const resolver = makeResolver(new Map(), ["hr"]);
+    const result = await authorize(resolver, makeCtx(), "hr:employees:manage");
+    expect(result).toEqual({ allow: false, scope: "none", reason: "FORBIDDEN" });
+  });
+
+  it("does not entitlement-gate a namespace no organization can enable", async () => {
+    const resolver = makeResolver(new Map([["directory:people:view", "all"]]), []);
+    const result = await authorize(resolver, makeCtx(), "directory:people:view");
+    expect(result).toEqual({
+      allow: true,
+      scope: "all",
+      permissions: ["directory:people:view"],
+    });
+  });
+
+  it("denies with FORBIDDEN when tokenScopes does not include the permission key, even for an org owner", async () => {
+    const resolver = makeResolver(new Map(), []);
+    const result = await authorize(
+      resolver,
+      makeCtx({ isOrgOwner: true, tokenScopes: ["crm:leads:view"] }),
+      "hr:employees:view",
+    );
+    expect(result).toEqual({ allow: false, scope: "none", reason: "FORBIDDEN" });
+  });
+
+  it("tokenScopes null bypasses the token scope gate and behaves identically to an unrestricted session", async () => {
+    const resolver = makeResolver(new Map([["hr:employees:view", "team"]]), ["hr"]);
+    const result = await authorize(resolver, makeCtx({ tokenScopes: null }), "hr:employees:view");
+    expect(result).toEqual({ allow: true, scope: "team", permissions: ["hr:employees:view"] });
+  });
+
+  it("intersects the returned permissions array with tokenScopes when non-null", async () => {
+    const resolver = makeResolver(
+      new Map<string, DataScope>([
+        ["hr:employees:view", "team"],
+        ["hr:analytics:read", "all"],
+        ["hr:payroll:view", "all"],
+      ]),
+      ["hr"],
+    );
+    const result = await authorize(
+      resolver,
+      makeCtx({ tokenScopes: ["hr:employees:view", "hr:analytics:read"] }),
+      "hr:employees:view",
+    );
+    expect(result.allow).toBe(true);
+    expect(result.permissions).toEqual(
+      expect.arrayContaining(["hr:employees:view", "hr:analytics:read"]),
+    );
+    expect(result.permissions).not.toContain("hr:payroll:view");
   });
 });
 

@@ -1,6 +1,6 @@
-import { pgTable, pgEnum, text, serial, integer, boolean, jsonb, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, serial, integer, boolean, jsonb, timestamp, index, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 import { surveyForms, surveyVersions } from "./forms";
 import { surveyQuestions } from "./structure";
 import { surveyCollectors, surveyParticipants } from "./distribution";
@@ -32,6 +32,7 @@ export const surveyResponseSessions = pgTable("survey_response_sessions", {
 }, (table) => [
   index("idx_survey_response_sessions_survey_submitted").on(table.orgId, table.surveyId, table.submittedAt),
   index("idx_survey_response_sessions_collector").on(table.collectorId),
+  unique("uniq_survey_response_sessions_org_id").on(table.orgId, table.id),
 ]);
 
 export const surveyAnswers = pgTable("survey_answers", {
@@ -49,6 +50,7 @@ export const surveyAnswers = pgTable("survey_answers", {
 }, (table) => [
   index("idx_survey_answers_org_question").on(table.orgId, table.questionId),
   index("idx_survey_answers_session").on(table.sessionId),
+  unique("uniq_survey_answers_org_id").on(table.orgId, table.id),
 ]);
 
 export const surveyResponseSessionsRelations = relations(surveyResponseSessions, ({ one, many }) => ({

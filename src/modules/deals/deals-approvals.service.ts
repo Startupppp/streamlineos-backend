@@ -26,7 +26,8 @@ export class DealsApprovalsService {
       .select()
       .from(dealApprovalRules)
       .where(eq(dealApprovalRules.orgId, orgId))
-      .orderBy(desc(dealApprovalRules.createdAt));
+      .orderBy(desc(dealApprovalRules.createdAt))
+      .limit(100);
   }
 
   async createRule(orgId: string, input: CreateApprovalRuleInput) {

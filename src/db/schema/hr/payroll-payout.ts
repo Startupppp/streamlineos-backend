@@ -1,10 +1,10 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
   payslipLayoutEnum,
   payrollBankBatchStatusEnum, payrollBankItemStatusEnum,
-} from "../enums";
-import { organizations, users } from "../auth";
+} from "../common/enums";
+import { organizations, users } from "../common/auth";
 import { payrollRuns, payrollRunEmployees } from "./payroll-runs";
 
 export const payslipTemplates = pgTable("payslip_templates", {
@@ -17,6 +17,7 @@ export const payslipTemplates = pgTable("payslip_templates", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_payslip_templates_org_id").on(table.orgId, table.id),
   index("idx_payslip_templates_org").on(table.orgId),
 ]);
 
@@ -37,8 +38,9 @@ export const payrollBankBatches = pgTable("payroll_bank_batches", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_payroll_bank_batches_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_payroll_bank_batches_org_number").on(table.orgId, table.batchNumber),
-  uniqueIndex("uniq_payroll_bank_batches_idempotency_key").on(table.idempotencyKey),
+  uniqueIndex("uniq_payroll_bank_batches_org_idempotency_key").on(table.orgId, table.idempotencyKey),
   index("idx_payroll_bank_batches_org_run").on(table.orgId, table.runId),
 ]);
 
@@ -58,6 +60,7 @@ export const payrollBankBatchItems = pgTable("payroll_bank_batch_items", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_payroll_bank_batch_items_org_id").on(table.orgId, table.id),
   index("idx_payroll_bank_batch_items_batch_status").on(table.batchId, table.status),
   index("idx_payroll_bank_batch_items_org").on(table.orgId),
 ]);

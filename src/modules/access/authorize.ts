@@ -1,5 +1,7 @@
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { isInternalModule, moduleOf } from "./access.service";
+import { grantsOrgAdmin } from "../../common/rbac/grantability";
+import { isPlanGatedModule } from "../../common/rbac/module-vocabulary";
+import { moduleOf } from "./access.service";
 import type { AuthResult, DataScope } from "./access.types";
 
 export interface AccessResolver {
@@ -14,21 +16,32 @@ export async function authorize(
 ): Promise<AuthResult> {
   if (!ctx) return { allow: false, scope: "none", reason: "UNAUTHENTICATED" };
 
-  if (ctx.isPlatformAdmin || ctx.isOrgOwner) return { allow: true, scope: "all" };
+  if (ctx.tokenScopes && !ctx.tokenScopes.includes(permissionKey)) {
+    return { allow: false, scope: "none", reason: "FORBIDDEN" };
+  }
+
+  if (ctx.isOrgOwner) return { allow: true, scope: "all" };
+
+  const resolved = await access.resolveUserPermissions(ctx.orgId, ctx.userId);
+
+  if (grantsOrgAdmin(resolved)) {
+    return { allow: true, scope: "all" };
+  }
 
   const moduleKey = moduleOf(permissionKey);
-  if (!isInternalModule(moduleKey) && !(await access.isModuleEnabled(ctx.orgId, moduleKey))) {
+  if (isPlanGatedModule(moduleKey) && !(await access.isModuleEnabled(ctx.orgId, moduleKey))) {
     return { allow: false, scope: "none", reason: "NO_MODULE" };
   }
 
-  const resolved = await access.resolveUserPermissions(ctx.orgId, ctx.userId);
   const scope = resolved.get(permissionKey);
   if (!scope || scope === "none") return { allow: false, scope: "none", reason: "FORBIDDEN" };
 
+  const tokenScopes = ctx.tokenScopes;
   const granted: string[] = [];
   for (const [key, grantedScope] of resolved) {
-    if (grantedScope !== "none") granted.push(key);
+    if (grantedScope === "none") continue;
+    if (tokenScopes && !tokenScopes.includes(key)) continue;
+    granted.push(key);
   }
   return { allow: true, scope, permissions: granted };
 }
-

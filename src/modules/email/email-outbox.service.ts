@@ -26,6 +26,7 @@ export class EmailOutboxService {
     const inserted = await this.db
       .insert(emailOutbox)
       .values({
+        organizationId: options.organizationId ?? null,
         toEmail,
         subject: options.subject,
         html: options.html,

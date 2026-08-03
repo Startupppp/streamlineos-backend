@@ -18,6 +18,7 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { LeadsOpsService } from "./leads-ops.service";
 import {
   bulkDeleteSchema,
@@ -91,6 +92,7 @@ export class LeadsOpsController {
   @Post("import")
   @RequirePermission("crm:leads:create")
   @HttpCode(201)
+  @Idempotent("crm.leads.import")
   importLeads(
     @Body(new ZodValidationPipe(importSchema)) body: ImportInput,
     @CurrentUser() u: CurrentUserContext,

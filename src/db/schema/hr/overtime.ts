@@ -1,5 +1,5 @@
-import { pgTable, text, serial, timestamp, date, decimal, boolean, index } from "drizzle-orm/pg-core";
-import { organizations, users } from "../auth";
+import { pgTable, text, serial, timestamp, date, decimal, boolean, index, unique } from "drizzle-orm/pg-core";
+import { organizations, users } from "../common/auth";
 
 export const overtimeRequests = pgTable("overtime_requests", {
   id: serial("id").primaryKey(),
@@ -14,6 +14,7 @@ export const overtimeRequests = pgTable("overtime_requests", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_overtime_requests_org_id").on(table.orgId, table.id),
   index("idx_overtime_org_status").on(table.orgId, table.status),
   index("idx_overtime_user").on(table.userId),
   index("idx_overtime_org_created").on(table.orgId, table.createdAt),
@@ -28,5 +29,7 @@ export const compOffBalances = pgTable("comp_off_balances", {
   expiryDate: date("expiry_date"),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_comp_off_balances_org_id").on(table.orgId, table.id),
   index("idx_comp_off_user").on(table.userId),
+  index("idx_comp_off_org_user").on(table.orgId, table.userId),
 ]);

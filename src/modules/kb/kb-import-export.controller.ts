@@ -13,6 +13,7 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { KbImportExportService } from "./kb-import-export.service";
 import {
   exportPageSchema,
@@ -27,6 +28,7 @@ export class KbImportExportController {
   constructor(private readonly importExport: KbImportExportService) {}
 
   @Post("pages/import")
+  @Idempotent("kb:pages.import")
   @RequirePermission("kb:pages:import")
   async importPages(
     @Body(new ZodValidationPipe(importPagesSchema)) body: ImportPagesInput,

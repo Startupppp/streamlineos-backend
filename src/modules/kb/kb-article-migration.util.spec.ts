@@ -18,6 +18,7 @@ const baseArticle = {
   helpfulCount: 0,
   notHelpfulCount: 0,
   tags: null,
+  fts: null,
   seoTitle: null,
   seoDescription: null,
   reviewIntervalDays: null,

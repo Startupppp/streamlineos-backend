@@ -1,7 +1,7 @@
-import { pgTable, text, serial, timestamp, decimal, integer, boolean, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, decimal, integer, jsonb, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { invChannelTypeEnum, invChannelStatusEnum, invChannelPubStatusEnum, inv3plStatusEnum } from "../enums";
-import { organizations } from "../auth";
+import { invChannelTypeEnum, invChannelStatusEnum, invChannelPubStatusEnum, inv3plStatusEnum } from "../common/enums";
+import { organizations } from "../common/auth";
 import { invProductVariants } from "./core";
 
 export const invChannels = pgTable("inv_channels", {
@@ -17,6 +17,8 @@ export const invChannels = pgTable("inv_channels", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  uniqueIndex("uniq_inv_channels_org_name").on(table.orgId, table.name),
+  unique("uniq_inv_channels_org_id").on(table.orgId, table.id),
   index("idx_inv_channels_org_status").on(table.orgId, table.status),
 ]);
 
@@ -34,6 +36,7 @@ export const invChannelStockPublications = pgTable("inv_channel_stock_publicatio
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_pub_org_channel_variant").on(table.orgId, table.channelId, table.productVariantId),
+  unique("uniq_inv_channel_stock_pub_org_id").on(table.orgId, table.id),
   index("idx_inv_pub_org_channel").on(table.orgId, table.channelId),
   index("idx_inv_pub_status").on(table.orgId, table.status),
 ]);
@@ -52,6 +55,7 @@ export const inv3plConnections = pgTable("inv_3pl_connections", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_inv_3pl_connections_org_id").on(table.orgId, table.id),
   index("idx_inv_3pl_org_status").on(table.orgId, table.status),
 ]);
 

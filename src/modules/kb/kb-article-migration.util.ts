@@ -1,4 +1,4 @@
-import { kbArticles, kbPages } from "../../db/schema";
+import { kbArticles } from "../../db/schema";
 
 type ArticleRow = typeof kbArticles.$inferSelect;
 
@@ -16,8 +16,6 @@ export interface MappedPage {
   sortOrder: number;
   parentPageId: null;
 }
-
-export type PageInsert = typeof kbPages.$inferInsert;
 
 const VERIFIED_WINDOW_MS = 180 * 24 * 60 * 60 * 1000;
 

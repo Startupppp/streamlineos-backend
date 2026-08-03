@@ -19,8 +19,11 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AccessService } from "../access/access.service";
-import { getTodayString } from "./date.helpers";
-import { resolveDashboardStatsFlags } from "./dashboard-scope";
+import { getTodayString } from "../../common/date";
+import {
+  resolveDashboardStatsFlags,
+  resolvePersonalDashboardModules,
+} from "./dashboard-scope";
 
 export interface BirthdayEntry {
   id: string;
@@ -297,7 +300,9 @@ export class DashboardHrService {
     return result.slice(0, 20);
   }
 
-  async getPersonalDashboard(orgId: string, userId: string) {
+  async getPersonalDashboard(u: CurrentUserContext) {
+    const { orgId, userId } = u;
+    const modules = await resolvePersonalDashboardModules(this.access, u);
     const now = new Date();
     const weekStart = new Date(now);
     weekStart.setDate(now.getDate() - now.getDay() + 1);
@@ -308,48 +313,54 @@ export class DashboardHrService {
 
     const [myTasks, timesheetRows, leaveBalanceRows, upcomingEvents, unreadCount] =
       await Promise.all([
-        this.db.query.tickets.findMany({
-          where: and(
-            eq(tickets.orgId, orgId),
-            eq(tickets.assigneeId, userId),
-            or(
-              eq(tickets.status, "TODO"),
-              eq(tickets.status, "IN_PROGRESS"),
-              eq(tickets.status, "IN_REVIEW"),
-            ),
-          ),
-          orderBy: [desc(tickets.updatedAt)],
-          limit: 10,
-          with: { project: { columns: { id: true, name: true } } },
-        }),
-        this.db
-          .select({ hours: sum(timesheets.hours) })
-          .from(timesheets)
-          .where(
-            and(
-              eq(timesheets.orgId, orgId),
-              eq(timesheets.userId, userId),
-              gte(timesheets.date, weekStart.toISOString().slice(0, 10)),
-              lt(timesheets.date, weekEnd.toISOString().slice(0, 10)),
-            ),
-          ),
-        this.db
-          .select({
-            id: leaveBalances.id,
-            balance: leaveBalances.balance,
-            total: leaveTypes.daysPerYear,
-            typeName: leaveTypes.name,
-            year: leaveBalances.year,
-          })
-          .from(leaveBalances)
-          .innerJoin(leaveTypes, eq(leaveBalances.leaveTypeId, leaveTypes.id))
-          .where(
-            and(
-              eq(leaveBalances.orgId, orgId),
-              eq(leaveBalances.userId, userId),
-              eq(leaveBalances.year, now.getFullYear()),
-            ),
-          ),
+        modules.build
+          ? this.db.query.tickets.findMany({
+              where: and(
+                eq(tickets.orgId, orgId),
+                eq(tickets.assigneeId, userId),
+                or(
+                  eq(tickets.status, "TODO"),
+                  eq(tickets.status, "IN_PROGRESS"),
+                  eq(tickets.status, "IN_REVIEW"),
+                ),
+              ),
+              orderBy: [desc(tickets.updatedAt)],
+              limit: 10,
+              with: { project: { columns: { id: true, name: true } } },
+            })
+          : [],
+        modules.timesheets
+          ? this.db
+              .select({ hours: sum(timesheets.hours) })
+              .from(timesheets)
+              .where(
+                and(
+                  eq(timesheets.orgId, orgId),
+                  eq(timesheets.userId, userId),
+                  gte(timesheets.date, weekStart.toISOString().slice(0, 10)),
+                  lt(timesheets.date, weekEnd.toISOString().slice(0, 10)),
+                ),
+              )
+          : [],
+        modules.hr
+          ? this.db
+              .select({
+                id: leaveBalances.id,
+                balance: leaveBalances.balance,
+                total: leaveTypes.daysPerYear,
+                typeName: leaveTypes.name,
+                year: leaveBalances.year,
+              })
+              .from(leaveBalances)
+              .innerJoin(leaveTypes, eq(leaveBalances.leaveTypeId, leaveTypes.id))
+              .where(
+                and(
+                  eq(leaveBalances.orgId, orgId),
+                  eq(leaveBalances.userId, userId),
+                  eq(leaveBalances.year, now.getFullYear()),
+                ),
+              )
+          : [],
         this.db
           .select({
             id: calendarEvents.id,

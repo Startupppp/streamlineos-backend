@@ -1,5 +1,5 @@
 import type { CalculationSnapshot, CalculationSnapshotLine, PayrollWorkerType } from "../../payroll.types";
-import type { PayslipPdfData } from "../../../hr-payroll/lib/payslip-pdf";
+import type { PayslipPdfData } from "../../../hr/payroll/lib/payslip-pdf";
 import type { PayslipTemplateConfig } from "../dto/payout.schemas";
 import { amountInWords } from "./amount-in-words";
 
@@ -351,7 +351,7 @@ export function renderPayslipHtml(params: RenderParams): string {
 
 export function buildPayslipPdfData(params: RenderParams): PayslipPdfData {
   const { snapshot, employee, org, month } = params;
-  const { lines, totals, currency } = snapshot;
+  const { lines, totals } = snapshot;
 
   const findLine = (code: string): CalculationSnapshotLine | undefined =>
     lines.find(l => l.code === code && l.category === "EARNING");

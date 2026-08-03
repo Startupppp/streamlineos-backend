@@ -1,6 +1,6 @@
-import { pgTable, pgEnum, text, serial, integer, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, serial, integer, timestamp, index, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { clientAccounts } from "./contacts";
 
 export const npsSurveyStatusEnum = pgEnum("nps_survey_status", ["draft", "active", "closed"]);
@@ -18,6 +18,7 @@ export const npsSurveys = pgTable("nps_surveys", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_nps_surveys_org_status").on(table.orgId, table.status),
+  unique("uniq_nps_surveys_org_id").on(table.orgId, table.id),
 ]);
 
 export const npsResponses = pgTable("nps_responses", {
@@ -33,6 +34,7 @@ export const npsResponses = pgTable("nps_responses", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_nps_responses_survey").on(table.surveyId),
+  unique("uniq_nps_responses_org_id").on(table.orgId, table.id),
 ]);
 
 export const npsSurveysRelations = relations(npsSurveys, ({ one, many }) => ({

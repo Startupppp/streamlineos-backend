@@ -16,12 +16,6 @@ export class ChatNotificationsService {
     private readonly orgSettings: ChatOrgSettingsService,
   ) {}
 
-  private async resolvePreference(orgId: string, preference: string) {
-    if (preference !== "DEFAULT") return preference;
-    const settings = await this.orgSettings.getSettings(orgId);
-    return settings.defaultNotificationPreference;
-  }
-
   async publishNewMessageNotification(
     orgId: string,
     channelId: number,
@@ -37,11 +31,15 @@ export class ChatNotificationsService {
       .from(chatChannelMembers)
       .where(eq(chatChannelMembers.channelId, channelId));
 
+    const settings = await this.orgSettings.getSettings(orgId);
+    const defaultPreference = settings.defaultNotificationPreference;
+
     const now = new Date();
     for (const { userId, mutedUntil, notificationPreference } of members) {
       if (userId === message.senderId) continue;
       if (mutedUntil && mutedUntil > now) continue;
-      const effectivePreference = await this.resolvePreference(orgId, notificationPreference);
+      const effectivePreference =
+        notificationPreference !== "DEFAULT" ? notificationPreference : defaultPreference;
       if (SUPPRESSED_GENERAL_PREFERENCES.has(effectivePreference)) continue;
       await this.ably.publishToUser(orgId, userId, "notification:message", {
         channelId,
@@ -76,11 +74,12 @@ export class ChatNotificationsService {
       );
     const preferenceByUser = new Map(members.map((m) => [m.userId, m.notificationPreference]));
 
+    const settings = await this.orgSettings.getSettings(orgId);
+    const defaultPreference = settings.defaultNotificationPreference;
+
     for (const userId of mentionedUserIds) {
-      const effectivePreference = await this.resolvePreference(
-        orgId,
-        preferenceByUser.get(userId) ?? "DEFAULT",
-      );
+      const pref = preferenceByUser.get(userId) ?? "DEFAULT";
+      const effectivePreference = pref !== "DEFAULT" ? pref : defaultPreference;
       if (effectivePreference === "NOTHING") continue;
       await this.ably.publishToUser(orgId, userId, "notification:mention", {
         channelId,

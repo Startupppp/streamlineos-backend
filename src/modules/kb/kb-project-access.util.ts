@@ -7,7 +7,7 @@ export async function getAccessibleProjectIds(
   db: Db,
   user: CurrentUserContext,
 ): Promise<number[]> {
-  if (user.isOrgOwner || user.isPlatformAdmin) return [];
+  if (user.isOrgOwner) return [];
   const rows = await db
     .select({ id: projects.id })
     .from(projects)

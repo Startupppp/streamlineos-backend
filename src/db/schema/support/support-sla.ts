@@ -1,6 +1,5 @@
 import {
   pgTable,
-  pgEnum,
   serial,
   text,
   integer,
@@ -8,10 +7,11 @@ import {
   jsonb,
   timestamp,
   index,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations } from "../auth";
-import { supportTicketPriorityEnum } from "../enums";
+import { organizations } from "../common/auth";
+import { supportTicketPriorityEnum } from "../common/enums";
 
 export interface WeeklyScheduleDay {
   start: string;
@@ -36,7 +36,10 @@ export const supportBusinessHours = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
-  (table) => [index("idx_support_business_hours_org").on(table.orgId)],
+  (table) => [
+    index("idx_support_business_hours_org").on(table.orgId),
+    unique("uniq_support_business_hours_org_id").on(table.orgId, table.id),
+  ],
 );
 
 export const supportSlaPolicies = pgTable(
@@ -47,7 +50,7 @@ export const supportSlaPolicies = pgTable(
     name: text("name").notNull(),
     priority: supportTicketPriorityEnum("priority"),
     category: text("category"),
-    businessHoursId: integer("business_hours_id"),
+    businessHoursId: integer("business_hours_id").references(() => supportBusinessHours.id, { onDelete: "set null" }),
     firstResponseTargetMins: integer("first_response_target_mins").notNull(),
     resolutionTargetMins: integer("resolution_target_mins").notNull(),
     pauseStatuses: jsonb("pause_statuses").$type<string[]>().default(["WAITING"]).notNull(),
@@ -58,6 +61,7 @@ export const supportSlaPolicies = pgTable(
   },
   (table) => [
     index("idx_support_sla_policies_org_enabled").on(table.orgId, table.isEnabled),
+    unique("uniq_support_sla_policies_org_id").on(table.orgId, table.id),
   ],
 );
 

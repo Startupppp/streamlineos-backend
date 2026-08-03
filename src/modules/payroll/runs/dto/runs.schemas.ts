@@ -50,14 +50,6 @@ export const listRunEmployeesQuerySchema = z.object({
 });
 export type ListRunEmployeesQuery = z.infer<typeof listRunEmployeesQuerySchema>;
 
-export const adjustmentSchema = z.object({
-  amount: z.string().regex(/^\d+(\.\d{1,2})?$/, "Must be decimal string"),
-  note: z.string().min(1).max(500),
-  code: z.string().min(1).max(50).optional(),
-  name: z.string().min(1).max(100).optional(),
-});
-export type AdjustmentInput = z.infer<typeof adjustmentSchema>;
-
 export const patchInputSchema = z.object({
   scheduledDays: z.string().optional(),
   paidDays: z.string().optional(),
@@ -140,3 +132,9 @@ export const inputsQuerySchema = z.object({
   userId: z.string().optional(),
 });
 export type InputsQuery = z.infer<typeof inputsQuerySchema>;
+
+export const exceptionFilterSchema = z.object({
+  severity: z.enum(["BLOCKER", "WARNING", "INFO"]).optional(),
+  status: z.enum(["OPEN", "RESOLVED", "OVERRIDDEN"]).optional(),
+});
+export type ExceptionFilterInput = z.infer<typeof exceptionFilterSchema>;

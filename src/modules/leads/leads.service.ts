@@ -27,12 +27,11 @@ import { logger } from "../../common/logger/logger.service";
 import { EmailService } from "../email/email.service";
 import { AutomationService } from "../automation/automation.service";
 import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";
-import { CrmAutomationBusService } from "../crm-automation-studio/crm-automation-bus.service";
-import { CrmValidationService } from "../crm-metadata/crm-validation.service";
-import { CrmAttributionReportService } from "../crm/crm-attribution-report.service";
-import { TerritoryMatchService } from "../crm/territory-match.service";
-import { PlanLimitsService } from "../billing/plan-limits.service";
-import { pushBranchAssigneeFilter, type BranchContext } from "./branch-filter";
+import { CrmAutomationBusService } from "../crm/automation-studio/crm-automation-bus.service";
+import { CrmValidationService } from "../crm/metadata/crm-validation.service";
+import { CrmAttributionReportService } from "../crm/core/crm-attribution-report.service";
+import { TerritoryMatchService } from "../crm/core/territory-match.service";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { LeadsBoardService, type BoardOpts, type StatsFilters } from "./leads-board.service";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
@@ -48,7 +47,7 @@ import type {
   IngestInput,
 } from "./dto/lead.schemas";
 
-type ListFilters = ListInput & { userId?: string; branch?: BranchContext; scope?: DataScope };
+type ListFilters = ListInput & { userId?: string; scope?: DataScope };
 
 function pushLeadsViewScope(
   where: SQL[],
@@ -119,10 +118,6 @@ export class LeadsService {
   async listLeads(orgId: string, filters?: ListFilters) {
     const where = [eq(leads.orgId, orgId)];
 
-    if (filters?.branch) {
-      await pushBranchAssigneeFilter(this.db, where, leads.assignedToId, filters.branch);
-    }
-
     pushLeadsViewScope(where, filters?.scope, filters?.userId);
     if (filters?.status) where.push(eq(leads.status, filters.status));
     if (filters?.priority) where.push(eq(leads.priority, filters.priority));
@@ -131,13 +126,13 @@ export class LeadsService {
     if (filters?.dateFrom) where.push(gte(leads.createdAt, new Date(filters.dateFrom)));
     if (filters?.dateTo) where.push(lte(leads.createdAt, new Date(filters.dateTo)));
     if (filters?.search) {
-      const s = `%${filters.search.toLowerCase()}%`;
+      const s = `%${filters.search}%`;
       where.push(
         or(
-          sql`LOWER(${leads.name}) LIKE ${s}`,
-          sql`LOWER(${leads.email}) LIKE ${s}`,
-          sql`${leads.phone} LIKE ${s}`,
-          sql`LOWER(${leads.company}) LIKE ${s}`,
+          sql`${leads.name} ILIKE ${s}`,
+          sql`${leads.email} ILIKE ${s}`,
+          sql`${leads.phone} ILIKE ${s}`,
+          sql`${leads.company} ILIKE ${s}`,
         )!,
       );
     }
@@ -205,6 +200,7 @@ export class LeadsService {
         activities: {
           with: { user: { columns: { id: true, name: true, image: true } } },
           orderBy: [desc(leadActivities.date)],
+          limit: 50,
         },
       },
     });

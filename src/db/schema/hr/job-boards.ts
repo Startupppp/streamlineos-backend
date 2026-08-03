@@ -1,6 +1,6 @@
-import { pgTable, text, serial, timestamp, decimal, integer, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, decimal, integer, index, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { jobPostings } from "./hiring";
 
 export const jobBoardPostings = pgTable("job_board_postings", {
@@ -22,6 +22,7 @@ export const jobBoardPostings = pgTable("job_board_postings", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_job_board_postings_org_id").on(table.orgId, table.id),
   index("idx_job_board_postings_job").on(table.jobPostingId),
   index("idx_job_board_postings_org").on(table.orgId),
 ]);

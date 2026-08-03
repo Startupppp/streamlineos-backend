@@ -30,7 +30,6 @@ export const listParticipantsSchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
 });
 
-export type ParticipantInput = z.infer<typeof participantInputSchema>;
 export type ImportParticipantsInput = z.infer<typeof importParticipantsSchema>;
 export type InviteParticipantsInput = z.infer<typeof inviteParticipantsSchema>;
 export type RemindParticipantsInput = z.infer<typeof remindParticipantsSchema>;

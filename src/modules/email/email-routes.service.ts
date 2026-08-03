@@ -1,7 +1,7 @@
 import { Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
 import { EmailService } from "./email.service";
 import { TwilioGateway } from "./dispatch/twilio.gateway";
-import { TEMPLATE_MAP } from "./templates/test-catalog";
+import { TEMPLATE_MAP } from "./templates/registry";
 import type { DispatchInput } from "./dto/email.schemas";
 
 export interface ChannelResult {

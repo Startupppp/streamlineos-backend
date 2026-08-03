@@ -1,3 +1,7 @@
+import { Logger } from "@nestjs/common";
+
+const logger = new Logger("KbPageContent");
+
 type TipTapNode = {
   type?: string;
   attrs?: Record<string, unknown>;
@@ -54,7 +58,8 @@ export function extractPageLinkIds(content: unknown): number[] {
         }
       });
     }
-  } catch {
+  } catch (err) {
+    logger.warn(`extractPageLinkIds parse error: ${err instanceof Error ? err.message : String(err)}`);
   }
   return [...new Set(ids)];
 }
@@ -80,7 +85,8 @@ export function extractMentionUserIds(content: unknown): string[] {
         }
       });
     }
-  } catch {
+  } catch (err) {
+    logger.warn(`extractMentionUserIds parse error: ${err instanceof Error ? err.message : String(err)}`);
   }
   return [...new Set(ids)];
 }

@@ -5,6 +5,7 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { KbArticleMigrationService } from "./kb-article-migration.service";
 import {
   runArticleMigrationSchema,
@@ -23,6 +24,7 @@ export class KbArticleMigrationController {
   }
 
   @Post("run")
+  @Idempotent("kb:article_migration.run")
   @RequirePermission("kb:settings:manage")
   async run(
     @Body(new ZodValidationPipe(runArticleMigrationSchema)) body: RunArticleMigrationInput,

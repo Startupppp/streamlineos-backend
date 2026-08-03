@@ -55,13 +55,6 @@ export const CreateSecretSchema = z.object({
   description: z.string().optional(),
 });
 
-export const CreateVariableSchema = z.object({
-  key: z.string().min(1).max(255),
-  valueType: z.enum(["string", "number", "boolean", "object"]),
-  defaultValue: z.unknown().optional(),
-  description: z.string().optional(),
-});
-
 export type CreateWorkflowDto = z.infer<typeof CreateWorkflowSchema>;
 export type UpdateWorkflowDto = z.infer<typeof UpdateWorkflowSchema>;
 export type PublishWorkflowDto = z.infer<typeof PublishWorkflowSchema>;
@@ -72,4 +65,3 @@ export type ApprovalActionDto = z.infer<typeof ApprovalActionSchema>;
 export type CreateScheduleDto = z.infer<typeof CreateScheduleSchema>;
 export type UpdateScheduleDto = z.infer<typeof UpdateScheduleSchema>;
 export type CreateSecretDto = z.infer<typeof CreateSecretSchema>;
-export type CreateVariableDto = z.infer<typeof CreateVariableSchema>;

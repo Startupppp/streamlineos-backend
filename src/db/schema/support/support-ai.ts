@@ -10,9 +10,10 @@ import {
   uniqueIndex,
   vector,
   pgEnum,
+  unique,
 } from "drizzle-orm/pg-core";
-import { organizations, users } from "../auth";
-import { supportTickets } from "../crm/billing";
+import { organizations, users } from "../common/auth";
+import { supportTickets } from "./tickets";
 
 export const SUPPORT_AI_EMBEDDING_DIMENSIONS = 1536;
 
@@ -55,6 +56,7 @@ export const supportAiSuggestions = pgTable(
     index("idx_support_ai_suggestions_ticket").on(table.ticketId),
     index("idx_support_ai_suggestions_org_type").on(table.orgId, table.type),
     index("idx_support_ai_suggestions_status").on(table.status),
+    unique("uniq_support_ai_suggestions_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -66,7 +68,10 @@ export const supportAiSettings = pgTable(
     confidenceThreshold: numeric("confidence_threshold", { precision: 4, scale: 3 }).default("0.7").notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
-  (table) => [uniqueIndex("uniq_support_ai_settings_org").on(table.orgId)],
+  (table) => [
+    uniqueIndex("uniq_support_ai_settings_org").on(table.orgId),
+    unique("uniq_support_ai_settings_org_id").on(table.orgId, table.id),
+  ],
 );
 
 // One embedding per ticket (title + description), regenerated on update. Used for
@@ -86,5 +91,6 @@ export const supportTicketEmbeddings = pgTable(
   (table) => [
     uniqueIndex("idx_support_ticket_embeddings_ticket").on(table.ticketId),
     index("idx_support_ticket_embeddings_org").on(table.orgId),
+    unique("uniq_support_ticket_embeddings_org_id").on(table.orgId, table.id),
   ],
 );

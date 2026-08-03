@@ -1,6 +1,6 @@
-import { pgTable, text, boolean, integer, jsonb, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, boolean, integer, jsonb, timestamp, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
-import { organizations } from "../auth";
+import { organizations } from "../common/auth";
 
 export const crmPipelines = pgTable("crm_pipelines", {
   id: text("id").primaryKey().$defaultFn(() => randomUUID()),
@@ -17,6 +17,7 @@ export const crmPipelines = pgTable("crm_pipelines", {
   deletedAt: timestamp("deleted_at"),
 }, (table) => [
   uniqueIndex("uniq_crm_pipelines_org_key").on(table.orgId, table.key),
+  unique("uniq_crm_pipelines_org_id").on(table.orgId, table.id),
 ]);
 
 export const crmPipelineStages = pgTable("crm_pipeline_stages", {
@@ -43,6 +44,7 @@ export const crmPipelineStages = pgTable("crm_pipeline_stages", {
 }, (table) => [
   uniqueIndex("uniq_crm_pipeline_stages_org_pipeline_key").on(table.orgId, table.pipelineId, table.key),
   index("idx_crm_pipeline_stages_org_pipeline_sort").on(table.orgId, table.pipelineId, table.sortOrder),
+  unique("uniq_crm_pipeline_stages_org_id").on(table.orgId, table.id),
 ]);
 
 export const crmOptions = pgTable("crm_options", {
@@ -64,6 +66,7 @@ export const crmOptions = pgTable("crm_options", {
 }, (table) => [
   uniqueIndex("uniq_crm_options_org_type_key").on(table.orgId, table.type, table.key),
   index("idx_crm_options_org_type_active").on(table.orgId, table.type, table.isActive),
+  unique("uniq_crm_options_org_id").on(table.orgId, table.id),
 ]);
 
 export const crmValidationRules = pgTable("crm_validation_rules", {
@@ -73,7 +76,7 @@ export const crmValidationRules = pgTable("crm_validation_rules", {
   field: text("field").notNull(),
   ruleType: text("rule_type").notNull(),
   config: jsonb("config").$type<Record<string, unknown>>(),
-  pipelineId: text("pipeline_id"),
+  pipelineId: text("pipeline_id").references(() => crmPipelines.id, { onDelete: "set null" }),
   stageKey: text("stage_key"),
   sourceKey: text("source_key"),
   errorMessage: text("error_message"),
@@ -83,6 +86,7 @@ export const crmValidationRules = pgTable("crm_validation_rules", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_crm_validation_rules_org_entity_active").on(table.orgId, table.entityType, table.isActive),
+  unique("uniq_crm_validation_rules_org_id").on(table.orgId, table.id),
 ]);
 
 export const crmBlueprints = pgTable("crm_blueprints", {
@@ -96,6 +100,7 @@ export const crmBlueprints = pgTable("crm_blueprints", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_crm_blueprints_org_pipeline").on(table.orgId, table.pipelineId),
+  unique("uniq_crm_blueprints_org_id").on(table.orgId, table.id),
 ]);
 
 export const crmBlueprintTransitions = pgTable("crm_blueprint_transitions", {
@@ -112,6 +117,7 @@ export const crmBlueprintTransitions = pgTable("crm_blueprint_transitions", {
   sortOrder: integer("sort_order").default(0).notNull(),
 }, (table) => [
   index("idx_crm_blueprint_transitions_org_blueprint").on(table.orgId, table.blueprintId),
+  unique("uniq_crm_blueprint_trans_org_id").on(table.orgId, table.id),
 ]);
 
 export const crmAutomationEvents = pgTable("crm_automation_events", {
@@ -127,6 +133,7 @@ export const crmAutomationEvents = pgTable("crm_automation_events", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_crm_automation_events_org_key").on(table.orgId, table.key),
+  unique("uniq_crm_automation_events_org_id").on(table.orgId, table.id),
 ]);
 
 export const crmAutomationActions = pgTable("crm_automation_actions", {
@@ -142,6 +149,7 @@ export const crmAutomationActions = pgTable("crm_automation_actions", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_crm_automation_actions_org_key").on(table.orgId, table.key),
+  unique("uniq_crm_automation_actions_org_id").on(table.orgId, table.id),
 ]);
 
 export const crmUiMetadata = pgTable("crm_ui_metadata", {
@@ -153,4 +161,5 @@ export const crmUiMetadata = pgTable("crm_ui_metadata", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_crm_ui_metadata_org_scope").on(table.orgId, table.scope),
+  unique("uniq_crm_ui_metadata_org_id").on(table.orgId, table.id),
 ]);

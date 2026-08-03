@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, ilike, inArray, ne, or, sql, type SQL } from "drizzle-orm";
-import { kbArticles, kbArticleFeedback, kbArticleVersions } from "../../db/schema";
+import { and, asc, desc, eq, ilike, inArray, ne, or, sql, type SQL } from "drizzle-orm";
+import { kbArticles, kbArticleFeedback, kbArticleTags, kbArticleVersions, kbTags } from "../../db/schema";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -34,13 +34,14 @@ type ArticleListItem = Pick<
   | "excerpt"
   | "status"
   | "visibility"
-  | "tags"
   | "ownerId"
   | "helpfulCount"
   | "notHelpfulCount"
   | "lastVerifiedAt"
   | "updatedAt"
->;
+> & { tags: string[] };
+
+type ArticleWithTags = ArticleRow & { tags: string[] };
 
 type ArticleListResult = {
   items: ArticleListItem[];
@@ -102,7 +103,12 @@ export class KbArticlesService {
         excerpt: kbArticles.excerpt,
         status: kbArticles.status,
         visibility: kbArticles.visibility,
-        tags: kbArticles.tags,
+        tags: sql<string[]>`ARRAY(
+          SELECT kt.name FROM kb_article_tags kat
+          JOIN kb_tags kt ON kt.id = kat.tag_id
+          WHERE kat.article_id = ${kbArticles.id}
+          ORDER BY kt.name
+        )`,
         ownerId: kbArticles.ownerId,
         helpfulCount: kbArticles.helpfulCount,
         notHelpfulCount: kbArticles.notHelpfulCount,
@@ -124,14 +130,22 @@ export class KbArticlesService {
     };
   }
 
-  async get(user: CurrentUserContext, articleId: number): Promise<ArticleRow> {
+  async get(user: CurrentUserContext, articleId: number): Promise<ArticleWithTags> {
     const article = await this.db.query.kbArticles.findFirst({
       where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, user.orgId)),
       with: { category: { columns: { id: true, name: true, slug: true } } },
     });
     if (!article) throw new NotFoundException("Article not found");
     await this.access.assertCanViewArticle(user, article);
-    return article;
+
+    const tagRows = await this.db
+      .select({ name: kbTags.name })
+      .from(kbArticleTags)
+      .innerJoin(kbTags, eq(kbArticleTags.tagId, kbTags.id))
+      .where(and(eq(kbArticleTags.articleId, articleId), eq(kbTags.orgId, user.orgId)))
+      .orderBy(asc(kbTags.name));
+
+    return { ...article, tags: tagRows.map((t) => t.name) };
   }
 
   async recordView(user: CurrentUserContext, articleId: number): Promise<{ success: boolean }> {
@@ -144,10 +158,11 @@ export class KbArticlesService {
     return { success: true };
   }
 
-  async create(user: CurrentUserContext, input: CreateArticleInput): Promise<ArticleRow> {
+  async create(user: CurrentUserContext, input: CreateArticleInput): Promise<ArticleWithTags> {
     const orgId = user.orgId;
     await this.access.assertSpaceAccessible(user, input.spaceId);
 
+    const tagNames = input.tags ?? [];
     const maxAttempts = 3;
     for (let attempt = 1; ; attempt += 1) {
       const slug = await this.uniqueArticleSlug(orgId, input.title);
@@ -168,7 +183,6 @@ export class KbArticlesService {
               visibility: input.visibility,
               authorId: user.userId,
               ownerId: user.userId,
-              tags: input.tags ?? null,
               seoTitle: input.seoTitle ?? null,
               seoDescription: input.seoDescription ?? null,
               reviewIntervalDays: input.reviewIntervalDays ?? null,
@@ -177,7 +191,8 @@ export class KbArticlesService {
             .returning();
 
           await this.snapshot(tx, orgId, article, user.userId);
-          return article;
+          const resolvedTags = await this.syncArticleTags(tx, orgId, article.id, tagNames);
+          return { ...article, tags: resolvedTags };
         });
       } catch (err) {
         if (attempt < maxAttempts && this.isUniqueViolation(err)) continue;
@@ -190,7 +205,7 @@ export class KbArticlesService {
     return typeof err === "object" && err !== null && "code" in err && err.code === "23505";
   }
 
-  async update(user: CurrentUserContext, articleId: number, input: UpdateArticleInput): Promise<ArticleRow> {
+  async update(user: CurrentUserContext, articleId: number, input: UpdateArticleInput): Promise<ArticleWithTags> {
     await this.access.assertArticleEditable(user, articleId);
     const orgId = user.orgId;
     const current = await this.db.query.kbArticles.findFirst({
@@ -204,7 +219,6 @@ export class KbArticlesService {
     if (input.content !== undefined) values.content = input.content;
     if (input.contentText !== undefined) values.contentText = input.contentText;
     if (input.visibility !== undefined) values.visibility = input.visibility;
-    if (input.tags !== undefined) values.tags = input.tags;
     if (input.seoTitle !== undefined) values.seoTitle = input.seoTitle;
     if (input.seoDescription !== undefined) values.seoDescription = input.seoDescription;
     if (input.reviewIntervalDays !== undefined) values.reviewIntervalDays = input.reviewIntervalDays;
@@ -221,18 +235,36 @@ export class KbArticlesService {
     const titleChanged = input.title !== undefined && input.title !== current.title;
     const contentChanged = input.content !== undefined && input.content !== current.content;
 
-    if (Object.keys(values).length === 0) return current;
-
     const updated = await this.db.transaction(async (tx) => {
-      const [result] = await tx
-        .update(kbArticles)
-        .set(values)
-        .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
-        .returning();
+      let result: ArticleRow;
+      if (Object.keys(values).length > 0) {
+        const [row] = await tx
+          .update(kbArticles)
+          .set(values)
+          .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
+          .returning();
+        result = row;
+      } else {
+        result = current;
+      }
+
       if (titleChanged || contentChanged) {
         await this.snapshot(tx, orgId, result, user.userId, input.changeSummary);
       }
-      return result;
+
+      if (input.tags !== undefined) {
+        const resolvedTags = await this.syncArticleTags(tx, orgId, articleId, input.tags ?? []);
+        return { ...result, tags: resolvedTags };
+      }
+
+      const tagRows = await tx
+        .select({ name: kbTags.name })
+        .from(kbArticleTags)
+        .innerJoin(kbTags, eq(kbArticleTags.tagId, kbTags.id))
+        .where(and(eq(kbArticleTags.articleId, articleId), eq(kbTags.orgId, orgId)))
+        .orderBy(asc(kbTags.name));
+
+      return { ...result, tags: tagRows.map((t) => t.name) };
     });
 
     if (updated.status === "published" && contentChanged) {
@@ -364,6 +396,7 @@ export class KbArticlesService {
     return this.db.query.kbArticleVersions.findMany({
       where: and(eq(kbArticleVersions.articleId, articleId), eq(kbArticleVersions.orgId, user.orgId)),
       orderBy: [desc(kbArticleVersions.versionNumber)],
+      limit: 100,
     });
   }
 
@@ -403,6 +436,38 @@ export class KbArticlesService {
     }
 
     return updated;
+  }
+
+  private async syncArticleTags(tx: KbTransaction, orgId: string, articleId: number, tagNames: string[]): Promise<string[]> {
+    await tx.delete(kbArticleTags).where(eq(kbArticleTags.articleId, articleId));
+
+    if (tagNames.length === 0) return [];
+
+    const slugged = tagNames
+      .map((name) => ({ name, slug: kbSlugify(name) }))
+      .filter(({ slug }) => slug.length > 0);
+
+    if (slugged.length === 0) return [];
+
+    await tx
+      .insert(kbTags)
+      .values(slugged.map(({ name, slug }) => ({ orgId, name, slug })))
+      .onConflictDoNothing();
+
+    const tagRows = await tx
+      .select({ id: kbTags.id, name: kbTags.name })
+      .from(kbTags)
+      .where(and(eq(kbTags.orgId, orgId), inArray(kbTags.slug, slugged.map((s) => s.slug))))
+      .orderBy(asc(kbTags.name));
+
+    if (tagRows.length > 0) {
+      await tx
+        .insert(kbArticleTags)
+        .values(tagRows.map((t) => ({ articleId, tagId: t.id })))
+        .onConflictDoNothing();
+    }
+
+    return tagRows.map((t) => t.name);
   }
 
   private extractPlainText(content: string): string {

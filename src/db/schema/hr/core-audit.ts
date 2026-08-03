@@ -5,9 +5,10 @@ import {
   timestamp,
   jsonb,
   index,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 
 export const hrAuditLogs = pgTable("hr_audit_logs", {
   id: serial("id").primaryKey(),
@@ -22,6 +23,7 @@ export const hrAuditLogs = pgTable("hr_audit_logs", {
   userAgent: text("user_agent"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_hr_audit_logs_org_id").on(table.orgId, table.id),
   index("idx_hr_audit_logs_org").on(table.orgId),
   index("idx_hr_audit_logs_org_entity").on(table.orgId, table.entityType, table.entityId),
   index("idx_hr_audit_logs_actor").on(table.actorId),

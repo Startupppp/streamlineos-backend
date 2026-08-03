@@ -1,47 +1,27 @@
-export * from "./enums";
-
-export * from "./auth";
-export * from "./email";
-export * from "./access";
-
-export * from "./projects";
+export * from "./common";
+export * from "./build";
+export * from "./timesheets";
 export * from "./hr";
 export * from "./crm";
 export * from "./chat";
-export * from "./shared";
 export * from "./blog";
-export * from "./platform";
 export * from "./accounting";
-export * from "./accounting-core";
-export * from "./finance-ar-ap";
-export * from "./finance-banking";
-export * from "./finance-tax";
-export * from "./finance-planning";
-export * from "./finance-assets";
-export * from "./finance-expenses";
 export * from "./support";
 export * from "./kb";
 export * from "./automation";
 export * from "./inventory";
-export * from "./organization";
-export * from "./user-management";
-export * from "./feature-flags";
 export * from "./billing";
-export * from "./workflow";
-export * from "./payroll";
-export * from "./integrations";
-export * from "./onboarding";
-export * from "./payment-providers";
+export * from "./ai";
 export * from "./surveys";
-export * from "./ai-chat";
-export * from "./feedbucket";
-export * from "./notifications-delivery";
-export * from "./signos";
-export * from "./agent-tokens";
-export * from "./ai-jobs";
-export * from "./ai-feedback";
-export * from "./ai-confirmation";
-export * from "./workspace-search";
-export * from "./ai-summaries";
-export * from "./comment-drafts";
-export * from "./project-teams";
+export * from "./e-sign";
+export * from "./directory";
+export * from "./party";
+export * from "./portal-access";
+export * from "./payroll";
+
+// MUST be last: cross-module relations reference tables from common/, hr/ and build/.
+// Declaring them inside common/ created a circular import (common -> build/hr while common
+// was still initializing), which left 25 build/ relations with an undefined table and made
+// drizzle(client, { schema }) throw at startup.
+export * from "./custom-field-engine";
+export * from "./cross-module-relations";

@@ -26,10 +26,8 @@ import { isForbidden, type DashboardActor } from "./dashboard.errors";
 import {
   createAnnouncementSchema,
   deleteAnnouncementSchema,
-  myIssuesSchema,
   type CreateAnnouncementInput,
   type DeleteAnnouncementInput,
-  type MyIssuesInput,
 } from "./dto/dashboard.schemas";
 
 @Controller("dashboard")
@@ -48,15 +46,13 @@ export class DashboardController {
       userId: u.userId,
       role: u.role,
       permissions: u.permissions,
-      enabledModules: u.enabledModules,
-      isPlatformAdmin: u.isPlatformAdmin,
       isOrgOwner: u.isOrgOwner,
     };
   }
 
   @Get("active-sprint")
   @UseGuards(ModuleGuard)
-  @RequireModule("projects")
+  @RequireModule("build")
   activeSprint(@CurrentUser() u: CurrentUserContext) {
     return this.project.getActiveSprintSummary(u.orgId, u);
   }
@@ -120,11 +116,8 @@ export class DashboardController {
 
   @Get("my-issues")
   @UseGuards(ModuleGuard)
-  @RequireModule("projects")
-  myIssues(
-    @Query(new ZodValidationPipe(myIssuesSchema)) query: MyIssuesInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
+  @RequireModule("build")
+  myIssues(@CurrentUser() u: CurrentUserContext) {
     return this.project.getMyIssues(u.orgId, u.userId);
   }
 
@@ -147,21 +140,21 @@ export class DashboardController {
 
   @Get("personal")
   personal(@CurrentUser() u: CurrentUserContext) {
-    return this.hr.getPersonalDashboard(u.orgId, u.userId);
+    return this.hr.getPersonalDashboard(u);
   }
 
   @Get("recent-activity")
   @UseGuards(ModuleGuard, PermissionGuard)
-  @RequireModule("projects")
-  @RequirePermission("projects:tickets:view")
+  @RequireModule("build")
+  @RequirePermission("build:tickets:view")
   recentActivity(@CurrentUser() u: CurrentUserContext) {
     return this.project.getRecentActivity(u.orgId, u);
   }
 
   @Get("recent-projects")
   @UseGuards(ModuleGuard, PermissionGuard)
-  @RequireModule("projects")
-  @RequirePermission("projects:tickets:view")
+  @RequireModule("build")
+  @RequirePermission("build:tickets:view")
   recentProjects(@CurrentUser() u: CurrentUserContext) {
     return this.project.getRecentProjects(u.orgId, u);
   }

@@ -16,10 +16,11 @@ import {
   salaryLoans,
   taxDeclarations,
   users,
+  organizationMembers,
 } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
-import { ReimbursementsService } from "../../hr-payroll/reimbursements.service";
-import { LoansService } from "../../hr-payroll/loans.service";
+import { ReimbursementsService } from "../../hr/payroll/reimbursements.service";
+import { LoansService } from "../../hr/payroll/loans.service";
 
 export interface ManagerTeamMember {
   userId: string;
@@ -101,7 +102,14 @@ export class ManagerInboxService {
         email: users.email,
       })
       .from(users)
-      .where(eq(users.reportingTo, managerUserId));
+      .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
+      .where(
+        and(
+          eq(users.reportingTo, managerUserId),
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.status, "ACTIVE"),
+        ),
+      );
 
     const honestyNote =
       "Team payroll inbox is limited to your direct reports. Approving claims requires hr:expenses:approve; loans require hr:expenses:approve or hr:loans:manage. You cannot approve your own requests.";

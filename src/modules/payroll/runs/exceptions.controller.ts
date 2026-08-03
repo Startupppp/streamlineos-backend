@@ -11,6 +11,8 @@ import {
   BadRequestException,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { ModuleGuard } from "../../../common/rbac/module.guard";
+import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
@@ -20,18 +22,15 @@ import { ExceptionsService } from "./exceptions.service";
 import {
   resolveExceptionSchema,
   overrideExceptionSchema,
+  exceptionFilterSchema,
   type ResolveExceptionInput,
   type OverrideExceptionInput,
+  type ExceptionFilterInput,
 } from "./dto/runs.schemas";
-import { z } from "zod";
 
-const exceptionFilterSchema = z.object({
-  severity: z.enum(["BLOCKER", "WARNING", "INFO"]).optional(),
-  status: z.enum(["OPEN", "RESOLVED", "OVERRIDDEN"]).optional(),
-});
-
+@RequireModule("payroll")
 @Controller("payroll/runs/:runId/exceptions")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class ExceptionsController {
   constructor(private readonly exceptionsService: ExceptionsService) {}
 
@@ -39,7 +38,7 @@ export class ExceptionsController {
   @RequirePermission("payroll:runs:view")
   async list(
     @Param("runId", ParseIntPipe) runId: number,
-    @Query(new ZodValidationPipe(exceptionFilterSchema)) query: z.infer<typeof exceptionFilterSchema>,
+    @Query(new ZodValidationPipe(exceptionFilterSchema)) query: ExceptionFilterInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.exceptionsService.listExceptions(u.orgId, runId, query.severity, query.status);

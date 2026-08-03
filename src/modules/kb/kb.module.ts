@@ -1,7 +1,7 @@
 ﻿import { Module } from "@nestjs/common";
-import { BillingModule } from "../billing/billing.module";
-import { AiModule } from "../ai/ai.module";
-import { AiJobsModule } from "../ai-jobs/ai-jobs.module";
+import { BillingModule } from "../billing/core/billing.module";
+import { AiModule } from "../ai/core/ai.module";
+import { AiJobsModule } from "../ai/jobs/ai-jobs.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { KbCreditsService } from "./kb-credits.service";
 import { KbAccessService } from "./kb-access.service";
@@ -21,6 +21,8 @@ import { KbTagsService } from "./kb-tags.service";
 import { KbTranslationsService } from "./kb-translations.service";
 import { KbCommentsService } from "./kb-comments.service";
 import { KbPagesService } from "./kb-pages.service";
+import { KbPageVersionsService } from "./kb-page-versions.service";
+import { KbPageVisitsService } from "./kb-page-visits.service";
 import { KbPageTreeService } from "./kb-page-tree.service";
 import { KbPageCommentsService } from "./kb-page-comments.service";
 import { KbPageTemplatesService } from "./kb-page-templates.service";
@@ -122,6 +124,8 @@ import { KbArticleAiController } from "./kb-article-ai.controller";
     KbCommentsService,
     KbVerificationService,
     KbPagesService,
+    KbPageVersionsService,
+    KbPageVisitsService,
     KbPageTreeService,
     KbPageCommentsService,
     KbPageTemplatesService,

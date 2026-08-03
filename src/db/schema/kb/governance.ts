@@ -6,9 +6,10 @@ import {
   jsonb,
   timestamp,
   index,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 import { kbPages } from "./pages";
 
 export const kbPageReviews = pgTable(
@@ -40,6 +41,7 @@ export const kbPageReviews = pgTable(
   (table) => [
     index("idx_kb_page_reviews_org_status_due").on(table.orgId, table.status, table.dueAt),
     index("idx_kb_page_reviews_org_page").on(table.orgId, table.pageId),
+    unique("uniq_kb_page_reviews_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -71,6 +73,7 @@ export const kbImportJobs = pgTable(
   },
   (table) => [
     index("idx_kb_import_jobs_org_created").on(table.orgId, table.createdAt),
+    unique("uniq_kb_import_jobs_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -99,6 +102,7 @@ export const kbExportJobs = pgTable(
   },
   (table) => [
     index("idx_kb_export_jobs_org_created").on(table.orgId, table.createdAt),
+    unique("uniq_kb_export_jobs_org_id").on(table.orgId, table.id),
   ],
 );
 

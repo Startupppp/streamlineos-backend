@@ -1,6 +1,6 @@
-import { pgTable, serial, text, jsonb, timestamp, index, integer } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, jsonb, timestamp, index, integer, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 
 export const KB_CHAT_ROLES = ["user", "assistant"] as const;
 export type KbChatRole = (typeof KB_CHAT_ROLES)[number];
@@ -26,6 +26,7 @@ export const kbChatConversations = pgTable(
   },
   (table) => [
     index("idx_kb_chat_conversations_org_user_updated").on(table.orgId, table.userId, table.updatedAt),
+    unique("uniq_kb_chat_conversations_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -48,6 +49,7 @@ export const kbChatMessages = pgTable(
   (table) => [
     index("idx_kb_chat_messages_org_user_id").on(table.orgId, table.userId, table.id),
     index("idx_kb_chat_messages_conversation_id").on(table.conversationId),
+    unique("uniq_kb_chat_messages_org_id").on(table.orgId, table.id),
   ],
 );
 

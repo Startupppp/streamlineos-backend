@@ -1,5 +1,6 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { eq, and, count, sql, inArray } from "drizzle-orm";
+import { AccessService } from "../access/access.service";
 import {
   leads,
   deals,
@@ -7,7 +8,6 @@ import {
   tickets,
   clients,
   clientAccounts,
-  organizationMembers,
   users,
   crmPipelines,
 } from "../../db/schema";
@@ -20,10 +20,10 @@ import { EmailService } from "../email/email.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { appUrl } from "../email/app-url";
 import { getLeadStatusChangeEmailTemplate } from "../email/templates/crm";
-import { CrmMetadataService } from "../crm-metadata/crm-metadata.service";
-import { CrmBlueprintsService } from "../crm-metadata/crm-blueprints.service";
+import { CrmMetadataService } from "../crm/metadata/crm-metadata.service";
+import { CrmBlueprintsService } from "../crm/metadata/crm-blueprints.service";
 import { resolveLeadStatusSemantics } from "./lead-status-semantics";
-import { PlanLimitsService } from "../billing/plan-limits.service";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import type { TransitionLeadStatusInput } from "./dto/lead-mutations.schemas";
 
 type LeadRow = typeof leads.$inferSelect;
@@ -43,6 +43,7 @@ export class LeadStatusService {
     private readonly crmMetadata: CrmMetadataService,
     private readonly blueprints: CrmBlueprintsService,
     private readonly planLimits: PlanLimitsService,
+    private readonly access: AccessService,
   ) {}
 
   private async getSemantics(orgId: string) {
@@ -58,15 +59,7 @@ export class LeadStatusService {
   }
 
   private async getNextCrmAssignee(orgId: string): Promise<string | null> {
-    const csMembers = await this.db
-      .select({ userId: organizationMembers.userId })
-      .from(organizationMembers)
-      .where(
-        and(
-          eq(organizationMembers.orgId, orgId),
-          eq(organizationMembers.role, "CUSTOMER_SUPPORT"),
-        ),
-      );
+    const csMembers = await this.access.membersWithPermission(orgId, "support:tickets:manage");
 
     if (csMembers.length === 0) return null;
 

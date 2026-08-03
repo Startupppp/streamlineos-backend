@@ -48,15 +48,15 @@ const CHAT = [
 ];
 
 const PROJECTS = [
-  e("project.task.assigned", "projects", "PROJECTS", "Task assigned to you", { defaultPriority: "HIGH", defaultChannels: IA_PUSH_EMAIL }),
-  e("project.task.due_soon", "projects", "PROJECTS", "Task due soon", { defaultChannels: IA_EMAIL }),
-  e("project.task.overdue", "projects", "PROJECTS", "Task overdue", { defaultPriority: "HIGH", defaultType: "WARNING", defaultChannels: IA_EMAIL }),
-  e("project.task.comment.mention", "projects", "PROJECTS", "Mentioned in a comment", { defaultPriority: "HIGH", defaultChannels: IA_PUSH_EMAIL, dedupeWindowSeconds: 0 }),
-  e("project.task.status.changed", "projects", "PROJECTS", "Task status changed", { defaultPriority: "LOW", defaultChannels: IA }),
-  e("project.sprint.started", "projects", "PROJECTS", "Sprint started", { defaultChannels: IA }),
-  e("project.sprint.ending", "projects", "PROJECTS", "Sprint ending soon", { defaultChannels: IA_EMAIL }),
-  e("project.blocker.created", "projects", "PROJECTS", "Blocker reported", { defaultPriority: "HIGH", defaultType: "WARNING", defaultChannels: IA_EMAIL }),
-  e("project.approval.requested", "projects", "WORKFLOW", "Approval requested", { defaultPriority: "HIGH", defaultChannels: IA_EMAIL }),
+  e("project.task.assigned", "build", "PROJECTS", "Task assigned to you", { defaultPriority: "HIGH", defaultChannels: IA_PUSH_EMAIL }),
+  e("project.task.due_soon", "build", "PROJECTS", "Task due soon", { defaultChannels: IA_EMAIL }),
+  e("project.task.overdue", "build", "PROJECTS", "Task overdue", { defaultPriority: "HIGH", defaultType: "WARNING", defaultChannels: IA_EMAIL }),
+  e("project.task.comment.mention", "build", "PROJECTS", "Mentioned in a comment", { defaultPriority: "HIGH", defaultChannels: IA_PUSH_EMAIL, dedupeWindowSeconds: 0 }),
+  e("project.task.status.changed", "build", "PROJECTS", "Task status changed", { defaultPriority: "LOW", defaultChannels: IA }),
+  e("project.sprint.started", "build", "PROJECTS", "Sprint started", { defaultChannels: IA }),
+  e("project.sprint.ending", "build", "PROJECTS", "Sprint ending soon", { defaultChannels: IA_EMAIL }),
+  e("project.blocker.created", "build", "PROJECTS", "Blocker reported", { defaultPriority: "HIGH", defaultType: "WARNING", defaultChannels: IA_EMAIL }),
+  e("project.approval.requested", "build", "WORKFLOW", "Approval requested", { defaultPriority: "HIGH", defaultChannels: IA_EMAIL }),
 ];
 
 const CRM = [
@@ -79,6 +79,16 @@ const HR = [
   e("hr.attendance.missing", "hr", "HRMS", "Missing attendance", { defaultChannels: IA }),
   e("hr.document.expiring", "hr", "HRMS", "Document expiring", { defaultPriority: "HIGH", defaultChannels: IA_EMAIL }),
   e("hr.announcement.created", "hr", "HRMS", "New announcement", { defaultChannels: IA_EMAIL }),
+  e("hr.emergency.broadcast", "hr", "HRMS", "Emergency safety broadcast", {
+    defaultPriority: "CRITICAL",
+    defaultType: "WARNING",
+    defaultChannels: IA_PUSH_EMAIL,
+    allowedChannels: ALLOWED_URGENT,
+    mandatory: true,
+    userConfigurable: false,
+    quietHoursBehavior: "always_bypass",
+    dedupeWindowSeconds: 0,
+  }),
 ];
 
 const PAYROLL = [

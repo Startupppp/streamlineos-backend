@@ -8,31 +8,38 @@ import {
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
-import { jwtVerify } from "jose";
+import { jwtVerify, decodeJwt } from "jose";
 import type { JWTPayload } from "jose";
-import { desc, eq } from "drizzle-orm";
+import { PORTAL_AUDIENCE } from "../portal-auth/portal-claims";
+import { and, desc, eq, gt, isNull, or } from "drizzle-orm";
 import * as bcrypt from "bcryptjs";
 import type { Redis } from "@upstash/redis";
 import { IS_PUBLIC } from "./public.decorator";
 import { ALLOW_NO_ORG_KEY } from "./allow-no-org.decorator";
-import type { BackendClaims, CurrentUserContext } from "./backend-claims";
+import {
+  INTERNAL_TOKEN_AUDIENCE,
+  INTERNAL_TOKEN_ISSUER,
+  type BackendClaims,
+  type CurrentUserContext,
+} from "./backend-claims";
+import { backendJwtPayloadSchema } from "./backend-claims-schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { withIdentity } from "../tenant/with-identity";
+import { runInTenantTransaction } from "../tenant/run-in-tenant-transaction";
 import { REDIS } from "../../common/cache/cache.service";
 import {
-  organizationMembers,
-  organizations,
-  subscriptions,
-  userApiTokens,
-  users,
-} from "../../db/schema";
+  hashApiToken,
+  isModernApiToken,
+  legacyApiTokenPrefix,
+} from "./api-token-hash";
+import { organizationMembers, userApiTokens, users } from "../../db/schema";
+import { MembershipStateService } from "./membership-state.service";
 
 interface OrgContext {
   orgId: string;
   role: string;
   isOwner: boolean;
-  enabledModules: string[];
-  plan: string | null;
 }
 
 interface OrgContextEntry {
@@ -40,44 +47,17 @@ interface OrgContextEntry {
   expiresAt: number;
 }
 
-interface PlatformAdminEntry {
-  value: boolean;
-  expiresAt: number;
-}
 
 const ORG_CTX_TTL_MS = 60_000;
-const PLATFORM_ADMIN_TTL_MS = 30_000;
 const REVOCATION_CACHE_TTL_MS = 5_000;
 
-const platformAdminCache = new Map<string, PlatformAdminEntry>();
-
-export function bustPlatformAdminCache(userId: string): void {
-  platformAdminCache.delete(userId);
-}
-
-function extractClaims(payload: JWTPayload): BackendClaims {
+function extractClaims(payload: JWTPayload): BackendClaims | null {
+  const parsed = backendJwtPayloadSchema.safeParse(payload);
+  if (!parsed.success) return null;
   return {
-    sub: typeof payload.sub === "string" ? payload.sub : "",
-    orgId:
-      typeof payload["orgId"] === "string" && payload["orgId"] !== ""
-        ? payload["orgId"]
-        : null,
-    branchId:
-      typeof payload["branchId"] === "number" ? payload["branchId"] : null,
-    role: typeof payload["role"] === "string" ? payload["role"] : "",
-    permissions: Array.isArray(payload["permissions"])
-      ? payload["permissions"].filter((x): x is string => typeof x === "string")
-      : [],
-    enabledModules: Array.isArray(payload["enabledModules"])
-      ? payload["enabledModules"].filter(
-          (x): x is string => typeof x === "string",
-        )
-      : [],
-    plan: typeof payload["plan"] === "string" ? payload["plan"] : null,
-    isPlatformAdmin: false,
-    isOrgOwner: payload["isOrgOwner"] === true,
-    sessionId:
-      typeof payload["sessionId"] === "string" ? payload["sessionId"] : "",
+    sub: parsed.data.sub,
+    orgId: parsed.data.orgId ?? null,
+    sessionId: parsed.data.sessionId,
   };
 }
 
@@ -86,36 +66,15 @@ export class JwtAuthGuard implements CanActivate {
   private readonly orgCtxCache = new Map<string, OrgContextEntry>();
   private readonly revocationCache = new Map<string, number>();
   private readonly jwtSecretKey: Uint8Array | null;
-  private readonly db_resolvePlatformAdmin: (userId: string) => Promise<boolean>;
 
   constructor(
     private readonly reflector: Reflector,
     @Inject(DRIZZLE) private readonly db: Db,
     @Inject(REDIS) private readonly redis: Redis | null,
+    private readonly membership: MembershipStateService,
   ) {
     const raw = process.env.BACKEND_JWT_SECRET;
     this.jwtSecretKey = raw ? new TextEncoder().encode(raw) : null;
-    this.db_resolvePlatformAdmin = async (userId: string): Promise<boolean> => {
-      const cached = platformAdminCache.get(userId);
-      if (cached && cached.expiresAt > Date.now()) return cached.value;
-      try {
-        const row = await this.db.query.users.findFirst({
-          where: eq(users.id, userId),
-          columns: { isPlatformAdmin: true },
-        });
-        const value = row?.isPlatformAdmin ?? false;
-        platformAdminCache.set(userId, { value, expiresAt: Date.now() + PLATFORM_ADMIN_TTL_MS });
-        if (platformAdminCache.size > 5000) {
-          const now = Date.now();
-          for (const [key, entry] of platformAdminCache) {
-            if (entry.expiresAt <= now) platformAdminCache.delete(key);
-          }
-        }
-        return value;
-      } catch {
-        return false;
-      }
-    };
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -135,10 +94,25 @@ export class JwtAuthGuard implements CanActivate {
     const token = header.slice("Bearer ".length).trim();
     if (!this.jwtSecretKey) throw new UnauthorizedException("Unauthorized");
 
+    try {
+      const raw = decodeJwt(token);
+      const rawAud = raw.aud;
+      if (
+        rawAud === PORTAL_AUDIENCE ||
+        (Array.isArray(rawAud) && rawAud.includes(PORTAL_AUDIENCE))
+      ) {
+        throw new UnauthorizedException("Unauthorized");
+      }
+    } catch (err) {
+      if (err instanceof UnauthorizedException) throw err;
+    }
+
     let claims: BackendClaims | null = null;
     try {
       const { payload } = await jwtVerify(token, this.jwtSecretKey, {
         algorithms: ["HS256"],
+        audience: INTERNAL_TOKEN_AUDIENCE,
+        issuer: INTERNAL_TOKEN_ISSUER,
       });
       claims = extractClaims(payload);
     } catch {
@@ -146,10 +120,6 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     if (claims !== null) {
-      if (!claims.sub) throw new UnauthorizedException("Unauthorized");
-
-      if (!claims.sessionId) throw new UnauthorizedException("Unauthorized");
-
       if (this.redis && !claims.sessionId.startsWith("pat:")) {
         const cachedOk = this.revocationCache.get(claims.sessionId);
         if (!(cachedOk && cachedOk > Date.now())) {
@@ -179,44 +149,43 @@ export class JwtAuthGuard implements CanActivate {
       const path = req.path ?? req.url?.split("?")[0] ?? "";
       const isOrgSetup = req.method === "PATCH" && path === "/org/setup";
 
-      const isPlatformAdmin = await this.db_resolvePlatformAdmin(claims.sub);
-
       let orgId = claims.orgId;
-      let isOrgOwner = claims.isOrgOwner;
-      let role = claims.role;
-      let enabledModules = claims.enabledModules;
-      let plan = claims.plan;
 
-      if (!orgId && !isPlatformAdmin) {
+      if (!orgId) {
         const resolved = await this.resolveOrgContext(claims.sub);
-        if (resolved) {
-          orgId = resolved.orgId;
-          isOrgOwner = resolved.isOwner;
-          role = role || resolved.role;
-          enabledModules =
-            enabledModules.length > 0
-              ? enabledModules
-              : resolved.enabledModules;
-          plan = plan ?? resolved.plan;
-        }
+        if (resolved) orgId = resolved.orgId;
       }
 
       // 403, not 401: the session is valid — a 401 would make the api-client force a sign-out loop for users who haven't created their org yet.
-      if (!orgId && !isPlatformAdmin && !allowNoOrg && !isOrgSetup) {
+      if (!orgId && !allowNoOrg && !isOrgSetup) {
         throw new ForbiddenException("Organization not found");
+      }
+
+      const accountActive = await this.membership.isAccountActive(claims.sub);
+      if (!accountActive) {
+        throw new UnauthorizedException("Unauthorized");
+      }
+
+      let role = "";
+      let isOrgOwner = false;
+
+      if (orgId) {
+        const state = await this.membership.resolve(claims.sub, orgId);
+        if (!state.active) {
+          throw new UnauthorizedException("Unauthorized");
+        }
+        role = state.role;
+        isOrgOwner = state.isOwner;
       }
 
       req.user = {
         userId: claims.sub,
         orgId: orgId ?? "",
-        branchId: claims.branchId ?? null,
         role,
-        permissions: claims.permissions,
-        enabledModules,
-        plan,
-        isPlatformAdmin,
+        permissions: [],
         isOrgOwner,
         sessionId: claims.sessionId,
+        tokenScopes: null,
       };
       return true;
     }
@@ -253,20 +222,17 @@ export class JwtAuthGuard implements CanActivate {
         where: eq(users.id, userId),
         columns: { lastActiveOrgId: true },
       }),
-      this.db
-        .select({
-          orgId: organizationMembers.orgId,
-          role: organizationMembers.role,
-          isOwner: organizationMembers.isOwner,
-          enabledModules: organizations.enabledModules,
-        })
-        .from(organizationMembers)
-        .innerJoin(
-          organizations,
-          eq(organizations.id, organizationMembers.orgId),
-        )
-        .where(eq(organizationMembers.userId, userId))
-        .orderBy(desc(organizationMembers.joinedAt)),
+      withIdentity(this.db, userId, (tx) =>
+        tx
+          .select({
+            orgId: organizationMembers.orgId,
+            role: organizationMembers.role,
+            isOwner: organizationMembers.isOwner,
+          })
+          .from(organizationMembers)
+          .where(eq(organizationMembers.userId, userId))
+          .orderBy(desc(organizationMembers.joinedAt)),
+      ),
     ]);
 
     const preferred = user?.lastActiveOrgId
@@ -275,80 +241,98 @@ export class JwtAuthGuard implements CanActivate {
     const member = preferred ?? rows[0];
     if (!member) return null;
 
-    const subscription = await this.db
-      .select({ plan: subscriptions.plan })
-      .from(subscriptions)
-      .where(eq(subscriptions.orgId, member.orgId))
-      .limit(1)
-      .then((r) => r[0] ?? null);
-
     return {
       orgId: member.orgId,
       role: member.role,
       isOwner: member.isOwner,
-      enabledModules: member.enabledModules ?? [],
-      plan: subscription?.plan ?? null,
     };
   }
 
   private async tryPatAuth(
     rawToken: string,
   ): Promise<CurrentUserContext | null> {
-    const prefix = rawToken.slice(0, 8);
-
-    const rows = await this.db
-      .select({
-        id: userApiTokens.id,
-        userId: userApiTokens.userId,
-        tokenHash: userApiTokens.tokenHash,
-        expiresAt: userApiTokens.expiresAt,
-      })
-      .from(userApiTokens)
-      .where(eq(userApiTokens.prefix, prefix));
-
-    let matchedUserId: string | null = null;
-    let matchedTokenId: string | null = null;
-
-    for (const row of rows) {
-      if (row.expiresAt && row.expiresAt < new Date()) continue;
-
-      const valid = await bcrypt.compare(rawToken, row.tokenHash);
-      if (!valid) continue;
-
-      matchedUserId = row.userId;
-      matchedTokenId = row.id;
-      break;
-    }
-
-    if (!matchedUserId || !matchedTokenId) return null;
+    const matched = await this.findApiToken(rawToken);
+    if (!matched) return null;
 
     void this.db
       .update(userApiTokens)
       .set({ lastUsedAt: new Date() })
-      .where(eq(userApiTokens.id, matchedTokenId))
+      .where(eq(userApiTokens.id, matched.id))
       .catch(() => undefined);
 
     const [user, resolved] = await Promise.all([
       this.db.query.users.findFirst({
-        where: eq(users.id, matchedUserId),
-        columns: { id: true, branchId: true, role: true },
+        where: eq(users.id, matched.userId),
+        columns: { id: true, isActive: true, deletedAt: true },
       }),
-      this.resolveOrgContext(matchedUserId),
+      this.resolveOrgContext(matched.userId),
     ]);
 
     if (!user || !resolved) return null;
+    if (!user.isActive || user.deletedAt !== null) return null;
 
     return {
-      userId: matchedUserId,
+      userId: matched.userId,
       orgId: resolved.orgId,
-      branchId: user.branchId ?? null,
       role: resolved.role,
       permissions: [],
-      enabledModules: resolved.enabledModules,
-      plan: resolved.plan,
-      isPlatformAdmin: false,
       isOrgOwner: resolved.isOwner,
-      sessionId: `pat:${matchedTokenId}`,
+      sessionId: `pat:${matched.id}`,
+      tokenScopes: matched.scopes.length > 0 ? matched.scopes : null,
     };
+  }
+
+  private async findApiToken(
+    rawToken: string,
+  ): Promise<{ id: string; userId: string; scopes: string[] } | null> {
+    const now = new Date();
+    const liveToken = and(
+      isNull(userApiTokens.revokedAt),
+      or(isNull(userApiTokens.expiresAt), gt(userApiTokens.expiresAt, now)),
+    );
+
+    const digest = hashApiToken(rawToken);
+    const [direct] = await this.db
+      .select({
+        id: userApiTokens.id,
+        userId: userApiTokens.userId,
+        scopes: userApiTokens.scopes,
+      })
+      .from(userApiTokens)
+      .where(and(eq(userApiTokens.tokenHash, digest), liveToken))
+      .limit(1);
+    if (direct) return direct;
+
+    if (isModernApiToken(rawToken)) return null;
+
+    const legacyRows = await this.db
+      .select({
+        id: userApiTokens.id,
+        userId: userApiTokens.userId,
+        tokenHash: userApiTokens.tokenHash,
+        scopes: userApiTokens.scopes,
+      })
+      .from(userApiTokens)
+      .where(
+        and(
+          eq(userApiTokens.prefix, legacyApiTokenPrefix(rawToken)),
+          eq(userApiTokens.hashAlg, "bcrypt"),
+          liveToken,
+        ),
+      );
+
+    for (const row of legacyRows) {
+      if (!(await bcrypt.compare(rawToken, row.tokenHash))) continue;
+
+      void this.db
+        .update(userApiTokens)
+        .set({ tokenHash: digest, hashAlg: "sha256" })
+        .where(eq(userApiTokens.id, row.id))
+        .catch(() => undefined);
+
+      return { id: row.id, userId: row.userId, scopes: row.scopes };
+    }
+
+    return null;
   }
 }

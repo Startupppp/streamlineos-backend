@@ -1,6 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, desc, eq, gte, ilike, lte } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
@@ -9,9 +8,11 @@ import {
   devices,
   loginHistory,
   organizationMembers,
-  userMemberships,
+  orgUnitMembers,
+  orgUnits,
   userPreferences,
   userSessions,
+  users,
 } from "../../db/schema";
 import type {
   ListAuditInput,
@@ -20,6 +21,7 @@ import type {
   UpdatePreferencesInput,
 } from "./dto/users.schemas";
 import { withClientInfo, withDeviceClientInfo } from "../../common/http/parse-user-agent";
+import { syncOrgUnitPlacement } from "../../common/org/sync-org-unit-placement";
 
 @Injectable()
 export class UserProfileService {
@@ -191,11 +193,6 @@ export class UserProfileService {
     if (data.timeFormat !== undefined) updateData.timeFormat = data.timeFormat;
     if (data.numberFormat !== undefined) updateData.numberFormat = data.numberFormat;
     if (data.weekStartDay !== undefined) updateData.weekStartDay = data.weekStartDay;
-    if (data.accentColor !== undefined) updateData.accentColor = data.accentColor;
-    if (data.density !== undefined) updateData.density = data.density;
-    if (data.fontSize !== undefined) updateData.fontSize = data.fontSize;
-    if (data.reducedMotion !== undefined) updateData.reducedMotion = data.reducedMotion;
-    if (data.highContrast !== undefined) updateData.highContrast = data.highContrast;
     if (data.notificationPreferences !== undefined)
       updateData.notificationPreferences = data.notificationPreferences;
     if (data.dashboardPreferences !== undefined)
@@ -258,21 +255,30 @@ export class UserProfileService {
 
   async getMembership(orgId: string, userId: string) {
     await this.assertMember(orgId, userId);
-    const membership = await this.db.query.userMemberships.findFirst({
-      where: and(eq(userMemberships.orgId, orgId), eq(userMemberships.userId, userId)),
-    });
-    return (
-      membership ?? {
-        userId,
-        orgId,
-        businessUnitId: null,
-        branchId: null,
-        departmentId: null,
-        teamId: null,
-        managerUserId: null,
-        isPrimary: true,
-      }
-    );
+
+    const [rows, placement] = await Promise.all([
+      this.db
+        .select({ unitId: orgUnitMembers.orgUnitId, kind: orgUnits.kind, name: orgUnits.name })
+        .from(orgUnitMembers)
+        .innerJoin(orgUnits, eq(orgUnitMembers.orgUnitId, orgUnits.id))
+        .where(and(eq(orgUnitMembers.userId, userId), eq(orgUnitMembers.orgId, orgId))),
+      this.db.query.users.findFirst({
+        where: eq(users.id, userId),
+        columns: { reportingTo: true },
+      }),
+    ]);
+
+    const byKind = (kind: string) => rows.find((r) => r.kind === kind)?.unitId ?? null;
+
+    return {
+      userId,
+      orgId,
+      businessUnitId: byKind("BUSINESS_UNIT"),
+      branchId: byKind("BRANCH"),
+      departmentId: byKind("DEPARTMENT"),
+      teamId: byKind("TEAM"),
+      managerUserId: placement?.reportingTo ?? null,
+    };
   }
 
   async updateMembership(
@@ -283,32 +289,28 @@ export class UserProfileService {
   ) {
     await this.assertMember(orgId, userId);
 
-    const existing = await this.db.query.userMemberships.findFirst({
-      where: and(eq(userMemberships.orgId, orgId), eq(userMemberships.userId, userId)),
-    });
+    await this.db.transaction(async (tx) => {
+      // `users.branchId` / `users.orgDepartmentId` are denormalised copies that several read paths still filter and render from (branch detail lists, the JWT context, HR analytics, workflow approver routing)
+      const scalarPlacement: Partial<{
+        reportingTo: string | null;
+        branchId: string | null;
+        orgDepartmentId: string | null;
+      }> = {};
+      if (data.managerUserId !== undefined) scalarPlacement.reportingTo = data.managerUserId;
+      if (data.branchId !== undefined) scalarPlacement.branchId = data.branchId;
+      if (data.departmentId !== undefined) scalarPlacement.orgDepartmentId = data.departmentId;
 
-    const updateData: Record<string, unknown> = {};
-    if (data.businessUnitId !== undefined) updateData.businessUnitId = data.businessUnitId;
-    if (data.branchId !== undefined) updateData.branchId = data.branchId;
-    if (data.departmentId !== undefined) updateData.departmentId = data.departmentId;
-    if (data.teamId !== undefined) updateData.teamId = data.teamId;
-    if (data.managerUserId !== undefined) updateData.managerUserId = data.managerUserId;
-    if (data.isPrimary !== undefined) updateData.isPrimary = data.isPrimary;
+      if (Object.keys(scalarPlacement).length > 0) 
+        await tx.update(users).set(scalarPlacement).where(eq(users.id, userId));
+      
 
-    if (existing) {
-      await this.db
-        .update(userMemberships)
-        .set(updateData)
-        .where(and(eq(userMemberships.orgId, orgId), eq(userMemberships.userId, userId)));
-    } else {
-      await this.db.insert(userMemberships).values({
-        id: randomUUID(),
-        orgId,
-        userId,
-        isPrimary: data.isPrimary ?? true,
-        ...updateData,
+      await syncOrgUnitPlacement(tx, orgId, userId, {
+        BUSINESS_UNIT: data.businessUnitId,
+        BRANCH: data.branchId,
+        DEPARTMENT: data.departmentId,
+        TEAM: data.teamId,
       });
-    }
+    });
 
     this.audit.log({
       action: "user.membership.updated",

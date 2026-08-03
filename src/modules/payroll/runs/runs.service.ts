@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Inject } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, Inject } from "@nestjs/common";
 import { and, eq, desc, ilike, or, count, lt, sql, inArray, isNull, type SQL } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -16,12 +16,12 @@ import type { DataScope } from "../../access/access.types";
 import { applyScope } from "../../access/apply-scope";
 import { buildRunChecklist } from "./lib/checklist";
 import type { ListRunsQuery, ListRunEmployeesQuery, AddRunAdjustmentInput } from "./dto/runs.schemas";
-import type { PayrollChecklistItem, PayrollToggles, PayrollPolicyConfig, VarianceSummary } from "../payroll.types";
+import type { PayrollChecklistItem, PayrollToggles, VarianceSummary } from "../payroll.types";
 import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
 import { toPaise, fromPaise } from "./lib/money";
 import { AuditService } from "../../../common/audit/audit.service";
 import { PayrollEntitiesService } from "../entities/entities.service";
-import { describeCountryPack } from "../../hr-global/lib/country-pack-registry";
+import { describeCountryPack } from "../../hr/global/lib/country-pack-registry";
 import { getIndiaBundleForMonth } from "./lib/statutory-registry";
 
 @Injectable()
@@ -40,6 +40,19 @@ export class RunsService {
     reason: string | null,
     actorId: string,
   ): Promise<{ ok: boolean }> {
+    const runCheck = await this.db
+      .select({ id: payrollRuns.id, status: payrollRuns.status })
+      .from(payrollRuns)
+      .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)))
+      .limit(1);
+
+    if (!runCheck[0]) return { ok: false };
+    if (PAYROLL_LOCKED_STATUSES.includes(runCheck[0].status)) {
+      throw new ConflictException(
+        `Cannot modify employee hold on a ${runCheck[0].status} payroll run`,
+      );
+    }
+
     const existing = await this.db
       .select({ id: payrollRunEmployees.id })
       .from(payrollRunEmployees)

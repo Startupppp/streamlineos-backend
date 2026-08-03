@@ -15,12 +15,12 @@ import {
   payrollExceptions,
   payrollRunEvents,
   payrollRuns,
+  roleAssignments,
   roles,
   rolePermissionGrants,
-  userRoles,
 } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
-import { ROLE_DEFAULT_PERMISSIONS } from "../../rbac/permissions.constants";
+import { ROLE_DEFAULT_PERMISSIONS } from "../../rbac/permissions";
 import { logger } from "../../../common/logger/logger.service";
 import {
   DEFAULT_PAYROLL_TOGGLES,
@@ -85,7 +85,7 @@ export class ApprovalsService {
         await tx
           .update(payrollRuns)
           .set({ status: "APPROVED", approvedAt: new Date(), approvedBy: userId })
-          .where(eq(payrollRuns.id, runId));
+          .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
 
         await tx.insert(payrollRunEvents).values([
           { orgId, runId, type: "APPROVAL_SUBMITTED", actorId: userId },
@@ -132,7 +132,7 @@ export class ApprovalsService {
       await tx
         .update(payrollRuns)
         .set({ status: "PENDING_APPROVAL" })
-        .where(eq(payrollRuns.id, runId));
+        .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
 
       await tx.insert(payrollRunEvents).values({
         orgId,
@@ -367,13 +367,20 @@ export class ApprovalsService {
 
     const [grantRows, defaultRoleRows, ownerRows] = await Promise.all([
       this.db
-        .select({ userId: userRoles.userId })
+        .select({ userId: organizationMembers.userId })
         .from(rolePermissionGrants)
         .innerJoin(
-          userRoles,
+          roleAssignments,
           and(
-            eq(userRoles.roleId, rolePermissionGrants.roleId),
-            eq(userRoles.orgId, orgId),
+            eq(roleAssignments.roleId, rolePermissionGrants.roleId),
+            eq(roleAssignments.orgId, orgId),
+          ),
+        )
+        .innerJoin(
+          organizationMembers,
+          and(
+            eq(organizationMembers.orgId, roleAssignments.orgId),
+            eq(organizationMembers.id, roleAssignments.organizationMembershipId),
           ),
         )
         .where(
@@ -384,10 +391,17 @@ export class ApprovalsService {
         ),
       slugsWithPerm.length > 0
         ? this.db
-            .select({ userId: userRoles.userId })
-            .from(userRoles)
-            .innerJoin(roles, eq(userRoles.roleId, roles.id))
-            .where(and(eq(userRoles.orgId, orgId), inArray(roles.slug, slugsWithPerm)))
+            .select({ userId: organizationMembers.userId })
+            .from(roleAssignments)
+            .innerJoin(roles, eq(roleAssignments.roleId, roles.id))
+            .innerJoin(
+              organizationMembers,
+              and(
+                eq(organizationMembers.orgId, roleAssignments.orgId),
+                eq(organizationMembers.id, roleAssignments.organizationMembershipId),
+              ),
+            )
+            .where(and(eq(roleAssignments.orgId, orgId), inArray(roles.slug, slugsWithPerm)))
         : Promise.resolve<{ userId: string }[]>([]),
       this.db
         .select({ userId: organizationMembers.userId })

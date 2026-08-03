@@ -33,28 +33,3 @@ export const chatMessagePayloadSchema = z.object({
 
 export type ChatAttachmentPayload = z.infer<typeof chatAttachmentPayloadSchema>;
 export type ChatMessagePayload = z.infer<typeof chatMessagePayloadSchema>;
-
-export const chatMessageUpdatedPayloadSchema = z.object({
-  id: z.number(),
-  channelId: z.number(),
-  content: z.string().nullable(),
-  isEdited: z.literal(true),
-  updatedAt: z.string(),
-});
-
-export type ChatMessageUpdatedPayload = z.infer<typeof chatMessageUpdatedPayloadSchema>;
-
-export const chatMessageDeletedPayloadSchema = z.object({
-  id: z.number(),
-  channelId: z.number(),
-});
-
-export type ChatMessageDeletedPayload = z.infer<typeof chatMessageDeletedPayloadSchema>;
-
-export const chatReactionUpdatedPayloadSchema = z.object({
-  messageId: z.number(),
-  channelId: z.number(),
-  reactions: z.record(z.string(), z.array(z.string())),
-});
-
-export type ChatReactionUpdatedPayload = z.infer<typeof chatReactionUpdatedPayloadSchema>;

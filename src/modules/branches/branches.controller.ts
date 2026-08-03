@@ -2,11 +2,9 @@ import {
   Body,
   Controller,
   Delete,
-  ForbiddenException,
   Get,
   NotFoundException,
   Param,
-  ParseIntPipe,
   Patch,
   Post,
   UseGuards,
@@ -15,7 +13,8 @@ import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
-import { AccessService } from "../access/access.service";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { BranchesService } from "./branches.service";
 import {
   createBranchSchema,
@@ -25,21 +24,20 @@ import {
 } from "./dto/branches.schemas";
 
 @Controller("branches")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class BranchesController {
-  constructor(
-    private readonly branches: BranchesService,
-    private readonly access: AccessService,
-  ) {}
+  constructor(private readonly branches: BranchesService) {}
 
   @Get()
+  @RequirePermission("branch:view")
   list(@CurrentUser() u: CurrentUserContext) {
     return this.branches.list(u.orgId);
   }
 
   @Get(":branchId")
+  @RequirePermission("branch:view")
   async getOne(
-    @Param("branchId", ParseIntPipe) branchId: number,
+    @Param("branchId") branchId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const branch = await this.branches.getOne(u.orgId, branchId);
@@ -48,47 +46,32 @@ export class BranchesController {
   }
 
   @Post()
+  @RequirePermission("branch:create")
   async create(
     @Body(new ZodValidationPipe(createBranchSchema)) body: CreateBranchInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("branch:create")) {
-        throw new ForbiddenException("Only HR/CEO can create branches");
-      }
-    }
     return this.branches.create(u.orgId, body);
   }
 
   @Patch(":branchId")
+  @RequirePermission("branch:update")
   async update(
-    @Param("branchId", ParseIntPipe) branchId: number,
+    @Param("branchId") branchId: string,
     @Body(new ZodValidationPipe(updateBranchSchema)) body: UpdateBranchInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("branch:update")) {
-        throw new ForbiddenException("Forbidden");
-      }
-    }
     const updated = await this.branches.update(u.orgId, branchId, body);
     if (!updated) throw new NotFoundException("Branch not found");
     return updated;
   }
 
   @Delete(":branchId")
+  @RequirePermission("branch:delete")
   async remove(
-    @Param("branchId", ParseIntPipe) branchId: number,
+    @Param("branchId") branchId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("branch:delete")) {
-        throw new ForbiddenException("Forbidden");
-      }
-    }
     const deleted = await this.branches.remove(u.orgId, branchId);
     if (!deleted) throw new NotFoundException("Branch not found");
     return deleted;

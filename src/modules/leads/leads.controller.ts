@@ -20,6 +20,7 @@ import { AccessService } from "../access/access.service";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { LeadsService, isAssigneeNotMember } from "./leads.service";
 import { resolveLeadsViewScope } from "./leads-scope";
 import {
@@ -52,13 +53,13 @@ export class LeadsController {
       ...filters,
       scope,
       userId: u.userId,
-      branch: { role: u.role, branchId: u.branchId, userId: u.userId },
     });
   }
 
   @Post()
   @HttpCode(201)
   @RequirePermission("crm:leads:create")
+  @Idempotent("crm.lead.create")
   async create(
     @Body(new ZodValidationPipe(createSchema)) body: CreateInput,
     @CurrentUser() u: CurrentUserContext,
@@ -77,7 +78,6 @@ export class LeadsController {
     return this.leads.getBoard(u.orgId, {
       scope,
       userId: u.userId,
-      branch: { role: u.role, branchId: u.branchId, userId: u.userId },
     });
   }
 
@@ -94,7 +94,6 @@ export class LeadsController {
       dateTo,
       scope,
       userId: u.userId,
-      branch: { role: u.role, branchId: u.branchId, userId: u.userId },
     });
   }
 

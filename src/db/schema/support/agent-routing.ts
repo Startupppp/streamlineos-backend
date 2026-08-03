@@ -1,5 +1,5 @@
-import { pgTable, serial, text, integer, boolean, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
-import { organizations, users } from "../auth";
+import { pgTable, serial, text, integer, boolean, timestamp, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
+import { organizations, users } from "../common/auth";
 import { clients } from "../crm/contacts";
 
 export const supportAgentSkills = pgTable(
@@ -12,8 +12,9 @@ export const supportAgentSkills = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex("uniq_support_agent_skills_user_skill").on(table.userId, table.skill),
+    uniqueIndex("uniq_support_agent_skills_org_user_skill").on(table.orgId, table.userId, table.skill),
     index("idx_support_agent_skills_org").on(table.orgId, table.skill),
+    unique("uniq_support_agent_skills_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -27,7 +28,10 @@ export const supportAgentAvailability = pgTable(
     isAvailable: boolean("is_available").default(true).notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
-  (table) => [uniqueIndex("uniq_support_agent_availability_user").on(table.userId)],
+  (table) => [
+    uniqueIndex("uniq_support_agent_availability_org_user").on(table.orgId, table.userId),
+    unique("uniq_support_agent_avail_org_id").on(table.orgId, table.id),
+  ],
 );
 
 export const supportVipClients = pgTable(
@@ -38,5 +42,8 @@ export const supportVipClients = pgTable(
     clientId: integer("client_id").references(() => clients.id, { onDelete: "cascade" }).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
-  (table) => [uniqueIndex("uniq_support_vip_clients_org_client").on(table.orgId, table.clientId)],
+  (table) => [
+    uniqueIndex("uniq_support_vip_clients_org_client").on(table.orgId, table.clientId),
+    unique("uniq_support_vip_clients_org_id").on(table.orgId, table.id),
+  ],
 );

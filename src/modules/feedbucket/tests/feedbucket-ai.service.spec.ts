@@ -1,16 +1,17 @@
 jest.mock("../../email/app-url", () => ({ appUrl: "https://test.example.com" }));
-jest.mock("../../projects/projects-tickets.service");
+jest.mock("../../build/core/projects-tickets.service");
 
 import { BadRequestException, ConflictException, ForbiddenException, HttpException, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { FeedbucketAiService } from "../feedbucket-ai.service";
 import type { Db } from "../../../db/drizzle.module";
-import type { AiGatewayService } from "../../ai/gateway/ai-gateway.service";
-import type { AiUsageService } from "../../ai/services/ai-usage.service";
+import type { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
+import type { AiUsageService } from "../../ai/core/services/ai-usage.service";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
-import type { ProjectsTicketsService } from "../../projects/projects-tickets.service";
+import type { ProjectsTicketsService } from "../../build/core/projects-tickets.service";
+import type { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import type { FeedbackAnalysis } from "../feedbucket-ai.schemas";
-import type { AiInvokeWithUsageResult } from "../../ai/gateway/ai-gateway.types";
+import type { AiInvokeWithUsageResult } from "../../ai/core/gateway/ai-gateway.types";
 
 const ORG_A = "org_a";
 const ORG_B = "org_b";
@@ -88,18 +89,15 @@ const baseGatewaySuccess: AiInvokeWithUsageResult<FeedbackAnalysis> = {
   aiUsage: { model: "gpt-4o", promptTokens: 50, completionTokens: 100, totalTokens: 150, credits: 1, costUsd: 0.002 },
 };
 
-function makeUser(orgId = ORG_A, plan = "PROFESSIONAL") {
+function makeUser(orgId = ORG_A) {
   return {
     userId: USER_A,
     orgId,
-    branchId: null,
     role: "ADMIN",
     permissions: [],
-    enabledModules: [],
-    plan,
-    isPlatformAdmin: false,
     isOrgOwner: false,
     sessionId: "sess_1",
+    tokenScopes: null,
   };
 }
 
@@ -144,6 +142,12 @@ function makeTickets(ticketId = 77): jest.Mocked<ProjectsTicketsService> {
   } as unknown as jest.Mocked<ProjectsTicketsService>;
 }
 
+function makePlanLimits(): jest.Mocked<PlanLimitsService> {
+  return {
+    assertFeature: jest.fn().mockResolvedValue(undefined),
+  } as unknown as jest.Mocked<PlanLimitsService>;
+}
+
 function buildService(opts: {
   submission?: unknown;
   notFound?: boolean;
@@ -164,6 +168,7 @@ function buildService(opts: {
     audit,
     rateLimiter,
     tickets,
+    makePlanLimits(),
   );
   return { service, db, gateway, audit, aiUsage, rateLimiter, tickets };
 }
@@ -323,6 +328,7 @@ describe("FeedbucketAiService", () => {
         makeAudit(),
         makeRateLimit(),
         makeTickets(),
+        makePlanLimits(),
       );
 
       await service.analyzePublic({
@@ -357,6 +363,7 @@ describe("FeedbucketAiService", () => {
         makeAudit(),
         makeRateLimit(),
         makeTickets(),
+        makePlanLimits(),
       );
 
       await expect(

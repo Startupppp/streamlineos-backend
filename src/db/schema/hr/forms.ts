@@ -4,14 +4,15 @@ import {
   text,
   serial,
   timestamp,
-  boolean,
   jsonb,
   integer,
   index,
   uniqueIndex,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
+import { hrWorkflowInstances } from "./workflow-engine";
 
 export const hrFormStatusEnum = pgEnum("hr_form_status", ["draft", "active", "archived"]);
 export const hrFormAudienceEnum = pgEnum("hr_form_audience", ["internal", "public"]);
@@ -79,6 +80,7 @@ export const hrForms = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+    unique("uniq_hr_forms_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_hr_forms_org_name").on(table.orgId, table.name),
     uniqueIndex("uniq_hr_forms_org_slug").on(table.orgId, table.slug),
     index("idx_hr_forms_org_status").on(table.orgId, table.status),
@@ -101,10 +103,11 @@ export const hrFormSubmissions = pgTable(
     subjectEmployeeId: integer("subject_employee_id"),
     data: jsonb("data").$type<Record<string, unknown>>().notNull(),
     status: hrFormSubmissionStatusEnum("status").notNull().default("submitted"),
-    workflowInstanceId: integer("workflow_instance_id"),
+    workflowInstanceId: integer("workflow_instance_id").references(() => hrWorkflowInstances.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+    unique("uniq_hr_form_submissions_org_id").on(table.orgId, table.id),
     index("idx_hr_form_subs_org_form_created").on(table.orgId, table.formId, table.createdAt),
     index("idx_hr_form_subs_org_status").on(table.orgId, table.status),
   ],

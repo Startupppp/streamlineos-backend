@@ -5,18 +5,25 @@ import {
   integer,
   timestamp,
   index,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../auth";
+import { organizations, users } from "../common/auth";
 
-export const tenantAiCredits = pgTable("tenant_ai_credits", {
-  id: serial("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull().unique(),
-  balance: integer("balance").default(0).notNull(),
-  monthlyAllowance: integer("monthly_allowance").default(0).notNull(),
-  lastResetAt: timestamp("last_reset_at"),
-  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
-});
+export const tenantAiCredits = pgTable(
+  "tenant_ai_credits",
+  {
+    id: serial("id").primaryKey(),
+    orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull().unique(),
+    balance: integer("balance").default(0).notNull(),
+    monthlyAllowance: integer("monthly_allowance").default(0).notNull(),
+    lastResetAt: timestamp("last_reset_at"),
+    updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+  },
+  (table) => [
+    unique("uniq_tenant_ai_credits_org_id").on(table.orgId, table.id),
+  ],
+);
 
 export const tenantAiCreditTransactions = pgTable(
   "tenant_ai_credit_transactions",
@@ -32,6 +39,7 @@ export const tenantAiCreditTransactions = pgTable(
   },
   (table) => [
     index("idx_tenant_ai_credit_txns_org_time").on(table.orgId, table.createdAt),
+    unique("uniq_tenant_ai_credit_txns_org_id").on(table.orgId, table.id),
   ],
 );
 

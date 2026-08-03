@@ -34,7 +34,7 @@ export class ChatOrgSettingsController {
     @Body(new ZodValidationPipe(updateChatOrgSettingsSchema)) body: UpdateChatOrgSettingsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+    if (!u.isOrgOwner) {
       throw new ForbiddenException("Only org admins can manage chat settings");
     }
     return this.settings.updateSettings(u.orgId, u.userId, body);
