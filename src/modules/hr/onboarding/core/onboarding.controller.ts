@@ -284,14 +284,14 @@ export class OnboardingController {
 
   @Get()
   @UseGuards(PermissionGuard)
-  @RequirePermission("settings:onboarding:manage")
+  @RequirePermission("hr:onboarding:manage")
   getProgress(@CurrentUser() u: CurrentUserContext) {
     return this.onboarding.getProgressSummary(u.orgId);
   }
 
   @Post()
   @UseGuards(PermissionGuard)
-  @RequirePermission("settings:onboarding:manage")
+  @RequirePermission("hr:onboarding:manage")
   async initiate(
     @Body(new ZodValidationPipe(initiateSchema)) body: InitiateInput,
     @CurrentUser() u: CurrentUserContext,
@@ -310,21 +310,21 @@ export class OnboardingController {
 
   @Get("templates")
   @UseGuards(PermissionGuard)
-  @RequirePermission("settings:onboarding:manage")
+  @RequirePermission("hr:onboarding:manage")
   listTemplates(@CurrentUser() u: CurrentUserContext) {
     return this.onboarding.listTemplates(u.orgId);
   }
 
   @Get("templates/departments")
   @UseGuards(PermissionGuard)
-  @RequirePermission("settings:onboarding:manage")
+  @RequirePermission("hr:onboarding:manage")
   listTemplateDepartments(@CurrentUser() u: CurrentUserContext) {
     return this.onboarding.listTemplateDepartments(u.orgId);
   }
 
   @Post("templates")
   @UseGuards(PermissionGuard)
-  @RequirePermission("settings:onboarding:manage")
+  @RequirePermission("hr:onboarding:manage")
   @HttpCode(201)
   createTemplate(
     @Body(new ZodValidationPipe(createTemplateSchema))

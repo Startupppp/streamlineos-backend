@@ -1,5 +1,5 @@
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ORG_ADMIN_PERMISSION_KEY } from "../../common/rbac/grantability";
+import { grantsOrgAdmin } from "../../common/rbac/grantability";
 import { isPlanGatedModule } from "../../common/rbac/module-vocabulary";
 import { moduleOf } from "./access.service";
 import type { AuthResult, DataScope } from "./access.types";
@@ -20,7 +20,7 @@ export async function authorize(
 
   const resolved = await access.resolveUserPermissions(ctx.orgId, ctx.userId);
 
-  if ((resolved.get(ORG_ADMIN_PERMISSION_KEY) ?? "none") !== "none") {
+  if (grantsOrgAdmin(resolved)) {
     return { allow: true, scope: "all" };
   }
 

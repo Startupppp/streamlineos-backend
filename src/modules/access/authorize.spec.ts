@@ -88,5 +88,33 @@ describe("authorize", () => {
     await authorize(resolver, makeCtx({ orgId: "org-legitimate" }), "hr:employees:view");
     expect(capturedOrgIds).toEqual(["org-legitimate"]);
   });
+
+  it("allows the org owner with no grants and the module disabled", async () => {
+    const resolver = makeResolver(new Map(), []);
+    const result = await authorize(resolver, makeCtx({ isOrgOwner: true }), "hr:employees:manage");
+    expect(result).toEqual({ allow: true, scope: "all" });
+  });
+
+  it("allows an org admin with no module grant and the module disabled", async () => {
+    const resolver = makeResolver(new Map([["settings:manage", "all"]]), []);
+    const result = await authorize(resolver, makeCtx(), "hr:employees:manage");
+    expect(result).toEqual({ allow: true, scope: "all" });
+  });
+
+  it("still denies a plain member whose module access was revoked", async () => {
+    const resolver = makeResolver(new Map(), ["hr"]);
+    const result = await authorize(resolver, makeCtx(), "hr:employees:manage");
+    expect(result).toEqual({ allow: false, scope: "none", reason: "FORBIDDEN" });
+  });
+
+  it("does not entitlement-gate a namespace no organization can enable", async () => {
+    const resolver = makeResolver(new Map([["directory:people:view", "all"]]), []);
+    const result = await authorize(resolver, makeCtx(), "directory:people:view");
+    expect(result).toEqual({
+      allow: true,
+      scope: "all",
+      permissions: ["directory:people:view"],
+    });
+  });
 });
 

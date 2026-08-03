@@ -1,6 +1,9 @@
 import { Module } from "@nestjs/common";
 import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
-import { TenantContextInterceptor, TenantContextService } from "./common/tenant";
+import {
+  TenantContextInterceptor,
+  TenantContextService,
+} from "./common/tenant";
 import { Reflector } from "@nestjs/core";
 import { DeprecationInterceptor } from "./common/deprecation/deprecation.interceptor";
 import { ConfigModule } from "./config/config.module";
@@ -22,7 +25,6 @@ import { PlatformModule } from "./modules/platform/platform.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { PushModule } from "./modules/push/push.module";
 import { QuotesModule } from "./modules/quotes/quotes.module";
-import { CustomerExecutiveModule } from "./modules/customer-executive/customer-executive.module";
 import { ReportsModule } from "./modules/reports/reports.module";
 import { SalesModule } from "./modules/sales/sales.module";
 import { CalendarModule } from "./modules/calendar/calendar.module";
@@ -40,6 +42,7 @@ import { DealsModule } from "./modules/deals/deals.module";
 import { OrganizationRootModule } from "./modules/organization/organization.module";
 import { OwnershipModule } from "./modules/ownership/ownership.module";
 import { BranchesModule } from "./modules/branches/branches.module";
+import { CustomerExecutiveModule } from "./modules/customer-executive/customer-executive.module";
 import { OfferFulfillmentModule } from "./modules/offer-fulfillment/offer-fulfillment.module";
 import { SupportRootModule } from "./modules/support/support.module";
 import { ESignModule } from "./modules/e-sign/e-sign.module";
@@ -162,10 +165,10 @@ import { ZodValidationInterceptor } from "./common/validation/zod-validation.int
   providers: [
     MeService,
     Reflector,
-    { provide: APP_GUARD, useClass: JwtAuthGuard },
-    { provide: APP_INTERCEPTOR, useClass: ZodValidationInterceptor },
-    { provide: APP_INTERCEPTOR, useClass: DeprecationInterceptor },
     TenantContextService,
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_INTERCEPTOR, useClass: DeprecationInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: ZodValidationInterceptor },
     { provide: APP_INTERCEPTOR, useClass: TenantContextInterceptor },
   ],
 })

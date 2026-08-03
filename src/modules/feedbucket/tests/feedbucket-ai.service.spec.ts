@@ -9,6 +9,7 @@ import type { AiUsageService } from "../../ai/core/services/ai-usage.service";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
 import type { ProjectsTicketsService } from "../../build/core/projects-tickets.service";
+import type { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import type { FeedbackAnalysis } from "../feedbucket-ai.schemas";
 import type { AiInvokeWithUsageResult } from "../../ai/core/gateway/ai-gateway.types";
 
@@ -143,6 +144,12 @@ function makeTickets(ticketId = 77): jest.Mocked<ProjectsTicketsService> {
   } as unknown as jest.Mocked<ProjectsTicketsService>;
 }
 
+function makePlanLimits(): jest.Mocked<PlanLimitsService> {
+  return {
+    assertFeature: jest.fn().mockResolvedValue(undefined),
+  } as unknown as jest.Mocked<PlanLimitsService>;
+}
+
 function buildService(opts: {
   submission?: unknown;
   notFound?: boolean;
@@ -163,6 +170,7 @@ function buildService(opts: {
     audit,
     rateLimiter,
     tickets,
+    makePlanLimits(),
   );
   return { service, db, gateway, audit, aiUsage, rateLimiter, tickets };
 }
@@ -322,6 +330,7 @@ describe("FeedbucketAiService", () => {
         makeAudit(),
         makeRateLimit(),
         makeTickets(),
+        makePlanLimits(),
       );
 
       await service.analyzePublic({
@@ -356,6 +365,7 @@ describe("FeedbucketAiService", () => {
         makeAudit(),
         makeRateLimit(),
         makeTickets(),
+        makePlanLimits(),
       );
 
       await expect(

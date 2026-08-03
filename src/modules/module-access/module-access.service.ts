@@ -17,6 +17,7 @@ import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import {
   assertPermissionsGrantable,
   buildPermissionModuleMap,
+  grantsOrgAdmin,
   isImmutableSystemRole,
   toGrantableSet,
 } from "../../common/rbac/grantability";
@@ -34,7 +35,6 @@ import {
 import type { AuditLogQuery, SetModuleRolePermissionsInput } from "./dto/module-access.schemas";
 
 const MANAGED_MODULES = new Set<string>(ACCESS_MANAGED_MODULES);
-const ORG_ADMIN_KEY = "settings:rbac:manage";
 const PERM_DIFF_CAP = 50;
 
 function moduleOf(permissionKey: string): string {
@@ -95,7 +95,7 @@ export class ModuleAccessService {
       actor.orgId,
       actor.userId,
     );
-    const isOrgAdmin = (resolved.get(ORG_ADMIN_KEY) ?? "none") !== "none";
+    const isOrgAdmin = grantsOrgAdmin(resolved);
     if (isOrgAdmin) return;
 
     const scope = resolved.get(`${moduleKey}:access:${action}`);
@@ -215,7 +215,7 @@ export class ModuleAccessService {
         this.access.resolveUserPermissions(actor.orgId, actor.userId),
         resolveActorRankContext(this.db, actor.orgId, actor.userId),
       ]);
-      const isOrgAdmin = (resolved.get(ORG_ADMIN_KEY) ?? "none") !== "none";
+      const isOrgAdmin = grantsOrgAdmin(resolved);
       if (!isOrgAdmin) {
         const permMeta = buildPermissionModuleMap(Array.from(deduped.keys()));
         assertPermissionsGrantable(
@@ -362,6 +362,7 @@ export class ModuleAccessService {
   ): Promise<{
     permissions: { key: string; scope: DataScope }[];
     isOrgOwner: boolean;
+    isOrgAdmin: boolean;
     isModuleOwner: boolean;
     isModuleAdmin: boolean;
   }> {
@@ -402,12 +403,12 @@ export class ModuleAccessService {
       .filter(([key]) => key.startsWith(`${moduleKey}:`))
       .map(([key, scope]) => ({ key, scope }));
 
-    const isModuleAdmin = (resolved.get(`${moduleKey}:access:manage`) ?? "none") !== "none"
-      || (resolved.get(`${moduleKey}:access:view`) ?? "none") !== "none";
+    const isModuleAdmin = (resolved.get(`${moduleKey}:access:manage`) ?? "none") !== "none";
 
     return {
       permissions,
       isOrgOwner: actor.isOrgOwner,
+      isOrgAdmin: grantsOrgAdmin(resolved),
       isModuleOwner: ownerRow[0]?.userId === actor.userId,
       isModuleAdmin,
     };

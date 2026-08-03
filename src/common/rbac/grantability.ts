@@ -16,6 +16,15 @@ export const RESERVED_PROPAGATION_KEYS: ReadonlySet<string> = new Set([
 
 export const ORG_ADMIN_PERMISSION_KEY = "settings:manage";
 
+/** Org-wide administrator: holds either reserved key. One definition for every gate. */
+export function grantsOrgAdmin(resolved: ReadonlyMap<string, string>): boolean {
+  for (const key of RESERVED_PROPAGATION_KEYS) {
+    const scope = resolved.get(key);
+    if (scope !== undefined && scope !== "none") return true;
+  }
+  return false;
+}
+
 export interface GrantabilityActor {
   isOrgOwner: boolean;
   grantable: ReadonlySet<string>;

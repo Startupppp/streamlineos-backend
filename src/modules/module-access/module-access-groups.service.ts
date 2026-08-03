@@ -24,6 +24,7 @@ import { AuditService } from "../../common/audit/audit.service";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import {
   assertPermissionsGrantable,
+  grantsOrgAdmin,
   ROLE_RANK,
   toGrantableSet,
 } from "../../common/rbac/grantability";
@@ -44,7 +45,6 @@ import type {
 } from "./dto/module-access.schemas";
 
 const MANAGED_MODULES = new Set<string>(ACCESS_MANAGED_MODULES);
-const ORG_ADMIN_KEY = "settings:rbac:manage";
 
 function moduleOf(permissionKey: string): string {
   return permissionKey.split(":")[0] ?? permissionKey;
@@ -127,7 +127,7 @@ export class ModuleAccessGroupsService {
     this.assertKnownModule(moduleKey);
     if (actor.isOrgOwner) return;
     const resolved = await this.access.resolveUserPermissions(actor.orgId, actor.userId);
-    const isOrgAdmin = (resolved.get(ORG_ADMIN_KEY) ?? "none") !== "none";
+    const isOrgAdmin = grantsOrgAdmin(resolved);
     if (isOrgAdmin) return;
     const scope = resolved.get(`${moduleKey}:access:${action}`);
     if (!scope || scope === "none") {
@@ -259,7 +259,7 @@ export class ModuleAccessGroupsService {
 
     if (!actor.isOrgOwner) {
       const resolved = await this.access.resolveUserPermissions(actor.orgId, actor.userId);
-      const isOrgAdmin = (resolved.get(ORG_ADMIN_KEY) ?? "none") !== "none";
+      const isOrgAdmin = grantsOrgAdmin(resolved);
       if (!isOrgAdmin) {
         const { bestRank, allowedModules } = await resolveActorRankContext(this.db, actor.orgId, actor.userId);
         assertPermissionsGrantable(

@@ -4,9 +4,13 @@ import { ModuleGuard } from "./module.guard";
 import { ModuleDisabledException } from "../http/api-exceptions";
 import type { CurrentUserContext } from "../auth/backend-claims";
 import type { EntitlementsService } from "../../modules/access/entitlements.service";
+import type { AccessService } from "../../modules/access/access.service";
+import type { DataScope } from "../../modules/access/access.types";
 
 function ctx(user: Partial<CurrentUserContext>): ExecutionContext {
-  const req = { user: { enabledModules: [], isOrgOwner: false, orgId: "org-1", ...user } };
+  const req = {
+    user: { enabledModules: [], isOrgOwner: false, orgId: "org-1", userId: "user-1", ...user },
+  };
   return {
     switchToHttp: () => ({ getRequest: () => req }),
     getHandler: () => ({}),
@@ -26,10 +30,19 @@ describe("ModuleGuard", () => {
     isModuleEnabled: jest.fn(),
   };
 
-  const guard = new ModuleGuard(reflector, entitlements as unknown as EntitlementsService);
+  const access: jest.Mocked<Pick<AccessService, "resolveUserPermissions">> = {
+    resolveUserPermissions: jest.fn(),
+  };
+
+  const guard = new ModuleGuard(
+    reflector,
+    entitlements as unknown as EntitlementsService,
+    access as unknown as AccessService,
+  );
 
   beforeEach(() => {
     jest.clearAllMocks();
+    access.resolveUserPermissions.mockResolvedValue(new Map<string, DataScope>());
   });
 
   it("passes through when no @RequireModule is set", async () => {
@@ -55,6 +68,15 @@ describe("ModuleGuard", () => {
   it("allows org owners regardless of module state", async () => {
     reflector.getAllAndOverride.mockReturnValue("crm");
     expect(await guard.canActivate(ctx({ isOrgOwner: true }))).toBe(true);
+    expect(entitlements.isModuleEnabled).not.toHaveBeenCalled();
+  });
+
+  it("allows org admins regardless of module state", async () => {
+    reflector.getAllAndOverride.mockReturnValue("crm");
+    access.resolveUserPermissions.mockResolvedValue(
+      new Map<string, DataScope>([["settings:manage", "all"]]),
+    );
+    expect(await guard.canActivate(ctx({}))).toBe(true);
     expect(entitlements.isModuleEnabled).not.toHaveBeenCalled();
   });
 

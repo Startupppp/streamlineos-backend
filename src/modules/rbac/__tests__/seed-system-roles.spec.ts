@@ -3,8 +3,9 @@ import { MODULE_CATALOG } from "../../../common/rbac/module-vocabulary";
 import { ACCESS_MANAGED_MODULES } from "../permissions";
 
 const ORG_ID = "org-seed-test";
+const ORG_WIDE_SYSTEM_ROLES = 2;
 const EXPECTED_SYSTEM_ROLE_COUNT =
-  1 +
+  ORG_WIDE_SYSTEM_ROLES +
   MODULE_CATALOG.length +
   ACCESS_MANAGED_MODULES.length * 2;
 

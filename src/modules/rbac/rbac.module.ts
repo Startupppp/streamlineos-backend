@@ -16,9 +16,9 @@ import { PermissionCatalogSyncService } from "./permission-catalog-sync.service"
   providers: [
     RbacService,
     RolesService,
+    RoleMemberService,
     RoleLockoutService,
     RolePermissionService,
-    RoleMemberService,
     PermissionCatalogSyncService,
   ],
 })

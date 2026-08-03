@@ -223,7 +223,6 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       "reports:generate",
       "reports:schedule",
       "settings:email-templates:manage",
-      "settings:onboarding:manage",
       "hr:shifts:view",
       "hr:shifts:manage",
       "hr:geofencing:manage",

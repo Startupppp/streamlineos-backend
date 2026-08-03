@@ -121,9 +121,9 @@ describe("ModuleAccessService", () => {
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
-    it("refuses to edit a system role", async () => {
+    it("refuses to edit an organization-level system role", async () => {
       (mockDb.query as { roles: { findFirst: jest.Mock } }).roles.findFirst.mockResolvedValue(
-        { id: 5, slug: "HR_ADMIN", isSystem: true, version: 1 },
+        { id: 5, slug: "ORG_ADMIN", isSystem: true, moduleKey: null, version: 1, rank: 10, orgId: "org-1" },
       );
       await expect(
         svc.setRolePermissions(actor({ isOrgOwner: true }), "hr", 5, {
@@ -131,6 +131,37 @@ describe("ModuleAccessService", () => {
           items: [{ permissionKey: "hr:employees:view", scope: "all" }],
         }),
       ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it("lets a module-scoped system role through to the version check", async () => {
+      (mockDb.query as { roles: { findFirst: jest.Mock } }).roles.findFirst.mockResolvedValue(
+        { id: 5, slug: "HR_MODULE_ADMIN", isSystem: true, moduleKey: "hr", version: 2, rank: 20, orgId: "org-1" },
+      );
+      const txMock = {
+        update: jest.fn().mockReturnValue({
+          set: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({
+              returning: jest.fn().mockResolvedValue([]),
+            }),
+          }),
+        }),
+        delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
+        select: jest.fn().mockReturnValue({
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+          }),
+        }),
+        insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue([]) }),
+      };
+      (mockDb as { transaction: jest.Mock }).transaction.mockImplementation(
+        (fn: (tx: unknown) => Promise<unknown>) => fn(txMock),
+      );
+      await expect(
+        svc.setRolePermissions(actor({ isOrgOwner: true }), "hr", 5, {
+          version: 1,
+          items: [{ permissionKey: "hr:employees:view", scope: "all" }],
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
     });
 
     it("throws 404 when the role is not in the caller's org", async () => {

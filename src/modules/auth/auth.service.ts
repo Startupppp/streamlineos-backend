@@ -71,9 +71,7 @@ export class AuthService {
       columns: { id: true },
     });
 
-    if (existing) {
-      return { success: true };
-    }
+    if (existing) return { success: true };
 
     const userId = randomUUID();
     const orgId = randomUUID();
@@ -82,22 +80,25 @@ export class AuthService {
       const seqRows = await tx.execute(
         sql`SELECT nextval(pg_get_serial_sequence('organization_members', 'id')) AS id`,
       );
+
       const ownerMembershipId = Number(seqRows[0]?.id);
-      if (!Number.isInteger(ownerMembershipId)) {
+
+      if (!Number.isInteger(ownerMembershipId))
         throw new Error("Failed to allocate owner membership id");
-      }
 
       await tx.insert(organizations).values({
         id: orgId,
+        ownerMembershipId,
         name: input.companyName,
         slug: slugify(input.companyName),
-        ownerMembershipId,
       });
 
       await tx.insert(users).values({
         id: userId,
         email: normalizedEmail,
-        name: input.lastName ? `${input.firstName} ${input.lastName}` : input.firstName,
+        name: input.lastName
+          ? `${input.firstName} ${input.lastName}`
+          : input.firstName,
         firstName: input.firstName,
         lastName: input.lastName ?? "",
         isActive: true,
@@ -195,12 +196,18 @@ export class AuthService {
             },
           })
           .catch(() => {
-            throw new HttpException("Service temporarily unavailable", HttpStatus.SERVICE_UNAVAILABLE);
+            throw new HttpException(
+              "Service temporarily unavailable",
+              HttpStatus.SERVICE_UNAVAILABLE,
+            );
           });
 
         if (!user) throw new NotFoundException("User not found");
 
-        const membership = await this.authTokens.resolveActiveMembership(userId, user.lastActiveOrgId ?? null);
+        const membership = await this.authTokens.resolveActiveMembership(
+          userId,
+          user.lastActiveOrgId ?? null,
+        );
 
         let mfaEnforced = false;
         let enabledModules: string[] = [];
@@ -213,7 +220,8 @@ export class AuthService {
 
         if (membership) {
           mfaEnforced = membership.mfaEnforced;
-          orgOnboardingCompletedAt = membership.orgOnboardingCompletedAt?.toISOString() ?? null;
+          orgOnboardingCompletedAt =
+            membership.orgOnboardingCompletedAt?.toISOString() ?? null;
 
           await runInTenantTransaction(
             this.db,
@@ -227,12 +235,20 @@ export class AuthService {
               ]);
 
               if (sub) {
-                plan = sub.status === "ACTIVE" || sub.status === "TRIAL" ? sub.plan : "FREE";
+                plan =
+                  sub.status === "ACTIVE" || sub.status === "TRIAL"
+                    ? sub.plan
+                    : "FREE";
               }
-              enabledModules = moduleStatuses.filter((m) => m.enabled).map((m) => m.moduleKey);
+              enabledModules = moduleStatuses
+                .filter((m) => m.enabled)
+                .map((m) => m.moduleKey);
 
               try {
-                const permMap = await this.access.resolveUserPermissions(membership.orgId, userId);
+                const permMap = await this.access.resolveUserPermissions(
+                  membership.orgId,
+                  userId,
+                );
                 permissions = [...permMap.keys()];
               } catch {
                 permissions = [];
@@ -259,7 +275,8 @@ export class AuthService {
           mfaEnforced,
           enabledModules,
           orgOnboardingCompletedAt,
-          userOnboardingCompletedAt: user.onboardingCompletedAt?.toISOString() ?? null,
+          userOnboardingCompletedAt:
+            user.onboardingCompletedAt?.toISOString() ?? null,
           permissions,
           plan,
         };

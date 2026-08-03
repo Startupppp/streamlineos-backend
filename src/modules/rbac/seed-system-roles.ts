@@ -29,15 +29,20 @@ export function buildOrgAdminPermissionKeys(dbCatalog: Set<string>): string[] {
   return candidates.filter((key) => dbCatalog.has(key));
 }
 
-const PEOPLE_ADMIN_MODULE = "hr";
-const PEOPLE_ADMIN_KEYS = ["settings:view", "settings:organization:manage"];
-const PEOPLE_READ_KEYS = ["settings:view"];
+/** Keys a module's admins need that live outside their own namespace. */
+const MODULE_ADMIN_EXTRA_KEYS: Readonly<Record<string, readonly string[]>> = {
+  hr: ["settings:view", "settings:organization:manage"],
+};
+
+const MODULE_MEMBER_EXTRA_KEYS: Readonly<Record<string, readonly string[]>> = {
+  hr: ["settings:view"],
+};
 
 export function buildModuleAdminPermissionKeys(
   moduleKey: string,
   dbCatalog: Set<string>,
 ): string[] {
-  const extra = moduleKey === PEOPLE_ADMIN_MODULE ? PEOPLE_ADMIN_KEYS : [];
+  const extra = MODULE_ADMIN_EXTRA_KEYS[moduleKey] ?? [];
   return [...moduleScopedPermissions(moduleKey), ...extra].filter((key) =>
     dbCatalog.has(key),
   );
@@ -50,7 +55,7 @@ export function buildModuleMemberPermissionKeys(
   const scoped = moduleScopedPermissions(moduleKey).filter(
     (key) => key.endsWith(":view") || key.endsWith(":read"),
   );
-  const extra = moduleKey === PEOPLE_ADMIN_MODULE ? PEOPLE_READ_KEYS : [];
+  const extra = MODULE_MEMBER_EXTRA_KEYS[moduleKey] ?? [];
   return [...scoped, ...extra].filter((key) => dbCatalog.has(key));
 }
 
