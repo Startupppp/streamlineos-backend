@@ -28,6 +28,7 @@ import {
   updateOrgDepartmentSchema,
   createOrgTeamSchema,
   updateOrgTeamSchema,
+  moveOrgTeamSchema,
   createOrgLocationSchema,
   updateOrgLocationSchema,
   createCostCenterSchema,
@@ -41,6 +42,7 @@ import {
   type UpdateOrgDepartmentInput,
   type CreateOrgTeamInput,
   type UpdateOrgTeamInput,
+  type MoveOrgTeamInput,
   type CreateOrgLocationInput,
   type UpdateOrgLocationInput,
   type CreateCostCenterInput,
@@ -340,9 +342,9 @@ export class OrgHierarchyController {
   @RequirePermission("settings:organization:manage")
   moveTeam(
     @Param("teamId") teamId: string,
-    @Body() body: { departmentId: string | null },
+    @Body(new ZodValidationPipe(moveOrgTeamSchema)) body: MoveOrgTeamInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.moveTeam(u.orgId, teamId, body.departmentId ?? null);
+    return this.service.moveTeam(u.orgId, teamId, body.departmentId);
   }
 }

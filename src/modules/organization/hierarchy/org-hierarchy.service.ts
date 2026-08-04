@@ -153,7 +153,7 @@ export class OrgHierarchyService {
     return this.teams.deleteTeam(orgId, userId, id);
   }
 
-  async moveTeam(orgId: string, teamId: string, newDepartmentId: string | null) {
+  async moveTeam(orgId: string, teamId: string, newDepartmentId: string) {
     return this.teams.moveTeam(orgId, teamId, newDepartmentId);
   }
 

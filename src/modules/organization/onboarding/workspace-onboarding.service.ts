@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -77,6 +77,13 @@ function teamCode(deptName: string): string {
   return deptName.substring(0, 4).toUpperCase().replace(/\s/g, "") + "T";
 }
 
+function requireCreatedId(row: { id: string } | undefined, kind: string): string {
+  if (!row) {
+    throw new Error(`Failed to create ${kind}`);
+  }
+  return row.id;
+}
+
 @Injectable()
 export class WorkspaceOnboardingService {
   constructor(
@@ -88,7 +95,12 @@ export class WorkspaceOnboardingService {
     orgId: string,
     industry: string,
     enabledModules?: string[],
-  ): Promise<{ businessUnits: number; branches: number; departments: number; teams: number }> {
+  ): Promise<{
+    businessUnits: number;
+    branches: number;
+    departments: number;
+    teams: number;
+  }> {
     if (enabledModules?.length) {
       await this.checklists.ensureChecklistsForModules(orgId, enabledModules);
     }
@@ -111,7 +123,14 @@ export class WorkspaceOnboardingService {
       const [existingBu] = await tx
         .select({ id: orgUnits.id })
         .from(orgUnits)
-        .where(and(eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "BUSINESS_UNIT")))
+        .where(
+          and(
+            eq(orgUnits.orgId, orgId),
+            eq(orgUnits.kind, "BUSINESS_UNIT"),
+            eq(orgUnits.code, "HQ"),
+            isNull(orgUnits.deletedAt),
+          ),
+        )
         .limit(1);
 
       let buId: string | undefined = existingBu?.id;
@@ -120,14 +139,21 @@ export class WorkspaceOnboardingService {
           .insert(orgUnits)
           .values({ id: randomUUID(), orgId, kind: "BUSINESS_UNIT", name: orgName, code: "HQ" })
           .returning({ id: orgUnits.id });
-        buId = insertedBu?.id;
+        buId = requireCreatedId(insertedBu, "business unit");
         createdBusinessUnits = 1;
       }
 
       const [existingBranch] = await tx
-        .select({ id: orgUnits.id })
+        .select({ id: orgUnits.id, parentId: orgUnits.parentId })
         .from(orgUnits)
-        .where(and(eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "BRANCH")))
+        .where(
+          and(
+            eq(orgUnits.orgId, orgId),
+            eq(orgUnits.kind, "BRANCH"),
+            eq(orgUnits.code, "MAIN"),
+            isNull(orgUnits.deletedAt),
+          ),
+        )
         .limit(1);
 
       let branchId: string | undefined = existingBranch?.id;
@@ -136,15 +162,25 @@ export class WorkspaceOnboardingService {
           .insert(orgUnits)
           .values({ id: randomUUID(), orgId, kind: "BRANCH", name: "Main Office", code: "MAIN", parentId: buId })
           .returning({ id: orgUnits.id });
-        branchId = insertedBranch?.id;
+        branchId = requireCreatedId(insertedBranch, "branch");
         createdBranches = 1;
+      } else if (existingBranch.parentId !== buId) {
+        await tx
+          .update(orgUnits)
+          .set({ parentId: buId })
+          .where(
+            and(
+              eq(orgUnits.id, existingBranch.id),
+              eq(orgUnits.orgId, orgId),
+            ),
+          );
       }
 
       for (const [deptName, teamNames] of structure) {
         const [existingDept] = await tx
-          .select({ id: orgUnits.id })
+          .select({ id: orgUnits.id, parentId: orgUnits.parentId })
           .from(orgUnits)
-          .where(and(eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "DEPARTMENT"), eq(orgUnits.name, deptName)))
+          .where(and(eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "DEPARTMENT"), eq(orgUnits.name, deptName), isNull(orgUnits.deletedAt)))
           .limit(1);
 
         let deptId: string | undefined = existingDept?.id;
@@ -154,16 +190,23 @@ export class WorkspaceOnboardingService {
             .insert(orgUnits)
             .values({ id: randomUUID(), orgId, kind: "DEPARTMENT", name: deptName, code, parentId: branchId })
             .returning({ id: orgUnits.id });
-          deptId = insertedDept?.id;
+          deptId = requireCreatedId(insertedDept, "department");
           createdDepartments += 1;
+        } else if (existingDept.parentId !== branchId) {
+          await tx
+            .update(orgUnits)
+            .set({ parentId: branchId })
+            .where(
+              and(eq(orgUnits.id, existingDept.id), eq(orgUnits.orgId, orgId)),
+            );
         }
 
         let teamIndex = 0;
         for (const teamName of teamNames) {
           const [existingTeam] = await tx
-            .select({ id: orgUnits.id })
+            .select({ id: orgUnits.id, parentId: orgUnits.parentId })
             .from(orgUnits)
-            .where(and(eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "TEAM"), eq(orgUnits.name, teamName)))
+            .where(and(eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "TEAM"), eq(orgUnits.name, teamName), isNull(orgUnits.deletedAt)))
             .limit(1);
 
           if (!existingTeam) {
@@ -171,6 +214,16 @@ export class WorkspaceOnboardingService {
             const code = `${teamCode(deptName)}${suffix}`;
             await tx.insert(orgUnits).values({ id: randomUUID(), orgId, kind: "TEAM", name: teamName, code, parentId: deptId });
             createdTeams += 1;
+          } else if (existingTeam.parentId !== deptId) {
+            await tx
+              .update(orgUnits)
+              .set({ parentId: deptId })
+              .where(
+                and(
+                  eq(orgUnits.id, existingTeam.id),
+                  eq(orgUnits.orgId, orgId),
+                ),
+              );
           }
           teamIndex += 1;
         }

@@ -128,6 +128,12 @@ export const updateOrgTeamSchema = z
 
 export type UpdateOrgTeamInput = z.infer<typeof updateOrgTeamSchema>;
 
+export const moveOrgTeamSchema = z
+  .object({ departmentId: z.string().uuid() })
+  .strict();
+
+export type MoveOrgTeamInput = z.infer<typeof moveOrgTeamSchema>;
+
 export const createOrgLocationSchema = z
   .object({
     name: orgNodeName,

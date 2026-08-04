@@ -240,7 +240,7 @@ export class OrgHierarchyTeamsService {
     await this.audit.log({ action: "org.team.deleted", userId, orgId, targetId: id, targetType: "org_unit" });
   }
 
-  async moveTeam(orgId: string, teamId: string, newDepartmentId: string | null) {
+  async moveTeam(orgId: string, teamId: string, newDepartmentId: string) {
     const team = await this.db.query.orgUnits.findFirst({
       where: and(
         eq(orgUnits.id, teamId),
@@ -249,7 +249,7 @@ export class OrgHierarchyTeamsService {
       ),
     });
     if (!team) throw new NotFoundException("Team not found");
-    if (newDepartmentId !== null && newDepartmentId === teamId) {
+    if (newDepartmentId === teamId) {
       throw new BadRequestException("A unit cannot be its own parent");
     }
     await this.assertDepartment(orgId, newDepartmentId);
