@@ -6,6 +6,7 @@ import {
   Injectable,
   NotFoundException,
   Logger,
+  ServiceUnavailableException,
 } from "@nestjs/common";
 import { randomUUID, randomBytes, createHash } from "node:crypto";
 import {
@@ -102,8 +103,11 @@ export class InvitationsService {
     return assertMayGrantRole(this.access, orgId, actor, role);
   }
 
-  private async requireActiveOrg(orgId: string): Promise<{ name: string }> {
-    const org = await this.db.query.organizations.findFirst({
+  private async requireActiveOrg(
+    orgId: string,
+    db: DbOrTx = this.db,
+  ): Promise<{ name: string }> {
+    const org = await db.query.organizations.findFirst({
       where: eq(organizations.id, orgId),
       columns: { name: true, status: true, deletedAt: true },
     });
@@ -546,13 +550,20 @@ export class InvitationsService {
     if (!invitation)
       throw new NotFoundException("Invalid or expired invitation");
 
-    const [org, existingUser] = await Promise.all([
-      this.requireActiveOrg(invitation.orgId),
-      this.db.query.users.findFirst({
-        where: eq(users.email, invitation.email),
-        columns: { id: true },
-      }),
-    ]);
+    const { org, existingUser } = await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const [org, existingUser] = await Promise.all([
+          this.requireActiveOrg(invitation.orgId, tx),
+          tx.query.users.findFirst({
+            where: eq(users.email, invitation.email),
+            columns: { id: true },
+          }),
+        ]);
+        return { org, existingUser };
+      },
+      { orgId: invitation.orgId },
+    );
 
     return {
       email: invitation.email,
@@ -578,23 +589,30 @@ export class InvitationsService {
     );
     if (!invitation)
       throw new NotFoundException("Invalid or expired invitation");
-    await this.requireActiveOrg(invitation.orgId);
     const invitedOrgId = invitation.orgId;
-
-    const existingUser = await this.db.query.users.findFirst({
-      where: eq(users.email, invitation.email),
-      columns: { id: true },
-    });
+    const { existingUser, existingMembership } = await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        await this.requireActiveOrg(invitation.orgId, tx);
+        const existingUser = await tx.query.users.findFirst({
+          where: eq(users.email, invitation.email),
+          columns: { id: true },
+        });
+        const existingMembership = existingUser
+          ? await tx.query.organizationMembers.findFirst({
+              where: and(
+                eq(organizationMembers.userId, existingUser.id),
+                eq(organizationMembers.orgId, invitation.orgId),
+              ),
+              columns: { status: true },
+            })
+          : undefined;
+        return { existingUser, existingMembership };
+      },
+      { orgId: invitedOrgId },
+    );
 
     if (existingUser) {
-      const existingMembership =
-        await this.db.query.organizationMembers.findFirst({
-          where: and(
-            eq(organizationMembers.userId, existingUser.id),
-            eq(organizationMembers.orgId, invitation.orgId),
-          ),
-          columns: { status: true },
-        });
       if (existingMembership) {
         if (
           existingMembership.status === "SUSPENDED" ||
@@ -914,11 +932,19 @@ export class InvitationsService {
         ? `${inviter.firstName} ${inviter.lastName}`
         : (inviter?.name ?? undefined);
 
-    void this.email
-      .sendInvitationEmail(invitation.email, rawToken, org.name, inviterName)
-      .catch((err: unknown) =>
-        this.recordDeliveryFailure(orgId, invitationId, err),
+    try {
+      await this.email.sendInvitationEmail(
+        invitation.email,
+        rawToken,
+        org.name,
+        inviterName,
       );
+    } catch (error: unknown) {
+      await this.recordDeliveryFailure(orgId, invitationId, error);
+      throw new ServiceUnavailableException(
+        "Invitation email could not be sent. Please try again.",
+      );
+    }
 
     this.audit.log({
       action: "user.invitation.resent",
