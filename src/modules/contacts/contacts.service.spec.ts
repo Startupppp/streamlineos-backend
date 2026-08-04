@@ -2,6 +2,69 @@ import { ContactsService } from "./contacts.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 
 describe("ContactsService bulk import", () => {
+  it("projects only public identity fields from contact relations", async () => {
+    const findFirst = jest.fn().mockResolvedValue(undefined);
+    const service = new ContactsService(
+      { query: { contacts: { findFirst } } } as never,
+      {} as never,
+      {} as never,
+    );
+
+    await service.getContact("org-1", 42);
+
+    expect(findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        with: {
+          crmOrganization: { columns: { id: true, name: true } },
+          lead: { columns: { id: true, name: true } },
+          deal: { columns: { id: true, name: true } },
+        },
+      }),
+    );
+  });
+
+  it("streams export rows in bounded keyset pages with one CSV header", async () => {
+    const makeRow = (id: number) => ({
+      id,
+      name: id === 1 ? "=unsafe" : `Contact ${id}`,
+      email: null,
+      phone: null,
+      title: null,
+      company: null,
+      department: null,
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    });
+    const limit = jest
+      .fn()
+      .mockResolvedValueOnce(Array.from({ length: 500 }, (_, index) => makeRow(index + 1)))
+      .mockResolvedValueOnce([makeRow(501)]);
+    const query = {
+      from: jest.fn(),
+      where: jest.fn(),
+      orderBy: jest.fn(),
+      limit,
+    };
+    query.from.mockReturnValue(query);
+    query.where.mockReturnValue(query);
+    query.orderBy.mockReturnValue(query);
+    const service = new ContactsService(
+      { select: jest.fn().mockReturnValue(query) } as never,
+      {} as never,
+      {} as never,
+    );
+
+    const chunks: string[] = [];
+    for await (const chunk of service.exportCsvChunks("org-1")) chunks.push(chunk);
+    const csv = chunks.join("");
+
+    expect(limit).toHaveBeenCalledTimes(2);
+    expect(limit).toHaveBeenCalledWith(500);
+    expect(csv.match(/^id,name,email,phone,title,company,department,createdAt$/gm)).toHaveLength(1);
+    expect(csv.split("\n")).toHaveLength(502);
+    expect(csv).toContain("1,'=unsafe");
+    expect(csv).toContain("501,Contact 501");
+  });
+
   it("reads contact pages through the organization namespace", async () => {
     const cachedVersioned = jest.fn().mockResolvedValue({ items: [], total: 0 });
     const service = new ContactsService(

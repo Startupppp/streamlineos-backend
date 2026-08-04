@@ -171,7 +171,8 @@ Also return a short summary (2-3 sentences) with overall advice for the rep.`,
   async suggestTaskAssignments(orgId: string, projectId: number): Promise<TaskSuggestion[]> {
     const projectTickets = await this.db.query.tickets.findMany({
       where: and(eq(tickets.orgId, orgId), eq(tickets.projectId, projectId), eq(tickets.status, "TODO")),
-      with: { assignee: true },
+      columns: { id: true, title: true, priority: true, assigneeId: true },
+      limit: 100,
     });
 
     const unassignedTickets = projectTickets.filter((t) => !t.assigneeId);

@@ -15,6 +15,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import type { Response } from "express";
+import { once } from "node:events";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -78,8 +79,15 @@ export class ContactsController {
   @RequirePermission("crm:contacts:view")
   @Header("Content-Type", "text/csv; charset=utf-8")
   @Header("Content-Disposition", 'attachment; filename="contacts-export.csv"')
-  exportCsv(@CurrentUser() u: CurrentUserContext) {
-    return this.contacts.exportCsv(u.orgId);
+  async exportCsv(
+    @CurrentUser() u: CurrentUserContext,
+    @Res() res: Response,
+  ): Promise<void> {
+    for await (const chunk of this.contacts.exportCsvChunks(u.orgId)) {
+      if (res.destroyed) return;
+      if (!res.write(chunk)) await once(res, "drain");
+    }
+    res.end();
   }
 
   @Get("search")

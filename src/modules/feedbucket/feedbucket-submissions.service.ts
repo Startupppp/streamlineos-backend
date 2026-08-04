@@ -38,7 +38,12 @@ export class FeedbucketSubmissionsService {
       this.db.query.feedbucketSubmissions.findMany({
         where,
         columns: { consoleLogs: false, networkLogs: false },
-        with: { widget: true, assignee: true },
+        with: {
+          widget: true,
+          assignee: {
+            columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true },
+          },
+        },
         orderBy: [desc(feedbucketSubmissions.createdAt)],
         limit,
         offset,
@@ -58,7 +63,13 @@ export class FeedbucketSubmissionsService {
           eq(feedbucketSubmissions.orgId, orgId),
           isNull(feedbucketSubmissions.deletedAt),
         ),
-        with: { widget: true, assignee: true, linkedTicket: true },
+        with: {
+          widget: true,
+          assignee: {
+            columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true },
+          },
+          linkedTicket: true,
+        },
       }),
       this.db
         .select({ fileUrl: feedbucketAttachments.fileUrl })

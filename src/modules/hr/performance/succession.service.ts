@@ -1,15 +1,41 @@
 import { Injectable, Inject, NotFoundException } from "@nestjs/common";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc, lt, or } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { hrSuccessionPlans } from "../../../db/schema/hr/succession";
+import type { SuccessionListInput } from "./dto/succession.schemas";
+import { decodeTimestampCursor, encodeTimestampCursor } from "./cursor-pagination";
 
 @Injectable()
 export class SuccessionService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async list(orgId: string) {
-    return this.db.select().from(hrSuccessionPlans).where(eq(hrSuccessionPlans.orgId, orgId));
+  async list(orgId: string, query: SuccessionListInput) {
+    const cursor = query.cursor ? decodeTimestampCursor(query.cursor) : null;
+    const rows = await this.db
+      .select()
+      .from(hrSuccessionPlans)
+      .where(and(
+        eq(hrSuccessionPlans.orgId, orgId),
+        cursor
+          ? or(
+              lt(hrSuccessionPlans.createdAt, cursor.createdAt),
+              and(eq(hrSuccessionPlans.createdAt, cursor.createdAt), lt(hrSuccessionPlans.id, cursor.id)),
+            )
+          : undefined,
+      ))
+      .orderBy(desc(hrSuccessionPlans.createdAt), desc(hrSuccessionPlans.id))
+      .limit(query.limit + 1);
+
+    const hasMore = rows.length > query.limit;
+    const items = hasMore ? rows.slice(0, query.limit) : rows;
+    const last = items.at(-1);
+    return {
+      items,
+      nextCursor: hasMore && last
+        ? encodeTimestampCursor({ createdAt: last.createdAt, id: last.id })
+        : null,
+    };
   }
 
   async create(

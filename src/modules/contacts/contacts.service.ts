@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, and, sql, count, or, ilike, isNull } from "drizzle-orm";
+import { eq, and, sql, count, or, ilike, isNull, gt } from "drizzle-orm";
 import { contacts } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -96,7 +96,11 @@ export class ContactsService {
   getContact(orgId: string, id: number) {
     return this.db.query.contacts.findFirst({
       where: and(eq(contacts.id, id), eq(contacts.orgId, orgId), isNull(contacts.deletedAt)),
-      with: { crmOrganization: true, lead: true, deal: true },
+      with: {
+        crmOrganization: { columns: { id: true, name: true } },
+        lead: { columns: { id: true, name: true } },
+        deal: { columns: { id: true, name: true } },
+      },
     });
   }
 
@@ -205,22 +209,7 @@ export class ContactsService {
     }
   }
 
-  async exportCsv(orgId: string): Promise<string> {
-    const rows = await this.db
-      .select({
-        id: contacts.id,
-        name: contacts.name,
-        email: contacts.email,
-        phone: contacts.phone,
-        title: contacts.title,
-        company: contacts.company,
-        department: contacts.department,
-        createdAt: contacts.createdAt,
-      })
-      .from(contacts)
-      .where(and(eq(contacts.orgId, orgId), isNull(contacts.deletedAt)))
-      .orderBy(contacts.name);
-
+  async *exportCsvChunks(orgId: string): AsyncGenerator<string> {
     const headers = [
       "id",
       "name",
@@ -231,9 +220,35 @@ export class ContactsService {
       "department",
       "createdAt",
     ];
-    return toCsv(
-      headers,
-      rows.map((r) => ({
+    yield toCsv(headers, []);
+
+    const pageSize = 500;
+    let afterId = 0;
+    for (;;) {
+      const rows = await this.db
+        .select({
+        id: contacts.id,
+        name: contacts.name,
+        email: contacts.email,
+        phone: contacts.phone,
+        title: contacts.title,
+        company: contacts.company,
+        department: contacts.department,
+        createdAt: contacts.createdAt,
+        })
+        .from(contacts)
+        .where(
+          and(
+            eq(contacts.orgId, orgId),
+            isNull(contacts.deletedAt),
+            gt(contacts.id, afterId),
+          ),
+        )
+        .orderBy(contacts.id)
+        .limit(pageSize);
+      if (rows.length === 0) return;
+
+      const pageCsv = toCsv(headers, rows.map((r) => ({
         id: r.id,
         name: r.name,
         email: r.email ?? "",
@@ -242,7 +257,10 @@ export class ContactsService {
         company: r.company ?? "",
         department: r.department ?? "",
         createdAt: r.createdAt?.toISOString() ?? "",
-      })),
-    );
+      })));
+      yield `\n${pageCsv.slice(pageCsv.indexOf("\n") + 1)}`;
+      afterId = rows[rows.length - 1]!.id;
+      if (rows.length < pageSize) return;
+    }
   }
 }

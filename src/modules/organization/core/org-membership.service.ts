@@ -137,7 +137,13 @@ export class OrgMembershipService {
     const rows = await db
       .select({ name: roles.name })
       .from(roleAssignments)
-      .innerJoin(roles, eq(roleAssignments.roleId, roles.id))
+      .innerJoin(
+        roles,
+        and(
+          eq(roleAssignments.roleId, roles.id),
+          eq(roleAssignments.orgId, roles.orgId),
+        ),
+      )
       .where(
         and(
           eq(roleAssignments.orgId, orgId),

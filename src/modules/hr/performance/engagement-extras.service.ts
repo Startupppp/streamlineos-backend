@@ -7,6 +7,7 @@ import type {
   CreateBadgeInput,
   CreateCampaignInput,
   CreateCommunityInput,
+  CommunityListInput,
   CreatePollInput,
   MoodCheckinInput,
   UpdateCampaignInput,
@@ -82,8 +83,8 @@ export class EngagementExtrasService {
     return this.moodPolls.pollResults(orgId, pollId);
   }
 
-  listCommunities(orgId: string) {
-    return this.communitiesCampaigns.listCommunities(orgId);
+  listCommunities(orgId: string, query: CommunityListInput) {
+    return this.communitiesCampaigns.listCommunities(orgId, query);
   }
 
   createCommunity(orgId: string, userId: string, input: CreateCommunityInput) {

@@ -34,6 +34,11 @@ export const createCommunitySchema = z.object({
   description: z.string().max(500).optional(),
 });
 
+export const communityListSchema = z.object({
+  cursor: z.string().max(500).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+});
+
 export const createCampaignSchema = z.object({
   name: z.string().min(2).max(200),
   description: z.string().max(1000).optional(),
@@ -58,6 +63,7 @@ export const updatePollSchema = z.object({
 export type MoodCheckinInput = z.infer<typeof moodCheckinSchema>;
 export type CreateBadgeInput = z.infer<typeof createBadgeSchema>;
 export type AwardBadgeInput = z.infer<typeof awardBadgeSchema>;
+export type CommunityListInput = z.infer<typeof communityListSchema>;
 export type CreatePollInput = z.infer<typeof createPollSchema>;
 export type VotePollInput = z.infer<typeof votePollSchema>;
 export type CreateCommunityInput = z.infer<typeof createCommunitySchema>;

@@ -13,6 +13,7 @@ import {
   leaveTypes,
   orgUnitMembers,
   orgUnits,
+  organizationMembers,
   users,
   leavePolicies,
 } from "../../../db/schema";
@@ -145,10 +146,18 @@ export class LeavesService {
 
     if (isAll) return base;
 
-    const reportingUsers = await this.db.query.users.findMany({
-      where: eq(users.reportingTo, userId),
-      columns: { id: true },
-    });
+    const reportingUsers = await this.db
+      .select({ id: users.id })
+      .from(users)
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.userId, users.id),
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.status, "ACTIVE"),
+        ),
+      )
+      .where(eq(users.reportingTo, userId));
 
     if (reportingUsers.length === 0) return base;
 
@@ -190,7 +199,17 @@ export class LeavesService {
         gte(leaveRequests.endDate, weekStart.toISOString()),
       ),
       with: {
-        user: true,
+        user: {
+          columns: {
+            id: true,
+            name: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            image: true,
+            designation: true,
+          },
+        },
         leaveType: { columns: { id: true, name: true } },
       },
       orderBy: [desc(leaveRequests.startDate)],

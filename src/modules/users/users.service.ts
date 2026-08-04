@@ -42,6 +42,7 @@ import { assertTargetNotOwner } from "../../common/rbac/assert-target-not-owner"
 import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
 import { withIdentity } from "../../common/tenant/with-identity";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import { syncCanonicalEmploymentFields } from "../../common/hr/sync-canonical-employment-fields";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 
 @Injectable()
@@ -85,6 +86,7 @@ export class UsersService {
 
     const existing = await this.db.query.users.findFirst({
       where: eq(users.email, email),
+      columns: { id: true },
     });
     if (existing) {
       const membership = await this.db.query.organizationMembers.findFirst({
@@ -480,6 +482,7 @@ export class UsersService {
     const hasPlacementUpdates =
       data.departmentId !== undefined || data.teamId !== undefined;
 
+    let canonicalEmploymentSynced: boolean | null = null;
     if (hasUserUpdates || hasPlacementUpdates) {
       await runInTenantTransaction(this.db, async (tx) => {
         if (hasUserUpdates) {
@@ -489,6 +492,12 @@ export class UsersService {
           DEPARTMENT: data.departmentId,
           TEAM: data.teamId,
         });
+        if (data.designation !== undefined || data.departmentId !== undefined) {
+          canonicalEmploymentSynced = await syncCanonicalEmploymentFields(tx, orgId, userId, {
+            designation: data.designation,
+            departmentId: data.departmentId,
+          });
+        }
       }, { orgId });
     }
 
@@ -523,7 +532,10 @@ export class UsersService {
       actorUserId,
       resourceType: "user",
       resourceId: userId,
-      metadata: { changes: data },
+      metadata: {
+        changes: data,
+        ...(canonicalEmploymentSynced !== null && { canonicalEmploymentSynced }),
+      },
     });
 
     return { success: true };

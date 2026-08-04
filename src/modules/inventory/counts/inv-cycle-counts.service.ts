@@ -121,10 +121,20 @@ export class InvCycleCountsService {
     const cc = await this.requireCount(orgId, countId);
     if (cc.status !== "COUNTING") throw new BadRequestException("Lines can only be updated while status is COUNTING");
 
-    for (const update of data.lines) {
-      await this.db.update(invCycleCountLines)
-        .set({ countedQty: update.countedQty.toFixed(4) })
-        .where(and(eq(invCycleCountLines.cycleCountId, countId), eq(invCycleCountLines.id, update.lineId)));
+    if (data.lines.length > 0) {
+      const values = sql.join(
+        data.lines.map(
+          (update) => sql`(${update.lineId}, ${update.countedQty.toFixed(4)}::numeric)`,
+        ),
+        sql`, `,
+      );
+      await this.db.execute(sql`
+        UPDATE ${invCycleCountLines}
+        SET counted_qty = updates.counted_qty
+        FROM (VALUES ${values}) AS updates(id, counted_qty)
+        WHERE ${invCycleCountLines.id} = updates.id
+          AND ${invCycleCountLines.cycleCountId} = ${countId}
+      `);
     }
 
     await this.cache.invalidate(CACHE_KEYS.invCycleCountDetail(orgId, countId));
@@ -135,19 +145,12 @@ export class InvCycleCountsService {
     const cc = await this.requireCount(orgId, countId);
     if (cc.status !== "COUNTING") throw new BadRequestException("Only COUNTING counts can move to REVIEW");
 
-    const lines = await this.db.query.invCycleCountLines.findMany({
-      where: eq(invCycleCountLines.cycleCountId, countId),
-      columns: { id: true, systemQty: true, countedQty: true },
-    });
-
-    for (const line of lines) {
-      const counted = parseFloat(line.countedQty ?? "0");
-      const system = parseFloat(line.systemQty);
-      const variance = counted - system;
-      await this.db.update(invCycleCountLines)
-        .set({ varianceQty: variance.toFixed(4) })
-        .where(eq(invCycleCountLines.id, line.id));
-    }
+    await this.db
+      .update(invCycleCountLines)
+      .set({
+        varianceQty: sql`coalesce(${invCycleCountLines.countedQty}, 0) - ${invCycleCountLines.systemQty}`,
+      })
+      .where(eq(invCycleCountLines.cycleCountId, countId));
 
     await this.db.update(invCycleCounts)
       .set({ status: "REVIEW" })

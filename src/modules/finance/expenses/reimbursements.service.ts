@@ -18,6 +18,17 @@ import { FinancePostingService } from "../../accounting/core/finance-posting.ser
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { CreateBatchInput, PayBatchInput, BatchListInput } from "./dto/finance-expenses.schemas";
 
+// Global users contains authentication secrets and legacy payroll fields. Never
+// hydrate the full relation into an API response.
+const REIMBURSEMENT_ACTOR_COLUMNS = {
+  id: true,
+  name: true,
+  firstName: true,
+  lastName: true,
+  email: true,
+  image: true,
+} as const;
+
 @Injectable()
 export class ReimbursementsService {
   constructor(
@@ -42,7 +53,10 @@ export class ReimbursementsService {
     const [rows, [countResult]] = await Promise.all([
       this.db.query.finReimbursementBatches.findMany({
         where,
-        with: { creator: true, approver: true },
+        with: {
+          creator: { columns: REIMBURSEMENT_ACTOR_COLUMNS },
+          approver: { columns: REIMBURSEMENT_ACTOR_COLUMNS },
+        },
         orderBy: (batch, { desc }) => [desc(batch.createdAt)],
         limit: pageSize,
         offset,
@@ -120,7 +134,10 @@ export class ReimbursementsService {
   async getBatch(orgId: string, batchId: number) {
     const batch = await this.db.query.finReimbursementBatches.findFirst({
       where: and(eq(finReimbursementBatches.id, batchId), eq(finReimbursementBatches.orgId, orgId)),
-      with: { creator: true, approver: true },
+      with: {
+        creator: { columns: REIMBURSEMENT_ACTOR_COLUMNS },
+        approver: { columns: REIMBURSEMENT_ACTOR_COLUMNS },
+      },
     });
 
     if (!batch) throw new NotFoundException("Reimbursement batch not found");

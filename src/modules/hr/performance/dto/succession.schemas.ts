@@ -2,6 +2,11 @@ import { z } from "zod";
 
 const READINESS = ["ready_now", "1_2_years", "3_plus"] as const;
 
+export const successionListSchema = z.object({
+  cursor: z.string().max(500).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+});
+
 export const createSuccessionPlanSchema = z.object({
   roleName: z
     .string()
@@ -31,3 +36,4 @@ export const updateSuccessionPlanSchema = z.object({
 
 export type CreateSuccessionPlanInput = z.infer<typeof createSuccessionPlanSchema>;
 export type UpdateSuccessionPlanInput = z.infer<typeof updateSuccessionPlanSchema>;
+export type SuccessionListInput = z.infer<typeof successionListSchema>;

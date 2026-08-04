@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, or } from "drizzle-orm";
 import {
   hrCampaigns,
   hrCommunities,
@@ -16,23 +16,36 @@ import type {
   CreateCampaignInput,
   CreateCommunityInput,
   UpdateCampaignInput,
+  CommunityListInput,
 } from "./dto/engagement-extras.schemas";
+import { decodeTimestampCursor, encodeTimestampCursor } from "./cursor-pagination";
 
 @Injectable()
 export class EngagementCommunitiesCampaignsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async listCommunities(orgId: string) {
+  async listCommunities(orgId: string, query: CommunityListInput) {
+    const cursor = query.cursor ? decodeTimestampCursor(query.cursor) : null;
     const communities = await this.db
       .select()
       .from(hrCommunities)
-      .where(eq(hrCommunities.orgId, orgId))
-      .orderBy(desc(hrCommunities.createdAt))
-      .limit(100);
+      .where(and(
+        eq(hrCommunities.orgId, orgId),
+        cursor
+          ? or(
+              lt(hrCommunities.createdAt, cursor.createdAt),
+              and(eq(hrCommunities.createdAt, cursor.createdAt), lt(hrCommunities.id, cursor.id)),
+            )
+          : undefined,
+      ))
+      .orderBy(desc(hrCommunities.createdAt), desc(hrCommunities.id))
+      .limit(query.limit + 1);
 
-    if (communities.length === 0) return [];
+    const hasMore = communities.length > query.limit;
+    const page = hasMore ? communities.slice(0, query.limit) : communities;
+    if (page.length === 0) return { items: [], nextCursor: null };
 
-    const ids = communities.map((c) => c.id);
+    const ids = page.map((c) => c.id);
     const members = await this.db
       .select({
         communityId: hrCommunityMembers.communityId,
@@ -49,10 +62,17 @@ export class EngagementCommunitiesCampaignsService {
       membersByComm.set(m.communityId, list);
     }
 
-    return communities.map((c) => ({
+    const items = page.map((c) => ({
       ...c,
       members: membersByComm.get(c.id) ?? [],
     }));
+    const last = page.at(-1)!;
+    return {
+      items,
+      nextCursor: hasMore
+        ? encodeTimestampCursor({ createdAt: last.createdAt, id: last.id })
+        : null,
+    };
   }
 
   async createCommunity(

@@ -201,6 +201,7 @@ export class InvitationsService {
 
     const existingUser = await this.db.query.users.findFirst({
       where: eq(users.email, email),
+      columns: { id: true },
     });
 
     if (existingUser) {
@@ -579,6 +580,7 @@ export class InvitationsService {
 
     const existingUser = await this.db.query.users.findFirst({
       where: eq(users.email, invitation.email),
+      columns: { id: true },
     });
 
     if (existingUser) {

@@ -11,7 +11,7 @@ import type { Request } from "express";
 import { jwtVerify, decodeJwt } from "jose";
 import type { JWTPayload } from "jose";
 import { PORTAL_AUDIENCE } from "../portal-auth/portal-claims";
-import { and, desc, eq, gt, isNull, or } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
 import * as bcrypt from "bcryptjs";
 import type { Redis } from "@upstash/redis";
 import { IS_PUBLIC } from "./public.decorator";
@@ -221,36 +221,33 @@ export class JwtAuthGuard implements CanActivate {
   }
 
   private async fetchOrgContext(userId: string): Promise<OrgContext | null> {
-    const [user, rows] = await Promise.all([
-      this.db.query.users.findFirst({
-        where: eq(users.id, userId),
-        columns: { lastActiveOrgId: true },
-      }),
-      withIdentity(this.db, userId, (tx) =>
-        tx
-          .select({
-            orgId: organizationMembers.orgId,
-            role: organizationMembers.role,
-            isOwner: organizationMembers.isOwner,
-          })
-          .from(organizationMembers)
-          .innerJoin(organizations, eq(organizations.id, organizationMembers.orgId))
-          .where(
-            and(
-              eq(organizationMembers.userId, userId),
-              eq(organizationMembers.status, "ACTIVE"),
-              eq(organizations.status, "ACTIVE"),
-              isNull(organizations.deletedAt),
-            ),
-          )
-          .orderBy(desc(organizationMembers.joinedAt)),
-      ),
-    ]);
+    const rows = await withIdentity(this.db, userId, (tx) =>
+      tx
+        .select({
+          orgId: organizationMembers.orgId,
+          role: organizationMembers.role,
+          isOwner: organizationMembers.isOwner,
+        })
+        .from(organizationMembers)
+        .innerJoin(organizations, eq(organizations.id, organizationMembers.orgId))
+        .innerJoin(users, eq(users.id, organizationMembers.userId))
+        .where(
+          and(
+            eq(organizationMembers.userId, userId),
+            eq(organizationMembers.status, "ACTIVE"),
+            eq(organizations.status, "ACTIVE"),
+            isNull(organizations.deletedAt),
+          ),
+        )
+        .orderBy(
+          desc(sql`${organizationMembers.orgId} = ${users.lastActiveOrgId}`),
+          desc(organizationMembers.joinedAt),
+          desc(organizationMembers.id),
+        )
+        .limit(1),
+    );
 
-    const preferred = user?.lastActiveOrgId
-      ? rows.find((r) => r.orgId === user.lastActiveOrgId)
-      : undefined;
-    const member = preferred ?? rows[0];
+    const member = rows[0];
     if (!member) return null;
 
     return {

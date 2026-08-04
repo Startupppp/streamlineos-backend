@@ -256,7 +256,7 @@ export class SupportTicketsService {
     const ticket = await this.db.query.supportTickets.findFirst({
       where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
       with: {
-        client: true,
+        client: { columns: { id: true, name: true } },
         assignee: { columns: { id: true, name: true, image: true } },
         creator: { columns: { id: true, name: true } },
         messages: {

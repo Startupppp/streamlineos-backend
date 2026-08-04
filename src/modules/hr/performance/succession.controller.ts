@@ -1,4 +1,4 @@
-import { Controller, Get, HttpCode, Post, Patch, Delete, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
+import { Controller, Get, HttpCode, Post, Patch, Delete, Body, Param, ParseIntPipe, Query, UseGuards } from "@nestjs/common";
 import { SuccessionService } from "./succession.service";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
@@ -10,8 +10,10 @@ import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import {
   createSuccessionPlanSchema,
   updateSuccessionPlanSchema,
+  successionListSchema,
   type CreateSuccessionPlanInput,
   type UpdateSuccessionPlanInput,
+  type SuccessionListInput,
 } from "./dto/succession.schemas";
 
 @RequireModule("hr")
@@ -22,8 +24,11 @@ export class SuccessionController {
 
   @Get()
   @RequirePermission("hr:succession:view")
-  list(@CurrentUser() user: CurrentUserContext) {
-    return this.successionService.list(user.orgId);
+  list(
+    @CurrentUser() user: CurrentUserContext,
+    @Query(new ZodValidationPipe(successionListSchema)) query: SuccessionListInput,
+  ) {
+    return this.successionService.list(user.orgId, query);
   }
 
   @Post()

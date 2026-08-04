@@ -117,10 +117,20 @@ export class InvPhysicalAuditsService {
     const audit = await this.requireAudit(orgId, auditId);
     if (audit.status !== "COUNTING") throw new BadRequestException("Lines can only be updated while status is COUNTING");
 
-    for (const update of data.lines) {
-      await this.db.update(invPhysicalAuditLines)
-        .set({ countedQty: update.countedQty.toFixed(4) })
-        .where(and(eq(invPhysicalAuditLines.auditId, auditId), eq(invPhysicalAuditLines.id, update.lineId)));
+    if (data.lines.length > 0) {
+      const values = sql.join(
+        data.lines.map(
+          (update) => sql`(${update.lineId}, ${update.countedQty.toFixed(4)}::numeric)`,
+        ),
+        sql`, `,
+      );
+      await this.db.execute(sql`
+        UPDATE ${invPhysicalAuditLines}
+        SET counted_qty = updates.counted_qty
+        FROM (VALUES ${values}) AS updates(id, counted_qty)
+        WHERE ${invPhysicalAuditLines.id} = updates.id
+          AND ${invPhysicalAuditLines.auditId} = ${auditId}
+      `);
     }
 
     await this.cache.invalidate(PA_DETAIL_KEY(orgId, auditId));
@@ -131,18 +141,12 @@ export class InvPhysicalAuditsService {
     const audit = await this.requireAudit(orgId, auditId);
     if (audit.status !== "COUNTING") throw new BadRequestException("Only COUNTING audits can move to REVIEW");
 
-    const lines = await this.db.query.invPhysicalAuditLines.findMany({
-      where: eq(invPhysicalAuditLines.auditId, auditId),
-      columns: { id: true, systemQty: true, countedQty: true },
-    });
-
-    for (const line of lines) {
-      const counted = parseFloat(line.countedQty ?? "0");
-      const system = parseFloat(line.systemQty);
-      await this.db.update(invPhysicalAuditLines)
-        .set({ varianceQty: (counted - system).toFixed(4) })
-        .where(eq(invPhysicalAuditLines.id, line.id));
-    }
+    await this.db
+      .update(invPhysicalAuditLines)
+      .set({
+        varianceQty: sql`coalesce(${invPhysicalAuditLines.countedQty}, 0) - ${invPhysicalAuditLines.systemQty}`,
+      })
+      .where(eq(invPhysicalAuditLines.auditId, auditId));
 
     await this.db.update(invPhysicalAudits)
       .set({ status: "REVIEW" })

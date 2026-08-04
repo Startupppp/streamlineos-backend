@@ -24,6 +24,7 @@ import {
   createBadgeSchema,
   createCampaignSchema,
   createCommunitySchema,
+  communityListSchema,
   createPollSchema,
   moodCheckinSchema,
   updateCampaignSchema,
@@ -33,6 +34,7 @@ import {
   type CreateBadgeInput,
   type CreateCampaignInput,
   type CreateCommunityInput,
+  type CommunityListInput,
   type CreatePollInput,
   type MoodCheckinInput,
   type UpdateCampaignInput,
@@ -185,8 +187,11 @@ export class EngagementExtrasController {
 
   @Get("communities")
   @RequirePermission("hr:engagement:view")
-  listCommunities(@CurrentUser() u: CurrentUserContext) {
-    return this.svc.listCommunities(u.orgId);
+  listCommunities(
+    @CurrentUser() u: CurrentUserContext,
+    @Query(new ZodValidationPipe(communityListSchema)) query: CommunityListInput,
+  ) {
+    return this.svc.listCommunities(u.orgId, query);
   }
 
   @Post("communities")
