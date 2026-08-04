@@ -43,7 +43,6 @@ describe("TerminationService.create — structural owner block", () => {
       undefined as never,
       undefined as never,
       undefined as never,
-      undefined as never,
     );
   }
 
@@ -95,7 +94,6 @@ describe("TerminationService.list — paginated envelope + status counts", () =>
     const db = { select: jest.fn(() => (call++ === 0 ? rowsChain : statusChain)) };
     return new TerminationService(
       db as never,
-      undefined as never,
       undefined as never,
       undefined as never,
       undefined as never,

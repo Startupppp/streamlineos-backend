@@ -200,6 +200,7 @@ export class PayrollInputsBuildService {
 
     const salaryProfileByUser = new Map<string, typeof employeeSalaryProfiles.$inferSelect>();
     for (const row of salaryProfileRows) {
+      if (!row.userId) continue;
       const existing = salaryProfileByUser.get(row.userId);
       if (!existing || row.effectiveFrom > existing.effectiveFrom) {
         salaryProfileByUser.set(row.userId, row);

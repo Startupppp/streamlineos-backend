@@ -286,6 +286,7 @@ export const roles = pgTable("roles", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_role_slug_org").on(table.slug, table.orgId),
+  unique("uniq_roles_org_id").on(table.orgId, table.id),
   index("idx_roles_org_module").on(table.orgId, table.moduleKey),
   uniqueIndex("uniq_roles_org_module_name_ci").on(
     table.orgId,

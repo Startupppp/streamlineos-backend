@@ -4,6 +4,7 @@ import { expenses, expenseCategories } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { AuditService } from "../../../common/audit/audit.service";
 import { paginateOffset, buildListResponse } from "../../../common/pagination/pagination";
 import type { ReceiptListInput, PatchReceiptInput } from "./dto/finance-expenses.schemas";
@@ -87,7 +88,7 @@ export class ReceiptsService {
       metadata: input,
     });
 
-    await this.cache.invalidatePattern(`hr:expenses:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.expensesListNamespace(orgId));
 
     return { success: true };
   }

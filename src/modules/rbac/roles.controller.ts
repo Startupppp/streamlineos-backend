@@ -10,6 +10,7 @@ import {
   Patch,
   Post,
   Put,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
@@ -26,11 +27,13 @@ import {
   createRoleSchema,
   roleMemberSchema,
   setRolePermissionsSchema,
+  simulationCandidatesQuerySchema,
   updateRoleSchema,
   type CloneTemplateInput,
   type CreateRoleInput,
   type RoleMemberInput,
   type SetRolePermissionsInput,
+  type SimulationCandidatesQuery,
   type UpdateRoleInput,
 } from "./dto/rbac.schemas";
 
@@ -81,6 +84,17 @@ export class RolesController {
     return this.roles.getPermissionsMatrix(u.orgId);
   }
 
+  @Get("simulate/candidates")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("settings:rbac:manage")
+  listSimulationCandidates(
+    @Query(new ZodValidationPipe(simulationCandidatesQuerySchema))
+    query: SimulationCandidatesQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.roles.listSimulationCandidates(u.orgId, query);
+  }
+
   @Get("simulate/:targetUserId")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
@@ -89,6 +103,7 @@ export class RolesController {
     @CurrentUser() u: CurrentUserContext,
   ): Promise<SimulateAccessResponse> {
     if (!targetUserId) throw new NotFoundException("targetUserId is required");
+    const target = await this.roles.getSimulationTarget(u.orgId, targetUserId);
     const resolved = await this.access.resolveUserPermissions(u.orgId, targetUserId);
     const permissions: string[] = [];
     const scopes: Record<string, DataScope> = {};
@@ -97,7 +112,7 @@ export class RolesController {
       permissions.push(key);
       scopes[key] = scope;
     }
-    return { userId: targetUserId, permissions, scopes, isOrgOwner: false };
+    return { userId: targetUserId, permissions, scopes, isOrgOwner: target.isOwner };
   }
 
   @Post("seed-defaults")

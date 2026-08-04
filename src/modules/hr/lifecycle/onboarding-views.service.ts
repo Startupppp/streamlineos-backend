@@ -10,6 +10,8 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AutomationService } from "../../automation/automation.service";
+import { applyScope } from "../../access/apply-scope";
+import type { DataScope } from "../../access/access.types";
 import type {
   CreateOnboardingDocInput,
   ListOnboardingDocsQueryInput,
@@ -26,8 +28,11 @@ export class OnboardingViewsService {
     private readonly automation: AutomationService,
   ) {}
 
-  async summary(orgId: string, query: OnboardingDocsSummaryQueryInput) {
-    const conditions: SQL[] = [eq(users.isActive, true)];
+  async summary(orgId: string, query: OnboardingDocsSummaryQueryInput, scope: DataScope, actorUserId: string) {
+    const conditions: SQL[] = [
+      eq(users.isActive, true),
+      applyScope(scope, orgId, actorUserId, { ownerColumn: users.id }),
+    ];
     if (query.status) conditions.push(eq(users.onboardingDocStatus, query.status));
     if (query.search) {
       const searchClause = or(
@@ -108,12 +113,25 @@ export class OnboardingViewsService {
     };
   }
 
-  async list(orgId: string, userId: string, isAdmin: boolean, query: ListOnboardingDocsQueryInput) {
+  async list(
+    orgId: string,
+    actorUserId: string,
+    isAdmin: boolean,
+    query: ListOnboardingDocsQueryInput,
+    scope: DataScope,
+  ) {
+    if (isAdmin && query.userId && query.userId !== actorUserId && scope !== "all") {
+      throw new ForbiddenException("Not authorized to filter onboarding documents for another employee");
+    }
+
     const conditions: SQL[] = [eq(onboardingDocuments.orgId, orgId)];
     if (isAdmin) {
-      if (query.userId) conditions.push(eq(onboardingDocuments.userId, query.userId));
+      conditions.push(applyScope(scope, orgId, actorUserId, { ownerColumn: onboardingDocuments.userId }));
+      if (query.userId && scope === "all") {
+        conditions.push(eq(onboardingDocuments.userId, query.userId));
+      }
     } else {
-      conditions.push(eq(onboardingDocuments.userId, userId));
+      conditions.push(eq(onboardingDocuments.userId, actorUserId));
     }
     if (query.status) conditions.push(eq(onboardingDocuments.status, query.status));
 
@@ -170,11 +188,20 @@ export class OnboardingViewsService {
     };
   }
 
-  async create(orgId: string, userId: string, isAdmin: boolean, body: CreateOnboardingDocInput) {
-    let targetUserId = userId;
-    if (body.targetUserId && body.targetUserId !== userId) {
+  async create(
+    orgId: string,
+    actorUserId: string,
+    isAdmin: boolean,
+    body: CreateOnboardingDocInput,
+    scope: DataScope,
+  ) {
+    let targetUserId = actorUserId;
+    if (body.targetUserId && body.targetUserId !== actorUserId) {
       if (!isAdmin) {
         throw new ForbiddenException("Only HR admins can upload documents on behalf of employees.");
+      }
+      if (scope !== "all") {
+        throw new ForbiddenException("Not authorized to upload onboarding documents for another employee");
       }
       targetUserId = body.targetUserId;
     }
@@ -230,14 +257,14 @@ export class OnboardingViewsService {
     const metadata: Record<string, unknown> = {
       fileName: body.fileName,
       version: nextVersion,
-      ...(targetUserId !== userId ? { uploadedOnBehalfOf: targetUserId } : {}),
+      ...(targetUserId !== actorUserId ? { uploadedOnBehalfOf: targetUserId } : {}),
     };
 
     await this.db.insert(documentAuditLogs).values({
       orgId,
       onboardingDocumentId: record.id,
       action: auditAction,
-      performedBy: userId,
+      performedBy: actorUserId,
       metadata,
     });
 

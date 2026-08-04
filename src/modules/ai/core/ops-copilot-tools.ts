@@ -15,6 +15,11 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { ToolAccessService } from "./tool-access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import type { DataScope } from "../../access/access.types";
+
+export function shouldDenyTeamPayrollCopilot(scope: DataScope): boolean {
+  return scope === "team";
+}
 
 export interface OpsCopilotContext {
   actor: CurrentUserContext;
@@ -147,8 +152,16 @@ export class OpsCopilotTools {
             return { scope: "self", records: await this.selfPayrollRows(orgId, userId, month, year) };
           }
 
-          if (scope === "own" || scope === "team") {
+          if (scope === "own") {
             return { scope: "self", records: await this.selfPayrollRows(orgId, userId, month, year) };
+          }
+
+          if (shouldDenyTeamPayrollCopilot(scope)) {
+            return {
+              denied: true,
+              reason:
+                "Team-scoped payroll summaries are not available in Ask OS yet. Open payroll reports for team totals.",
+            };
           }
 
           const summaryRows = await this.db.execute<{

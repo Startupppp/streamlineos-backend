@@ -65,7 +65,7 @@ export class SoLifecycleService {
     }
 
     await this.cache.del(CACHE_KEYS.invSoDetail(orgId, soId));
-    await this.cache.invalidatePattern(`inv:so:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invSoNamespace(orgId));
   }
 
   async cancelSo(orgId: string, soId: number, userId: string) {
@@ -114,7 +114,7 @@ export class SoLifecycleService {
     });
 
     await this.cache.del(CACHE_KEYS.invSoDetail(orgId, soId));
-    await this.cache.invalidatePattern(`inv:so:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invSoNamespace(orgId));
   }
 
   async invoiceSo(orgId: string, soId: number, userId: string) {
@@ -206,7 +206,7 @@ export class SoLifecycleService {
     });
 
     await this.cache.del(CACHE_KEYS.invSoDetail(orgId, soId));
-    await this.cache.invalidatePattern(`inv:so:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invSoNamespace(orgId));
     return invoice;
   }
 

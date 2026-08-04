@@ -30,7 +30,7 @@ export class PackagesService {
     const offset = (page - 1) * limit;
     const hash = `${shipmentId ?? ""}:${status ?? ""}:${limit}:${offset}`;
 
-    return this.cache.cached(CACHE_KEYS.invPackagesList(orgId, hash), async () => {
+    return this.cache.cachedVersioned(CACHE_KEYS.invPackagesNamespace(orgId), `list:${hash}`, async () => {
       const conditions = [eq(invPackages.orgId, orgId)];
       if (shipmentId) conditions.push(eq(invPackages.shipmentId, shipmentId));
       if (status) conditions.push(eq(invPackages.status, status));
@@ -46,7 +46,7 @@ export class PackagesService {
   }
 
   async findOne(orgId: string, packageId: number) {
-    return this.cache.cached(CACHE_KEYS.invPackageDetail(orgId, packageId), async () => {
+    return this.cache.cachedVersioned(CACHE_KEYS.invPackagesNamespace(orgId), `detail:${packageId}`, async () => {
       const [pkg] = await this.db.select().from(invPackages).where(and(eq(invPackages.id, packageId), eq(invPackages.orgId, orgId))).limit(1);
       if (!pkg) throw new NotFoundException("Package not found");
       const lines = await this.db.select().from(invPackageLines).where(eq(invPackageLines.packageId, packageId));
@@ -87,7 +87,7 @@ export class PackagesService {
       });
       return row!;
     });
-    await this.cache.invalidatePattern(`inv:packages:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invPackagesNamespace(orgId));
     return pkg;
   }
 
@@ -115,8 +115,7 @@ export class PackagesService {
         resourceId: String(packageId),
       });
     });
-    await this.cache.invalidate(CACHE_KEYS.invPackageDetail(orgId, packageId));
-    await this.cache.invalidatePattern(`inv:packages:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invPackagesNamespace(orgId));
     return this.findOne(orgId, packageId);
   }
 
@@ -152,8 +151,7 @@ export class PackagesService {
 
     await this.db.update(invPackages).set({ status: "CLOSED", updatedAt: new Date() }).where(and(eq(invPackages.id, packageId), eq(invPackages.orgId, orgId)));
     await this.audit.insert(this.db, { orgId, actorUserId: userId, action: "package.closed", resourceType: "package", resourceId: String(packageId) });
-    await this.cache.invalidate(CACHE_KEYS.invPackageDetail(orgId, packageId));
-    await this.cache.invalidatePattern(`inv:packages:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invPackagesNamespace(orgId));
     return this.findOne(orgId, packageId);
   }
 
@@ -164,8 +162,7 @@ export class PackagesService {
 
     await this.db.update(invPackages).set({ status: "OPEN", updatedAt: new Date() }).where(and(eq(invPackages.id, packageId), eq(invPackages.orgId, orgId)));
     await this.audit.insert(this.db, { orgId, actorUserId: userId, action: "package.reopened", resourceType: "package", resourceId: String(packageId) });
-    await this.cache.invalidate(CACHE_KEYS.invPackageDetail(orgId, packageId));
-    await this.cache.invalidatePattern(`inv:packages:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invPackagesNamespace(orgId));
     return this.findOne(orgId, packageId);
   }
 }

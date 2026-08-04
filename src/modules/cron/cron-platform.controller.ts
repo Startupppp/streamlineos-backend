@@ -12,6 +12,7 @@ import { assertCronSecret } from "./cron-secret";
 import { CronEmailOutboxService } from "./cron-email-outbox.service";
 import { CronNotificationDeliveryService } from "./cron-notification-delivery.service";
 import { CronOrganizationService } from "./cron-organization.service";
+import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
 import { CronIdempotencyService } from "./cron-idempotency.service";
 import { ChatReplyRemindersService } from "../chat/chat-reply-reminders.service";
 import { ExceptionsDetectorService } from "../timesheets/core/exceptions-detector.service";
@@ -24,6 +25,7 @@ export class CronPlatformController {
     private readonly emailOutbox: CronEmailOutboxService,
     private readonly notificationDelivery: CronNotificationDeliveryService,
     private readonly cronOrganization: CronOrganizationService,
+    private readonly orgPurgeWorker: CronOrgPurgeWorkerService,
     private readonly timesheetExceptionsDetector: ExceptionsDetectorService,
     private readonly idempotency: CronIdempotencyService,
   ) {}
@@ -176,7 +178,7 @@ export class CronPlatformController {
   private async runOrgPurgeWorker(authorization?: string) {
     assertCronSecret(authorization);
     try {
-      const result = await this.cronOrganization.runPurgeWorker();
+      const result = await this.orgPurgeWorker.run();
       return {
         success: true,
         message: `Org purge worker: processed ${result.processed}, skipped ${result.skipped}`,

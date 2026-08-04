@@ -5,7 +5,8 @@ export const HR_PERMISSIONS: Permission[] = [
     name: "hr:employees:view",
     resource: "hr:employees",
     action: "view",
-    description: "View employees list",
+    description: "View employee records",
+    scopable: true,
   },
   {
     name: "hr:employees:create",
@@ -154,13 +155,6 @@ export const HR_PERMISSIONS: Permission[] = [
     resource: "hr:goals",
     action: "manage",
     description: "Manage goals",
-  },
-  {
-    name: "hr:employees:read",
-    resource: "hr:employees",
-    action: "read",
-    description: "Read employee records",
-    scopable: true,
   },
   {
     name: "hr:employees:manage",
@@ -500,6 +494,7 @@ export const HR_PERMISSIONS: Permission[] = [
     resource: "hr:onboarding",
     action: "manage",
     description: "Manage onboarding",
+    scopable: true,
   },
   {
     name: "hr:alumni:read",

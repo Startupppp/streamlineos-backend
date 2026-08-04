@@ -30,7 +30,7 @@ export class ComplianceService {
   listAcknowledgments(orgId: string, userId: string, scope: DataScope) {
     const conditions = [
       eq(policyAcknowledgments.orgId, orgId),
-      applyScope(scope, userId, { ownerColumn: policyAcknowledgments.userId }),
+      applyScope(scope, orgId, userId, { ownerColumn: policyAcknowledgments.userId }),
     ];
 
     return this.db.query.policyAcknowledgments.findMany({

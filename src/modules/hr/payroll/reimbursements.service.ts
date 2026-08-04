@@ -20,7 +20,7 @@ export class ReimbursementsService {
   ) {}
 
   listReimbursements(orgId: string, userId: string, scope: DataScope, page = 1, limit = 100) {
-    const conditions = [eq(reimbursements.orgId, orgId), applyScope(scope, userId, { ownerColumn: reimbursements.userId })];
+    const conditions = [eq(reimbursements.orgId, orgId), applyScope(scope, orgId, userId, { ownerColumn: reimbursements.userId })];
 
     return this.db.query.reimbursements.findMany({
       where: and(...conditions),

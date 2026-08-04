@@ -93,7 +93,7 @@ function defaultAudit() {
 
 function defaultCache() {
   return {
-    invalidatePattern: jest.fn().mockResolvedValue(undefined),
+    invalidateNamespace: jest.fn().mockResolvedValue(undefined),
     invalidate: jest.fn().mockResolvedValue(undefined),
   };
 }

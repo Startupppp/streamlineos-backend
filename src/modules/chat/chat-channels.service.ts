@@ -18,7 +18,6 @@ import {
   resolveEntityChannelName,
 } from "./entity-channel-name.util";
 
-const chatUnreadKey = (userId: string, orgId: string) => `chat:unread:${userId}:${orgId}`;
 
 @Injectable()
 export class ChatChannelsService {
@@ -96,8 +95,9 @@ export class ChatChannelsService {
         },
       });
 
-      const unreadRows = await this.cache.cached(
-        chatUnreadKey(userId, orgId),
+      const unreadRows = await this.cache.cachedVersioned(
+        `chat:unread:${orgId}`,
+        userId,
         () =>
           this.db
             .select({ channelId: chatMessages.channelId, count: count() })

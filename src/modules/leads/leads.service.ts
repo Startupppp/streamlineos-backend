@@ -51,6 +51,7 @@ type ListFilters = ListInput & { userId?: string; scope?: DataScope };
 
 function pushLeadsViewScope(
   where: SQL[],
+  orgId: string,
   scope: DataScope | undefined,
   userId: string | undefined,
 ): void {
@@ -60,7 +61,7 @@ function pushLeadsViewScope(
     return;
   }
   if (!userId) return;
-  where.push(applyScope(scope, userId, { ownerColumn: leads.assignedToId }));
+  where.push(applyScope(scope, orgId, userId, { ownerColumn: leads.assignedToId }));
 }
 
 export type AssigneeNotMember = { error: "assignee_not_member" };
@@ -118,7 +119,7 @@ export class LeadsService {
   async listLeads(orgId: string, filters?: ListFilters) {
     const where = [eq(leads.orgId, orgId)];
 
-    pushLeadsViewScope(where, filters?.scope, filters?.userId);
+    pushLeadsViewScope(where, orgId, filters?.scope, filters?.userId);
     if (filters?.status) where.push(eq(leads.status, filters.status));
     if (filters?.priority) where.push(eq(leads.priority, filters.priority));
     if (filters?.source) where.push(eq(leads.source, filters.source));
@@ -291,7 +292,7 @@ export class LeadsService {
       logger.error("Auto-trigger: SLA policy failed", { leadId: newLead.id, error });
     }
 
-    await this.cache.invalidatePattern(`leads:*:${orgId}:*`);
+    await this.cache.invalidateNamespace(`leads:${orgId}`);
 
     this.audit.log({
       action: "lead.created",

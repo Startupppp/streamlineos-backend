@@ -111,7 +111,7 @@ export class AccountingLedgerService {
     if (fromStr) conds.push(gte(journalEntries.entryDate, fromStr));
     if (toStr) conds.push(lte(journalEntries.entryDate, toStr));
     if (sourceType) conds.push(eq(journalEntries.sourceType, sourceType));
-    conds.push(applyScope(scope, userId, { ownerColumn: journalEntries.createdBy }));
+    conds.push(applyScope(scope, orgId, userId, { ownerColumn: journalEntries.createdBy }));
 
     const where = and(...conds);
     const { offset, limit } = paginateOffset({ page, pageSize });

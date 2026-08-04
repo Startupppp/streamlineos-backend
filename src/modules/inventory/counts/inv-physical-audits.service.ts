@@ -9,7 +9,7 @@ import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import type { ListCountsInput, CreateAuditInput, UpdateCountLinesInput } from "./dto/inv-counts.schemas";
 
-const PA_LIST_KEY = (orgId: string, hash: string) => `inv:physical-audits:list:${orgId}:${hash}`;
+const PA_LIST_NAMESPACE = (orgId: string) => `inv:physical-audits:list:${orgId}`;
 const PA_DETAIL_KEY = (orgId: string, id: number) => `inv:physical-audits:detail:${orgId}:${id}`;
 
 @Injectable()
@@ -26,7 +26,7 @@ export class InvPhysicalAuditsService {
     const offset = (page - 1) * limit;
     const hash = `${status ?? ""}:${warehouseId ?? ""}:${limit}:${offset}`;
 
-    return this.cache.cached(PA_LIST_KEY(orgId, hash), async () => {
+    return this.cache.cachedVersioned(PA_LIST_NAMESPACE(orgId), hash, async () => {
       const conditions = [eq(invPhysicalAudits.orgId, orgId)];
       if (status) conditions.push(eq(invPhysicalAudits.status, status));
       if (warehouseId) conditions.push(eq(invPhysicalAudits.warehouseId, warehouseId));
@@ -97,7 +97,7 @@ export class InvPhysicalAuditsService {
       );
     }
 
-    await this.cache.invalidatePattern(PA_LIST_KEY(orgId, "*"));
+    await this.cache.invalidateNamespace(PA_LIST_NAMESPACE(orgId));
     return this.getAudit(orgId, audit.id);
   }
 
@@ -188,7 +188,7 @@ export class InvPhysicalAuditsService {
       .where(and(eq(invPhysicalAudits.orgId, orgId), eq(invPhysicalAudits.id, auditId)));
 
     await this.cache.invalidate(PA_DETAIL_KEY(orgId, auditId));
-    await this.cache.invalidatePattern(PA_LIST_KEY(orgId, "*"));
+    await this.cache.invalidateNamespace(PA_LIST_NAMESPACE(orgId));
     return this.getAudit(orgId, auditId);
   }
 

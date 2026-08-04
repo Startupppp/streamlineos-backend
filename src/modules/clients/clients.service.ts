@@ -31,7 +31,7 @@ export class ClientsService {
     return this.db
       .select({ id: clients.id, name: clients.name })
       .from(clients)
-      .where(and(eq(clients.orgId, orgId), applyScope(scope, userId, { ownerColumn: clients.accountManagerId })))
+      .where(and(eq(clients.orgId, orgId), applyScope(scope, orgId, userId, { ownerColumn: clients.accountManagerId })))
       .orderBy(clients.name)
       .limit(100);
   }
@@ -43,7 +43,7 @@ export class ClientsService {
       async () => {
         const conditions: SQL[] = [
           eq(clients.orgId, orgId),
-          applyScope(scope, userId, { ownerColumn: clients.accountManagerId }),
+          applyScope(scope, orgId, userId, { ownerColumn: clients.accountManagerId }),
         ];
         if (status) conditions.push(eq(clients.healthStatus, status));
 
@@ -76,9 +76,9 @@ export class ClientsService {
     );
   }
 
-  getChurnAlerts(orgId: string) {
+  getChurnAlerts(orgId: string, userId: string, scope: DataScope) {
     return this.cache.cached(
-      CACHE_KEYS.churnAlerts(orgId),
+      `${CACHE_KEYS.churnAlerts(orgId)}:${userId}:${scope}`,
       async () => {
         const atRiskClients = await this.db
           .select({
@@ -99,6 +99,7 @@ export class ClientsService {
           .where(
             and(
               eq(clients.orgId, orgId),
+              applyScope(scope, orgId, userId, { ownerColumn: clients.accountManagerId }),
               or(eq(clients.healthStatus, "at_risk"), eq(clients.healthStatus, "critical")),
             ),
           )

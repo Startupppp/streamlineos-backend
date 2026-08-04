@@ -24,6 +24,8 @@ describe("AgentTokenGuard", () => {
   let mockDb: {
     select: jest.Mock;
     update: jest.Mock;
+    execute: jest.Mock;
+    transaction: jest.Mock;
     query: { users: { findFirst: jest.Mock } };
   };
 
@@ -62,6 +64,10 @@ describe("AgentTokenGuard", () => {
     mockDb = {
       select: jest.fn(),
       update: jest.fn(),
+      execute: jest.fn().mockResolvedValue([]),
+      transaction: jest.fn(
+        (fn: (tx: typeof mockDb) => Promise<unknown>) => fn(mockDb),
+      ),
       query: {
         users: { findFirst: jest.fn() },
       },
@@ -88,7 +94,11 @@ describe("AgentTokenGuard", () => {
       return makeSelectChain([subRow]);
     });
     mockDb.update.mockReturnValue(makeUpdateChain());
-    mockDb.query.users.findFirst.mockResolvedValue({ id: USER_ID, branchId: null, role: "ENGINEERING", lastActiveOrgId: ORG_ID });
+    mockDb.query.users.findFirst.mockResolvedValue({
+      id: USER_ID,
+      isActive: true,
+      deletedAt: null,
+    });
 
     const ctx = makeExecutionContext(`Bearer ${VALID_TOKEN}`);
     const result = await guard.canActivate(ctx);
@@ -131,6 +141,43 @@ describe("AgentTokenGuard", () => {
     mockDb.query.users.findFirst.mockResolvedValue(null);
 
     await expect(guard.canActivate(makeExecutionContext(`Bearer ${VALID_TOKEN}`))).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it.each([
+    { id: USER_ID, isActive: false, deletedAt: null },
+    { id: USER_ID, isActive: true, deletedAt: new Date() },
+  ])("throws 401 when the token user account is inactive", async (user) => {
+    let selectCount = 0;
+    mockDb.select.mockImplementation(() => {
+      selectCount++;
+      if (selectCount === 1) return makeSelectChain([validTokenRow]);
+      return makeSelectChain([memberRow]);
+    });
+    mockDb.update.mockReturnValue(makeUpdateChain());
+    mockDb.query.users.findFirst.mockResolvedValue(user);
+
+    await expect(
+      guard.canActivate(makeExecutionContext(`Bearer ${VALID_TOKEN}`)),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it("throws 401 when the token user has no active membership in its organization", async () => {
+    let selectCount = 0;
+    mockDb.select.mockImplementation(() => {
+      selectCount++;
+      if (selectCount === 1) return makeSelectChain([validTokenRow]);
+      return makeSelectChain([]);
+    });
+    mockDb.update.mockReturnValue(makeUpdateChain());
+    mockDb.query.users.findFirst.mockResolvedValue({
+      id: USER_ID,
+      isActive: true,
+      deletedAt: null,
+    });
+
+    await expect(
+      guard.canActivate(makeExecutionContext(`Bearer ${VALID_TOKEN}`)),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it("uses sha256 so a token with wrong hash finds no row", async () => {

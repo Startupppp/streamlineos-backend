@@ -388,7 +388,7 @@ export class RunsService {
     if (!runCheck[0]) return null;
 
     const offset = (query.page - 1) * query.limit;
-    const scopeCondition = applyScope(scope, userId, { ownerColumn: payrollRunEmployees.userId });
+    const scopeCondition = applyScope(scope, orgId, userId, { ownerColumn: payrollRunEmployees.userId });
 
     const conditions = [
       eq(payrollRunEmployees.orgId, orgId),

@@ -18,9 +18,14 @@ export const roleAssignments = pgTable("role_assignments", {
 }, (table) => [
   uniqueIndex("uniq_role_assignments_org_membership_role").on(table.orgId, table.organizationMembershipId, table.roleId),
   index("idx_role_assignments_org_membership").on(table.orgId, table.organizationMembershipId),
+  index("idx_role_assignments_org_role").on(table.orgId, table.roleId),
   foreignKey({
     columns: [table.orgId, table.organizationMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+  }).onDelete("cascade"),
+  foreignKey({
+    columns: [table.orgId, table.roleId],
+    foreignColumns: [roles.orgId, roles.id],
   }).onDelete("cascade"),
 ]);
 
@@ -34,6 +39,10 @@ export const rolePermissionGrants = pgTable("role_permission_grants", {
 }, (table) => [
   uniqueIndex("uniq_role_permission_grants_role_key").on(table.orgId, table.roleId, table.permissionKey),
   index("idx_role_permission_grants_org_role").on(table.orgId, table.roleId),
+  foreignKey({
+    columns: [table.orgId, table.roleId],
+    foreignColumns: [roles.orgId, roles.id],
+  }).onDelete("cascade"),
 ]);
 
 
@@ -124,6 +133,7 @@ export const principalGroups = pgTable(
   },
   (table) => [
     uniqueIndex("uniq_principal_groups_org_name").on(table.orgId, table.name),
+    uniqueIndex("uniq_principal_groups_org_id").on(table.orgId, table.id),
     index("idx_principal_groups_org").on(table.orgId),
     index("idx_principal_groups_org_unit").on(table.orgUnitId),
   ],
@@ -146,6 +156,10 @@ export const principalGroupMembers = pgTable(
       columns: [table.orgId, table.organizationMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.orgId, table.principalGroupId],
+      foreignColumns: [principalGroups.orgId, principalGroups.id],
+    }).onDelete("cascade"),
   ],
 );
 
@@ -161,6 +175,14 @@ export const groupRoleAssignments = pgTable(
   (table) => [
     uniqueIndex("uniq_group_role_assignments_group_role").on(table.orgId, table.principalGroupId, table.roleId),
     index("idx_group_role_assignments_org_group").on(table.orgId, table.principalGroupId),
+    foreignKey({
+      columns: [table.orgId, table.principalGroupId],
+      foreignColumns: [principalGroups.orgId, principalGroups.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.orgId, table.roleId],
+      foreignColumns: [roles.orgId, roles.id],
+    }).onDelete("cascade"),
   ],
 );
 

@@ -108,6 +108,7 @@ function pivotByEmployee(
   for (const { lineItem, runEmployee, userName, userDept } of items) {
     if (!categoryFilter(lineItem.category)) continue;
     const uid = runEmployee.userId;
+    if (!uid) continue;
     if (!empMap.has(uid)) {
       empMap.set(uid, {
         employeeId: uid,
@@ -164,6 +165,7 @@ export class ReportsService {
 
     for (const { lineItem, runEmployee, userName, userDept } of items) {
       const uid = runEmployee.userId;
+      if (!uid) continue;
       if (!empMap.has(uid)) {
         empMap.set(uid, {
           employeeId: uid,
@@ -406,10 +408,14 @@ export class ReportsService {
         })
         .from(payrollRunEmployees)
         .where(eq(payrollRunEmployees.runId, previousRun.id));
-      for (const e of prevEmps) prevMap.set(e.userId, { gross: e.gross, net: e.net });
+      for (const e of prevEmps) {
+        if (e.userId) prevMap.set(e.userId, { gross: e.gross, net: e.net });
+      }
     }
 
-    const allPerEmployee: VarianceEmployeeRow[] = currEmps.map((e) => {
+    const allPerEmployee: VarianceEmployeeRow[] = currEmps
+      .filter((e): e is typeof e & { userId: string } => e.userId !== null)
+      .map((e) => {
       const prev = prevMap.get(e.userId) ?? { gross: "0.00", net: "0.00" };
       return {
         userId: e.userId,

@@ -1,11 +1,33 @@
 import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
-import { sql } from "drizzle-orm";
+import { inArray, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { permissions, permissionSupportedScopes } from "../../db/schema";
+import {
+  permissions,
+  permissionSupportedScopes,
+  rolePermissionGrants,
+} from "../../db/schema";
 import { PERMISSIONS } from "./permissions";
 
 type SupportedScope = "all" | "team" | "own";
+
+interface RetiredPermissionClassification {
+  deletableKeys: string[];
+  retainedKeys: string[];
+}
+
+export function classifyRetiredPermissions(
+  staleKeys: string[],
+  referencedKeys: string[],
+): RetiredPermissionClassification {
+  const referenced = new Set(referencedKeys);
+  return {
+    deletableKeys: staleKeys
+      .filter((key) => !referenced.has(key))
+      .sort(),
+    retainedKeys: staleKeys.filter((key) => referenced.has(key)).sort(),
+  };
+}
 
 @Injectable()
 export class PermissionCatalogSyncService implements OnModuleInit {
@@ -25,8 +47,20 @@ export class PermissionCatalogSyncService implements OnModuleInit {
     }
   }
 
-  async sync(): Promise<{ catalogSize: number; staleKeys: string[] }> {
-    if (PERMISSIONS.length === 0) return { catalogSize: 0, staleKeys: [] };
+  async sync(options?: { cleanupRetired?: boolean }): Promise<{
+    catalogSize: number;
+    staleKeys: string[];
+    deletedKeys: string[];
+    retainedKeys: string[];
+  }> {
+    if (PERMISSIONS.length === 0) {
+      return {
+        catalogSize: 0,
+        staleKeys: [],
+        deletedKeys: [],
+        retainedKeys: [],
+      };
+    }
 
     await this.db
       .insert(permissions)
@@ -74,13 +108,53 @@ export class PermissionCatalogSyncService implements OnModuleInit {
       .filter((name) => !catalogNames.has(name))
       .sort();
 
-    if (staleKeys.length > 0) {
+    let deletedKeys: string[] = [];
+    let retainedKeys = staleKeys;
+    if (options?.cleanupRetired === true && staleKeys.length > 0) {
+      const cleanup = await this.db.transaction(async (tx) => {
+        const lockedRows = await tx
+          .select({ name: permissions.name })
+          .from(permissions)
+          .where(inArray(permissions.name, staleKeys))
+          .for("update");
+        const lockedKeys = lockedRows.map((row) => row.name);
+        const referencedRows = await tx
+          .selectDistinct({
+            permissionKey: rolePermissionGrants.permissionKey,
+          })
+          .from(rolePermissionGrants)
+          .where(inArray(rolePermissionGrants.permissionKey, lockedKeys));
+        const classification = classifyRetiredPermissions(
+          lockedKeys,
+          referencedRows.map((row) => row.permissionKey),
+        );
+        if (classification.deletableKeys.length > 0) {
+          await tx
+            .delete(permissions)
+            .where(inArray(permissions.name, classification.deletableKeys));
+        }
+        return classification;
+      });
+      deletedKeys = cleanup.deletableKeys;
+      retainedKeys = cleanup.retainedKeys;
+    }
+
+    if (options?.cleanupRetired === true && retainedKeys.length > 0) {
       this.logger.warn(
-        `Permission catalog has ${staleKeys.length} stale key(s) still present in the database and not deleted (deleting them would cascade to role_permission_grants): ${staleKeys.join(", ")}`,
+        `Permission catalog has ${retainedKeys.length} retired key(s) retained because role grants still reference them: ${retainedKeys.join(", ")}`,
+      );
+    } else if (staleKeys.length > 0) {
+      this.logger.warn(
+        `Permission catalog has ${staleKeys.length} retired key(s); cleanup is disabled: ${staleKeys.join(", ")}`,
       );
     }
 
-    return { catalogSize: PERMISSIONS.length, staleKeys };
+    return {
+      catalogSize: PERMISSIONS.length,
+      staleKeys,
+      deletedKeys,
+      retainedKeys,
+    };
   }
 }
 

@@ -42,7 +42,7 @@ describe("ContactRolesService – mergeContacts", () => {
         ContactRolesService,
         { provide: DRIZZLE, useValue: db },
         { provide: AuditService, useValue: { log: jest.fn() } },
-        { provide: CacheService, useValue: { invalidatePattern: jest.fn().mockResolvedValue(undefined) } },
+        { provide: CacheService, useValue: { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
 
@@ -95,7 +95,7 @@ describe("ContactRolesService – cross-org denial", () => {
         ContactRolesService,
         { provide: DRIZZLE, useValue: db },
         { provide: AuditService, useValue: { log: jest.fn() } },
-        { provide: CacheService, useValue: { invalidatePattern: jest.fn().mockResolvedValue(undefined) } },
+        { provide: CacheService, useValue: { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
 

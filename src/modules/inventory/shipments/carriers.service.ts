@@ -19,8 +19,9 @@ export class CarriersService {
   list(orgId: string, page = 1, limit = 100) {
     const cappedLimit = Math.min(limit, 100);
     const offset = (page - 1) * cappedLimit;
-    const cacheKey = `${CACHE_KEYS.invCarriersList(orgId)}:${cappedLimit}:${offset}`;
-    return this.cache.cached(
+    const cacheKey = `${cappedLimit}:${offset}`;
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.invCarriersNamespace(orgId),
       cacheKey,
       () =>
         this.db
@@ -46,7 +47,7 @@ export class CarriersService {
       });
       return rows;
     });
-    await this.cache.invalidatePattern(`${CACHE_KEYS.invCarriersList(orgId)}*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invCarriersNamespace(orgId));
     return carrier;
   }
 
@@ -75,7 +76,7 @@ export class CarriersService {
       });
       return rows;
     });
-    await this.cache.invalidatePattern(`${CACHE_KEYS.invCarriersList(orgId)}*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invCarriersNamespace(orgId));
     return updated;
   }
 }

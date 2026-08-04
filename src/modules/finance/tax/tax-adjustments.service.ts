@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { FinancePostingService } from "../../accounting/core/finance-posting.service";
 import type { CreateTaxAdjustmentInput } from "./dto/tax-adjustments.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -51,8 +52,8 @@ export class TaxAdjustmentsService {
       lines: journalLines,
     });
 
-    await this.cache.invalidatePattern(`fin:tax-dashboard:${orgId}:*`);
-    await this.cache.invalidatePattern(`fin:tax-report:*:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.finTaxDashboardNamespace(orgId));
+    await this.cache.invalidateNamespace(CACHE_KEYS.finTaxReportsNamespace(orgId));
 
     this.audit.log({
       action: "accounting.tax_adjustment.create",

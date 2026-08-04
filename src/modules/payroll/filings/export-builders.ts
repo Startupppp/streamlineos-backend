@@ -13,7 +13,9 @@ import {
 export type FilingExportType = "PF_ECR" | "ESI" | "PT" | "TDS_24Q" | "FORM16" | "LWF";
 
 export interface EmployeeStatutorySourceRow {
-  userId: string;
+  subjectKey: string;
+  userId: string | null;
+  workerId: string | null;
   employeeNumber: string | null;
   employeeName: string;
   email: string | null;
@@ -137,12 +139,12 @@ export function buildPfEcrExport(
     const empShare = amt(e.lines, ["EPF_EMPLOYEE", "PF_EMP", "PF_EE"]);
     const erShare = amt(e.lines, ["EPF_EMPLOYER", "PF_ER"]);
     if (empShare === 0 && erShare === 0) continue;
-    if (!e.employeeNumber) missing.push(`${e.userId}:employeeNumber`);
-    if (!e.uan) missing.push(`${e.userId}:uan`);
+    if (!e.employeeNumber) missing.push(`${e.subjectKey}:employeeNumber`);
+    if (!e.uan) missing.push(`${e.subjectKey}:uan`);
     rows.push({
       employeeNumber: e.employeeNumber ?? "",
       employeeName: e.employeeName,
-      userId: e.userId,
+      userId: e.userId ?? e.subjectKey,
       uan: e.uan ?? "",
       wages: e.gross,
       employeeContribution: money(empShare),
@@ -190,12 +192,12 @@ export function buildEsiExport(
     const empShare = amt(e.lines, ["ESI_EMPLOYEE", "ESI_EMP"]);
     const erShare = amt(e.lines, ["ESI_EMPLOYER", "ESI_ER"]);
     if (empShare === 0 && erShare === 0) continue;
-    if (!e.employeeNumber) missing.push(`${e.userId}:employeeNumber`);
-    if (!e.esiIpNumber) missing.push(`${e.userId}:esiIpNumber`);
+    if (!e.employeeNumber) missing.push(`${e.subjectKey}:employeeNumber`);
+    if (!e.esiIpNumber) missing.push(`${e.subjectKey}:esiIpNumber`);
     rows.push({
       employeeNumber: e.employeeNumber ?? "",
       employeeName: e.employeeName,
-      userId: e.userId,
+      userId: e.userId ?? e.subjectKey,
       ipNumber: e.esiIpNumber ?? "",
       grossWages: e.gross,
       employeeContribution: money(empShare),
@@ -242,7 +244,7 @@ export function buildPtExport(
     rows.push({
       employeeNumber: e.employeeNumber ?? "",
       employeeName: e.employeeName,
-      userId: e.userId,
+      userId: e.userId ?? e.subjectKey,
       professionalTax: money(pt),
       gross: e.gross,
     });
@@ -272,7 +274,7 @@ export function buildLwfExport(
     rows.push({
       employeeNumber: e.employeeNumber ?? "",
       employeeName: e.employeeName,
-      userId: e.userId,
+      userId: e.userId ?? e.subjectKey,
       employeeLwf: money(emp),
       employerLwf: money(er),
       totalLwf: money(emp + er),
@@ -311,11 +313,11 @@ export function buildTds24qExport(
   for (const e of employees) {
     const tds = amt(e.lines, TDS_CODES);
     if (tds === 0) continue;
-    if (!e.pan) missing.push(`${e.userId}:pan`);
+    if (!e.pan) missing.push(`${e.subjectKey}:pan`);
     rows.push({
       employeeNumber: e.employeeNumber ?? "",
       employeeName: e.employeeName,
-      userId: e.userId,
+      userId: e.userId ?? e.subjectKey,
       pan: e.pan ?? "",
       email: e.email ?? "",
       gross: e.gross,
@@ -356,7 +358,7 @@ export function buildForm16SummaryExport(
     rows.push({
       employeeNumber: e.employeeNumber ?? "",
       employeeName: e.employeeName,
-      userId: e.userId,
+      userId: e.userId ?? e.subjectKey,
       pan: e.pan ?? "",
       email: e.email ?? "",
       periodGross: e.gross,

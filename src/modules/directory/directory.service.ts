@@ -292,6 +292,7 @@ export class DirectoryService {
           displayName: organizationPeople.displayName,
           workEmail: organizationPeople.workEmail,
           avatarUrl: organizationPeople.avatarUrl,
+          userId: organizationPeople.userId,
         })
         .from(workers)
         .innerJoin(

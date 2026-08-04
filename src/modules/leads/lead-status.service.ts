@@ -389,7 +389,7 @@ export class LeadStatusService {
     );
     if (!result.ok) return result;
 
-    await this.cache.invalidatePattern(`leads:*:${orgId}:*`);
+    await this.cache.invalidateNamespace(`leads:${orgId}`);
     await this.cache.invalidate(CACHE_KEYS.salesDashboard(orgId));
 
     this.audit.log({

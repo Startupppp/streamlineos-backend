@@ -46,6 +46,8 @@ const mockDb = {
 
 const mockCache = {
   cached: jest.fn(),
+  cachedVersioned: jest.fn(),
+  invalidateNamespace: jest.fn().mockResolvedValue(undefined),
   invalidatePattern: jest.fn().mockResolvedValue(undefined),
 };
 
@@ -78,6 +80,7 @@ const makeQuote = (overrides: Record<string, unknown> = {}): Record<string, unkn
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockCache.invalidateNamespace.mockResolvedValue(undefined);
   mockCache.invalidatePattern.mockResolvedValue(undefined);
   mockAudit.log.mockReturnValue(undefined);
   mockPlanLimits.assertWithinLimit.mockResolvedValue(undefined);
@@ -330,7 +333,7 @@ describe("QuotesService.send", () => {
       expect.objectContaining({ status: "SENT", sentAt: expect.any(Date) }),
     );
     expect(result).toEqual(sent);
-    expect(mockCache.invalidatePattern).toHaveBeenCalledWith(`quotes:list:${ORG}:*`);
+    expect(mockCache.invalidateNamespace).toHaveBeenCalledWith(`quotes:list:${ORG}`);
   });
 });
 

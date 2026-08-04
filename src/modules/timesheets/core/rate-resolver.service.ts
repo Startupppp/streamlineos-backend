@@ -127,8 +127,9 @@ export class RateResolverService {
   }
 
   private async getRates(orgId: string) {
-    return this.cache.cached(
-      CACHE_KEYS.timesheetRates(orgId),
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.timesheetRatesNamespace(orgId),
+      "rates",
       () =>
         this.db
           .select()

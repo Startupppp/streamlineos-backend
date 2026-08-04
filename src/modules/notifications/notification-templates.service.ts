@@ -24,9 +24,9 @@ export class NotificationTemplatesService {
   ) {}
 
   list(orgId: string, filters: ListTemplatesInput) {
-    const key = `notification-templates:list:${orgId}:${JSON.stringify(filters)}`;
-    return this.cache.cached(
-      key,
+    return this.cache.cachedVersioned(
+      `notification-templates:list:${orgId}`,
+      JSON.stringify(filters),
       () => this.queryTemplates(orgId, filters),
       CACHE_TTL.SHORT,
     );
@@ -77,7 +77,7 @@ export class NotificationTemplatesService {
         createdBy: userId,
       })
       .returning();
-    await this.cache.invalidatePattern(`notification-templates:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(`notification-templates:list:${orgId}`);
     await this.cache.del(NOTIF_CACHE.templates(orgId));
     return created;
   }
@@ -103,7 +103,7 @@ export class NotificationTemplatesService {
         ),
       )
       .returning();
-    await this.cache.invalidatePattern(`notification-templates:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(`notification-templates:list:${orgId}`);
     await this.cache.del(NOTIF_CACHE.templates(orgId));
 
     this.audit.log({
@@ -139,7 +139,7 @@ export class NotificationTemplatesService {
           eq(notificationTemplates.orgId, orgId),
         ),
       );
-    await this.cache.invalidatePattern(`notification-templates:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(`notification-templates:list:${orgId}`);
     await this.cache.del(NOTIF_CACHE.templates(orgId));
     return { success: true };
   }

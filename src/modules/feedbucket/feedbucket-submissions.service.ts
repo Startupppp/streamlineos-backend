@@ -21,8 +21,8 @@ export class FeedbucketSubmissionsService {
       isNull(feedbucketSubmissions.deletedAt),
     ];
 
-    const scopeFilter = applyFeedbucketScope(scope, userId);
-    if (scopeFilter) conditions.push(scopeFilter);
+    const scopeFilter = applyFeedbucketScope(scope, orgId, userId);
+    conditions.push(scopeFilter);
 
     if (widgetId !== undefined) conditions.push(eq(feedbucketSubmissions.widgetId, widgetId));
     if (type !== undefined) conditions.push(eq(feedbucketSubmissions.type, type));
@@ -100,7 +100,13 @@ export class FeedbucketSubmissionsService {
       .where(and(eq(feedbucketSubmissions.id, submissionId), eq(feedbucketSubmissions.orgId, orgId)));
   }
 
-  async stats(orgId: string) {
+  async stats(orgId: string, userId: string, scope: DataScope) {
+    const conditions = [
+      eq(feedbucketSubmissions.orgId, orgId),
+      isNull(feedbucketSubmissions.deletedAt),
+      applyFeedbucketScope(scope, orgId, userId),
+    ];
+
     const rows = await this.db
       .select({
         status: feedbucketSubmissions.status,
@@ -108,7 +114,7 @@ export class FeedbucketSubmissionsService {
         cnt: count(),
       })
       .from(feedbucketSubmissions)
-      .where(and(eq(feedbucketSubmissions.orgId, orgId), isNull(feedbucketSubmissions.deletedAt)))
+      .where(and(...conditions))
       .groupBy(feedbucketSubmissions.status, feedbucketSubmissions.type);
 
     const byStatus: Record<string, number> = {};

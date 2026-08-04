@@ -47,6 +47,7 @@ type OrgSettingsUpdate = {
 type SecuritySettingsUpdate = {
   mfaEnforced?: boolean;
   maxConcurrentSessions?: number | null;
+  settings?: Record<string, unknown>;
 };
 
 @Injectable()
@@ -61,7 +62,7 @@ export class OrganizationSettingsService {
   private async invalidateSettingsCache(orgId: string): Promise<void> {
     await Promise.all([
       this.cache.invalidate(CACHE_KEYS.orgSettings(orgId)),
-      this.cache.invalidatePattern(CACHE_KEYS.orgProfilePattern(orgId)),
+      this.cache.invalidateNamespace(CACHE_KEYS.orgProfileNamespace(orgId)),
       this.mfaPolicy.invalidateOrg(orgId),
     ]);
   }
@@ -187,6 +188,16 @@ export class OrganizationSettingsService {
     if (input.mfaEnforced !== undefined) updateData.mfaEnforced = input.mfaEnforced;
     if (input.maxConcurrentSessions !== undefined)
       updateData.maxConcurrentSessions = input.maxConcurrentSessions;
+    if (input.ipAllowlist !== undefined) {
+      const currentOrg = await this.db.query.organizations.findFirst({
+        where: eq(organizations.id, orgId),
+        columns: { settings: true },
+      });
+      updateData.settings = {
+        ...(currentOrg?.settings ?? {}),
+        ipAllowlist: input.ipAllowlist,
+      };
+    }
 
     const hasOrgUpdate = Object.keys(updateData).length > 0;
     const hasDomainsUpdate = input.allowedEmailDomains !== undefined;
@@ -209,13 +220,32 @@ export class OrganizationSettingsService {
       orgId,
       targetId: orgId,
       targetType: "organization",
-      metadata: { ...updateData, ...(hasDomainsUpdate ? { allowedEmailDomains: input.allowedEmailDomains } : {}) },
+      metadata: {
+        ...(input.mfaEnforced !== undefined ? { mfaEnforced: input.mfaEnforced } : {}),
+        ...(input.maxConcurrentSessions !== undefined
+          ? { maxConcurrentSessions: input.maxConcurrentSessions }
+          : {}),
+        ...(input.allowedEmailDomains !== undefined
+          ? { allowedEmailDomainCount: input.allowedEmailDomains.length }
+          : {}),
+        ...(input.ipAllowlist !== undefined
+          ? { ipAllowlistCount: input.ipAllowlist.length }
+          : {}),
+      },
     });
 
-    await Promise.all([
-      this.cache.invalidate(CACHE_KEYS.orgSettings(orgId)),
-      this.mfaPolicy.invalidateOrg(orgId),
-    ]);
+    if (input.ipAllowlist !== undefined) {
+      if (input.ipAllowlist.length === 0) {
+        await this.cache.invalidate(`org:ip-allowlist:${orgId}`);
+      } else {
+        await this.cache.set(
+          `org:ip-allowlist:${orgId}`,
+          JSON.stringify(input.ipAllowlist),
+          3600,
+        );
+      }
+    }
+    await this.invalidateSettingsCache(orgId);
 
     return { success: true };
   }

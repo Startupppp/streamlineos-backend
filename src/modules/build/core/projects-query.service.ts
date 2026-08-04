@@ -38,8 +38,9 @@ export class ProjectsQueryService {
     const scope = await resolveProjectsScope(this.access, u);
     const orgId = u.orgId;
     const userId = u.userId;
-    const key = `projects:list:${orgId}:${userId}:${scope}:${input.status}:${input.search ?? ""}:${input.page}:${input.limit}`;
-    return this.cache.cached(
+    const key = `${userId}:${scope}:${input.status}:${input.search ?? ""}:${input.page}:${input.limit}`;
+    return this.cache.cachedVersioned(
+      `projects:list:${orgId}`,
       key,
       () => this.queryProjects(orgId, userId, scope, input),
       CACHE_TTL.SHORT,

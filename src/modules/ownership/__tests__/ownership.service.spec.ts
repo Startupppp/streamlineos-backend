@@ -99,7 +99,7 @@ describe("OwnershipService — access / business-rule logic", () => {
         OwnershipService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AuditService, useValue: { log: jest.fn() } },
-        { provide: CacheService, useValue: { invalidate: jest.fn(), invalidatePattern: jest.fn().mockResolvedValue(undefined), cached: jest.fn() } },
+        { provide: CacheService, useValue: { invalidate: jest.fn(), invalidateNamespace: jest.fn().mockResolvedValue(undefined), cached: jest.fn(), cachedVersioned: jest.fn() } },
       ],
     }).compile();
     svc = moduleRef.get(OwnershipService);

@@ -43,6 +43,7 @@ import { syncStructuralRoleAssignment } from "../../common/rbac/sync-structural-
 import { assertMayGrantRole } from "../../common/rbac/assert-may-grant-role";
 import { assertNoOwnerAmongTargets } from "../../common/rbac/assert-target-not-owner";
 import { membershipStatusToUserStatus } from "../organization/core/org-membership.service";
+import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
 
 @Injectable()
 export class UserOpsService {
@@ -384,6 +385,9 @@ export class UserOpsService {
           await syncStructuralRoleAssignment(tx, orgId, row.id, role);
         }
       });
+      await Promise.all(
+        scopedIds.map((id) => bustMembershipStatusCache(this.cache, id, orgId)),
+      );
     }
 
     this.audit.log({

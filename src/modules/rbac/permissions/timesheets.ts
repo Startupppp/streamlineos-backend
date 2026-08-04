@@ -6,6 +6,7 @@ export const TIMESHEETS_PERMISSIONS: Permission[] = [
     resource: "timesheets:payroll",
     action: "view",
     description: "View payroll queue and export history",
+    scopable: true,
   },
   {
     name: "timesheets:payroll:export",

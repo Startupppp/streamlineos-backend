@@ -15,6 +15,7 @@ import {
 import { canUseFeature, minPlanFor, type Feature } from "../../ai/core/billing/feature-gates";
 import { PaymentRequiredException } from "../../../common/http/api-exceptions";
 import { NotificationsService } from "../../notifications/notifications.service";
+import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 
 export interface EntitlementsDto {
   tier: PlanTier;
@@ -212,7 +213,12 @@ export class PlanLimitsService {
     };
   }
 
-  async assertWithinLimit(orgId: string, key: LimitKey, increment = 1): Promise<void> {
+  async assertWithinLimit(
+    orgId: string,
+    key: LimitKey,
+    increment = 1,
+    executor?: DbOrTx,
+  ): Promise<void> {
     const { tier, plan } = await this.resolveTier(orgId);
     let limit = PLAN_LIMITS[key][plan];
     if (key === "members" && tier === "ENTERPRISE") {
@@ -221,7 +227,7 @@ export class PlanLimitsService {
     }
     if (limit === null) return;
 
-    const used = await this.fetchCount(orgId, key);
+    const used = await this.fetchCount(orgId, key, executor);
     if (used + increment > limit) {
       throw new PaymentRequiredException({
         code: "QUOTA_EXCEEDED",
@@ -267,10 +273,14 @@ export class PlanLimitsService {
     }
   }
 
-  private async fetchCount(orgId: string, key: LimitKey): Promise<number> {
+  private async fetchCount(
+    orgId: string,
+    key: LimitKey,
+    executor?: DbOrTx,
+  ): Promise<number> {
     switch (key) {
       case "members": {
-        const rows = await this.db.execute(sql`
+        const rows = await (executor ?? this.db).execute(sql`
           SELECT (
             (SELECT COUNT(*)::int FROM organization_members WHERE org_id = ${orgId}) +
             (SELECT COUNT(*)::int FROM invitations

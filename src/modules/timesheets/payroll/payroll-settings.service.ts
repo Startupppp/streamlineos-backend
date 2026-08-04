@@ -28,8 +28,12 @@ export class PayrollSettingsService {
   ) {}
 
   async getSettings(orgId: string): Promise<PayrollSettingsDto> {
-    const cacheKey = CACHE_KEYS.payrollSettings(orgId);
-    return this.cache.cached(cacheKey, () => this.fetchOrCreate(orgId), CACHE_TTL.MEDIUM);
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.payrollSettingsNamespace(orgId),
+      "settings",
+      () => this.fetchOrCreate(orgId),
+      CACHE_TTL.MEDIUM,
+    );
   }
 
   private async fetchOrCreate(orgId: string): Promise<PayrollSettingsDto> {
@@ -66,13 +70,17 @@ export class PayrollSettingsService {
 
     if (!updated) throw new InternalServerErrorException("Timesheet settings could not be updated");
 
-    await this.cache.invalidate(CACHE_KEYS.payrollSettings(orgId));
+    await Promise.all([
+      this.cache.invalidateNamespace(CACHE_KEYS.payrollSettingsNamespace(orgId)),
+      // Both APIs project the same timesheet_settings row.
+      this.cache.invalidateNamespace(CACHE_KEYS.timesheetSettingsNamespace(orgId)),
+    ]);
     if (
       input.overtimeDailyHours !== undefined ||
       input.overtimeWeeklyHours !== undefined ||
       input.includeNonBillable !== undefined
     ) {
-      await this.cache.invalidatePattern(CACHE_KEYS.payrollSummary(orgId, "*"));
+      await this.cache.invalidateNamespace(CACHE_KEYS.payrollSummaryNamespace(orgId));
     }
 
     this.audit.log({

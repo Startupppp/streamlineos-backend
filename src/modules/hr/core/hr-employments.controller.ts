@@ -37,7 +37,7 @@ export class HrEmploymentsController {
 
   @Get()
   @UseGuards(PermissionGuard)
-  @RequirePermission("hr:employees:read")
+  @RequirePermission("hr:employees:view")
   list(
     @Query(new ZodValidationPipe(paginationSchema)) query: { page: number; limit: number },
     @CurrentUser() u: CurrentUserContext,
@@ -47,7 +47,7 @@ export class HrEmploymentsController {
 
   @Get(":employmentId")
   @UseGuards(PermissionGuard)
-  @RequirePermission("hr:employees:read")
+  @RequirePermission("hr:employees:view")
   getOne(
     @Param("employmentId", ParseIntPipe) employmentId: number,
     @CurrentUser() u: CurrentUserContext,

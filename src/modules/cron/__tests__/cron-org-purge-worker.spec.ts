@@ -1,11 +1,21 @@
 import { Test } from "@nestjs/testing";
 import { CronOrgPurgeWorkerService } from "../cron-org-purge-worker.service";
 import { AuditService } from "../../../common/audit/audit.service";
+import { CacheService } from "../../../common/cache/cache.service";
+import { OrgMembershipService } from "../../organization/core/org-membership.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 
 const ORG_ID = "org-aaaaaaaa-0000-0000-0000-000000000001";
+const MEMBER_ID = "user-bbbbbbbb-0000-0000-0000-000000000001";
 
 const mockAudit = { log: jest.fn() };
+const mockCache = {
+  invalidate: jest.fn().mockResolvedValue(undefined),
+  invalidatePattern: jest.fn().mockResolvedValue(undefined),
+};
+const mockOrgMembership = {
+  revokeMemberAccess: jest.fn().mockResolvedValue(undefined),
+};
 
 describe("CronOrgPurgeWorkerService — both status columns stay consistent", () => {
   let svc: CronOrgPurgeWorkerService;
@@ -16,6 +26,8 @@ describe("CronOrgPurgeWorkerService — both status columns stay consistent", ()
 
   beforeEach(async () => {
     jest.resetAllMocks();
+    mockOrgMembership.revokeMemberAccess.mockResolvedValue(undefined);
+    mockCache.invalidate.mockResolvedValue(undefined);
 
     mockDb = {
       select: jest.fn(),
@@ -27,6 +39,8 @@ describe("CronOrgPurgeWorkerService — both status columns stay consistent", ()
         CronOrgPurgeWorkerService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AuditService, useValue: mockAudit },
+        { provide: CacheService, useValue: mockCache },
+        { provide: OrgMembershipService, useValue: mockOrgMembership },
       ],
     }).compile();
 
@@ -34,10 +48,14 @@ describe("CronOrgPurgeWorkerService — both status columns stay consistent", ()
   });
 
   it("sets statusV2 = PURGED and status = PURGED in the same transaction so legacy readers exclude the org", async () => {
+    const memberLimit = { where: jest.fn().mockResolvedValue([{ userId: MEMBER_ID }]) };
+    const memberFrom = { from: jest.fn().mockReturnValue(memberLimit) };
     const limitChain = { limit: jest.fn().mockResolvedValue([{ id: ORG_ID }]) };
     const whereChain = { where: jest.fn().mockReturnValue(limitChain) };
     const fromChain = { from: jest.fn().mockReturnValue(whereChain) };
-    mockDb.select.mockReturnValue(fromChain);
+    mockDb.select
+      .mockReturnValueOnce(fromChain)
+      .mockReturnValueOnce(memberFrom);
 
     let capturedSetArg: Record<string, unknown> | undefined;
 
@@ -68,13 +86,18 @@ describe("CronOrgPurgeWorkerService — both status columns stay consistent", ()
       status: "PURGED",
     });
     expect(capturedSetArg?.purgedAt).toBeInstanceOf(Date);
+    expect(mockOrgMembership.revokeMemberAccess).toHaveBeenCalledWith(ORG_ID, MEMBER_ID);
   });
 
   it("skips purge and reports skipped=1 when the row is already claimed (SKIP LOCKED returns nothing)", async () => {
+    const memberLimit = { where: jest.fn().mockResolvedValue([]) };
+    const memberFrom = { from: jest.fn().mockReturnValue(memberLimit) };
     const limitChain = { limit: jest.fn().mockResolvedValue([{ id: ORG_ID }]) };
     const whereChain = { where: jest.fn().mockReturnValue(limitChain) };
     const fromChain = { from: jest.fn().mockReturnValue(whereChain) };
-    mockDb.select.mockReturnValue(fromChain);
+    mockDb.select
+      .mockReturnValueOnce(fromChain)
+      .mockReturnValueOnce(memberFrom);
 
     mockDb.transaction.mockImplementation((fn: (tx: unknown) => Promise<unknown>) => {
       const tx = {
@@ -88,6 +111,7 @@ describe("CronOrgPurgeWorkerService — both status columns stay consistent", ()
 
     expect(result.processed).toBe(0);
     expect(result.skipped).toBe(1);
+    expect(mockOrgMembership.revokeMemberAccess).not.toHaveBeenCalled();
   });
 
   it("returns processed=0 skipped=0 when there are no purge-scheduled candidates", async () => {

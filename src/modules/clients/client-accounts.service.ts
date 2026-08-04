@@ -1,6 +1,7 @@
 import { BadRequestException, Inject, Injectable, Logger } from "@nestjs/common";
 import { eq, and, desc, sql, count, or, inArray, isNull } from "drizzle-orm";
 import type { DataScope } from "../access/access.types";
+import { applyClientAccountsScope } from "./client-accounts-scope";
 import { Redis } from "@upstash/redis";
 import {
   clientAccounts,
@@ -43,8 +44,7 @@ export class ClientAccountsService {
     void this.tryBackfill(orgId, userId);
 
     const f = [eq(clientAccounts.orgId, orgId)];
-    if (scope === "own") f.push(eq(clientAccounts.salesRepId, userId));
-    if (scope === "none") f.push(sql`false`);
+    if (scope !== "all") f.push(applyClientAccountsScope(scope, orgId, userId));
     if (filters.status) f.push(eq(clientAccounts.status, filters.status));
     if (filters.search) {
       const s = `%${filters.search}%`;
@@ -83,13 +83,23 @@ export class ClientAccountsService {
     };
   }
 
-  getClientAccount(orgId: string, id: number) {
-    return this.loadClientAccount(orgId, id);
+  getClientAccount(orgId: string, id: number, scope: DataScope = "all", userId?: string) {
+    return this.loadClientAccount(orgId, id, scope, userId);
   }
 
-  private async loadClientAccount(orgId: string, id: number) {
+  private async loadClientAccount(
+    orgId: string,
+    id: number,
+    scope: DataScope = "all",
+    userId?: string,
+  ) {
+    const conditions = [eq(clientAccounts.id, id), eq(clientAccounts.orgId, orgId)];
+    if (scope !== "all" && userId) {
+      conditions.push(applyClientAccountsScope(scope, orgId, userId));
+    }
+
     const account = await this.db.query.clientAccounts.findFirst({
-      where: and(eq(clientAccounts.id, id), eq(clientAccounts.orgId, orgId)),
+      where: and(...conditions),
       with: {
         salesRep: { columns: { id: true, name: true, image: true, email: true } },
         assignedCrm: { columns: { id: true, name: true, image: true, email: true } },
@@ -144,9 +154,13 @@ export class ClientAccountsService {
     return activity;
   }
 
-  listRenewals(orgId: string) {
+  listRenewals(orgId: string, scope: DataScope, userId: string) {
+    const conditions = [eq(clientAccounts.orgId, orgId)];
+    if (scope !== "all") {
+      conditions.push(applyClientAccountsScope(scope, orgId, userId));
+    }
     return this.db.query.clientAccounts.findMany({
-      where: eq(clientAccounts.orgId, orgId),
+      where: and(...conditions),
       with: { salesRep: { columns: { id: true, name: true } } },
       orderBy: (t, { asc }) => [asc(t.clientName)],
       limit: 100,

@@ -21,7 +21,7 @@ export class InvVendorsService {
     const offset = (page - 1) * limit;
     const hash = `${search ?? ""}:${isActive ?? ""}:${limit}:${offset}`;
 
-    return this.cache.cached(CACHE_KEYS.invVendorsList(orgId, hash), async () => {
+    return this.cache.cachedVersioned(CACHE_KEYS.invVendorsNamespace(orgId), hash, async () => {
       const conditions = [eq(invVendors.orgId, orgId)];
       if (search) conditions.push(ilike(invVendors.name, `%${search}%`));
       if (isActive !== undefined) conditions.push(eq(invVendors.isActive, isActive));
@@ -72,7 +72,7 @@ export class InvVendorsService {
     if (existing) throw new ConflictException("A vendor with this code already exists");
 
     const [vendor] = await this.db.insert(invVendors).values({ orgId, createdBy: userId, ...data, code }).returning();
-    await this.cache.invalidatePattern(`inv:vendors:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invVendorsNamespace(orgId));
     return vendor;
   }
 
@@ -96,7 +96,7 @@ export class InvVendorsService {
       .where(and(eq(invVendors.id, vendorId), eq(invVendors.orgId, orgId)))
       .returning();
     if (!updated) throw new NotFoundException("Vendor not found");
-    await this.cache.invalidatePattern(`inv:vendors:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invVendorsNamespace(orgId));
     return updated;
   }
 

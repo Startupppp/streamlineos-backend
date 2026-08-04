@@ -112,7 +112,7 @@ export class CareersService {
       return { id: candidateId };
     }, { orgId: job.orgId });
 
-    await this.cache.invalidatePattern(`hr:candidates:list:${job.orgId}:*`);
+    await this.cache.invalidateNamespace(`hr:candidates:list:${job.orgId}`);
     return result;
   }
 }

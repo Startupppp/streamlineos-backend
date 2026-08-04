@@ -12,9 +12,12 @@ import {
   index,
   uniqueIndex,
   unique,
+  foreignKey,
+  check,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
+import { workers } from "../directory/workers";
 
 export const payrollEntityStatusEnum = pgEnum("payroll_entity_status", [
   "ACTIVE",
@@ -234,8 +237,8 @@ export const payrollTdsYtdLedger = pgTable(
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     userId: text("user_id")
-      .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    workerId: text("worker_id"),
     fiscalYear: text("fiscal_year").notNull(),
     periodKey: text("period_key").notNull(),
     runId: integer("run_id"),
@@ -250,13 +253,23 @@ export const payrollTdsYtdLedger = pgTable(
   },
   (table) => [
     unique("uniq_payroll_tds_ytd_ledger_org_id").on(table.orgId, table.id),
-    uniqueIndex("uniq_payroll_tds_ytd_user_period").on(
-      table.orgId,
-      table.userId,
-      table.fiscalYear,
-      table.periodKey,
-    ),
+    uniqueIndex("uniq_payroll_tds_ytd_user_period")
+      .on(table.orgId, table.userId, table.fiscalYear, table.periodKey)
+      .where(sql`user_id IS NOT NULL`),
+    uniqueIndex("uniq_payroll_tds_ytd_worker_period")
+      .on(table.orgId, table.workerId, table.fiscalYear, table.periodKey)
+      .where(sql`worker_id IS NOT NULL`),
     index("idx_payroll_tds_ytd_user_fy").on(table.orgId, table.userId, table.fiscalYear),
+    index("idx_payroll_tds_ytd_worker_fy").on(table.orgId, table.workerId, table.fiscalYear),
+    check(
+      "chk_payroll_tds_ytd_ledger_subject",
+      sql`user_id IS NOT NULL OR worker_id IS NOT NULL`,
+    ),
+    foreignKey({
+      columns: [table.orgId, table.workerId],
+      foreignColumns: [workers.organizationId, workers.workerId],
+      name: "fk_payroll_tds_ytd_ledger_org_worker",
+    }).onDelete("restrict"),
   ],
 );
 

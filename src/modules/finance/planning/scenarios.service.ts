@@ -5,12 +5,11 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import type {
   CreateScenarioInput,
   UpdateScenarioInput,
 } from "./dto/finance-planning.schemas";
-
-const FORECAST_PATTERN = (orgId: string) => `fin:forecast:${orgId}:*`;
 
 const SEED_SCENARIOS: Array<{
   kind: "CONSERVATIVE" | "EXPECTED" | "AGGRESSIVE";
@@ -95,6 +94,8 @@ export class ScenariosService {
       })
       .returning();
 
+    await this.cache.invalidateNamespace(CACHE_KEYS.finForecastNamespace(orgId));
+
     this.audit.log({
       action: "scenario.created",
       userId,
@@ -157,7 +158,7 @@ export class ScenariosService {
       )
       .returning();
 
-    await this.cache.invalidatePattern(FORECAST_PATTERN(orgId));
+    await this.cache.invalidateNamespace(CACHE_KEYS.finForecastNamespace(orgId));
 
     this.audit.log({
       action: "scenario.updated",
@@ -199,7 +200,7 @@ export class ScenariosService {
         ),
       );
 
-    await this.cache.invalidatePattern(FORECAST_PATTERN(orgId));
+    await this.cache.invalidateNamespace(CACHE_KEYS.finForecastNamespace(orgId));
 
     this.audit.log({
       action: "scenario.deleted",
@@ -270,6 +271,7 @@ export class ScenariosService {
       metadata: { created: toInsert.length },
     });
 
+    await this.cache.invalidateNamespace(CACHE_KEYS.finForecastNamespace(orgId));
     return { created: toInsert.length };
   }
 }

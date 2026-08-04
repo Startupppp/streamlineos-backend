@@ -232,7 +232,10 @@ export class PayrollJobsWorkerService implements OnModuleInit, OnModuleDestroy {
         const userIds = Array.isArray(ctx.payload.userIds)
           ? (ctx.payload.userIds as string[])
           : undefined;
-        const result = await pub.publish(ctx.orgId, runId, ctx.actorId, userIds);
+        const runEmployeeIds = Array.isArray(ctx.payload.runEmployeeIds)
+          ? (ctx.payload.runEmployeeIds as number[])
+          : undefined;
+        const result = await pub.publish(ctx.orgId, runId, ctx.actorId, userIds, runEmployeeIds);
         return result as unknown as Record<string, unknown>;
       }
       case "FILING_EXPORT": {

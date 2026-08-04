@@ -264,9 +264,6 @@ export class NotificationsLifecycleService {
   }
 
   async invalidateCache(userId: string, orgId: string) {
-    await Promise.all([
-      this.cache.invalidatePattern(`notifications:list:${userId}:${orgId}:*`),
-      this.cache.del(`notifications:unread-count:${userId}:${orgId}`),
-    ]);
+    await this.cache.invalidateNamespace(`notifications:${userId}:${orgId}`);
   }
 }

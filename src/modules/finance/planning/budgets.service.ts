@@ -12,6 +12,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { addDecimals, multiplyDecimals } from "../../accounting/core/money.util";
 import type {
   ListBudgetsQuery,
@@ -21,11 +22,6 @@ import type {
   BudgetWorkflowInput,
   DuplicateBudgetInput,
 } from "./dto/finance-planning.schemas";
-
-const BUDGET_CACHE_PREFIX = (orgId: string, budgetId: number) =>
-  `fin:budget:${orgId}:${budgetId}`;
-const BVA_CACHE_PREFIX = (orgId: string, budgetId: number) =>
-  `fin:bva:${orgId}:${budgetId}`;
 
 @Injectable()
 export class BudgetsService {
@@ -135,7 +131,6 @@ export class BudgetsService {
       .where(and(eq(finBudgets.id, budgetId), eq(finBudgets.orgId, orgId)))
       .returning();
 
-    await this.cache.invalidate(BUDGET_CACHE_PREFIX(orgId, budgetId));
     this.audit.log({
       action: "budget.updated",
       userId,
@@ -248,10 +243,7 @@ export class BudgetsService {
         .where(and(eq(finBudgets.id, budgetId), eq(finBudgets.orgId, orgId)));
     });
 
-    await Promise.all([
-      this.cache.invalidate(BUDGET_CACHE_PREFIX(orgId, budgetId)),
-      this.cache.invalidatePattern(`${BVA_CACHE_PREFIX(orgId, budgetId)}:*`),
-    ]);
+    await this.cache.invalidateNamespace(CACHE_KEYS.finBvaNamespace(orgId, budgetId));
     this.audit.log({
       action: "budget.lines_replaced",
       userId,
@@ -282,7 +274,6 @@ export class BudgetsService {
       .where(and(eq(finBudgets.id, budgetId), eq(finBudgets.orgId, orgId)))
       .returning();
 
-    await this.cache.invalidate(BUDGET_CACHE_PREFIX(orgId, budgetId));
     this.audit.log({
       action: "budget.submitted",
       userId,
@@ -315,7 +306,6 @@ export class BudgetsService {
       .where(and(eq(finBudgets.id, budgetId), eq(finBudgets.orgId, orgId)))
       .returning();
 
-    await this.cache.invalidate(BUDGET_CACHE_PREFIX(orgId, budgetId));
     this.audit.log({
       action: "budget.approved",
       userId,

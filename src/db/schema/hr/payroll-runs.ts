@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, unique, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, unique, foreignKey, check, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import {
   payrollRunStatusEnum, payrollWorkerTypeEnum, salaryComponentTypeEnum,
@@ -6,6 +6,7 @@ import {
   payrollExceptionStatusEnum, payrollApprovalStatusEnum,
 } from "../common/enums";
 import { organizations, users } from "../common/auth";
+import { workers } from "../directory/workers";
 import { payrollPolicyVersions } from "./payroll-policies";
 import { hrPayrollInputPeriods } from "./payroll-inputs";
 
@@ -71,7 +72,8 @@ export const payrollRunEmployees = pgTable("payroll_run_employees", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   runId: integer("run_id").references(() => payrollRuns.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "restrict" }).notNull(),
+  userId: text("user_id").references(() => users.id, { onDelete: "restrict" }),
+  workerId: text("worker_id"),
   profileId: integer("profile_id"),
   workerType: payrollWorkerTypeEnum("worker_type").default("EMPLOYEE").notNull(),
   currency: text("currency").default("INR").notNull(),
@@ -95,7 +97,20 @@ export const payrollRunEmployees = pgTable("payroll_run_employees", {
 }, (table) => [
   unique("uniq_payroll_run_employees_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_payroll_run_employees_run_user").on(table.runId, table.userId),
+  uniqueIndex("uniq_payroll_run_employees_run_worker")
+    .on(table.runId, table.workerId)
+    .where(sql`worker_id IS NOT NULL`),
   index("idx_payroll_run_employees_org_run").on(table.orgId, table.runId),
+  index("idx_payroll_run_employees_org_worker").on(table.orgId, table.workerId),
+  check(
+    "chk_payroll_run_employees_subject",
+    sql`user_id IS NOT NULL OR worker_id IS NOT NULL`,
+  ),
+  foreignKey({
+    columns: [table.orgId, table.workerId],
+    foreignColumns: [workers.organizationId, workers.workerId],
+    name: "fk_payroll_run_employees_org_worker",
+  }).onDelete("restrict"),
 ]);
 
 export const payrollLineItems = pgTable("payroll_line_items", {
@@ -171,6 +186,7 @@ export const payrollRunsRelations = relations(payrollRuns, ({ one, many }) => ({
 export const payrollRunEmployeesRelations = relations(payrollRunEmployees, ({ one, many }) => ({
   run: one(payrollRuns, { fields: [payrollRunEmployees.runId], references: [payrollRuns.id] }),
   user: one(users, { fields: [payrollRunEmployees.userId], references: [users.id] }),
+  worker: one(workers, { fields: [payrollRunEmployees.workerId], references: [workers.workerId] }),
   lineItems: many(payrollLineItems),
   exceptions: many(payrollExceptions),
 }));

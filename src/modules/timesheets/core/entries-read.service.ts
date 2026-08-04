@@ -26,7 +26,7 @@ export class EntriesReadService {
     const conditions = [
       eq(timesheets.orgId, u.orgId),
       isNull(timesheets.voidedAt),
-      applyScope(scope, u.userId, { ownerColumn: timesheets.userId }),
+      applyScope(scope, u.orgId, u.userId, { ownerColumn: timesheets.userId }),
     ];
 
     if (query.userId && scope === "all")

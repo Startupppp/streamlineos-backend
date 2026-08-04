@@ -1,8 +1,8 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, eq, isNull, sql } from "drizzle-orm";
 import { portalMemberships } from "../../../db/schema/portal-access/portal-memberships";
 import { projectClientGrants } from "../../../db/schema/portal-access/project-client-grants";
-import { partyContacts } from "../../../db/schema";
+import { partyContacts, projects } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { type PgUpdateSetSource } from "drizzle-orm/pg-core";
@@ -266,6 +266,25 @@ export class PortalAccessService {
 
   async createGrant(organizationId: string, userId: string, input: CreateGrantInput) {
     const membership = await this.loadMembership(organizationId, input.portalMembershipId);
+    if (membership.status !== "ACTIVE") {
+      throw new ForbiddenException("Portal membership is not active");
+    }
+
+    const [project] = await this.db
+      .select({ id: projects.id, pmWorkspaceId: projects.pmWorkspaceId })
+      .from(projects)
+      .where(and(eq(projects.id, input.projectId), eq(projects.orgId, organizationId)))
+      .limit(1);
+    if (!project) throw new NotFoundException("Project not found");
+
+    const resolvedWorkspaceId = input.pmWorkspaceId ?? project.pmWorkspaceId ?? null;
+    if (
+      input.pmWorkspaceId &&
+      project.pmWorkspaceId &&
+      input.pmWorkspaceId !== project.pmWorkspaceId
+    ) {
+      throw new ForbiddenException("Project does not belong to the specified PM workspace");
+    }
 
     const [row] = await this.db
       .insert(projectClientGrants)
@@ -274,7 +293,7 @@ export class PortalAccessService {
         portalMembershipId: input.portalMembershipId,
         partyContactId: membership.partyContactId,
         projectId: input.projectId,
-        pmWorkspaceId: input.pmWorkspaceId ?? null,
+        pmWorkspaceId: resolvedWorkspaceId,
         canViewMilestones: input.canViewMilestones ?? false,
         canViewTasks: input.canViewTasks ?? false,
         canViewAttachments: input.canViewAttachments ?? false,

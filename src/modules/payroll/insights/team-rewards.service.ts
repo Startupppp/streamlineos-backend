@@ -177,6 +177,7 @@ export class TeamRewardsService {
       );
 
     const members = rows
+      .filter((r): r is typeof r & { userId: string } => r.userId !== null)
       .map((r) => ({
         userId: r.userId,
         annualCtc: parseFloat(r.annualCtc ?? "0") || 0,

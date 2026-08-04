@@ -126,7 +126,7 @@ export class PeriodsService {
 
     const conditions = [
       eq(timesheetPeriods.orgId, u.orgId),
-      applyScope(scope, u.userId, { ownerColumn: timesheetPeriods.userId }),
+      applyScope(scope, u.orgId, u.userId, { ownerColumn: timesheetPeriods.userId }),
     ];
 
     if (query.userId && scope === "all") {

@@ -52,7 +52,7 @@ export class LeadsReportsService {
     const f = [eq(leads.orgId, orgId)];
     if (viewScope)
       f.push(
-        applyScope(viewScope.scope, viewScope.userId, {
+        applyScope(viewScope.scope, orgId, viewScope.userId, {
           ownerColumn: leads.assignedToId,
         }),
       );
@@ -214,8 +214,9 @@ export class LeadsReportsService {
   }
 
   getDashboardMetrics(orgId: string) {
-    return this.cache.cached(
-      `leads:dashboard-metrics:${orgId}`,
+    return this.cache.cachedVersioned(
+      `leads:${orgId}`,
+      "dashboard-metrics",
       async () => {
         const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
 
@@ -290,8 +291,9 @@ export class LeadsReportsService {
   }
 
   getSourceReport(orgId: string) {
-    return this.cache.cached(
-      `leads:source-report:${orgId}`,
+    return this.cache.cachedVersioned(
+      `leads:${orgId}`,
+      "source-report",
       async () => {
         const statusOptions = await this.db.select().from(crmOptions)
           .where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, "lead_status")));

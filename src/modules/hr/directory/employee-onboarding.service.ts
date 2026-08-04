@@ -4,7 +4,7 @@ import {
   Injectable,
   InternalServerErrorException,
 } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { randomBytes, randomUUID } from "node:crypto";
 import { addDays } from "date-fns";
 import {
@@ -33,6 +33,10 @@ import { syncStructuralRoleAssignment } from "../../../common/rbac/sync-structur
 import { assertMayGrantRole } from "../../../common/rbac/assert-may-grant-role";
 import { AccessService } from "../../access/access.service";
 import { syncOrgUnitPlacement } from "../../../common/org/sync-org-unit-placement";
+import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
+import { PlanLimitsService } from "../../billing/core/plan-limits.service";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 
 type BankDetailsInput = NonNullable<UpdateEmployeeInput["bankDetails"]> & {
   pfUanNumber?: string;
@@ -71,7 +75,18 @@ export class EmployeeOnboardingService {
     private readonly webhooks: WebhooksDispatchService,
     private readonly personEmploymentSync: PersonEmploymentSyncService,
     private readonly access: AccessService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
+
+  private async reserveMemberSeat(
+    tx: DbOrTx,
+    orgId: string,
+  ): Promise<void> {
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtextextended(${`quota:${orgId}:members`}, 0))`,
+    );
+    await this.planLimits.assertWithinLimit(orgId, "members", 1, tx);
+  }
 
   async onboardEmployee(actor: CurrentUserContext, body: OnboardEmployeeInput) {
     const existingUser = await this.db.query.users.findFirst({
@@ -115,7 +130,8 @@ export class EmployeeOnboardingService {
     await assertMayGrantRole(this.access, actor.orgId, actor, role);
 
     if (existingUser) {
-      const linkedUser = await this.db.transaction(async (tx) => {
+      const linkedUser = await runInTenantTransaction(this.db, async (tx) => {
+        await this.reserveMemberSeat(tx, actor.orgId);
         const updateData: Partial<typeof users.$inferInsert> = {
           designation: body.designation,
           orgDepartmentId: body.departmentId,
@@ -159,8 +175,9 @@ export class EmployeeOnboardingService {
         });
         if (!updated) throw new InternalServerErrorException("Failed to link user record.");
         return updated;
-      });
+      }, { orgId: actor.orgId });
 
+      await bustMembershipStatusCache(this.cache, linkedUser.id, actor.orgId);
       await this.invalidateHrDashboardCache(actor.orgId);
 
       void this.automation
@@ -208,7 +225,8 @@ export class EmployeeOnboardingService {
 
     const userId = randomUUID();
 
-    const newUser = await this.db.transaction(async (tx) => {
+    const newUser = await runInTenantTransaction(this.db, async (tx) => {
+      await this.reserveMemberSeat(tx, actor.orgId);
       const [created] = await tx
         .insert(users)
         .values({
@@ -259,8 +277,9 @@ export class EmployeeOnboardingService {
       }
 
       return created;
-    });
+    }, { orgId: actor.orgId });
 
+    await bustMembershipStatusCache(this.cache, newUser.id, actor.orgId);
     await this.invalidateHrDashboardCache(actor.orgId);
 
     void this.automation

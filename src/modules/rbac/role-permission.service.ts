@@ -19,6 +19,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import {
   assertPermissionsGrantable,
   buildPermissionModuleMap,
@@ -230,7 +231,7 @@ export class RolePermissionService {
 
     const nextVersion = existingRole.version + 1;
 
-    await this.db.transaction(async (tx): Promise<void> => {
+    await runInTenantTransaction(this.db, async (tx): Promise<void> => {
       const updated = await tx
         .update(roles)
         .set({ version: nextVersion })
@@ -270,7 +271,7 @@ export class RolePermissionService {
       }
 
       await bumpPermissionsVersion(tx, actor.orgId);
-    });
+    }, { orgId: actor.orgId });
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
     await this.invalidateRoleHolderSessions(actor.orgId, roleId);

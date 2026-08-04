@@ -35,7 +35,7 @@ export class HrEffectiveChangesController {
 
   @Get()
   @UseGuards(PermissionGuard)
-  @RequirePermission("hr:employees:read")
+  @RequirePermission("hr:employees:view")
   list(
     @Query(new ZodValidationPipe(listEffectiveDateChangesSchema)) query: ListEffectiveDateChangesInput,
     @CurrentUser() u: CurrentUserContext,

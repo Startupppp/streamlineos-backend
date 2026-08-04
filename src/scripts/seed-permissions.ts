@@ -15,15 +15,26 @@ async function main(): Promise<void> {
 
   try {
     const service = new PermissionCatalogSyncService(db);
-    const { catalogSize, staleKeys } = await service.sync();
+    const cleanupRetired = process.argv.includes("--cleanup-retired");
+    const { catalogSize, staleKeys, deletedKeys, retainedKeys } =
+      await service.sync({ cleanupRetired });
 
     console.log(`Permission catalog synced: ${catalogSize} key(s).`);
-    if (staleKeys.length > 0) {
+    if (deletedKeys.length > 0) {
       console.log(
-        `${staleKeys.length} stale key(s) remain in the database and were NOT deleted, ` +
-          `because deleting them cascades to role_permission_grants:`,
+        `${deletedKeys.length} unreferenced retired key(s) deleted:`,
       );
-      for (const key of staleKeys) console.log(`  ${key}`);
+      for (const key of deletedKeys) console.log(`  ${key}`);
+    }
+    if (cleanupRetired && retainedKeys.length > 0) {
+      console.log(
+        `${retainedKeys.length} retired key(s) remain because role grants reference them:`,
+      );
+      for (const key of retainedKeys) console.log(`  ${key}`);
+    } else if (staleKeys.length > 0 && !cleanupRetired) {
+      console.log(
+        `${staleKeys.length} retired key(s) detected. Re-run with --cleanup-retired to delete only unreferenced keys.`,
+      );
     }
   } finally {
     await client.end({ timeout: 5 }).catch(() => undefined);

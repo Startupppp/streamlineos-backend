@@ -6,6 +6,7 @@ import { invoices, invoiceItems, purchaseBills, purchaseBillItems } from "../../
 import { journalLines } from "../../../db/schema/accounting/accounting";
 import { accTaxPayments } from "../../../db/schema/accounting/finance-tax";
 import { CacheService } from "../../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { FinancePostingService } from "../../accounting/core/finance-posting.service";
 import type { TaxDashboardQuery } from "./dto/tax-reports.schemas";
 
@@ -40,8 +41,8 @@ export class TaxDashboardService {
   ) {}
 
   async getDashboard(orgId: string, query: TaxDashboardQuery) {
-    const cacheKey = `fin:tax-dashboard:${orgId}:${query.from}:${query.to}`;
-    return this.cache.cached(cacheKey, () => this.computeDashboard(orgId, query), 120);
+    const cacheKey = `${query.from}:${query.to}`;
+    return this.cache.cachedVersioned(CACHE_KEYS.finTaxDashboardNamespace(orgId), cacheKey, () => this.computeDashboard(orgId, query), 120);
   }
 
   private async computeDashboard(orgId: string, query: TaxDashboardQuery) {

@@ -26,8 +26,9 @@ export class SettingsService {
   ) {}
 
   async getSettings(orgId: string) {
-    return this.cache.cached(
-      CACHE_KEYS.timesheetSettings(orgId),
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.timesheetSettingsNamespace(orgId),
+      "settings",
       () => this.fetchOrCreate(orgId),
       CACHE_TTL.MEDIUM,
     );
@@ -108,7 +109,7 @@ export class SettingsService {
       });
     });
 
-    await this.cache.invalidate(CACHE_KEYS.timesheetSettings(u.orgId));
+    await this.cache.invalidateNamespace(CACHE_KEYS.timesheetSettingsNamespace(u.orgId));
 
     return this.fetchOrCreate(u.orgId);
   }

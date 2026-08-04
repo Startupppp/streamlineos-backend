@@ -13,7 +13,6 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import type { ListLotsInput, ListSerialsInput, UpdateLotStatusInput } from "./dto/traceability.schemas";
 
 @Injectable()
@@ -134,10 +133,9 @@ export class InvTraceabilityService {
       .where(and(eq(invLots.id, lotId), eq(invLots.orgId, orgId)))
       .returning();
 
-    await Promise.all([
-      this.cache.invalidate(CACHE_KEYS.invLotDetail(orgId, lotId)),
-      this.cache.invalidatePattern(CACHE_KEYS.invLotsListPattern(orgId)),
-    ]);
+    // Lot list/detail are direct DB reads. Only the cached trace chain needs a
+    // generation bump when status changes.
+    await this.cache.invalidateNamespace(`inv:traceability:${orgId}`);
     return updated;
   }
 

@@ -78,7 +78,7 @@ describe("ModuleAccessService.getCallerPermissions", () => {
       providers: [
         ModuleAccessService,
         { provide: DRIZZLE, useValue: mockDb },
-        { provide: AccessService, useValue: { resolveUserPermissions } },
+        { provide: AccessService, useValue: { resolveUserPermissions, isModuleEnabled: jest.fn().mockResolvedValue(true) } },
         { provide: CacheService, useValue: { invalidate: jest.fn() } },
         { provide: AuditService, useValue: { log: jest.fn() } },
       ],
@@ -125,7 +125,7 @@ describe("ModuleAccessService.getCallerPermissions", () => {
       providers: [
         ModuleAccessService,
         { provide: DRIZZLE, useValue: inactiveMockDb },
-        { provide: AccessService, useValue: { resolveUserPermissions: jest.fn() } },
+        { provide: AccessService, useValue: { resolveUserPermissions: jest.fn(), isModuleEnabled: jest.fn().mockResolvedValue(true) } },
         { provide: CacheService, useValue: { invalidate: jest.fn() } },
         { provide: AuditService, useValue: { log: jest.fn() } },
       ],
@@ -157,7 +157,7 @@ describe("ModuleAccessGroupsService.listMembers — access guard", () => {
       providers: [
         ModuleAccessGroupsService,
         { provide: DRIZZLE, useValue: mockDb },
-        { provide: AccessService, useValue: { resolveUserPermissions } },
+        { provide: AccessService, useValue: { resolveUserPermissions, isModuleEnabled: jest.fn().mockResolvedValue(true) } },
         { provide: CacheService, useValue: { invalidate: jest.fn() } },
         { provide: AuditService, useValue: { log: jest.fn() } },
       ],
@@ -170,6 +170,58 @@ describe("ModuleAccessGroupsService.listMembers — access guard", () => {
         page: 1,
         pageSize: 20,
       }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it("requires manage access for a userId membership probe", async () => {
+    const resolveUserPermissions = jest.fn().mockResolvedValue(
+      new Map([["hr:access:view", "all"]]),
+    );
+    const mockDb = {
+      select: jest.fn().mockReturnValue(makeFlexChain([])),
+      query: { roles: { findFirst: jest.fn() } },
+    };
+    const m = await Test.createTestingModule({
+      providers: [
+        ModuleAccessGroupsService,
+        { provide: DRIZZLE, useValue: mockDb },
+        { provide: AccessService, useValue: { resolveUserPermissions, isModuleEnabled: jest.fn().mockResolvedValue(true) } },
+        { provide: CacheService, useValue: { cached: jest.fn(), invalidate: jest.fn() } },
+        { provide: AuditService, useValue: { log: jest.fn() } },
+      ],
+    }).compile();
+
+    await expect(
+      m.get(ModuleAccessGroupsService).listMembers(makeActor(), "hr", {
+        page: 1,
+        pageSize: 20,
+        userId: "u-target",
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+});
+
+describe("ModuleAccessGroupsService.listMemberCandidates — access guard", () => {
+  it("requires manage access", async () => {
+    const resolveUserPermissions = jest.fn().mockResolvedValue(
+      new Map([["hr:access:view", "all"]]),
+    );
+    const mockDb = {
+      select: jest.fn().mockReturnValue(makeFlexChain([])),
+      query: { roles: { findFirst: jest.fn() } },
+    };
+    const m = await Test.createTestingModule({
+      providers: [
+        ModuleAccessGroupsService,
+        { provide: DRIZZLE, useValue: mockDb },
+        { provide: AccessService, useValue: { resolveUserPermissions, isModuleEnabled: jest.fn().mockResolvedValue(true) } },
+        { provide: CacheService, useValue: { cached: jest.fn(), invalidate: jest.fn() } },
+        { provide: AuditService, useValue: { log: jest.fn() } },
+      ],
+    }).compile();
+
+    await expect(
+      m.get(ModuleAccessGroupsService).listMemberCandidates(makeActor(), "hr"),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 });
@@ -192,7 +244,7 @@ describe("ModuleAccessGroupsService.removeMember — module owner protection", (
       providers: [
         ModuleAccessGroupsService,
         { provide: DRIZZLE, useValue: mockDb },
-        { provide: AccessService, useValue: { resolveUserPermissions } },
+        { provide: AccessService, useValue: { resolveUserPermissions, isModuleEnabled: jest.fn().mockResolvedValue(true) } },
         { provide: CacheService, useValue: { invalidate: jest.fn() } },
         { provide: AuditService, useValue: { log: jest.fn() } },
       ],
@@ -224,7 +276,7 @@ describe("ModuleAccessGroupsService.addMember — self-assignment block", () => 
       providers: [
         ModuleAccessGroupsService,
         { provide: DRIZZLE, useValue: mockDb },
-        { provide: AccessService, useValue: { resolveUserPermissions } },
+        { provide: AccessService, useValue: { resolveUserPermissions, isModuleEnabled: jest.fn().mockResolvedValue(true) } },
         { provide: CacheService, useValue: { invalidate: jest.fn() } },
         { provide: AuditService, useValue: { log: jest.fn() } },
       ],
@@ -253,6 +305,7 @@ describe("ModuleAccessGroupsService.addMember — self-assignment block", () => 
       }),
     };
     const txMock = {
+      execute: jest.fn().mockResolvedValue([]),
       insert: jest.fn().mockReturnValue(mockInsertChain),
       delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
     };
@@ -265,7 +318,9 @@ describe("ModuleAccessGroupsService.addMember — self-assignment block", () => 
         async (fn: (tx: typeof txMock) => Promise<unknown>) => fn(txMock),
       ),
       query: {
-        organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 12 }) },
+        organizationMembers: {
+          findFirst: jest.fn().mockResolvedValue({ id: 12, status: "ACTIVE" }),
+        },
       },
     };
 
@@ -273,7 +328,7 @@ describe("ModuleAccessGroupsService.addMember — self-assignment block", () => 
       providers: [
         ModuleAccessGroupsService,
         { provide: DRIZZLE, useValue: mockDb },
-        { provide: AccessService, useValue: { resolveUserPermissions } },
+        { provide: AccessService, useValue: { resolveUserPermissions, isModuleEnabled: jest.fn().mockResolvedValue(true) } },
         { provide: CacheService, useValue: { invalidate: jest.fn() } },
         { provide: AuditService, useValue: { log: jest.fn() } },
       ],

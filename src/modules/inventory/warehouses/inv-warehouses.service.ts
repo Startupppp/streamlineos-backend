@@ -240,8 +240,7 @@ export class InvWarehousesService {
     });
     if (!wh) throw new NotFoundException("Warehouse not found");
 
-    const cacheKey = CACHE_KEYS.invStockLevels(orgId, `wh:${warehouseId}:${page}:${limit}`);
-    return this.cache.cached(cacheKey, async () => {
+    return this.cache.cachedVersioned(`inv:stock:levels:${orgId}`, `wh:${warehouseId}:${page}:${limit}`, async () => {
       const offset = (page - 1) * limit;
       const stockWhere = and(
         eq(invLocations.warehouseId, warehouseId),

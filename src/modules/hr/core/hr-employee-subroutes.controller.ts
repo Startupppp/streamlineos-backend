@@ -24,7 +24,7 @@ export class HrEmployeeSubroutesController {
 
   @Get(":userId/employment")
   @UseGuards(PermissionGuard)
-  @RequirePermission("hr:employees:read")
+  @RequirePermission("hr:employees:view")
   getEmployment(
     @Param("userId") userId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -34,7 +34,7 @@ export class HrEmployeeSubroutesController {
 
   @Get(":employeeId/timeline")
   @UseGuards(PermissionGuard)
-  @RequirePermission("hr:employees:read")
+  @RequirePermission("hr:employees:view")
   getTimeline(
     @Param("employeeId", ParseIntPipe) employeeId: number,
     @Query(new ZodValidationPipe(listTimelineSchema)) query: ListTimelineInput,
@@ -45,7 +45,7 @@ export class HrEmployeeSubroutesController {
 
   @Get(":employeeId/history")
   @UseGuards(PermissionGuard)
-  @RequirePermission("hr:employees:read")
+  @RequirePermission("hr:employees:view")
   getHistory(
     @Param("employeeId", ParseIntPipe) employeeId: number,
     @Query(new ZodValidationPipe(historyTypeSchema)) query: HistoryTypeInput,

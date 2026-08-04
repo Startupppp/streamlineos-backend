@@ -46,7 +46,7 @@ describe("ProjectsProvisionService.createProject — plan limit enforcement", ()
         ProjectsProvisionService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: PlanLimitsService, useValue: mockPlanLimits },
-        { provide: CacheService, useValue: { invalidatePattern: jest.fn().mockResolvedValue(undefined) } },
+        { provide: CacheService, useValue: { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } },
         { provide: AuditService, useValue: { log: jest.fn() } },
         {
           provide: ProjectsEmailService,

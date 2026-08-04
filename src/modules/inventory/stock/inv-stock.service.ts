@@ -6,7 +6,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
+import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import type {
   ListStockLevelsInput, ListTransactionsInput, AvailabilityQueryInput,
 } from "./dto/inv-stock.schemas";
@@ -23,7 +23,7 @@ export class InvStockService {
     const offset = (page - 1) * limit;
     const hash = `${warehouseId ?? ""}:${locationId ?? ""}:${productId ?? ""}:${variantId ?? ""}:${lotId ?? ""}:${serialId ?? ""}:${lowStock ?? ""}:${negative ?? ""}:${search ?? ""}:${limit}:${offset}`;
 
-    return this.cache.cached(CACHE_KEYS.invStockLevels(orgId, hash), async () => {
+    return this.cache.cachedVersioned(`inv:stock:levels:${orgId}`, hash, async () => {
 
       // [B1-08] Run data + count queries in parallel.
       // [B1-10] Explicit column projection instead of SELECT sl.*.

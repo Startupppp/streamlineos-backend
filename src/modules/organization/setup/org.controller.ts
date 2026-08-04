@@ -11,6 +11,8 @@ import {
   orgSetupSkipSchema,
   type OrgSetupSkipInput,
 } from "../../hr/onboarding/flow/dto/onboarding-flow.schemas";
+import { PermissionGuard } from "../../access/permission.guard";
+import { RequirePermission } from "../../access/require-permission.decorator";
 
 @Controller("org")
 @UseGuards(JwtAuthGuard)
@@ -21,6 +23,8 @@ export class OrgController {
   ) {}
 
   @Get("members")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("directory:people:view")
   listMembers(
     @CurrentUser() u: CurrentUserContext,
     @Query("search") search?: string,

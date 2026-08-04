@@ -13,6 +13,7 @@ import {
 } from "../../../../db/schema";
 import { hrPayrollInputPeriods } from "../../../../db/schema/hr/payroll-inputs";
 import type { PayrollChecklistItem, PayrollToggles } from "../../payroll.types";
+import { requirePayrollUserIds } from "../../lib/payroll-user-id";
 import type { payrollRuns } from "../../../../db/schema";
 
 /**
@@ -154,7 +155,7 @@ export async function buildRunChecklist(
       .from(payrollRunEmployees)
       .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)));
 
-    const userIds = empUserIds.map(r => r.userId);
+    const userIds = requirePayrollUserIds(empUserIds.map((r) => r.userId));
 
     if (userIds.length > 0) {
       const activeLoans = await db

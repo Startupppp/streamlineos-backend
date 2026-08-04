@@ -248,7 +248,10 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
       const res = await request(app.getHttpServer())
         .put(`/module-access/crm/roles/${ROLE_ID}/permissions`)
         .set("Authorization", `Bearer ${token}`)
-        .send({ items: [{ permissionKey: "crm:leads:view", scope: "all" }] });
+        .send({
+          version: 1,
+          items: [{ permissionKey: "crm:leads:view", scope: "all" }],
+        });
       expect(res.status).toBe(403);
     });
   });
@@ -264,7 +267,10 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
       const res = await request(app.getHttpServer())
         .put(`/module-access/hr/roles/${ROLE_ID}/permissions`)
         .set("Authorization", `Bearer ${token}`)
-        .send({ items: [{ permissionKey: "crm:leads:view", scope: "all" }] });
+        .send({
+          version: 1,
+          items: [{ permissionKey: "crm:leads:view", scope: "all" }],
+        });
       expect(res.status).toBe(400);
       expect(res.body).toMatchObject({ error: expect.stringContaining("crm:leads:view") });
     });
@@ -279,7 +285,10 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
       const res = await request(app.getHttpServer())
         .put(`/module-access/hr/groups/${GROUP_ID}/permissions`)
         .set("Authorization", `Bearer ${token}`)
-        .send({ items: [{ permissionKey: "inventory:products:view", scope: "all" }] });
+        .send({
+          version: 1,
+          items: [{ permissionKey: "inventory:products:view", scope: "all" }],
+        });
       expect(res.status).toBe(400);
       expect(res.body).toMatchObject({ error: expect.stringContaining("inventory:products:view") });
     });
@@ -294,7 +303,10 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
       const res = await request(app.getHttpServer())
         .put(`/module-access/hr/roles/${ROLE_ID}/permissions`)
         .set("Authorization", `Bearer ${token}`)
-        .send({ items: [{ permissionKey: "hr:employees:delete", scope: "all" }] });
+        .send({
+          version: 1,
+          items: [{ permissionKey: "hr:employees:delete", scope: "all" }],
+        });
       expect(res.status).toBe(403);
       expect(res.body).toMatchObject({ error: expect.stringContaining("cannot grant") });
     });

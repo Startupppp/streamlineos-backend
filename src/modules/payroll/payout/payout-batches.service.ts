@@ -24,7 +24,8 @@ import { StorageService } from "../../storage/storage.service";
 import { decryptBankDetails } from "../../../modules/hr/payroll/lib/encryption";
 import type { PayoutBatchFormat } from "./dto/payout.schemas";
 import { PayrollPostingService } from "../payroll-posting.service";
-import { assertOrgMember } from "../lib/org-membership";
+import { assertPayrollPayeeEligible } from "../lib/payroll-payee-eligibility";
+import { loadRunEmployeePayees } from "../lib/payroll-run-payee";
 import { JournalOutboxService } from "../insights/journal-outbox.service";
 import { parseBankReturnCsv } from "./lib/bank-return";
 import { defaultFormatFromCurrency, csvHeader, csvRow } from "./lib/payout-csv";
@@ -82,18 +83,19 @@ export class PayoutBatchesService {
       .select({
         id: payrollRunEmployees.id,
         userId: payrollRunEmployees.userId,
+        workerId: payrollRunEmployees.workerId,
         net: payrollRunEmployees.net,
         currency: payrollRunEmployees.currency,
         payoutCurrency: payrollRunEmployees.payoutCurrency,
         netPayoutCurrency: payrollRunEmployees.netPayoutCurrency,
         status: payrollRunEmployees.status,
         holdReason: payrollRunEmployees.holdReason,
-        bankDetails: users.bankDetails,
-        name: users.name,
       })
       .from(payrollRunEmployees)
-      .leftJoin(users, eq(payrollRunEmployees.userId, users.id))
       .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)));
+
+    const payees = await loadRunEmployeePayees(this.db, orgId, runId);
+    const payeeByRunEmployee = new Map(payees.map((payee) => [payee.runEmployeeId, payee]));
 
     const alreadyPaidRows = await this.db
       .select({ runEmployeeId: payrollBankBatchItems.runEmployeeId })
@@ -111,7 +113,8 @@ export class PayoutBatchesService {
     const eligible = employees.filter(e => {
       if (alreadyPaidRunEmployeeIds.has(e.id)) return false;
       if (e.status === "HELD" || e.holdReason) return false;
-      const bank = decryptBankDetails(e.bankDetails ?? null);
+      const payee = payeeByRunEmployee.get(e.id);
+      const bank = payee?.bankDetails ?? null;
       if (!bank?.accountNumber) return false;
       const netPaise = toPaise(e.netPayoutCurrency ?? e.net);
       if (netPaise <= 0) return false;
@@ -140,7 +143,14 @@ export class PayoutBatchesService {
       .where(and(eq(payrollBankBatches.orgId, orgId), eq(payrollBankBatches.runId, runId)));
     const baseSeq = seqRow?.count ?? 0;
 
-    type ItemData = { runEmployeeId: number; userId: string; amount: string; accountMasked: string; ifsc: string | null };
+    type ItemData = {
+      runEmployeeId: number;
+      userId: string | null;
+      workerId: string | null;
+      amount: string;
+      accountMasked: string;
+      ifsc: string | null;
+    };
     type BatchResult = {
       batch: typeof payrollBankBatches.$inferSelect;
       items: Array<typeof payrollBankBatchItems.$inferSelect>;
@@ -177,14 +187,17 @@ export class PayoutBatchesService {
       const itemsData: ItemData[] = [];
 
       groupEmps.forEach((emp, idx) => {
-        const bank = decryptBankDetails(emp.bankDetails ?? null);
+        const payee = payeeByRunEmployee.get(emp.id);
+        const bank = payee?.bankDetails ?? null;
         if (!bank?.accountNumber) return;
         const bankCode = bank.ifsc ?? "";
         const effectiveAmount = emp.netPayoutCurrency ?? emp.net;
-        csvRows.push(csvRow(groupFormat, idx + 1, emp.name ?? emp.userId, bank.accountNumber, bankCode, currencyCode, toPaise(effectiveAmount), narrationLabel));
+        const payeeName = payee?.displayName ?? emp.userId ?? emp.workerId ?? "Payee";
+        csvRows.push(csvRow(groupFormat, idx + 1, payeeName, bank.accountNumber, bankCode, currencyCode, toPaise(effectiveAmount), narrationLabel));
         itemsData.push({
           runEmployeeId: emp.id,
           userId: emp.userId,
+          workerId: emp.workerId,
           amount: effectiveAmount,
           accountMasked: "XXXX" + bank.accountNumber.slice(-4),
           ifsc: bankCode || null,
@@ -233,6 +246,7 @@ export class PayoutBatchesService {
               batchId: batch.id,
               runEmployeeId: item.runEmployeeId,
               userId: item.userId,
+              workerId: item.workerId,
               amount: item.amount,
               accountMasked: item.accountMasked,
               ifsc: item.ifsc,
@@ -598,6 +612,7 @@ export class PayoutBatchesService {
     const byId = new Map(items.map((i) => [i.id, i]));
     const byUser = new Map<string, typeof items>();
     for (const it of items) {
+      if (!it.userId) continue;
       const list = byUser.get(it.userId) ?? [];
       list.push(it);
       byUser.set(it.userId, list);
@@ -689,7 +704,7 @@ export class PayoutBatchesService {
   }
 
   async getBankDetails(orgId: string, employeeUserId: string, actorId: string) {
-    await assertOrgMember(this.db, orgId, employeeUserId);
+    await assertPayrollPayeeEligible(this.db, orgId, employeeUserId);
 
     const user = await this.db.query.users.findFirst({
       where: eq(users.id, employeeUserId),

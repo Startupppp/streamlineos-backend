@@ -4,6 +4,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { accTaxCodes } from "../../../db/schema/accounting/finance-tax";
 import { CacheService } from "../../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { AuditService } from "../../../common/audit/audit.service";
 import { FinancePostingService } from "../../accounting/core/finance-posting.service";
 import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
@@ -35,8 +36,8 @@ export class TaxCodesService {
   ) {}
 
   async list(orgId: string, query: ListTaxCodesQuery) {
-    const cacheKey = `fin:tax-codes:${orgId}:${query.page}:${query.pageSize}:${query.taxType ?? ""}:${query.isActive ?? ""}`;
-    return this.cache.cached(cacheKey, async () => {
+    const cacheKey = `${query.page}:${query.pageSize}:${query.taxType ?? ""}:${query.isActive ?? ""}`;
+    return this.cache.cachedVersioned(CACHE_KEYS.finTaxCodesNamespace(orgId), cacheKey, async () => {
       const { limit, offset } = paginateOffset(query);
       const conditions = [eq(accTaxCodes.orgId, orgId)];
       if (query.taxType) conditions.push(eq(accTaxCodes.taxType, query.taxType));
@@ -92,7 +93,7 @@ export class TaxCodesService {
         })
         .returning();
 
-      await this.cache.invalidatePattern(`fin:tax-codes:${orgId}:*`);
+      await this.cache.invalidateNamespace(CACHE_KEYS.finTaxCodesNamespace(orgId));
 
       this.audit.log({
         action: "accounting.tax_code.create",
@@ -123,7 +124,7 @@ export class TaxCodesService {
         .where(and(eq(accTaxCodes.id, taxCodeId), eq(accTaxCodes.orgId, orgId)))
         .returning();
 
-      await this.cache.invalidatePattern(`fin:tax-codes:${orgId}:*`);
+      await this.cache.invalidateNamespace(CACHE_KEYS.finTaxCodesNamespace(orgId));
 
       this.audit.log({
         action: "accounting.tax_code.update",
@@ -183,7 +184,7 @@ export class TaxCodesService {
       })),
     );
 
-    await this.cache.invalidatePattern(`fin:tax-codes:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.finTaxCodesNamespace(orgId));
 
     this.audit.log({
       action: "accounting.tax_code.seed_defaults",

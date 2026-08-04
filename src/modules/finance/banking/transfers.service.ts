@@ -14,6 +14,7 @@ import {
 } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { FinancePostingService } from "../../accounting/core/finance-posting.service";
 import { paginateOffset, buildListResponse } from "../../../common/pagination/pagination";
 import { createHash } from "crypto";
@@ -184,7 +185,7 @@ export class TransfersService {
       return transfer;
     });
 
-    await this.cache.invalidatePattern(`fin:banking:accounts:${orgId}*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.finBankAccountsNamespace(orgId));
     await this.cache.invalidate(CACHE_TRANSFERS(orgId));
 
     this.audit.log({

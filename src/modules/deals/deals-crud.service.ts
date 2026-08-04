@@ -26,12 +26,13 @@ export class DealsCrudService {
 
   listDeals(orgId: string, userId: string, query: ListDealsInput, scope: DataScope) {
     const hash = Buffer.from(JSON.stringify({ ...query, userId, scope })).toString("base64");
-    return this.cache.cached(
-      CACHE_KEYS.dealsList(orgId, hash),
+    return this.cache.cachedVersioned(
+      `deals:list:${orgId}`,
+      hash,
       () => {
         const conditions: SQL[] = [
           eq(deals.orgId, orgId),
-          applyScope(scope, userId, { ownerColumn: deals.assignedToId }),
+          applyScope(scope, orgId, userId, { ownerColumn: deals.assignedToId }),
         ];
         if (query.stage) conditions.push(eq(deals.stage, query.stage));
         if (query.assignedToId) conditions.push(eq(deals.assignedToId, query.assignedToId));
@@ -99,7 +100,7 @@ export class DealsCrudService {
     await Promise.all([
       this.cache.invalidate(CACHE_KEYS.dealsForecast(orgId)),
       this.cache.invalidate(CACHE_KEYS.salesDashboard(orgId)),
-      this.cache.invalidatePattern(`deals:list:${orgId}:*`),
+      this.cache.invalidateNamespace(`deals:list:${orgId}`),
     ]);
 
     if (deal) {
@@ -132,7 +133,7 @@ export class DealsCrudService {
     await this.db.delete(deals).where(and(eq(deals.id, dealId), eq(deals.orgId, orgId)));
 
     await Promise.all([
-      this.cache.invalidatePattern(`deals:list:${orgId}:*`),
+      this.cache.invalidateNamespace(`deals:list:${orgId}`),
       this.cache.invalidate(CACHE_KEYS.dealsForecast(orgId)),
     ]);
 

@@ -7,6 +7,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { paginateOffset, buildListResponse } from "../../../common/pagination/pagination";
 import {
   accFixedAssets, accAssetCategories, accDepreciationSchedules,
@@ -31,8 +32,8 @@ export class AssetsService {
   ) {}
 
   async list(orgId: string, query: ListAssetsQuery) {
-    const cacheKey = `fin:assets:list:${orgId}:${query.page}:${query.pageSize}:${query.status ?? ""}:${query.categoryId ?? ""}`;
-    return this.cache.cached(cacheKey, async () => {
+    const cacheKey = `${query.page}:${query.pageSize}:${query.status ?? ""}:${query.categoryId ?? ""}`;
+    return this.cache.cachedVersioned(CACHE_KEYS.finAssetsListNamespace(orgId), cacheKey, async () => {
       const { limit, offset } = paginateOffset(query);
       const conditions = [eq(accFixedAssets.orgId, orgId)];
       if (query.status) conditions.push(eq(accFixedAssets.status, query.status));
@@ -126,7 +127,7 @@ export class AssetsService {
       resourceId: String(asset.id),
     });
 
-    await this.cache.invalidatePattern(`fin:assets:list:${u.orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.finAssetsListNamespace(u.orgId));
     return asset;
   }
 
@@ -163,7 +164,7 @@ export class AssetsService {
       .where(and(eq(accFixedAssets.id, assetId), eq(accFixedAssets.orgId, orgId)))
       .returning();
 
-    await this.cache.invalidatePattern(`fin:assets:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.finAssetsListNamespace(orgId));
     return updated;
   }
 
@@ -224,7 +225,7 @@ export class AssetsService {
       resourceId: String(assetId),
     });
 
-    await this.cache.invalidatePattern(`fin:assets:list:${u.orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.finAssetsListNamespace(u.orgId));
     return this.getOne(u.orgId, assetId);
   }
 
@@ -305,7 +306,7 @@ export class AssetsService {
       metadata: { disposalDate: input.disposalDate, amount: input.amount },
     });
 
-    await this.cache.invalidatePattern(`fin:assets:list:${u.orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.finAssetsListNamespace(u.orgId));
     return { assetId, journalEntryId: entry.id, entryNumber: entry.entryNumber };
   }
 

@@ -59,7 +59,7 @@ export class InvStockTransfersService {
       );
     }
     if (scope !== "all" && userId) {
-      conditions.push(applyScope(scope, userId, { ownerColumn: invStockTransfers.createdBy }));
+      conditions.push(applyScope(scope, orgId, userId, { ownerColumn: invStockTransfers.createdBy }));
     }
     const where = and(...conditions);
 
@@ -235,7 +235,7 @@ export class InvStockTransfersService {
 
     await Promise.all([
       this.engine.invalidateCaches(orgId),
-      this.cache.invalidatePattern(`inv:reservations:list:${orgId}:*`),
+      this.cache.invalidateNamespace(`inv:reservations:list:${orgId}`),
     ]);
   }
 
@@ -330,8 +330,8 @@ export class InvStockTransfersService {
 
     await Promise.all([
       this.cache.invalidate(CACHE_KEYS.invStockSummary(orgId)),
-      this.cache.invalidatePattern(CACHE_KEYS.invStockLevelPattern(orgId)),
-      this.cache.invalidatePattern(`inv:reservations:list:${orgId}:*`),
+      this.cache.invalidateNamespace(`inv:stock:levels:${orgId}`),
+      this.cache.invalidateNamespace(`inv:reservations:list:${orgId}`),
     ]);
   }
 }

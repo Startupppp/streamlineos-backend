@@ -27,27 +27,28 @@ function makeActor(overrides: Partial<CurrentUserContext> = {}): CurrentUserCont
 function makeFlexChain(results: unknown[]) {
   const resolved = Promise.resolve(results);
   const limitFn = jest.fn().mockResolvedValue(results);
-  const whereReturn: Record<string, unknown> = {
-    limit: limitFn,
-    offset: jest.fn().mockReturnValue({ limit: limitFn }),
-    then: resolved.then.bind(resolved),
-    catch: resolved.catch.bind(resolved),
-  };
-  const chain: Record<string, unknown> = {
-    from: jest.fn(),
-    innerJoin: jest.fn(),
-    leftJoin: jest.fn(),
-    where: jest.fn().mockReturnValue(whereReturn),
+  const thenable = {
     limit: limitFn,
     offset: jest.fn().mockReturnValue({ limit: limitFn }),
     orderBy: jest.fn(),
     then: resolved.then.bind(resolved),
     catch: resolved.catch.bind(resolved),
   };
+  (thenable.orderBy as jest.Mock).mockReturnValue(thenable);
+  const chain: Record<string, unknown> = {
+    from: jest.fn(),
+    innerJoin: jest.fn(),
+    leftJoin: jest.fn(),
+    where: jest.fn().mockReturnValue(thenable),
+    limit: limitFn,
+    offset: jest.fn().mockReturnValue({ limit: limitFn }),
+    orderBy: jest.fn().mockReturnValue(thenable),
+    then: resolved.then.bind(resolved),
+    catch: resolved.catch.bind(resolved),
+  };
   (chain.from as jest.Mock).mockReturnValue(chain);
   (chain.innerJoin as jest.Mock).mockReturnValue(chain);
   (chain.leftJoin as jest.Mock).mockReturnValue(chain);
-  (chain.orderBy as jest.Mock).mockReturnValue(chain);
   return chain;
 }
 
@@ -57,6 +58,7 @@ describe("ModuleAccessGroupsService — audit: group created", () => {
 
     const createdRow = { id: 42, name: "HR Admins", isSystem: false, version: 1 };
     const txMock = {
+      execute: jest.fn().mockResolvedValue([]),
       insert: jest.fn().mockReturnValue({
         values: jest.fn().mockReturnValue({
           returning: jest.fn().mockResolvedValue([createdRow]),
@@ -78,7 +80,7 @@ describe("ModuleAccessGroupsService — audit: group created", () => {
       providers: [
         ModuleAccessGroupsService,
         { provide: DRIZZLE, useValue: mockDb },
-        { provide: AccessService, useValue: { resolveUserPermissions: jest.fn() } },
+        { provide: AccessService, useValue: { resolveUserPermissions: jest.fn(), isModuleEnabled: jest.fn().mockResolvedValue(true) } },
         { provide: CacheService, useValue: { invalidate: jest.fn() } },
         { provide: AuditService, useValue: { log: auditLog } },
       ],
@@ -102,6 +104,7 @@ describe("ModuleAccessGroupsService — audit: group deleted", () => {
 
     const existingGroup = { id: 9, orgId: "org-1", moduleKey: "hr", isSystem: false, name: "Old Group" };
     const txMock = {
+      execute: jest.fn().mockResolvedValue([]),
       delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
     };
     const mockDb = {
@@ -119,7 +122,7 @@ describe("ModuleAccessGroupsService — audit: group deleted", () => {
       providers: [
         ModuleAccessGroupsService,
         { provide: DRIZZLE, useValue: mockDb },
-        { provide: AccessService, useValue: { resolveUserPermissions: jest.fn() } },
+        { provide: AccessService, useValue: { resolveUserPermissions: jest.fn(), isModuleEnabled: jest.fn().mockResolvedValue(true) } },
         { provide: CacheService, useValue: { invalidate: jest.fn() } },
         { provide: AuditService, useValue: { log: auditLog } },
       ],
@@ -143,6 +146,7 @@ describe("ModuleAccessGroupsService — audit: group member added", () => {
 
     const groupRow = { id: 9, orgId: "org-1", moduleKey: "hr" };
     const txMock = {
+      execute: jest.fn().mockResolvedValue([]),
       insert: jest.fn().mockReturnValue({
         values: jest.fn().mockReturnValue({
           onConflictDoNothing: jest.fn().mockResolvedValue(undefined),
@@ -156,7 +160,9 @@ describe("ModuleAccessGroupsService — audit: group member added", () => {
       ),
       query: {
         roles: { findFirst: jest.fn().mockResolvedValue(groupRow) },
-        organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 55 }) },
+        organizationMembers: {
+          findFirst: jest.fn().mockResolvedValue({ id: 55, status: "ACTIVE" }),
+        },
       },
     };
 
@@ -164,7 +170,7 @@ describe("ModuleAccessGroupsService — audit: group member added", () => {
       providers: [
         ModuleAccessGroupsService,
         { provide: DRIZZLE, useValue: mockDb },
-        { provide: AccessService, useValue: { resolveUserPermissions: jest.fn() } },
+        { provide: AccessService, useValue: { resolveUserPermissions: jest.fn(), isModuleEnabled: jest.fn().mockResolvedValue(true) } },
         { provide: CacheService, useValue: { invalidate: jest.fn() } },
         { provide: AuditService, useValue: { log: auditLog } },
       ],
@@ -202,6 +208,7 @@ describe("ModuleAccessService — audit: role permissions set with diff", () => 
     const existingGrants = [{ permissionKey: "hr:employees:view", scope: "all" }];
 
     const txMock = {
+      execute: jest.fn().mockResolvedValue([]),
       update: jest.fn().mockReturnValue({
         set: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
@@ -227,7 +234,7 @@ describe("ModuleAccessService — audit: role permissions set with diff", () => 
       providers: [
         ModuleAccessService,
         { provide: DRIZZLE, useValue: mockDb },
-        { provide: AccessService, useValue: { resolveUserPermissions: jest.fn() } },
+        { provide: AccessService, useValue: { resolveUserPermissions: jest.fn(), isModuleEnabled: jest.fn().mockResolvedValue(true) } },
         { provide: CacheService, useValue: { invalidate: jest.fn() } },
         { provide: AuditService, useValue: { log: auditLog } },
       ],
@@ -244,7 +251,7 @@ describe("ModuleAccessService — audit: role permissions set with diff", () => 
     const meta = call.metadata as Record<string, unknown>;
     expect(meta.moduleKey).toBe("hr");
     expect(meta.added).toEqual(expect.arrayContaining(["hr:employees:create"]));
-    expect(meta.removed).toEqual(expect.arrayContaining(["hr:employees:view"]));
+    expect(meta.removed).toEqual([]);
   });
 
   it("logs module_access.role_permissions_set with truncated=true when diff exceeds the cap", async () => {
@@ -267,6 +274,7 @@ describe("ModuleAccessService — audit: role permissions set with diff", () => 
     }));
 
     const txMock = {
+      execute: jest.fn().mockResolvedValue([]),
       update: jest.fn().mockReturnValue({
         set: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
@@ -292,7 +300,7 @@ describe("ModuleAccessService — audit: role permissions set with diff", () => 
       providers: [
         ModuleAccessService,
         { provide: DRIZZLE, useValue: mockDb },
-        { provide: AccessService, useValue: { resolveUserPermissions: jest.fn() } },
+        { provide: AccessService, useValue: { resolveUserPermissions: jest.fn(), isModuleEnabled: jest.fn().mockResolvedValue(true) } },
         { provide: CacheService, useValue: { invalidate: jest.fn() } },
         { provide: AuditService, useValue: { log: auditLog } },
       ],

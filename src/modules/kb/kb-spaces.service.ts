@@ -53,7 +53,7 @@ export class KbSpacesService {
     ];
     if (scope && scope !== "all") {
       baseConditions.push(
-        applyScope(scope, user.userId, { ownerColumn: kbSpaces.createdById }),
+        applyScope(scope, user.orgId, user.userId, { ownerColumn: kbSpaces.createdById }),
       );
     }
 

@@ -7,6 +7,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { JournalPostingService, type DraftLine } from "../../accounting/core/journal-posting.service";
 import { paginateOffset, buildListResponse } from "../../../common/pagination/pagination";
@@ -216,7 +217,7 @@ export class DepreciationRunsService {
       metadata: { periodKey, totalAmount: roundedTotal },
     });
 
-    await this.cache.invalidatePattern(`fin:assets:list:${u.orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.finAssetsListNamespace(u.orgId));
     return run;
   }
 

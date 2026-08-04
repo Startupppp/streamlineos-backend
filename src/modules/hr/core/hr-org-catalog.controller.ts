@@ -95,7 +95,7 @@ export class HrOrgCatalogController {
 
   @Get("locations")
   @UseGuards(PermissionGuard)
-  @RequirePermission("hr:employees:read")
+  @RequirePermission("hr:employees:view")
   listLocations(@CurrentUser() u: CurrentUserContext) {
     return this.catalog.listLocations(u.orgId);
   }
@@ -135,7 +135,7 @@ export class HrOrgCatalogController {
 
   @Get("roles")
   @UseGuards(PermissionGuard)
-  @RequirePermission("hr:employees:read")
+  @RequirePermission("hr:employees:view")
   listJobRoles(@CurrentUser() u: CurrentUserContext) {
     return this.catalog.listJobRoles(u.orgId);
   }
@@ -175,7 +175,7 @@ export class HrOrgCatalogController {
 
   @Get("levels")
   @UseGuards(PermissionGuard)
-  @RequirePermission("hr:employees:read")
+  @RequirePermission("hr:employees:view")
   listJobLevels(@CurrentUser() u: CurrentUserContext) {
     return this.catalog.listJobLevels(u.orgId);
   }
@@ -215,7 +215,7 @@ export class HrOrgCatalogController {
 
   @Get("teams")
   @UseGuards(PermissionGuard)
-  @RequirePermission("hr:employees:read")
+  @RequirePermission("hr:employees:view")
   listTeams(@CurrentUser() u: CurrentUserContext) {
     return this.catalog.listTeams(u.orgId);
   }
@@ -255,7 +255,7 @@ export class HrOrgCatalogController {
 
   @Get("headcount")
   @UseGuards(PermissionGuard)
-  @RequirePermission("hr:employees:read")
+  @RequirePermission("hr:employees:view")
   getHeadcount(
     @Query("groupBy") groupBy: string = "department",
     @CurrentUser() u: CurrentUserContext,

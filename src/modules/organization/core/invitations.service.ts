@@ -8,7 +8,19 @@ import {
   Logger,
 } from "@nestjs/common";
 import { randomUUID, randomBytes, createHash } from "node:crypto";
-import { and, count, desc, eq, gt, ilike, isNull, lt, inArray, or, sql } from "drizzle-orm";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  gt,
+  ilike,
+  isNull,
+  lt,
+  inArray,
+  or,
+  sql,
+} from "drizzle-orm";
 import { addDays, addMinutes } from "date-fns";
 import { hashToken } from "../../../common/security/token.util";
 import { withPublicToken } from "../../../common/tenant/with-public-token";
@@ -22,6 +34,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { bustUsersStatsCache } from "../../../common/cache/bust-users-stats";
+import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
 import { EmailService } from "../../email/email.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import {
@@ -34,6 +47,7 @@ import {
   users,
 } from "../../../db/schema";
 import type { AcceptInvitationInput } from "./dto/organization.schemas";
+import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 
 export interface InviteActor {
   userId: string;
@@ -80,8 +94,94 @@ export class InvitationsService {
     }
   }
 
-  private assertMayInviteWithRole(orgId: string, actor: InviteActor, role: string): Promise<void> {
+  private assertMayInviteWithRole(
+    orgId: string,
+    actor: InviteActor,
+    role: string,
+  ): Promise<void> {
     return assertMayGrantRole(this.access, orgId, actor, role);
+  }
+
+  private async requireActiveOrg(orgId: string): Promise<{ name: string }> {
+    const org = await this.db.query.organizations.findFirst({
+      where: eq(organizations.id, orgId),
+      columns: { name: true, status: true, deletedAt: true },
+    });
+    if (!org || org.status !== "ACTIVE" || org.deletedAt !== null) {
+      throw new BadRequestException(
+        "This organization is archived or unavailable. Restore it before inviting or accepting members.",
+      );
+    }
+    return { name: org.name };
+  }
+
+  private async lockPendingInvitation(
+    tx: DbOrTx,
+    invitationId: string,
+    tokenHash: string,
+  ) {
+    const [invitation] = await tx
+      .select({
+        id: invitations.id,
+        orgId: invitations.orgId,
+        email: invitations.email,
+        role: invitations.role,
+      })
+      .from(invitations)
+      .where(
+        and(
+          eq(invitations.id, invitationId),
+          eq(invitations.tokenHash, tokenHash),
+          eq(invitations.status, "PENDING"),
+          gt(invitations.expiresAt, new Date()),
+          isNull(invitations.acceptedAt),
+        ),
+      )
+      .for("update")
+      .limit(1);
+    if (!invitation) {
+      throw new ConflictException("Invitation has already been accepted");
+    }
+    return invitation;
+  }
+
+  async revokeAllPending(orgId: string, existingTx?: DbOrTx): Promise<number> {
+    const now = new Date();
+    const revoke = async (tx: DbOrTx) => {
+      const rows = await tx
+        .update(invitations)
+        .set({
+          status: "REVOKED",
+          revokedAt: now,
+          revokedByMembershipId: null,
+        })
+        .where(
+          and(
+            eq(invitations.orgId, orgId),
+            eq(invitations.status, "PENDING"),
+            isNull(invitations.acceptedAt),
+          ),
+        )
+        .returning({ id: invitations.id });
+      if (rows.length > 0) {
+        await tx.insert(invitationEvents).values(
+          rows.map((r) => ({
+            orgId,
+            invitationId: r.id,
+            event: "REVOKED" as const,
+            actorMembershipId: null,
+          })),
+        );
+      }
+      return rows;
+    };
+    const updated = existingTx
+      ? await revoke(existingTx)
+      : await runInTenantTransaction(this.db, revoke, { orgId });
+    if (!existingTx && updated.length > 0) {
+      await bustUsersStatsCache(this.cache, orgId);
+    }
+    return updated.length;
   }
 
   async invite(
@@ -89,9 +189,15 @@ export class InvitationsService {
     actor: InviteActor,
     email: string,
     role: string,
-  ): Promise<{ success: true; invitationId: string; organizationName: string; resent: boolean }> {
+  ): Promise<{
+    success: true;
+    invitationId: string;
+    organizationName: string;
+    resent: boolean;
+  }> {
     const actorUserId = actor.userId;
     await this.assertMayInviteWithRole(orgId, actor, role);
+    const org = await this.requireActiveOrg(orgId);
 
     const existingUser = await this.db.query.users.findFirst({
       where: eq(users.email, email),
@@ -106,7 +212,10 @@ export class InvitationsService {
         columns: { status: true },
       });
       if (existingMember) {
-        if (existingMember.status === "SUSPENDED" || existingMember.status === "LEFT") {
+        if (
+          existingMember.status === "SUSPENDED" ||
+          existingMember.status === "LEFT"
+        ) {
           throw new ConflictException(
             "This person was archived/suspended in this organization. Restore them from Users instead of inviting again.",
           );
@@ -115,16 +224,10 @@ export class InvitationsService {
       }
     }
 
-    const [org, allowedDomainRows] = await Promise.all([
-      this.db.query.organizations.findFirst({
-        where: eq(organizations.id, orgId),
-        columns: { name: true },
-      }),
-      this.db
-        .select({ domain: organizationAllowedEmailDomains.domain })
-        .from(organizationAllowedEmailDomains)
-        .where(eq(organizationAllowedEmailDomains.orgId, orgId)),
-    ]);
+    const allowedDomainRows = await this.db
+      .select({ domain: organizationAllowedEmailDomains.domain })
+      .from(organizationAllowedEmailDomains)
+      .where(eq(organizationAllowedEmailDomains.orgId, orgId));
 
     if (allowedDomainRows.length > 0) {
       const emailDomain = email.split("@")[1]?.toLowerCase();
@@ -138,54 +241,58 @@ export class InvitationsService {
 
     const now = new Date();
 
-    const pendingResult = await this.db.transaction(async (tx) => {
-      const pending = await tx
-        .select()
-        .from(invitations)
-        .where(
-          and(
-            eq(invitations.email, email),
-            eq(invitations.orgId, orgId),
-            gt(invitations.expiresAt, now),
-            isNull(invitations.acceptedAt),
-          ),
-        )
-        .for("update")
-        .limit(1);
-      const pendingInvitation = pending[0];
-      if (!pendingInvitation) return null;
+    const pendingResult = await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const pending = await tx
+          .select()
+          .from(invitations)
+          .where(
+            and(
+              eq(invitations.email, email),
+              eq(invitations.orgId, orgId),
+              gt(invitations.expiresAt, now),
+              isNull(invitations.acceptedAt),
+            ),
+          )
+          .for("update")
+          .limit(1);
+        const pendingInvitation = pending[0];
+        if (!pendingInvitation) return null;
 
-      const rawToken = randomBytes(32).toString("hex");
-      const newExpiresAt = addDays(now, 7);
+        const rawToken = randomBytes(32).toString("hex");
+        const newExpiresAt = addDays(now, 7);
 
-      await tx
-        .update(invitations)
-        .set({
-          tokenHash: hashToken(rawToken),
-          expiresAt: newExpiresAt,
-          role,
-          invitedBy: actorUserId,
-          status: "PENDING",
-          revokedAt: null,
-          revokedByMembershipId: null,
-          declinedAt: null,
-        })
-        .where(eq(invitations.id, pendingInvitation.id));
+        await tx
+          .update(invitations)
+          .set({
+            tokenHash: hashToken(rawToken),
+            expiresAt: newExpiresAt,
+            role,
+            invitedBy: actorUserId,
+            status: "PENDING",
+            revokedAt: null,
+            revokedByMembershipId: null,
+            declinedAt: null,
+          })
+          .where(eq(invitations.id, pendingInvitation.id));
 
-      await tx.insert(invitationEvents).values({
-        orgId,
-        invitationId: pendingInvitation.id,
-        event: "RESENT",
-        actorMembershipId: null,
-      });
+        await tx.insert(invitationEvents).values({
+          orgId,
+          invitationId: pendingInvitation.id,
+          event: "RESENT",
+          actorMembershipId: null,
+        });
 
-      return { pendingInvitation, rawToken };
-    });
+        return { pendingInvitation, rawToken };
+      },
+      { orgId },
+    );
 
     if (pendingResult) {
       const { pendingInvitation, rawToken } = pendingResult;
       void this.email
-        .sendInvitationEmail(email, rawToken, org?.name ?? "Your Organization")
+        .sendInvitationEmail(email, rawToken, org.name)
         .catch((err: unknown) =>
           this.recordDeliveryFailure(orgId, pendingInvitation.id, err),
         );
@@ -200,55 +307,70 @@ export class InvitationsService {
       });
 
       await bustUsersStatsCache(this.cache, orgId);
-      return { success: true, invitationId: pendingInvitation.id, organizationName: org?.name ?? "", resent: true };
+      return {
+        success: true,
+        invitationId: pendingInvitation.id,
+        organizationName: org.name,
+        resent: true,
+      };
     }
-
-    await this.planLimits.assertWithinLimit(orgId, "members");
 
     const invitationId = randomUUID();
     const rawToken = randomBytes(32).toString("hex");
     const expiresAt = addDays(now, 7);
 
     try {
-      await this.db.transaction(async (tx) => {
-        await tx
-          .delete(invitations)
-          .where(
-            and(
-              eq(invitations.email, email),
-              eq(invitations.orgId, orgId),
-              isNull(invitations.acceptedAt),
-            ),
+      await runInTenantTransaction(
+        this.db,
+        async (tx) => {
+          await tx.execute(
+            sql`SELECT pg_advisory_xact_lock(hashtextextended(${`quota:${orgId}:members`}, 0))`,
           );
+          await this.planLimits.assertWithinLimit(orgId, "members", 1, tx);
+          await tx
+            .delete(invitations)
+            .where(
+              and(
+                eq(invitations.email, email),
+                eq(invitations.orgId, orgId),
+                isNull(invitations.acceptedAt),
+              ),
+            );
 
-        await tx.insert(invitations).values({
-          id: invitationId,
-          email,
-          tokenHash: hashToken(rawToken),
-          orgId,
-          role,
-          invitedBy: actorUserId,
-          expiresAt,
-        });
+          await tx.insert(invitations).values({
+            id: invitationId,
+            email,
+            tokenHash: hashToken(rawToken),
+            orgId,
+            role,
+            invitedBy: actorUserId,
+            expiresAt,
+          });
 
-        await tx.insert(invitationEvents).values({
-          orgId,
-          invitationId,
-          event: "CREATED",
-          actorMembershipId: null,
-        });
-      });
+          await tx.insert(invitationEvents).values({
+            orgId,
+            invitationId,
+            event: "CREATED",
+            actorMembershipId: null,
+          });
+        },
+        { orgId },
+      );
     } catch (err) {
       const code = (err as { code?: string }).code;
       if (code === "23505") {
-        throw new ConflictException("An invitation is already pending for this email");
+        throw new ConflictException(
+          "An invitation is already pending for this email",
+        );
       }
       throw err;
     }
 
     void this.email
-      .sendInvitationEmail(email, rawToken, org?.name ?? "Your Organization")
-      .catch((err: unknown) => this.recordDeliveryFailure(orgId, invitationId, err));
+      .sendInvitationEmail(email, rawToken, org.name)
+      .catch((err: unknown) =>
+        this.recordDeliveryFailure(orgId, invitationId, err),
+      );
 
     this.audit.log({
       action: "user.invited",
@@ -260,7 +382,12 @@ export class InvitationsService {
     });
 
     await bustUsersStatsCache(this.cache, orgId);
-    return { success: true, invitationId, organizationName: org?.name ?? "", resent: false };
+    return {
+      success: true,
+      invitationId,
+      organizationName: org.name,
+      resent: false,
+    };
   }
 
   async bulkInvite(
@@ -269,7 +396,12 @@ export class InvitationsService {
     emails: string[],
     role: string,
   ): Promise<{
-    results: Array<{ email: string; success: boolean; invitationId?: string; error?: string }>;
+    results: Array<{
+      email: string;
+      success: boolean;
+      invitationId?: string;
+      error?: string;
+    }>;
   }> {
     const results: Array<{
       email: string;
@@ -281,7 +413,11 @@ export class InvitationsService {
     for (const email of emails) {
       try {
         const result = await this.invite(orgId, actor, email, role);
-        results.push({ email, success: true, invitationId: result.invitationId });
+        results.push({
+          email,
+          success: true,
+          invitationId: result.invitationId,
+        });
       } catch (err) {
         results.push({
           email,
@@ -372,7 +508,10 @@ export class InvitationsService {
         .orderBy(desc(invitations.createdAt))
         .limit(limit)
         .offset(offset),
-      this.db.select({ total: count() }).from(invitations).where(and(...conditions)),
+      this.db
+        .select({ total: count() })
+        .from(invitations)
+        .where(and(...conditions)),
     ]);
 
     return {
@@ -386,9 +525,12 @@ export class InvitationsService {
     };
   }
 
-  async validate(
-    token: string,
-  ): Promise<{ email: string; organizationName: string; role: string; userExists: boolean }> {
+  async validate(token: string): Promise<{
+    email: string;
+    organizationName: string;
+    role: string;
+    userExists: boolean;
+  }> {
     const invitation = await this.db.query.invitations.findFirst({
       where: and(
         eq(invitations.tokenHash, hashToken(token)),
@@ -397,13 +539,11 @@ export class InvitationsService {
         isNull(invitations.acceptedAt),
       ),
     });
-    if (!invitation) throw new NotFoundException("Invalid or expired invitation");
+    if (!invitation)
+      throw new NotFoundException("Invalid or expired invitation");
 
     const [org, existingUser] = await Promise.all([
-      this.db.query.organizations.findFirst({
-        where: eq(organizations.id, invitation.orgId),
-        columns: { name: true },
-      }),
+      this.requireActiveOrg(invitation.orgId),
       this.db.query.users.findFirst({
         where: eq(users.email, invitation.email),
         columns: { id: true },
@@ -412,13 +552,15 @@ export class InvitationsService {
 
     return {
       email: invitation.email,
-      organizationName: org?.name ?? "Unknown",
+      organizationName: org.name,
       role: invitation.role,
       userExists: !!existingUser,
     };
   }
 
-  async accept(input: AcceptInvitationInput): Promise<{ ok: boolean; autoLoginToken?: string }> {
+  async accept(
+    input: AcceptInvitationInput,
+  ): Promise<{ ok: boolean; autoLoginToken?: string }> {
     const tokenHash = hashToken(input.token);
     const invitation = await withPublicToken(this.db, tokenHash, (tx) =>
       tx.query.invitations.findFirst({
@@ -430,7 +572,9 @@ export class InvitationsService {
         ),
       }),
     );
-    if (!invitation) throw new NotFoundException("Invalid or expired invitation");
+    if (!invitation)
+      throw new NotFoundException("Invalid or expired invitation");
+    await this.requireActiveOrg(invitation.orgId);
     const invitedOrgId = invitation.orgId;
 
     const existingUser = await this.db.query.users.findFirst({
@@ -438,13 +582,14 @@ export class InvitationsService {
     });
 
     if (existingUser) {
-      const existingMembership = await this.db.query.organizationMembers.findFirst({
-        where: and(
-          eq(organizationMembers.userId, existingUser.id),
-          eq(organizationMembers.orgId, invitation.orgId),
-        ),
-        columns: { status: true },
-      });
+      const existingMembership =
+        await this.db.query.organizationMembers.findFirst({
+          where: and(
+            eq(organizationMembers.userId, existingUser.id),
+            eq(organizationMembers.orgId, invitation.orgId),
+          ),
+          columns: { status: true },
+        });
       if (existingMembership) {
         if (
           existingMembership.status === "SUSPENDED" ||
@@ -454,64 +599,115 @@ export class InvitationsService {
             "Your membership in this organization is archived or suspended. Ask an admin to restore you from Users.",
           );
         }
-        throw new ConflictException("You are already a member of this organization");
+        throw new ConflictException(
+          "You are already a member of this organization",
+        );
       }
 
       const autoLoginToken = randomBytes(32).toString("hex");
-      await runInTenantTransaction(this.db, async (tx) => {
-        try {
-          await this.planLimits.assertWithinLimit(invitation.orgId, "members", 0);
-        } catch (err) {
-          if (err instanceof ForbiddenException) {
-            throw new ForbiddenException(
-              "This organization has reached its member limit. Ask an admin to upgrade the plan or free a seat.",
+      await runInTenantTransaction(
+        this.db,
+        async (tx) => {
+          const lockedInvitation = await this.lockPendingInvitation(
+            tx,
+            invitation.id,
+            tokenHash,
+          );
+          await tx.execute(
+            sql`SELECT pg_advisory_xact_lock(hashtextextended(${`quota:${invitation.orgId}:members`}, 0))`,
+          );
+          try {
+            await this.planLimits.assertWithinLimit(
+              invitation.orgId,
+              "members",
+              0,
+              tx,
+            );
+          } catch (err) {
+            if (err instanceof ForbiddenException) {
+              throw new ForbiddenException(
+                "This organization has reached its member limit. Ask an admin to upgrade the plan or free a seat.",
+              );
+            }
+            throw err;
+          }
+          const inserted = await tx
+            .insert(organizationMembers)
+            .values({
+              userId: existingUser.id,
+              orgId: lockedInvitation.orgId,
+              role: lockedInvitation.role,
+            })
+            .onConflictDoNothing()
+            .returning({ id: organizationMembers.id });
+          const membershipId = inserted[0]?.id;
+          if (membershipId === undefined) {
+            throw new ConflictException(
+              "You are already a member of this organization",
             );
           }
-          throw err;
-        }
-        const inserted = await tx
-          .insert(organizationMembers)
-          .values({ userId: existingUser.id, orgId: invitation.orgId, role: invitation.role })
-          .onConflictDoNothing()
-          .returning({ id: organizationMembers.id });
-        const membershipId = inserted[0]?.id ?? null;
-        if (membershipId !== null)
-          await syncStructuralRoleAssignment(tx, invitation.orgId, membershipId, invitation.role);
+          await syncStructuralRoleAssignment(
+            tx,
+            lockedInvitation.orgId,
+            membershipId,
+            lockedInvitation.role,
+          );
 
-        await tx
-          .update(users)
-          .set({ lastActiveOrgId: invitation.orgId })
-          .where(eq(users.id, existingUser.id));
-        const claimedRows = await tx
-          .update(invitations)
-          .set({
-            acceptedAt: new Date(),
-            status: "ACCEPTED",
-            ...(membershipId !== null ? { acceptedMembershipId: membershipId } : {}),
-          })
-          .where(and(eq(invitations.id, invitation.id), eq(invitations.status, "PENDING"), isNull(invitations.acceptedAt)))
-          .returning({ id: invitations.id });
-        if (claimedRows.length === 0) throw new NotFoundException("Invalid or expired invitation");
-        await tx.insert(invitationEvents).values({
-          orgId: invitation.orgId,
-          invitationId: invitation.id,
-          event: "ACCEPTED",
-          actorMembershipId: membershipId,
-        });
-        await tx.insert(magicLinkTokens).values({
-          id: randomUUID(),
-          userId: existingUser.id,
-          tokenHash: createHash("sha256").update(autoLoginToken).digest("hex"),
-          expiresAt: addMinutes(new Date(), 10),
-        });
-      }, { orgId: invitedOrgId });
+          await tx
+            .update(users)
+            .set({ lastActiveOrgId: lockedInvitation.orgId })
+            .where(eq(users.id, existingUser.id));
+          const claimedRows = await tx
+            .update(invitations)
+            .set({
+              acceptedAt: new Date(),
+              status: "ACCEPTED",
+              acceptedMembershipId: membershipId,
+            })
+            .where(
+              and(
+                eq(invitations.id, invitation.id),
+                eq(invitations.status, "PENDING"),
+                isNull(invitations.acceptedAt),
+              ),
+            )
+            .returning({ id: invitations.id });
+          if (claimedRows.length === 0)
+            throw new NotFoundException("Invalid or expired invitation");
+          await tx.insert(invitationEvents).values({
+            orgId: invitation.orgId,
+            invitationId: invitation.id,
+            event: "ACCEPTED",
+            actorMembershipId: membershipId,
+          });
+          await tx.insert(magicLinkTokens).values({
+            id: randomUUID(),
+            userId: existingUser.id,
+            tokenHash: createHash("sha256")
+              .update(autoLoginToken)
+              .digest("hex"),
+            expiresAt: addMinutes(new Date(), 10),
+          });
+        },
+        { orgId: invitedOrgId },
+      );
       await Promise.all([
         this.cache.invalidate(CACHE_KEYS.userSession(existingUser.id)),
-        this.cache.invalidatePattern(CACHE_KEYS.orgMembersListPattern(invitation.orgId)),
-        this.cache.invalidatePattern(CACHE_KEYS.orgMembersSimplePattern(invitation.orgId)),
-        this.cache.invalidate(CACHE_KEYS.rbacDiscoveryMembers(invitation.orgId)),
-        this.cache.invalidate(CACHE_KEYS.moduleAccessCandidates(invitation.orgId)),
+        this.cache.invalidateNamespace(
+          CACHE_KEYS.orgMembersListNamespace(invitation.orgId),
+        ),
+        this.cache.invalidate(
+          CACHE_KEYS.rbacDiscoveryMembers(invitation.orgId),
+        ),
+        this.cache.invalidate(
+          CACHE_KEYS.moduleAccessCandidates(invitation.orgId),
+        ),
         bustUsersStatsCache(this.cache, invitation.orgId),
+        bustMembershipStatusCache(
+          this.cache,
+          existingUser.id,
+          invitation.orgId,
+        ),
       ]);
 
       return { ok: true, autoLoginToken };
@@ -526,58 +722,97 @@ export class InvitationsService {
 
     const autoLoginToken = randomBytes(32).toString("hex");
     try {
-      await runInTenantTransaction(this.db, async (tx) => {
-        try {
-          await this.planLimits.assertWithinLimit(invitation.orgId, "members", 0);
-        } catch (err) {
-          if (err instanceof ForbiddenException) {
-            throw new ForbiddenException(
-              "This organization has reached its member limit. Ask an admin to upgrade the plan or free a seat.",
+      await runInTenantTransaction(
+        this.db,
+        async (tx) => {
+          const lockedInvitation = await this.lockPendingInvitation(
+            tx,
+            invitation.id,
+            tokenHash,
+          );
+          await tx.execute(
+            sql`SELECT pg_advisory_xact_lock(hashtextextended(${`quota:${invitation.orgId}:members`}, 0))`,
+          );
+          try {
+            await this.planLimits.assertWithinLimit(
+              invitation.orgId,
+              "members",
+              0,
+              tx,
+            );
+          } catch (err) {
+            if (err instanceof ForbiddenException) {
+              throw new ForbiddenException(
+                "This organization has reached its member limit. Ask an admin to upgrade the plan or free a seat.",
+              );
+            }
+            throw err;
+          }
+          await tx.insert(users).values({
+            id: userId,
+            email: lockedInvitation.email,
+            name: fullName,
+            firstName,
+            lastName,
+            emailVerified: new Date(),
+            lastActiveOrgId: lockedInvitation.orgId,
+          });
+          const inserted = await tx
+            .insert(organizationMembers)
+            .values({
+              userId,
+              orgId: lockedInvitation.orgId,
+              role: lockedInvitation.role,
+            })
+            .onConflictDoNothing()
+            .returning({ id: organizationMembers.id });
+          const membershipId = inserted[0]?.id;
+          if (membershipId === undefined) {
+            throw new ConflictException(
+              "You are already a member of this organization",
             );
           }
-          throw err;
-        }
-        await tx.insert(users).values({
-          id: userId,
-          email: invitation.email,
-          name: fullName,
-          firstName,
-          lastName,
-          emailVerified: new Date(),
-          lastActiveOrgId: invitation.orgId,
-        });
-        const inserted = await tx
-          .insert(organizationMembers)
-          .values({ userId, orgId: invitation.orgId, role: invitation.role })
-          .onConflictDoNothing()
-          .returning({ id: organizationMembers.id });
-        const membershipId = inserted[0]?.id ?? null;
-        if (membershipId !== null)
-          await syncStructuralRoleAssignment(tx, invitation.orgId, membershipId, invitation.role);
+          await syncStructuralRoleAssignment(
+            tx,
+            lockedInvitation.orgId,
+            membershipId,
+            lockedInvitation.role,
+          );
 
-        const claimedRows = await tx
-          .update(invitations)
-          .set({
-            acceptedAt: new Date(),
-            status: "ACCEPTED",
-            ...(membershipId !== null ? { acceptedMembershipId: membershipId } : {}),
-          })
-          .where(and(eq(invitations.id, invitation.id), eq(invitations.status, "PENDING"), isNull(invitations.acceptedAt)))
-          .returning({ id: invitations.id });
-        if (claimedRows.length === 0) throw new NotFoundException("Invalid or expired invitation");
-        await tx.insert(invitationEvents).values({
-          orgId: invitation.orgId,
-          invitationId: invitation.id,
-          event: "ACCEPTED",
-          actorMembershipId: membershipId,
-        });
-        await tx.insert(magicLinkTokens).values({
-          id: randomUUID(),
-          userId,
-          tokenHash: createHash("sha256").update(autoLoginToken).digest("hex"),
-          expiresAt: addMinutes(new Date(), 10),
-        });
-      }, { orgId: invitedOrgId });
+          const claimedRows = await tx
+            .update(invitations)
+            .set({
+              acceptedAt: new Date(),
+              status: "ACCEPTED",
+              acceptedMembershipId: membershipId,
+            })
+            .where(
+              and(
+                eq(invitations.id, invitation.id),
+                eq(invitations.status, "PENDING"),
+                isNull(invitations.acceptedAt),
+              ),
+            )
+            .returning({ id: invitations.id });
+          if (claimedRows.length === 0)
+            throw new NotFoundException("Invalid or expired invitation");
+          await tx.insert(invitationEvents).values({
+            orgId: invitation.orgId,
+            invitationId: invitation.id,
+            event: "ACCEPTED",
+            actorMembershipId: membershipId,
+          });
+          await tx.insert(magicLinkTokens).values({
+            id: randomUUID(),
+            userId,
+            tokenHash: createHash("sha256")
+              .update(autoLoginToken)
+              .digest("hex"),
+            expiresAt: addMinutes(new Date(), 10),
+          });
+        },
+        { orgId: invitedOrgId },
+      );
     } catch (err) {
       const code = (err as { code?: string }).code;
       if (code === "23505") {
@@ -587,11 +822,15 @@ export class InvitationsService {
     }
     await Promise.all([
       this.cache.invalidate(CACHE_KEYS.userSession(userId)),
-      this.cache.invalidatePattern(CACHE_KEYS.orgMembersListPattern(invitation.orgId)),
-      this.cache.invalidatePattern(CACHE_KEYS.orgMembersSimplePattern(invitation.orgId)),
+      this.cache.invalidateNamespace(
+        CACHE_KEYS.orgMembersListNamespace(invitation.orgId),
+      ),
       this.cache.invalidate(CACHE_KEYS.rbacDiscoveryMembers(invitation.orgId)),
-      this.cache.invalidate(CACHE_KEYS.moduleAccessCandidates(invitation.orgId)),
+      this.cache.invalidate(
+        CACHE_KEYS.moduleAccessCandidates(invitation.orgId),
+      ),
       bustUsersStatsCache(this.cache, invitation.orgId),
+      bustMembershipStatusCache(this.cache, userId, invitation.orgId),
     ]);
 
     return { ok: true, autoLoginToken };
@@ -602,6 +841,8 @@ export class InvitationsService {
     invitationId: string,
     actorUserId: string,
   ): Promise<{ success: true }> {
+    const org = await this.requireActiveOrg(orgId);
+
     const invitation = await this.db.query.invitations.findFirst({
       where: and(
         eq(invitations.id, invitationId),
@@ -609,60 +850,70 @@ export class InvitationsService {
         isNull(invitations.acceptedAt),
       ),
     });
-    if (!invitation) throw new NotFoundException("Invitation not found or already accepted");
+    if (!invitation)
+      throw new NotFoundException("Invitation not found or already accepted");
 
     const rawToken = randomBytes(32).toString("hex");
     const newExpiresAt = addDays(new Date(), 7);
 
     const actorMembership = await this.db.query.organizationMembers.findFirst({
-      where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, actorUserId)),
+      where: and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, actorUserId),
+      ),
       columns: { id: true },
     });
 
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(invitations)
-        .set({
-          tokenHash: hashToken(rawToken),
-          expiresAt: newExpiresAt,
-          status: "PENDING",
-          revokedAt: null,
-          revokedByMembershipId: null,
-          declinedAt: null,
-        })
-        .where(eq(invitations.id, invitationId));
-      await tx.insert(invitationEvents).values({
-        orgId,
-        invitationId,
-        event: "RESENT",
-        actorMembershipId: actorMembership?.id ?? null,
-      });
-    });
+    await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const updated = await tx
+          .update(invitations)
+          .set({
+            tokenHash: hashToken(rawToken),
+            expiresAt: newExpiresAt,
+            status: "PENDING",
+            revokedAt: null,
+            revokedByMembershipId: null,
+            declinedAt: null,
+          })
+          .where(
+            and(
+              eq(invitations.id, invitationId),
+              eq(invitations.orgId, orgId),
+              eq(invitations.status, invitation.status),
+              isNull(invitations.acceptedAt),
+            ),
+          )
+          .returning({ id: invitations.id });
+        if (updated.length === 0) {
+          throw new NotFoundException("Invitation not found or already accepted");
+        }
+        await tx.insert(invitationEvents).values({
+          orgId,
+          invitationId,
+          event: "RESENT",
+          actorMembershipId: actorMembership?.id ?? null,
+        });
+      },
+      { orgId },
+    );
 
-    const [org, inviter] = await Promise.all([
-      this.db.query.organizations.findFirst({
-        where: eq(organizations.id, orgId),
-        columns: { name: true },
-      }),
-      this.db.query.users.findFirst({
-        where: eq(users.id, actorUserId),
-        columns: { name: true, firstName: true, lastName: true },
-      }),
-    ]);
+    const inviter = await this.db.query.users.findFirst({
+      where: eq(users.id, actorUserId),
+      columns: { name: true, firstName: true, lastName: true },
+    });
 
     const inviterName =
       inviter?.firstName && inviter?.lastName
         ? `${inviter.firstName} ${inviter.lastName}`
-        : inviter?.name ?? undefined;
+        : (inviter?.name ?? undefined);
 
     void this.email
-      .sendInvitationEmail(
-        invitation.email,
-        rawToken,
-        org?.name ?? "Your Organization",
-        inviterName,
-      )
-      .catch((err: unknown) => this.recordDeliveryFailure(orgId, invitationId, err));
+      .sendInvitationEmail(invitation.email, rawToken, org.name, inviterName)
+      .catch((err: unknown) =>
+        this.recordDeliveryFailure(orgId, invitationId, err),
+      );
 
     this.audit.log({
       action: "user.invitation.resent",
@@ -707,18 +958,34 @@ export class InvitationsService {
       columns: { id: true },
     });
 
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(invitations)
-        .set({ role })
-        .where(eq(invitations.id, invitationId));
-      await tx.insert(invitationEvents).values({
-        orgId,
-        invitationId,
-        event: "ROLE_CHANGED",
-        actorMembershipId: actorMembership?.id ?? null,
-      });
-    });
+    await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const updated = await tx
+          .update(invitations)
+          .set({ role })
+          .where(
+            and(
+              eq(invitations.id, invitationId),
+              eq(invitations.orgId, orgId),
+              eq(invitations.status, invitation.status),
+              eq(invitations.role, invitation.role),
+              isNull(invitations.acceptedAt),
+            ),
+          )
+          .returning({ id: invitations.id });
+        if (updated.length === 0) {
+          throw new NotFoundException("Invitation not found or already accepted");
+        }
+        await tx.insert(invitationEvents).values({
+          orgId,
+          invitationId,
+          event: "ROLE_CHANGED",
+          actorMembershipId: actorMembership?.id ?? null,
+        });
+      },
+      { orgId },
+    );
 
     this.audit.log({
       action: "user.invitation.role_changed",
@@ -745,7 +1012,8 @@ export class InvitationsService {
         isNull(invitations.acceptedAt),
       ),
     });
-    if (!invitation) throw new NotFoundException("Invitation not found or already accepted");
+    if (!invitation)
+      throw new NotFoundException("Invitation not found or already accepted");
 
     const actorMembership = await this.db.query.organizationMembers.findFirst({
       where: and(
@@ -755,22 +1023,37 @@ export class InvitationsService {
       columns: { id: true },
     });
 
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(invitations)
-        .set({
-          status: "REVOKED",
-          revokedAt: new Date(),
-          revokedByMembershipId: actorMembership?.id ?? null,
-        })
-        .where(eq(invitations.id, invitationId));
-      await tx.insert(invitationEvents).values({
-        orgId,
-        invitationId,
-        event: "REVOKED",
-        actorMembershipId: actorMembership?.id ?? null,
-      });
-    });
+    await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const updated = await tx
+          .update(invitations)
+          .set({
+            status: "REVOKED",
+            revokedAt: new Date(),
+            revokedByMembershipId: actorMembership?.id ?? null,
+          })
+          .where(
+            and(
+              eq(invitations.id, invitationId),
+              eq(invitations.orgId, orgId),
+              eq(invitations.status, invitation.status),
+              isNull(invitations.acceptedAt),
+            ),
+          )
+          .returning({ id: invitations.id });
+        if (updated.length === 0) {
+          throw new NotFoundException("Invitation not found or already accepted");
+        }
+        await tx.insert(invitationEvents).values({
+          orgId,
+          invitationId,
+          event: "REVOKED",
+          actorMembershipId: actorMembership?.id ?? null,
+        });
+      },
+      { orgId },
+    );
 
     this.audit.log({
       action: "user.invitation.cancelled",
@@ -811,7 +1094,9 @@ export class InvitationsService {
       return rows;
     });
     const orgIds = [...new Set(updated.map((r) => r.orgId))];
-    await Promise.all(orgIds.map((orgId) => bustUsersStatsCache(this.cache, orgId)));
+    await Promise.all(
+      orgIds.map((orgId) => bustUsersStatsCache(this.cache, orgId)),
+    );
     return { expired: updated.length };
   }
 }

@@ -5,6 +5,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { CONTACT_ROLE_DEFAULTS, type ContactRoleCreateInput, type DuplicatesQueryInput, type MergeContactsInput } from "./dto/contact-roles.schemas";
 
 function isDbConflict(err: unknown): boolean {
@@ -215,7 +216,7 @@ export class ContactRolesService {
       metadata: { primaryId: input.primaryId, duplicateId: input.duplicateId },
     });
 
-    await this.cache.invalidatePattern(`crm:contacts:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.contactsListNamespace(orgId));
 
     return { success: true, primaryId: input.primaryId, mergedId: input.duplicateId };
   }

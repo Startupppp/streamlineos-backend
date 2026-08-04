@@ -19,7 +19,7 @@ export const createOrganizationSchema = z.object({
 
 export const listMembersSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(200).default(20),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
   search: z.string().trim().optional(),
   userIds: z
     .string()
@@ -89,6 +89,7 @@ export const securitySettingsSchema = z.object({
   mfaEnforced: z.boolean().optional(),
   allowedEmailDomains: z.array(z.string().min(1)).optional(),
   maxConcurrentSessions: z.number().int().min(1).max(100).nullable().optional(),
+  ipAllowlist: z.array(z.string().min(1).max(128)).max(100).optional(),
 });
 
 export const updateMemberRoleSchema = z.object({
@@ -102,6 +103,10 @@ export const acceptInvitationSchema = z.object({
 });
 
 export const switchOrgSchema = z.object({
+  orgId: z.string().min(1),
+});
+
+export const restoreOrgSchema = z.object({
   orgId: z.string().min(1),
 });
 
@@ -131,6 +136,7 @@ export type SecuritySettingsInput = z.infer<typeof securitySettingsSchema>;
 export type UpdateMemberRoleInput = z.infer<typeof updateMemberRoleSchema>;
 export type AcceptInvitationInput = z.infer<typeof acceptInvitationSchema>;
 export type SwitchOrgInput = z.infer<typeof switchOrgSchema>;
+export type RestoreOrgInput = z.infer<typeof restoreOrgSchema>;
 export type DeleteOrgInput = z.infer<typeof deleteOrgSchema>;
 export type AddCustomDomainInput = z.infer<typeof addCustomDomainSchema>;
 export type CreateHolidayInput = z.infer<typeof createHolidaySchema>;

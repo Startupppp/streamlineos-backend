@@ -54,7 +54,7 @@ export class TeamService {
             inArray(timesheetPeriods.userId, ids),
             lte(timesheetPeriods.periodStart, query.endDate),
             gte(timesheetPeriods.periodEnd, query.startDate),
-            applyScope(scope, u.userId, { ownerColumn: timesheetPeriods.userId }),
+            applyScope(scope, u.orgId, u.userId, { ownerColumn: timesheetPeriods.userId }),
           ),
         ),
       this.db
@@ -71,7 +71,7 @@ export class TeamService {
             isNull(timesheets.voidedAt),
             gte(timesheets.date, query.startDate),
             lte(timesheets.date, query.endDate),
-            applyScope(scope, u.userId, { ownerColumn: timesheets.userId }),
+            applyScope(scope, u.orgId, u.userId, { ownerColumn: timesheets.userId }),
           ),
         )
         .groupBy(timesheets.userId, timesheets.date),

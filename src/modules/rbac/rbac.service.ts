@@ -13,6 +13,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import {
   assertPermissionsGrantable,
   buildPermissionModuleMap,
@@ -110,7 +111,7 @@ export class RbacService {
       );
     }
 
-    await this.db.transaction(async (tx) => {
+    await runInTenantTransaction(this.db, async (tx) => {
       await tx
         .insert(rolePermissionGrants)
         .values({
@@ -120,11 +121,15 @@ export class RbacService {
           scope: input.scope,
         })
         .onConflictDoUpdate({
-          target: [rolePermissionGrants.roleId, rolePermissionGrants.permissionKey],
+          target: [
+            rolePermissionGrants.orgId,
+            rolePermissionGrants.roleId,
+            rolePermissionGrants.permissionKey,
+          ],
           set: { scope: input.scope },
         });
       await bumpPermissionsVersion(tx, actor.orgId);
-    });
+    }, { orgId: actor.orgId });
 
     return { success: true };
   }
@@ -150,7 +155,7 @@ export class RbacService {
       }
     }
 
-    await this.db.transaction(async (tx) => {
+    await runInTenantTransaction(this.db, async (tx) => {
       await tx
         .delete(rolePermissionGrants)
         .where(
@@ -161,7 +166,7 @@ export class RbacService {
           ),
         );
       await bumpPermissionsVersion(tx, actor.orgId);
-    });
+    }, { orgId: actor.orgId });
 
     return { success: true };
   }

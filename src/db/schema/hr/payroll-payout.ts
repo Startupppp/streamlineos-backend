@@ -1,10 +1,11 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, integer, index, uniqueIndex, unique, foreignKey, check } from "drizzle-orm/pg-core";
+import { relations, sql } from "drizzle-orm";
 import {
   payslipLayoutEnum,
   payrollBankBatchStatusEnum, payrollBankItemStatusEnum,
 } from "../common/enums";
 import { organizations, users } from "../common/auth";
+import { workers } from "../directory/workers";
 import { payrollRuns, payrollRunEmployees } from "./payroll-runs";
 
 export const payslipTemplates = pgTable("payslip_templates", {
@@ -49,7 +50,8 @@ export const payrollBankBatchItems = pgTable("payroll_bank_batch_items", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   batchId: integer("batch_id").references(() => payrollBankBatches.id, { onDelete: "cascade" }).notNull(),
   runEmployeeId: integer("run_employee_id").references(() => payrollRunEmployees.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "restrict" }).notNull(),
+  userId: text("user_id").references(() => users.id, { onDelete: "restrict" }),
+  workerId: text("worker_id"),
   amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
   accountMasked: text("account_masked").notNull(),
   ifsc: text("ifsc"),
@@ -63,6 +65,16 @@ export const payrollBankBatchItems = pgTable("payroll_bank_batch_items", {
   unique("uniq_payroll_bank_batch_items_org_id").on(table.orgId, table.id),
   index("idx_payroll_bank_batch_items_batch_status").on(table.batchId, table.status),
   index("idx_payroll_bank_batch_items_org").on(table.orgId),
+  index("idx_payroll_bank_batch_items_org_worker").on(table.orgId, table.workerId),
+  check(
+    "chk_payroll_bank_batch_items_subject",
+    sql`user_id IS NOT NULL OR worker_id IS NOT NULL`,
+  ),
+  foreignKey({
+    columns: [table.orgId, table.workerId],
+    foreignColumns: [workers.organizationId, workers.workerId],
+    name: "fk_payroll_bank_batch_items_org_worker",
+  }).onDelete("restrict"),
 ]);
 
 export const payslipTemplatesRelations = relations(payslipTemplates, ({ one }) => ({

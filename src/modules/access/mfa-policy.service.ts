@@ -8,7 +8,7 @@ import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
 import type { MfaState } from "./access.types";
 
-const UNDETERMINED: MfaState = { enforced: false, satisfied: true };
+const UNDETERMINED: MfaState = { enforced: true, satisfied: false };
 
 @Injectable()
 export class MfaPolicyService {

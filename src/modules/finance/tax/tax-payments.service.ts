@@ -5,6 +5,7 @@ import type { Db } from "../../../db/drizzle.module";
 import { accTaxPayments } from "../../../db/schema/accounting/finance-tax";
 import { accountingPeriods } from "../../../db/schema/accounting/accounting-core";
 import { CacheService } from "../../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { AuditService } from "../../../common/audit/audit.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { FinancePostingService } from "../../accounting/core/finance-posting.service";
@@ -27,8 +28,8 @@ export class TaxPaymentsService {
   ) {}
 
   async list(orgId: string, query: ListTaxPaymentsQuery) {
-    const cacheKey = `fin:tax-payments:${orgId}:${query.page}:${query.pageSize}:${query.taxType ?? ""}:${query.from ?? ""}:${query.to ?? ""}`;
-    return this.cache.cached(cacheKey, async () => {
+    const cacheKey = `${query.page}:${query.pageSize}:${query.taxType ?? ""}:${query.from ?? ""}:${query.to ?? ""}`;
+    return this.cache.cachedVersioned(CACHE_KEYS.finTaxPaymentsNamespace(orgId), cacheKey, async () => {
       const { limit, offset } = paginateOffset(query);
       const conditions = [eq(accTaxPayments.orgId, orgId)];
       if (query.taxType) conditions.push(eq(accTaxPayments.taxType, query.taxType));
@@ -86,8 +87,8 @@ export class TaxPaymentsService {
       throw err;
     }
 
-    await this.cache.invalidatePattern(`fin:tax-payments:${orgId}:*`);
-    await this.cache.invalidatePattern(`fin:tax-dashboard:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.finTaxPaymentsNamespace(orgId));
+    await this.cache.invalidateNamespace(CACHE_KEYS.finTaxDashboardNamespace(orgId));
 
     this.audit.log({
       action: "accounting.tax_payment.create",
@@ -136,8 +137,8 @@ export class TaxPaymentsService {
 
     await this.db.delete(accTaxPayments).where(and(eq(accTaxPayments.id, paymentId), eq(accTaxPayments.orgId, orgId)));
 
-    await this.cache.invalidatePattern(`fin:tax-payments:${orgId}:*`);
-    await this.cache.invalidatePattern(`fin:tax-dashboard:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.finTaxPaymentsNamespace(orgId));
+    await this.cache.invalidateNamespace(CACHE_KEYS.finTaxDashboardNamespace(orgId));
 
     this.audit.log({
       action: "accounting.tax_payment.delete",

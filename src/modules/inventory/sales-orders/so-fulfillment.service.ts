@@ -110,7 +110,7 @@ export class SoFulfillmentService {
     const newStatus = allReserved ? "RESERVED" : "PARTIALLY_RESERVED";
 
     await this.cache.del(CACHE_KEYS.invSoDetail(orgId, soId));
-    await this.cache.invalidatePattern(`inv:so:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invSoNamespace(orgId));
 
     return { soId, status: newStatus, allReserved };
   }
@@ -177,7 +177,7 @@ export class SoFulfillmentService {
       .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)));
 
     await this.cache.del(CACHE_KEYS.invSoDetail(orgId, soId));
-    await this.cache.invalidatePattern(`inv:so:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invSoNamespace(orgId));
 
     return { pickListId: pickList.id, pickNumber, allPicked };
   }
@@ -235,7 +235,7 @@ export class SoFulfillmentService {
       .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)));
 
     await this.cache.del(CACHE_KEYS.invSoDetail(orgId, soId));
-    await this.cache.invalidatePattern(`inv:so:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invSoNamespace(orgId));
 
     return { soId, status: "PACKED", packageId };
   }
@@ -458,7 +458,7 @@ export class SoFulfillmentService {
     }
 
     await this.cache.del(CACHE_KEYS.invSoDetail(orgId, soId));
-    await this.cache.invalidatePattern(`inv:so:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invSoNamespace(orgId));
 
     return { shipmentId: shipment.id, shipmentNumber, status: newStatus, isPartial };
   }

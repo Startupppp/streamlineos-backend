@@ -20,6 +20,8 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { AccessService } from "../../access/access.service";
+import { resolvePayrollRunsViewScope } from "../payroll-scope";
 import { InputsService } from "./inputs.service";
 import {
   patchInputSchema,
@@ -32,7 +34,10 @@ import {
 @Controller("payroll/runs/:runId/inputs")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class InputsController {
-  constructor(private readonly inputsService: InputsService) {}
+  constructor(
+    private readonly inputsService: InputsService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get()
   @RequirePermission("payroll:runs:view")
@@ -41,7 +46,8 @@ export class InputsController {
     @Query(new ZodValidationPipe(inputsQuerySchema)) query: InputsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const result = await this.inputsService.listInputs(u.orgId, runId, query);
+    const scope = await resolvePayrollRunsViewScope(this.access, u);
+    const result = await this.inputsService.listInputs(u.orgId, runId, query, scope, u.userId);
     if (!result) throw new NotFoundException("Payroll run not found");
     return result;
   }

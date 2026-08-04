@@ -28,7 +28,7 @@ export class LoadsService {
     const offset = (page - 1) * limit;
     const hash = `${status ?? ""}:${carrierId ?? ""}:${limit}:${offset}`;
 
-    return this.cache.cached(CACHE_KEYS.invLoadsList(orgId, hash), async () => {
+    return this.cache.cachedVersioned(CACHE_KEYS.invLoadsNamespace(orgId), `list:${hash}`, async () => {
       const conditions = [eq(invLoads.orgId, orgId)];
       if (status) conditions.push(eq(invLoads.status, status));
       if (carrierId) conditions.push(eq(invLoads.carrierId, carrierId));
@@ -44,7 +44,7 @@ export class LoadsService {
   }
 
   async findOne(orgId: string, loadId: number) {
-    return this.cache.cached(CACHE_KEYS.invLoadDetail(orgId, loadId), async () => {
+    return this.cache.cachedVersioned(CACHE_KEYS.invLoadsNamespace(orgId), `detail:${loadId}`, async () => {
       const [load] = await this.db.select().from(invLoads).where(and(eq(invLoads.id, loadId), eq(invLoads.orgId, orgId))).limit(1);
       if (!load) throw new NotFoundException("Load not found");
       const lines = await this.db.select().from(invLoadLines).where(eq(invLoadLines.loadId, loadId));
@@ -85,7 +85,7 @@ export class LoadsService {
       });
       return row!;
     });
-    await this.cache.invalidatePattern(`inv:loads:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invLoadsNamespace(orgId));
     return load;
   }
 
@@ -146,8 +146,7 @@ export class LoadsService {
       });
       return rows;
     });
-    await this.cache.invalidate(CACHE_KEYS.invLoadDetail(orgId, loadId));
-    await this.cache.invalidatePattern(`inv:loads:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invLoadsNamespace(orgId));
     return updated;
   }
 
@@ -174,8 +173,7 @@ export class LoadsService {
       });
       return rows;
     });
-    await this.cache.invalidate(CACHE_KEYS.invLoadDetail(orgId, loadId));
-    await this.cache.invalidatePattern(`inv:loads:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invLoadsNamespace(orgId));
     return updated;
   }
 
@@ -199,8 +197,7 @@ export class LoadsService {
       });
       return rows;
     });
-    await this.cache.invalidate(CACHE_KEYS.invLoadDetail(orgId, loadId));
-    await this.cache.invalidatePattern(`inv:loads:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invLoadsNamespace(orgId));
     return updated;
   }
 }

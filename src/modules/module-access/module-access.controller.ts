@@ -28,6 +28,7 @@ import {
   flatMemberParamSchema,
   initiateOwnershipTransferSchema,
   listMembersQuerySchema,
+  memberCandidatesQuerySchema,
   moduleGroupMemberParamSchema,
   moduleGroupParamSchema,
   moduleKeyParamSchema,
@@ -42,6 +43,7 @@ import {
   type FlatMemberParam,
   type InitiateOwnershipTransferInput,
   type ListMembersQuery,
+  type MemberCandidatesQuery,
   type ModuleGroupMemberParam,
   type ModuleGroupParam,
   type ModuleKeyParam,
@@ -233,9 +235,10 @@ export class ModuleAccessController {
   @Get(":moduleKey/member-candidates")
   listMemberCandidates(
     @Param(new ZodValidationPipe(moduleKeyParamSchema)) params: ModuleKeyParam,
+    @Query(new ZodValidationPipe(memberCandidatesQuerySchema)) query: MemberCandidatesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.groups.listMemberCandidates(u, params.moduleKey);
+    return this.groups.listMemberCandidates(u, params.moduleKey, query);
   }
 
   @Get(":moduleKey/ownership")

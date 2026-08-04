@@ -18,6 +18,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { AccessService } from "../../access/access.service";
 import { OnboardingViewsService } from "./onboarding-views.service";
+import { resolveOnboardingManageScope } from "./onboarding-scope";
 import {
   createOnboardingDocSchema,
   listOnboardingDocsQuerySchema,
@@ -47,11 +48,12 @@ export class OnboardingViewsController {
 
   @Get("summary")
   @RequirePermission("hr:onboarding:manage")
-  summary(
+  async summary(
     @Query(new ZodValidationPipe(onboardingDocsSummaryQuerySchema)) query: OnboardingDocsSummaryQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.onboardingViews.summary(u.orgId, query);
+    const scope = await resolveOnboardingManageScope(this.access, u);
+    return this.onboardingViews.summary(u.orgId, query, scope, u.userId);
   }
 
   @Get("me")
@@ -60,7 +62,7 @@ export class OnboardingViewsController {
     @Query(new ZodValidationPipe(listOnboardingDocsQuerySchema)) query: ListOnboardingDocsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.onboardingViews.list(u.orgId, u.userId, false, query);
+    return this.onboardingViews.list(u.orgId, u.userId, false, query, "own");
   }
 
   @Get()
@@ -69,23 +71,21 @@ export class OnboardingViewsController {
     @Query(new ZodValidationPipe(listOnboardingDocsQuerySchema)) query: ListOnboardingDocsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.onboardingViews.list(
-      u.orgId,
-      u.userId,
-      await this.canManageOnboarding(u),
-      query,
-    );
+    const isAdmin = await this.canManageOnboarding(u);
+    const scope = isAdmin ? await resolveOnboardingManageScope(this.access, u) : "own";
+    return this.onboardingViews.list(u.orgId, u.userId, isAdmin, query, scope);
   }
 
   @Post()
   @HttpCode(201)
   @RequirePermission("self:onboarding-docs")
-  create(
+  async create(
     @Body(new ZodValidationPipe(createOnboardingDocSchema)) body: CreateOnboardingDocInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const canManage = u.isOrgOwner || (u.permissions ?? []).includes("hr:onboarding:manage");
-    return this.onboardingViews.create(u.orgId, u.userId, canManage, body);
+    const canManage = await this.canManageOnboarding(u);
+    const scope = canManage ? await resolveOnboardingManageScope(this.access, u) : "own";
+    return this.onboardingViews.create(u.orgId, u.userId, canManage, body, scope);
   }
 
   @Patch(":docId")

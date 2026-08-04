@@ -14,6 +14,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { GenerateService } from "../runs/generate.service";
 import { PayrollPostingService } from "../payroll-posting.service";
 import { toPaise } from "../runs/lib/money";
+import { payrollSubjectKeyFromRunEmployee } from "../lib/payroll-subject";
 
 function fiscalYearFromMonth(month: string): string {
   const [y, m] = month.split("-").map(Number);
@@ -55,12 +56,12 @@ export class LockingService {
           eq(payrollRunEmployees.orgId, orgId),
           isNull(payrollRunEmployees.calculationSnapshot),
         ),
-        columns: { id: true, userId: true },
+        columns: { id: true, userId: true, workerId: true },
       });
 
       if (missingSnapshot) {
         throw new BadRequestException(
-          `Employee ${missingSnapshot.userId} has no calculation snapshot — re-run generation before locking`,
+          `Payee ${payrollSubjectKeyFromRunEmployee(missingSnapshot)} has no calculation snapshot — re-run generation before locking`,
         );
       }
 
@@ -115,6 +116,7 @@ export class LockingService {
     const emps = await tx
       .select({
         userId: payrollRunEmployees.userId,
+        workerId: payrollRunEmployees.workerId,
         calculationSnapshot: payrollRunEmployees.calculationSnapshot,
         gross: payrollRunEmployees.gross,
       })
@@ -122,6 +124,7 @@ export class LockingService {
       .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)));
 
     for (const emp of emps) {
+      if (!emp.userId && !emp.workerId) continue;
       const snap = emp.calculationSnapshot as CalculationSnapshot | null;
       const tdsLine = snap?.lines?.find(
         (l) =>
@@ -132,35 +135,73 @@ export class LockingService {
       const tdsPaise = tdsLine ? toPaise(tdsLine.amount) : 0;
       const taxablePaise = toPaise(emp.gross ?? "0");
 
-      await tx
-        .insert(payrollTdsYtdLedger)
-        .values({
-          orgId,
-          userId: emp.userId,
-          fiscalYear: fy,
-          periodKey: month,
-          runId,
-          taxableIncomePaise: taxablePaise,
-          tdsPaise,
-          previousEmployerIncomePaise: 0,
-          previousEmployerTdsPaise: 0,
-          perquisitesPaise: 0,
-          surchargePaise: 0,
-          rebatePaise: 0,
-        })
-        .onConflictDoUpdate({
-          target: [
-            payrollTdsYtdLedger.orgId,
-            payrollTdsYtdLedger.userId,
-            payrollTdsYtdLedger.fiscalYear,
-            payrollTdsYtdLedger.periodKey,
-          ],
-          set: {
+      if (emp.userId) {
+        await tx
+          .insert(payrollTdsYtdLedger)
+          .values({
+            orgId,
+            userId: emp.userId,
+            workerId: emp.workerId,
+            fiscalYear: fy,
+            periodKey: month,
             runId,
             taxableIncomePaise: taxablePaise,
             tdsPaise,
-          },
-        });
+            previousEmployerIncomePaise: 0,
+            previousEmployerTdsPaise: 0,
+            perquisitesPaise: 0,
+            surchargePaise: 0,
+            rebatePaise: 0,
+          })
+          .onConflictDoUpdate({
+            target: [
+              payrollTdsYtdLedger.orgId,
+              payrollTdsYtdLedger.userId,
+              payrollTdsYtdLedger.fiscalYear,
+              payrollTdsYtdLedger.periodKey,
+            ],
+            set: {
+              runId,
+              taxableIncomePaise: taxablePaise,
+              tdsPaise,
+              workerId: emp.workerId,
+            },
+          });
+        continue;
+      }
+
+      if (emp.workerId) {
+        await tx
+          .insert(payrollTdsYtdLedger)
+          .values({
+            orgId,
+            userId: null,
+            workerId: emp.workerId,
+            fiscalYear: fy,
+            periodKey: month,
+            runId,
+            taxableIncomePaise: taxablePaise,
+            tdsPaise,
+            previousEmployerIncomePaise: 0,
+            previousEmployerTdsPaise: 0,
+            perquisitesPaise: 0,
+            surchargePaise: 0,
+            rebatePaise: 0,
+          })
+          .onConflictDoUpdate({
+            target: [
+              payrollTdsYtdLedger.orgId,
+              payrollTdsYtdLedger.workerId,
+              payrollTdsYtdLedger.fiscalYear,
+              payrollTdsYtdLedger.periodKey,
+            ],
+            set: {
+              runId,
+              taxableIncomePaise: taxablePaise,
+              tdsPaise,
+            },
+          });
+      }
     }
   }
 

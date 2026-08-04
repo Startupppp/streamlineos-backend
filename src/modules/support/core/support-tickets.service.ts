@@ -86,8 +86,9 @@ export class SupportTicketsService {
 
   listTickets(orgId: string, query: ListTicketsQuery) {
     const { status, priority, assigneeId, queueId, channel, snoozed, page, limit, scope, userId } = query;
-    const key = `support:tickets:${orgId}:${status ?? ""}:${priority ?? ""}:${assigneeId ?? ""}:${queueId ?? ""}:${channel ?? ""}:${snoozed ?? ""}:${scope ?? ""}:${userId ?? ""}:${page}:${limit}`;
-    return this.cache.cached(
+    const key = `${status ?? ""}:${priority ?? ""}:${assigneeId ?? ""}:${queueId ?? ""}:${channel ?? ""}:${snoozed ?? ""}:${scope ?? ""}:${userId ?? ""}:${page}:${limit}`;
+    return this.cache.cachedVersioned(
+      `support:tickets:${orgId}`,
       key,
       async () => {
         const offset = (page - 1) * limit;
@@ -104,7 +105,7 @@ export class SupportTicketsService {
           if (notSnoozed) conditions.push(notSnoozed);
         }
         if (scope && scope !== "none" && userId) {
-          conditions.push(applyScope(scope, userId, { ownerColumn: supportTickets.assigneeId }));
+          conditions.push(applyScope(scope, orgId, userId, { ownerColumn: supportTickets.assigneeId }));
         } else if (scope === "none") {
           return { items: [], total: 0, page, totalPages: 0 };
         }
@@ -461,7 +462,7 @@ export class SupportTicketsService {
   }
 
   private async invalidateTicketCaches(orgId: string) {
-    await this.cache.invalidatePattern(`support:tickets:${orgId}:*`);
+    await this.cache.invalidateNamespace(`support:tickets:${orgId}`);
     await this.cache.invalidate(CACHE_KEYS.supportDashboard(orgId));
     await this.cache.invalidate(CACHE_KEYS.ceDashboard(orgId));
   }

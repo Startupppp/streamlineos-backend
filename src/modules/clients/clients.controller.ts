@@ -2,7 +2,6 @@ import {
   Body,
   Controller,
   Delete,
-  ForbiddenException,
   Get,
   Header,
   HttpCode,
@@ -107,8 +106,9 @@ export class ClientsController {
 
   @Get("churn-alerts")
   @RequirePermission("crm:clients:read")
-  getChurnAlerts(@CurrentUser() u: CurrentUserContext) {
-    return this.clients.getChurnAlerts(u.orgId);
+  async getChurnAlerts(@CurrentUser() u: CurrentUserContext) {
+    const scope = await resolveClientsReadScope(this.access, u);
+    return this.clients.getChurnAlerts(u.orgId, u.userId, scope);
   }
 
   @Get("assign-crm")
@@ -130,8 +130,9 @@ export class ClientsController {
 
   @Get("renewals")
   @RequirePermission("crm:clients:read")
-  listRenewals(@CurrentUser() u: CurrentUserContext) {
-    return this.accounts.listRenewals(u.orgId);
+  async listRenewals(@CurrentUser() u: CurrentUserContext) {
+    const scope = await resolveClientsReadScope(this.access, u);
+    return this.accounts.listRenewals(u.orgId, scope, u.userId);
   }
 
   @Patch("renewals/:accountId")
@@ -256,12 +257,8 @@ export class ClientsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolveClientsReadScope(this.access, u);
-    const account = await this.accounts.getClientAccount(u.orgId, clientId);
+    const account = await this.accounts.getClientAccount(u.orgId, clientId, scope, u.userId);
     if (!account) throw new NotFoundException("Client account not found");
-    if (scope === "none") throw new ForbiddenException("Access denied");
-    if (scope === "own" && account.salesRepId !== u.userId) {
-      throw new ForbiddenException("You can only view your own converted clients");
-    }
     return account;
   }
 

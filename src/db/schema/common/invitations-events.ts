@@ -1,5 +1,5 @@
 import { pgTable, text, integer, timestamp, index, uuid } from "drizzle-orm/pg-core";
-import { invitations } from "./auth";
+import { invitations, organizations } from "./auth";
 
 export type InvitationEventType =
   | "CREATED"
@@ -15,7 +15,9 @@ export const invitationEvents = pgTable(
   "invitation_events",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    orgId: text("org_id").notNull(),
+    orgId: text("org_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
     invitationId: text("invitation_id")
       .references(() => invitations.id, { onDelete: "cascade" })
       .notNull(),

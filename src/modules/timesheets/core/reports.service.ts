@@ -40,7 +40,7 @@ export class ReportsService {
     const conditions = [
       eq(timesheets.orgId, u.orgId),
       isNull(timesheets.voidedAt),
-      applyScope(scope, u.userId, { ownerColumn: timesheets.userId }),
+      applyScope(scope, u.orgId, u.userId, { ownerColumn: timesheets.userId }),
     ];
 
     if (query.userId && (scope === "all" || u.isOrgOwner)) {
@@ -52,7 +52,7 @@ export class ReportsService {
     const periodConditions = [
       eq(timesheetPeriods.orgId, u.orgId),
       eq(timesheetPeriods.status, "SUBMITTED"),
-      applyScope(scope, u.userId, { ownerColumn: timesheetPeriods.userId }),
+      applyScope(scope, u.orgId, u.userId, { ownerColumn: timesheetPeriods.userId }),
     ];
     if (query.startDate) periodConditions.push(gte(timesheetPeriods.periodStart, query.startDate));
     if (query.endDate) periodConditions.push(lte(timesheetPeriods.periodEnd, query.endDate));
@@ -145,7 +145,7 @@ export class ReportsService {
     const conditions = [
       eq(timesheets.orgId, u.orgId),
       isNull(timesheets.voidedAt),
-      applyScope(scope, u.userId, { ownerColumn: timesheets.userId }),
+      applyScope(scope, u.orgId, u.userId, { ownerColumn: timesheets.userId }),
       gte(timesheets.date, startDate),
       lte(timesheets.date, endDate),
     ];
@@ -221,7 +221,7 @@ export class ReportsService {
       isNull(timesheets.voidedAt),
       eq(timesheets.status, "APPROVED"),
       eq(timesheets.isBillable, true),
-      applyScope(scope, u.userId, { ownerColumn: timesheets.userId }),
+      applyScope(scope, u.orgId, u.userId, { ownerColumn: timesheets.userId }),
       gte(timesheets.date, startDate),
       lte(timesheets.date, endDate),
     ];
@@ -301,14 +301,14 @@ export class ReportsService {
     const entryConditions = [
       eq(timesheets.orgId, u.orgId),
       isNull(timesheets.voidedAt),
-      applyScope(scope, u.userId, { ownerColumn: timesheets.userId }),
+      applyScope(scope, u.orgId, u.userId, { ownerColumn: timesheets.userId }),
       gte(timesheets.date, startDate),
       lte(timesheets.date, endDate),
     ];
 
     const periodConditions = [
       eq(timesheetPeriods.orgId, u.orgId),
-      applyScope(scope, u.userId, { ownerColumn: timesheetPeriods.userId }),
+      applyScope(scope, u.orgId, u.userId, { ownerColumn: timesheetPeriods.userId }),
       lte(timesheetPeriods.periodStart, endDate),
       gte(timesheetPeriods.periodEnd, startDate),
     ];
@@ -419,7 +419,7 @@ export class ReportsService {
       .where(
         and(
           eq(timesheetPeriods.orgId, u.orgId),
-          applyScope(scope, u.userId, { ownerColumn: timesheetPeriods.userId }),
+          applyScope(scope, u.orgId, u.userId, { ownerColumn: timesheetPeriods.userId }),
           sql`${timesheetPeriods.submittedAt} IS NOT NULL`,
           sql`${timesheetPeriods.submittedAt} >= ${startDate}::timestamp`,
           sql`${timesheetPeriods.submittedAt} < ${endDate}::date + INTERVAL '1 day'`,
@@ -507,7 +507,7 @@ export class ReportsService {
     const scope = await resolveReportsScope(this.access, u);
     const { startDate, endDate } = resolveDateRange(query.startDate, query.endDate);
 
-    const scopeCondition = applyScope(scope, u.userId, { ownerColumn: timesheets.userId });
+    const scopeCondition = applyScope(scope, u.orgId, u.userId, { ownerColumn: timesheets.userId });
     const rangeConditions = [
       eq(timesheets.orgId, u.orgId),
       scopeCondition,

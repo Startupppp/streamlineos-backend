@@ -80,7 +80,7 @@ export class EmployeesService {
 
     const baseConditions: SQL[] = [
       eq(organizationMembers.orgId, orgId),
-      applyScope(scope, userId, { ownerColumn: organizationMembers.userId }),
+      applyScope(scope, orgId, userId, { ownerColumn: organizationMembers.userId }),
     ];
     if (isActive === "true") baseConditions.push(eq(users.isActive, true));
     else if (isActive === "false") baseConditions.push(eq(users.isActive, false));

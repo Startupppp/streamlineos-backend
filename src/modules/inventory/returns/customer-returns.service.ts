@@ -26,7 +26,7 @@ export class CustomerReturnsService {
     const offset = (page - 1) * limit;
     const hash = `${status ?? ""}:${limit}:${offset}`;
 
-    return this.cache.cached(`inv:cret:list:${orgId}:${hash}`, async () => {
+    return this.cache.cachedVersioned(CACHE_KEYS.invCustomerReturnsNamespace(orgId), hash, async () => {
       const conditions = [eq(invCustomerReturns.orgId, orgId)];
       if (status) conditions.push(eq(invCustomerReturns.status, status));
       const where = and(...conditions);
@@ -117,7 +117,7 @@ export class CustomerReturnsService {
       }))
     );
 
-    await this.cache.invalidatePattern(`inv:cret:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invCustomerReturnsNamespace(orgId));
     return this.get(orgId, ret.id);
   }
 
@@ -214,7 +214,7 @@ export class CustomerReturnsService {
 
     await this.engine.invalidateCaches(orgId);
     await Promise.all([
-      this.cache.invalidatePattern(`inv:cret:list:${orgId}:*`),
+      this.cache.invalidateNamespace(CACHE_KEYS.invCustomerReturnsNamespace(orgId)),
       this.cache.del(CACHE_KEYS.invCustomerReturnDetail(orgId, returnId)),
     ]);
     return this.get(orgId, returnId);
@@ -262,7 +262,7 @@ export class CustomerReturnsService {
       .set({ status: "CANCELLED", cancelledAt: new Date(), updatedAt: new Date() })
       .where(and(eq(invCustomerReturns.id, returnId), eq(invCustomerReturns.orgId, orgId)));
 
-    await this.cache.invalidatePattern(`inv:cret:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invCustomerReturnsNamespace(orgId));
     return this.get(orgId, returnId);
   }
 }

@@ -32,7 +32,7 @@ import {
   isModernApiToken,
   legacyApiTokenPrefix,
 } from "./api-token-hash";
-import { organizationMembers, userApiTokens, users } from "../../db/schema";
+import { organizationMembers, organizations, userApiTokens, users } from "../../db/schema";
 import { MembershipStateService } from "./membership-state.service";
 
 interface OrgContext {
@@ -167,19 +167,24 @@ export class JwtAuthGuard implements CanActivate {
 
       let role = "";
       let isOrgOwner = false;
+      let resolvedOrgId = orgId ?? "";
 
       if (orgId) {
         const state = await this.membership.resolve(claims.sub, orgId);
         if (!state.active) {
-          throw new UnauthorizedException("Unauthorized");
+          if (!allowNoOrg) {
+            throw new UnauthorizedException("Unauthorized");
+          }
+          resolvedOrgId = "";
+        } else {
+          role = state.role;
+          isOrgOwner = state.isOwner;
         }
-        role = state.role;
-        isOrgOwner = state.isOwner;
       }
 
       req.user = {
         userId: claims.sub,
-        orgId: orgId ?? "",
+        orgId: resolvedOrgId,
         role,
         permissions: [],
         isOrgOwner,
@@ -229,10 +234,13 @@ export class JwtAuthGuard implements CanActivate {
             isOwner: organizationMembers.isOwner,
           })
           .from(organizationMembers)
+          .innerJoin(organizations, eq(organizations.id, organizationMembers.orgId))
           .where(
             and(
               eq(organizationMembers.userId, userId),
               eq(organizationMembers.status, "ACTIVE"),
+              eq(organizations.status, "ACTIVE"),
+              isNull(organizations.deletedAt),
             ),
           )
           .orderBy(desc(organizationMembers.joinedAt)),

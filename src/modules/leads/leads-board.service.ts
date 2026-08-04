@@ -7,13 +7,14 @@ import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
 import { resolveLeadStatusSemantics } from "./lead-status-semantics";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
+import { CACHE_TTL } from "../../common/cache/cache-keys";
 
 export type BoardOpts = { userId?: string; limitPerStatus?: number; scope?: DataScope };
 export type StatsFilters = { dateFrom?: string; dateTo?: string; userId?: string; scope?: DataScope };
 
 function pushLeadsViewScope(
   where: SQL[],
+  orgId: string,
   scope: DataScope | undefined,
   userId: string | undefined,
 ): void {
@@ -23,7 +24,7 @@ function pushLeadsViewScope(
     return;
   }
   if (!userId) return;
-  where.push(applyScope(scope, userId, { ownerColumn: leads.assignedToId }));
+  where.push(applyScope(scope, orgId, userId, { ownerColumn: leads.assignedToId }));
 }
 
 @Injectable()
@@ -34,7 +35,7 @@ export class LeadsBoardService {
   ) {}
 
   private async resolveLeadStatusKeys(orgId: string): Promise<string[]> {
-    return this.cache.cached(`leads:status-keys:${orgId}`, async () => {
+    return this.cache.cachedVersioned(`leads:${orgId}`, "status-keys", async () => {
       const defaultLeadPipeline = await this.db
         .select({ id: crmPipelines.id })
         .from(crmPipelines)
@@ -70,10 +71,10 @@ export class LeadsBoardService {
   async getBoard(orgId: string, opts?: BoardOpts) {
     const hash = Buffer.from(JSON.stringify(opts ?? {})).toString("base64");
 
-    return this.cache.cached(CACHE_KEYS.leadBoard(orgId, hash), async () => {
+    return this.cache.cachedVersioned(`leads:${orgId}`, `board:${hash}`, async () => {
       const baseFilters = [eq(leads.orgId, orgId)];
 
-      pushLeadsViewScope(baseFilters, opts?.scope, opts?.userId);
+      pushLeadsViewScope(baseFilters, orgId, opts?.scope, opts?.userId);
 
       const statusKeys = await this.resolveLeadStatusKeys(orgId);
       const limitPerStatus = opts?.limitPerStatus ?? 50;
@@ -144,7 +145,7 @@ export class LeadsBoardService {
 
   async getStats(orgId: string, filters?: StatsFilters) {
     const statsFilters = [eq(leads.orgId, orgId)];
-    pushLeadsViewScope(statsFilters, filters?.scope, filters?.userId);
+    pushLeadsViewScope(statsFilters, orgId, filters?.scope, filters?.userId);
 
     if (filters?.dateFrom) {
       statsFilters.push(gte(leads.createdAt, new Date(filters.dateFrom)));

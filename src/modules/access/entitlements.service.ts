@@ -19,6 +19,8 @@ import { MODULE_CATALOG } from "../../common/rbac/module-vocabulary";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { ACCESS_MANAGED_MODULES } from "../rbac/permissions";
 import { assignModuleOwnerRole } from "../ownership/module-owner-role.helper";
+import { APP_CONFIG } from "../../config/config.module";
+import type { AppConfig } from "../../config/env.validation";
 
 export { MODULE_CATALOG };
 
@@ -64,6 +66,8 @@ export class EntitlementsService implements OnModuleInit {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly planLimits: PlanLimitsService,
+    @Inject(APP_CONFIG)
+    private readonly config: Pick<AppConfig, "RBAC_MIGRATION_MODE">,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -87,7 +91,9 @@ export class EntitlementsService implements OnModuleInit {
       if (!this.missingTableLogged) {
         this.missingTableLogged = true;
         logger.warn(
-          "entitlements: org_modules table missing, defaulting to allow",
+          this.config.RBAC_MIGRATION_MODE === "degrade"
+            ? "entitlements: org_modules table missing, migration mode permits temporary access"
+            : "entitlements: org_modules table missing, denying gated module access",
           {
             error: error instanceof Error ? error.message : String(error),
           },
@@ -134,7 +140,12 @@ export class EntitlementsService implements OnModuleInit {
     if (this.coreModuleKeys.has(moduleKey)) return true;
     const map = await this.getModuleMap(orgId);
     const enabled = map[moduleKey];
-    if (enabled === undefined) return this.moduleTableUnavailable;
+    if (enabled === undefined) {
+      return (
+        this.moduleTableUnavailable &&
+        this.config.RBAC_MIGRATION_MODE === "degrade"
+      );
+    }
     return enabled;
   }
 
@@ -234,7 +245,9 @@ export class EntitlementsService implements OnModuleInit {
     for (const moduleKey of MODULE_CATALOG) {
       effective[moduleKey] = this.coreModuleKeys.has(moduleKey)
         ? true
-        : (map[moduleKey] ?? this.moduleTableUnavailable);
+        : (map[moduleKey] ??
+          (this.moduleTableUnavailable &&
+            this.config.RBAC_MIGRATION_MODE === "degrade"));
     }
     return effective;
   }

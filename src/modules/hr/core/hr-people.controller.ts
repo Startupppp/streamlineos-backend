@@ -44,7 +44,7 @@ export class HrPeopleController {
 
   @Get()
   @UseGuards(PermissionGuard)
-  @RequirePermission("hr:employees:read")
+  @RequirePermission("hr:employees:view")
   list(
     @Query(new ZodValidationPipe(listPeopleSchema)) query: z.infer<typeof listPeopleSchema>,
     @CurrentUser() u: CurrentUserContext,
@@ -62,7 +62,7 @@ export class HrPeopleController {
 
   @Get(":personId")
   @UseGuards(PermissionGuard)
-  @RequirePermission("hr:employees:read")
+  @RequirePermission("hr:employees:view")
   getOne(
     @Param("personId", ParseIntPipe) personId: number,
     @CurrentUser() u: CurrentUserContext,

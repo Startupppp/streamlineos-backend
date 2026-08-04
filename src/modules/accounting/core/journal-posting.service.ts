@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, like } from "drizzle-orm";
+import { and, desc, eq, inArray, like } from "drizzle-orm";
 import { ledgerAccounts, journalEntries, journalLines } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -162,12 +162,17 @@ export class JournalPostingService {
       .limit(1);
     if (existing.length > 0) return;
 
-    for (const row of DEFAULT_COA) {
-      await this.db
-        .insert(ledgerAccounts)
-        .values({ orgId, code: row.code, name: row.name, accountType: row.accountType })
-        .onConflictDoNothing();
-    }
+    await this.db
+      .insert(ledgerAccounts)
+      .values(
+        DEFAULT_COA.map((row) => ({
+          orgId,
+          code: row.code,
+          name: row.name,
+          accountType: row.accountType,
+        })),
+      )
+      .onConflictDoNothing();
   }
 
   private async nextEntryNumber(orgId: string, year: number, executor: DbOrTx): Promise<string> {
@@ -229,7 +234,12 @@ export class JournalPostingService {
     const rows = await executor
       .select({ id: ledgerAccounts.id, code: ledgerAccounts.code })
       .from(ledgerAccounts)
-      .where(eq(ledgerAccounts.orgId, draft.orgId));
+      .where(
+        and(
+          eq(ledgerAccounts.orgId, draft.orgId),
+          inArray(ledgerAccounts.code, distinctCodes),
+        ),
+      );
     for (const row of rows) codeToId.set(row.code, row.id);
 
     for (const code of distinctCodes) {

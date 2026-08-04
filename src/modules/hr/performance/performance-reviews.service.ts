@@ -129,7 +129,7 @@ export class PerformanceReviewsService {
   ) {
     const conditions = [eq(performanceReviews.orgId, orgId)];
     conditions.push(
-      applyScope(scope, userId, { ownerColumn: performanceReviews.userId }),
+      applyScope(scope, orgId, userId, { ownerColumn: performanceReviews.userId }),
     );
     if (filters.userId && scope === "all") {
       conditions.push(eq(performanceReviews.userId, filters.userId));

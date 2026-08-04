@@ -50,20 +50,17 @@ export class KbAccessService {
     return rows.map((r) => r.slug);
   }
 
-  private accessibleSpacesKey(orgId: string, userId: string): string {
-    return `kb:acc-spaces:${orgId}:${userId}`;
-  }
-
   async getAccessibleSpaceIds(user: CurrentUserContext): Promise<number[]> {
-    return this.cache.cached(
-      this.accessibleSpacesKey(user.orgId, user.userId),
+    return this.cache.cachedVersioned(
+      `kb:acc-spaces:${user.orgId}`,
+      user.userId,
       () => this.computeAccessibleSpaceIds(user),
       60,
     );
   }
 
   async invalidateAccessibleSpaceIds(orgId: string): Promise<void> {
-    await this.cache.invalidatePattern(`kb:acc-spaces:${orgId}:*`);
+    await this.cache.invalidateNamespace(`kb:acc-spaces:${orgId}`);
   }
 
   private async computeAccessibleSpaceIds(user: CurrentUserContext): Promise<number[]> {

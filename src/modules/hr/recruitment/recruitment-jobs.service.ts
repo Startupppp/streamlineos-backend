@@ -41,8 +41,9 @@ export class RecruitmentJobsService {
   ) {}
 
   async list(orgId: string, input: JobListInput) {
-    const key = `hr:jobs:list:${orgId}:${input.status ?? ""}:${input.page}:${input.pageSize}`;
-    return this.cache.cached(
+    const key = `${input.status ?? ""}:${input.page}:${input.pageSize}`;
+    return this.cache.cachedVersioned(
+      `hr:jobs:list:${orgId}`,
       key,
       async () => {
         const conditions = [eq(jobPostings.orgId, orgId)];
@@ -119,7 +120,7 @@ export class RecruitmentJobsService {
       })
       .returning();
 
-    await this.cache.invalidatePattern(`hr:jobs:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(`hr:jobs:list:${orgId}`);
     return job;
   }
 
@@ -157,13 +158,13 @@ export class RecruitmentJobsService {
     if (input.screeningQuestions !== undefined) updateData.screeningQuestions = input.screeningQuestions;
 
     await this.db.update(jobPostings).set(updateData).where(and(eq(jobPostings.id, jobId), eq(jobPostings.orgId, orgId)));
-    await this.cache.invalidatePattern(`hr:jobs:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(`hr:jobs:list:${orgId}`);
     return { success: true };
   }
 
   async remove(orgId: string, jobId: number) {
     await this.db.delete(jobPostings).where(and(eq(jobPostings.id, jobId), eq(jobPostings.orgId, orgId)));
-    await this.cache.invalidatePattern(`hr:jobs:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(`hr:jobs:list:${orgId}`);
     return { success: true };
   }
 
@@ -220,7 +221,7 @@ export class RecruitmentJobsService {
       })
       .returning();
 
-    await this.cache.invalidatePattern(`hr:jobs:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(`hr:jobs:list:${orgId}`);
     return job;
   }
 
@@ -264,7 +265,7 @@ export class RecruitmentJobsService {
         .update(jobPostings)
         .set({ externalPostingIds: externalIds, updatedAt: new Date() })
         .where(eq(jobPostings.id, jobId));
-      await this.cache.invalidatePattern(`hr:jobs:list:${orgId}:*`);
+      await this.cache.invalidateNamespace(`hr:jobs:list:${orgId}`);
     }
 
     return { results, publishedCount, externalIds };

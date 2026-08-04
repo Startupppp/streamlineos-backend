@@ -128,6 +128,7 @@ describe("isActiveDelegation", () => {
     return {
       permissions: ["hr:leaves:approve"],
       status: "ACTIVE",
+      startsAt: past,
       endsAt: future,
       ...overrides,
     };
@@ -152,6 +153,10 @@ describe("isActiveDelegation", () => {
   it("accepts a delegation that expires one millisecond in the future", () => {
     const almostExpired = new Date(now.getTime() + 1);
     expect(isActiveDelegation(makeRow({ endsAt: almostExpired }), now)).toBe(true);
+  });
+
+  it("rejects a delegation that has not started", () => {
+    expect(isActiveDelegation(makeRow({ startsAt: future }), now)).toBe(false);
   });
 
   it("merging an active delegation's permissions into an empty map adds them at all scope", () => {
@@ -231,6 +236,20 @@ function makeSelectChain(result: unknown[]): Record<string, jest.Mock> {
   return chain;
 }
 
+function withTenantTxMock<T extends object>(db: T): T {
+  const mutable = db as T & {
+    execute?: jest.Mock;
+    transaction?: jest.Mock;
+  };
+  if (typeof mutable.transaction !== "function") {
+    mutable.execute = jest.fn().mockResolvedValue(undefined);
+    mutable.transaction = jest
+      .fn()
+      .mockImplementation(async (fn: (tx: T) => Promise<unknown>) => fn(db));
+  }
+  return db;
+}
+
 function buildService(db: unknown): AccessService {
   const cache = {
     cached: jest.fn().mockImplementation(async (_key: string, fn: () => Promise<unknown>) => fn()),
@@ -242,7 +261,7 @@ function buildService(db: unknown): AccessService {
     getEffectiveModuleMap: jest.fn().mockResolvedValue({}),
   };
   return new AccessService(
-    db as unknown as Db,
+    withTenantTxMock(db as object) as unknown as Db,
     cache as unknown as CacheService,
     entitlements as unknown as EntitlementsService,
     makeMfaPolicyStub(),
@@ -483,11 +502,17 @@ describe("AccessService.resolveUserPermissions — version bump invalidates loca
           onConflictDoUpdate: jest.fn().mockResolvedValue(undefined),
         }),
       }),
+      execute: jest.fn().mockResolvedValue(undefined),
+      transaction: jest.fn(),
     };
+    db.transaction.mockImplementation(
+      async (fn: (tx: typeof db) => Promise<unknown>) => fn(db),
+    );
 
     const cache = {
       cached: jest.fn().mockImplementation(async (_key: string, fn: () => Promise<unknown>) => fn()),
       invalidate: jest.fn().mockResolvedValue(undefined),
+      invalidatePattern: jest.fn().mockResolvedValue(undefined),
     };
     const entitlements = {
       isModuleEnabled: jest.fn().mockResolvedValue(true),
@@ -504,12 +529,29 @@ describe("AccessService.resolveUserPermissions — version bump invalidates loca
 
     await svc.resolveUserPermissions("org-bump", "user-bump");
     expect(db.query.accessVersions.findFirst).toHaveBeenCalledTimes(1);
+    svc["ownerCache"].set("org-bump:user-bump", {
+      isOwner: false,
+      expiresAt: Date.now() + 30_000,
+    });
 
     currentVersion = 2;
     await bumpPermissionsVersion(db as unknown as DbOrTx, "org-bump");
 
+    expect(svc["ownerCache"].has("org-bump:user-bump")).toBe(false);
+    expect(cache.invalidatePattern).not.toHaveBeenCalled();
+    expect(cache.invalidate).toHaveBeenCalledWith("rbac:members:org-bump");
+    expect(cache.invalidate).toHaveBeenCalledWith(
+      "module-access:candidates:org-bump",
+    );
     await svc.resolveUserPermissions("org-bump", "user-bump");
     expect(db.query.accessVersions.findFirst).toHaveBeenCalledTimes(2);
+
+    svc["versionCache"].delete("org-bump");
+    cache.invalidatePattern.mockClear();
+    cache.invalidate.mockClear();
+    currentVersion = 3;
+    await bumpPermissionsVersion(db as unknown as DbOrTx, "org-bump");
+    expect(cache.invalidatePattern).not.toHaveBeenCalled();
 
     svc.onModuleDestroy();
   });
@@ -622,7 +664,7 @@ describe("AccessService.resolveUserPermissions — unknown permission keys are o
     };
     const logWarnSpy = jest.spyOn(logger, "warn").mockImplementation(() => undefined);
 
-    const db1 = makeDb();
+    const db1 = withTenantTxMock(makeDb());
     const svc = new AccessService(
       db1 as unknown as Db,
       cache as unknown as CacheService,
@@ -632,7 +674,7 @@ describe("AccessService.resolveUserPermissions — unknown permission keys are o
 
     await svc.resolveUserPermissions("org-dedup", "user-dedup");
 
-    const db2 = makeDb();
+    const db2 = withTenantTxMock(makeDb());
     (svc as unknown as { db: unknown }).db = db2;
     cache.cached.mockImplementation(async (_key: string, fn: () => Promise<unknown>) => fn());
     svc["versionCache"].clear();
@@ -659,6 +701,7 @@ describe("AccessService.membersWithPermission", () => {
       from: jest.fn(),
       where: jest.fn(),
       innerJoin: jest.fn(),
+      orderBy: jest.fn(),
       limit: jest.fn(),
       then: jest.fn().mockImplementation(
         (res: (v: unknown[]) => unknown, rej?: (e: unknown) => unknown) => p.then(res, rej),
@@ -667,6 +710,7 @@ describe("AccessService.membersWithPermission", () => {
     chain.from.mockReturnValue(chain);
     chain.innerJoin.mockReturnValue(chain);
     chain.where.mockReturnValue(chain);
+    chain.orderBy.mockReturnValue(chain);
     chain.limit.mockReturnValue(chain);
     return chain;
   }
@@ -687,7 +731,12 @@ describe("AccessService.membersWithPermission", () => {
       },
       select: jest.fn().mockImplementation(() => makeQueryChain(sr[sIdx++] ?? [])),
       selectDistinct: jest.fn().mockImplementation(() => makeQueryChain(dr[dIdx++] ?? [])),
+      execute: jest.fn().mockResolvedValue(undefined),
+      transaction: jest.fn(),
     };
+    db.transaction.mockImplementation(
+      async (fn: (tx: typeof db) => Promise<unknown>) => fn(db),
+    );
 
     const cache = {
       cached: jest.fn().mockImplementation(async (_k: string, fn: () => Promise<unknown>) => fn()),
@@ -855,23 +904,31 @@ describe("AccessService.membersWithPermission", () => {
   });
 });
 
-describe("AccessService.membersWithPermission — distribution cap", () => {
+describe("AccessService.membersWithPermission — pagination", () => {
   interface CapSvc {
     svc: AccessService;
     cachedMock: jest.Mock;
   }
 
-  function buildCapSvc(results: { userId: string; membershipId: number }[]): CapSvc {
+  function buildCapSvc(pages: {
+    data: { userId: string; membershipId: number }[];
+    nextCursor: number;
+    exhausted: boolean;
+  }[]): CapSvc {
     const db = {
       query: {
         accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
       },
+      execute: jest.fn().mockResolvedValue(undefined),
+      transaction: jest.fn(),
     };
+    db.transaction.mockImplementation(
+      async (fn: (tx: typeof db) => Promise<unknown>) => fn(db),
+    );
 
     const cachedMock = jest.fn().mockImplementation(
-      async (key: string, _fn: () => Promise<unknown>) => {
-        void key;
-        return results;
+      async (_key: string, _fn: () => Promise<unknown>) => {
+        return pages.shift() ?? { data: [], nextCursor: 0, exhausted: true };
       },
     );
 
@@ -897,53 +954,47 @@ describe("AccessService.membersWithPermission — distribution cap", () => {
     };
   }
 
-  it("embeds the default cap (50) in the cache key when no limit option is supplied", async () => {
-    const { svc, cachedMock } = buildCapSvc([]);
-    await svc.membersWithPermission("org-1", "settings:manage");
-    const key = String(cachedMock.mock.calls[0]?.[0]);
-    expect(key).toContain(":l50");
-  });
-
-  it("embeds the custom limit in the cache key when options.limit is supplied", async () => {
-    const { svc, cachedMock } = buildCapSvc([]);
-    await svc.membersWithPermission("org-1", "settings:manage", { limit: 500 });
-    const key = String(cachedMock.mock.calls[0]?.[0]);
-    expect(key).toContain(":l500");
-  });
-
-  it("logs a warning when the result set length equals the limit", async () => {
-    const fiftyResults = Array.from({ length: 50 }, (_, i) => ({
+  it("loads every page when no explicit limit is supplied", async () => {
+    const firstPage = Array.from({ length: 100 }, (_, i) => ({
       userId: `u-${i}`,
       membershipId: i,
     }));
-    const { svc } = buildCapSvc(fiftyResults);
-    const warnSpy = jest.spyOn(logger, "warn").mockImplementation(() => undefined);
+    const { svc, cachedMock } = buildCapSvc([
+      { data: firstPage, nextCursor: 100, exhausted: false },
+      {
+        data: [{ userId: "u-100", membershipId: 100 }],
+        nextCursor: 101,
+        exhausted: true,
+      },
+    ]);
 
-    await svc.membersWithPermission("org-1", "settings:manage");
-
-    const truncationWarnings = warnSpy.mock.calls.filter(
-      (call) => typeof call[0] === "string" && call[0].includes("may be truncated"),
+    const result = await svc.membersWithPermission(
+      "org-1",
+      "settings:manage",
     );
-    expect(truncationWarnings.length).toBeGreaterThan(0);
 
-    warnSpy.mockRestore();
+    expect(result).toHaveLength(101);
+    expect(cachedMock).toHaveBeenCalledTimes(2);
+    expect(String(cachedMock.mock.calls[0]?.[0])).toContain(":a0:l100");
+    expect(String(cachedMock.mock.calls[1]?.[0])).toContain(":a100:l100");
   });
 
-  it("does not log a truncation warning when the result set is smaller than the limit", async () => {
-    const thirtyResults = Array.from({ length: 30 }, (_, i) => ({
+  it("stops at an explicit caller limit without a silent default cap", async () => {
+    const firstPage = Array.from({ length: 100 }, (_, i) => ({
       userId: `u-${i}`,
       membershipId: i,
     }));
-    const { svc } = buildCapSvc(thirtyResults);
-    const warnSpy = jest.spyOn(logger, "warn").mockImplementation(() => undefined);
+    const { svc, cachedMock } = buildCapSvc([
+      { data: firstPage, nextCursor: 100, exhausted: false },
+    ]);
 
-    await svc.membersWithPermission("org-1", "settings:manage", { limit: 500 });
-
-    const truncationWarnings = warnSpy.mock.calls.filter(
-      (call) => typeof call[0] === "string" && call[0].includes("may be truncated"),
+    const result = await svc.membersWithPermission(
+      "org-1",
+      "settings:manage",
+      { limit: 50 },
     );
-    expect(truncationWarnings.length).toBe(0);
 
-    warnSpy.mockRestore();
+    expect(result).toHaveLength(50);
+    expect(cachedMock).toHaveBeenCalledTimes(1);
   });
 });

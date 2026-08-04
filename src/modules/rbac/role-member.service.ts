@@ -21,6 +21,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { RoleLockoutService } from "./role-lockout.service";
@@ -201,14 +202,14 @@ export class RoleMemberService {
           eq(organizationMembers.orgId, actor.orgId),
           eq(organizationMembers.userId, input.principalId),
         ),
-        columns: { id: true },
+        columns: { id: true, status: true },
       });
-      if (!member)
+      if (!member || member.status !== "ACTIVE")
         throw new BadRequestException(
-          "User is not a member of this organization",
+          "User must be an active member of this organization",
         );
 
-      await this.db.transaction(async (tx): Promise<void> => {
+      await runInTenantTransaction(this.db, async (tx): Promise<void> => {
         await tx
           .insert(roleAssignments)
           .values({
@@ -219,7 +220,7 @@ export class RoleMemberService {
           })
           .onConflictDoNothing();
         await bumpPermissionsVersion(tx, actor.orgId);
-      });
+      }, { orgId: actor.orgId });
     } else {
       const group = await this.db.query.principalGroups.findFirst({
         where: and(
@@ -233,7 +234,7 @@ export class RoleMemberService {
           "Group not found in this organization",
         );
 
-      await this.db.transaction(async (tx): Promise<void> => {
+      await runInTenantTransaction(this.db, async (tx): Promise<void> => {
         await tx
           .insert(groupRoleAssignments)
           .values({
@@ -243,7 +244,7 @@ export class RoleMemberService {
           })
           .onConflictDoNothing();
         await bumpPermissionsVersion(tx, actor.orgId);
-      });
+      }, { orgId: actor.orgId });
     }
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
@@ -304,7 +305,7 @@ export class RoleMemberService {
         })
       : undefined;
 
-    await this.db.transaction(async (tx): Promise<void> => {
+    await runInTenantTransaction(this.db, async (tx): Promise<void> => {
       if (input.principalType === "user") {
         if (membershipForRemoval !== undefined) {
           await tx
@@ -329,7 +330,7 @@ export class RoleMemberService {
           );
       }
       await bumpPermissionsVersion(tx, actor.orgId);
-    });
+    }, { orgId: actor.orgId });
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
     await this.invalidateRoleHolderSessions(actor.orgId, roleId);

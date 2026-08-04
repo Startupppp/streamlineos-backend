@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { ModuleAccessGroupsService } from "../module-access-groups.service";
 import { AccessService } from "../../access/access.service";
@@ -21,15 +21,24 @@ function makeActor(overrides: Partial<CurrentUserContext> = {}): CurrentUserCont
 }
 
 function makeFlexChain(results: unknown[]) {
-  const limitFn = jest.fn().mockResolvedValue(results);
-  const chain: Record<string, jest.Mock> = {
+  const chain: Record<string, unknown> = {
     from: jest.fn(),
     innerJoin: jest.fn(),
-    where: jest.fn().mockReturnValue({ limit: limitFn }),
-    limit: limitFn,
+    where: jest.fn(),
+    orderBy: jest.fn(),
+    groupBy: jest.fn(),
+    limit: jest.fn(),
+    then: (
+      onfulfilled?: (value: unknown[]) => unknown,
+      onrejected?: (reason: unknown) => unknown,
+    ) => Promise.resolve(results).then(onfulfilled, onrejected),
   };
-  chain.from!.mockReturnValue(chain);
-  chain.innerJoin!.mockReturnValue(chain);
+  (chain.from as jest.Mock).mockReturnValue(chain);
+  (chain.innerJoin as jest.Mock).mockReturnValue(chain);
+  (chain.where as jest.Mock).mockReturnValue(chain);
+  (chain.orderBy as jest.Mock).mockReturnValue(chain);
+  (chain.groupBy as jest.Mock).mockReturnValue(chain);
+  (chain.limit as jest.Mock).mockReturnValue(chain);
   return chain;
 }
 
@@ -51,8 +60,21 @@ function buildTxMock() {
   const insertChain = {
     values: jest.fn().mockReturnValue(valuesResult),
   };
+  const updateChain = {
+    set: jest.fn().mockReturnValue({
+      where: jest.fn().mockReturnValue({
+        returning: jest
+          .fn()
+          .mockResolvedValue([
+            { id: 9, name: "Existing Group Name", isSystem: false, version: 1 },
+          ]),
+      }),
+    }),
+  };
   return {
+    execute: jest.fn().mockResolvedValue([]),
     insert: jest.fn().mockReturnValue(insertChain),
+    update: jest.fn().mockReturnValue(updateChain),
     delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
   };
 }
@@ -60,13 +82,14 @@ function buildTxMock() {
 async function buildSvc(opts: {
   actorOverrides?: Partial<CurrentUserContext>;
   selectResultSets?: unknown[][];
-  orgMember?: { id: number } | null;
+  orgMember?: { id: number; status: "ACTIVE" | "SUSPENDED" } | null;
   groupRow?: { id: number; orgId: string; moduleKey: string; isSystem: boolean } | null;
   permissionsMap?: Map<string, string>;
 }) {
   const permissionsMap = opts.permissionsMap ?? new Map([["hr:access:manage", "all"]]);
   const selectResultSets = opts.selectResultSets ?? [[]];
-  const orgMember = opts.orgMember !== undefined ? opts.orgMember : { id: 42 };
+  const orgMember =
+    opts.orgMember !== undefined ? opts.orgMember : { id: 42, status: "ACTIVE" as const };
   const groupRow =
     opts.groupRow !== undefined
       ? opts.groupRow
@@ -88,8 +111,10 @@ async function buildSvc(opts: {
   };
   updateChain.set.mockReturnValue(setContinue);
 
+  const selectFn = buildSelectFn(selectResultSets);
   const mockDb = {
-    select: buildSelectFn(selectResultSets),
+    select: selectFn,
+    selectDistinct: selectFn,
     transaction,
     update: jest.fn().mockReturnValue(updateChain),
     query: {
@@ -102,7 +127,13 @@ async function buildSvc(opts: {
     providers: [
       ModuleAccessGroupsService,
       { provide: DRIZZLE, useValue: mockDb },
-      { provide: AccessService, useValue: { resolveUserPermissions: jest.fn().mockResolvedValue(permissionsMap) } },
+      {
+        provide: AccessService,
+        useValue: {
+          resolveUserPermissions: jest.fn().mockResolvedValue(permissionsMap),
+          isModuleEnabled: jest.fn().mockResolvedValue(true),
+        },
+      },
       { provide: CacheService, useValue: { invalidate: jest.fn() } },
       { provide: AuditService, useValue: { log: jest.fn() } },
     ],
@@ -112,6 +143,18 @@ async function buildSvc(opts: {
 }
 
 describe("ModuleAccessGroupsService — P0-1: self-assignment guard", () => {
+  it("rejects group assignment for a suspended membership", async () => {
+    const { svc } = await buildSvc({
+      orgMember: { id: 42, status: "SUSPENDED" },
+    });
+
+    await expect(
+      svc.addGroupMember(makeActor({ userId: "u-admin" }), "hr", 9, {
+        userId: "u-target",
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
   it("blocks a non-owner actor from adding themselves to a module group", async () => {
     const { svc } = await buildSvc({});
 
@@ -162,7 +205,7 @@ describe("ModuleAccessGroupsService — P0-2: module owner protection", () => {
   it("allows the module owner to remove themselves from a group", async () => {
     const { svc } = await buildSvc({
       selectResultSets: [[{ userId: "u-owner" }]],
-      orgMember: { id: 42 },
+      orgMember: { id: 42, status: "ACTIVE" },
     });
 
     const result = await svc.removeGroupMember(
@@ -178,7 +221,7 @@ describe("ModuleAccessGroupsService — P0-2: module owner protection", () => {
   it("allows an org owner to remove the module owner from a group", async () => {
     const { svc } = await buildSvc({
       selectResultSets: [[{ userId: "u-owner" }]],
-      orgMember: { id: 42 },
+      orgMember: { id: 42, status: "ACTIVE" },
     });
 
     const result = await svc.removeGroupMember(
@@ -194,7 +237,7 @@ describe("ModuleAccessGroupsService — P0-2: module owner protection", () => {
   it("allows operations on non-owner users unaffected by the owner guard", async () => {
     const { svc } = await buildSvc({
       selectResultSets: [[{ userId: "u-owner" }]],
-      orgMember: { id: 42 },
+      orgMember: { id: 42, status: "ACTIVE" },
     });
 
     const result = await svc.removeGroupMember(
@@ -243,7 +286,21 @@ describe("ModuleAccessGroupsService — P0-3: duplicate group name guard", () =>
 
   it("allows renameGroup to the same name as the current group (excludes self from check)", async () => {
     const { svc } = await buildSvc({
-      selectResultSets: [[]],
+      selectResultSets: [
+        [],
+        [
+          {
+            id: 9,
+            name: "Existing Group Name",
+            slug: "HR_CUSTOM",
+            isSystem: false,
+            version: 1,
+          },
+        ],
+        [],
+        [],
+        [],
+      ],
     });
 
     const result = await svc.renameGroup(makeActor({ isOrgOwner: true }), "hr", 9, {

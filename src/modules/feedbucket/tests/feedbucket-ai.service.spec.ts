@@ -5,7 +5,6 @@ import { BadRequestException, ConflictException, ForbiddenException, HttpExcepti
 import { FeedbucketAiService } from "../feedbucket-ai.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
-import type { AiUsageService } from "../../ai/core/services/ai-usage.service";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
 import type { ProjectsTicketsService } from "../../build/core/projects-tickets.service";
@@ -132,10 +131,6 @@ function makeAudit(): jest.Mocked<AuditService> {
   return { log: jest.fn() } as unknown as jest.Mocked<AuditService>;
 }
 
-function makeAiUsage(): jest.Mocked<AiUsageService> {
-  return { track: jest.fn().mockResolvedValue(undefined) } as unknown as jest.Mocked<AiUsageService>;
-}
-
 function makeTickets(ticketId = 77): jest.Mocked<ProjectsTicketsService> {
   return {
     createFromFeedback: jest.fn().mockResolvedValue({ id: ticketId }),
@@ -158,19 +153,17 @@ function buildService(opts: {
   const db = makeDb(opts.notFound ? undefined : (opts.submission ?? makeSubmission()));
   const gateway = opts.gateway ?? makeGateway();
   const audit = makeAudit();
-  const aiUsage = makeAiUsage();
   const rateLimiter = opts.rateLimit ?? makeRateLimit();
   const tickets = opts.tickets ?? makeTickets();
   const service = new FeedbucketAiService(
     db,
     gateway as unknown as AiGatewayService,
-    aiUsage,
     audit,
     rateLimiter,
     tickets,
     makePlanLimits(),
   );
-  return { service, db, gateway, audit, aiUsage, rateLimiter, tickets };
+  return { service, db, gateway, audit, rateLimiter, tickets };
 }
 
 describe("FeedbucketAiService", () => {
@@ -324,7 +317,6 @@ describe("FeedbucketAiService", () => {
       const service = new FeedbucketAiService(
         {} as Db,
         gateway as unknown as AiGatewayService,
-        makeAiUsage(),
         makeAudit(),
         makeRateLimit(),
         makeTickets(),
@@ -359,7 +351,6 @@ describe("FeedbucketAiService", () => {
       const service = new FeedbucketAiService(
         {} as Db,
         gateway as unknown as AiGatewayService,
-        makeAiUsage(),
         makeAudit(),
         makeRateLimit(),
         makeTickets(),

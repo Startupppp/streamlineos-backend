@@ -54,7 +54,7 @@ export class TimesheetsService {
 
     const conditions = [eq(timesheets.orgId, user.orgId)];
     if (query.ticketId) conditions.push(eq(timesheets.ticketId, query.ticketId));
-    conditions.push(applyScope(scope, user.userId, { ownerColumn: timesheets.userId }));
+    conditions.push(applyScope(scope, user.orgId, user.userId, { ownerColumn: timesheets.userId }));
     if (query.userId && scope === "all") conditions.push(eq(timesheets.userId, query.userId));
     if (query.startDate) conditions.push(gte(timesheets.date, query.startDate));
     if (query.endDate) conditions.push(lte(timesheets.date, query.endDate));
@@ -197,13 +197,16 @@ export class TimesheetsService {
   }
 
   async teamTimesheets(user: CurrentUserContext, query: TeamTimesheetsQuery) {
-    const perms = await this.access.resolveUserPermissions(user.orgId, user.userId);
-    if (!perms.has("build:timesheets:manage")) {
-      throw new ForbiddenException("Only admins can view team timesheets");
+    const scope = await resolveTimesheetsScope(this.access, user);
+    if (scope === "none") {
+      throw new ForbiddenException("You do not have permission to view team timesheets");
     }
 
-    const conditions = [eq(timesheets.orgId, user.orgId)];
-    if (query.userId) conditions.push(eq(timesheets.userId, query.userId));
+    const conditions = [
+      eq(timesheets.orgId, user.orgId),
+      applyScope(scope, user.orgId, user.userId, { ownerColumn: timesheets.userId }),
+    ];
+    if (query.userId && scope === "all") conditions.push(eq(timesheets.userId, query.userId));
     if (query.startDate) conditions.push(gte(timesheets.date, query.startDate));
     if (query.endDate) conditions.push(lte(timesheets.date, query.endDate));
     if (query.status) conditions.push(eq(timesheets.status, query.status));

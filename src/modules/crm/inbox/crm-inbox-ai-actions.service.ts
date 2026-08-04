@@ -58,7 +58,7 @@ export class CrmInboxAiActionsService {
     const todayString = now.toISOString().slice(0, 10);
     const threeDaysFromNow = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-    const leadScopeFilter = applyScope(scope, userId, { ownerColumn: leads.assignedToId });
+    const leadScopeFilter = applyScope(scope, orgId, userId, { ownerColumn: leads.assignedToId });
 
     const [hotLeads, slaDeals, expiringQuotes] = await Promise.all([
       this.db

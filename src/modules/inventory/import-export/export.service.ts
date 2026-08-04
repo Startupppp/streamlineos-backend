@@ -64,7 +64,7 @@ export class ExportService {
       .where(and(eq(invExportJobs.id, job.id), eq(invExportJobs.orgId, orgId)))
       .returning();
 
-    await this.cache.invalidatePattern(`inv:export-jobs:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invExportJobsNamespace(orgId));
 
     const result = updated ?? job;
     return { ...result, resultUrl: undefined };
@@ -143,9 +143,7 @@ export class ExportService {
     const { page, limit } = query;
     const offset = (page - 1) * limit;
     const hash = `${limit}:${offset}`;
-    const key = CACHE_KEYS.invExportJobsList(orgId, hash);
-
-    return this.cache.cached(key, async () => {
+    return this.cache.cachedVersioned(CACHE_KEYS.invExportJobsNamespace(orgId), hash, async () => {
       const [items, countResult] = await Promise.all([
         this.db
           .select({

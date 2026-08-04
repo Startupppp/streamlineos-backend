@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, count, desc, eq, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import { auditLogs, moduleOwnerships, organizationMembers, roleAssignments, rolePermissionGrants, roles, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -14,6 +14,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import {
   assertPermissionsGrantable,
   buildPermissionModuleMap,
@@ -36,9 +37,56 @@ import type { AuditLogQuery, SetModuleRolePermissionsInput } from "./dto/module-
 
 const MANAGED_MODULES = new Set<string>(ACCESS_MANAGED_MODULES);
 const PERM_DIFF_CAP = 50;
+const ROLE_ASSIGNEE_PAGE_SIZE = 100;
+const SCOPE_RANK: Record<DataScope, number> = { none: 0, own: 1, team: 2, all: 3 };
+
+interface RoleAssignee {
+  membershipId: number;
+  userId: string;
+}
+
+export async function invalidateRoleAssigneePages(
+  fetchPage: (
+    afterMembershipId: number | null,
+    limit: number,
+  ) => Promise<RoleAssignee[]>,
+  invalidateSession: (userId: string) => Promise<void>,
+): Promise<void> {
+  let afterMembershipId: number | null = null;
+  for (;;) {
+    const page = await fetchPage(
+      afterMembershipId,
+      ROLE_ASSIGNEE_PAGE_SIZE,
+    );
+    await Promise.all(page.map((assignee) => invalidateSession(assignee.userId)));
+    if (page.length < ROLE_ASSIGNEE_PAGE_SIZE) return;
+    const last = page[page.length - 1];
+    if (!last) return;
+    afterMembershipId = last.membershipId;
+  }
+}
 
 function moduleOf(permissionKey: string): string {
   return permissionKey.split(":")[0] ?? permissionKey;
+}
+
+function normalizeModulePermissionItems(
+  catalog: ReadonlySet<string>,
+  items: ReadonlyMap<string, DataScope>,
+): Map<string, DataScope> {
+  const normalized = new Map(items);
+  for (const [permissionKey, scope] of items) {
+    const [moduleKey, resource, action] = permissionKey.split(":");
+    if (!moduleKey || !resource || !action || action === "view" || scope === "none") continue;
+    const viewKey = `${moduleKey}:${resource}:view`;
+    if (!catalog.has(viewKey)) continue;
+    const existing = normalized.get(viewKey);
+    normalized.set(
+      viewKey,
+      existing && SCOPE_RANK[existing] >= SCOPE_RANK[scope] ? existing : scope,
+    );
+  }
+  return normalized;
 }
 
 export interface ModuleRoleView {
@@ -89,6 +137,9 @@ export class ModuleAccessService {
     action: "view" | "manage",
   ): Promise<void> {
     this.assertKnownModule(moduleKey);
+    if (!(await this.access.isModuleEnabled(actor.orgId, moduleKey))) {
+      throw new ForbiddenException(`The ${moduleKey} module is not enabled`);
+    }
     if (actor.isOrgOwner) return;
 
     const resolved = await this.access.resolveUserPermissions(
@@ -98,7 +149,9 @@ export class ModuleAccessService {
     const isOrgAdmin = grantsOrgAdmin(resolved);
     if (isOrgAdmin) return;
 
-    const scope = resolved.get(`${moduleKey}:access:${action}`);
+    const scope =
+      resolved.get(`${moduleKey}:access:${action}`) ??
+      (action === "view" ? resolved.get(`${moduleKey}:access:manage`) : undefined);
     if (!scope || scope === "none") {
       throw moduleAccessDenied(action);
     }
@@ -136,28 +189,46 @@ export class ModuleAccessService {
         isSystem: roles.isSystem,
       })
       .from(roles)
-      .where(eq(roles.orgId, orgId))
+      .where(and(eq(roles.orgId, orgId), eq(roles.moduleKey, moduleKey)))
       .orderBy(asc(roles.name))
       .limit(100);
 
-    const grants = await this.db
-      .select({
-        roleId: rolePermissionGrants.roleId,
-        permissionKey: rolePermissionGrants.permissionKey,
-        scope: rolePermissionGrants.scope,
-      })
-      .from(rolePermissionGrants)
-      .where(eq(rolePermissionGrants.orgId, orgId))
-      .limit(10000);
+    if (orgRoles.length === 0) return [];
+    const roleIds = orgRoles.map((role) => role.id);
+    const [grants, rolesWithGrantRows] = await Promise.all([
+      this.db
+        .select({
+          roleId: rolePermissionGrants.roleId,
+          permissionKey: rolePermissionGrants.permissionKey,
+          scope: rolePermissionGrants.scope,
+        })
+        .from(rolePermissionGrants)
+        .where(
+          and(
+            eq(rolePermissionGrants.orgId, orgId),
+            inArray(rolePermissionGrants.roleId, roleIds),
+            inArray(rolePermissionGrants.permissionKey, Array.from(catalog)),
+          ),
+        ),
+      this.db
+        .selectDistinct({ roleId: rolePermissionGrants.roleId })
+        .from(rolePermissionGrants)
+        .where(
+          and(
+            eq(rolePermissionGrants.orgId, orgId),
+            inArray(rolePermissionGrants.roleId, roleIds),
+          ),
+        ),
+    ]);
 
     const moduleGrantsByRole = new Map<
       number,
       { permissionKey: string; scope: DataScope }[]
     >();
-    const rolesWithAnyGrant = new Set<number>();
+    const rolesWithAnyGrant = new Set(
+      rolesWithGrantRows.map((grant) => grant.roleId),
+    );
     for (const grant of grants) {
-      rolesWithAnyGrant.add(grant.roleId);
-      if (!catalog.has(grant.permissionKey)) continue;
       const list = moduleGrantsByRole.get(grant.roleId) ?? [];
       list.push({ permissionKey: grant.permissionKey, scope: grant.scope });
       moduleGrantsByRole.set(grant.roleId, list);
@@ -192,20 +263,27 @@ export class ModuleAccessService {
     await this.assertModuleAccess(actor, moduleKey, "manage");
     const catalog = this.moduleCatalogKeys(moduleKey);
 
-    const deduped = new Map<string, DataScope>();
+    const requested = new Map<string, DataScope>();
     for (const item of input.items) {
       if (!catalog.has(item.permissionKey)) {
         throw new BadRequestException(
           `Permission "${item.permissionKey}" is not part of the ${moduleKey} module`,
         );
       }
-      deduped.set(item.permissionKey, item.scope);
+      requested.set(item.permissionKey, item.scope);
     }
+    const deduped = normalizeModulePermissionItems(catalog, requested);
 
     const role = await this.db.query.roles.findFirst({
-      where: and(eq(roles.id, roleId), eq(roles.orgId, actor.orgId)),
+      where: and(
+        eq(roles.id, roleId),
+        eq(roles.orgId, actor.orgId),
+        eq(roles.moduleKey, moduleKey),
+      ),
     });
-    if (!role) throw new NotFoundException("Role not found");
+    if (!role || role.moduleKey !== moduleKey) {
+      throw new NotFoundException("Role not found");
+    }
     if (isImmutableSystemRole(role)) {
       throw new ForbiddenException("Organization-level system roles cannot be edited");
     }
@@ -236,7 +314,7 @@ export class ModuleAccessService {
 
     let permDiff: { added: string[]; removed: string[]; truncated: boolean } = { added: [], removed: [], truncated: false };
 
-    await this.db.transaction(async (tx): Promise<void> => {
+    await runInTenantTransaction(this.db, async (tx): Promise<void> => {
       const updated = await tx
         .update(roles)
         .set({ version: nextVersion })
@@ -266,8 +344,7 @@ export class ModuleAccessService {
             eq(rolePermissionGrants.orgId, actor.orgId),
             eq(rolePermissionGrants.roleId, roleId),
           ),
-        )
-        .limit(2000);
+        );
 
       const base = new Map<string, DataScope>();
       if (existingGrants.length > 0) {
@@ -321,23 +398,51 @@ export class ModuleAccessService {
         );
       }
       await bumpPermissionsVersion(tx, actor.orgId);
-    });
+    }, { orgId: actor.orgId });
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
 
-    const assignees = await this.db
-      .select({ userId: organizationMembers.userId })
-      .from(roleAssignments)
-      .innerJoin(
-        organizationMembers,
-        and(
-          eq(organizationMembers.orgId, roleAssignments.orgId),
-          eq(organizationMembers.id, roleAssignments.organizationMembershipId),
+    await runInTenantTransaction(
+      this.db,
+      (tx) =>
+        invalidateRoleAssigneePages(
+          (afterMembershipId, limit) => {
+            const conditions = [
+              eq(roleAssignments.orgId, actor.orgId),
+              eq(roleAssignments.roleId, roleId),
+            ];
+            if (afterMembershipId !== null) {
+              conditions.push(
+                gt(
+                  roleAssignments.organizationMembershipId,
+                  afterMembershipId,
+                ),
+              );
+            }
+            return tx
+              .select({
+                membershipId: roleAssignments.organizationMembershipId,
+                userId: organizationMembers.userId,
+              })
+              .from(roleAssignments)
+              .innerJoin(
+                organizationMembers,
+                and(
+                  eq(organizationMembers.orgId, roleAssignments.orgId),
+                  eq(
+                    organizationMembers.id,
+                    roleAssignments.organizationMembershipId,
+                  ),
+                ),
+              )
+              .where(and(...conditions))
+              .orderBy(asc(roleAssignments.organizationMembershipId))
+              .limit(limit);
+          },
+          (userId) => this.cache.invalidate(CACHE_KEYS.userSession(userId)),
         ),
-      )
-      .where(and(eq(roleAssignments.orgId, actor.orgId), eq(roleAssignments.roleId, roleId)))
-      .limit(500);
-    await Promise.all(assignees.map((a) => this.cache.invalidate(CACHE_KEYS.userSession(a.userId))));
+      { orgId: actor.orgId },
+    );
 
     this.audit.log({
       action: "module_access.role_permissions_set",
@@ -427,6 +532,7 @@ export class ModuleAccessService {
       actorEmail: string;
       targetId: string | null;
       targetType: string | null;
+      targetName: string | null;
       metadata: Record<string, unknown> | null;
       ipAddress: string | null;
       createdAt: string;
@@ -467,6 +573,38 @@ export class ModuleAccessService {
     ]);
 
     const total = Number(totalResult[0]?.total ?? 0);
+    const targetUserIds = rows.flatMap((row) =>
+      row.targetType === "user" && row.targetId ? [row.targetId] : [],
+    );
+    const targetRoleIds = rows.flatMap((row) => {
+      if (row.targetType !== "role" || !row.targetId) return [];
+      const roleId = Number(row.targetId);
+      return Number.isInteger(roleId) ? [roleId] : [];
+    });
+    const [targetUsers, targetRoles] = await Promise.all([
+      targetUserIds.length
+        ? this.db
+            .select({ id: users.id, name: users.name, email: users.email })
+            .from(organizationMembers)
+            .innerJoin(users, eq(users.id, organizationMembers.userId))
+            .where(
+              and(
+                eq(organizationMembers.orgId, actor.orgId),
+                inArray(organizationMembers.userId, targetUserIds),
+              ),
+            )
+        : [],
+      targetRoleIds.length
+        ? this.db
+            .select({ id: roles.id, name: roles.name })
+            .from(roles)
+            .where(and(eq(roles.orgId, actor.orgId), inArray(roles.id, targetRoleIds)))
+        : [],
+    ]);
+    const userNames = new Map(
+      targetUsers.map((user) => [user.id, user.name ?? user.email]),
+    );
+    const roleNames = new Map(targetRoles.map((role) => [role.id, role.name]));
 
     const data = rows.map((r) => ({
       id: r.id,
@@ -476,6 +614,12 @@ export class ModuleAccessService {
       actorEmail: r.actorEmail ?? "",
       targetId: r.targetId,
       targetType: r.targetType,
+      targetName:
+        r.targetType === "user" && r.targetId
+          ? userNames.get(r.targetId) ?? null
+          : r.targetType === "role" && r.targetId
+            ? roleNames.get(Number(r.targetId)) ?? null
+            : null,
       metadata: r.metadata,
       ipAddress: r.ipAddress,
       createdAt: r.createdAt.toISOString(),

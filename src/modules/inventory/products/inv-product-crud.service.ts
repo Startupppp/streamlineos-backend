@@ -116,10 +116,9 @@ export class InvProductCrudService {
     const offset = (page - 1) * limit;
     const scopeSuffix = scope !== "all" ? `:${scope}:${userId ?? ""}` : "";
     const hash = `${status ?? ""}:${productType ?? ""}:${categoryId ?? ""}:${search ?? ""}:${limit}:${offset}${scopeSuffix}`;
-    const key = CACHE_KEYS.invProductsList(orgId, hash);
-
-    return this.cache.cached(
-      key,
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.invProductsNamespace(orgId),
+      hash,
       async () => {
         const conditions = [eq(invProducts.orgId, orgId)];
         if (status) conditions.push(eq(invProducts.status, status));
@@ -136,7 +135,7 @@ export class InvProductCrudService {
         }
         if (scope !== "all" && userId) {
           conditions.push(
-            applyScope(scope, userId, { ownerColumn: invProducts.createdBy }),
+            applyScope(scope, orgId, userId, { ownerColumn: invProducts.createdBy }),
           );
         }
         const where = and(...conditions);
@@ -255,7 +254,7 @@ export class InvProductCrudService {
           });
         }
 
-        await this.cache.invalidatePattern(`inv:products:list:${orgId}:*`);
+        await this.cache.invalidateNamespace(CACHE_KEYS.invProductsNamespace(orgId));
         return product;
       } catch (err) {
         if (!providedSku && isUniqueViolation(err)) continue;
@@ -321,7 +320,7 @@ export class InvProductCrudService {
       .returning();
 
     await this.cache.del(CACHE_KEYS.invProductDetail(orgId, productId));
-    await this.cache.invalidatePattern(`inv:products:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invProductsNamespace(orgId));
     return updated;
   }
 
@@ -394,7 +393,7 @@ export class InvProductCrudService {
       .delete(invProducts)
       .where(and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)));
     await this.cache.del(CACHE_KEYS.invProductDetail(orgId, productId));
-    await this.cache.invalidatePattern(`inv:products:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invProductsNamespace(orgId));
   }
 
   async archiveProduct(orgId: string, productId: number, userId: string) {
@@ -421,7 +420,7 @@ export class InvProductCrudService {
     });
 
     await this.cache.del(CACHE_KEYS.invProductDetail(orgId, productId));
-    await this.cache.invalidatePattern(`inv:products:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invProductsNamespace(orgId));
     return updated;
   }
 
@@ -449,7 +448,7 @@ export class InvProductCrudService {
     });
 
     await this.cache.del(CACHE_KEYS.invProductDetail(orgId, productId));
-    await this.cache.invalidatePattern(`inv:products:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invProductsNamespace(orgId));
     return updated;
   }
 }

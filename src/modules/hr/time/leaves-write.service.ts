@@ -45,7 +45,7 @@ export class LeavesWriteService {
   ) {}
 
   private async invalidateLeaveAnalytics(orgId: string): Promise<void> {
-    await this.cache.invalidatePattern(`hr:leave-analytics:${orgId}:*`);
+    await this.cache.invalidateNamespace(`hr:leave-analytics:${orgId}`);
   }
 
   async create(u: CurrentUserContext, body: CreateLeaveInput) {

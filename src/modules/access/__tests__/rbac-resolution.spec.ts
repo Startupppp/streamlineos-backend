@@ -97,7 +97,16 @@ describe("AccessService.resolveUserPermissions — org owner receives every cata
       select: jest.fn().mockReturnValue(makeSelectChain([])),
     };
 
-    const result = await buildService(db).resolveUserPermissions(ORG_A, USER);
+    const result = new Map(
+      Object.entries(
+        await (buildService(db) as unknown as {
+          computeUserPermissions: (
+            orgId: string,
+            userId: string,
+          ) => Promise<Record<string, "all" | "team" | "own" | "none">>;
+        }).computeUserPermissions(ORG_A, USER),
+      ),
+    );
 
     expect(result.size).toBeGreaterThan(0);
     for (const name of ALL_PERMISSION_NAMES) {
@@ -152,7 +161,12 @@ describe("AccessService.resolveUserPermissions — ORG_ADMIN role grants every c
       query: {
         accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
         organizationMembers: {
-          findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 1 }),
+          findFirst: jest.fn().mockResolvedValue({
+            isOwner: false,
+            status: "ACTIVE",
+            role: "ORG_ADMIN",
+            id: 1,
+          }),
         },
       },
       select: jest.fn()
@@ -165,7 +179,16 @@ describe("AccessService.resolveUserPermissions — ORG_ADMIN role grants every c
         .mockReturnValueOnce(makeSelectChain([])),
     };
 
-    const result = await buildService(db).resolveUserPermissions(ORG_A, USER);
+    const result = new Map(
+      Object.entries(
+        await (buildService(db) as unknown as {
+          computeUserPermissions: (
+            orgId: string,
+            userId: string,
+          ) => Promise<Record<string, "all" | "team" | "own" | "none">>;
+        }).computeUserPermissions(ORG_A, USER),
+      ),
+    );
 
     expect(result.size).toBeGreaterThan(0);
     for (const name of ALL_PERMISSION_NAMES) {
@@ -174,6 +197,7 @@ describe("AccessService.resolveUserPermissions — ORG_ADMIN role grants every c
     expect(result.get("ownership:org:transfer")).toBe("all");
     expect(result.get("hr:leaves:approve")).toBe("all");
     expect(result.get("crm:deals:read")).toBe("all");
+    expect(db.select).not.toHaveBeenCalled();
   });
 });
 

@@ -30,6 +30,6 @@ describe("Expenses import auth/RBAC (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ fileName: "expenses.csv", content: "category,amount\nTravel,10" });
     expect(res.status).toBe(403);
-    expect(res.body).toEqual({ error: "Only HR and CEO can import expenses" });
+    expect(res.body).toEqual({ error: "Permission denied" });
   });
 });

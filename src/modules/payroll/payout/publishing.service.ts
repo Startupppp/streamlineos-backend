@@ -17,7 +17,6 @@ import {
   payslipPublications,
   payslipTemplates,
   payrollRunEvents,
-  users,
   organizationMembers,
   organizations,
 } from "../../../db/schema";
@@ -27,10 +26,15 @@ import { EmailService } from "../../email/email.service";
 import { AccessService } from "../../access/access.service";
 import { PayrollNotificationsService } from "../insights/payroll-notifications.service";
 import { logger } from "../../../common/logger/logger.service";
-import { decryptBankDetails } from "../../../modules/hr/payroll/lib/encryption";
 import { generatePayslipPdf } from "../../../modules/hr/payroll/lib/payslip-pdf";
 import { buildPayslipPdfData } from "./lib/payslip-renderer";
 import { getPayslipEmailTemplate } from "../../email/templates/payroll";
+import {
+  filterPayeesByRunEmployeeIds,
+  filterPayeesBySubjectKeys,
+  loadRunEmployeePayeeById,
+  loadRunEmployeePayees,
+} from "../lib/payroll-run-payee";
 import type { CalculationSnapshot, PayrollToggles } from "../payroll.types";
 import type { PayslipTemplateConfig } from "./dto/payout.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -67,7 +71,8 @@ export class PublishingService {
     orgId: string,
     runId: number,
     actorId: string,
-    userIds?: string[],
+    subjectKeys?: string[],
+    runEmployeeIds?: number[],
   ) {
     const run = await this.db.query.payrollRuns.findFirst({
       where: and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)),
@@ -97,32 +102,31 @@ export class PublishingService {
       ? [org.address.city, org.address.state, org.address.country].filter(Boolean).join(", ")
       : undefined;
 
-    let employees = await this.db
-      .select({
-        id: payrollRunEmployees.id,
-        userId: payrollRunEmployees.userId,
-        workerType: payrollRunEmployees.workerType,
-        currency: payrollRunEmployees.currency,
-        calculationSnapshot: payrollRunEmployees.calculationSnapshot,
-        bankDetails: users.bankDetails,
-        name: users.name,
-        email: users.email,
-        employeeId: users.employeeId,
-        designation: users.designation,
-        joiningDate: users.joiningDate,
-      })
-      .from(payrollRunEmployees)
-      .leftJoin(users, eq(payrollRunEmployees.userId, users.id))
-      .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)));
+    let payees = await loadRunEmployeePayees(this.db, orgId, runId);
+    const totalRunEmployeeCount = payees.length;
 
-    const totalRunEmployeeCount = employees.length;
-
-    if (userIds && userIds.length > 0) {
-      employees = employees.filter(e => userIds.includes(e.userId));
+    if (runEmployeeIds && runEmployeeIds.length > 0) {
+      payees = filterPayeesByRunEmployeeIds(payees, runEmployeeIds);
+    } else if (subjectKeys && subjectKeys.length > 0) {
+      payees = filterPayeesBySubjectKeys(payees, subjectKeys);
     }
 
+    const runEmployees = await this.db
+      .select({
+        id: payrollRunEmployees.id,
+        calculationSnapshot: payrollRunEmployees.calculationSnapshot,
+        workerType: payrollRunEmployees.workerType,
+        currency: payrollRunEmployees.currency,
+      })
+      .from(payrollRunEmployees)
+      .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)));
+
+    const snapshotByRunEmployee = new Map(
+      runEmployees.map((row) => [row.id, row] as const),
+    );
+
     let published = 0;
-    const total = employees.length;
+    const total = payees.length;
 
     const layout = defaultTemplate?.layout ?? "CLASSIC";
     const rawTemplateConfig = defaultTemplate?.config;
@@ -142,21 +146,22 @@ export class PublishingService {
       existingPubs.map((p) => [p.runEmployeeId, p.status] as const),
     );
 
-    for (const emp of employees) {
-      if (!emp.calculationSnapshot) continue;
+    for (const payee of payees) {
+      const emp = snapshotByRunEmployee.get(payee.runEmployeeId);
+      if (!emp?.calculationSnapshot) continue;
       const snapshot = emp.calculationSnapshot as CalculationSnapshot;
       const snapshotHash = computeSnapshotHash(snapshot);
 
-      const bank = decryptBankDetails(emp.bankDetails ?? null);
+      const bank = payee.bankDetails;
       const maskedAccount = bank?.accountNumber ? "XXXX" + bank.accountNumber.slice(-4) : undefined;
 
       const pdfData = buildPayslipPdfData({
         snapshot,
         employee: {
-          name: emp.name ?? emp.userId,
-          employeeId: emp.employeeId ?? undefined,
-          designation: emp.designation ?? undefined,
-          joiningDate: emp.joiningDate ?? undefined,
+          name: payee.displayName,
+          employeeId: payee.employeeId ?? undefined,
+          designation: payee.designation ?? undefined,
+          joiningDate: payee.joiningDate ?? undefined,
           maskedAccount,
           bankName: bank?.bankName ?? undefined,
           ifsc: bank?.ifsc ?? undefined,
@@ -175,7 +180,7 @@ export class PublishingService {
       try {
         renderedPdfBuffer = await generatePayslipPdf(pdfData);
         if (this.storage.isConfigured()) {
-          const fileName = `payslip-${emp.userId}-${run.month}.pdf`;
+          const fileName = `payslip-${payee.subjectKey}-${run.month}.pdf`;
           const uploadResult = await this.storage.uploadFile(
             renderedPdfBuffer,
             `payroll/payslips/${runId}`,
@@ -192,20 +197,19 @@ export class PublishingService {
         failureReason = err instanceof Error ? err.message : "PDF generation failed";
       }
 
-      // Without storage, portal still marks published if PDF was generated (in-memory path).
-      // If generation failed, persist FAILED so operators can retry.
       const pubStatus = failureReason ? "FAILED" : "PUBLISHED";
       const now = new Date();
 
-      const nextAttempt = (attemptCountByRunEmployee.get(emp.id) ?? 0) + 1;
+      const nextAttempt = (attemptCountByRunEmployee.get(payee.runEmployeeId) ?? 0) + 1;
 
       const [upsertedPub] = await this.db
         .insert(payslipPublications)
         .values({
           orgId,
           runId,
-          runEmployeeId: emp.id,
-          userId: emp.userId,
+          runEmployeeId: payee.runEmployeeId,
+          userId: payee.subject.userId,
+          workerId: payee.subject.workerId,
           payslipTemplateId: defaultTemplate?.id ?? null,
           pdfUrl,
           publishedAt: pubStatus === "PUBLISHED" ? now : null,
@@ -229,31 +233,33 @@ export class PublishingService {
             failureReason,
             attemptCount: nextAttempt,
             lastAttemptAt: now,
+            userId: payee.subject.userId,
+            workerId: payee.subject.workerId,
           },
         })
         .returning({ id: payslipPublications.id });
 
-      const wasAlreadyPublished = priorStatusByRunEmployee.get(emp.id) === "PUBLISHED";
+      const wasAlreadyPublished = priorStatusByRunEmployee.get(payee.runEmployeeId) === "PUBLISHED";
       if (pubStatus === "PUBLISHED") {
         published++;
-        if (upsertedPub && !wasAlreadyPublished) {
+        if (upsertedPub && !wasAlreadyPublished && payee.subject.userId) {
           this.notifications
-            .notifyPayslipPublished(orgId, emp.userId, upsertedPub.id, run.month)
+            .notifyPayslipPublished(orgId, payee.subject.userId, upsertedPub.id, run.month)
             .catch(e => logger.error("notifyPayslipPublished failed", { error: e }));
         }
 
-        if (!wasAlreadyPublished && emailPayslips && emp.email && renderedPdfBuffer) {
+        if (!wasAlreadyPublished && emailPayslips && payee.email && renderedPdfBuffer) {
           try {
             const monthLabel = fmtMonthYear(run.month);
             const netAmount = parseFloat(snapshot.totals.net).toLocaleString("en-IN", { minimumFractionDigits: 2 });
             const emailTemplate = getPayslipEmailTemplate({
-              employeeName: emp.name ?? emp.userId,
+              employeeName: payee.displayName,
               month: monthLabel,
               netSalary: netAmount,
               orgName,
             });
             void this.email.sendEmail({
-              to: emp.email,
+              to: payee.email,
               subject: emailTemplate.subject,
               html: emailTemplate.html,
               attachments: [
@@ -264,15 +270,20 @@ export class PublishingService {
                 },
               ],
             });
-          } catch {
-            // Email is best-effort; PDF already published to portal.
+          } catch (error) {
+            logger.warn("Payslip publication email failed", {
+              orgId,
+              runId,
+              subjectKey: payee.subjectKey,
+              error,
+            });
           }
         }
       } else {
         logger.error("Payslip publication failed", {
           orgId,
           runId,
-          userId: emp.userId,
+          subjectKey: payee.subjectKey,
           failureReason,
         });
       }
@@ -329,6 +340,7 @@ export class PublishingService {
       columns: {
         id: true,
         userId: true,
+        workerId: true,
         runEmployeeId: true,
         status: true,
         channel: true,
@@ -353,14 +365,14 @@ export class PublishingService {
         eq(payslipPublications.orgId, orgId),
         eq(payslipPublications.status, "FAILED"),
       ),
-      columns: { userId: true },
+      columns: { runEmployeeId: true },
     });
     if (failed.length === 0) {
       return { published: 0, total: 0, runStatus: null as string | null, retried: 0 };
     }
-    const userIds = failed.map((f) => f.userId);
-    const result = await this.publish(orgId, runId, actorId, userIds);
-    return { ...result, retried: userIds.length };
+    const runEmployeeIds = failed.map((f) => f.runEmployeeId);
+    const result = await this.publish(orgId, runId, actorId, undefined, runEmployeeIds);
+    return { ...result, retried: runEmployeeIds.length };
   }
 
   async retryFailedPublication(orgId: string, publicationId: number, actorId: string) {
@@ -369,13 +381,13 @@ export class PublishingService {
         eq(payslipPublications.id, publicationId),
         eq(payslipPublications.orgId, orgId),
       ),
-      columns: { id: true, runId: true, userId: true, status: true },
+      columns: { id: true, runId: true, runEmployeeId: true, status: true },
     });
     if (!pub) throw new NotFoundException("Payslip publication not found");
     if (pub.status !== "FAILED") {
       throw new BadRequestException("Only FAILED payslip publications can be retried");
     }
-    const result = await this.publish(orgId, pub.runId, actorId, [pub.userId]);
+    const result = await this.publish(orgId, pub.runId, actorId, undefined, [pub.runEmployeeId]);
     return { ...result, retried: 1, publicationId };
   }
 
@@ -389,6 +401,7 @@ export class PublishingService {
         id: true,
         orgId: true,
         userId: true,
+        workerId: true,
         runId: true,
         runEmployeeId: true,
         snapshotHash: true,
@@ -398,7 +411,8 @@ export class PublishingService {
     });
     if (!publication) throw new NotFoundException("Payslip publication not found");
 
-    const isOwnPayslip = publication.userId === caller.userId;
+    const isOwnPayslip =
+      publication.userId != null && publication.userId === caller.userId;
 
     if (!isOwnPayslip) {
       if (publication.orgId !== caller.orgId) {
@@ -425,10 +439,16 @@ export class PublishingService {
         workerType: true,
         currency: true,
         userId: true,
+        workerId: true,
       },
     });
     if (!runEmployee?.calculationSnapshot) {
       throw new ConflictException("Calculation snapshot not available for this payslip");
+    }
+
+    const payee = await loadRunEmployeePayeeById(this.db, publication.orgId, publication.runEmployeeId);
+    if (!payee) {
+      throw new ConflictException("Payee details not available for this payslip");
     }
 
     const snapshot = runEmployee.calculationSnapshot as CalculationSnapshot;
@@ -443,11 +463,7 @@ export class PublishingService {
     });
     if (!run) throw new NotFoundException("Payroll run not found");
 
-    const [userRow, orgRow, templateRow] = await Promise.all([
-      this.db.query.users.findFirst({
-        where: eq(users.id, runEmployee.userId),
-        columns: { name: true, employeeId: true, designation: true, joiningDate: true, bankDetails: true, email: true },
-      }),
+    const [orgRow, templateRow] = await Promise.all([
       this.db.query.organizations.findFirst({
         where: eq(organizations.id, run.orgId),
         columns: { name: true, address: true },
@@ -460,7 +476,7 @@ export class PublishingService {
         : Promise.resolve(null),
     ]);
 
-    const bank = decryptBankDetails(userRow?.bankDetails ?? null);
+    const bank = payee.bankDetails;
     const maskedAccount = bank?.accountNumber ? "XXXX" + bank.accountNumber.slice(-4) : undefined;
     const orgName = orgRow?.name ?? "Organization";
     const orgAddress = orgRow?.address
@@ -476,10 +492,10 @@ export class PublishingService {
     const pdfData = buildPayslipPdfData({
       snapshot,
       employee: {
-        name: userRow?.name ?? runEmployee.userId,
-        employeeId: userRow?.employeeId ?? undefined,
-        designation: userRow?.designation ?? undefined,
-        joiningDate: userRow?.joiningDate ?? undefined,
+        name: payee.displayName,
+        employeeId: payee.employeeId ?? undefined,
+        designation: payee.designation ?? undefined,
+        joiningDate: payee.joiningDate ?? undefined,
         maskedAccount,
         bankName: bank?.bankName ?? undefined,
         ifsc: bank?.ifsc ?? undefined,

@@ -24,8 +24,9 @@ export class ContactsService {
 
   list(orgId: string, filters: ListInput) {
     const hash = `${filters.search ?? ""}:${filters.organizationId ?? ""}:${filters.limit ?? ""}:${filters.offset ?? ""}`;
-    return this.cache.cached(
-      CACHE_KEYS.contactsList(orgId, hash),
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.contactsListNamespace(orgId),
+      hash,
       () => this.queryContacts(orgId, filters),
       CACHE_TTL.SHORT,
     );
@@ -122,7 +123,7 @@ export class ContactsService {
       })
       .returning();
 
-    await this.cache.invalidatePattern(`crm:contacts:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.contactsListNamespace(orgId));
     return contact;
   }
 
@@ -134,7 +135,7 @@ export class ContactsService {
       .returning();
 
     if (!updated) return null;
-    await this.cache.invalidatePattern(`crm:contacts:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.contactsListNamespace(orgId));
     return updated;
   }
 
@@ -143,39 +144,65 @@ export class ContactsService {
       .update(contacts)
       .set({ deletedAt: new Date(), updatedAt: new Date() })
       .where(and(eq(contacts.id, id), eq(contacts.orgId, orgId)));
-    await this.cache.invalidatePattern(`crm:contacts:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.contactsListNamespace(orgId));
     return { success: true };
   }
 
   async bulkImport(orgId: string, input: BulkImportContactsInput) {
     await this.planLimits.assertWithinLimit(orgId, "crmContacts", input.contacts.length);
 
+    const rows = input.contacts.map((row) => ({
+      orgId,
+      name: row.name.trim(),
+      email: row.email?.trim() || null,
+      phone: row.phone?.trim() || null,
+      company: row.company?.trim() || null,
+      title: row.title?.trim() || null,
+      tags: [],
+    }));
+
     let created = 0;
     let failed = 0;
-
-    for (const row of input.contacts) {
-      try {
-        const email = row.email?.trim() || null;
-        await this.db.insert(contacts).values({
-          orgId,
-          name: row.name.trim(),
-          email: email || null,
-          phone: row.phone?.trim() || null,
-          company: row.company?.trim() || null,
-          title: row.title?.trim() || null,
-          tags: [],
-        });
-        created++;
-      } catch {
-        failed++;
-      }
+    for (let start = 0; start < rows.length; start += 100) {
+      const result = await this.insertImportChunk(rows.slice(start, start + 100));
+      created += result.created;
+      failed += result.failed;
     }
 
     if (created > 0) {
-      await this.cache.invalidatePattern(`crm:contacts:list:${orgId}:*`);
+      await this.cache.invalidateNamespace(CACHE_KEYS.contactsListNamespace(orgId));
     }
 
     return { created, failed };
+  }
+
+  /**
+   * Bulk-insert the common success path while retaining row-level partial failure
+   * semantics. A rejected batch is bisected until only the invalid row remains.
+   */
+  private async insertImportChunk(
+    rows: (typeof contacts.$inferInsert)[],
+  ): Promise<{ created: number; failed: number }> {
+    if (rows.length === 0) return { created: 0, failed: 0 };
+
+    try {
+      await this.db.transaction(async (tx) => {
+        await tx.insert(contacts).values(rows);
+      });
+      return { created: rows.length, failed: 0 };
+    } catch {
+      if (rows.length === 1) return { created: 0, failed: 1 };
+
+      const midpoint = Math.ceil(rows.length / 2);
+      // Keep failure isolation sequential so a pathological file cannot fan out
+      // into hundreds of concurrent transactions.
+      const left = await this.insertImportChunk(rows.slice(0, midpoint));
+      const right = await this.insertImportChunk(rows.slice(midpoint));
+      return {
+        created: left.created + right.created,
+        failed: left.failed + right.failed,
+      };
+    }
   }
 
   async exportCsv(orgId: string): Promise<string> {

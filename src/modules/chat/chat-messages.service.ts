@@ -170,7 +170,7 @@ export class ChatMessagesService {
       return { message: created, insertedAttachments: attachmentRows };
     });
 
-    void this.cache.invalidatePattern(`chat:unread:*:${orgId}`).catch(() => undefined);
+    void this.cache.invalidateNamespace(`chat:unread:${orgId}`).catch(() => undefined);
     void this.replyReminders
       .scheduleForMessage(orgId, channelId, message.id, userId)
       .catch(() => undefined);

@@ -23,7 +23,7 @@ export class InvCycleCountsService {
     const offset = (page - 1) * limit;
     const hash = `${status ?? ""}:${warehouseId ?? ""}:${limit}:${offset}`;
 
-    return this.cache.cached(CACHE_KEYS.invCycleCountsList(orgId, hash), async () => {
+    return this.cache.cachedVersioned(CACHE_KEYS.invCycleCountsNamespace(orgId), hash, async () => {
       const conditions = [eq(invCycleCounts.orgId, orgId)];
       if (status) conditions.push(eq(invCycleCounts.status, status));
       if (warehouseId) conditions.push(eq(invCycleCounts.warehouseId, warehouseId));
@@ -101,7 +101,7 @@ export class InvCycleCountsService {
       );
     }
 
-    await this.cache.invalidatePattern(CACHE_KEYS.invCycleCountsList(orgId, "*") + "");
+    await this.cache.invalidateNamespace(CACHE_KEYS.invCycleCountsNamespace(orgId));
     return this.getCycleCount(orgId, cc.id);
   }
 
@@ -195,7 +195,7 @@ export class InvCycleCountsService {
     });
 
     await this.cache.invalidate(CACHE_KEYS.invCycleCountDetail(orgId, countId));
-    await this.cache.invalidatePattern(CACHE_KEYS.invCycleCountsList(orgId, "*") + "");
+    await this.cache.invalidateNamespace(CACHE_KEYS.invCycleCountsNamespace(orgId));
     return this.getCycleCount(orgId, countId);
   }
 

@@ -123,13 +123,13 @@ describe("Leads extended routes auth/RBAC (e2e)", () => {
     expect(res.body).toEqual({ error: "Forbidden: Manager or Admin role required" });
   });
 
-  it("403 on POST /leads/distribute for a non CEO/HR role (role-string gate)", async () => {
+  it("403 on POST /leads/distribute without crm:leads:assign", async () => {
     const token = await signToken({ sub: "member_1" });
     const res = await request(app.getHttpServer())
       .post("/leads/distribute")
       .set("Authorization", `Bearer ${token}`)
       .send({ leadIds: [1] });
     expect(res.status).toBe(403);
-    expect(res.body).toEqual({ error: "Only CEO or HR can distribute leads" });
+    expect(res.body).toEqual({ error: "Permission denied" });
   });
 });

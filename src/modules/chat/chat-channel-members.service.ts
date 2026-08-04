@@ -18,7 +18,6 @@ import { CacheService } from "../../common/cache/cache.service";
 import type { UpdateChannelInput } from "./dto/chat.schemas";
 import { assertUsersInOrg } from "../../common/tenant/org-membership";
 
-const chatUnreadKey = (userId: string, orgId: string) => `chat:unread:${userId}:${orgId}`;
 
 @Injectable()
 export class ChatChannelMembersService {
@@ -232,7 +231,7 @@ export class ChatChannelMembersService {
         ),
       );
 
-    await this.cache.invalidate(chatUnreadKey(userId, orgId));
+    await this.cache.invalidateNamespace(`chat:unread:${orgId}`);
 
     return { ok: true };
   }

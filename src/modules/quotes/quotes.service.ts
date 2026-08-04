@@ -32,8 +32,9 @@ export class QuotesService {
     const limit = pageSize;
     const offset = (page - 1) * pageSize;
 
-    const key = `quotes:list:${orgId}:${status ?? ""}:${dealId ?? ""}:${search ?? ""}:${limit}:${offset}`;
-    return this.cache.cached(
+    const key = `${status ?? ""}:${dealId ?? ""}:${search ?? ""}:${limit}:${offset}`;
+    return this.cache.cachedVersioned(
+      `quotes:list:${orgId}`,
       key,
       async () => {
         const conditions = [eq(quotes.orgId, orgId)];
@@ -183,7 +184,7 @@ export class QuotesService {
       metadata: { quoteNumber: quote.quoteNumber, subject: input.subject },
     });
 
-    await this.cache.invalidatePattern(`quotes:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(`quotes:list:${orgId}`);
 
     return quote;
   }
@@ -292,7 +293,7 @@ export class QuotesService {
       metadata: { changedFields: Object.keys(input), newStatus: input.status },
     });
 
-    await this.cache.invalidatePattern(`quotes:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(`quotes:list:${orgId}`);
 
     return updated;
   }
@@ -315,7 +316,7 @@ export class QuotesService {
       metadata: { quoteNumber: existing.quoteNumber },
     });
 
-    await this.cache.invalidatePattern(`quotes:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(`quotes:list:${orgId}`);
 
     return { success: true };
   }

@@ -4,8 +4,6 @@ import { ModuleGuard } from "./module.guard";
 import { ModuleDisabledException } from "../http/api-exceptions";
 import type { CurrentUserContext } from "../auth/backend-claims";
 import type { EntitlementsService } from "../../modules/access/entitlements.service";
-import type { AccessService } from "../../modules/access/access.service";
-import type { DataScope } from "../../modules/access/access.types";
 
 function ctx(user: Partial<CurrentUserContext>): ExecutionContext {
   const req = {
@@ -30,19 +28,13 @@ describe("ModuleGuard", () => {
     isModuleEnabled: jest.fn(),
   };
 
-  const access: jest.Mocked<Pick<AccessService, "resolveUserPermissions">> = {
-    resolveUserPermissions: jest.fn(),
-  };
-
   const guard = new ModuleGuard(
     reflector,
     entitlements as unknown as EntitlementsService,
-    access as unknown as AccessService,
   );
 
   beforeEach(() => {
     jest.clearAllMocks();
-    access.resolveUserPermissions.mockResolvedValue(new Map<string, DataScope>());
   });
 
   it("passes through when no @RequireModule is set", async () => {
@@ -65,19 +57,20 @@ describe("ModuleGuard", () => {
     await expect(guard.canActivate(ctx({}))).rejects.toThrow(ModuleDisabledException);
   });
 
-  it("allows org owners regardless of module state", async () => {
+  it("denies org owners when the module is disabled", async () => {
     reflector.getAllAndOverride.mockReturnValue("crm");
-    expect(await guard.canActivate(ctx({ isOrgOwner: true }))).toBe(true);
-    expect(entitlements.isModuleEnabled).not.toHaveBeenCalled();
+    entitlements.isModuleEnabled.mockResolvedValue(false);
+    await expect(guard.canActivate(ctx({ isOrgOwner: true }))).rejects.toThrow(
+      ModuleDisabledException,
+    );
+    expect(entitlements.isModuleEnabled).toHaveBeenCalledWith("org-1", "crm");
   });
 
-  it("allows org admins regardless of module state", async () => {
+  it("denies org admins when the module is disabled", async () => {
     reflector.getAllAndOverride.mockReturnValue("crm");
-    access.resolveUserPermissions.mockResolvedValue(
-      new Map<string, DataScope>([["settings:manage", "all"]]),
-    );
-    expect(await guard.canActivate(ctx({}))).toBe(true);
-    expect(entitlements.isModuleEnabled).not.toHaveBeenCalled();
+    entitlements.isModuleEnabled.mockResolvedValue(false);
+    await expect(guard.canActivate(ctx({}))).rejects.toThrow(ModuleDisabledException);
+    expect(entitlements.isModuleEnabled).toHaveBeenCalledWith("org-1", "crm");
   });
 
   it("normalizes the required key to lowercase before querying", async () => {
@@ -92,5 +85,21 @@ describe("ModuleGuard", () => {
     entitlements.isModuleEnabled.mockResolvedValue(true);
     expect(await guard.canActivate(ctx({}))).toBe(true);
     expect(entitlements.isModuleEnabled).toHaveBeenCalledWith("org-1", "build");
+  });
+
+  it("requires every module when @RequireModule receives an array", async () => {
+    reflector.getAllAndOverride.mockReturnValue(["crm", "inventory"]);
+    entitlements.isModuleEnabled.mockResolvedValue(true);
+    expect(await guard.canActivate(ctx({}))).toBe(true);
+    expect(entitlements.isModuleEnabled).toHaveBeenCalledTimes(2);
+    expect(entitlements.isModuleEnabled).toHaveBeenNthCalledWith(1, "org-1", "crm");
+    expect(entitlements.isModuleEnabled).toHaveBeenNthCalledWith(2, "org-1", "inventory");
+  });
+
+  it("throws when any required module in the array is disabled", async () => {
+    reflector.getAllAndOverride.mockReturnValue(["crm", "inventory"]);
+    entitlements.isModuleEnabled.mockImplementation(async (_orgId, key) => key === "crm");
+    await expect(guard.canActivate(ctx({}))).rejects.toThrow(ModuleDisabledException);
+    expect(entitlements.isModuleEnabled).toHaveBeenCalledWith("org-1", "inventory");
   });
 });

@@ -36,8 +36,9 @@ export class InspectionsService {
     const { status, sourceType, productVariantId, page, limit } = query;
     const offset = (page - 1) * limit;
     const hash = `${status ?? ""}:${sourceType ?? ""}:${productVariantId ?? ""}:${limit}:${offset}`;
-    return this.cache.cached(
-      CACHE_KEYS.invQualityInspectionsList(orgId, hash),
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.invQualityInspectionsNamespace(orgId),
+      hash,
       async () => {
         const conditions = [eq(invQualityInspections.orgId, orgId)];
         if (status) conditions.push(eq(invQualityInspections.status, status));
@@ -105,7 +106,7 @@ export class InspectionsService {
       });
       return { ...ins, lines };
     });
-    await this.cache.invalidatePattern(`inv:quality:inspections:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invQualityInspectionsNamespace(orgId));
     return result;
   }
 
@@ -119,7 +120,7 @@ export class InspectionsService {
       orgId, actorUserId: userId, action: "quality_inspection.started",
       resourceType: "inspection", resourceId: String(id),
     });
-    await this.cache.invalidatePattern(`inv:quality:inspections:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invQualityInspectionsNamespace(orgId));
     return this.findOne(orgId, id);
   }
 
@@ -150,7 +151,7 @@ export class InspectionsService {
       orgId, actorUserId: userId, action: "quality_inspection.passed",
       resourceType: "inspection", resourceId: String(id),
     });
-    await this.cache.invalidatePattern(`inv:quality:inspections:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invQualityInspectionsNamespace(orgId));
     return this.findOne(orgId, id);
   }
 
@@ -171,7 +172,7 @@ export class InspectionsService {
         resourceType: "inspection", resourceId: String(id),
       });
     });
-    await this.cache.invalidatePattern(`inv:quality:inspections:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invQualityInspectionsNamespace(orgId));
     return this.findOne(orgId, id);
   }
 
@@ -258,7 +259,7 @@ export class InspectionsService {
       orgId, actorUserId: userId, action: "quality_inspection.disposed",
       resourceType: "inspection", resourceId: String(id),
     });
-    await this.cache.invalidatePattern(`inv:quality:inspections:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invQualityInspectionsNamespace(orgId));
     return this.findOne(orgId, id);
   }
 
@@ -274,7 +275,7 @@ export class InspectionsService {
       orgId, actorUserId: userId, action: "quality_inspection.cancelled",
       resourceType: "inspection", resourceId: String(id),
     });
-    await this.cache.invalidatePattern(`inv:quality:inspections:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invQualityInspectionsNamespace(orgId));
     return this.findOne(orgId, id);
   }
 

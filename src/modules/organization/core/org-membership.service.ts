@@ -17,6 +17,7 @@ import {
   roles,
   orgUnitMembers,
   organizationMembers,
+  organizations,
   userApiTokens,
   users,
 } from "../../../db/schema";
@@ -33,6 +34,7 @@ import { bustMembershipStatusCache } from "../../../common/auth/membership-state
 import { SessionsService } from "../../sessions/sessions.service";
 import { stableHash } from "../../../common/cache/cache-hash";
 import type { ListMembersInput } from "./dto/organization.schemas";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 
 const PG_FK_VIOLATION = "23503";
 
@@ -64,27 +66,32 @@ export class OrgMembershipService {
     private readonly access: AccessService,
   ) {}
 
-  private async revokeOrgAgentTokensAndBustMembership(
+  async revokeOrgScopedAccess(
     orgId: string,
     memberUserId: string,
   ): Promise<void> {
     await bustMembershipStatusCache(this.cache, memberUserId, orgId);
     const now = new Date();
-    await this.db
-      .update(agentTokens)
-      .set({ revokedAt: now })
-      .where(
-        and(
-          eq(agentTokens.userId, memberUserId),
-          eq(agentTokens.orgId, orgId),
-          isNull(agentTokens.revokedAt),
-        ),
-      );
+    await runInTenantTransaction(
+      this.db,
+      (tx) =>
+        tx
+          .update(agentTokens)
+          .set({ revokedAt: now })
+          .where(
+            and(
+              eq(agentTokens.userId, memberUserId),
+              eq(agentTokens.orgId, orgId),
+              isNull(agentTokens.revokedAt),
+            ),
+          ),
+      { orgId },
+    );
   }
 
-  private async revokeMemberAccess(orgId: string, memberUserId: string): Promise<void> {
+  async revokeAccountAccess(orgId: string, memberUserId: string): Promise<void> {
     await this.cache.invalidate(CACHE_KEYS.userSession(memberUserId));
-    await this.revokeOrgAgentTokensAndBustMembership(orgId, memberUserId);
+    await this.revokeOrgScopedAccess(orgId, memberUserId);
     await this.sessions.revokeAllForUser(memberUserId);
     const now = new Date();
     await this.db
@@ -97,8 +104,7 @@ export class OrgMembershipService {
 
   private async invalidateMemberListCaches(orgId: string): Promise<void> {
     await Promise.all([
-      this.cache.invalidatePattern(CACHE_KEYS.orgMembersListPattern(orgId)),
-      this.cache.invalidatePattern(CACHE_KEYS.orgMembersSimplePattern(orgId)),
+      this.cache.invalidateNamespace(CACHE_KEYS.orgMembersListNamespace(orgId)),
       this.cache.invalidate(CACHE_KEYS.rbacDiscoveryMembers(orgId)),
       this.cache.invalidate(CACHE_KEYS.moduleAccessCandidates(orgId)),
       bustUsersStatsCache(this.cache, orgId),
@@ -143,7 +149,8 @@ export class OrgMembershipService {
   }
 
   async listMembers(orgId: string, input: ListMembersInput) {
-    const { page, limit, search, userIds } = input;
+    const { page, search, userIds } = input;
+    const limit = Math.min(input.limit, 100);
     const includeInactive = input.includeInactive === true;
     const hash = stableHash({
       page,
@@ -152,8 +159,9 @@ export class OrgMembershipService {
       userIds: userIds ? [...userIds].sort() : null,
       includeInactive,
     });
-    return this.cache.cached(
-      CACHE_KEYS.orgMembersList(orgId, hash),
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.orgMembersListNamespace(orgId),
+      hash,
       () => this.fetchMembers(orgId, page, limit, search, userIds, includeInactive),
       60,
     );
@@ -225,7 +233,7 @@ export class OrgMembershipService {
 
   async removeMember(orgId: string, actorUserId: string, memberUserId: string) {
     try {
-      await this.db.transaction(async (tx) => {
+      await runInTenantTransaction(this.db, async (tx) => {
         const [member] = await tx
           .select({ isOwner: organizationMembers.isOwner, id: organizationMembers.id })
           .from(organizationMembers)
@@ -278,7 +286,7 @@ export class OrgMembershipService {
           );
 
         await bumpPermissionsVersion(tx, orgId);
-      });
+      }, { orgId });
     } catch (err) {
       if (err instanceof BadRequestException || err instanceof NotFoundException) throw err;
       if ((err as { code?: string }).code === PG_FK_VIOLATION) {
@@ -289,7 +297,7 @@ export class OrgMembershipService {
       throw err;
     }
 
-    await this.revokeMemberAccess(orgId, memberUserId);
+    await this.revokeOrgScopedAccess(orgId, memberUserId);
     await this.invalidateMemberListCaches(orgId);
 
     this.audit.log({
@@ -360,7 +368,7 @@ export class OrgMembershipService {
               suspendedAt: null,
             };
 
-    await this.db.transaction(async (tx) => {
+    await runInTenantTransaction(this.db, async (tx) => {
       if (status !== "active") {
         const ownedModuleKeys = await this.queryOwnedModuleKeys(tx, orgId, member.id);
         if (ownedModuleKeys.length > 0) {
@@ -386,11 +394,21 @@ export class OrgMembershipService {
             eq(organizationMembers.orgId, orgId),
           ),
         );
+      if (status !== "active") {
+        await tx
+          .delete(orgUnitMembers)
+          .where(
+            and(
+              eq(orgUnitMembers.userId, memberUserId),
+              eq(orgUnitMembers.orgId, orgId),
+            ),
+          );
+      }
       await bumpPermissionsVersion(tx, orgId);
-    });
+    }, { orgId });
 
     if (status !== "active") {
-      await this.revokeMemberAccess(orgId, memberUserId);
+      await this.revokeOrgScopedAccess(orgId, memberUserId);
     } else {
       await this.cache.invalidate(CACHE_KEYS.userSession(memberUserId));
       await bustMembershipStatusCache(this.cache, memberUserId, orgId);
@@ -443,10 +461,9 @@ export class OrgMembershipService {
   ) {
     const actorUserId = actor.userId;
 
-    // Rejects OWNER outright (ownership moves only through the transfer flow) and stops a non-admin handing out ORG_ADMIN
     await assertMayGrantRole(this.access, orgId, actor, role);
 
-    await this.db.transaction(async (tx) => {
+    await runInTenantTransaction(this.db, async (tx) => {
       await assertTargetNotOwner(tx, orgId, memberUserId);
       const [member] = await tx
         .select({ id: organizationMembers.id })
@@ -480,11 +497,11 @@ export class OrgMembershipService {
         );
 
       await syncStructuralRoleAssignment(tx, orgId, member.id, role);
-    });
+    }, { orgId });
 
     await Promise.all([
       this.invalidateMemberListCaches(orgId),
-      this.cache.invalidate(CACHE_KEYS.orgProfile(orgId, memberUserId)),
+      this.cache.invalidateNamespace(CACHE_KEYS.orgProfileNamespace(orgId)),
       bustMembershipStatusCache(this.cache, memberUserId, orgId),
     ]);
 
@@ -520,7 +537,7 @@ export class OrgMembershipService {
     }
 
     try {
-      const nextOrgId = await this.db.transaction(async (tx) => {
+      const nextOrgId = await runInTenantTransaction(this.db, async (tx) => {
         const ownedModuleKeys = await this.queryOwnedModuleKeys(tx, orgId, membership.id);
         if (ownedModuleKeys.length > 0) {
           throw new BadRequestException(
@@ -551,10 +568,13 @@ export class OrgMembershipService {
         const [remaining] = await tx
           .select({ orgId: organizationMembers.orgId })
           .from(organizationMembers)
+          .innerJoin(organizations, eq(organizations.id, organizationMembers.orgId))
           .where(
             and(
               eq(organizationMembers.userId, userId),
               eq(organizationMembers.status, "ACTIVE"),
+              eq(organizations.status, "ACTIVE"),
+              isNull(organizations.deletedAt),
             ),
           )
           .orderBy(desc(organizationMembers.joinedAt))
@@ -565,12 +585,12 @@ export class OrgMembershipService {
           .set({ lastActiveOrgId: fallbackOrgId })
           .where(and(eq(users.id, userId), eq(users.lastActiveOrgId, orgId)));
         return fallbackOrgId;
-      });
+      }, { orgId });
 
       await Promise.all([
-        this.revokeOrgAgentTokensAndBustMembership(orgId, userId),
+        this.revokeOrgScopedAccess(orgId, userId),
         this.cache.invalidate(CACHE_KEYS.userSession(userId)),
-        this.cache.invalidate(CACHE_KEYS.orgProfile(orgId, userId)),
+        this.cache.invalidateNamespace(CACHE_KEYS.orgProfileNamespace(orgId)),
         this.invalidateMemberListCaches(orgId),
       ]);
       this.audit.log({

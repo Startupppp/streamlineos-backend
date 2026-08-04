@@ -4,15 +4,13 @@ import { finBudgets, finBudgetLines, journalLines, journalEntries, ledgerAccount
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { addDecimals, subtractDecimals, compareDecimals, formatDecimal } from "../../accounting/core/money.util";
 import type { BvaQuery } from "./dto/finance-planning.schemas";
 import type { BvaResponse, BvaAccountPeriodRow } from "./finance-planning.types";
 
 const exceededNotifiedSet = new Set<string>();
-
-const bvaCacheKey = (orgId: string, budgetId: number, from?: string, to?: string): string =>
-  `fin:bva:${orgId}:${budgetId}:${from ?? ""}:${to ?? ""}`;
 
 function computeVariancePct(actual: string, budgeted: string): string {
   const b = Number(budgeted);
@@ -48,9 +46,10 @@ export class BvaService {
       throw new NotFoundException(`Budget ${budgetId} not found`);
     }
 
-    const cacheKey = bvaCacheKey(orgId, budgetId, query.from, query.to);
+    const cacheKey = `${query.from ?? ""}:${query.to ?? ""}`;
 
-    return this.cache.cached<BvaResponse>(
+    return this.cache.cachedVersioned<BvaResponse>(
+      CACHE_KEYS.finBvaNamespace(orgId, budgetId),
       cacheKey,
       () => this.computeBva(orgId, budgetId, budget, query, requesterId),
       60,

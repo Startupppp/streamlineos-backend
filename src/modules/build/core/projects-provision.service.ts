@@ -130,7 +130,7 @@ export class ProjectsProvisionService {
       metadata: { name: input.name, key: projectKey, managerId: input.managerId },
     });
 
-    await this.cache.invalidatePattern(`projects:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(`projects:list:${orgId}`);
 
     return project;
   }

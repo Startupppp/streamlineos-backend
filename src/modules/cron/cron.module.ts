@@ -23,6 +23,7 @@ import { FinanceAssetsModule } from "../finance/assets/finance-assets.module";
 import { AiJobsModule } from "../ai/jobs/ai-jobs.module";
 import { SupportKbGapModule } from "../support/kb-gap";
 import { TimesheetsCoreModule } from "../timesheets/core/timesheets-core.module";
+import { OrganizationModule } from "../organization/core/organization.module";
 import { CronBillingController } from "./cron-billing.controller";
 import { CronHrController } from "./cron-hr.controller";
 import { CronPlatformController } from "./cron-platform.controller";
@@ -75,6 +76,7 @@ import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
     CrmAutomationStudioModule,
     BillingModule,
     TimesheetsCoreModule,
+    OrganizationModule,
   ],
   controllers: [
     CronBillingController,

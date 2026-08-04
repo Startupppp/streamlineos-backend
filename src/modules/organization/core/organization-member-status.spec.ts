@@ -6,6 +6,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { SessionsService } from "../../sessions/sessions.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { orgUnitMembers } from "../../../db/schema";
 
 const ORG_ID = "org-1";
 const ACTOR_ID = "actor-1";
@@ -24,7 +25,13 @@ describe("OrgMembershipService member status guards", () => {
         OrgMembershipService,
         { provide: DRIZZLE, useValue: { query: { organizationMembers: { findFirst } } } },
         { provide: AuditService, useValue: { log: jest.fn() } },
-        { provide: CacheService, useValue: { invalidate: jest.fn(), invalidatePattern: jest.fn().mockResolvedValue(undefined) } },
+        {
+          provide: CacheService,
+          useValue: {
+            invalidate: jest.fn(),
+            invalidateNamespace: jest.fn().mockResolvedValue(undefined),
+          },
+        },
         { provide: SessionsService, useValue: { revokeAllForUser } },
         {
           provide: AccessService,
@@ -102,6 +109,7 @@ function makeSelectChain(result: unknown[], endWithLimit = false) {
 function buildTxMock(selectResults: { result: unknown[]; endWithLimit?: boolean }[]) {
   let callIndex = 0;
   return {
+    execute: jest.fn().mockResolvedValue([]),
     select: jest.fn().mockImplementation(() => {
       const entry = selectResults[callIndex++];
       return makeSelectChain(entry?.result ?? [], entry?.endWithLimit ?? false);
@@ -121,7 +129,7 @@ function buildTxMock(selectResults: { result: unknown[]; endWithLimit?: boolean 
 describe("OrgMembershipService — module-ownership guards", () => {
   const auditLog = jest.fn();
   const cacheInvalidate = jest.fn().mockResolvedValue(undefined);
-  const cacheInvalidatePattern = jest.fn().mockResolvedValue(undefined);
+  const cacheInvalidateNamespace = jest.fn().mockResolvedValue(undefined);
   const revokeAllForUser = jest.fn().mockResolvedValue({ revokedCount: 0 });
 
   async function buildService(dbValue: unknown): Promise<OrgMembershipService> {
@@ -130,7 +138,13 @@ describe("OrgMembershipService — module-ownership guards", () => {
         OrgMembershipService,
         { provide: DRIZZLE, useValue: dbValue },
         { provide: AuditService, useValue: { log: auditLog } },
-        { provide: CacheService, useValue: { invalidate: cacheInvalidate, invalidatePattern: cacheInvalidatePattern } },
+        {
+          provide: CacheService,
+          useValue: {
+            invalidate: cacheInvalidate,
+            invalidateNamespace: cacheInvalidateNamespace,
+          },
+        },
         { provide: SessionsService, useValue: { revokeAllForUser } },
         {
           provide: AccessService,
@@ -205,8 +219,8 @@ describe("OrgMembershipService — module-ownership guards", () => {
       const result = await svc.removeMember(ORG_ID, ACTOR_ID, MEMBER_ID);
 
       expect(result).toEqual({ success: true });
-      expect(revokeAllForUser).toHaveBeenCalledWith(MEMBER_ID);
-      expect(db.update).toHaveBeenCalled();
+      expect(revokeAllForUser).not.toHaveBeenCalled();
+      expect(tx.update).toHaveBeenCalled();
       expect(auditLog).toHaveBeenCalledWith(
         expect.objectContaining({ action: "org.member_removed" }),
       );
@@ -227,6 +241,7 @@ describe("OrgMembershipService — module-ownership guards", () => {
   describe("updateMemberRole", () => {
     it("rejects a role change when the member owns modules and names which modules", async () => {
       const tx = buildTxMock([
+        { result: [{ isOwner: false }] },
         { result: [{ id: 9 }], endWithLimit: true },
         { result: [{ moduleKey: "build" }] },
       ]);
@@ -241,6 +256,7 @@ describe("OrgMembershipService — module-ownership guards", () => {
         .updateMemberRole(ORG_ID, { userId: ACTOR_ID, isOrgOwner: true }, MEMBER_ID, "MEMBER")
         .catch((e: unknown) => e);
 
+      if (!(err instanceof BadRequestException)) throw err;
       expect(err).toBeInstanceOf(BadRequestException);
       expect((err as BadRequestException).message).toContain("build");
       expect(auditLog).not.toHaveBeenCalled();
@@ -248,6 +264,7 @@ describe("OrgMembershipService — module-ownership guards", () => {
 
     it("throws NotFoundException when member does not exist", async () => {
       const tx = buildTxMock([
+        { result: [] },
         { result: [], endWithLimit: true },
       ]);
       const db = {
@@ -314,6 +331,32 @@ describe("OrgMembershipService — module-ownership guards", () => {
 
       expect(err).toBeInstanceOf(BadRequestException);
       expect((err as BadRequestException).message).toContain("payroll");
+      expect(revokeAllForUser).not.toHaveBeenCalled();
+    });
+
+    it("removes organization-unit membership in the lifecycle transaction", async () => {
+      const findFirst = jest.fn().mockResolvedValue({
+        isOwner: false,
+        status: "ACTIVE",
+        id: 4,
+      });
+      const tx = buildTxMock([{ result: [] }, { result: [] }]);
+      const db = {
+        query: { organizationMembers: { findFirst } },
+        transaction: jest.fn().mockImplementation(
+          async (fn: (transaction: unknown) => Promise<unknown>) => fn(tx),
+        ),
+        update: jest.fn().mockReturnValue({
+          set: jest.fn().mockReturnValue({
+            where: jest.fn().mockResolvedValue(undefined),
+          }),
+        }),
+      };
+      const svc = await buildService(db);
+
+      await svc.suspendMember(ORG_ID, ACTOR_ID, MEMBER_ID);
+
+      expect(tx.delete).toHaveBeenCalledWith(orgUnitMembers);
       expect(revokeAllForUser).not.toHaveBeenCalled();
     });
   });

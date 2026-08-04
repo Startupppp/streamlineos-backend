@@ -24,6 +24,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { ROLE_RANK } from "../../../common/rbac/grantability";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
+import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
 import { EmailService } from "../../email/email.service";
 import { AutomationService } from "../../automation/automation.service";
 import { HrAutomationEngineService } from "../automations/hr-automation-engine.service";
@@ -481,6 +482,7 @@ export class TerminationService {
     });
 
     await this.sessions.revokeAllForUser(existing.userId);
+    await bustMembershipStatusCache(this.cache, existing.userId, orgId);
     await this.invalidateHrDashboardCache(orgId);
 
     this.dispatchEmployeeTerminated(

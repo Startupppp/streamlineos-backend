@@ -14,6 +14,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import {
   addDecimals,
   subtractDecimals,
@@ -30,9 +31,6 @@ import type {
   ForecastWeek,
   ScenarioCompareResponse,
 } from "./finance-planning.types";
-
-const FORECAST_CACHE_KEY = (orgId: string, sid?: number, weeks?: number) =>
-  `fin:forecast:${orgId}:${sid ?? "default"}:${weeks ?? 13}`;
 
 const FORECAST_TTL = 120;
 
@@ -141,8 +139,9 @@ export class ForecastService {
     query: ForecastQuery,
   ): Promise<ForecastResponse> {
     const weeks = query.weeks ?? 13;
-    return this.cache.cached<ForecastResponse>(
-      FORECAST_CACHE_KEY(orgId, query.scenarioId, weeks),
+    return this.cache.cachedVersioned<ForecastResponse>(
+      CACHE_KEYS.finForecastNamespace(orgId),
+      `${query.scenarioId ?? "default"}:${weeks}`,
       () => this.buildForecast(orgId, query.scenarioId, weeks),
       FORECAST_TTL,
     );

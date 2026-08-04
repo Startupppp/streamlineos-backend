@@ -13,20 +13,31 @@ const peerUnits = alias(orgUnitMembers, "scope_peer_unit");
 const teammates = alias(orgUnitMembers, "scope_teammate");
 
 /** Everyone sharing at least one TEAM org-unit with `userId`. */
-function teammateUserIds(userId: string): SQL {
+function teammateUserIds(orgId: string, userId: string): SQL {
   return sql`(
     SELECT ${teammates.userId}
     FROM ${teammates}
-    WHERE ${teammates.orgUnitId} IN (
+    WHERE ${eq(teammates.orgId, orgId)}
+      AND ${teammates.orgUnitId} IN (
       SELECT ${peerUnits.orgUnitId}
       FROM ${peerUnits}
       JOIN ${orgUnits} ON ${eq(orgUnits.id, peerUnits.orgUnitId)}
-      WHERE ${and(eq(peerUnits.userId, userId), eq(orgUnits.kind, "TEAM"))}
+      WHERE ${and(
+        eq(peerUnits.orgId, orgId),
+        eq(peerUnits.userId, userId),
+        eq(orgUnits.orgId, orgId),
+        eq(orgUnits.kind, "TEAM"),
+      )}
     )
   )`;
 }
 
-export function applyScope(scope: DataScope, userId: string, cols: ScopeColumns): SQL {
+export function applyScope(
+  scope: DataScope,
+  orgId: string,
+  userId: string,
+  cols: ScopeColumns,
+): SQL {
   switch (scope) {
     case "all":
       return sql`true`;
@@ -38,7 +49,7 @@ export function applyScope(scope: DataScope, userId: string, cols: ScopeColumns)
         return sql`(${byOwner} OR ${inArray(cols.teamColumn, cols.teamIds)})`;
       }
       // No team column on this table, so resolve teammates from org_unit_members instead of failing closed
-      return sql`(${eq(cols.ownerColumn, userId)} OR ${cols.ownerColumn} IN ${teammateUserIds(userId)})`;
+      return sql`(${eq(cols.ownerColumn, userId)} OR ${cols.ownerColumn} IN ${teammateUserIds(orgId, userId)})`;
     }
     case "none":
       return sql`false`;

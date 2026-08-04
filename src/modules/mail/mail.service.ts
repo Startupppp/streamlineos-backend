@@ -1,6 +1,5 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { ComposioToolError } from "../integrations/core/composio.gateway";
 import { GmailMailProvider } from "./providers/gmail-mail.provider";
 import { OutlookMailProvider } from "./providers/outlook-mail.provider";
@@ -96,7 +95,7 @@ export class MailService {
   ): Promise<{ messages: ReturnType<typeof mergeMessagesByDate>; nextProviderCursor: string | number | undefined }> {
     const conn: NormalizerConnectionMeta = { id: acc.id, composioAccountId: acc.composioConnectedAccountId, provider: acc.provider, accountEmail: acc.accountEmail };
     const cursorValue = parsedCursor[acc.id];
-    const cacheKey = CACHE_KEYS.mailMessages(acc.id, folder, String(cursorValue ?? ""), query ?? "");
+    const cacheKey = `${folder}:${String(cursorValue ?? "")}:${query ?? ""}`;
 
     const fetcher = async () => {
       if (acc.provider === "gmail") {
@@ -110,7 +109,12 @@ export class MailService {
     };
 
     if (skipCache) return fetcher();
-    return this.cache.cached(cacheKey, fetcher, CACHE_TTL_SECONDS);
+    return this.cache.cachedVersioned(
+      `mail:messages:${acc.id}`,
+      cacheKey,
+      fetcher,
+      CACHE_TTL_SECONDS,
+    );
   }
 
   async getMessage(
@@ -244,7 +248,7 @@ export class MailService {
       }
     }
 
-    await this.cache.invalidatePattern(CACHE_KEYS.mailMessagesPattern(acc.id));
+    await this.cache.invalidateNamespace(`mail:messages:${acc.id}`);
   }
 
   async getAttachment(

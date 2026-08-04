@@ -212,8 +212,10 @@ export class PayrollExportService {
       },
     });
 
-    await this.cache.invalidatePattern(CACHE_KEYS.payrollSummary(orgId, "*"));
-    await this.cache.invalidatePattern(CACHE_KEYS.payrollExportsList(orgId, "*", "*"));
+    await Promise.all([
+      this.cache.invalidateNamespace(CACHE_KEYS.payrollSummaryNamespace(orgId)),
+      this.cache.invalidateNamespace(CACHE_KEYS.payrollExportsNamespace(orgId)),
+    ]);
 
     return {
       export: toExportDto(exportRow, null),
@@ -222,9 +224,9 @@ export class PayrollExportService {
   }
 
   async listExports(orgId: string, query: ExportsListQuery) {
-    const cacheKey = CACHE_KEYS.payrollExportsList(orgId, query.page, query.pageSize);
-    return this.cache.cached(
-      cacheKey,
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.payrollExportsNamespace(orgId),
+      `${query.page}:${query.pageSize}`,
       async () => {
         const offset = (query.page - 1) * query.pageSize;
         const [items, [{ total }]] = await Promise.all([
@@ -316,7 +318,7 @@ export class PayrollExportService {
       },
     });
 
-    await this.cache.invalidatePattern(CACHE_KEYS.payrollExportsList(orgId, "*", "*"));
+    await this.cache.invalidateNamespace(CACHE_KEYS.payrollExportsNamespace(orgId));
 
     return { export: toExportDto(updated, existing.creatorName ?? null) };
   }

@@ -120,7 +120,7 @@ export class ImportService {
       .where(and(eq(invImportJobs.id, job.id), eq(invImportJobs.orgId, orgId)))
       .returning();
 
-    await this.cache.invalidatePattern(`inv:import-jobs:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invImportJobsNamespace(orgId));
 
     return updated;
   }
@@ -236,9 +236,7 @@ export class ImportService {
     const { page, limit } = query;
     const offset = (page - 1) * limit;
     const hash = `${limit}:${offset}`;
-    const key = CACHE_KEYS.invImportJobsList(orgId, hash);
-
-    return this.cache.cached(key, async () => {
+    return this.cache.cachedVersioned(CACHE_KEYS.invImportJobsNamespace(orgId), hash, async () => {
       const [items, countResult] = await Promise.all([
         this.db
           .select()

@@ -41,6 +41,8 @@ import { syncOrgUnitPlacement } from "../../common/org/sync-org-unit-placement";
 import { assertTargetNotOwner } from "../../common/rbac/assert-target-not-owner";
 import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
 import { withIdentity } from "../../common/tenant/with-identity";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 
 @Injectable()
 export class UsersService {
@@ -51,6 +53,7 @@ export class UsersService {
     private readonly invitationsSvc: InvitationsService,
     private readonly access: AccessService,
     private readonly orgMembership: OrgMembershipService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   private async invalidateMembershipCaches(orgId: string): Promise<void> {
@@ -101,7 +104,11 @@ export class UsersService {
           "User is already a member of this organization",
         );
       }
-      await this.db.transaction(async (tx) => {
+      await runInTenantTransaction(this.db, async (tx) => {
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtextextended(${`quota:${orgId}:members`}, 0))`,
+        );
+        await this.planLimits.assertWithinLimit(orgId, "members", 1, tx);
         const inserted = await tx
           .insert(organizationMembers)
           .values({ userId: existing.id, orgId, role })
@@ -115,7 +122,8 @@ export class UsersService {
           DEPARTMENT: departmentId ?? null,
           BRANCH: branchId ?? null,
         });
-      });
+      }, { orgId });
+      await bustMembershipStatusCache(this.cache, existing.id, orgId);
       await this.invalidateMembershipCaches(orgId);
       return { userId: existing.id, created: false };
     }
@@ -128,7 +136,11 @@ export class UsersService {
     const emailLocal = email.split("@")[0]?.trim() || null;
     const fullName = fromNames ?? emailLocal;
 
-    await this.db.transaction(async (tx) => {
+    await runInTenantTransaction(this.db, async (tx) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${`quota:${orgId}:members`}, 0))`,
+      );
+      await this.planLimits.assertWithinLimit(orgId, "members", 1, tx);
       await tx.insert(users).values({
         id: userId,
         email,
@@ -157,8 +169,9 @@ export class UsersService {
         DEPARTMENT: departmentId ?? null,
         BRANCH: branchId ?? null,
       });
-    });
+    }, { orgId });
 
+    await bustMembershipStatusCache(this.cache, userId, orgId);
     await this.invalidateMembershipCaches(orgId);
 
     this.audit.log({
@@ -468,7 +481,7 @@ export class UsersService {
       data.departmentId !== undefined || data.teamId !== undefined;
 
     if (hasUserUpdates || hasPlacementUpdates) {
-      await this.db.transaction(async (tx) => {
+      await runInTenantTransaction(this.db, async (tx) => {
         if (hasUserUpdates) {
           await tx.update(users).set(updateData).where(eq(users.id, userId));
         }
@@ -476,13 +489,13 @@ export class UsersService {
           DEPARTMENT: data.departmentId,
           TEAM: data.teamId,
         });
-      });
+      }, { orgId });
     }
 
     if (data.role !== undefined) {
       const nextRole = data.role;
       await this.assertMayGrantRole(orgId, actor, nextRole);
-      await this.db.transaction(async (tx) => {
+      await runInTenantTransaction(this.db, async (tx) => {
         await assertTargetNotOwner(tx, orgId, userId);
         const [member] = await tx
           .update(organizationMembers)
@@ -497,7 +510,8 @@ export class UsersService {
         if (member) {
           await syncStructuralRoleAssignment(tx, orgId, member.id, nextRole);
         }
-      });
+      }, { orgId });
+      await bustMembershipStatusCache(this.cache, userId, orgId);
     }
 
     this.audit.log({
@@ -552,6 +566,7 @@ export class UsersService {
     }
 
     await this.orgMembership.removeMember(orgId, actorUserId, userId);
+    await this.orgMembership.revokeAccountAccess(orgId, userId);
 
     await this.db
       .update(users)

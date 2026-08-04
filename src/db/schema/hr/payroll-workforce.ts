@@ -1,11 +1,12 @@
-import { pgTable, text, serial, timestamp, boolean, decimal, date, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { pgTable, text, serial, timestamp, boolean, decimal, date, integer, index, uniqueIndex, unique, foreignKey, check } from "drizzle-orm/pg-core";
+import { relations, sql } from "drizzle-orm";
 import {
   salaryComponentTypeEnum, salaryComponentCalcMethodEnum,
   payrollWorkerTypeEnum, payFrequencyEnum, taxRegimeTypeEnum,
   salaryProfileStatusEnum, payrollLoanAdjustmentTypeEnum,
 } from "../common/enums";
 import { organizations, users } from "../common/auth";
+import { workers } from "../directory/workers";
 import { salaryLoans } from "./payroll";
 import { payrollRuns } from "./payroll-runs";
 import { payrollPolicyVersions } from "./payroll-policies";
@@ -40,7 +41,8 @@ export const salaryComponents = pgTable("salary_components", {
 export const employeeSalaryProfiles = pgTable("employee_salary_profiles", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "restrict" }).notNull(),
+  userId: text("user_id").references(() => users.id, { onDelete: "restrict" }),
+  workerId: text("worker_id"),
   workerType: payrollWorkerTypeEnum("worker_type").default("EMPLOYEE").notNull(),
   payFrequency: payFrequencyEnum("pay_frequency").default("MONTHLY").notNull(),
   currency: text("currency").default("INR").notNull(),
@@ -63,8 +65,21 @@ export const employeeSalaryProfiles = pgTable("employee_salary_profiles", {
 }, (table) => [
   unique("uniq_employee_salary_profiles_org_id").on(table.orgId, table.id),
   index("idx_employee_salary_profiles_org_user_effective").on(table.orgId, table.userId, table.effectiveFrom),
+  index("idx_employee_salary_profiles_org_worker").on(table.orgId, table.workerId),
   index("idx_employee_salary_profiles_org_status").on(table.orgId, table.status),
   uniqueIndex("uniq_esp_org_user_effective_from").on(table.orgId, table.userId, table.effectiveFrom),
+  uniqueIndex("uniq_esp_org_worker_effective_from")
+    .on(table.orgId, table.workerId, table.effectiveFrom)
+    .where(sql`worker_id IS NOT NULL`),
+  check(
+    "chk_employee_salary_profiles_subject",
+    sql`user_id IS NOT NULL OR worker_id IS NOT NULL`,
+  ),
+  foreignKey({
+    columns: [table.orgId, table.workerId],
+    foreignColumns: [workers.organizationId, workers.workerId],
+    name: "fk_employee_salary_profiles_org_worker",
+  }).onDelete("restrict"),
 ]);
 
 export const employeeSalaryProfileComponents = pgTable("employee_salary_profile_components", {
@@ -109,6 +124,7 @@ export const salaryComponentsRelations = relations(salaryComponents, ({ one, man
 
 export const employeeSalaryProfilesRelations = relations(employeeSalaryProfiles, ({ one, many }) => ({
   user: one(users, { fields: [employeeSalaryProfiles.userId], references: [users.id] }),
+  worker: one(workers, { fields: [employeeSalaryProfiles.workerId], references: [workers.workerId] }),
   createdByUser: one(users, { fields: [employeeSalaryProfiles.createdBy], references: [users.id], relationName: "profileCreatedBy" }),
   components: many(employeeSalaryProfileComponents),
 }));

@@ -1,4 +1,4 @@
-import { Injectable, Inject } from "@nestjs/common";
+import { Injectable, Inject, ForbiddenException } from "@nestjs/common";
 import { and, eq, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -7,12 +7,20 @@ import { users } from "../../../db/schema";
 import type { PatchInputInput, InputsQuery } from "./dto/runs.schemas";
 import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
 import { pullAttendanceInputs } from "./lib/input-puller";
+import type { DataScope } from "../../access/access.types";
+import { applyScope } from "../../access/apply-scope";
 
 @Injectable()
 export class InputsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async listInputs(orgId: string, runId: number, query: InputsQuery) {
+  async listInputs(
+    orgId: string,
+    runId: number,
+    query: InputsQuery,
+    scope: DataScope,
+    actorUserId: string,
+  ) {
     const runCheck = await this.db
       .select({ id: payrollRuns.id, status: payrollRuns.status })
       .from(payrollRuns)
@@ -21,7 +29,15 @@ export class InputsService {
 
     if (!runCheck[0]) return null;
 
-    const conditions = [eq(payrollInputs.runId, runId), eq(payrollInputs.orgId, orgId)];
+    if (query.userId && query.userId !== actorUserId && scope !== "all") {
+      throw new ForbiddenException("Not authorized to filter payroll inputs for another payee");
+    }
+
+    const conditions = [
+      eq(payrollInputs.runId, runId),
+      eq(payrollInputs.orgId, orgId),
+      applyScope(scope, orgId, actorUserId, { ownerColumn: payrollInputs.userId }),
+    ];
     if (query.userId) conditions.push(eq(payrollInputs.userId, query.userId));
 
     const rows = await this.db

@@ -6,7 +6,7 @@ import {
   Injectable,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { organizationMembers, organizations, subscriptions, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { seedSystemRolesForOrg } from "../../rbac/seed-system-roles";
@@ -35,44 +35,31 @@ export class OrgProfileService {
   async listUserOrganizations(userId: string) {
     const memberships = await this.db
       .select({
-        orgId: organizationMembers.orgId,
+        id: organizations.id,
+        name: organizations.name,
+        slug: organizations.slug,
         role: organizationMembers.role,
         joinedAt: organizationMembers.joinedAt,
       })
       .from(organizationMembers)
+      .innerJoin(organizations, eq(organizations.id, organizationMembers.orgId))
       .where(
         and(
           eq(organizationMembers.userId, userId),
           eq(organizationMembers.status, "ACTIVE"),
+          eq(organizations.status, "ACTIVE"),
+          isNull(organizations.deletedAt),
         ),
       )
       .orderBy(desc(organizationMembers.joinedAt));
 
-    if (memberships.length === 0) return [];
-
-    const orgIds = memberships.map((m) => m.orgId);
-    const orgs = await this.db
-      .select({
-        id: organizations.id,
-        name: organizations.name,
-        slug: organizations.slug,
-        logo: organizations.logo,
-      })
-      .from(organizations)
-      .where(inArray(organizations.id, orgIds));
-
-    const orgMap = new Map(orgs.map((o) => [o.id, o]));
-
-    return memberships.map((m) => {
-      const org = orgMap.get(m.orgId);
-      return {
-        id: org?.id ?? m.orgId,
-        name: org?.name ?? "Unknown",
-        slug: org?.slug ?? "",
-        role: m.role,
-        joinedAt: m.joinedAt,
-      };
-    });
+    return memberships.map((m) => ({
+      id: m.id,
+      name: m.name,
+      slug: m.slug,
+      role: m.role,
+      joinedAt: m.joinedAt,
+    }));
   }
 
   async switchOrg(userId: string, targetOrgId: string) {
@@ -109,11 +96,18 @@ export class OrgProfileService {
         id: organizations.id,
         name: organizations.name,
         slug: organizations.slug,
+        status: organizations.status,
+        deletedAt: organizations.deletedAt,
       })
       .from(organizations)
       .where(eq(organizations.id, targetOrgId))
       .limit(1);
     if (!org) throw new BadRequestException("Organization not found");
+    if (org.status !== "ACTIVE" || org.deletedAt !== null) {
+      throw new ConflictException(
+        "This organization is archived or unavailable. Restore it before switching to it.",
+      );
+    }
 
     await this.db
       .update(users)
@@ -200,8 +194,9 @@ export class OrgProfileService {
   }
 
   async getProfile(userId: string, orgId: string) {
-    return this.cache.cached(
-      CACHE_KEYS.orgProfile(orgId, userId),
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.orgProfileNamespace(orgId),
+      userId,
       () => this.fetchProfile(userId, orgId),
       120,
     );

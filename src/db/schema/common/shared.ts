@@ -146,6 +146,11 @@ export const auditLogs = pgTable("audit_logs", {
   index("idx_audit_logs_org_created").on(table.orgId, table.createdAt),
   index("idx_audit_logs_org_action").on(table.orgId, table.action),
   index("idx_audit_logs_resource").on(table.orgId, table.resourceType, table.createdAt),
+  index("idx_audit_logs_org_module_created").on(
+    table.orgId,
+    sql`(${table.metadata}->>'moduleKey')`,
+    table.createdAt.desc(),
+  ),
 ]);
 
 export const pushSubscriptions = pgTable("push_subscriptions", {

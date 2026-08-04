@@ -1,5 +1,5 @@
 import { Injectable, Inject } from "@nestjs/common";
-import { and, eq, inArray, isNull, gte, lte, or } from "drizzle-orm";
+import { and, eq, inArray, isNull, gte, lte, or, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -28,10 +28,12 @@ import {
   type SectionMap,
 } from "./lib/input-puller";
 import { daysInMonth } from "./lib/money";
+import { payrollSubjectKey, isWorkerOnlySubject } from "../lib/payroll-subject";
 
 export interface ProfileData {
   id: number;
-  userId: string;
+  userId: string | null;
+  workerId: string | null;
   workerType: "EMPLOYEE" | "CONTRACTOR" | "CONSULTANT" | "INTERN" | "EOR";
   currency: string;
   payoutCurrency: string | null;
@@ -102,7 +104,9 @@ export class GeneratePipelineService {
     profiles: ProfileData[],
     lockedPeriodId: number | null,
   ): Promise<RunBatchData> {
-    const userIds = profiles.map((p) => p.userId);
+    const userIds = profiles
+      .map((p) => p.userId)
+      .filter((id): id is string => id !== null);
     const profileIds = profiles.map((p) => p.id);
     const [year, mon] = month.split("-").map(Number);
     const monthStart = new Date(year!, mon! - 1, 1);
@@ -530,9 +534,9 @@ export class GeneratePipelineService {
       orgId: "",
       runId: 0,
       runEmployeeId: 0,
-      userId: profile.userId,
+      userId: profile.userId ?? payrollSubjectKey(profile),
       hasProfile: true,
-      hasBankAccount: true,
+      hasBankAccount: !isWorkerOnlySubject(profile),
       snapshot,
       toggles,
       scheduledDays: parseFloat(inputs.scheduledDays),
@@ -569,7 +573,16 @@ export class GeneratePipelineService {
         ? await db
             .select({ id: payrollRunEmployees.id })
             .from(payrollRunEmployees)
-            .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.userId, profile.userId)))
+            .where(
+              and(
+                eq(payrollRunEmployees.runId, runId),
+                profile.userId
+                  ? eq(payrollRunEmployees.userId, profile.userId)
+                  : profile.workerId
+                    ? eq(payrollRunEmployees.workerId, profile.workerId)
+                    : sql`false`,
+              ),
+            )
             .limit(1)
         : knownExistingId === null
           ? []
@@ -607,6 +620,7 @@ export class GeneratePipelineService {
         orgId,
         runId,
         userId: profile.userId,
+        workerId: profile.workerId,
         profileId: profile.id,
         workerType: profile.workerType,
         currency: profile.currency,

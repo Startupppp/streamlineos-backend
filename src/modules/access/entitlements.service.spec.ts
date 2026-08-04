@@ -74,10 +74,19 @@ function buildMockCache(
   return { cache: cache as unknown as CacheService, mocks: { cached, invalidate } };
 }
 
-function buildService(db: Db, cache: CacheService) {
+function buildService(
+  db: Db,
+  cache: CacheService,
+  migrationMode: "off" | "degrade" = "off",
+) {
   const resolveTier = jest.fn().mockResolvedValue({ tier: "ENTERPRISE", plan: "ENTERPRISE" });
   const planLimits: DeepPartial<PlanLimitsService> = { resolveTier };
-  return new EntitlementsService(db, cache, planLimits as unknown as PlanLimitsService);
+  return new EntitlementsService(
+    db,
+    cache,
+    planLimits as unknown as PlanLimitsService,
+    { RBAC_MIGRATION_MODE: migrationMode },
+  );
 }
 
 describe("EntitlementsService", () => {
@@ -116,22 +125,36 @@ describe("EntitlementsService", () => {
       expect(result).toBe(true);
     });
 
-    it("returns true on 42P01 error (graceful degradation — org_modules table missing)", async () => {
+    it("fails closed on 42P01 when migration mode is off", async () => {
       const { db, mocks } = buildMockDb();
       mocks.findMany.mockRejectedValue({ code: "42P01" });
       const { cache } = buildMockCache();
 
       const result = await buildService(db, cache).isModuleEnabled("org-1", "hr");
 
-      expect(result).toBe(true);
+      expect(result).toBe(false);
     });
 
-    it("returns true when the error message includes 'does not exist'", async () => {
+    it("fails closed when the missing-table error is message-wrapped", async () => {
       const { db, mocks } = buildMockDb();
       mocks.findMany.mockRejectedValue(new Error("relation does not exist"));
       const { cache } = buildMockCache();
 
       const result = await buildService(db, cache).isModuleEnabled("org-1", "hr");
+
+      expect(result).toBe(false);
+    });
+
+    it("degrades only when migration mode is explicitly enabled", async () => {
+      const { db, mocks } = buildMockDb();
+      mocks.findMany.mockRejectedValue({ code: "42P01" });
+      const { cache } = buildMockCache();
+
+      const result = await buildService(
+        db,
+        cache,
+        "degrade",
+      ).isModuleEnabled("org-1", "hr");
 
       expect(result).toBe(true);
     });
@@ -222,22 +245,22 @@ describe("EntitlementsService", () => {
       );
     });
 
-    it("executes no raw SQL calls — org array sync was removed", async () => {
+    it("executes only the tenant context SQL when enabling a module", async () => {
       const { db, mocks } = buildMockDb();
       const { cache } = buildMockCache();
 
       await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
 
-      expect(mocks.execute).not.toHaveBeenCalled();
+      expect(mocks.execute).toHaveBeenCalledTimes(1);
     });
 
-    it("executes no raw SQL calls when disabling a module", async () => {
+    it("executes only the tenant context SQL when disabling a module", async () => {
       const { db, mocks } = buildMockDb();
       const { cache } = buildMockCache();
 
       await buildService(db, cache).setModuleEnabled("org-1", "hr", false, "user-1");
 
-      expect(mocks.execute).not.toHaveBeenCalled();
+      expect(mocks.execute).toHaveBeenCalledTimes(1);
     });
 
     it("throws 400 BadRequestException when toggling a core module (kb)", async () => {

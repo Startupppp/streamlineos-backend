@@ -42,7 +42,11 @@ mockDb.transaction.mockImplementation((cb: unknown) =>
 
 const mockCache = {
   cached: jest.fn((_key: string, fetcher: () => Promise<unknown>) => fetcher()),
+  cachedVersioned: jest.fn(
+    (_namespace: string, _key: string, fetcher: () => Promise<unknown>) => fetcher(),
+  ),
   invalidate: jest.fn().mockResolvedValue(undefined),
+  invalidateNamespace: jest.fn().mockResolvedValue(undefined),
   invalidatePattern: jest.fn().mockResolvedValue(undefined),
 };
 
@@ -502,8 +506,8 @@ describe("SupportTicketsService", () => {
       const result = await service.unsnoozeExpiredTickets();
 
       expect(result).toEqual({ unsnoozed: 2 });
-      expect(mockCache.invalidatePattern).toHaveBeenCalledWith("support:tickets:org1:*");
-      expect(mockCache.invalidatePattern).toHaveBeenCalledWith("support:tickets:org2:*");
+      expect(mockCache.invalidateNamespace).toHaveBeenCalledWith("support:tickets:org1");
+      expect(mockCache.invalidateNamespace).toHaveBeenCalledWith("support:tickets:org2");
     });
   });
 

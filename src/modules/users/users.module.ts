@@ -5,9 +5,10 @@ import { UserProfileService } from "./user-profile.service";
 import { UserOpsService } from "./user-ops.service";
 import { OrganizationModule } from "../organization/core/organization.module";
 import { SessionsModule } from "../sessions/sessions.module";
+import { BillingModule } from "../billing/core/billing.module";
 
 @Module({
-  imports: [OrganizationModule, SessionsModule],
+  imports: [OrganizationModule, SessionsModule, BillingModule],
   controllers: [UsersController],
   providers: [UsersService, UserProfileService, UserOpsService],
   exports: [UsersService],

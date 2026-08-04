@@ -23,9 +23,16 @@ import { AssetInventoryService } from "./asset-inventory.service";
 import { AssetsRecoveryService } from "./assets-recovery.service";
 import { BackgroundVerificationService } from "./background-verification.service";
 import { AccessRequestsService } from "./access-requests.service";
+import { BillingModule } from "../../billing/core/billing.module";
 
 @Module({
-  imports: [AutomationModule, WebhooksModule, HrAutomationsModule, HrCoreModule],
+  imports: [
+    AutomationModule,
+    WebhooksModule,
+    HrAutomationsModule,
+    HrCoreModule,
+    BillingModule,
+  ],
   controllers: [
     EmployeesController,
     OrgStructureController,

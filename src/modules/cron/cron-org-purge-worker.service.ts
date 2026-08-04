@@ -1,10 +1,14 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, isNotNull, lte, sql } from "drizzle-orm";
-import { organizations } from "../../db/schema";
+import { organizationMembers, organizations } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
 import { AuditService } from "../../common/audit/audit.service";
+import { CacheService } from "../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../common/cache/cache-keys";
+import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
+import { OrgMembershipService } from "../organization/core/org-membership.service";
 
 const BATCH_SIZE = 20;
 
@@ -13,6 +17,8 @@ export class CronOrgPurgeWorkerService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly cache: CacheService,
+    private readonly orgMembership: OrgMembershipService,
   ) {}
 
   async run(): Promise<{ processed: number; skipped: number }> {
@@ -57,8 +63,32 @@ export class CronOrgPurgeWorkerService {
     return { processed, skipped };
   }
 
+  private async listMemberUserIds(orgId: string): Promise<string[]> {
+    const members = await this.db
+      .select({ userId: organizationMembers.userId })
+      .from(organizationMembers)
+      .where(eq(organizationMembers.orgId, orgId));
+    return members.map((m) => m.userId);
+  }
+
+  private async revokeAndBustMembers(orgId: string, memberUserIds: string[]): Promise<void> {
+    for (const memberUserId of memberUserIds) {
+      await this.orgMembership.revokeOrgScopedAccess(orgId, memberUserId);
+    }
+    await Promise.all(
+      memberUserIds.map((memberUserId) =>
+        Promise.all([
+          bustMembershipStatusCache(this.cache, memberUserId, orgId),
+          this.cache.invalidate(CACHE_KEYS.userSession(memberUserId)),
+        ]),
+      ),
+    );
+  }
+
   private async purgeSingle(orgId: string): Promise<boolean> {
-    return this.db.transaction(async (tx) => {
+    const memberUserIds = await this.listMemberUserIds(orgId);
+
+    const purged = await this.db.transaction(async (tx) => {
       const rows = await tx.execute(sql`
         SELECT id, name, purge_job_id
         FROM   organizations
@@ -96,5 +126,11 @@ export class CronOrgPurgeWorkerService {
 
       return true;
     });
+
+    if (purged) {
+      await this.revokeAndBustMembers(orgId, memberUserIds);
+    }
+
+    return purged;
   }
 }

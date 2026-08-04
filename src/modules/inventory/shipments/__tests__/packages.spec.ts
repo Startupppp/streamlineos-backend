@@ -30,9 +30,8 @@ function makeUpdateChain() {
 
 function makeCache(cachedResult: unknown) {
   return {
-    cached: jest.fn().mockResolvedValue(cachedResult),
-    invalidate: jest.fn().mockResolvedValue(undefined),
-    invalidatePattern: jest.fn().mockResolvedValue(undefined),
+    cachedVersioned: jest.fn().mockResolvedValue(cachedResult),
+    invalidateNamespace: jest.fn().mockResolvedValue(undefined),
   };
 }
 

@@ -21,7 +21,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
+import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import type { TraceabilityQueryInput } from "./dto/traceability.schemas";
 
 @Injectable()
@@ -33,12 +33,10 @@ export class TraceabilityChainService {
 
   async getChain(orgId: string, query: TraceabilityQueryInput) {
     const { lotId, serialId } = query;
-    const cacheKey =
-      lotId != null
-        ? CACHE_KEYS.invTraceabilityLot(orgId, lotId)
-        : CACHE_KEYS.invTraceabilitySerial(orgId, serialId!);
+    const cacheKey = lotId != null ? `lot:${lotId}` : `serial:${serialId!}`;
 
-    return this.cache.cached(
+    return this.cache.cachedVersioned(
+      `inv:traceability:${orgId}`,
       cacheKey,
       async () => this.fetchChain(orgId, lotId, serialId),
       CACHE_TTL.MEDIUM,

@@ -74,8 +74,9 @@ export class RecruitmentCandidatesService {
   ) {}
 
   async list(orgId: string, input: CandidateListInput) {
-    const key = `hr:candidates:list:${orgId}:${input.status ?? ""}:${input.source ?? ""}:${input.jobId ?? ""}:${input.search ?? ""}:${input.page}:${input.pageSize}`;
-    return this.cache.cached(
+    const key = `${input.status ?? ""}:${input.source ?? ""}:${input.jobId ?? ""}:${input.search ?? ""}:${input.page}:${input.pageSize}`;
+    return this.cache.cachedVersioned(
+      `hr:candidates:list:${orgId}`,
       key,
       async () => {
         const conditions = [eq(candidates.orgId, orgId)];
@@ -171,7 +172,7 @@ export class RecruitmentCandidatesService {
     if (!existing || !target) throw new NotFoundException("Candidate not found.");
 
     await this.db.update(candidates).set({ duplicateOfId, updatedAt: new Date() }).where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)));
-    await this.cache.invalidatePattern(`hr:candidates:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(`hr:candidates:list:${orgId}`);
     return { success: true };
   }
 
@@ -180,7 +181,7 @@ export class RecruitmentCandidatesService {
     if (!existing) throw new NotFoundException("Candidate not found.");
 
     await this.db.update(candidates).set({ duplicateOfId: null, updatedAt: new Date() }).where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)));
-    await this.cache.invalidatePattern(`hr:candidates:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(`hr:candidates:list:${orgId}`);
     return { success: true };
   }
 
@@ -216,7 +217,7 @@ export class RecruitmentCandidatesService {
       })
       .returning();
 
-    await this.cache.invalidatePattern(`hr:candidates:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(`hr:candidates:list:${orgId}`);
     return candidate;
   }
 

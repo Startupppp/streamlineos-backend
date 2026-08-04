@@ -171,7 +171,8 @@ export class FeedbucketController {
 
   @Get("stats")
   @RequirePermission("feedbucket:submissions:view")
-  getStats(@CurrentUser() user: CurrentUserContext) {
-    return this.submissions.stats(user.orgId);
+  getStats(@CurrentUser() user: CurrentUserContext, @Req() req: Request) {
+    const scope = req.rbacScope ?? "all";
+    return this.submissions.stats(user.orgId, user.userId, scope);
   }
 }

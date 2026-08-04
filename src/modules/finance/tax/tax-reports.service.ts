@@ -6,6 +6,7 @@ import { invoices, invoiceItems, purchaseBills, purchaseBillItems } from "../../
 import { clients } from "../../../db/schema/crm/contacts";
 import { journalLines } from "../../../db/schema/accounting/accounting";
 import { CacheService } from "../../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { FinancePostingService } from "../../accounting/core/finance-posting.service";
 import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
 import type { TaxDateRangeQuery } from "./dto/tax-reports.schemas";
@@ -56,18 +57,18 @@ export class TaxReportsService {
   ) {}
 
   async getOutputReport(orgId: string, query: TaxDateRangeQuery) {
-    const cacheKey = `fin:tax-report:output:${orgId}:${query.from}:${query.to}:${query.rate ?? ""}:${query.page}:${query.pageSize}`;
-    return this.cache.cached(cacheKey, () => this.computeOutputReport(orgId, query), 120);
+    const cacheKey = `output:${query.from}:${query.to}:${query.rate ?? ""}:${query.page}:${query.pageSize}`;
+    return this.cache.cachedVersioned(CACHE_KEYS.finTaxReportsNamespace(orgId), cacheKey, () => this.computeOutputReport(orgId, query), 120);
   }
 
   async getInputReport(orgId: string, query: TaxDateRangeQuery) {
-    const cacheKey = `fin:tax-report:input:${orgId}:${query.from}:${query.to}:${query.rate ?? ""}:${query.page}:${query.pageSize}`;
-    return this.cache.cached(cacheKey, () => this.computeInputReport(orgId, query), 120);
+    const cacheKey = `input:${query.from}:${query.to}:${query.rate ?? ""}:${query.page}:${query.pageSize}`;
+    return this.cache.cachedVersioned(CACHE_KEYS.finTaxReportsNamespace(orgId), cacheKey, () => this.computeInputReport(orgId, query), 120);
   }
 
   async getLiabilitySummary(orgId: string, query: TaxDateRangeQuery) {
-    const cacheKey = `fin:tax-report:liability:${orgId}:${query.from}:${query.to}`;
-    return this.cache.cached(cacheKey, () => this.computeLiabilitySummary(orgId, query), 120);
+    const cacheKey = `liability:${query.from}:${query.to}`;
+    return this.cache.cachedVersioned(CACHE_KEYS.finTaxReportsNamespace(orgId), cacheKey, () => this.computeLiabilitySummary(orgId, query), 120);
   }
 
   private async computeOutputReport(orgId: string, query: TaxDateRangeQuery) {

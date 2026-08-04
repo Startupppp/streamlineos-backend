@@ -1,8 +1,7 @@
-import {
-  pgTable, serial, text, integer, timestamp, index, uniqueIndex, unique,
-} from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { pgTable, serial, text, integer, timestamp, index, uniqueIndex, unique, foreignKey, check } from "drizzle-orm/pg-core";
+import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
+import { workers } from "../directory/workers";
 import { payslipPublishChannelEnum } from "../common/enums";
 import { payslipPublicationStatusEnum } from "./enums";
 import { payrollRuns, payrollRunEmployees } from "../hr/payroll-runs";
@@ -13,7 +12,8 @@ export const payslipPublications = pgTable("payslip_publications", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   runId: integer("run_id").references(() => payrollRuns.id, { onDelete: "restrict" }).notNull(),
   runEmployeeId: integer("run_employee_id").references(() => payrollRunEmployees.id, { onDelete: "restrict" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "restrict" }).notNull(),
+  userId: text("user_id").references(() => users.id, { onDelete: "restrict" }),
+  workerId: text("worker_id"),
   payslipTemplateId: integer("payslip_template_id").references(() => payslipTemplates.id, { onDelete: "set null" }),
   pdfUrl: text("pdf_url"),
   publishedAt: timestamp("published_at"),
@@ -32,6 +32,16 @@ export const payslipPublications = pgTable("payslip_publications", {
   index("idx_payslip_publications_user").on(table.userId),
   index("idx_payslip_publications_org_status").on(table.orgId, table.status),
   uniqueIndex("uniq_payslip_publications_run_employee").on(table.runEmployeeId),
+  index("idx_payslip_publications_org_worker").on(table.orgId, table.workerId),
+  check(
+    "chk_payslip_publications_subject",
+    sql`user_id IS NOT NULL OR worker_id IS NOT NULL`,
+  ),
+  foreignKey({
+    columns: [table.orgId, table.workerId],
+    foreignColumns: [workers.organizationId, workers.workerId],
+    name: "fk_payslip_publications_org_worker",
+  }).onDelete("restrict"),
 ]);
 
 export const payslipPublicationsRelations = relations(payslipPublications, ({ one }) => ({

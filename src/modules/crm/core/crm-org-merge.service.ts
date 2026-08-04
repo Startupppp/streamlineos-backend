@@ -5,6 +5,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import type { MergeOrgsInput, OrgDuplicatesQueryInput } from "./dto/org-merge.schemas";
 
 @Injectable()
@@ -119,7 +120,9 @@ export class CrmOrgMergeService {
       metadata: { primaryId: input.primaryId, duplicateId: input.duplicateId },
     });
 
-    await this.cache.invalidatePattern(`crm:organizations:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(
+      CACHE_KEYS.crmOrganizationsListNamespace(orgId),
+    );
 
     return { success: true, primaryId: input.primaryId, mergedId: input.duplicateId };
   }

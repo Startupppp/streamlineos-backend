@@ -251,8 +251,9 @@ export class CrmRulesService {
   }
 
   listScoringRules(orgId: string) {
-    return this.cache.cached(
+    return this.cache.cachedVersioned(
       `crm:scoring-rules:${orgId}`,
+      "list",
       () =>
         this.db
           .select({
@@ -282,7 +283,7 @@ export class CrmRulesService {
         points: input.points,
       })
       .returning();
-    await this.cache.invalidatePattern(`crm:scoring-rules:${orgId}*`);
+    await this.cache.invalidateNamespace(`crm:scoring-rules:${orgId}`);
     return rule;
   }
 

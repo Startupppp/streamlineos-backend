@@ -71,7 +71,7 @@ describe("authorize", () => {
   it("skips the module gate for internal settings and self keys", async () => {
     const resolver = makeResolver(new Map([["settings:rbac:manage", "all"]]), []);
     const result = await authorize(resolver, makeCtx(), "settings:rbac:manage");
-    expect(result).toEqual({ allow: true, scope: "all", permissions: ["settings:rbac:manage"] });
+    expect(result).toEqual({ allow: true, scope: "all" });
   });
 
   it("BOLA: passes ctx.orgId to resolveUserPermissions (not from request params)", async () => {
@@ -87,16 +87,16 @@ describe("authorize", () => {
     expect(capturedOrgIds).toEqual(["org-legitimate"]);
   });
 
-  it("allows the org owner with no grants and the module disabled", async () => {
+  it("denies the org owner when the module is disabled", async () => {
     const resolver = makeResolver(new Map(), []);
     const result = await authorize(resolver, makeCtx({ isOrgOwner: true }), "hr:employees:manage");
-    expect(result).toEqual({ allow: true, scope: "all" });
+    expect(result).toEqual({ allow: false, scope: "none", reason: "NO_MODULE" });
   });
 
-  it("allows an org admin with no module grant and the module disabled", async () => {
+  it("denies an org admin when the module is disabled", async () => {
     const resolver = makeResolver(new Map([["settings:manage", "all"]]), []);
     const result = await authorize(resolver, makeCtx(), "hr:employees:manage");
-    expect(result).toEqual({ allow: true, scope: "all" });
+    expect(result).toEqual({ allow: false, scope: "none", reason: "NO_MODULE" });
   });
 
   it("still denies a plain member whose module access was revoked", async () => {

@@ -208,7 +208,7 @@ export class ProjectsWriteService {
       metadata: { changedFields: Object.keys(body) },
     });
 
-    await this.cache.invalidatePattern(`projects:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(`projects:list:${orgId}`);
 
     return this.projectsQuery.getProject(u, projectId);
   }
@@ -280,7 +280,7 @@ export class ProjectsWriteService {
       metadata: { name: project.name },
     });
 
-    await this.cache.invalidatePattern(`projects:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(`projects:list:${orgId}`);
 
     return { success: true };
   }
@@ -336,7 +336,7 @@ export class ProjectsWriteService {
       metadata: { projectId, managedProductId: input.managedProductId },
     });
 
-    await this.cache.invalidatePattern(`projects:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(`projects:list:${orgId}`);
 
     return updated;
   }

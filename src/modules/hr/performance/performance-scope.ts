@@ -8,14 +8,14 @@ export const DOCUMENTS_PERMISSION = "hr:documents:manage";
 
 export async function resolvePerformanceScope(access: AccessService, u: CurrentUserContext): Promise<DataScope> {
   if (u.isOrgOwner) return "all";
-  if (!isScopable(PERFORMANCE_PERMISSION)) return "all";
+  if (!isScopable(PERFORMANCE_PERMISSION)) return "none";
   const resolved = await access.resolveUserPermissions(u.orgId, u.userId);
   return resolved.get(PERFORMANCE_PERMISSION) ?? "none";
 }
 
 export async function resolveDocumentsScope(access: AccessService, u: CurrentUserContext): Promise<DataScope> {
   if (u.isOrgOwner) return "all";
-  if (!isScopable(DOCUMENTS_PERMISSION)) return "all";
+  if (!isScopable(DOCUMENTS_PERMISSION)) return "none";
   const resolved = await access.resolveUserPermissions(u.orgId, u.userId);
   return resolved.get(DOCUMENTS_PERMISSION) ?? "none";
 }

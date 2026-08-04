@@ -125,8 +125,8 @@ export async function checkRunCompletion(
 
   if (pendingItems.length > 0) return;
 
-  const paidItemUserIds = await deps.db
-    .select({ userId: payrollBankBatchItems.userId })
+  const paidRunEmployees = await deps.db
+    .select({ runEmployeeId: payrollBankBatchItems.runEmployeeId })
     .from(payrollBankBatchItems)
     .where(
       and(
@@ -136,7 +136,7 @@ export async function checkRunCompletion(
       ),
     );
 
-  const paidUserIds = paidItemUserIds.map(r => r.userId);
+  const paidRunEmployeeIds = paidRunEmployees.map((r) => r.runEmployeeId);
 
   const now = new Date();
   let runMarkedPaid = false;
@@ -157,7 +157,7 @@ export async function checkRunCompletion(
       .set({ status: "PAID", paidAt: now, paidBy: actorId })
       .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
 
-    if (paidUserIds.length > 0) {
+    if (paidRunEmployeeIds.length > 0) {
       await tx
         .update(payrollRunEmployees)
         .set({ status: "PAID" })
@@ -165,7 +165,7 @@ export async function checkRunCompletion(
           and(
             eq(payrollRunEmployees.runId, runId),
             eq(payrollRunEmployees.orgId, orgId),
-            inArray(payrollRunEmployees.userId, paidUserIds),
+            inArray(payrollRunEmployees.id, paidRunEmployeeIds),
           ),
         );
     }
@@ -175,7 +175,7 @@ export async function checkRunCompletion(
       runId,
       type: "MARKED_PAID",
       actorId,
-      metadata: { paidCount: paidUserIds.length },
+      metadata: { paidCount: paidRunEmployeeIds.length },
     });
 
     runMarkedPaid = true;
@@ -188,7 +188,7 @@ export async function checkRunCompletion(
       orgId,
       targetId: String(runId),
       targetType: "payroll_run",
-      metadata: { paidCount: paidUserIds.length },
+      metadata: { paidCount: paidRunEmployeeIds.length },
     });
 
     const paidRun = await deps.db

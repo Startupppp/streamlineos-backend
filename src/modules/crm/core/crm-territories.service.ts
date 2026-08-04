@@ -18,8 +18,9 @@ export class CrmTerritoriesService {
   ) {}
 
   list(orgId: string, limit: number) {
-    return this.cache.cached(
-      `crm:territories:${orgId}:${limit}`,
+    return this.cache.cachedVersioned(
+      `crm:territories:${orgId}`,
+      String(limit),
       () =>
         this.db.query.territories.findMany({
           where: eq(territories.orgId, orgId),
@@ -69,7 +70,7 @@ export class CrmTerritoriesService {
         );
       }
 
-      await this.cache.invalidatePattern(`crm:territories:${orgId}:*`);
+      await this.cache.invalidateNamespace(`crm:territories:${orgId}`);
       return created;
     });
   }
@@ -152,14 +153,14 @@ export class CrmTerritoriesService {
         }
       }
 
-      await this.cache.invalidatePattern(`crm:territories:${orgId}:*`);
+      await this.cache.invalidateNamespace(`crm:territories:${orgId}`);
       return updated;
     });
   }
 
   async remove(orgId: string, id: number) {
     await this.db.delete(territories).where(and(eq(territories.id, id), eq(territories.orgId, orgId)));
-    await this.cache.invalidatePattern(`crm:territories:${orgId}:*`);
+    await this.cache.invalidateNamespace(`crm:territories:${orgId}`);
     return { success: true };
   }
 

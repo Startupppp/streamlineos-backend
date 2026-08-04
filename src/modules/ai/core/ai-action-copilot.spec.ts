@@ -21,8 +21,7 @@ function buildMocks() {
   const db = { select: jest.fn(), update: jest.fn(), insert: jest.fn() } as unknown as import("../../../db/drizzle.module").Db;
   const toolAccess = { denyReason: jest.fn(), scope: jest.fn() } as unknown as ToolAccessService;
   const confirmation = { propose: jest.fn(), confirm: jest.fn(), markExecuted: jest.fn(), cancel: jest.fn() } as unknown as AiConfirmationService;
-  const moduleRef = { get: jest.fn() } as unknown as import("@nestjs/core").ModuleRef;
-  return { db, toolAccess, confirmation, moduleRef };
+  return { db, toolAccess, confirmation };
 }
 
 function buildTicketsDb(found: boolean) {
@@ -34,11 +33,11 @@ function buildTicketsDb(found: boolean) {
 describe("ProjectsCopilotTools", () => {
   describe("createTicket tool", () => {
     it("calls propose and does NOT call ProjectsTicketsService when tool executes", async () => {
-      const { toolAccess, confirmation, moduleRef, db } = buildMocks();
+      const { toolAccess, confirmation, db } = buildMocks();
       jest.mocked(toolAccess.denyReason).mockResolvedValue(null);
       jest.mocked(confirmation.propose).mockResolvedValue({ proposalId: 1, token: "tok", expiresAt: new Date() });
 
-      const tools = new ProjectsCopilotTools(db, toolAccess, confirmation, moduleRef);
+      const tools = new ProjectsCopilotTools(db, toolAccess, confirmation);
       const built = tools.buildTools({ actor: mockActor });
 
       const execFn = built.createTicket.execute;
@@ -47,14 +46,13 @@ describe("ProjectsCopilotTools", () => {
 
       expect(result).toMatchObject({ requiresConfirmation: true, action: "ticket.create" });
       expect(confirmation.propose).toHaveBeenCalledWith(expect.objectContaining({ action: "ticket.create" }));
-      expect(moduleRef.get).not.toHaveBeenCalled();
     });
 
     it("returns denied when toolAccess.denyReason returns a reason", async () => {
-      const { toolAccess, confirmation, moduleRef, db } = buildMocks();
+      const { toolAccess, confirmation, db } = buildMocks();
       jest.mocked(toolAccess.denyReason).mockResolvedValue("No permission");
 
-      const tools = new ProjectsCopilotTools(db, toolAccess, confirmation, moduleRef);
+      const tools = new ProjectsCopilotTools(db, toolAccess, confirmation);
       const built = tools.buildTools({ actor: mockActor });
 
       const execFn2 = built.createTicket.execute;
@@ -68,11 +66,11 @@ describe("ProjectsCopilotTools", () => {
 
   describe("readTicket tool", () => {
     it("returns ticket data when found", async () => {
-      const { toolAccess, confirmation, moduleRef } = buildMocks();
+      const { toolAccess, confirmation } = buildMocks();
       jest.mocked(toolAccess.denyReason).mockResolvedValue(null);
 
       const db = buildTicketsDb(true) as unknown as import("../../../db/drizzle.module").Db;
-      const tools = new ProjectsCopilotTools(db, toolAccess, confirmation, moduleRef);
+      const tools = new ProjectsCopilotTools(db, toolAccess, confirmation);
       const built = tools.buildTools({ actor: mockActor });
 
       const execRead = built.readTicket.execute;
@@ -82,11 +80,11 @@ describe("ProjectsCopilotTools", () => {
     });
 
     it("returns { found: false } when ticket not in org", async () => {
-      const { toolAccess, confirmation, moduleRef } = buildMocks();
+      const { toolAccess, confirmation } = buildMocks();
       jest.mocked(toolAccess.denyReason).mockResolvedValue(null);
 
       const db = buildTicketsDb(false) as unknown as import("../../../db/drizzle.module").Db;
-      const tools = new ProjectsCopilotTools(db, toolAccess, confirmation, moduleRef);
+      const tools = new ProjectsCopilotTools(db, toolAccess, confirmation);
       const built = tools.buildTools({ actor: mockActor });
 
       const execRead2 = built.readTicket.execute;

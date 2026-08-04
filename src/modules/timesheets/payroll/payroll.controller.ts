@@ -22,6 +22,8 @@ import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { PayrollSummaryService } from "./payroll-summary.service";
 import { PayrollExportService } from "./payroll-export.service";
 import { PayrollSettingsService } from "./payroll-settings.service";
+import { AccessService } from "../../access/access.service";
+import { resolvePayrollScope } from "../core/timesheets-core-scope";
 import {
   periodSummaryQuerySchema,
   exportPayrollSchema,
@@ -43,15 +45,17 @@ export class PayrollController {
     private readonly summary: PayrollSummaryService,
     private readonly exportSvc: PayrollExportService,
     private readonly settings: PayrollSettingsService,
+    private readonly access: AccessService,
   ) {}
 
   @Get("period-summary")
   @RequirePermission("timesheets:payroll:view")
-  getPeriodSummary(
+  async getPeriodSummary(
     @Query(new ZodValidationPipe(periodSummaryQuerySchema)) query: PeriodSummaryQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.summary.getPeriodSummary(u.orgId, query);
+    const scope = await resolvePayrollScope(this.access, u);
+    return this.summary.getPeriodSummary(u.orgId, query, scope, u.userId);
   }
 
   @Post("export")

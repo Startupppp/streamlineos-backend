@@ -11,6 +11,7 @@ import { ConfigModule } from "./config/config.module";
 import { JwtAuthGuard } from "./common/auth/jwt-auth.guard";
 import { AuthContextModule } from "./common/auth/auth-context.module";
 import { MfaGuard } from "./common/auth/mfa.guard";
+import { ModuleGuard } from "./common/rbac/module.guard";
 import { DrizzleModule } from "./db/drizzle.module";
 import { CacheModule } from "./common/cache/cache.module";
 import { AuditModule } from "./common/audit/audit.module";
@@ -172,6 +173,7 @@ import { ZodValidationInterceptor } from "./common/validation/zod-validation.int
     TenantContextService,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: MfaGuard },
+    { provide: APP_GUARD, useClass: ModuleGuard },
     { provide: APP_INTERCEPTOR, useClass: DeprecationInterceptor },
     { provide: APP_INTERCEPTOR, useClass: ZodValidationInterceptor },
     { provide: APP_INTERCEPTOR, useClass: TenantContextInterceptor },

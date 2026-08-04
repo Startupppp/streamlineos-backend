@@ -202,8 +202,12 @@ export class LeavesService {
     const scope = await resolveLeavesViewScope(this.access, u);
     if (scope === "none") throw new ForbiddenException("Forbidden");
 
-    const cacheKey = `hr:leave-analytics:${u.orgId}:${year}`;
-    return this.cache.cached(cacheKey, () => this.queryAnalytics(u.orgId, year), CACHE_TTL.MEDIUM);
+    return this.cache.cachedVersioned(
+      `hr:leave-analytics:${u.orgId}`,
+      String(year),
+      () => this.queryAnalytics(u.orgId, year),
+      CACHE_TTL.MEDIUM,
+    );
   }
 
   private async queryAnalytics(orgId: string, year: number) {

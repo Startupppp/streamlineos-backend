@@ -4,7 +4,7 @@ import { crmOrganizations, contacts, deals, leads, tickets } from "../../../db/s
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_TTL } from "../../../common/cache/cache-keys";
+import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import type {
   OrganizationCreateInput,
   OrganizationListInput,
@@ -49,8 +49,9 @@ export class CrmOrganizationsService {
 
   list(orgId: string, filters: OrganizationListInput) {
     const searchTerm = (filters.search ?? filters.q ?? "").trim();
-    const key = `crm:organizations:list:${orgId}:${filters.page}:${filters.pageSize}:${searchTerm}`;
-    return this.cache.cached(
+    const key = `${filters.page}:${filters.pageSize}:${searchTerm}`;
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.crmOrganizationsListNamespace(orgId),
       key,
       () => this.queryList(orgId, filters, searchTerm),
       CACHE_TTL.SHORT,
@@ -131,7 +132,9 @@ export class CrmOrganizationsService {
         description: crmOrganizations.description,
         createdAt: crmOrganizations.createdAt,
       });
-    await this.cache.invalidatePattern(`crm:organizations:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(
+      CACHE_KEYS.crmOrganizationsListNamespace(orgId),
+    );
     return org;
   }
 

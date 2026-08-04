@@ -26,7 +26,7 @@ export class VendorReturnsService {
     const offset = (page - 1) * limit;
     const hash = `${status ?? ""}:${limit}:${offset}`;
 
-    return this.cache.cached(`inv:vret:list:${orgId}:${hash}`, async () => {
+    return this.cache.cachedVersioned(CACHE_KEYS.invVendorReturnsNamespace(orgId), hash, async () => {
       const conditions = [eq(invVendorReturns.orgId, orgId)];
       if (status) conditions.push(eq(invVendorReturns.status, status));
       const where = and(...conditions);
@@ -121,7 +121,7 @@ export class VendorReturnsService {
       }))
     );
 
-    await this.cache.invalidatePattern(`inv:vret:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invVendorReturnsNamespace(orgId));
     return this.get(orgId, ret.id);
   }
 
@@ -182,7 +182,7 @@ export class VendorReturnsService {
     await this.engine.invalidateCaches(orgId);
 
     await Promise.all([
-      this.cache.invalidatePattern(`inv:vret:list:${orgId}:*`),
+      this.cache.invalidateNamespace(CACHE_KEYS.invVendorReturnsNamespace(orgId)),
       this.cache.del(CACHE_KEYS.invVendorReturnDetail(orgId, returnId)),
     ]);
     return this.get(orgId, returnId);
@@ -228,7 +228,7 @@ export class VendorReturnsService {
       .set({ status: "CANCELLED", cancelledAt: new Date(), updatedAt: new Date() })
       .where(and(eq(invVendorReturns.id, returnId), eq(invVendorReturns.orgId, orgId)));
 
-    await this.cache.invalidatePattern(`inv:vret:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invVendorReturnsNamespace(orgId));
     return this.get(orgId, returnId);
   }
 }

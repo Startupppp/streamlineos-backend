@@ -39,7 +39,7 @@ export class WorkAuthorizationsController {
 
   @Get()
   @UseGuards(PermissionGuard)
-  @RequirePermission("hr:employees:read")
+  @RequirePermission("hr:employees:view")
   list(
     @Query(new ZodValidationPipe(listWorkAuthSchema)) query: ListWorkAuthInput,
     @CurrentUser() u: CurrentUserContext,
@@ -59,7 +59,7 @@ export class WorkAuthorizationsController {
 
   @Get(":authId")
   @UseGuards(PermissionGuard)
-  @RequirePermission("hr:employees:read")
+  @RequirePermission("hr:employees:view")
   getOne(
     @Param("authId", ParseIntPipe) authId: number,
     @CurrentUser() u: CurrentUserContext,

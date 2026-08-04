@@ -17,9 +17,9 @@ export class BroadcastsService {
   ) {}
 
   list(orgId: string, filters: ListBroadcastsInput) {
-    const key = `broadcasts:list:${orgId}:${JSON.stringify(filters)}`;
-    return this.cache.cached(
-      key,
+    return this.cache.cachedVersioned(
+      `broadcasts:list:${orgId}`,
+      JSON.stringify(filters),
       () => this.queryBroadcasts(orgId, filters),
       CACHE_TTL.SHORT,
     );
@@ -293,6 +293,6 @@ export class BroadcastsService {
   }
 
   private async invalidateCache(orgId: string) {
-    await this.cache.invalidatePattern(`broadcasts:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(`broadcasts:list:${orgId}`);
   }
 }

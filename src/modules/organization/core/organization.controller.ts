@@ -19,6 +19,7 @@ import {
 import { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { Public } from "../../../common/auth/public.decorator";
+import { AllowNoOrg } from "../../../common/auth/allow-no-org.decorator";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
@@ -35,6 +36,7 @@ import {
   createHolidaySchema,
   deleteOrgSchema,
   listMembersSchema,
+  restoreOrgSchema,
   schedulePurgeSchema,
   securitySettingsSchema,
   switchOrgSchema,
@@ -46,6 +48,7 @@ import {
   type CreateOrganizationInput,
   type DeleteOrgInput,
   type ListMembersInput,
+  type RestoreOrgInput,
   type SchedulePurgeInput,
   type SecuritySettingsInput,
   type SwitchOrgInput,
@@ -97,6 +100,12 @@ export class OrganizationController {
     return this.organization.listUserOrganizations(u.userId);
   }
 
+  @Get("archived")
+  @AllowNoOrg()
+  listArchivedOrganizations(@CurrentUser() u: CurrentUserContext) {
+    return this.organization.listArchivedOwnedOrganizations(u.userId);
+  }
+
   @Post()
   @HttpCode(201)
   @Idempotent("organization.create")
@@ -130,7 +139,7 @@ export class OrganizationController {
   }
 
   @UseGuards(PermissionGuard)
-  @RequirePermission("settings:manage")
+  @RequirePermission("settings:organization:manage")
   @Patch("members/:memberId")
   updateMemberRole(
     @Param("memberId") memberId: string,
@@ -287,11 +296,13 @@ export class OrganizationController {
   }
 
   @Post("restore")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("settings:manage")
-  restoreOrg(@CurrentUser() u: CurrentUserContext) {
-    if (!u.isOrgOwner) throw new ForbiddenException("Forbidden");
-    return this.organization.restoreOrg(u.orgId, u.userId);
+  @HttpCode(200)
+  @AllowNoOrg()
+  restoreOrg(
+    @Body(new ZodValidationPipe(restoreOrgSchema)) body: RestoreOrgInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.organization.restoreOrg(body.orgId, u.userId);
   }
 
   @Post("leave")

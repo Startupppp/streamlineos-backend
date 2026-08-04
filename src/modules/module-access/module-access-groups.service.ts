@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, count, countDistinct, eq, ilike, inArray, ne, type SQL } from "drizzle-orm";
+import { and, asc, count, countDistinct, eq, ilike, inArray, isNull, ne, notExists, or, sql, type SQL } from "drizzle-orm";
 import {
   moduleOwnerships,
   organizationMembers,
@@ -14,6 +14,7 @@ import {
   roleAssignments,
   rolePermissionGrants,
   roles,
+  userModuleAccess,
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -22,6 +23,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import {
   assertPermissionsGrantable,
   grantsOrgAdmin,
@@ -40,6 +42,7 @@ import type {
   CreateModuleGroupInput,
   InitiateOwnershipTransferInput,
   ListMembersQuery,
+  MemberCandidatesQuery,
   RenameModuleGroupInput,
   UpdateMemberGroupsInput,
 } from "./dto/module-access.schemas";
@@ -125,11 +128,16 @@ export class ModuleAccessGroupsService {
     action: "view" | "manage",
   ): Promise<void> {
     this.assertKnownModule(moduleKey);
+    if (!(await this.access.isModuleEnabled(actor.orgId, moduleKey))) {
+      throw new ForbiddenException(`The ${moduleKey} module is not enabled`);
+    }
     if (actor.isOrgOwner) return;
     const resolved = await this.access.resolveUserPermissions(actor.orgId, actor.userId);
     const isOrgAdmin = grantsOrgAdmin(resolved);
     if (isOrgAdmin) return;
-    const scope = resolved.get(`${moduleKey}:access:${action}`);
+    const scope =
+      resolved.get(`${moduleKey}:access:${action}`) ??
+      (action === "view" ? resolved.get(`${moduleKey}:access:manage`) : undefined);
     if (!scope || scope === "none") {
       throw moduleAccessDenied(action);
     }
@@ -140,6 +148,9 @@ export class ModuleAccessGroupsService {
     moduleKey: string,
   ): Promise<void> {
     this.assertKnownModule(moduleKey);
+    if (!(await this.access.isModuleEnabled(actor.orgId, moduleKey))) {
+      throw new ForbiddenException(`The ${moduleKey} module is not enabled`);
+    }
     if (actor.isOrgOwner) return;
     const ownerUserId = await this.resolveModuleOwnerUserId(actor.orgId, moduleKey);
     if (ownerUserId !== null && ownerUserId === actor.userId) return;
@@ -204,7 +215,7 @@ export class ModuleAccessGroupsService {
 
     const roleIds = orgRoles.map((r) => r.id);
 
-    const [memberCountRows, grantRows] = await Promise.all([
+    const [memberCountRows, grantRows, rolesWithGrantRows] = await Promise.all([
       this.db
         .select({ roleId: roleAssignments.roleId, cnt: count() })
         .from(roleAssignments)
@@ -223,9 +234,18 @@ export class ModuleAccessGroupsService {
           and(
             eq(rolePermissionGrants.orgId, orgId),
             inArray(rolePermissionGrants.roleId, roleIds),
+            inArray(rolePermissionGrants.permissionKey, Array.from(catalog)),
           ),
-        )
-        .limit(5000),
+        ),
+      this.db
+        .selectDistinct({ roleId: rolePermissionGrants.roleId })
+        .from(rolePermissionGrants)
+        .where(
+          and(
+            eq(rolePermissionGrants.orgId, orgId),
+            inArray(rolePermissionGrants.roleId, roleIds),
+          ),
+        ),
     ]);
 
     const memberCountById = new Map<number, number>(
@@ -233,11 +253,11 @@ export class ModuleAccessGroupsService {
     );
 
     const moduleGrantsByRole = new Map<number, { permissionKey: string; scope: DataScope }[]>();
-    const rolesWithAnyGrant = new Set<number>();
+    const rolesWithAnyGrant = new Set<number>(
+      rolesWithGrantRows.map((grant) => grant.roleId),
+    );
 
     for (const grant of grantRows) {
-      rolesWithAnyGrant.add(grant.roleId);
-      if (!catalog.has(grant.permissionKey)) continue;
       const list = moduleGrantsByRole.get(grant.roleId) ?? [];
       list.push({ permissionKey: grant.permissionKey, scope: grant.scope });
       moduleGrantsByRole.set(grant.roleId, list);
@@ -303,8 +323,9 @@ export class ModuleAccessGroupsService {
 
     const slug = `${moduleKey.toUpperCase()}_${input.name.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_${Date.now()}`;
 
-    const row = await this.db
-      .transaction(async (tx) => {
+    const row = await runInTenantTransaction(
+      this.db,
+      async (tx) => {
         const [created] = await tx
           .insert(roles)
           .values({ name: input.name, slug, orgId: actor.orgId, isSystem: false, moduleKey, rank: ROLE_RANK.MODULE_CUSTOM })
@@ -312,7 +333,9 @@ export class ModuleAccessGroupsService {
         if (!created) throw new BadRequestException("Failed to create group");
         await bumpPermissionsVersion(tx, actor.orgId);
         return created;
-      })
+      },
+      { orgId: actor.orgId },
+    )
       .catch((err: unknown) => {
         if (typeof err === "object" && err !== null && "code" in err && err.code === "23505") {
           throw new ConflictException(`A group named "${input.name}" already exists in this module`);
@@ -362,11 +385,27 @@ export class ModuleAccessGroupsService {
       throw new ConflictException(`A group named "${input.name}" already exists in this module`);
     }
 
-    const [row] = await this.db
-      .update(roles)
-      .set({ name: input.name, updatedAt: new Date() })
-      .where(and(eq(roles.id, groupId), eq(roles.orgId, actor.orgId)))
-      .returning({ id: roles.id, name: roles.name, isSystem: roles.isSystem, version: roles.version })
+    const [row] = await runInTenantTransaction(
+      this.db,
+      (tx) =>
+        tx
+          .update(roles)
+          .set({ name: input.name, updatedAt: new Date() })
+          .where(
+            and(
+              eq(roles.id, groupId),
+              eq(roles.orgId, actor.orgId),
+              eq(roles.moduleKey, moduleKey),
+            ),
+          )
+          .returning({
+            id: roles.id,
+            name: roles.name,
+            isSystem: roles.isSystem,
+            version: roles.version,
+          }),
+      { orgId: actor.orgId },
+    )
       .catch((err: unknown) => {
         if (typeof err === "object" && err !== null && "code" in err && err.code === "23505") {
           throw new ConflictException(`A group named "${input.name}" already exists in this module`);
@@ -385,7 +424,11 @@ export class ModuleAccessGroupsService {
       targetType: "role",
       metadata: { moduleKey, oldName: existing.name, newName: row.name },
     });
-    return { id: row.id, name: row.name, isSystem: row.isSystem, version: row.version, memberCount: 0, permissions: [] };
+    const refreshed = (await this.fetchGroups(actor.orgId, moduleKey)).find(
+      (group) => group.id === row.id,
+    );
+    if (!refreshed) throw new NotFoundException("Group not found");
+    return refreshed;
   }
 
   async deleteGroup(
@@ -412,7 +455,7 @@ export class ModuleAccessGroupsService {
       );
     }
 
-    await this.db.transaction(async (tx): Promise<void> => {
+    await runInTenantTransaction(this.db, async (tx): Promise<void> => {
       await tx
         .delete(rolePermissionGrants)
         .where(
@@ -423,7 +466,7 @@ export class ModuleAccessGroupsService {
         );
       await tx.delete(roles).where(and(eq(roles.id, groupId), eq(roles.orgId, actor.orgId)));
       await bumpPermissionsVersion(tx, actor.orgId);
-    });
+    }, { orgId: actor.orgId });
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
     this.audit.log({
@@ -469,7 +512,13 @@ export class ModuleAccessGroupsService {
         ),
       )
       .innerJoin(users, eq(organizationMembers.userId, users.id))
-      .where(and(eq(roleAssignments.orgId, orgId), eq(roleAssignments.roleId, groupId)))
+      .where(
+        and(
+          eq(roleAssignments.orgId, orgId),
+          eq(roleAssignments.roleId, groupId),
+          eq(organizationMembers.status, "ACTIVE"),
+        ),
+      )
       .limit(100);
 
     return rows.map((r) => ({
@@ -506,12 +555,15 @@ export class ModuleAccessGroupsService {
       where: and(
         eq(organizationMembers.orgId, actor.orgId),
         eq(organizationMembers.userId, input.userId),
+        eq(organizationMembers.status, "ACTIVE"),
       ),
-      columns: { id: true },
+      columns: { id: true, status: true },
     });
-    if (!member) throw new BadRequestException("User is not a member of this organization");
+    if (!member || member.status !== "ACTIVE") {
+      throw new BadRequestException("User must be an active member of this organization");
+    }
 
-    await this.db.transaction(async (tx): Promise<void> => {
+    await runInTenantTransaction(this.db, async (tx): Promise<void> => {
       await tx
         .insert(roleAssignments)
         .values({
@@ -522,7 +574,7 @@ export class ModuleAccessGroupsService {
         })
         .onConflictDoNothing();
       await bumpPermissionsVersion(tx, actor.orgId);
-    });
+    }, { orgId: actor.orgId });
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
     await this.cache.invalidate(CACHE_KEYS.userSession(input.userId));
@@ -564,7 +616,7 @@ export class ModuleAccessGroupsService {
     });
 
     if (member) {
-      await this.db.transaction(async (tx): Promise<void> => {
+      await runInTenantTransaction(this.db, async (tx): Promise<void> => {
         await tx
           .delete(roleAssignments)
           .where(
@@ -575,7 +627,7 @@ export class ModuleAccessGroupsService {
             ),
           );
         await bumpPermissionsVersion(tx, actor.orgId);
-      });
+      }, { orgId: actor.orgId });
       await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
       await this.cache.invalidate(CACHE_KEYS.userSession(userId));
       this.audit.log({
@@ -594,75 +646,96 @@ export class ModuleAccessGroupsService {
   async listMemberCandidates(
     actor: CurrentUserContext,
     moduleKey: string,
-  ): Promise<ModuleMemberCandidate[]> {
-    await this.assertAccess(actor, moduleKey, "view");
-    const [candidates, alreadyMembers] = await Promise.all([
-      this.cache.cached(
-        CACHE_KEYS.moduleAccessCandidates(actor.orgId),
-        () => this.fetchMemberCandidates(actor.orgId),
-        CACHE_TTL.MEDIUM,
-      ),
-      this.fetchModuleMemberUserIds(actor.orgId, moduleKey),
-    ]);
-    return candidates.filter((candidate) => !alreadyMembers.has(candidate.userId));
-  }
-
-  private async fetchModuleMemberUserIds(
-    orgId: string,
-    moduleKey: string,
-  ): Promise<Set<string>> {
-    const moduleRoleRows = await this.db
-      .select({ id: roles.id })
-      .from(roles)
-      .where(and(eq(roles.orgId, orgId), eq(roles.moduleKey, moduleKey)))
-      .limit(200);
-    if (moduleRoleRows.length === 0) return new Set();
-
-    const rows = await this.db
-      .selectDistinct({ userId: organizationMembers.userId })
+    {
+      page,
+      pageSize,
+      search,
+      userId,
+      excludeAssigned,
+    }: MemberCandidatesQuery = {
+      page: 1,
+      pageSize: 20,
+      search: "",
+      excludeAssigned: true,
+    },
+  ): Promise<{ data: ModuleMemberCandidate[]; pagination: Pagination }> {
+    await this.assertAccess(actor, moduleKey, "manage");
+    const limit = Math.min(pageSize, 100);
+    const offset = (page - 1) * limit;
+    const searchPattern = `%${search}%`;
+    const assignedToModule = this.db
+      .select({ value: sql<number>`1` })
       .from(roleAssignments)
       .innerJoin(
-        organizationMembers,
+        roles,
         and(
-          eq(organizationMembers.orgId, roleAssignments.orgId),
-          eq(organizationMembers.id, roleAssignments.organizationMembershipId),
+          eq(roles.orgId, roleAssignments.orgId),
+          eq(roles.id, roleAssignments.roleId),
+          eq(roles.moduleKey, moduleKey),
         ),
       )
       .where(
         and(
-          eq(roleAssignments.orgId, orgId),
-          inArray(
-            roleAssignments.roleId,
-            moduleRoleRows.map((role) => role.id),
+          eq(roleAssignments.orgId, actor.orgId),
+          eq(
+            roleAssignments.organizationMembershipId,
+            organizationMembers.id,
           ),
         ),
       );
-
-    return new Set(rows.map((row) => row.userId));
-  }
-
-  private async fetchMemberCandidates(orgId: string): Promise<ModuleMemberCandidate[]> {
-    const rows = await this.db
-      .select({
-        userId: organizationMembers.userId,
-        name: users.name,
-        email: users.email,
-        image: users.image,
-      })
-      .from(organizationMembers)
-      .innerJoin(users, eq(organizationMembers.userId, users.id))
-      .where(
-        and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.status, "ACTIVE")),
-      )
-      .orderBy(asc(users.name))
-      .limit(200);
-
-    return rows.map((r) => ({
-      userId: r.userId,
-      displayName: r.name ?? r.email ?? r.userId,
-      email: r.email ?? "",
-      avatarUrl: r.image,
-    }));
+    const where = and(
+      eq(organizationMembers.orgId, actor.orgId),
+      eq(organizationMembers.status, "ACTIVE"),
+      isNull(userModuleAccess.id),
+      excludeAssigned ? notExists(assignedToModule) : undefined,
+      userId ? eq(organizationMembers.userId, userId) : undefined,
+      search
+        ? or(ilike(users.name, searchPattern), ilike(users.email, searchPattern))
+        : undefined,
+    );
+    const baseJoin = and(
+      eq(userModuleAccess.orgId, organizationMembers.orgId),
+      eq(userModuleAccess.userId, organizationMembers.userId),
+      eq(userModuleAccess.moduleKey, moduleKey),
+      eq(userModuleAccess.enabled, false),
+    );
+    const [totalRows, rows] = await Promise.all([
+      this.db
+        .select({ total: count() })
+        .from(organizationMembers)
+        .innerJoin(users, eq(organizationMembers.userId, users.id))
+        .leftJoin(userModuleAccess, baseJoin)
+        .where(where),
+      this.db
+        .select({
+          userId: organizationMembers.userId,
+          name: users.name,
+          email: users.email,
+          image: users.image,
+        })
+        .from(organizationMembers)
+        .innerJoin(users, eq(organizationMembers.userId, users.id))
+        .leftJoin(userModuleAccess, baseJoin)
+        .where(where)
+        .orderBy(asc(users.name), asc(users.email))
+        .limit(limit)
+        .offset(offset),
+    ]);
+    const total = Number(totalRows[0]?.total ?? 0);
+    return {
+      data: rows.map((row) => ({
+        userId: row.userId,
+        displayName: row.name ?? row.email ?? row.userId,
+        email: row.email ?? "",
+        avatarUrl: row.image,
+      })),
+      pagination: {
+        page,
+        pageSize: limit,
+        total,
+        totalPages: total > 0 ? Math.ceil(total / limit) : 0,
+      },
+    };
   }
 
   async getOwnership(actor: CurrentUserContext, moduleKey: string): Promise<ModuleOwnership> {
@@ -762,6 +835,7 @@ export class ModuleAccessGroupsService {
         where: and(
           eq(organizationMembers.orgId, actor.orgId),
           eq(organizationMembers.userId, actor.userId),
+          eq(organizationMembers.status, "ACTIVE"),
         ),
         columns: { id: true },
       }),
@@ -781,16 +855,22 @@ export class ModuleAccessGroupsService {
 
     try {
       const expiresAt = new Date(Date.now() + 48 * 3_600_000);
-      await this.db.insert(ownershipTransfers).values({
-        orgId: actor.orgId,
-        scope: "MODULE",
-        moduleKey,
-        fromMembershipId: actorMembership.id,
-        toMembershipId: toMembership.id,
-        status: "PENDING",
-        expiresAt,
-        reason: null,
-      });
+      await runInTenantTransaction(
+        this.db,
+        async (tx) => {
+          await tx.insert(ownershipTransfers).values({
+            orgId: actor.orgId,
+            scope: "MODULE",
+            moduleKey,
+            fromMembershipId: actorMembership.id,
+            toMembershipId: toMembership.id,
+            status: "PENDING",
+            expiresAt,
+            reason: null,
+          });
+        },
+        { orgId: actor.orgId },
+      );
     } catch (err: unknown) {
       const pgErr = err as { code?: string };
       if (pgErr.code === "23505") {
@@ -801,8 +881,7 @@ export class ModuleAccessGroupsService {
 
     await Promise.all([
       this.cache.invalidate(CACHE_KEYS.moduleAccessOwnership(actor.orgId, moduleKey)),
-      this.cache.invalidatePattern(CACHE_KEYS.ownershipTransfersPattern(actor.orgId)),
-      this.cache.invalidatePattern(CACHE_KEYS.incomingTransfersPattern(actor.orgId)),
+      this.cache.invalidateNamespace(`ownership:transfers:${actor.orgId}`),
     ]);
 
     return { success: true };
@@ -813,7 +892,7 @@ export class ModuleAccessGroupsService {
     moduleKey: string,
     { page, pageSize, userId }: ListMembersQuery,
   ): Promise<{ data: FlatModuleMember[]; pagination: Pagination }> {
-    await this.assertAccess(actor, moduleKey, "view");
+    await this.assertAccess(actor, moduleKey, userId === undefined ? "view" : "manage");
     const limit = Math.min(pageSize, 100);
     const version = await this.access.getPermissionsVersion(actor.orgId);
     return this.cache.cached(
@@ -835,8 +914,7 @@ export class ModuleAccessGroupsService {
     const moduleRoleRows = await this.db
       .select({ id: roles.id })
       .from(roles)
-      .where(and(eq(roles.orgId, orgId), eq(roles.moduleKey, moduleKey)))
-      .limit(200);
+      .where(and(eq(roles.orgId, orgId), eq(roles.moduleKey, moduleKey)));
 
     if (moduleRoleRows.length === 0) {
       return { data: [], pagination: { page, pageSize: limit, total: 0, totalPages: 0 } };
@@ -862,6 +940,7 @@ export class ModuleAccessGroupsService {
     const baseWhere = and(
       eq(roleAssignments.orgId, orgId),
       inArray(roleAssignments.roleId, moduleRoleIds),
+      eq(organizationMembers.status, "ACTIVE"),
       membershipFilter,
     );
 
@@ -869,6 +948,13 @@ export class ModuleAccessGroupsService {
       this.db
         .select({ total: countDistinct(roleAssignments.organizationMembershipId) })
         .from(roleAssignments)
+        .innerJoin(
+          organizationMembers,
+          and(
+            eq(organizationMembers.orgId, roleAssignments.orgId),
+            eq(organizationMembers.id, roleAssignments.organizationMembershipId),
+          ),
+        )
         .where(baseWhere),
       this.db
         .selectDistinct({
@@ -915,8 +1001,7 @@ export class ModuleAccessGroupsService {
           inArray(roleAssignments.organizationMembershipId, membershipIds),
           inArray(roleAssignments.roleId, moduleRoleIds),
         ),
-      )
-      .limit(500);
+      );
 
     const groupsByMembership = new Map<number, { id: number; name: string }[]>();
     for (const gr of groupRows) {
@@ -963,10 +1048,13 @@ export class ModuleAccessGroupsService {
       where: and(
         eq(organizationMembers.orgId, actor.orgId),
         eq(organizationMembers.userId, input.userId),
+        eq(organizationMembers.status, "ACTIVE"),
       ),
-      columns: { id: true },
+      columns: { id: true, status: true },
     });
-    if (!member) throw new BadRequestException("User is not a member of this organization");
+    if (!member || member.status !== "ACTIVE") {
+      throw new BadRequestException("User must be an active member of this organization");
+    }
 
     const validGroups = await this.db
       .select({ id: roles.id })
@@ -983,7 +1071,7 @@ export class ModuleAccessGroupsService {
       throw new BadRequestException("One or more group IDs do not belong to this module");
     }
 
-    await this.db.transaction(async (tx): Promise<void> => {
+    await runInTenantTransaction(this.db, async (tx): Promise<void> => {
       for (const groupId of input.groupIds) {
         await tx
           .insert(roleAssignments)
@@ -996,7 +1084,7 @@ export class ModuleAccessGroupsService {
           .onConflictDoNothing();
       }
       await bumpPermissionsVersion(tx, actor.orgId);
-    });
+    }, { orgId: actor.orgId });
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
     await this.cache.invalidate(CACHE_KEYS.userSession(input.userId));
@@ -1036,16 +1124,18 @@ export class ModuleAccessGroupsService {
       where: and(
         eq(organizationMembers.orgId, actor.orgId),
         eq(organizationMembers.userId, userId),
+        eq(organizationMembers.status, "ACTIVE"),
       ),
-      columns: { id: true },
+      columns: { id: true, status: true },
     });
-    if (!member) throw new NotFoundException("User is not a member of this organization");
+    if (!member || member.status !== "ACTIVE") {
+      throw new NotFoundException("Active member not found");
+    }
 
     const allModuleRoles = await this.db
       .select({ id: roles.id })
       .from(roles)
-      .where(and(eq(roles.orgId, actor.orgId), eq(roles.moduleKey, moduleKey)))
-      .limit(200);
+      .where(and(eq(roles.orgId, actor.orgId), eq(roles.moduleKey, moduleKey)));
 
     const allModuleRoleIds = allModuleRoles.map((r) => r.id);
 
@@ -1058,7 +1148,7 @@ export class ModuleAccessGroupsService {
       }
     }
 
-    await this.db.transaction(async (tx): Promise<void> => {
+    await runInTenantTransaction(this.db, async (tx): Promise<void> => {
       if (allModuleRoleIds.length > 0) {
         await tx
           .delete(roleAssignments)
@@ -1086,7 +1176,7 @@ export class ModuleAccessGroupsService {
       }
 
       await bumpPermissionsVersion(tx, actor.orgId);
-    });
+    }, { orgId: actor.orgId });
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
     await this.cache.invalidate(CACHE_KEYS.userSession(userId));
@@ -1128,14 +1218,13 @@ export class ModuleAccessGroupsService {
     const allModuleRoles = await this.db
       .select({ id: roles.id })
       .from(roles)
-      .where(and(eq(roles.orgId, actor.orgId), eq(roles.moduleKey, moduleKey)))
-      .limit(200);
+      .where(and(eq(roles.orgId, actor.orgId), eq(roles.moduleKey, moduleKey)));
 
     if (allModuleRoles.length === 0) return { success: true };
 
     const allModuleRoleIds = allModuleRoles.map((r) => r.id);
 
-    await this.db.transaction(async (tx): Promise<void> => {
+    await runInTenantTransaction(this.db, async (tx): Promise<void> => {
       await tx
         .delete(roleAssignments)
         .where(
@@ -1146,7 +1235,7 @@ export class ModuleAccessGroupsService {
           ),
         );
       await bumpPermissionsVersion(tx, actor.orgId);
-    });
+    }, { orgId: actor.orgId });
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
     await this.cache.invalidate(CACHE_KEYS.userSession(userId));
@@ -1197,15 +1286,25 @@ export class ModuleAccessGroupsService {
       }
     }
 
-    await this.db
-      .update(ownershipTransfers)
-      .set({ status: "CANCELLED" })
-      .where(eq(ownershipTransfers.id, transfer.id));
+    await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        await tx
+          .update(ownershipTransfers)
+          .set({ status: "CANCELLED" })
+          .where(
+            and(
+              eq(ownershipTransfers.id, transfer.id),
+              eq(ownershipTransfers.orgId, actor.orgId),
+            ),
+          );
+      },
+      { orgId: actor.orgId },
+    );
 
     await Promise.all([
       this.cache.invalidate(CACHE_KEYS.moduleAccessOwnership(actor.orgId, moduleKey)),
-      this.cache.invalidatePattern(CACHE_KEYS.ownershipTransfersPattern(actor.orgId)),
-      this.cache.invalidatePattern(CACHE_KEYS.incomingTransfersPattern(actor.orgId)),
+      this.cache.invalidateNamespace(`ownership:transfers:${actor.orgId}`),
     ]);
 
     return { success: true };

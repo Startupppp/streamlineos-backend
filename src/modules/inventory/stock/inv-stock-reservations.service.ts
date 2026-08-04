@@ -4,7 +4,7 @@ import { invStockReservations } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
+import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { ReservationService } from "../stock-engine/reservation.service";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import type { ListReservationsInput, CreateReservationInput, ReleaseReservationInput, OpeningStockInput } from "./dto/inv-stock.schemas";
@@ -23,7 +23,7 @@ export class InvStockReservationsService {
     const offset = (page - 1) * limit;
     const hash = `${sourceType ?? ""}:${status ?? ""}:${variantId ?? ""}:${warehouseId ?? ""}:${limit}:${offset}`;
 
-    return this.cache.cached(CACHE_KEYS.invReservationsList(orgId, hash), async () => {
+    return this.cache.cachedVersioned(`inv:reservations:list:${orgId}`, hash, async () => {
       const conditions: SQL[] = [eq(invStockReservations.orgId, orgId)];
       if (sourceType) conditions.push(eq(invStockReservations.sourceType, sourceType));
       if (status) conditions.push(eq(invStockReservations.status, status));
@@ -63,13 +63,13 @@ export class InvStockReservationsService {
       qty: input.qty,
       expiresAt: input.expiresAt ? new Date(input.expiresAt) : undefined,
     });
-    await this.cache.invalidatePattern(CACHE_KEYS.invReservationsList(orgId, "*") + "");
+    await this.cache.invalidateNamespace(`inv:reservations:list:${orgId}`);
     return reservation;
   }
 
   async releaseReservation(orgId: string, userId: string, input: ReleaseReservationInput) {
     await this.reservationService.releaseReservation(orgId, userId, input.reservationId);
-    await this.cache.invalidatePattern(CACHE_KEYS.invReservationsList(orgId, "*") + "");
+    await this.cache.invalidateNamespace(`inv:reservations:list:${orgId}`);
   }
 
   async createOpeningBalance(orgId: string, userId: string, input: OpeningStockInput, idempotencyKey: string) {

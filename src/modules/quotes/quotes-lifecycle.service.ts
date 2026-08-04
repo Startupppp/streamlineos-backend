@@ -60,7 +60,7 @@ export class QuotesLifecycleService {
 
     void this.bus.emit(orgId, "quote.sent", { entityType: "quote", entityId: String(quoteId), data: { quoteNumber: existing.quoteNumber, dealId: existing.dealId, clientId: existing.clientId }, actorId: userId }).catch(() => undefined);
 
-    await this.cache.invalidatePattern(`quotes:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(`quotes:list:${orgId}`);
 
     return updated;
   }
@@ -86,7 +86,7 @@ export class QuotesLifecycleService {
       targetType: "quote",
       metadata: { quoteNumber: existing.quoteNumber },
     });
-    await this.cache.invalidatePattern(`quotes:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(`quotes:list:${orgId}`);
     return updated;
   }
 
@@ -118,7 +118,7 @@ export class QuotesLifecycleService {
       targetType: "quote",
       metadata: { quoteNumber: existing.quoteNumber, reason },
     });
-    await this.cache.invalidatePattern(`quotes:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(`quotes:list:${orgId}`);
     return updated;
   }
 
@@ -205,7 +205,7 @@ export class QuotesLifecycleService {
       targetType: "quote",
       metadata: { quoteNumber: existing.quoteNumber, invoiceId: result.id, invoiceNumber: result.invoiceNumber },
     });
-    await this.cache.invalidatePattern(`quotes:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(`quotes:list:${orgId}`);
     return { invoice: result, quoteId };
   }
 
@@ -231,7 +231,7 @@ export class QuotesLifecycleService {
 
     void this.bus.emit(orgId, "quote.signed", { entityType: "quote", entityId: String(quoteId), data: { quoteNumber: existing.quoteNumber, dealId: existing.dealId, clientId: existing.clientId, documentRef: documentRef ?? null }, actorId: userId }).catch(() => undefined);
 
-    await this.cache.invalidatePattern(`quotes:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(`quotes:list:${orgId}`);
     return updated;
   }
 

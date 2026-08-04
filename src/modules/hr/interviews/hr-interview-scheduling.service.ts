@@ -88,8 +88,6 @@ export class HrInterviewSchedulingService {
       })
       .returning();
 
-    await this.cache.invalidatePattern(`hr:interviews:list:${orgId}:*`);
-
     void this.dispatchScheduledAutomation(orgId, interview, interview.interviewerId ?? "").catch(() => undefined);
 
     return interview;
@@ -99,7 +97,6 @@ export class HrInterviewSchedulingService {
     await this.db
       .delete(interviews)
       .where(and(eq(interviews.id, interviewId), eq(interviews.orgId, orgId)));
-    await this.cache.invalidatePattern(`hr:interviews:list:${orgId}:*`);
     return { success: true };
   }
 

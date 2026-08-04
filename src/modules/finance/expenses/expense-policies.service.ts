@@ -9,10 +9,9 @@ import { finExpensePolicies } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CreatePolicyInput, UpdatePolicyInput } from "./dto/finance-expenses.schemas";
-
-const POLICY_CACHE_KEY = (orgId: string) => `fin:expense-policies:${orgId}`;
 
 @Injectable()
 export class ExpensePoliciesService {
@@ -23,8 +22,9 @@ export class ExpensePoliciesService {
   ) {}
 
   async list(orgId: string) {
-    return this.cache.cached(
-      POLICY_CACHE_KEY(orgId),
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.finExpensePoliciesNamespace(orgId),
+      "list",
       () =>
         this.db.query.finExpensePolicies.findMany({
           where: eq(finExpensePolicies.orgId, orgId),
@@ -61,7 +61,7 @@ export class ExpensePoliciesService {
       metadata: { name: input.name },
     });
 
-    await this.cache.invalidatePattern(`fin:expense-policies:${orgId}*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.finExpensePoliciesNamespace(orgId));
 
     return policy;
   }
@@ -95,7 +95,7 @@ export class ExpensePoliciesService {
       targetType: "fin_expense_policy",
     });
 
-    await this.cache.invalidatePattern(`fin:expense-policies:${orgId}*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.finExpensePoliciesNamespace(orgId));
 
     return { success: true };
   }
@@ -120,7 +120,7 @@ export class ExpensePoliciesService {
       targetType: "fin_expense_policy",
     });
 
-    await this.cache.invalidatePattern(`fin:expense-policies:${orgId}*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.finExpensePoliciesNamespace(orgId));
 
     return { success: true };
   }

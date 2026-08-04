@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
-import { organizationMembers, users } from "../../db/schema";
+import { organizationMembers, organizations, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { runInTenantTransaction } from "../tenant/run-in-tenant-transaction";
@@ -20,14 +20,14 @@ const UNKNOWN: MembershipState = { active: false, isOwner: false, role: "" };
 export async function bustMembershipStatusCache(
   cache: CacheService,
   userId: string,
-  orgId?: string,
+  _orgId?: string,
 ): Promise<void> {
   await cache.invalidate(CACHE_KEYS.membershipAccount(userId));
-  if (orgId) {
-    await cache.invalidate(CACHE_KEYS.membershipStatus(userId, orgId));
-    return;
-  }
-  await cache.invalidatePattern(CACHE_KEYS.membershipStatusPattern(userId));
+  // One user namespace supports both targeted and all-organization busts in
+  // constant time. A targeted bust intentionally expires the user's other
+  // short-lived membership entries too; membership changes are rare and this
+  // avoids maintaining per-org generation counters.
+  await cache.invalidateNamespace(`membership:status:${userId}`);
 }
 
 @Injectable()
@@ -38,10 +38,15 @@ export class MembershipStateService {
   ) {}
 
   async resolve(userId: string, orgId: string): Promise<MembershipState> {
-    const key = CACHE_KEYS.membershipStatus(userId, orgId);
-    const cached = await this.cache.get<MembershipState>(key);
-    if (cached) return cached;
+    return this.cache.cachedVersioned(
+      `membership:status:${userId}`,
+      orgId,
+      () => this.fetchMembershipState(userId, orgId),
+      MEMBERSHIP_STATUS_TTL_SECONDS,
+    );
+  }
 
+  private async fetchMembershipState(userId: string, orgId: string): Promise<MembershipState> {
     let state = UNKNOWN;
     try {
       const rows = await runInTenantTransaction(
@@ -54,9 +59,12 @@ export class MembershipStateService {
               role: organizationMembers.role,
               userIsActive: users.isActive,
               userDeletedAt: users.deletedAt,
+              orgStatus: organizations.status,
+              orgDeletedAt: organizations.deletedAt,
             })
             .from(organizationMembers)
             .innerJoin(users, eq(users.id, organizationMembers.userId))
+            .innerJoin(organizations, eq(organizations.id, organizationMembers.orgId))
             .where(
               and(
                 eq(organizationMembers.userId, userId),
@@ -73,7 +81,9 @@ export class MembershipStateService {
           active:
             row.status === "ACTIVE" &&
             row.userIsActive &&
-            row.userDeletedAt === null,
+            row.userDeletedAt === null &&
+            row.orgStatus === "ACTIVE" &&
+            row.orgDeletedAt === null,
           isOwner: row.isOwner,
           role: row.role,
         };
@@ -82,7 +92,6 @@ export class MembershipStateService {
       state = UNKNOWN;
     }
 
-    await this.cache.set(key, state, MEMBERSHIP_STATUS_TTL_SECONDS);
     return state;
   }
 

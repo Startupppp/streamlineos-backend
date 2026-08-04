@@ -309,7 +309,7 @@ export class DealsService {
     if (!updated) return { ok: false, reason: "not_found" };
 
     const invalidations: Array<Promise<void>> = [
-      this.cache.invalidatePattern(`deals:list:${orgId}:*`),
+      this.cache.invalidateNamespace(`deals:list:${orgId}`),
       this.cache.invalidate(CACHE_KEYS.salesDashboard(orgId)),
     ];
     if (stageChanged) {

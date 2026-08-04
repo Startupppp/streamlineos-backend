@@ -24,7 +24,7 @@ export class PerformancePipsService {
   listPips(orgId: string, userId: string, scope: DataScope) {
     const conditions = [
       eq(performanceImprovementPlans.orgId, orgId),
-      applyScope(scope, userId, {
+      applyScope(scope, orgId, userId, {
         ownerColumn: performanceImprovementPlans.userId,
       }),
     ];

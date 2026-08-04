@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { auditLogs, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -24,11 +24,12 @@ export class AuditLogService {
   ) {}
 
   async list(orgId: string, filters: ListInput) {
-    const { page, pageSize, action, targetType, dateFrom, dateTo } = filters;
+    const { page, pageSize, action, actions, targetType, dateFrom, dateTo } = filters;
     const offset = (page - 1) * pageSize;
 
     const conditions = [eq(auditLogs.orgId, orgId)];
     if (action) conditions.push(eq(auditLogs.action, action));
+    if (actions?.length) conditions.push(inArray(auditLogs.action, actions));
     if (targetType) conditions.push(eq(auditLogs.targetType, targetType));
     if (dateFrom) conditions.push(gte(auditLogs.createdAt, new Date(dateFrom)));
     if (dateTo) {

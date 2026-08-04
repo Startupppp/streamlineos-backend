@@ -86,7 +86,7 @@ export class AccountingPayablesQueryService {
     }
     if (vendorId) conds.push(eq(purchaseBills.vendorId, vendorId));
     if (q) conds.push(ilike(purchaseBills.billNumber, `%${escapeLike(q)}%`));
-    conds.push(applyScope(scope, userId, { ownerColumn: purchaseBills.createdBy }));
+    conds.push(applyScope(scope, orgId, userId, { ownerColumn: purchaseBills.createdBy }));
 
     const where = and(...conds);
     const { offset, limit } = paginateOffset({ page, pageSize });

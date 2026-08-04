@@ -16,6 +16,7 @@ import { getChatReplyReminderEmail } from "../email/templates/chat";
 import { logger } from "../../common/logger/logger.service";
 
 const REPLY_REMINDER_MS = Number(process.env.CHAT_REPLY_REMINDER_MINUTES ?? 15) * 60 * 1000;
+const REMINDER_INSERT_BATCH_SIZE = 500;
 
 @Injectable()
 export class ChatReplyRemindersService {
@@ -39,18 +40,21 @@ export class ChatReplyRemindersService {
       columns: { userId: true },
     });
 
-    for (const member of members) {
-      if (member.userId === senderId) continue;
+    const reminders = members
+      .filter((member) => member.userId !== senderId)
+      .map((member) => ({
+        orgId,
+        channelId,
+        messageId,
+        recipientUserId: member.userId,
+        senderUserId: senderId,
+        remindAt,
+      }));
+
+    for (let offset = 0; offset < reminders.length; offset += REMINDER_INSERT_BATCH_SIZE) {
       await this.db
         .insert(chatReplyReminders)
-        .values({
-          orgId,
-          channelId,
-          messageId,
-          recipientUserId: member.userId,
-          senderUserId: senderId,
-          remindAt,
-        })
+        .values(reminders.slice(offset, offset + REMINDER_INSERT_BATCH_SIZE))
         .onConflictDoNothing();
     }
   }
@@ -178,11 +182,6 @@ export class ChatReplyRemindersService {
     const channel = await this.db.query.chatChannels.findFirst({
       where: eq(chatChannels.id, reminder.channelId),
       columns: { name: true, type: true },
-      with: {
-        members: {
-          with: { user: { columns: { id: true, name: true } } },
-        },
-      },
     });
     if (!channel) {
       await this.markCancelled(reminderId);

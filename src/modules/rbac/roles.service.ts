@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, count, eq, gte, inArray, like } from "drizzle-orm";
+import { and, asc, count, eq, gte, ilike, inArray, like, or } from "drizzle-orm";
 import {
   auditLogs,
   groupRoleAssignments,
@@ -14,6 +14,7 @@ import {
   roleAssignments,
   rolePermissionGrants,
   roles,
+  users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -21,6 +22,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import {
   assertKnownPermissionKeys,
   assertPermissionsGrantable,
@@ -49,6 +51,7 @@ import type {
   CreateRoleInput,
   RoleMemberInput,
   SetRolePermissionsInput,
+  SimulationCandidatesQuery,
   UpdateRoleInput,
 } from "./dto/rbac.schemas";
 
@@ -143,6 +146,66 @@ export class RolesService {
       .orderBy(asc(principalGroups.name));
   }
 
+  async listSimulationCandidates(orgId: string, input: SimulationCandidatesQuery) {
+    const offset = (input.page - 1) * input.limit;
+    const conditions = [
+      eq(organizationMembers.orgId, orgId),
+      eq(organizationMembers.status, "ACTIVE"),
+    ];
+    if (input.search) {
+      const searchCondition = or(
+        ilike(users.name, `%${input.search}%`),
+        ilike(users.email, `%${input.search}%`),
+      );
+      if (searchCondition) conditions.push(searchCondition);
+    }
+    const where = and(...conditions);
+    const [data, [{ value }]] = await Promise.all([
+      this.db
+        .select({
+          id: users.id,
+          name: users.name,
+          email: users.email,
+          image: users.image,
+          designation: users.designation,
+        })
+        .from(organizationMembers)
+        .innerJoin(users, eq(users.id, organizationMembers.userId))
+        .where(where)
+        .orderBy(asc(users.name), asc(users.email))
+        .limit(input.limit)
+        .offset(offset),
+      this.db
+        .select({ value: count() })
+        .from(organizationMembers)
+        .innerJoin(users, eq(users.id, organizationMembers.userId))
+        .where(where),
+    ]);
+    const total = Number(value);
+    return {
+      data,
+      pagination: {
+        page: input.page,
+        limit: input.limit,
+        total,
+        totalPages: Math.ceil(total / input.limit),
+      },
+    };
+  }
+
+  async getSimulationTarget(orgId: string, targetUserId: string) {
+    const target = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, targetUserId),
+        eq(organizationMembers.status, "ACTIVE"),
+      ),
+      columns: { isOwner: true },
+    });
+    if (!target) throw new NotFoundException("Organization member not found");
+    return target;
+  }
+
   async getRoles(orgId: string) {
     return this.cache.cached(
       CACHE_KEYS.rolesList(orgId),
@@ -171,7 +234,7 @@ export class RolesService {
     const target: RoleGrantTarget = { rank: targetRank, moduleKey: targetModuleKey };
     await this.assertGrantable(actor, input.permissions, target);
 
-    const created = await this.db.transaction(async (tx) => {
+    const created = await runInTenantTransaction(this.db, async (tx) => {
       const existing = await tx.query.roles.findFirst({
         where: and(eq(roles.slug, input.slug), eq(roles.orgId, actor.orgId)),
       });
@@ -203,7 +266,7 @@ export class RolesService {
 
       await bumpPermissionsVersion(tx, actor.orgId);
       return row;
-    });
+    }, { orgId: actor.orgId });
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
     return created;
@@ -214,7 +277,7 @@ export class RolesService {
     roleId: number,
     input: UpdateRoleInput,
   ): Promise<{ success: true }> {
-    await this.db.transaction(async (tx): Promise<void> => {
+    await runInTenantTransaction(this.db, async (tx): Promise<void> => {
       const existing = await tx.query.roles.findFirst({
         where: and(eq(roles.id, roleId), eq(roles.orgId, actor.orgId)),
       });
@@ -268,7 +331,7 @@ export class RolesService {
       }
 
       await bumpPermissionsVersion(tx, actor.orgId);
-    });
+    }, { orgId: actor.orgId });
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
 
@@ -295,7 +358,7 @@ export class RolesService {
       );
     }
 
-    await this.db.transaction(async (tx): Promise<void> => {
+    await runInTenantTransaction(this.db, async (tx): Promise<void> => {
       const existing = await tx.query.roles.findFirst({
         where: and(eq(roles.id, roleId), eq(roles.orgId, actor.orgId)),
       });
@@ -328,7 +391,7 @@ export class RolesService {
         .delete(roles)
         .where(and(eq(roles.id, roleId), eq(roles.orgId, actor.orgId)));
       await bumpPermissionsVersion(tx, actor.orgId);
-    });
+    }, { orgId: actor.orgId });
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
     return { success: true };
@@ -461,7 +524,7 @@ export class RolesService {
     const cloneTarget: RoleGrantTarget = { rank: ROLE_RANK.FUNCTIONAL, moduleKey: null };
     await this.assertGrantable(actor, validPermissions, cloneTarget);
 
-    const created = await this.db.transaction(async (tx) => {
+    const created = await runInTenantTransaction(this.db, async (tx) => {
       const existing = await tx.query.roles.findFirst({
         where: and(eq(roles.slug, slug), eq(roles.orgId, actor.orgId)),
       });
@@ -495,7 +558,7 @@ export class RolesService {
 
       await bumpPermissionsVersion(tx, actor.orgId);
       return row;
-    });
+    }, { orgId: actor.orgId });
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
     return created;

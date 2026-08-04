@@ -685,7 +685,8 @@ export class StockEngineService {
 
   async invalidateCaches(orgId: string): Promise<void> {
     await Promise.allSettled([
-      this.cache.invalidatePattern(CACHE_KEYS.invStockLevelPattern(orgId)),
+      this.cache.invalidateNamespace(`inv:stock:levels:${orgId}`),
+      this.cache.invalidateNamespace(`inv:traceability:${orgId}`),
       this.cache.invalidate(CACHE_KEYS.invDashboard(orgId)),
       this.cache.invalidate(CACHE_KEYS.invStockSummary(orgId)),
       this.cache.invalidate(CACHE_KEYS.invLowStock(orgId)),

@@ -12,6 +12,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { ModuleGuard } from "../../common/rbac/module.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
@@ -28,9 +29,9 @@ import {
   type UpdateOfferFulfillmentInput,
 } from "./dto/offer-fulfillment.schemas";
 
-@RequireModule("crm")
+@RequireModule(["crm", "inventory"])
 @Controller("offer-fulfillment")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class OfferFulfillmentController {
   constructor(private readonly svc: OfferFulfillmentService) {}
 

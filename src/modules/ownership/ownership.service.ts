@@ -230,8 +230,7 @@ export class OwnershipService {
       this.cache.invalidate(CACHE_KEYS.moduleOwnershipsList(orgId)),
       this.cache.invalidate(CACHE_KEYS.moduleOwnershipDetail(orgId, moduleKey)),
       this.cache.invalidate(CACHE_KEYS.moduleAccessOwnership(orgId, moduleKey)),
-      this.cache.invalidatePattern(CACHE_KEYS.ownershipTransfersPattern(orgId)),
-      this.cache.invalidatePattern(CACHE_KEYS.incomingTransfersPattern(orgId)),
+      this.cache.invalidateNamespace(`ownership:transfers:${orgId}`),
     ]);
 
     this.audit.log({
@@ -299,8 +298,7 @@ export class OwnershipService {
       });
 
       await Promise.all([
-        this.cache.invalidatePattern(CACHE_KEYS.ownershipTransfersPattern(orgId)),
-        this.cache.invalidatePattern(CACHE_KEYS.incomingTransfersPattern(orgId)),
+        this.cache.invalidateNamespace(`ownership:transfers:${orgId}`),
       ]);
 
       return { transferId: transfer.id, expiresAt: transfer.expiresAt };
@@ -388,8 +386,7 @@ export class OwnershipService {
 
       await Promise.all([
         this.cache.invalidate(CACHE_KEYS.moduleAccessOwnership(orgId, moduleKey)),
-        this.cache.invalidatePattern(CACHE_KEYS.ownershipTransfersPattern(orgId)),
-        this.cache.invalidatePattern(CACHE_KEYS.incomingTransfersPattern(orgId)),
+        this.cache.invalidateNamespace(`ownership:transfers:${orgId}`),
       ]);
 
       return { transferId: transfer.id, expiresAt: transfer.expiresAt };
@@ -599,8 +596,7 @@ export class OwnershipService {
             this.cache.invalidate(CACHE_KEYS.moduleAccessOwnership(orgId, moduleKeyForAccept)),
           ]
         : []),
-      this.cache.invalidatePattern(CACHE_KEYS.ownershipTransfersPattern(orgId)),
-      this.cache.invalidatePattern(CACHE_KEYS.incomingTransfersPattern(orgId)),
+      this.cache.invalidateNamespace(`ownership:transfers:${orgId}`),
     ]);
 
     this.audit.log({
@@ -666,8 +662,7 @@ export class OwnershipService {
       ...(moduleKeyForDecline
         ? [this.cache.invalidate(CACHE_KEYS.moduleAccessOwnership(orgId, moduleKeyForDecline))]
         : []),
-      this.cache.invalidatePattern(CACHE_KEYS.ownershipTransfersPattern(orgId)),
-      this.cache.invalidate(CACHE_KEYS.incomingTransfers(orgId, actorUserId)),
+      this.cache.invalidateNamespace(`ownership:transfers:${orgId}`),
     ]);
 
     this.audit.log({
@@ -735,8 +730,7 @@ export class OwnershipService {
       ...(moduleKeyForCancel
         ? [this.cache.invalidate(CACHE_KEYS.moduleAccessOwnership(orgId, moduleKeyForCancel))]
         : []),
-      this.cache.invalidatePattern(CACHE_KEYS.ownershipTransfersPattern(orgId)),
-      this.cache.invalidatePattern(CACHE_KEYS.incomingTransfersPattern(orgId)),
+      this.cache.invalidateNamespace(`ownership:transfers:${orgId}`),
     ]);
 
     this.audit.log({
@@ -764,8 +758,9 @@ export class OwnershipService {
       scope: filters.scope ?? null,
       status: filters.status ?? null,
     });
-    return this.cache.cached(
-      CACHE_KEYS.ownershipTransfersList(orgId, hash),
+    return this.cache.cachedVersioned(
+      `ownership:transfers:${orgId}`,
+      `list:${hash}`,
       () => this.fetchTransfers(orgId, filters),
       60,
     );
@@ -817,8 +812,9 @@ export class OwnershipService {
   }
 
   async listIncomingTransfers(orgId: string, userId: string) {
-    return this.cache.cached(
-      CACHE_KEYS.incomingTransfers(orgId, userId),
+    return this.cache.cachedVersioned(
+      `ownership:transfers:${orgId}`,
+      `incoming:${userId}`,
       () => this.fetchIncomingTransfers(orgId, userId),
       60,
     );
@@ -885,10 +881,9 @@ export class OwnershipService {
 
     const affectedOrgIds = [...new Set(rows.map((r) => r.orgId))];
     await Promise.all(
-      affectedOrgIds.flatMap((affectedOrgId) => [
-        this.cache.invalidatePattern(CACHE_KEYS.ownershipTransfersPattern(affectedOrgId)),
-        this.cache.invalidatePattern(CACHE_KEYS.incomingTransfersPattern(affectedOrgId)),
-      ]),
+      affectedOrgIds.map((affectedOrgId) =>
+        this.cache.invalidateNamespace(`ownership:transfers:${affectedOrgId}`),
+      ),
     );
 
     return { expired: rows.length };

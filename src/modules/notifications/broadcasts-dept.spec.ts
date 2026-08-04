@@ -13,6 +13,8 @@ const USER_ID_B = "user-bbbb-0000-0000-0000-000000000003";
 
 const mockCache = {
   cached: jest.fn(),
+  cachedVersioned: jest.fn(),
+  invalidateNamespace: jest.fn().mockResolvedValue(undefined),
   invalidatePattern: jest.fn().mockResolvedValue(undefined),
 };
 const mockAudit = { log: jest.fn() };

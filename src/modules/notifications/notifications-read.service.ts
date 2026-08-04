@@ -95,8 +95,9 @@ export class NotificationsReadService {
   list(orgId: string, userId: string, filters: ListInput) {
     const limit = Math.min(filters.limit ?? 20, 100);
     const section = filters.unreadOnly ? "UNREAD" : (filters.section ?? "ALL");
-    const key = `notifications:list:${userId}:${orgId}:${section}:${filters.category ?? ""}:${filters.priority ?? ""}:${limit}:${filters.cursor ?? ""}:${filters.search ?? ""}`;
-    return this.cache.cached(
+    const key = `list:${section}:${filters.category ?? ""}:${filters.priority ?? ""}:${limit}:${filters.cursor ?? ""}:${filters.search ?? ""}`;
+    return this.cache.cachedVersioned(
+      `notifications:${userId}:${orgId}`,
       key,
       () =>
         this.queryNotifications(orgId, userId, { ...filters, limit, section }),
@@ -251,9 +252,9 @@ export class NotificationsReadService {
   }
 
   unreadCount(orgId: string, userId: string) {
-    const key = `notifications:unread-count:${userId}:${orgId}`;
-    return this.cache.cached(
-      key,
+    return this.cache.cachedVersioned(
+      `notifications:${userId}:${orgId}`,
+      "unread-count",
       () => this.queryUnreadCount(orgId, userId),
       CACHE_TTL.SHORT,
     );

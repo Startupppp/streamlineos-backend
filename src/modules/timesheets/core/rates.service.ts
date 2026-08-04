@@ -56,7 +56,7 @@ export class RatesService {
         action: "rate.created",
         after: input,
       }),
-      this.cache.invalidate(CACHE_KEYS.timesheetRates(u.orgId)),
+      this.cache.invalidateNamespace(CACHE_KEYS.timesheetRatesNamespace(u.orgId)),
     ]);
 
     return rate;
@@ -103,7 +103,7 @@ export class RatesService {
       return [result];
     });
 
-    await this.cache.invalidate(CACHE_KEYS.timesheetRates(u.orgId));
+    await this.cache.invalidateNamespace(CACHE_KEYS.timesheetRatesNamespace(u.orgId));
 
     if (!updated) throw new NotFoundException("Rate not found after update");
     return updated;
@@ -131,7 +131,7 @@ export class RatesService {
       });
     });
 
-    await this.cache.invalidate(CACHE_KEYS.timesheetRates(u.orgId));
+    await this.cache.invalidateNamespace(CACHE_KEYS.timesheetRatesNamespace(u.orgId));
 
     return { success: true };
   }

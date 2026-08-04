@@ -49,7 +49,7 @@ describe("LeadsService plan-limit enforcement", () => {
         LeadsService,
         { provide: DRIZZLE, useValue: { ...db, query: { organizationMembers: { findFirst: jest.fn().mockResolvedValue(null) }, leads: { findFirst: jest.fn().mockResolvedValue(null) } } } },
         { provide: PlanLimitsService, useValue: planLimitsMock },
-        { provide: CacheService, useValue: { invalidatePattern: jest.fn() } },
+        { provide: CacheService, useValue: { invalidateNamespace: jest.fn() } },
         { provide: AuditService, useValue: { log: jest.fn() } },
         { provide: EmailService, useValue: { sendLeadAssignedEmail: jest.fn() } },
         { provide: AutomationService, useValue: { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) } },

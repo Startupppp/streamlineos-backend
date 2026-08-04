@@ -24,6 +24,8 @@ import type { PayrollToggles, PayrollPolicyConfig, CalculationSnapshot, InputsSn
 import { GeneratePipelineService, type ProfileData } from "./generate-pipeline.service";
 import { PayrollNotificationsService } from "../insights/payroll-notifications.service";
 import { PayrollRunLockService } from "../run-lock.service";
+import { payrollSubjectKey } from "../lib/payroll-subject";
+import { requirePayrollUserIds } from "../lib/payroll-user-id";
 import {
   buildPulledInputsFromSections,
   getLockedInputPeriodId,
@@ -94,7 +96,9 @@ export class GenerateService {
     const { toggles, config, policyVersionId } = policyResult;
 
     const profiles = await this.loadEligibleProfiles(orgId, run.month, toggles);
-    const eligibleUserIds = profiles.map((p) => p.userId);
+    const eligibleUserIds = profiles
+      .map((p) => p.userId)
+      .filter((id): id is string => id !== null);
     const [heldUserIds, duplicateBankAccountUserIds, lockedPeriodId, statutoryFlags] =
       await Promise.all([
         this.loadHeldUserIds(orgId, runId, eligibleUserIds),
@@ -130,9 +134,10 @@ export class GenerateService {
     const calcResults: EmployeeCalcResult[] = [];
 
     for (const profile of profiles) {
+      const subjectKey = payrollSubjectKey({ userId: profile.userId, workerId: profile.workerId });
       const components = batch.componentsByProfileId.get(profile.id) ?? [];
-      const inputs = this.pipeline.buildInputsFromBatch(profile.userId, run.month, toggles, batch);
-      const pulls = this.pipeline.buildCalcInputsFromBatch(profile.userId, toggles, batch);
+      const inputs = this.pipeline.buildInputsFromBatch(subjectKey, run.month, toggles, batch);
+      const pulls = this.pipeline.buildCalcInputsFromBatch(subjectKey, toggles, batch);
 
       const hasAttendanceInput =
         inputs.source === "ATTENDANCE" ||
@@ -142,15 +147,16 @@ export class GenerateService {
       const fromLockedSnapshot =
         inputs.overrideReason === "Locked payroll input period snapshot" ||
         (inputs.source === "UPLOAD" && Boolean(inputs.overrideReason));
-      const prevSnap = prevSnapshotByUser.get(profile.userId) ?? null;
+      const prevSnap = prevSnapshotByUser.get(subjectKey) ?? null;
 
-      const lockedBaselinePull = periodLocked
-        ? buildPulledInputsFromSections(
-            profile.userId,
-            run.month,
-            batch.lockedSectionsByUser.get(profile.userId),
-          )
-        : null;
+      const lockedBaselinePull =
+        periodLocked && profile.userId
+          ? buildPulledInputsFromSections(
+              profile.userId,
+              run.month,
+              batch.lockedSectionsByUser.get(profile.userId),
+            )
+          : null;
 
       const { snapshot, exceptions } = this.pipeline.runCalcAndDetect(
         profile,
@@ -164,7 +170,7 @@ export class GenerateService {
         prevSnap,
         hasAttendanceInput,
         {
-          isSalaryOnHold: heldUserIds.has(profile.userId),
+          isSalaryOnHold: profile.userId ? heldUserIds.has(profile.userId) : false,
           duplicateBankAccountUserIds,
           missingLockedInputPeriod:
             Boolean(toggles.requireLockedPayrollInputs) && !periodLocked,
@@ -172,8 +178,12 @@ export class GenerateService {
             Boolean(toggles.requireLockedPayrollInputs) &&
             periodLocked &&
             !fromLockedSnapshot,
-          missingPfUan: statutoryFlags.get(profile.userId)?.missingPfUan ?? false,
-          missingEsiIp: statutoryFlags.get(profile.userId)?.missingEsiIp ?? false,
+          missingPfUan: profile.userId
+            ? (statutoryFlags.get(profile.userId)?.missingPfUan ?? false)
+            : false,
+          missingEsiIp: profile.userId
+            ? (statutoryFlags.get(profile.userId)?.missingEsiIp ?? false)
+            : false,
           lockedInputBaseline: lockedBaselinePull
             ? {
                 paidDays: lockedBaselinePull.paidDays,
@@ -197,67 +207,140 @@ export class GenerateService {
     }
 
     await this.db.transaction(async (tx) => {
-      const empIdByUser = new Map<string, number>();
+      const empIdBySubject = new Map<string, number>();
 
       if (calcResults.length > 0) {
-        const upsertRows = calcResults.map(({ profile, inputs, snapshot }) => ({
-          orgId,
-          runId,
-          userId: profile.userId,
-          profileId: profile.id,
-          workerType: profile.workerType,
-          currency: profile.currency,
-          payoutCurrency: profile.payoutCurrency,
-          fxRate: snapshot.fxRate ?? null,
-          netPayoutCurrency: snapshot.netPayoutCurrency ?? null,
-          scheduledDays: inputs.scheduledDays,
-          paidDays: inputs.paidDays,
-          lopDays: inputs.lopDays,
-          overtimeHours: inputs.overtimeHours,
-          gross: snapshot.totals.gross,
-          totalDeductions: snapshot.totals.deductions,
-          employerContributions: snapshot.totals.employerContributions,
-          net: snapshot.totals.net,
-          inputsSnapshot: inputs,
-          calculationSnapshot: snapshot,
-        }));
-        const upserted = await tx
-          .insert(payrollRunEmployees)
-          .values(upsertRows)
-          .onConflictDoUpdate({
-            target: [payrollRunEmployees.runId, payrollRunEmployees.userId],
-            set: {
-              profileId: sql`excluded.profile_id`,
-              workerType: sql`excluded.worker_type`,
-              currency: sql`excluded.currency`,
-              payoutCurrency: sql`excluded.payout_currency`,
-              fxRate: sql`excluded.fx_rate`,
-              netPayoutCurrency: sql`excluded.net_payout_currency`,
-              scheduledDays: sql`excluded.scheduled_days`,
-              paidDays: sql`excluded.paid_days`,
-              lopDays: sql`excluded.lop_days`,
-              overtimeHours: sql`excluded.overtime_hours`,
-              gross: sql`excluded.gross`,
-              totalDeductions: sql`excluded.total_deductions`,
-              employerContributions: sql`excluded.employer_contributions`,
-              net: sql`excluded.net`,
-              inputsSnapshot: sql`excluded.inputs_snapshot`,
-              calculationSnapshot: sql`excluded.calculation_snapshot`,
-            },
-          })
-          .returning({ id: payrollRunEmployees.id, userId: payrollRunEmployees.userId });
-        for (const row of upserted) {
-          empIdByUser.set(row.userId, row.id);
+        const userRows = calcResults
+          .filter(({ profile }) => profile.userId !== null)
+          .map(({ profile, inputs, snapshot }) => ({
+            orgId,
+            runId,
+            userId: profile.userId,
+            workerId: profile.workerId,
+            profileId: profile.id,
+            workerType: profile.workerType,
+            currency: profile.currency,
+            payoutCurrency: profile.payoutCurrency,
+            fxRate: snapshot.fxRate ?? null,
+            netPayoutCurrency: snapshot.netPayoutCurrency ?? null,
+            scheduledDays: inputs.scheduledDays,
+            paidDays: inputs.paidDays,
+            lopDays: inputs.lopDays,
+            overtimeHours: inputs.overtimeHours,
+            gross: snapshot.totals.gross,
+            totalDeductions: snapshot.totals.deductions,
+            employerContributions: snapshot.totals.employerContributions,
+            net: snapshot.totals.net,
+            inputsSnapshot: inputs,
+            calculationSnapshot: snapshot,
+          }));
+
+        const workerOnlyRows = calcResults
+          .filter(({ profile }) => profile.userId === null && profile.workerId !== null)
+          .map(({ profile, inputs, snapshot }) => ({
+            orgId,
+            runId,
+            userId: null,
+            workerId: profile.workerId,
+            profileId: profile.id,
+            workerType: profile.workerType,
+            currency: profile.currency,
+            payoutCurrency: profile.payoutCurrency,
+            fxRate: snapshot.fxRate ?? null,
+            netPayoutCurrency: snapshot.netPayoutCurrency ?? null,
+            scheduledDays: inputs.scheduledDays,
+            paidDays: inputs.paidDays,
+            lopDays: inputs.lopDays,
+            overtimeHours: inputs.overtimeHours,
+            gross: snapshot.totals.gross,
+            totalDeductions: snapshot.totals.deductions,
+            employerContributions: snapshot.totals.employerContributions,
+            net: snapshot.totals.net,
+            inputsSnapshot: inputs,
+            calculationSnapshot: snapshot,
+          }));
+
+        if (userRows.length > 0) {
+          const upserted = await tx
+            .insert(payrollRunEmployees)
+            .values(userRows)
+            .onConflictDoUpdate({
+              target: [payrollRunEmployees.runId, payrollRunEmployees.userId],
+              set: {
+                workerId: sql`excluded.worker_id`,
+                profileId: sql`excluded.profile_id`,
+                workerType: sql`excluded.worker_type`,
+                currency: sql`excluded.currency`,
+                payoutCurrency: sql`excluded.payout_currency`,
+                fxRate: sql`excluded.fx_rate`,
+                netPayoutCurrency: sql`excluded.net_payout_currency`,
+                scheduledDays: sql`excluded.scheduled_days`,
+                paidDays: sql`excluded.paid_days`,
+                lopDays: sql`excluded.lop_days`,
+                overtimeHours: sql`excluded.overtime_hours`,
+                gross: sql`excluded.gross`,
+                totalDeductions: sql`excluded.total_deductions`,
+                employerContributions: sql`excluded.employer_contributions`,
+                net: sql`excluded.net`,
+                inputsSnapshot: sql`excluded.inputs_snapshot`,
+                calculationSnapshot: sql`excluded.calculation_snapshot`,
+              },
+            })
+            .returning({
+              id: payrollRunEmployees.id,
+              userId: payrollRunEmployees.userId,
+              workerId: payrollRunEmployees.workerId,
+            });
+          for (const row of upserted) {
+            if (row.userId) {
+              empIdBySubject.set(row.userId, row.id);
+            }
+          }
+        }
+
+        if (workerOnlyRows.length > 0) {
+          for (const row of workerOnlyRows) {
+            const [inserted] = await tx
+              .insert(payrollRunEmployees)
+              .values(row)
+              .onConflictDoUpdate({
+                target: [payrollRunEmployees.runId, payrollRunEmployees.workerId],
+                set: {
+                  profileId: sql`excluded.profile_id`,
+                  workerType: sql`excluded.worker_type`,
+                  currency: sql`excluded.currency`,
+                  payoutCurrency: sql`excluded.payout_currency`,
+                  fxRate: sql`excluded.fx_rate`,
+                  netPayoutCurrency: sql`excluded.net_payout_currency`,
+                  scheduledDays: sql`excluded.scheduled_days`,
+                  paidDays: sql`excluded.paid_days`,
+                  lopDays: sql`excluded.lop_days`,
+                  overtimeHours: sql`excluded.overtime_hours`,
+                  gross: sql`excluded.gross`,
+                  totalDeductions: sql`excluded.total_deductions`,
+                  employerContributions: sql`excluded.employer_contributions`,
+                  net: sql`excluded.net`,
+                  inputsSnapshot: sql`excluded.inputs_snapshot`,
+                  calculationSnapshot: sql`excluded.calculation_snapshot`,
+                },
+              })
+              .returning({ id: payrollRunEmployees.id, workerId: payrollRunEmployees.workerId });
+            if (inserted?.workerId) {
+              empIdBySubject.set(`worker:${inserted.workerId}`, inserted.id);
+            }
+          }
         }
       }
 
-      const allEmpIds = [...empIdByUser.values()];
+      const allEmpIds = [...empIdBySubject.values()];
 
       if (allEmpIds.length > 0) {
         await tx.delete(payrollLineItems).where(inArray(payrollLineItems.runEmployeeId, allEmpIds));
 
         const allLineRows = calcResults.flatMap(({ profile, snapshot }) => {
-          const empId = empIdByUser.get(profile.userId);
+          const empId = empIdBySubject.get(
+            payrollSubjectKey({ userId: profile.userId, workerId: profile.workerId }),
+          );
           if (empId === undefined) return [];
           return snapshot.lines.map((line) => ({
             orgId,
@@ -287,7 +370,9 @@ export class GenerateService {
           );
 
         const allExceptionRows = calcResults.flatMap(({ profile, exceptions }) => {
-          const empId = empIdByUser.get(profile.userId);
+          const empId = empIdBySubject.get(
+            payrollSubjectKey({ userId: profile.userId, workerId: profile.workerId }),
+          );
           if (empId === undefined) return [];
           return exceptions.map((ex) => ({
             orgId,
@@ -311,6 +396,7 @@ export class GenerateService {
       const allAllocationRows: (typeof payrollRunAllocations.$inferInsert)[] = [];
 
       for (const { profile, pulls } of calcResults) {
+        if (!profile.userId) continue;
         for (const [i, reimbId] of (pulls.consumedReimbursementIds ?? []).entries()) {
           allReimbIds.push(reimbId);
           allAllocationRows.push({
@@ -429,7 +515,7 @@ export class GenerateService {
           or(eq(payrollRunEmployees.status, "HELD"), isNotNull(payrollRunEmployees.holdReason)),
         ),
       );
-    return new Set(rows.map((r) => r.userId));
+    return new Set(requirePayrollUserIds(rows.map((r) => r.userId)));
   }
 
   private async findDuplicateBankAccounts(userIds: string[]): Promise<string[]> {
@@ -589,7 +675,12 @@ export class GenerateService {
 
     for (const prevEmp of prevEmps) {
       const rawSnap = prevEmp.calculationSnapshot;
-      if (rawSnap && typeof rawSnap === "object" && !result.has(prevEmp.userId)) {
+      if (
+        prevEmp.userId &&
+        rawSnap &&
+        typeof rawSnap === "object" &&
+        !result.has(prevEmp.userId)
+      ) {
         result.set(prevEmp.userId, rawSnap as CalculationSnapshot);
       }
     }
@@ -652,10 +743,11 @@ export class GenerateService {
     const lastDay = new Date(year!, mon!, 0).getDate();
     const monthEndDate = `${month}-${String(lastDay).padStart(2, "0")}`;
 
-    const rows = await this.db
+    const rows = await       this.db
       .select({
         id: employeeSalaryProfiles.id,
         userId: employeeSalaryProfiles.userId,
+        workerId: employeeSalaryProfiles.workerId,
         workerType: employeeSalaryProfiles.workerType,
         currency: employeeSalaryProfiles.currency,
         payoutCurrency: employeeSalaryProfiles.payoutCurrency,

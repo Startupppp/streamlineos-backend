@@ -117,12 +117,13 @@ export class DocumentsController {
 
   @Get("document-expiry")
   @RequirePermission("hr:documents:view")
-  documentExpiry(
+  async documentExpiry(
     @Query("days") days: string | undefined,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const daysAhead = Math.min(Math.max(Number(days) || 30, 1), 365);
-    return this.documents.expiry(u.orgId, daysAhead);
+    const scope = await resolveDocumentsScope(this.access, u);
+    return this.documents.expiry(u.orgId, u.userId, scope, daysAhead);
   }
 
   @Get("compliance")

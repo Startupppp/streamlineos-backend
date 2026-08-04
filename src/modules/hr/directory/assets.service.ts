@@ -42,7 +42,7 @@ export class AssetsService {
       })
       .from(assetReturns)
       .leftJoin(users, eq(assetReturns.userId, users.id))
-      .where(and(eq(assetReturns.orgId, orgId), applyScope(scope, userId, { ownerColumn: assetReturns.userId })))
+      .where(and(eq(assetReturns.orgId, orgId), applyScope(scope, orgId, userId, { ownerColumn: assetReturns.userId })))
       .orderBy(desc(assetReturns.createdAt))
       .limit(100);
 

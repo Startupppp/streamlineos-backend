@@ -36,7 +36,7 @@ export class InvStockAdjustmentsService {
     const conditions = [eq(invStockAdjustments.orgId, orgId)];
     if (status) conditions.push(eq(invStockAdjustments.status, status));
     if (scope !== "all" && userId) {
-      conditions.push(applyScope(scope, userId, { ownerColumn: invStockAdjustments.createdBy }));
+      conditions.push(applyScope(scope, orgId, userId, { ownerColumn: invStockAdjustments.createdBy }));
     }
     const where = and(...conditions);
 
@@ -167,7 +167,6 @@ export class InvStockAdjustmentsService {
 
     await Promise.all([
       this.cache.invalidate(CACHE_KEYS.invStockSummary(orgId)),
-      this.cache.invalidatePattern(CACHE_KEYS.invAdjustmentsListPattern(orgId)),
     ]);
   }
 
@@ -218,7 +217,6 @@ export class InvStockAdjustmentsService {
 
     await Promise.all([
       this.engine.invalidateCaches(orgId),
-      this.cache.invalidatePattern(CACHE_KEYS.invAdjustmentsListPattern(orgId)),
     ]);
   }
 }

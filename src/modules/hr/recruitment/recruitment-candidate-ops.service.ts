@@ -82,7 +82,7 @@ export class RecruitmentCandidateOpsService {
         await this.db.insert(candidates).values(chunk).onConflictDoNothing();
         results.created += chunk.length;
       }
-      await this.cache.invalidatePattern(`hr:candidates:list:${orgId}:*`);
+      await this.cache.invalidateNamespace(`hr:candidates:list:${orgId}`);
     }
 
     return results;
@@ -103,7 +103,7 @@ export class RecruitmentCandidateOpsService {
     }));
 
     const inserted = await this.db.insert(candidates).values(values).returning({ id: candidates.id });
-    await this.cache.invalidatePattern(`hr:candidates:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(`hr:candidates:list:${orgId}`);
     return { imported: inserted.length };
   }
 
@@ -177,7 +177,7 @@ export class RecruitmentCandidateOpsService {
       emailsSent = results.filter((r) => r.status === "fulfilled").length;
     }
 
-    await this.cache.invalidatePattern(`hr:candidates:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(`hr:candidates:list:${orgId}`);
     return { rejected: toReject.length, alreadyRejected, emailsSent };
   }
 
@@ -215,7 +215,7 @@ export class RecruitmentCandidateOpsService {
       });
     }
 
-    await this.cache.invalidatePattern(`hr:candidates:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(`hr:candidates:list:${orgId}`);
     return { shortlisted: toShortlist.length, skipped };
   }
 

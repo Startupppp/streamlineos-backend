@@ -27,18 +27,36 @@ const BASE_INVITATION = {
 const EXISTING_USER = { id: "user-existing", email: "invitee@example.com" };
 
 function buildUniversalTx() {
+  const updateResult = {
+    returning: jest.fn().mockResolvedValue([{ id: BASE_INVITATION.id }]),
+    then: (resolve: (value: undefined) => unknown) =>
+      Promise.resolve(undefined).then(resolve),
+  };
   return {
+    execute: jest.fn().mockResolvedValue([]),
+    query: {
+      invitations: {
+        findFirst: jest.fn().mockResolvedValue(BASE_INVITATION),
+      },
+    },
     select: jest.fn().mockReturnThis(),
     from: jest.fn().mockReturnThis(),
-    where: jest.fn().mockReturnThis(),
+    where: jest.fn().mockImplementation(function (this: unknown) {
+      return this;
+    }),
     for: jest.fn().mockReturnThis(),
     limit: jest.fn().mockResolvedValue([]),
     update: jest.fn().mockReturnThis(),
-    set: jest.fn().mockReturnThis(),
+    set: jest.fn().mockReturnValue({
+      where: jest.fn().mockReturnValue(updateResult),
+    }),
     delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
     insert: jest.fn().mockImplementation(() => ({
       values: jest.fn().mockReturnValue({
         onConflictDoNothing: jest.fn().mockReturnValue({
+          returning: jest.fn().mockResolvedValue([{ id: 42 }]),
+        }),
+        onConflictDoUpdate: jest.fn().mockReturnValue({
           returning: jest.fn().mockResolvedValue([{ id: 42 }]),
         }),
         returning: jest.fn().mockResolvedValue([{ id: 42 }]),
@@ -50,11 +68,18 @@ function buildUniversalTx() {
 function buildMockDb() {
   const universalTx = buildUniversalTx();
   return {
+    universalTx,
     query: {
       users: { findFirst: jest.fn().mockResolvedValue(null) },
       organizationMembers: { findFirst: jest.fn().mockResolvedValue(null) },
       organizations: {
-        findFirst: jest.fn().mockResolvedValue({ id: ORG_ID, name: "Acme", allowedEmailDomains: [] }),
+        findFirst: jest.fn().mockResolvedValue({
+          id: ORG_ID,
+          name: "Acme",
+          status: "ACTIVE",
+          deletedAt: null,
+          allowedEmailDomains: [],
+        }),
       },
       invitations: { findFirst: jest.fn().mockResolvedValue(null) },
     },
@@ -86,7 +111,7 @@ describe("InvitationsService.invite — plan limit enforcement", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: PlanLimitsService, useValue: mockPlanLimits },
         { provide: AuditService, useValue: { log: jest.fn() } },
-        { provide: CacheService, useValue: { invalidate: jest.fn(), invalidatePattern: jest.fn().mockResolvedValue(undefined) } },
+        { provide: CacheService, useValue: { invalidate: jest.fn(), invalidateNamespace: jest.fn().mockResolvedValue(undefined) } },
         { provide: EmailService, useValue: { sendInvitationEmail: jest.fn().mockResolvedValue(undefined) } },
         {
           provide: AccessService,
@@ -98,9 +123,18 @@ describe("InvitationsService.invite — plan limit enforcement", () => {
     svc = module.get(InvitationsService);
   });
 
-  it("calls assertWithinLimit(orgId, 'members') before creating an invitation", async () => {
+  it("checks the member limit inside the serialized tenant transaction", async () => {
     await svc.invite(ORG_ID, { userId: ACTOR_ID, isOrgOwner: true }, "new@example.com", "MEMBER");
-    expect(mockPlanLimits.assertWithinLimit).toHaveBeenCalledWith(ORG_ID, "members");
+    expect(mockPlanLimits.assertWithinLimit).toHaveBeenCalledWith(
+      ORG_ID,
+      "members",
+      1,
+      mockDb.universalTx,
+    );
+    expect(mockDb.universalTx.execute).toHaveBeenCalled();
+    expect(mockDb.universalTx.execute.mock.invocationCallOrder[1]).toBeLessThan(
+      mockPlanLimits.assertWithinLimit.mock.invocationCallOrder[0] ?? 0,
+    );
   });
 
   it("propagates ForbiddenException from assertWithinLimit without wrapping", async () => {
@@ -147,6 +181,7 @@ describe("InvitationsService.accept — plan limit enforcement", () => {
   beforeEach(async () => {
     jest.resetAllMocks();
     mockDb = buildMockDb();
+    mockDb.universalTx.limit.mockResolvedValue([BASE_INVITATION]);
     mockPlanLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
 
     const module = await Test.createTestingModule({
@@ -155,7 +190,7 @@ describe("InvitationsService.accept — plan limit enforcement", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: PlanLimitsService, useValue: mockPlanLimits },
         { provide: AuditService, useValue: { log: jest.fn() } },
-        { provide: CacheService, useValue: { invalidate: jest.fn().mockResolvedValue(undefined), invalidatePattern: jest.fn().mockResolvedValue(undefined) } },
+        { provide: CacheService, useValue: { invalidate: jest.fn().mockResolvedValue(undefined), invalidateNamespace: jest.fn().mockResolvedValue(undefined) } },
         { provide: EmailService, useValue: { sendInvitationEmail: jest.fn().mockResolvedValue(undefined) } },
         {
           provide: AccessService,
@@ -212,7 +247,12 @@ describe("InvitationsService.accept — plan limit enforcement", () => {
 
     expect(result.ok).toBe(true);
     expect(result.autoLoginToken).toBeDefined();
-    expect(mockPlanLimits.assertWithinLimit).toHaveBeenCalledWith(ORG_ID, "members", 0);
+    expect(mockPlanLimits.assertWithinLimit).toHaveBeenCalledWith(
+      ORG_ID,
+      "members",
+      0,
+      mockDb.universalTx,
+    );
   });
 
   it("new-user accept succeeds when a seat is available", async () => {
@@ -223,7 +263,12 @@ describe("InvitationsService.accept — plan limit enforcement", () => {
 
     expect(result.ok).toBe(true);
     expect(result.autoLoginToken).toBeDefined();
-    expect(mockPlanLimits.assertWithinLimit).toHaveBeenCalledWith(ORG_ID, "members", 0);
+    expect(mockPlanLimits.assertWithinLimit).toHaveBeenCalledWith(
+      ORG_ID,
+      "members",
+      0,
+      mockDb.universalTx,
+    );
   });
 
   it("calls assertWithinLimit with increment=0 (not increment=1) on accept", async () => {
@@ -235,6 +280,11 @@ describe("InvitationsService.accept — plan limit enforcement", () => {
 
     const call = mockPlanLimits.assertWithinLimit.mock.calls[0];
     expect(call[2]).toBe(0);
+    expect(call[3]).toBe(mockDb.universalTx);
+    expect(mockDb.universalTx.execute).toHaveBeenCalled();
+    expect(mockDb.universalTx.execute.mock.invocationCallOrder[0]).toBeLessThan(
+      mockPlanLimits.assertWithinLimit.mock.invocationCallOrder[0] ?? 0,
+    );
   });
 
   it("does not insert member if limit check fails (no DB write on rejection)", async () => {
@@ -246,5 +296,35 @@ describe("InvitationsService.accept — plan limit enforcement", () => {
     );
 
     await expect(svc.accept({ token: RAW_TOKEN })).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it("never accepts an invitation without an accepted membership id", async () => {
+    mockDb.query.invitations.findFirst.mockResolvedValue(BASE_INVITATION);
+    mockDb.query.users.findFirst.mockResolvedValue(EXISTING_USER);
+    mockDb.query.organizationMembers.findFirst.mockResolvedValue(null);
+    mockDb.universalTx.insert.mockImplementation(() => ({
+      values: jest.fn().mockReturnValue({
+        onConflictDoNothing: jest.fn().mockReturnValue({
+          returning: jest.fn().mockResolvedValue([]),
+        }),
+        returning: jest.fn().mockResolvedValue([]),
+      }),
+    }));
+
+    await expect(svc.accept({ token: RAW_TOKEN })).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+  });
+
+  it("rejects a concurrent loser before creating a membership", async () => {
+    mockDb.query.users.findFirst.mockResolvedValue(EXISTING_USER);
+    mockDb.query.organizationMembers.findFirst.mockResolvedValue(null);
+    mockDb.universalTx.limit.mockResolvedValue([]);
+
+    await expect(svc.accept({ token: RAW_TOKEN })).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+
+    expect(mockDb.universalTx.insert).not.toHaveBeenCalled();
   });
 });

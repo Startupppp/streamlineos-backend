@@ -22,8 +22,9 @@ export class HoldsService {
     const { status, productVariantId, page, limit } = query;
     const offset = (page - 1) * limit;
     const hash = `${status ?? ""}:${productVariantId ?? ""}:${limit}:${offset}`;
-    return this.cache.cached(
-      CACHE_KEYS.invQualityHoldsList(orgId, hash),
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.invQualityHoldsNamespace(orgId),
+      `list:${hash}`,
       async () => {
         const conditions = [eq(invQualityHolds.orgId, orgId)];
         if (status) conditions.push(eq(invQualityHolds.status, status));
@@ -59,8 +60,9 @@ export class HoldsService {
   }
 
   async findOne(orgId: string, holdId: number) {
-    return this.cache.cached(
-      CACHE_KEYS.invQualityHoldDetail(orgId, holdId),
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.invQualityHoldsNamespace(orgId),
+      `detail:${holdId}`,
       async () => {
         const row = await this.db.query.invQualityHolds.findFirst({
           where: and(eq(invQualityHolds.id, holdId), eq(invQualityHolds.orgId, orgId)),
@@ -113,7 +115,7 @@ export class HoldsService {
       resourceType: "quality_hold", resourceId: String(hold?.id ?? 0),
       after: { productVariantId: input.productVariantId, quantity: input.quantity },
     });
-    await this.cache.invalidatePattern(`inv:quality:holds:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invQualityHoldsNamespace(orgId));
     return hold;
   }
 
@@ -170,7 +172,7 @@ export class HoldsService {
       orgId, actorUserId: userId, action: "quality_hold.released",
       resourceType: "quality_hold", resourceId: String(holdId),
     });
-    await this.cache.invalidatePattern(`inv:quality:holds:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invQualityHoldsNamespace(orgId));
     return this.db.query.invQualityHolds.findFirst({
       where: and(eq(invQualityHolds.id, holdId), eq(invQualityHolds.orgId, orgId)),
     });

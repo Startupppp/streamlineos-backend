@@ -12,7 +12,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
+import { CACHE_TTL } from "../../common/cache/cache-keys";
 import type {
   CommissionRuleCreateInput,
   CommissionListInput,
@@ -61,9 +61,9 @@ export class SalesService {
   ) {}
 
   listCommissionRules(orgId: string) {
-    const key = `sales:commission-rules:${orgId}`;
-    return this.cache.cached(
-      key,
+    return this.cache.cachedVersioned(
+      `sales:commission-rules:${orgId}`,
+      "list",
       () =>
         this.db
           .select({
@@ -95,17 +95,15 @@ export class SalesService {
       })
       .returning();
 
-    await this.cache.invalidatePattern(`sales:commission-rules:${orgId}*`);
+    await this.cache.invalidateNamespace(`sales:commission-rules:${orgId}`);
 
     return rule;
   }
 
   listCommissions(orgId: string, filters: CommissionListInput) {
-    return this.cache.cached(
-      CACHE_KEYS.commissionsList(
-        orgId,
-        `${filters.userId ?? "*"}:${filters.status ?? "*"}:${filters.limit ?? 25}`,
-      ),
+    return this.cache.cachedVersioned(
+      `sales:commissions:${orgId}`,
+      `${filters.userId ?? "*"}:${filters.status ?? "*"}:${filters.limit ?? 25}`,
       async () => {
         const conditions = [eq(commissions.orgId, orgId)];
         if (filters.userId) conditions.push(eq(commissions.userId, filters.userId));
@@ -173,7 +171,7 @@ export class SalesService {
 
     if (!updated) return { error: "not_found" } as CommissionNotFound;
 
-    await this.cache.invalidatePattern(CACHE_KEYS.commissionsListPattern(orgId));
+    await this.cache.invalidateNamespace(`sales:commissions:${orgId}`);
 
     const [deal] = await this.db
       .select({ name: deals.name })
@@ -194,8 +192,9 @@ export class SalesService {
   }
 
   listQuotas(orgId: string, filters: QuotaListInput) {
-    return this.cache.cached(
-      CACHE_KEYS.quotasList(orgId, `${filters.userId ?? "*"}:${filters.period ?? "*"}`),
+    return this.cache.cachedVersioned(
+      `sales:quotas:${orgId}`,
+      `${filters.userId ?? "*"}:${filters.period ?? "*"}`,
       async () => {
         const conditions = [eq(salesQuotas.orgId, orgId)];
         if (filters.userId) conditions.push(eq(salesQuotas.userId, filters.userId));
@@ -256,7 +255,7 @@ export class SalesService {
       })
       .returning();
 
-    await this.cache.invalidatePattern(CACHE_KEYS.quotasListPattern(orgId));
+    await this.cache.invalidateNamespace(`sales:quotas:${orgId}`);
     return quota;
   }
 

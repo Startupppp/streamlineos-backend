@@ -32,8 +32,9 @@ export class RecallsService {
     const { status, page, limit } = query;
     const offset = (page - 1) * limit;
     const hash = `${status ?? ""}:${limit}:${offset}`;
-    return this.cache.cached(
-      CACHE_KEYS.invQualityRecallsList(orgId, hash),
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.invQualityRecallsNamespace(orgId),
+      hash,
       async () => {
         const conditions = [eq(invRecallEvents.orgId, orgId)];
         if (status) conditions.push(eq(invRecallEvents.status, status));
@@ -163,7 +164,7 @@ export class RecallsService {
       }
     }
 
-    await this.cache.invalidatePattern(`inv:quality:recalls:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invQualityRecallsNamespace(orgId));
     return recall;
   }
 
@@ -184,7 +185,7 @@ export class RecallsService {
       resourceType: "recall", resourceId: String(id),
       before: { status: recall.status }, after: patch,
     });
-    await this.cache.invalidatePattern(`inv:quality:recalls:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invQualityRecallsNamespace(orgId));
     return this.db.query.invRecallEvents.findFirst({
       where: and(eq(invRecallEvents.id, id), eq(invRecallEvents.orgId, orgId)),
       with: { lines: true },

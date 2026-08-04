@@ -15,7 +15,7 @@ import {
 } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_TTL } from "../../../common/cache/cache-keys";
+import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { paginateOffset, buildListResponse } from "../../../common/pagination/pagination";
 import { FinancePostingService } from "../../accounting/core/finance-posting.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -25,8 +25,6 @@ import type {
   BankAccountsQuery,
   BankTransactionsQuery,
 } from "./dto/bank-accounts.schemas";
-
-const CACHE_BANK_ACCOUNT_DETAIL = (orgId: string, id: number) => `fin:banking:account:${orgId}:${id}`;
 
 @Injectable()
 export class BankAccountsService {
@@ -70,8 +68,9 @@ export class BankAccountsService {
   }
 
   async findOne(orgId: string, bankAccountId: number) {
-    return this.cache.cached(
-      CACHE_BANK_ACCOUNT_DETAIL(orgId, bankAccountId),
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.finBankAccountsNamespace(orgId),
+      String(bankAccountId),
       async () => {
         const row = await this.db.query.finBankAccounts.findFirst({
           where: and(
@@ -151,7 +150,7 @@ export class BankAccountsService {
       return account;
     });
 
-    await this.cache.invalidatePattern(`fin:banking:accounts:${orgId}*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.finBankAccountsNamespace(orgId));
 
     this.audit.log({
       action: "banking.account.create",
@@ -193,10 +192,7 @@ export class BankAccountsService {
       .where(and(eq(finBankAccounts.id, bankAccountId), eq(finBankAccounts.orgId, orgId)))
       .returning();
 
-    await Promise.all([
-      this.cache.invalidate(CACHE_BANK_ACCOUNT_DETAIL(orgId, bankAccountId)),
-      this.cache.invalidatePattern(`fin:banking:accounts:${orgId}*`),
-    ]);
+    await this.cache.invalidateNamespace(CACHE_KEYS.finBankAccountsNamespace(orgId));
 
     this.audit.log({
       action: "banking.account.update",
@@ -281,7 +277,7 @@ export class BankAccountsService {
       .set({ currentBalance: balance, updatedAt: new Date() })
       .where(and(eq(finBankAccounts.id, bankAccountId), eq(finBankAccounts.orgId, orgId)));
 
-    await this.cache.invalidate(CACHE_BANK_ACCOUNT_DETAIL(orgId, bankAccountId));
+    await this.cache.invalidateNamespace(CACHE_KEYS.finBankAccountsNamespace(orgId));
     return balance;
   }
 

@@ -22,8 +22,9 @@ export class LeadsReportsTeamService {
   ) {}
 
   async getSalesLeaderboard(orgId: string) {
-    return this.cache.cached(
-      `leads:leaderboard:${orgId}`,
+    return this.cache.cachedVersioned(
+      `leads:${orgId}`,
+      "leaderboard",
       async () => {
         const statusOptions = await this.db
           .select()
@@ -152,8 +153,9 @@ export class LeadsReportsTeamService {
   }
 
   async getSalesTeamCapacity(orgId: string) {
-    return this.cache.cached(
-      `leads:team-capacity:${orgId}`,
+    return this.cache.cachedVersioned(
+      `leads:${orgId}`,
+      "team-capacity",
       async () => {
         const [permittedMembers, statusOptions] = await Promise.all([
           this.access.membersWithPermission(orgId, "crm:leads:view"),

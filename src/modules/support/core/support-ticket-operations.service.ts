@@ -38,7 +38,7 @@ export class SupportTicketOperationsService {
   }
 
   private async invalidateTicketCaches(orgId: string) {
-    await this.cache.invalidatePattern(`support:tickets:${orgId}:*`);
+    await this.cache.invalidateNamespace(`support:tickets:${orgId}`);
     await this.cache.invalidate(CACHE_KEYS.supportDashboard(orgId));
     await this.cache.invalidate(CACHE_KEYS.ceDashboard(orgId));
   }

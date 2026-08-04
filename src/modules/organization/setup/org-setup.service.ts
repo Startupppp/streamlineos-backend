@@ -1,11 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { ORG_MEMBER_ROLES } from "../../../common/rbac/org-roles";
-import { desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   users,
-  orgModules,
-  modulesCatalog,
-  moduleOwnerships,
   subscriptions,
   organizations,
   magicLinkTokens,
@@ -19,9 +16,9 @@ import { OnboardingSessionService } from "../../hr/onboarding/flow/onboarding-se
 import { EmailService } from "../../email/email.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { logger } from "../../../common/logger/logger.service";
-import { ACCESS_MANAGED_MODULES } from "../../rbac/permissions";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
+import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
 import { randomUUID, randomBytes, createHash } from "node:crypto";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { bumpPermissionsVersion } from "../../../common/rbac/access-invalidate";
@@ -89,7 +86,11 @@ export class OrgSetupService {
   ): Promise<string> {
     if (u.orgId) {
       const existingOrg = await this.db.query.organizations.findFirst({
-        where: eq(organizations.id, u.orgId),
+        where: and(
+          eq(organizations.id, u.orgId),
+          eq(organizations.status, "ACTIVE"),
+          isNull(organizations.deletedAt),
+        ),
         columns: { id: true },
       });
       if (existingOrg) {
@@ -110,13 +111,20 @@ export class OrgSetupService {
         id: organizationMembers.id,
         orgId: organizationMembers.orgId,
         existingOrgId: organizations.id,
+        orgStatus: organizations.status,
+        orgDeletedAt: organizations.deletedAt,
       })
       .from(organizationMembers)
       .leftJoin(organizations, eq(organizations.id, organizationMembers.orgId))
       .where(eq(organizationMembers.userId, u.userId))
       .orderBy(desc(organizationMembers.joinedAt));
 
-    const valid = memberships.find((m) => m.existingOrgId !== null);
+    const valid = memberships.find(
+      (m) =>
+        m.existingOrgId !== null &&
+        m.orgStatus === "ACTIVE" &&
+        m.orgDeletedAt === null,
+    );
     if (valid) {
       await runInTenantTransaction(
         this.db,
@@ -130,6 +138,7 @@ export class OrgSetupService {
 
     const orphansByOrg = new Map<string, number[]>();
     for (const m of memberships) {
+      if (m.existingOrgId !== null) continue;
       orphansByOrg.set(m.orgId, [...(orphansByOrg.get(m.orgId) ?? []), m.id]);
     }
     for (const [orphanOrgId, ids] of orphansByOrg) {
@@ -143,6 +152,7 @@ export class OrgSetupService {
           },
           { orgId: orphanOrgId },
         );
+        await bustMembershipStatusCache(this.cache, u.userId, orphanOrgId);
       } catch (error) {
         logger.warn("Orphan membership cleanup failed", {
           userId: u.userId,
@@ -229,7 +239,12 @@ export class OrgSetupService {
           })
           .where(eq(organizations.id, orgId));
 
-        await this.provisionOrgModules(tx, orgId, input.enabledModules, u.userId);
+        await this.provisionOrgModules(
+          tx,
+          orgId,
+          input.enabledModules,
+          u.userId,
+        );
 
         await tx
           .update(users)
@@ -239,7 +254,10 @@ export class OrgSetupService {
           })
           .where(eq(users.id, u.userId));
 
-        await this.checklists.ensureChecklistsForModules(orgId, input.enabledModules);
+        await this.checklists.ensureChecklistsForModules(
+          orgId,
+          input.enabledModules,
+        );
         await this.sessions.completeSession(orgId, u.userId, "org_setup");
 
         await tx.insert(magicLinkTokens).values({
@@ -299,14 +317,22 @@ export class OrgSetupService {
           })
           .where(eq(organizations.id, orgId));
 
-        await this.provisionOrgModules(tx, orgId, DEFAULT_SKIP_MODULES, u.userId);
+        await this.provisionOrgModules(
+          tx,
+          orgId,
+          DEFAULT_SKIP_MODULES,
+          u.userId,
+        );
 
         await tx
           .update(users)
           .set({ lastActiveOrgId: orgId })
           .where(eq(users.id, u.userId));
 
-        await this.checklists.ensureChecklistsForModules(orgId, DEFAULT_SKIP_MODULES);
+        await this.checklists.ensureChecklistsForModules(
+          orgId,
+          DEFAULT_SKIP_MODULES,
+        );
         await this.sessions.skipSession(orgId, u.userId, "org_setup", reason);
 
         await tx.insert(magicLinkTokens).values({

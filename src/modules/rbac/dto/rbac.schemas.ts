@@ -69,6 +69,12 @@ export const roleMemberSchema = z.discriminatedUnion("principalType", [
   }),
 ]);
 
+export const simulationCandidatesQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  search: z.string().trim().max(100).optional(),
+});
+
 export type RolePermissionsQuery = z.infer<typeof rolePermissionsQuerySchema>;
 export type AssignRolePermissionInput = z.infer<typeof assignRolePermissionSchema>;
 export type RevokeRolePermissionInput = z.infer<typeof revokeRolePermissionSchema>;
@@ -77,6 +83,7 @@ export type UpdateRoleInput = z.infer<typeof updateRoleSchema>;
 export type CloneTemplateInput = z.infer<typeof cloneTemplateSchema>;
 export type SetRolePermissionsInput = z.infer<typeof setRolePermissionsSchema>;
 export type RoleMemberInput = z.infer<typeof roleMemberSchema>;
+export type SimulationCandidatesQuery = z.infer<typeof simulationCandidatesQuerySchema>;
 
 export interface DiscoveryPermissionEntry {
   name: string;

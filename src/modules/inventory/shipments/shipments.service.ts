@@ -37,7 +37,7 @@ export class ShipmentsService {
     const offset = (page - 1) * limit;
     const hash = `${status ?? ""}:${carrierId ?? ""}:${warehouseId ?? ""}:${soId ?? ""}:${limit}:${offset}`;
 
-    return this.cache.cached(CACHE_KEYS.invShipmentsList(orgId, hash), async () => {
+    return this.cache.cachedVersioned(CACHE_KEYS.invShipmentsNamespace(orgId), `list:${hash}`, async () => {
       const conditions = [eq(invShipments.orgId, orgId)];
       if (status) conditions.push(eq(invShipments.status, status));
       if (carrierId) conditions.push(eq(invShipments.carrierId, carrierId));
@@ -55,7 +55,7 @@ export class ShipmentsService {
   }
 
   async findOne(orgId: string, shipmentId: number) {
-    return this.cache.cached(CACHE_KEYS.invShipmentDetail(orgId, shipmentId), async () => {
+    return this.cache.cachedVersioned(CACHE_KEYS.invShipmentsNamespace(orgId), `detail:${shipmentId}`, async () => {
       const [shipment] = await this.db.select().from(invShipments).where(and(eq(invShipments.id, shipmentId), eq(invShipments.orgId, orgId))).limit(1);
       if (!shipment) throw new NotFoundException("Shipment not found");
       const [lines, packages] = await Promise.all([
@@ -99,7 +99,7 @@ export class ShipmentsService {
       });
       return row!;
     });
-    await this.cache.invalidatePattern(`inv:shipments:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invShipmentsNamespace(orgId));
     return shipment;
   }
 
@@ -122,8 +122,7 @@ export class ShipmentsService {
       });
       return rows;
     });
-    await this.cache.invalidate(CACHE_KEYS.invShipmentDetail(orgId, shipmentId));
-    await this.cache.invalidatePattern(`inv:shipments:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invShipmentsNamespace(orgId));
     return updated;
   }
 
@@ -186,8 +185,7 @@ export class ShipmentsService {
       });
       return rows;
     });
-    await this.cache.invalidate(CACHE_KEYS.invShipmentDetail(orgId, shipmentId));
-    await this.cache.invalidatePattern(`inv:shipments:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invShipmentsNamespace(orgId));
     return updated;
   }
 
@@ -207,8 +205,7 @@ export class ShipmentsService {
       });
       return rows;
     });
-    await this.cache.invalidate(CACHE_KEYS.invShipmentDetail(orgId, shipmentId));
-    await this.cache.invalidatePattern(`inv:shipments:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invShipmentsNamespace(orgId));
     return updated;
   }
 }

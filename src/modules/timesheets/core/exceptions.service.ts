@@ -34,7 +34,7 @@ export class ExceptionsService {
 
     const conditions = [
       eq(timesheetExceptions.orgId, u.orgId),
-      applyScope(scope, u.userId, { ownerColumn: timesheetExceptions.userId }),
+      applyScope(scope, u.orgId, u.userId, { ownerColumn: timesheetExceptions.userId }),
     ];
 
     if (query.userId && scope === "all") {

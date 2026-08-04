@@ -63,6 +63,17 @@ export const listMembersQuerySchema = z.object({
   userId: z.string().min(1).max(64).optional(),
 });
 
+export const memberCandidatesQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  search: z.string().trim().max(100).default(""),
+  userId: z.string().min(1).max(64).optional(),
+  excludeAssigned: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((value) => value !== "false"),
+});
+
 export const addFlatMemberSchema = z.object({
   userId: z.string().min(1),
   groupIds: z
@@ -94,6 +105,7 @@ export type RenameModuleGroupInput = z.infer<typeof renameModuleGroupSchema>;
 export type AddModuleGroupMemberInput = z.infer<typeof addModuleGroupMemberSchema>;
 export type InitiateOwnershipTransferInput = z.infer<typeof initiateOwnershipTransferSchema>;
 export type ListMembersQuery = z.infer<typeof listMembersQuerySchema>;
+export type MemberCandidatesQuery = z.infer<typeof memberCandidatesQuerySchema>;
 export type AddFlatMemberInput = z.infer<typeof addFlatMemberSchema>;
 export type UpdateMemberGroupsInput = z.infer<typeof updateMemberGroupsSchema>;
 export type AuditLogQuery = z.infer<typeof auditLogQuerySchema>;

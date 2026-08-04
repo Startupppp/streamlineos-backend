@@ -78,10 +78,7 @@ export class InvReplenishmentService {
       })
       .returning();
 
-    await Promise.all([
-      this.cache.invalidatePattern(CACHE_KEYS.invReorderRulesList(orgId, "*")),
-      this.cache.invalidatePattern(CACHE_KEYS.invReplenishmentSuggestions(orgId, "*")),
-    ]);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invReplenishmentSuggestionsNamespace(orgId));
     return rule;
   }
 
@@ -106,10 +103,7 @@ export class InvReplenishmentService {
       .where(and(eq(invReorderRules.id, ruleId), eq(invReorderRules.orgId, orgId)))
       .returning();
 
-    await Promise.all([
-      this.cache.invalidatePattern(CACHE_KEYS.invReorderRulesList(orgId, "*")),
-      this.cache.invalidatePattern(CACHE_KEYS.invReplenishmentSuggestions(orgId, "*")),
-    ]);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invReplenishmentSuggestionsNamespace(orgId));
     return updated;
   }
 
@@ -125,19 +119,15 @@ export class InvReplenishmentService {
       .where(and(eq(invReorderRules.id, ruleId), eq(invReorderRules.orgId, orgId)))
       .returning();
 
-    await Promise.all([
-      this.cache.invalidatePattern(CACHE_KEYS.invReorderRulesList(orgId, "*")),
-      this.cache.invalidatePattern(CACHE_KEYS.invReplenishmentSuggestions(orgId, "*")),
-    ]);
+    await this.cache.invalidateNamespace(CACHE_KEYS.invReplenishmentSuggestionsNamespace(orgId));
     return updated;
   }
 
   async getSuggestions(orgId: string, filters: SuggestionsQueryInput) {
     const { page, limit } = filters;
-    const cacheKey = CACHE_KEYS.invReplenishmentSuggestions(orgId, `${page}:${limit}`);
-
-    return this.cache.cached(
-      cacheKey,
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.invReplenishmentSuggestionsNamespace(orgId),
+      `${page}:${limit}`,
       async () => {
         const [rules, stockRows] = await Promise.all([
           this.db.query.invReorderRules.findMany({

@@ -80,15 +80,12 @@ export class PeriodsService {
       toInsert.push({ orgId, name, startDate, endDate });
     }
 
-    let created = 0;
-    for (const row of toInsert) {
-      const result = await this.db
-        .insert(accountingPeriods)
-        .values(row)
-        .onConflictDoNothing()
-        .returning({ id: accountingPeriods.id });
-      if (result.length > 0) created++;
-    }
+    const inserted = await this.db
+      .insert(accountingPeriods)
+      .values(toInsert)
+      .onConflictDoNothing()
+      .returning({ id: accountingPeriods.id });
+    const created = inserted.length;
 
     await this.cache.invalidate(periodsKey(orgId));
     this.audit.log({ action: "accounting.periods.generated", userId, orgId, resourceType: "accounting_period", resourceId: String(input.year), result: "SUCCESS" });
@@ -105,54 +102,62 @@ export class PeriodsService {
 
     const { startDate, endDate } = period[0];
 
-    const [draftJournals] = await this.db
-      .select({ c: count() })
-      .from(journalEntries)
-      .where(
-        and(
-          eq(journalEntries.orgId, orgId),
-          gte(journalEntries.entryDate, startDate),
-          lte(journalEntries.entryDate, endDate),
-          or(eq(journalEntries.status, "DRAFT"), eq(journalEntries.status, "PENDING_APPROVAL")),
-        ),
-      );
-
-    const [draftBills] = await this.db
-      .select({ c: count() })
-      .from(purchaseBills)
-      .where(
-        and(
-          eq(purchaseBills.orgId, orgId),
-          gte(purchaseBills.billDate, startDate),
-          lte(purchaseBills.billDate, endDate),
-          eq(purchaseBills.status, "DRAFT"),
-        ),
-      );
-
-    const [unreconciledTxns] = await this.db
-      .select({ c: count() })
-      .from(finBankTransactions)
-      .where(
-        and(
-          eq(finBankTransactions.orgId, orgId),
-          gte(finBankTransactions.txnDate, startDate),
-          lte(finBankTransactions.txnDate, endDate),
-          or(
-            eq(finBankTransactions.status, "UNMATCHED"),
-            eq(finBankTransactions.status, "SUGGESTED"),
+    const [draftJournalRows, draftBillRows, unreconciledRows, pendingRows] =
+      await Promise.all([
+        this.db
+          .select({ c: count() })
+          .from(journalEntries)
+          .where(
+            and(
+              eq(journalEntries.orgId, orgId),
+              gte(journalEntries.entryDate, startDate),
+              lte(journalEntries.entryDate, endDate),
+              or(
+                eq(journalEntries.status, "DRAFT"),
+                eq(journalEntries.status, "PENDING_APPROVAL"),
+              ),
+            ),
           ),
-        ),
-      );
+        this.db
+          .select({ c: count() })
+          .from(purchaseBills)
+          .where(
+            and(
+              eq(purchaseBills.orgId, orgId),
+              gte(purchaseBills.billDate, startDate),
+              lte(purchaseBills.billDate, endDate),
+              eq(purchaseBills.status, "DRAFT"),
+            ),
+          ),
+        this.db
+          .select({ c: count() })
+          .from(finBankTransactions)
+          .where(
+            and(
+              eq(finBankTransactions.orgId, orgId),
+              gte(finBankTransactions.txnDate, startDate),
+              lte(finBankTransactions.txnDate, endDate),
+              or(
+                eq(finBankTransactions.status, "UNMATCHED"),
+                eq(finBankTransactions.status, "SUGGESTED"),
+              ),
+            ),
+          ),
+        this.db
+          .select({ c: count() })
+          .from(finApprovalRequests)
+          .where(
+            and(
+              eq(finApprovalRequests.orgId, orgId),
+              eq(finApprovalRequests.status, "PENDING"),
+            ),
+          ),
+      ]);
 
-    const [pendingApprovals] = await this.db
-      .select({ c: count() })
-      .from(finApprovalRequests)
-      .where(
-        and(
-          eq(finApprovalRequests.orgId, orgId),
-          eq(finApprovalRequests.status, "PENDING"),
-        ),
-      );
+    const [draftJournals] = draftJournalRows;
+    const [draftBills] = draftBillRows;
+    const [unreconciledTxns] = unreconciledRows;
+    const [pendingApprovals] = pendingRows;
 
     const draftJournalCount = Number(draftJournals?.c ?? 0);
     const draftBillCount = Number(draftBills?.c ?? 0);

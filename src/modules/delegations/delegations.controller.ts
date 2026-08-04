@@ -6,10 +6,10 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import {
-  DelegationsService,
   createDelegationSchema,
   type CreateDelegationInput,
-} from "./delegations.service";
+} from "./dto/delegation.schemas";
+import { DelegationsService } from "./delegations.service";
 
 @Controller("access/delegations")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -35,7 +35,7 @@ export class DelegationsController {
     @Body(new ZodValidationPipe(createDelegationSchema)) body: CreateDelegationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.create(u.orgId, u.userId, body);
+    return this.service.create(u, body);
   }
 
   @Delete(":delegationId")

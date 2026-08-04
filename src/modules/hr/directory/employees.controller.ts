@@ -80,7 +80,7 @@ export class EmployeesController {
   }
 
   @Get()
-  @RequirePermission("hr:employees:read")
+  @RequirePermission("hr:employees:view")
   async listEmployees(
     @Query(new ZodValidationPipe(listEmployeesSchema)) query: ListEmployeesInput,
     @CurrentUser() u: CurrentUserContext,
@@ -154,7 +154,7 @@ export class EmployeesController {
   }
 
   @Get("skills-matrix")
-  @RequirePermission("hr:employees:read")
+  @RequirePermission("hr:employees:view")
   skillsMatrix(@CurrentUser() u: CurrentUserContext) {
     return this.skills.getSkillsMatrix(u.orgId);
   }

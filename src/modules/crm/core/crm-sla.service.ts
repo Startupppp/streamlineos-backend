@@ -16,8 +16,9 @@ export class CrmSlaService {
   ) {}
 
   listPolicies(orgId: string) {
-    return this.cache.cached(
+    return this.cache.cachedVersioned(
       `crm:sla-policies:${orgId}`,
+      "list",
       () =>
         this.db
           .select({
@@ -61,7 +62,7 @@ export class CrmSlaService {
         priorityText: input.priorityText ?? null,
       })
       .returning();
-    await this.cache.invalidatePattern(`crm:sla-policies:${orgId}*`);
+    await this.cache.invalidateNamespace(`crm:sla-policies:${orgId}`);
     return policy;
   }
 
@@ -77,7 +78,7 @@ export class CrmSlaService {
       .set(updates)
       .where(and(eq(crmSla.id, id), eq(crmSla.orgId, orgId)))
       .returning();
-    await this.cache.invalidatePattern(`crm:sla-policies:${orgId}*`);
+    await this.cache.invalidateNamespace(`crm:sla-policies:${orgId}`);
     return updated;
   }
 

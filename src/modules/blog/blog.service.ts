@@ -15,8 +15,7 @@ import type {
 } from "./dto/blog.schemas";
 
 const POST_WITH = { category: true, author: true } as const;
-const ADMIN_POSTS_CACHE_KEY = "blog:admin:posts";
-const ADMIN_POSTS_CACHE_PATTERN = "blog:admin:posts*";
+const ADMIN_POSTS_CACHE_NAMESPACE = "blog:admin:posts";
 
 @Injectable()
 export class BlogService {
@@ -26,8 +25,9 @@ export class BlogService {
   ) {}
 
   listAdminPosts() {
-    return this.cache.cached(
-      ADMIN_POSTS_CACHE_KEY,
+    return this.cache.cachedVersioned(
+      ADMIN_POSTS_CACHE_NAMESPACE,
+      "list",
       () =>
         this.db.query.blogPosts.findMany({
           with: POST_WITH,
@@ -72,7 +72,7 @@ export class BlogService {
       })
       .returning();
 
-    await this.cache.invalidatePattern(ADMIN_POSTS_CACHE_PATTERN);
+    await this.cache.invalidateNamespace(ADMIN_POSTS_CACHE_NAMESPACE);
     return created;
   }
 
@@ -119,7 +119,7 @@ export class BlogService {
       .where(eq(blogPosts.id, id))
       .returning();
 
-    await this.cache.invalidatePattern(ADMIN_POSTS_CACHE_PATTERN);
+    await this.cache.invalidateNamespace(ADMIN_POSTS_CACHE_NAMESPACE);
     return updated;
   }
 
@@ -129,7 +129,7 @@ export class BlogService {
       .where(eq(blogPosts.id, id))
       .returning();
     if (!deleted) return null;
-    await this.cache.invalidatePattern(ADMIN_POSTS_CACHE_PATTERN);
+    await this.cache.invalidateNamespace(ADMIN_POSTS_CACHE_NAMESPACE);
     return { success: true };
   }
 

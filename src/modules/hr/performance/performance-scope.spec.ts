@@ -36,10 +36,10 @@ describe("resolvePerformanceScope", () => {
     expect(mockAccess.resolveUserPermissions).not.toHaveBeenCalled();
   });
 
-  it("returns all when the permission is not scopable", async () => {
+  it("returns none when the permission is not scopable", async () => {
     jest.spyOn(permissionsConstants, "isScopable").mockReturnValue(false);
     const result = await resolvePerformanceScope(mockAccess, makeUser());
-    expect(result).toBe("all");
+    expect(result).toBe("none");
     expect(mockAccess.resolveUserPermissions).not.toHaveBeenCalled();
   });
 
@@ -78,10 +78,10 @@ describe("resolveDocumentsScope", () => {
     expect(mockAccess.resolveUserPermissions).not.toHaveBeenCalled();
   });
 
-  it("returns all when the permission is not scopable", async () => {
+  it("returns none when the permission is not scopable", async () => {
     jest.spyOn(permissionsConstants, "isScopable").mockReturnValue(false);
     const result = await resolveDocumentsScope(mockAccess, makeUser());
-    expect(result).toBe("all");
+    expect(result).toBe("none");
     expect(mockAccess.resolveUserPermissions).not.toHaveBeenCalled();
   });
 

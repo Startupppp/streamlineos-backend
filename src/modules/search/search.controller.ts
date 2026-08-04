@@ -16,6 +16,6 @@ export class SearchController {
     @Query(new ZodValidationPipe(searchQuerySchema)) query: SearchQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.search.search(u.orgId, u.userId, query.q, query.limit);
+    return this.search.search(u, query.q, query.limit);
   }
 }

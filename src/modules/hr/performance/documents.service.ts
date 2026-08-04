@@ -35,7 +35,7 @@ export class DocumentsService {
 
   async listDocuments(orgId: string, userId: string, scope: DataScope, filters: ListDocumentsInput) {
     const conditions = [eq(documents.orgId, orgId), eq(documents.isActive, true)];
-    conditions.push(applyScope(scope, userId, { ownerColumn: documents.userId }));
+    conditions.push(applyScope(scope, orgId, userId, { ownerColumn: documents.userId }));
     if (filters.userId && scope === "all") {
       conditions.push(eq(documents.userId, filters.userId));
     }
@@ -193,7 +193,7 @@ export class DocumentsService {
     const baseWhere = and(
       eq(documents.orgId, orgId),
       eq(documents.isActive, true),
-      applyScope(scope, userId, { ownerColumn: documents.userId }),
+      applyScope(scope, orgId, userId, { ownerColumn: documents.userId }),
     );
 
     const horizon = formatDateString(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000));
@@ -225,28 +225,34 @@ export class DocumentsService {
     };
   }
 
-  async expiry(orgId: string, daysAhead: number) {
+  async expiry(orgId: string, userId: string, scope: DataScope, daysAhead: number) {
     const now = new Date();
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + daysAhead);
     const todayStr = formatDateString(now);
     const futureStr = formatDateString(futureDate);
 
+    const docConditions = [
+      eq(documents.orgId, orgId),
+      eq(documents.isActive, true),
+      applyScope(scope, orgId, userId, { ownerColumn: documents.userId }),
+      gte(documents.expiryDate, todayStr),
+      lte(documents.expiryDate, futureStr),
+    ];
+
+    const certConditions = [
+      eq(certifications.orgId, orgId),
+      applyScope(scope, orgId, userId, { ownerColumn: certifications.userId }),
+      gte(certifications.expiryDate, todayStr),
+      lte(certifications.expiryDate, futureStr),
+    ];
+
     const [expiringDocs, expiringCerts] = await Promise.all([
       this.db.query.documents.findMany({
-        where: and(
-          eq(documents.orgId, orgId),
-          eq(documents.isActive, true),
-          gte(documents.expiryDate, todayStr),
-          lte(documents.expiryDate, futureStr),
-        ),
+        where: and(...docConditions),
       }),
       this.db.query.certifications.findMany({
-        where: and(
-          eq(certifications.orgId, orgId),
-          gte(certifications.expiryDate, todayStr),
-          lte(certifications.expiryDate, futureStr),
-        ),
+        where: and(...certConditions),
         with: { user: { columns: { id: true, name: true } } },
       }),
     ]);

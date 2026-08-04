@@ -10,6 +10,7 @@ import { finBankAccounts } from "../../../db/schema/accounting/finance-banking";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { AuditService } from "../../../common/audit/audit.service";
 import { addDecimals, formatDecimal } from "../../accounting/core/money.util";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
@@ -112,7 +113,6 @@ export class ReimbursementsService {
       metadata: { name: input.name, expenseCount: input.expenseIds.length, totalAmount },
     });
 
-    await this.cache.invalidatePattern(`fin:reimbursement-batches:${u.orgId}:*`);
 
     return batch;
   }
@@ -168,7 +168,6 @@ export class ReimbursementsService {
       targetType: "fin_reimbursement_batch",
     });
 
-    await this.cache.invalidatePattern(`fin:reimbursement-batches:${u.orgId}:*`);
 
     return { success: true };
   }
@@ -274,8 +273,7 @@ export class ReimbursementsService {
       });
     }
 
-    await this.cache.invalidatePattern(`fin:reimbursement-batches:${u.orgId}:*`);
-    await this.cache.invalidatePattern(`hr:expenses:${u.orgId}:*`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.expensesListNamespace(u.orgId));
 
     return { success: true, replayed: postResult.replayed, entryId: postResult.entryId };
   }

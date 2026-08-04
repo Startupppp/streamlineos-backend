@@ -1,6 +1,6 @@
 import { BadRequestException } from "@nestjs/common";
 import { and, eq, inArray } from "drizzle-orm";
-import { moduleOwnerships, organizationMembers } from "../../db/schema";
+import { organizationMembers } from "../../db/schema";
 import type { DbOrTx } from "./access-invalidate";
 
 const MESSAGE =
@@ -67,23 +67,3 @@ export async function assertNoOwnerAmongTargets(
   if (owners.length > 0) throw new BadRequestException(MESSAGE);
 }
 
-export async function assertNotModuleOwner(
-  db: DbOrTx,
-  orgId: string,
-  ownerMembershipId: number,
-): Promise<void> {
-  const owned = await db
-    .select({ moduleKey: moduleOwnerships.moduleKey })
-    .from(moduleOwnerships)
-    .where(
-      and(
-        eq(moduleOwnerships.orgId, orgId),
-        eq(moduleOwnerships.ownerMembershipId, ownerMembershipId),
-      ),
-    );
-  if (owned.length > 0) {
-    throw new BadRequestException(
-      `Transfer module ownership before this action. Owned modules: ${owned.map((r) => r.moduleKey).join(", ")}.`,
-    );
-  }
-}

@@ -20,17 +20,17 @@ export async function authorize(
     return { allow: false, scope: "none", reason: "FORBIDDEN" };
   }
 
+  const moduleKey = moduleOf(permissionKey);
+  if (isPlanGatedModule(moduleKey) && !(await access.isModuleEnabled(ctx.orgId, moduleKey))) {
+    return { allow: false, scope: "none", reason: "NO_MODULE" };
+  }
+
   if (ctx.isOrgOwner) return { allow: true, scope: "all" };
 
   const resolved = await access.resolveUserPermissions(ctx.orgId, ctx.userId);
 
   if (grantsOrgAdmin(resolved)) {
     return { allow: true, scope: "all" };
-  }
-
-  const moduleKey = moduleOf(permissionKey);
-  if (isPlanGatedModule(moduleKey) && !(await access.isModuleEnabled(ctx.orgId, moduleKey))) {
-    return { allow: false, scope: "none", reason: "NO_MODULE" };
   }
 
   const scope = resolved.get(permissionKey);

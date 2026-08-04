@@ -126,7 +126,7 @@ export class ApprovalsService {
     const conditions = [
       eq(timesheetPeriods.orgId, u.orgId),
       eq(timesheetPeriods.status, query.status),
-      applyScope(scope, u.userId, { ownerColumn: timesheetPeriods.userId }),
+      applyScope(scope, u.orgId, u.userId, { ownerColumn: timesheetPeriods.userId }),
     ];
 
     if (

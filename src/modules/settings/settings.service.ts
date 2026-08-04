@@ -25,6 +25,8 @@ import { AccessService } from "../access/access.service";
 import { assertMayGrantRole } from "../../common/rbac/assert-may-grant-role";
 import { syncStructuralRoleAssignment } from "../../common/rbac/sync-structural-role";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
+import { CacheService } from "../../common/cache/cache.service";
+import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
 import {
   VALID_API_KEY_SCOPES,
   generateApiKey,
@@ -51,6 +53,7 @@ export class SettingsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly planLimits: PlanLimitsService,
     private readonly access: AccessService,
+    private readonly cache: CacheService,
   ) {}
 
   getPermissions() {
@@ -492,6 +495,8 @@ export class SettingsService {
         );
       await syncStructuralRoleAssignment(tx, u.orgId, member.id, role);
     });
+
+    await bustMembershipStatusCache(this.cache, targetUserId, u.orgId);
 
     return { success: true, userId: targetUserId, role };
   }

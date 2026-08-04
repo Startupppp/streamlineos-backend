@@ -20,8 +20,9 @@ export class HrHiringFlowsService {
   ) {}
 
   listFlows(orgId: string, limit: number, offset: number) {
-    return this.cache.cached(
-      `hr:hiring-flows:list:${orgId}:${limit}:${offset}`,
+    return this.cache.cachedVersioned(
+      `hr:hiring-flows:${orgId}`,
+      `list:${limit}:${offset}`,
       () =>
         this.db.query.hiringFlows.findMany({
           where: eq(hiringFlows.orgId, orgId),
@@ -52,13 +53,14 @@ export class HrHiringFlowsService {
       })
       .returning();
 
-    await this.cache.invalidatePattern(`hr:hiring-flows:list:${orgId}:*`);
+    await this.cache.invalidateNamespace(`hr:hiring-flows:${orgId}`);
     return flow;
   }
 
   async getFlow(orgId: string, id: number) {
-    const flow = await this.cache.cached(
-      `hr:hiring-flow:${orgId}:${id}`,
+    const flow = await this.cache.cachedVersioned(
+      `hr:hiring-flows:${orgId}`,
+      `detail:${id}`,
       () =>
         this.db.query.hiringFlows.findFirst({
           where: and(eq(hiringFlows.id, id), eq(hiringFlows.orgId, orgId)),
@@ -93,8 +95,7 @@ export class HrHiringFlowsService {
       .where(and(eq(hiringFlows.id, id), eq(hiringFlows.orgId, orgId)))
       .returning();
 
-    await this.cache.invalidatePattern(`hr:hiring-flows:list:${orgId}:*`);
-    await this.cache.invalidatePattern(`hr:hiring-flow:${orgId}:${id}`);
+    await this.cache.invalidateNamespace(`hr:hiring-flows:${orgId}`);
     return updated;
   }
 
@@ -107,8 +108,7 @@ export class HrHiringFlowsService {
 
     await this.db.delete(hiringFlows).where(and(eq(hiringFlows.id, id), eq(hiringFlows.orgId, orgId)));
 
-    await this.cache.invalidatePattern(`hr:hiring-flows:list:${orgId}:*`);
-    await this.cache.invalidatePattern(`hr:hiring-flow:${orgId}:${id}`);
+    await this.cache.invalidateNamespace(`hr:hiring-flows:${orgId}`);
     return { success: true };
   }
 
@@ -157,8 +157,7 @@ export class HrHiringFlowsService {
       })
       .returning();
 
-    await this.cache.invalidatePattern(`hr:hiring-flows:list:${orgId}:*`);
-    await this.cache.invalidatePattern(`hr:hiring-flow:${orgId}:${flowId}`);
+    await this.cache.invalidateNamespace(`hr:hiring-flows:${orgId}`);
     return round;
   }
 
@@ -194,8 +193,7 @@ export class HrHiringFlowsService {
       .where(and(eq(hiringFlowRounds.id, roundId), eq(hiringFlowRounds.flowId, flowId)))
       .returning();
 
-    await this.cache.invalidatePattern(`hr:hiring-flows:list:${orgId}:*`);
-    await this.cache.invalidatePattern(`hr:hiring-flow:${orgId}:${flowId}`);
+    await this.cache.invalidateNamespace(`hr:hiring-flows:${orgId}`);
     return updated;
   }
 
@@ -210,8 +208,7 @@ export class HrHiringFlowsService {
       .delete(hiringFlowRounds)
       .where(and(eq(hiringFlowRounds.id, roundId), eq(hiringFlowRounds.flowId, flowId)));
 
-    await this.cache.invalidatePattern(`hr:hiring-flows:list:${orgId}:*`);
-    await this.cache.invalidatePattern(`hr:hiring-flow:${orgId}:${flowId}`);
+    await this.cache.invalidateNamespace(`hr:hiring-flows:${orgId}`);
     return { success: true };
   }
 }

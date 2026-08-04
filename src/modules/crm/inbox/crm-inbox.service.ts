@@ -70,8 +70,8 @@ export class CrmInboxService {
     const fourteenDaysAgo = new Date(now.getTime() - INBOX_ACTIVITY_LOOKBACK_MS);
     const fourHoursFromNow = new Date(now.getTime() + INBOX_SLA_HORIZON_MS);
 
-    const scopeFilter = applyScope(scope, userId, { ownerColumn: tasks.assigneeId });
-    const leadScopeFilter = applyScope(scope, userId, { ownerColumn: leads.assignedToId });
+    const scopeFilter = applyScope(scope, orgId, userId, { ownerColumn: tasks.assigneeId });
+    const leadScopeFilter = applyScope(scope, orgId, userId, { ownerColumn: leads.assignedToId });
 
     const { terminalLeadKeys, openStageKeys } = await this.aiActions.resolveMetadata(orgId);
 
@@ -397,8 +397,8 @@ export class CrmInboxService {
     const fourteenDaysAgo = new Date(now.getTime() - INBOX_ACTIVITY_LOOKBACK_MS);
     const fourHoursFromNow = new Date(now.getTime() + INBOX_SLA_HORIZON_MS);
 
-    const scopeFilter = applyScope(scope, userId, { ownerColumn: tasks.assigneeId });
-    const leadScopeFilter = applyScope(scope, userId, { ownerColumn: leads.assignedToId });
+    const scopeFilter = applyScope(scope, orgId, userId, { ownerColumn: tasks.assigneeId });
+    const leadScopeFilter = applyScope(scope, orgId, userId, { ownerColumn: leads.assignedToId });
 
     const { terminalLeadKeys, openStageKeys } = await this.aiActions.resolveMetadata(orgId);
 

@@ -1,10 +1,15 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, ilike, or, sql } from "drizzle-orm";
+import { and, eq, exists, ilike, or, sql } from "drizzle-orm";
 import { leads, deals, contacts, clients, projects, tickets } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { applyScope } from "../access/apply-scope";
+import { authorize, type AccessResolver } from "../access/authorize";
+import type { DataScope } from "../access/access.types";
+import { AccessService } from "../access/access.service";
 
 export type SearchResultType = "lead" | "deal" | "contact" | "client" | "ticket";
 
@@ -22,25 +27,71 @@ export interface SearchResponse {
   total: number;
 }
 
+export interface SearchAccess {
+  leads: DataScope | null;
+  deals: DataScope | null;
+  contacts: DataScope | null;
+  clients: DataScope | null;
+  build: DataScope | null;
+}
+
+export async function resolveSearchAccess(
+  access: AccessResolver,
+  user: CurrentUserContext,
+): Promise<SearchAccess> {
+  const [leadResult, dealResult, contactResult, clientResult, buildResult] =
+    await Promise.all([
+      authorize(access, user, "crm:leads:view"),
+      authorize(access, user, "crm:deals:read"),
+      authorize(access, user, "crm:contacts:view"),
+      authorize(access, user, "crm:clients:read"),
+      authorize(access, user, "build:tickets:view"),
+    ]);
+  return {
+    leads: leadResult.allow ? leadResult.scope : null,
+    deals: dealResult.allow ? dealResult.scope : null,
+    contacts: contactResult.allow ? contactResult.scope : null,
+    clients: clientResult.allow ? clientResult.scope : null,
+    build: buildResult.allow ? buildResult.scope : null,
+  };
+}
+
 @Injectable()
 export class SearchService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly access: AccessService,
   ) {}
 
-  search(orgId: string, userId: string, q: string, limit: number | undefined): Promise<SearchResponse> {
+  async search(
+    user: CurrentUserContext,
+    q: string,
+    limit: number | undefined,
+  ): Promise<SearchResponse> {
     const trimmed = q.trim();
-    if (!trimmed) return Promise.resolve({ results: [], total: 0 });
-    const queryHash = Buffer.from(trimmed + (limit ?? "")).toString("base64url").slice(0, 32);
+    if (!trimmed) return { results: [], total: 0 };
+    const [searchAccess, version] = await Promise.all([
+      resolveSearchAccess(this.access, user),
+      this.access.getPermissionsVersion(user.orgId),
+    ]);
+    const queryHash = Buffer.from(`${trimmed}:${limit ?? ""}:v${version}`)
+      .toString("base64url")
+      .slice(0, 32);
     return this.cache.cached(
-      CACHE_KEYS.searchResults(orgId, userId, queryHash),
-      () => this.executeSearch(orgId, trimmed, limit),
+      CACHE_KEYS.searchResults(user.orgId, user.userId, queryHash),
+      () => this.executeSearch(user, searchAccess, trimmed, limit),
       CACHE_TTL.SHORT,
     );
   }
 
-  private async executeSearch(orgId: string, q: string, limit: number | undefined): Promise<SearchResponse> {
+  private async executeSearch(
+    user: CurrentUserContext,
+    access: SearchAccess,
+    q: string,
+    limit: number | undefined,
+  ): Promise<SearchResponse> {
+    const { orgId, userId } = user;
     const maxPer = Math.min(limit ?? 5, 10);
     const pattern = `%${q}%`;
     const trimmed = q.trim();
@@ -54,14 +105,54 @@ export class SearchService {
       ticketConditions.push(eq(tickets.ticketNumber, numericTicket));
     }
     const ticketWhere = or(...ticketConditions);
+    const contactAccess = access.contacts;
+    const contactScope =
+      contactAccess === "all"
+        ? sql`true`
+        : contactAccess
+          ? or(
+              exists(
+                this.db
+                  .select({ value: sql`1` })
+                  .from(leads)
+                  .where(
+                    and(
+                      eq(leads.orgId, orgId),
+                      eq(leads.id, contacts.leadId),
+                      applyScope(contactAccess, orgId, userId, {
+                        ownerColumn: leads.assignedToId,
+                      }),
+                    ),
+                  ),
+              ),
+              exists(
+                this.db
+                  .select({ value: sql`1` })
+                  .from(deals)
+                  .where(
+                    and(
+                      eq(deals.orgId, orgId),
+                      eq(deals.id, contacts.dealId),
+                      applyScope(contactAccess, orgId, userId, {
+                        ownerColumn: deals.assignedToId,
+                      }),
+                    ),
+                  ),
+              ),
+            )
+          : sql`false`;
 
     const [leadResults, dealResults, contactResults, clientResults, ticketResults] = await Promise.all([
-      this.db
+      access.leads
+        ? this.db
         .select({ id: leads.id, name: leads.name, email: leads.email, company: leads.company, status: leads.status })
         .from(leads)
         .where(
           and(
             eq(leads.orgId, orgId),
+            applyScope(access.leads, orgId, userId, {
+              ownerColumn: leads.assignedToId,
+            }),
             or(
               ilike(leads.name, pattern),
               ilike(leads.email, pattern),
@@ -70,42 +161,57 @@ export class SearchService {
             ),
           ),
         )
-        .limit(maxPer),
+        .limit(maxPer)
+        : Promise.resolve([]),
 
-      this.db
+      access.deals
+        ? this.db
         .select({ id: deals.id, name: deals.name, value: deals.value, stage: deals.stage, contactPerson: deals.contactPerson })
         .from(deals)
         .where(
           and(
             eq(deals.orgId, orgId),
+            applyScope(access.deals, orgId, userId, {
+              ownerColumn: deals.assignedToId,
+            }),
             or(ilike(deals.name, pattern), ilike(deals.contactPerson, pattern)),
           ),
         )
-        .limit(maxPer),
+        .limit(maxPer)
+        : Promise.resolve([]),
 
-      this.db
+      access.contacts
+        ? this.db
         .select({ id: contacts.id, name: contacts.name, email: contacts.email, company: contacts.company })
         .from(contacts)
         .where(
           and(
             eq(contacts.orgId, orgId),
+            contactScope,
             or(ilike(contacts.name, pattern), ilike(contacts.email, pattern), ilike(contacts.company, pattern)),
           ),
         )
-        .limit(maxPer),
+        .limit(maxPer)
+        : Promise.resolve([]),
 
-      this.db
+      access.clients
+        ? this.db
         .select({ id: clients.id, name: clients.name, company: clients.company, status: clients.status })
         .from(clients)
         .where(
           and(
             eq(clients.orgId, orgId),
+            applyScope(access.clients, orgId, userId, {
+              ownerColumn: clients.accountManagerId,
+            }),
             or(ilike(clients.name, pattern), ilike(clients.company, pattern)),
           ),
         )
-        .limit(maxPer),
+        .limit(maxPer)
+        : Promise.resolve([]),
 
-      this.db
+      access.build
+        ? this.db
         .select({
           id: tickets.id,
           title: tickets.title,
@@ -116,8 +222,18 @@ export class SearchService {
         })
         .from(tickets)
         .innerJoin(projects, eq(projects.id, tickets.projectId))
-        .where(and(eq(tickets.orgId, orgId), ticketWhere))
-        .limit(maxPer),
+        .where(
+          and(
+            eq(tickets.orgId, orgId),
+            eq(projects.orgId, orgId),
+            applyScope(access.build, orgId, userId, {
+              ownerColumn: tickets.assigneeId,
+            }),
+            ticketWhere,
+          ),
+        )
+        .limit(maxPer)
+        : Promise.resolve([]),
     ]);
 
     const results: SearchResult[] = [

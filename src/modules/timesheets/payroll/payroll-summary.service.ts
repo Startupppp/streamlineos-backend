@@ -1,10 +1,12 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, ForbiddenException } from "@nestjs/common";
 import { and, eq, gte, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { timesheets, timesheetSettings, holidays, leaveRequests, users } from "../../../db/schema";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
+import { applyScope } from "../../access/apply-scope";
+import type { DataScope } from "../../access/access.types";
 import { computeLeaveDays, computeOvertime, isWeekend, round2 } from "./lib/payroll-calc";
 import type { PeriodSummaryQuery, PayrollSummaryRow } from "./dto/payroll.schemas";
 
@@ -104,13 +106,31 @@ export class PayrollSummaryService {
     private readonly cache: CacheService,
   ) {}
 
-  async getPeriodSummary(orgId: string, query: PeriodSummaryQuery) {
-    const hash = `${query.start}-${query.end}-${query.userId ?? ""}-${query.includeExported}`;
-    const cacheKey = CACHE_KEYS.payrollSummary(orgId, hash);
-    return this.cache.cached(cacheKey, () => this.compute(orgId, query), CACHE_TTL.SHORT);
+  async getPeriodSummary(
+    orgId: string,
+    query: PeriodSummaryQuery,
+    scope: DataScope,
+    actorUserId: string,
+  ) {
+    if (query.userId && query.userId !== actorUserId && scope !== "all") {
+      throw new ForbiddenException("Not authorized to filter payroll summary for another user");
+    }
+
+    const hash = `${query.start}-${query.end}-${query.userId ?? ""}-${query.includeExported}-${scope}-${actorUserId}`;
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.payrollSummaryNamespace(orgId),
+      hash,
+      () => this.compute(orgId, query, scope, actorUserId),
+      CACHE_TTL.SHORT,
+    );
   }
 
-  private async compute(orgId: string, query: PeriodSummaryQuery) {
+  private async compute(
+    orgId: string,
+    query: PeriodSummaryQuery,
+    scope: DataScope,
+    actorUserId: string,
+  ) {
     const [settings] = await this.db
       .select({
         overtimeDailyHours: timesheetSettings.overtimeDailyHours,
@@ -129,8 +149,9 @@ export class PayrollSummaryService {
       eq(timesheets.orgId, orgId),
       gte(timesheets.date, query.start),
       lte(timesheets.date, query.end),
+      applyScope(scope, orgId, actorUserId, { ownerColumn: timesheets.userId }),
     ];
-    if (query.userId) entryConditions.push(eq(timesheets.userId, query.userId));
+    if (query.userId && scope === "all") entryConditions.push(eq(timesheets.userId, query.userId));
 
     const entries = await this.db
       .select({
@@ -159,8 +180,9 @@ export class PayrollSummaryService {
       eq(leaveRequests.status, "APPROVED"),
       lte(leaveRequests.startDate, query.end),
       gte(leaveRequests.endDate, query.start),
+      applyScope(scope, orgId, actorUserId, { ownerColumn: leaveRequests.userId }),
     ];
-    if (query.userId) leaveConditions.push(eq(leaveRequests.userId, query.userId));
+    if (query.userId && scope === "all") leaveConditions.push(eq(leaveRequests.userId, query.userId));
 
     const leaveRows = await this.db
       .select({

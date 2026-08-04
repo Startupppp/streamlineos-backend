@@ -7,6 +7,7 @@ import { RunsService } from "./runs.service";
 import { GenerateService } from "./generate.service";
 import { GeneratePipelineService } from "./generate-pipeline.service";
 import { ProfilesController } from "./profiles.controller";
+import { WorkerProfilesController } from "./worker-profiles.controller";
 import { ProfilesService } from "./profiles.service";
 import { InputsController } from "./inputs.controller";
 import { InputsService } from "./inputs.service";
@@ -24,6 +25,7 @@ import { PayrollRunLockService } from "../run-lock.service";
   controllers: [
     RunsController,
     ProfilesController,
+    WorkerProfilesController,
     InputsController,
     ExceptionsController,
     LoanAdjustmentsController,

@@ -35,7 +35,7 @@ export class PublishingController {
     @Body(new ZodValidationPipe(publishSchema)) body: PublishInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.publishing.publish(u.orgId, runId, u.userId, body.userIds);
+    return this.publishing.publish(u.orgId, runId, u.userId, body.userIds, body.runEmployeeIds);
   }
 
   @Post("runs/:runId/payslips/retry-failed")

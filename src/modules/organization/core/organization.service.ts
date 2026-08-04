@@ -61,6 +61,10 @@ export class OrganizationService {
     return this.orgMembership.leaveOrg(orgId, userId);
   }
 
+  async listArchivedOwnedOrganizations(userId: string) {
+    return this.orgLifecycle.listArchivedOwnedOrganizations(userId);
+  }
+
   async archiveOrg(orgId: string, userId: string) {
     return this.orgLifecycle.archiveOrg(orgId, userId);
   }

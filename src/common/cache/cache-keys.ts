@@ -1,9 +1,6 @@
 export const CACHE_KEYS = {
   dashboardStats: (orgId: string) => `dashboard:stats:${orgId}`,
   userSession: (userId: string) => `user:session:${userId}`,
-  membershipStatus: (userId: string, orgId: string) =>
-    `membership:status:${userId}:${orgId}`,
-  membershipStatusPattern: (userId: string) => `membership:status:${userId}:*`,
   membershipAccount: (userId: string) => `membership:account:${userId}`,
 
   rolesList: (orgId: string) => `org:roles:${orgId}`,
@@ -14,18 +11,24 @@ export const CACHE_KEYS = {
   accessVersion: (orgId: string) => `access:version:${orgId}`,
   accessPerms: (orgId: string, userId: string, version: number) =>
     `access:perms:${orgId}:${userId}:v${version}`,
-  accessMembersWithPerm: (
+  accessMembersWithPermPage: (
     orgId: string,
     permissionKey: string,
     version: number,
-    limit = 50,
-  ) => `access:members-with-perm:${orgId}:${permissionKey}:v${version}:l${limit}`,
+    afterMembershipId: number,
+    limit: number,
+  ) =>
+    `access:members-with-perm:${orgId}:${permissionKey}:v${version}:a${afterMembershipId}:l${limit}`,
 
   leadsList: (orgId: string, hash: string) => `leads:list:${orgId}:${hash}`,
   leadDetail: (orgId: string, id: number) => `leads:detail:${orgId}:${id}`,
 
   contactsList: (orgId: string, hash: string) =>
     `crm:contacts:list:${orgId}:${hash}`,
+  contactsListNamespace: (orgId: string) => `crm:contacts:list:${orgId}`,
+
+  crmOrganizationsListNamespace: (orgId: string) =>
+    `crm:organizations:list:${orgId}`,
 
   projectsList: (orgId: string) => `projects:list:${orgId}`,
   projectLabels: (orgId: string) => `projects:labels:${orgId}`,
@@ -92,26 +95,25 @@ export const CACHE_KEYS = {
 
   branchesList: (orgId: string) => `branches:list:${orgId}`,
 
-  invProductsList: (orgId: string, hash: string) =>
-    `inv:products:list:${orgId}:${hash}`,
+  invProductsNamespace: (orgId: string) => `inv:products:list:${orgId}`,
   invProductDetail: (orgId: string, id: number) =>
     `inv:products:detail:${orgId}:${id}`,
-  invStockLevels: (orgId: string, hash: string) =>
-    `inv:stock:levels:${orgId}:${hash}`,
   invStockSummary: (orgId: string) => `inv:stock:summary:${orgId}`,
   invLowStock: (orgId: string) => `inv:low-stock:${orgId}`,
   invWarehousesList: (orgId: string) => `inv:warehouses:${orgId}`,
   invWarehouseDetail: (orgId: string, id: number) =>
     `inv:warehouses:detail:${orgId}:${id}`,
-  invVendorsList: (orgId: string, hash: string) =>
-    `inv:vendors:list:${orgId}:${hash}`,
-  invPoList: (orgId: string, hash: string) => `inv:po:list:${orgId}:${hash}`,
+  invVendorsNamespace: (orgId: string) => `inv:vendors:list:${orgId}`,
+  invPoNamespace: (orgId: string) => `inv:po:list:${orgId}`,
+  invGrnNamespace: (orgId: string) => `inv:grn:list:${orgId}`,
   invPoDetail: (orgId: string, id: number) => `inv:po:detail:${orgId}:${id}`,
   invVendorReturnDetail: (orgId: string, id: number) =>
     `inv:vret:detail:${orgId}:${id}`,
+  invVendorReturnsNamespace: (orgId: string) => `inv:vret:list:${orgId}`,
   invCustomerReturnDetail: (orgId: string, id: number) =>
     `inv:cret:detail:${orgId}:${id}`,
-  invSoList: (orgId: string, hash: string) => `inv:so:list:${orgId}:${hash}`,
+  invCustomerReturnsNamespace: (orgId: string) => `inv:cret:list:${orgId}`,
+  invSoNamespace: (orgId: string) => `inv:so:list:${orgId}`,
   invSoDetail: (orgId: string, id: number) => `inv:so:detail:${orgId}:${id}`,
   invDashboard: (orgId: string) => `inv:dashboard:${orgId}`,
   invReorderReport: (orgId: string) => `inv:reorder:${orgId}`,
@@ -119,68 +121,35 @@ export const CACHE_KEYS = {
     `inv:reorder:paged:${orgId}:${hash}`,
   invStockSummaryReport: (orgId: string, hash: string) =>
     `inv:stock:summary-report:${orgId}:${hash}`,
-  invLotsList: (orgId: string, hash: string) =>
-    `inv:lots:list:${orgId}:${hash}`,
-  invLotsListPattern: (orgId: string) => `inv:lots:list:${orgId}:*`,
-  invAdjustmentsList: (orgId: string, hash: string) =>
-    `inv:adjustments:list:${orgId}:${hash}`,
-  invAdjustmentsListPattern: (orgId: string) =>
-    `inv:adjustments:list:${orgId}:*`,
-  invReplenishmentSuggestions: (orgId: string, hash: string) =>
-    `inv:replenishment:suggestions:${orgId}:${hash}`,
+  invReplenishmentSuggestionsNamespace: (orgId: string) =>
+    `inv:replenishment:suggestions:${orgId}`,
 
-  invReservationsList: (orgId: string, hash: string) =>
-    `inv:reservations:list:${orgId}:${hash}`,
-  invLotDetail: (orgId: string, id: number) => `inv:lots:detail:${orgId}:${id}`,
   invValuationReport: (orgId: string, hash: string) =>
     `inv:valuation:report:${orgId}:${hash}`,
   invSlowMovingReport: (orgId: string, hash: string) =>
     `inv:slow-moving:${orgId}:${hash}`,
   invExpiryReport: (orgId: string, hash: string) =>
     `inv:expiry:report:${orgId}:${hash}`,
-  invReorderRulesList: (orgId: string, hash: string) =>
-    `inv:reorder-rules:list:${orgId}:${hash}`,
-  invCycleCountsList: (orgId: string, hash: string) =>
-    `inv:cycle-counts:list:${orgId}:${hash}`,
+  invCycleCountsNamespace: (orgId: string) => `inv:cycle-counts:list:${orgId}`,
   invCycleCountDetail: (orgId: string, id: number) =>
     `inv:cycle-counts:detail:${orgId}:${id}`,
-  invQualityInspectionsList: (orgId: string, hash: string) =>
-    `inv:quality:inspections:${orgId}:${hash}`,
-  invQualityHoldsList: (orgId: string, hash: string) =>
-    `inv:quality:holds:${orgId}:${hash}`,
-  invQualityHoldDetail: (orgId: string, id: number) =>
-    `inv:quality:holds:detail:${orgId}:${id}`,
-  invQualityRecallsList: (orgId: string, hash: string) =>
-    `inv:quality:recalls:${orgId}:${hash}`,
-  invPackagesList: (orgId: string, hash: string) =>
-    `inv:packages:list:${orgId}:${hash}`,
-  invPackageDetail: (orgId: string, id: number) =>
-    `inv:packages:detail:${orgId}:${id}`,
-  invShipmentsList: (orgId: string, hash: string) =>
-    `inv:shipments:list:${orgId}:${hash}`,
-  invShipmentDetail: (orgId: string, id: number) =>
-    `inv:shipments:detail:${orgId}:${id}`,
-  invLoadsList: (orgId: string, hash: string) =>
-    `inv:loads:list:${orgId}:${hash}`,
-  invLoadDetail: (orgId: string, id: number) =>
-    `inv:loads:detail:${orgId}:${id}`,
-  invCarriersList: (orgId: string) => `inv:carriers:${orgId}`,
+  invQualityInspectionsNamespace: (orgId: string) =>
+    `inv:quality:inspections:${orgId}`,
+  invQualityHoldsNamespace: (orgId: string) => `inv:quality:holds:${orgId}`,
+  invQualityRecallsNamespace: (orgId: string) => `inv:quality:recalls:${orgId}`,
+  invPackagesNamespace: (orgId: string) => `inv:packages:${orgId}`,
+  invShipmentsNamespace: (orgId: string) => `inv:shipments:${orgId}`,
+  invLoadsNamespace: (orgId: string) => `inv:loads:${orgId}`,
+  invCarriersNamespace: (orgId: string) => `inv:carriers:${orgId}`,
   invChannelsList: (orgId: string) => `inv:channels:list:${orgId}`,
   invChannelDetail: (orgId: string, id: number) =>
     `inv:channels:detail:${orgId}:${id}`,
   inv3plList: (orgId: string) => `inv:3pl:list:${orgId}`,
-  invImportJobsList: (orgId: string, hash: string) =>
-    `inv:import-jobs:list:${orgId}:${hash}`,
-  invExportJobsList: (orgId: string, hash: string) =>
-    `inv:export-jobs:list:${orgId}:${hash}`,
+  invImportJobsNamespace: (orgId: string) => `inv:import-jobs:list:${orgId}`,
+  invExportJobsNamespace: (orgId: string) => `inv:export-jobs:list:${orgId}`,
   invSettings: (orgId: string) => `inv:settings:${orgId}`,
   invNumberSequences: (orgId: string) => `inv:numseq:${orgId}`,
   invAiInsightsList: (orgId: string) => `inv:ai-insights:${orgId}`,
-  invTraceabilityLot: (orgId: string, lotId: number) =>
-    `inv:trace:lot:${orgId}:${lotId}`,
-  invTraceabilitySerial: (orgId: string, serialId: number) =>
-    `inv:trace:serial:${orgId}:${serialId}`,
-  invStockLevelPattern: (orgId: string) => `inv:stock:levels:${orgId}:*`,
 
   mailMessages: (
     accountId: number,
@@ -200,15 +169,23 @@ export const CACHE_KEYS = {
 
   payrollSummary: (orgId: string, hash: string) =>
     `timesheets:payroll:summary:${orgId}:${hash}`,
+  payrollSummaryNamespace: (orgId: string) =>
+    `timesheets:payroll:summary:${orgId}`,
   payrollExportsList: (
     orgId: string,
     page: number | "*",
     pageSize: number | "*",
   ) => `timesheets:payroll:exports:${orgId}:${page}:${pageSize}`,
+  payrollExportsNamespace: (orgId: string) =>
+    `timesheets:payroll:exports:${orgId}`,
   payrollSettings: (orgId: string) => `timesheets:payroll:settings:${orgId}`,
+  payrollSettingsNamespace: (orgId: string) =>
+    `timesheets:payroll:settings:${orgId}`,
 
   timesheetSettings: (orgId: string) => `timesheets:settings:${orgId}`,
+  timesheetSettingsNamespace: (orgId: string) => `timesheets:settings:${orgId}`,
   timesheetRates: (orgId: string) => `timesheets:rates:${orgId}`,
+  timesheetRatesNamespace: (orgId: string) => `timesheets:rates:${orgId}`,
 
   finOverview: (orgId: string) => `fin:overview:${orgId}`,
   finOverviewWithDates: (orgId: string, from: string, to: string) =>
@@ -254,13 +231,25 @@ export const CACHE_KEYS = {
   finCategorizeSuggest: (orgId: string, merchant: string) =>
     `fin:cat-suggest:${orgId}:${merchant}`,
 
+  expensesListNamespace: (orgId: string) => `hr:expenses:${orgId}`,
+  finAssetsListNamespace: (orgId: string) => `fin:assets:list:${orgId}`,
+  finAssetCategoriesNamespace: (orgId: string) =>
+    `fin:asset-categories:${orgId}`,
+  finTaxCodesNamespace: (orgId: string) => `fin:tax-codes:${orgId}`,
+  finTaxPaymentsNamespace: (orgId: string) => `fin:tax-payments:${orgId}`,
+  finTaxDashboardNamespace: (orgId: string) => `fin:tax-dashboard:${orgId}`,
+  finTaxReportsNamespace: (orgId: string) => `fin:tax-reports:${orgId}`,
+  finExpensePoliciesNamespace: (orgId: string) =>
+    `fin:expense-policies:${orgId}`,
+  finBankAccountsNamespace: (orgId: string) =>
+    `fin:banking:accounts:${orgId}`,
+  finForecastNamespace: (orgId: string) => `fin:forecast:${orgId}`,
+  finBvaNamespace: (orgId: string, budgetId: number) =>
+    `fin:bva:${orgId}:${budgetId}`,
+
   orgSettings: (orgId: string) => `org:settings:${orgId}`,
-  orgProfile: (orgId: string, userId: string) => `org:profile:${orgId}:${userId}`,
-  orgProfilePattern: (orgId: string) => `org:profile:${orgId}:*`,
-  orgMembersList: (orgId: string, hash: string) => `org:members:list:${orgId}:${hash}`,
-  orgMembersListPattern: (orgId: string) => `org:members:list:${orgId}:*`,
-  orgMembersSimple: (orgId: string, hash: string) => `org:members-simple:${orgId}:${hash}`,
-  orgMembersSimplePattern: (orgId: string) => `org:members-simple:${orgId}:*`,
+  orgProfileNamespace: (orgId: string) => `org:profile:${orgId}`,
+  orgMembersListNamespace: (orgId: string) => `org:members:list:${orgId}`,
   usersStats: (orgId: string) => `users:stats:${orgId}`,
 
   permissionsMatrix: (orgId: string, version: number) => `rbac:matrix:${orgId}:v${version}`,

@@ -74,7 +74,7 @@ export class KbArticlesService {
 
     const conditions: SQL[] = [eq(kbArticles.orgId, user.orgId), inArray(kbArticles.spaceId, ids)];
     if (scope && scope !== "all") {
-      conditions.push(applyScope(scope, user.userId, { ownerColumn: kbArticles.ownerId }));
+      conditions.push(applyScope(scope, user.orgId, user.userId, { ownerColumn: kbArticles.ownerId }));
     }
     if (query.spaceId) conditions.push(eq(kbArticles.spaceId, query.spaceId));
     if (query.categoryId) conditions.push(eq(kbArticles.categoryId, query.categoryId));

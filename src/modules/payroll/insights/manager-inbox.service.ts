@@ -246,6 +246,7 @@ export class ManagerInboxService {
       { month: string; net: string | null; publicationId: number }
     >();
     for (const p of pubs) {
+      if (!p.userId) continue;
       if (!latestPayslipByUser.has(p.userId)) {
         latestPayslipByUser.set(p.userId, {
           month: p.month,

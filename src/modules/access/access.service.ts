@@ -6,7 +6,7 @@ import {
   type OnModuleDestroy,
   type OnModuleInit,
 } from "@nestjs/common";
-import { and, eq, gt, inArray, isNull, or } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, lte, or } from "drizzle-orm";
 import {
   accessVersions,
   groupRoleAssignments,
@@ -39,11 +39,12 @@ import {
   subscribeVersionBump,
 } from "../../common/rbac/access-invalidate";
 import { isPlanGatedModule } from "../../common/rbac/module-vocabulary";
+import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
 import type { AccessSnapshot, DataScope } from "./access.types";
 import { EntitlementsService, MODULE_CATALOG } from "./entitlements.service";
 import { MfaPolicyService } from "./mfa-policy.service";
 
-const MEMBERS_WITH_PERM_DEFAULT_CAP = 50;
+const MEMBERS_WITH_PERM_PAGE_SIZE = 100;
 
 const MANAGEABLE_MODULE_SET: ReadonlySet<string> = new Set(MODULE_CATALOG);
 
@@ -102,11 +103,12 @@ export function broadest(a: DataScope, b: DataScope): DataScope {
 export interface DelegationRow {
   permissions: string[];
   status: string;
+  startsAt: Date;
   endsAt: Date;
 }
 
 export function isActiveDelegation(row: DelegationRow, now: Date): boolean {
-  return row.status === "ACTIVE" && row.endsAt > now;
+  return row.status === "ACTIVE" && row.startsAt <= now && row.endsAt > now;
 }
 
 export function isActiveAssignment(
@@ -126,6 +128,17 @@ export { isPlanGatedModule };
 export interface MembershipGateResult {
   active: boolean;
   isOwner: boolean;
+}
+
+interface PermissionMember {
+  userId: string;
+  membershipId: number;
+}
+
+interface PermissionMemberPage {
+  data: PermissionMember[];
+  nextCursor: number;
+  exhausted: boolean;
 }
 
 export function evaluateMembershipGate(
@@ -180,12 +193,29 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     this.unsubscribeVersionBump = subscribeVersionBump((orgId) => {
       this.versionCache.delete(orgId);
+      this.deleteOrgEntries(this.ownerCache, orgId);
+      this.deleteOrgEntries(this.permsCache, orgId);
+      this.deleteOrgEntries(this.deniedModulesCache, orgId);
+      void Promise.all([
+        // Permission, RBAC, and module-access list keys already include this
+        // access version. A bump makes every previous generation unreachable,
+        // so scanning Redis to delete it is both redundant and expensive.
+        this.cache.invalidate(CACHE_KEYS.rbacDiscoveryMembers(orgId)),
+        this.cache.invalidate(CACHE_KEYS.moduleAccessCandidates(orgId)),
+      ]);
     });
   }
 
   onModuleDestroy(): void {
     this.unsubscribeVersionBump?.();
     this.unsubscribeVersionBump = null;
+  }
+
+  private deleteOrgEntries<T>(cache: Map<string, T>, orgId: string): void {
+    const prefix = `${orgId}:`;
+    for (const key of cache.keys()) {
+      if (key.startsWith(prefix)) cache.delete(key);
+    }
   }
 
   private noteMissingAccessTables(error: unknown): void {
@@ -272,8 +302,10 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
           map = new Map(Object.entries(resolved));
         }
 
-        // Denies never apply to the org owner
-        if (await this.isOrgOwner(orgId, userId)) return map;
+        // Structural organization administrators have the same product access as
+        // the owner. Ownership transfer/deletion remains protected by explicit
+        // isOrgOwner checks in those lifecycle services.
+        if (await this.isOrgOwnerOrAdmin(orgId, userId)) return map;
 
         const denied = await this.getUserDeniedModules(orgId, userId);
         if (denied.size > 0) {
@@ -293,8 +325,11 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     { isOwner: boolean; expiresAt: number }
   >();
 
-  /** Cached `organization_members.is_owner` for the deny exemption above. */
-  private async isOrgOwner(orgId: string, userId: string): Promise<boolean> {
+  /** Cached structural owner/admin status for the deny exemption above. */
+  private async isOrgOwnerOrAdmin(
+    orgId: string,
+    userId: string,
+  ): Promise<boolean> {
     const cacheKey = `${orgId}:${userId}`;
     const cached = this.ownerCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) return cached.isOwner;
@@ -304,9 +339,11 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
         eq(organizationMembers.userId, userId),
         eq(organizationMembers.orgId, orgId),
       ),
-      columns: { isOwner: true },
+      columns: { isOwner: true, role: true, status: true },
     });
-    const isOwner = member?.isOwner === true;
+    const isOwner =
+      member?.status === "ACTIVE" &&
+      (member.isOwner === true || member.role === ORG_MEMBER_ROLES.ORG_ADMIN);
     this.ownerCache.set(cacheKey, {
       isOwner,
       expiresAt: Date.now() + AccessService.DENIED_MODULES_TTL_MS,
@@ -509,11 +546,12 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
         eq(organizationMembers.userId, userId),
         eq(organizationMembers.orgId, orgId),
       ),
-      columns: { isOwner: true, status: true, id: true },
+      columns: { isOwner: true, status: true, id: true, role: true },
     });
     const gate = evaluateMembershipGate(member);
     if (!gate.active) return {};
     if (gate.isOwner) return allCatalogScopes();
+    if (member?.role === ORG_MEMBER_ROLES.ORG_ADMIN) return allCatalogScopes();
 
     const membershipId = member?.id ?? 0;
     const now = new Date();
@@ -600,8 +638,10 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       scope: DataScope,
       source: string,
     ): void => {
-      if (CATALOG_KEY_SET.has(key)) {
-        merge(key, scope);
+      const canonicalKey =
+        key === "hr:employees:read" ? "hr:employees:view" : key;
+      if (CATALOG_KEY_SET.has(canonicalKey)) {
+        merge(canonicalKey, scope);
         return;
       }
       if (!this.warnedUnknownKeys.has(key)) {
@@ -679,7 +719,8 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
               eq(userDelegations.orgId, orgId),
               eq(userDelegations.delegateeId, userId),
               eq(userDelegations.status, "ACTIVE"),
-              gt(userDelegations.endsAt, new Date()),
+              lte(userDelegations.startsAt, now),
+              gt(userDelegations.endsAt, now),
             ),
           ),
       [] as { permissions: string[] }[],
@@ -704,7 +745,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     orgId: string,
     permissionKey: string,
     options?: { limit?: number },
-  ): Promise<{ userId: string; membershipId: number }[]> {
+  ): Promise<PermissionMember[]> {
     return runInTenantTransaction(
       this.db,
       () =>
@@ -717,7 +758,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     orgId: string,
     permissionKey: string,
     options?: { limit?: number },
-  ): Promise<{ userId: string; membershipId: number }[]> {
+  ): Promise<PermissionMember[]> {
     const permModule = moduleOf(permissionKey);
 
     if (isPlanGatedModule(permModule)) {
@@ -725,42 +766,43 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       if (!enabled) return [];
     }
 
-    const limit = Math.max(1, options?.limit ?? MEMBERS_WITH_PERM_DEFAULT_CAP);
     const version = await this.getPermissionsVersion(orgId);
-    const cacheKey = CACHE_KEYS.accessMembersWithPerm(
-      orgId,
-      permissionKey,
-      version,
-      limit,
-    );
-
-    const result = await this.cache.cached<
-      { userId: string; membershipId: number }[]
-    >(
-      cacheKey,
-      () => this.computeMembersWithPermission(orgId, permissionKey, limit),
-      CACHE_TTL.SHORT,
-    );
-
-    if (result.length >= limit) {
-      logger.warn(
-        "access: membersWithPermission result may be truncated — raise limit or investigate org size",
-        {
+    const requestedLimit =
+      options?.limit === undefined ? null : Math.max(1, options.limit);
+    const result: PermissionMember[] = [];
+    let afterMembershipId = 0;
+    for (;;) {
+      const page = await this.cache.cached<PermissionMemberPage>(
+        CACHE_KEYS.accessMembersWithPermPage(
           orgId,
           permissionKey,
-          limit,
-        },
+          version,
+          afterMembershipId,
+          MEMBERS_WITH_PERM_PAGE_SIZE,
+        ),
+        () =>
+          this.computeMembersWithPermissionPage(
+            orgId,
+            permissionKey,
+            afterMembershipId,
+            MEMBERS_WITH_PERM_PAGE_SIZE,
+          ),
+        CACHE_TTL.SHORT,
       );
+      result.push(...page.data);
+      if (page.exhausted || page.nextCursor <= afterMembershipId) break;
+      if (requestedLimit !== null && result.length >= requestedLimit) break;
+      afterMembershipId = page.nextCursor;
     }
-
-    return result;
+    return requestedLimit === null ? result : result.slice(0, requestedLimit);
   }
 
-  private async computeMembersWithPermission(
+  private async computeMembersWithPermissionPage(
     orgId: string,
     permissionKey: string,
+    afterMembershipId: number,
     limit: number,
-  ): Promise<{ userId: string; membershipId: number }[]> {
+  ): Promise<PermissionMemberPage> {
     const permModule = moduleOf(permissionKey);
     const now = new Date();
 
@@ -788,8 +830,10 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
                 eq(organizationMembers.orgId, orgId),
                 eq(organizationMembers.isOwner, true),
                 eq(organizationMembers.status, "ACTIVE"),
+                gt(organizationMembers.id, afterMembershipId),
               ),
             )
+            .orderBy(asc(organizationMembers.id))
             .limit(limit),
         [] as { userId: string; membershipId: number }[],
       ),
@@ -853,8 +897,10 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
               and(
                 eq(organizationMembers.orgId, orgId),
                 eq(organizationMembers.status, "ACTIVE"),
+                gt(organizationMembers.id, afterMembershipId),
               ),
             )
+            .orderBy(asc(organizationMembers.id))
             .limit(limit),
         [] as { userId: string; membershipId: number }[],
       ),
@@ -901,8 +947,10 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
                     and(
                       eq(organizationMembers.orgId, orgId),
                       eq(organizationMembers.status, "ACTIVE"),
+                      gt(organizationMembers.id, afterMembershipId),
                     ),
                   )
+                  .orderBy(asc(organizationMembers.id))
                   .limit(limit),
               [] as { userId: string; membershipId: number }[],
             ),
@@ -940,31 +988,49 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
                     and(
                       eq(organizationMembers.orgId, orgId),
                       eq(organizationMembers.status, "ACTIVE"),
+                      gt(organizationMembers.id, afterMembershipId),
                     ),
                   )
+                  .orderBy(asc(organizationMembers.id))
                   .limit(limit),
               [] as { userId: string; membershipId: number }[],
             ),
           ])
         : [[], []];
 
+    const sourcePages = [
+      ownerRows,
+      directRoleRows,
+      groupRoleRows,
+      ownershipRows,
+    ];
+    const fullPageEnds: number[] = [];
+    for (const page of sourcePages) {
+      if (page.length !== limit) continue;
+      const last = page[page.length - 1];
+      if (last) fullPageEnds.push(last.membershipId);
+    }
+    const merged = sourcePages
+      .flat()
+      .sort((a, b) => a.membershipId - b.membershipId);
+    const scanThrough =
+      fullPageEnds.length > 0
+        ? Math.min(...fullPageEnds)
+        : (merged[merged.length - 1]?.membershipId ?? afterMembershipId);
+    const exhausted = fullPageEnds.length === 0;
     const seen = new Set<string>();
-    const candidates: { userId: string; membershipId: number }[] = [];
-    for (const row of [
-      ...ownerRows,
-      ...directRoleRows,
-      ...groupRoleRows,
-      ...ownershipRows,
-    ]) {
+    const candidates: PermissionMember[] = [];
+    for (const row of merged) {
+      if (row.membershipId > scanThrough) break;
       if (!seen.has(row.userId)) {
         seen.add(row.userId);
         candidates.push(row);
-        if (candidates.length >= limit) break;
       }
     }
 
-    if (candidates.length === 0 || !isPlanGatedModule(permModule))
-      return candidates;
+    if (candidates.length === 0 || !isPlanGatedModule(permModule)) {
+      return { data: candidates, nextCursor: scanThrough, exhausted };
+    }
 
     const deniedRows = await this.safeAccessTableRead(
       () =>
@@ -985,9 +1051,15 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       [] as { userId: string }[],
     );
 
-    if (deniedRows.length === 0) return candidates;
+    if (deniedRows.length === 0) {
+      return { data: candidates, nextCursor: scanThrough, exhausted };
+    }
 
     const deniedUserIds = new Set(deniedRows.map((r) => r.userId));
-    return candidates.filter((c) => !deniedUserIds.has(c.userId));
+    return {
+      data: candidates.filter((candidate) => !deniedUserIds.has(candidate.userId)),
+      nextCursor: scanThrough,
+      exhausted,
+    };
   }
 }

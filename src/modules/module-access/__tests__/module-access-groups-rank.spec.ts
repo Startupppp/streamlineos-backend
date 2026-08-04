@@ -43,7 +43,11 @@ function buildTxMock(createdRow: { id: number; name: string; isSystem: boolean }
     onConflictDoUpdate: jest.fn().mockResolvedValue(undefined),
   });
   const insertMock = jest.fn().mockReturnValue({ values: valuesMock });
-  return { insert: insertMock, update: jest.fn() };
+  return {
+    execute: jest.fn().mockResolvedValue([]),
+    insert: insertMock,
+    update: jest.fn(),
+  };
 }
 
 async function buildSvc(
@@ -70,7 +74,13 @@ async function buildSvc(
     providers: [
       ModuleAccessGroupsService,
       { provide: DRIZZLE, useValue: mockDb },
-      { provide: AccessService, useValue: { resolveUserPermissions } },
+      {
+        provide: AccessService,
+        useValue: {
+          resolveUserPermissions,
+          isModuleEnabled: jest.fn().mockResolvedValue(true),
+        },
+      },
       { provide: CacheService, useValue: { invalidate: jest.fn() } },
       { provide: AuditService, useValue: { log: jest.fn() } },
     ],

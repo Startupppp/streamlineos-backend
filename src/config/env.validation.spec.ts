@@ -99,6 +99,27 @@ describe("validateEnv", () => {
     ).toBe("postgres://streamline_app:p@localhost:5432/db");
   });
 
+  it("rejects entitlement degradation mode in production", () => {
+    expect(() =>
+      validateEnv({
+        ...base,
+        NODE_ENV: "production",
+        RBAC_MIGRATION_MODE: "degrade",
+        CRON_SECRET: "x".repeat(32),
+        INTERNAL_API_SECRET: "x".repeat(32),
+        CONTACT_NOTIFICATION_EMAIL: "contact@example.com",
+        APP_DATABASE_URL: "postgres://streamline_app:p@localhost:5432/db",
+      }),
+    ).toThrow(/RBAC_MIGRATION_MODE=degrade is forbidden in production/);
+  });
+
+  it("allows explicit entitlement degradation mode outside production", () => {
+    expect(
+      validateEnv({ ...base, RBAC_MIGRATION_MODE: "degrade" })
+        .RBAC_MIGRATION_MODE,
+    ).toBe("degrade");
+  });
+
   it("does not require APP_DATABASE_URL outside production", () => {
     expect(validateEnv(base).APP_DATABASE_URL).toBeUndefined();
   });

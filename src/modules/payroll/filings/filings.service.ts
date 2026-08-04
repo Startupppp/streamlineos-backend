@@ -23,13 +23,16 @@ import {
   getIndiaBundleForDate,
   IN_STATUTORY_RULE_BUNDLE_VERSION,
 } from "../runs/lib/statutory-registry";
-import { decrypt, decryptBankDetails } from "../../hr/payroll/lib/encryption";
+import { decrypt } from "../../hr/payroll/lib/encryption";
 import {
   buildFilingExport,
   type EmployeeStatutorySourceRow,
   type FilingExportType,
 } from "./export-builders";
 import { PayrollEntitiesService } from "../entities/entities.service";
+import { requirePayrollUserIds } from "../lib/payroll-user-id";
+import { payrollSubjectKeyFromRunEmployee } from "../lib/payroll-subject";
+import { loadRunEmployeePayees } from "../lib/payroll-run-payee";
 import { generateForm16SummaryPdf } from "./form16-pdf";
 
 export const FILING_CAPABILITY = {
@@ -411,46 +414,50 @@ export class PayrollFilingsService {
       return { employees: [], run: null, periodMonth: month ?? null };
     }
 
-    const runEmployees = await this.db
-      .select({
-        id: payrollRunEmployees.id,
-        userId: payrollRunEmployees.userId,
-        gross: payrollRunEmployees.gross,
-        net: payrollRunEmployees.net,
-        name: users.name,
-        email: users.email,
-        bankDetails: users.bankDetails,
-        taxId: users.taxId,
-      })
-      .from(payrollRunEmployees)
-      .innerJoin(users, eq(users.id, payrollRunEmployees.userId))
-      .where(
-        and(
-          eq(payrollRunEmployees.orgId, orgId),
-          eq(payrollRunEmployees.runId, run.id),
+    const [runEmployeeRows, payees] = await Promise.all([
+      this.db
+        .select({
+          id: payrollRunEmployees.id,
+          userId: payrollRunEmployees.userId,
+          workerId: payrollRunEmployees.workerId,
+          gross: payrollRunEmployees.gross,
+          net: payrollRunEmployees.net,
+          taxId: users.taxId,
+        })
+        .from(payrollRunEmployees)
+        .leftJoin(users, eq(users.id, payrollRunEmployees.userId))
+        .where(
+          and(
+            eq(payrollRunEmployees.orgId, orgId),
+            eq(payrollRunEmployees.runId, run.id),
+          ),
         ),
-      );
+      loadRunEmployeePayees(this.db, orgId, run.id),
+    ]);
 
-    if (runEmployees.length === 0) {
+    if (runEmployeeRows.length === 0) {
       return { employees: [], run, periodMonth: run.month };
     }
 
-    const userIds = runEmployees.map((e) => e.userId);
-    const employments = await this.db
-      .select({
-        userId: hrPeople.userId,
-        employmentId: hrEmployments.id,
-        employeeNumber: hrEmployments.employeeNumber,
-      })
-      .from(hrEmployments)
-      .innerJoin(hrPeople, eq(hrPeople.id, hrEmployments.personId))
-      .where(
-        and(
-          eq(hrEmployments.orgId, orgId),
-          inArray(hrPeople.userId, userIds),
-          eq(hrEmployments.isPrimary, true),
-        ),
-      );
+    const payeeByRunEmployee = new Map(payees.map((payee) => [payee.runEmployeeId, payee]));
+    const userIds = requirePayrollUserIds(runEmployeeRows.map((e) => e.userId));
+    const employments = userIds.length
+      ? await this.db
+          .select({
+            userId: hrPeople.userId,
+            employmentId: hrEmployments.id,
+            employeeNumber: hrEmployments.employeeNumber,
+          })
+          .from(hrEmployments)
+          .innerJoin(hrPeople, eq(hrPeople.id, hrEmployments.personId))
+          .where(
+            and(
+              eq(hrEmployments.orgId, orgId),
+              inArray(hrPeople.userId, userIds),
+              eq(hrEmployments.isPrimary, true),
+            ),
+          )
+      : [];
 
     const empNumByUser = new Map(
       employments
@@ -502,16 +509,16 @@ export class PayrollFilingsService {
     const linesByRe = new Map<number, Record<string, string>>();
     for (const li of lineRows) {
       const map = linesByRe.get(li.runEmployeeId) ?? {};
-      // Sum duplicate codes if any
       const prev = parseFloat(map[li.code] ?? "0") || 0;
       const next = parseFloat(li.amount) || 0;
       map[li.code] = (prev + next).toFixed(2);
       linesByRe.set(li.runEmployeeId, map);
     }
 
-    const employees: EmployeeStatutorySourceRow[] = runEmployees.map((e) => {
-      const userBank = decryptBankDetails(e.bankDetails ?? null);
-      const empId = employmentIdByUser.get(e.userId);
+    const employees: EmployeeStatutorySourceRow[] = runEmployeeRows.map((e) => {
+      const payee = payeeByRunEmployee.get(e.id);
+      const userBank = payee?.bankDetails ?? null;
+      const empId = e.userId ? employmentIdByUser.get(e.userId) : undefined;
       const sens = empId != null ? sensitiveByEmployment.get(empId) : undefined;
       const sensBank = sens?.bankDetails ?? null;
 
@@ -525,15 +532,17 @@ export class PayrollFilingsService {
           null) ?? null;
       const pan =
         (sens?.panNumber?.trim() ||
-          // taxId sometimes holds PAN when not using sensitive fields
           (typeof e.taxId === "string" ? e.taxId.trim() : "") ||
           null) || null;
 
       return {
+        subjectKey: payrollSubjectKeyFromRunEmployee(e),
         userId: e.userId,
-        employeeNumber: empNumByUser.get(e.userId) ?? null,
-        employeeName: e.name?.trim() || e.email || e.userId,
-        email: e.email,
+        workerId: e.workerId,
+        employeeNumber:
+          (e.userId ? empNumByUser.get(e.userId) : null) ?? payee?.workerNumber ?? null,
+        employeeName: payee?.displayName ?? e.userId ?? e.workerId ?? "Payee",
+        email: payee?.email ?? null,
         gross: e.gross ?? "0",
         net: e.net ?? "0",
         uan: uan || null,

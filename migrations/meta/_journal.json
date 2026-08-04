@@ -820,6 +820,55 @@
       "when": 1784993525611,
       "tag": "0391_org_scoped_member_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 117,
+      "version": "7",
+      "when": 1785774798954,
+      "tag": "0117_invitation-events-org-fk",
+      "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1785774900000,
+      "tag": "0118_module_access_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1785775000000,
+      "tag": "0392_payroll_worker_subject",
+      "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "7",
+      "when": 1785775100000,
+      "tag": "0393_payroll_lifecycle_worker_subject",
+      "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1785775200000,
+      "tag": "0394_rbac_composite_tenant_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1785775300000,
+      "tag": "0395_validate_rbac_composite_tenant_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1785775400000,
+      "tag": "0396_drop_verified_dead_learning_tables",
+      "breakpoints": true
     }
   ]
 }
