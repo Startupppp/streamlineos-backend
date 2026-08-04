@@ -33,6 +33,19 @@ import { PayrollEntitiesService } from "../entities/entities.service";
 import { requirePayrollUserIds } from "../lib/payroll-user-id";
 import { payrollSubjectKeyFromRunEmployee } from "../lib/payroll-subject";
 import { loadRunEmployeePayees } from "../lib/payroll-run-payee";
+
+export function resolveStatutoryTaxId(
+  canonicalTaxId: string | null | undefined,
+  canonicalPan: string | null | undefined,
+  legacyTaxId: string | null | undefined,
+): string | null {
+  return (
+    canonicalTaxId?.trim() ||
+    canonicalPan?.trim() ||
+    (legacyTaxId ? decrypt(legacyTaxId).trim() : "") ||
+    null
+  );
+}
 import { generateForm16SummaryPdf } from "./form16-pdf";
 
 export const FILING_CAPABILITY = {
@@ -449,10 +462,17 @@ export class PayrollFilingsService {
             employeeNumber: hrEmployments.employeeNumber,
           })
           .from(hrEmployments)
-          .innerJoin(hrPeople, eq(hrPeople.id, hrEmployments.personId))
+          .innerJoin(
+            hrPeople,
+            and(
+              eq(hrPeople.id, hrEmployments.personId),
+              eq(hrPeople.orgId, hrEmployments.orgId),
+            ),
+          )
           .where(
             and(
               eq(hrEmployments.orgId, orgId),
+              eq(hrPeople.orgId, orgId),
               inArray(hrPeople.userId, userIds),
               eq(hrEmployments.isPrimary, true),
             ),
@@ -476,6 +496,7 @@ export class PayrollFilingsService {
         ? await this.db
             .select({
               employmentId: hrEmployeeSensitiveFields.employmentId,
+              taxId: hrEmployeeSensitiveFields.taxId,
               panNumber: hrEmployeeSensitiveFields.panNumber,
               bankDetails: hrEmployeeSensitiveFields.bankDetails,
             })
@@ -491,7 +512,11 @@ export class PayrollFilingsService {
     const sensitiveByEmployment = new Map(
       sensitiveRows.map((s) => [
         s.employmentId,
-        { ...s, panNumber: s.panNumber ? decrypt(s.panNumber) : s.panNumber },
+        {
+          ...s,
+          taxId: s.taxId ? decrypt(s.taxId) : s.taxId,
+          panNumber: s.panNumber ? decrypt(s.panNumber) : s.panNumber,
+        },
       ]),
     );
 
@@ -530,10 +555,7 @@ export class PayrollFilingsService {
         (userBank?.esiIpNumber?.trim() ||
           sensBank?.esiIpNumber?.trim() ||
           null) ?? null;
-      const pan =
-        (sens?.panNumber?.trim() ||
-          (typeof e.taxId === "string" ? e.taxId.trim() : "") ||
-          null) || null;
+      const pan = resolveStatutoryTaxId(sens?.taxId, sens?.panNumber, e.taxId);
 
       return {
         subjectKey: payrollSubjectKeyFromRunEmployee(e),

@@ -5,6 +5,7 @@ import type { DbOrTx } from "../rbac/access-invalidate";
 export interface CanonicalEmploymentPatch {
   designation?: string | null;
   departmentId?: string | null;
+  joiningDate?: string | null;
 }
 
 /** Dual-write only when a canonical primary employment already exists. */
@@ -17,6 +18,7 @@ export async function syncCanonicalEmploymentFields(
   const updates: Partial<typeof hrEmployments.$inferInsert> = {};
   if (patch.designation !== undefined) updates.designation = patch.designation;
   if (patch.departmentId !== undefined) updates.departmentId = patch.departmentId;
+  if (patch.joiningDate !== undefined) updates.joiningDate = patch.joiningDate;
   if (Object.keys(updates).length === 0) return true;
 
   const personIds = db

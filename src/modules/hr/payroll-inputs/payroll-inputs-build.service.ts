@@ -50,7 +50,6 @@ export class PayrollInputsBuildService {
         firstName: users.firstName,
         lastName: users.lastName,
         email: users.email,
-        monthlySalary: users.monthlySalary,
       })
       .from(organizationMembers)
       .innerJoin(users, eq(users.id, organizationMembers.userId))

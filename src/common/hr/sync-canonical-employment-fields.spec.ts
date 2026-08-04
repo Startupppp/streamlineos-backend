@@ -24,11 +24,16 @@ describe("syncCanonicalEmploymentFields", () => {
       syncCanonicalEmploymentFields(db as never, "org-1", "user-1", {
         designation: "Staff Engineer",
         departmentId: "dept-1",
+        joiningDate: "2026-02-03",
       }),
     ).resolves.toBe(true);
 
     expect(set).toHaveBeenCalledWith(
-      expect.objectContaining({ designation: "Staff Engineer", departmentId: "dept-1" }),
+      expect.objectContaining({
+        designation: "Staff Engineer",
+        departmentId: "dept-1",
+        joiningDate: "2026-02-03",
+      }),
     );
     expect(primitives(personWhere.mock.calls[0][0])).toEqual(
       expect.arrayContaining(["org-1", "user-1"]),

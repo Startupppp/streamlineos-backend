@@ -36,6 +36,8 @@ import {
   users,
   orgUnitMembers,
   orgUnits,
+  hrPeople,
+  hrEmployments,
 } from "../../db/schema";
 import type { BulkUpdateUsersInput, ImportUsersRow } from "./dto/users.schemas";
 import { UsersService } from "./users.service";
@@ -282,22 +284,25 @@ export class UserOpsService {
     const { userIds, role, departmentId, branchId, teamId, managerUserId } =
       data;
 
-    if (managerUserId) {
-      const manager = await this.db.query.organizationMembers.findFirst({
-        where: and(
-          eq(organizationMembers.orgId, orgId),
-          eq(organizationMembers.userId, managerUserId),
-          eq(organizationMembers.status, "ACTIVE"),
-        ),
-        columns: { userId: true },
-      });
-      if (!manager)
-        throw new BadRequestException(
-          "Manager must be an active member of this organization",
-        );
-    }
+    if (role) await this.assertMayGrantRole(orgId, actor, role);
 
-    const memberRows = await this.db
+    const scopedIds = await this.db.transaction(async (tx) => {
+      if (managerUserId) {
+        const manager = await tx.query.organizationMembers.findFirst({
+          where: and(
+            eq(organizationMembers.orgId, orgId),
+            eq(organizationMembers.userId, managerUserId),
+            eq(organizationMembers.status, "ACTIVE"),
+          ),
+          columns: { userId: true },
+        });
+        if (!manager)
+          throw new BadRequestException(
+            "Manager must be an active member of this organization",
+          );
+      }
+
+      const memberRows = await tx
       .select({ userId: organizationMembers.userId })
       .from(organizationMembers)
       .where(
@@ -306,34 +311,51 @@ export class UserOpsService {
           inArray(organizationMembers.userId, userIds),
         ),
       );
-    const scopedIds = memberRows.map((r) => r.userId);
+      const tenantUserIds = memberRows.map((r) => r.userId);
 
-    if (scopedIds.length === 0) {
-      return { success: true, updated: 0 };
-    }
+      if (tenantUserIds.length === 0) return [];
 
-    const userUpdate: Record<string, unknown> = {};
-    if (departmentId !== undefined) userUpdate.orgDepartmentId = departmentId;
-    if (branchId !== undefined) userUpdate.branchId = branchId;
-    if (managerUserId !== undefined) userUpdate.reportingTo = managerUserId;
+      const userUpdate: Record<string, unknown> = {};
+      if (departmentId !== undefined) userUpdate.orgDepartmentId = departmentId;
+      if (branchId !== undefined) userUpdate.branchId = branchId;
+      if (managerUserId !== undefined) userUpdate.reportingTo = managerUserId;
 
-    if (Object.keys(userUpdate).length > 0) {
-      await this.db
+      if (Object.keys(userUpdate).length > 0) {
+        await tx
         .update(users)
         .set(userUpdate)
-        .where(inArray(users.id, scopedIds));
-    }
+        .where(inArray(users.id, tenantUserIds));
 
-    const unitMoves: Array<{ kind: OrgUnitKind; unitId: string | null }> = [];
-    if (branchId !== undefined)
-      unitMoves.push({ kind: "BRANCH", unitId: branchId ?? null });
-    if (departmentId !== undefined)
-      unitMoves.push({ kind: "DEPARTMENT", unitId: departmentId ?? null });
-    if (teamId !== undefined)
-      unitMoves.push({ kind: "TEAM", unitId: teamId ?? null });
+        if (departmentId !== undefined) {
+          await tx
+          .update(hrEmployments)
+          .set({ departmentId })
+          .where(
+            and(
+              eq(hrEmployments.orgId, orgId),
+              eq(hrEmployments.isPrimary, true),
+              isNull(hrEmployments.deletedAt),
+              sql`EXISTS (
+                SELECT 1 FROM ${hrPeople}
+                WHERE ${hrPeople.id} = ${hrEmployments.personId}
+                  AND ${hrPeople.orgId} = ${orgId}
+                  AND ${inArray(hrPeople.userId, tenantUserIds)}
+                  AND ${hrPeople.deletedAt} IS NULL
+              )`,
+            ),
+          );
+        }
+      }
 
-    if (unitMoves.length > 0) {
-      await this.db.transaction(async (tx) => {
+      const unitMoves: Array<{ kind: OrgUnitKind; unitId: string | null }> = [];
+      if (branchId !== undefined)
+        unitMoves.push({ kind: "BRANCH", unitId: branchId ?? null });
+      if (departmentId !== undefined)
+        unitMoves.push({ kind: "DEPARTMENT", unitId: departmentId ?? null });
+      if (teamId !== undefined)
+        unitMoves.push({ kind: "TEAM", unitId: teamId ?? null });
+
+      if (unitMoves.length > 0) {
         for (const { kind, unitId } of unitMoves) {
           const existing = await tx
             .select({ id: orgUnitMembers.id })
@@ -342,49 +364,54 @@ export class UserOpsService {
             .where(
               and(
                 eq(orgUnitMembers.orgId, orgId),
-                inArray(orgUnitMembers.userId, scopedIds),
+                inArray(orgUnitMembers.userId, tenantUserIds),
                 eq(orgUnits.kind, kind),
               ),
             );
-          for (const row of existing)
+          if (existing.length > 0) {
             await tx
               .delete(orgUnitMembers)
-              .where(eq(orgUnitMembers.id, row.id));
+              .where(inArray(orgUnitMembers.id, existing.map((row) => row.id)));
+          }
 
-          if (unitId !== null)
-            for (const userId of scopedIds)
-              await tx
+          if (unitId !== null) {
+            await tx
                 .insert(orgUnitMembers)
-                .values({
+                .values(tenantUserIds.map((userId) => ({
                   id: randomUUID(),
                   orgId,
                   orgUnitId: unitId,
                   userId,
                   role: "member",
-                })
+                })))
                 .onConflictDoNothing();
+          }
         }
-      });
-    }
+      }
 
-    if (role) {
-      await this.assertMayGrantRole(orgId, actor, role);
-      await this.db.transaction(async (tx) => {
-        await assertNoOwnerAmongTargets(tx, orgId, scopedIds);
+      if (role) {
+        await assertNoOwnerAmongTargets(tx, orgId, tenantUserIds);
         const rows = await tx
           .update(organizationMembers)
           .set({ role })
           .where(
             and(
               eq(organizationMembers.orgId, orgId),
-              inArray(organizationMembers.userId, scopedIds),
+              inArray(organizationMembers.userId, tenantUserIds),
             ),
           )
           .returning({ id: organizationMembers.id });
         for (const row of rows) {
           await syncStructuralRoleAssignment(tx, orgId, row.id, role);
         }
-      });
+      }
+
+      return tenantUserIds;
+    });
+
+    if (scopedIds.length === 0) return { success: true, updated: 0 };
+
+    if (role) {
       await Promise.all(
         scopedIds.map((id) => bustMembershipStatusCache(this.cache, id, orgId)),
       );

@@ -32,3 +32,36 @@ describe("HR canonical parity preflight", () => {
     expect(sql).toContain("legacy_branch_rows");
   });
 });
+
+describe("HR approved-field backfill script", () => {
+  const sql = readFileSync(
+    resolve(
+      process.cwd(),
+      "..",
+      "docs",
+      "schema-migration",
+      "hr-users-approved-backfill.sql",
+    ),
+    "utf8",
+  );
+
+  it("defaults to rollback and requires an explicit apply flag", () => {
+    expect(sql).toContain("\\set apply false");
+    expect(sql).toContain("\\if :apply");
+    expect(sql).toContain("ROLLBACK;");
+  });
+
+  it("tenant-correlates and preserves existing canonical values", () => {
+    expect(sql).toContain("hp.org_id = om.org_id");
+    expect(sql).toContain("he.org_id = om.org_id");
+    expect(sql).toContain("COALESCE(he.designation, c.designation)");
+    expect(sql).toContain("sf.org_id = c.org_id");
+    expect(sql).toContain("ON CONFLICT (employment_id) DO NOTHING");
+  });
+
+  it("excludes tax and ambiguous mappings from writes", () => {
+    expect(sql).not.toMatch(/SET\s+tax_id\s*=/i);
+    expect(sql).not.toMatch(/SET\s+bank_details\s*=/i);
+    expect(sql).not.toMatch(/SET\s+reporting_to\s*=/i);
+  });
+});

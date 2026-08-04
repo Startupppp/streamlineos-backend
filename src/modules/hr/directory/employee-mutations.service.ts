@@ -25,6 +25,8 @@ import type { UpdateEmployeeInput } from "./dto/hr-directory.schemas";
 import { hrEmployments, hrPeople } from "../../../db/schema/hr/core-people";
 import { assertUsersInOrg } from "../../../common/tenant/org-membership";
 import { syncOrgUnitPlacement } from "../../../common/org/sync-org-unit-placement";
+import { syncCanonicalEmploymentFields } from "../../../common/hr/sync-canonical-employment-fields";
+import { syncCanonicalSensitiveFields } from "../../../common/hr/sync-canonical-sensitive-fields";
 
 type BankDetailsInput = NonNullable<UpdateEmployeeInput["bankDetails"]> & {
   pfUanNumber?: string;
@@ -98,6 +100,7 @@ export class EmployeeMutationsService {
         employeeNumber: hrEmployments.employeeNumber,
         lifecycleStatus: hrEmployments.lifecycleStatus,
         workerType: hrEmployments.workerType,
+        departmentId: hrEmployments.departmentId,
         designation: hrEmployments.designation,
         joiningDate: hrEmployments.joiningDate,
         probationEndDate: hrEmployments.probationEndDate,
@@ -129,12 +132,12 @@ export class EmployeeMutationsService {
       lastName: u.lastName,
       email: u.email,
       role: member.role,
-      designation: u.designation,
-      employeeId: u.employeeId,
-      orgDepartmentId: u.orgDepartmentId,
+      designation: employment?.designation ?? u.designation,
+      employeeId: employment?.employeeNumber ?? u.employeeId,
+      orgDepartmentId: employment?.departmentId ?? u.orgDepartmentId,
       image: u.image,
       isActive: u.isActive,
-      joiningDate: u.joiningDate,
+      joiningDate: employment?.joiningDate ?? u.joiningDate,
       reportingTo: u.reportingTo,
       monthlySalary: u.monthlySalary,
       bio: u.bio ?? null,
@@ -231,11 +234,32 @@ export class EmployeeMutationsService {
     if (body.joiningDate !== undefined) updateData.joiningDate = body.joiningDate;
     if (body.reportingTo !== undefined) updateData.reportingTo = body.reportingTo;
 
+    let canonicalJoiningDateSynced: boolean | null = null;
+    let canonicalSensitiveSynced: boolean | null = null;
     await this.db.transaction(async (tx) => {
       if (Object.keys(updateData).length > 0) {
         await tx.update(users).set(updateData).where(eq(users.id, targetUserId));
       }
       await syncOrgUnitPlacement(tx, actor.orgId, targetUserId, { DEPARTMENT: body.departmentId });
+      if (body.joiningDate !== undefined) {
+        canonicalJoiningDateSynced = await syncCanonicalEmploymentFields(
+          tx,
+          actor.orgId,
+          targetUserId,
+          { joiningDate: body.joiningDate },
+        );
+      }
+      if (body.taxId !== undefined || (body.monthlySalary !== undefined && isOwnerOrAdmin)) {
+        canonicalSensitiveSynced = await syncCanonicalSensitiveFields(
+          tx,
+          actor.orgId,
+          targetUserId,
+          {
+            taxId: body.taxId,
+            monthlySalary: isOwnerOrAdmin ? body.monthlySalary : undefined,
+          },
+        );
+      }
 
       if (body.skills !== undefined) {
         const existing = await tx
@@ -294,7 +318,11 @@ export class EmployeeMutationsService {
       orgId: actor.orgId,
       targetId: targetUserId,
       targetType: "employee",
-      metadata: { changedFields: Object.keys(updateData) },
+      metadata: {
+        changedFields: Object.keys(updateData),
+        ...(canonicalJoiningDateSynced !== null && { canonicalJoiningDateSynced }),
+        ...(canonicalSensitiveSynced !== null && { canonicalSensitiveSynced }),
+      },
     });
 
     if (
