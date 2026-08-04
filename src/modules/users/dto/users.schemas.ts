@@ -62,7 +62,7 @@ export const inviteUserSchema = z.object({
 export type InviteUserInput = z.infer<typeof inviteUserSchema>;
 
 export const bulkInviteSchema = z.object({
-  emails: z.array(inviteEmailSchema).min(1).max(50),
+  emails: z.array(inviteEmailSchema).min(1).max(500),
   role: z.enum(ORG_MEMBER_ROLE_VALUES).default(ORG_MEMBER_ROLES.MEMBER),
 });
 export type BulkInviteInput = z.infer<typeof bulkInviteSchema>;

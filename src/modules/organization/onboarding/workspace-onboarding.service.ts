@@ -5,6 +5,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { orgUnits, organizations } from "../../../db/schema";
 import { ModuleChecklistService } from "../../hr/onboarding/flow/module-checklist.service";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 
 const INDUSTRY_TEMPLATES: Record<string, string[]> = {
   "it-services": ["Engineering", "Product", "Operations", "HR"],
@@ -18,6 +19,51 @@ const INDUSTRY_TEMPLATES: Record<string, string[]> = {
   "restaurant": ["Kitchen", "Service", "Management", "HR"],
   "logistics": ["Operations", "Fleet", "Warehouse", "HR"],
 };
+
+const MODULE_STRUCTURE_TEMPLATES: Record<
+  string,
+  { department: string; team: string }[]
+> = {
+  crm: [
+    { department: "Sales", team: "Revenue Team" },
+    { department: "Marketing", team: "Growth Team" },
+  ],
+  hr: [{ department: "HR", team: "People Operations" }],
+  build: [
+    { department: "Engineering", team: "Delivery Team" },
+    { department: "Product", team: "Product Team" },
+  ],
+  accounting: [{ department: "Finance", team: "Accounting Team" }],
+  inventory: [{ department: "Inventory", team: "Inventory Operations" }],
+  support: [
+    { department: "Customer Service", team: "Customer Support" },
+  ],
+};
+
+export function resolveStructureTemplate(
+  industry: string,
+  enabledModules: readonly string[] = [],
+): Map<string, Set<string>> {
+  const departments = INDUSTRY_TEMPLATES[normalizeIndustrySlug(industry)];
+  if (!departments) {
+    throw new BadRequestException(`Unknown industry: ${industry}`);
+  }
+
+  const structure = new Map<string, Set<string>>(
+    departments.map((department) => [
+      department,
+      new Set([`${department} Team`]),
+    ]),
+  );
+  for (const moduleKey of new Set(enabledModules)) {
+    for (const item of MODULE_STRUCTURE_TEMPLATES[moduleKey] ?? []) {
+      const teams = structure.get(item.department) ?? new Set<string>();
+      teams.add(item.team);
+      structure.set(item.department, teams);
+    }
+  }
+  return structure;
+}
 
 function normalizeIndustrySlug(industry: string): string {
   return industry.toLowerCase().replace(/[\s_]+/g, "-");
@@ -46,11 +92,7 @@ export class WorkspaceOnboardingService {
     if (enabledModules?.length) {
       await this.checklists.ensureChecklistsForModules(orgId, enabledModules);
     }
-    const slug = normalizeIndustrySlug(industry);
-    const deptNames = INDUSTRY_TEMPLATES[slug];
-    if (!deptNames) {
-      throw new BadRequestException(`Unknown industry: ${industry}`);
-    }
+    const structure = resolveStructureTemplate(industry, enabledModules);
 
     const [org] = await this.db
       .select({ name: organizations.name })
@@ -65,7 +107,7 @@ export class WorkspaceOnboardingService {
     let createdDepartments = 0;
     let createdTeams = 0;
 
-    await this.db.transaction(async (tx) => {
+    await runInTenantTransaction(this.db, async (tx) => {
       const [existingBu] = await tx
         .select({ id: orgUnits.id })
         .from(orgUnits)
@@ -98,7 +140,7 @@ export class WorkspaceOnboardingService {
         createdBranches = 1;
       }
 
-      for (const deptName of deptNames) {
+      for (const [deptName, teamNames] of structure) {
         const [existingDept] = await tx
           .select({ id: orgUnits.id })
           .from(orgUnits)
@@ -116,20 +158,24 @@ export class WorkspaceOnboardingService {
           createdDepartments += 1;
         }
 
-        const teamName = `${deptName} Team`;
-        const [existingTeam] = await tx
-          .select({ id: orgUnits.id })
-          .from(orgUnits)
-          .where(and(eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "TEAM"), eq(orgUnits.name, teamName)))
-          .limit(1);
+        let teamIndex = 0;
+        for (const teamName of teamNames) {
+          const [existingTeam] = await tx
+            .select({ id: orgUnits.id })
+            .from(orgUnits)
+            .where(and(eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "TEAM"), eq(orgUnits.name, teamName)))
+            .limit(1);
 
-        if (!existingTeam) {
-          const code = teamCode(deptName);
-          await tx.insert(orgUnits).values({ id: randomUUID(), orgId, kind: "TEAM", name: teamName, code, parentId: deptId });
-          createdTeams += 1;
+          if (!existingTeam) {
+            const suffix = teamIndex === 0 ? "" : String(teamIndex + 1);
+            const code = `${teamCode(deptName)}${suffix}`;
+            await tx.insert(orgUnits).values({ id: randomUUID(), orgId, kind: "TEAM", name: teamName, code, parentId: deptId });
+            createdTeams += 1;
+          }
+          teamIndex += 1;
         }
       }
-    });
+    }, { orgId });
 
     return {
       businessUnits: createdBusinessUnits,

@@ -68,6 +68,61 @@ export class OrgSetupService {
       });
   }
 
+  private schedulePostSetupWork(input: {
+    orgId: string;
+    userId: string;
+    moduleKeys: readonly string[];
+    sessionAction: "complete" | "skip";
+    skipReason?: string;
+    sendWelcome?: boolean;
+  }): void {
+    setImmediate(() => {
+      void this.runPostSetupWork(input).catch((error: unknown) => {
+        logger.error("Organization post-setup work failed", {
+          orgId: input.orgId,
+          userId: input.userId,
+          error,
+        });
+      });
+    });
+  }
+
+  private async runPostSetupWork(input: {
+    orgId: string;
+    userId: string;
+    moduleKeys: readonly string[];
+    sessionAction: "complete" | "skip";
+    skipReason?: string;
+    sendWelcome?: boolean;
+  }): Promise<void> {
+    const sessionWork =
+      input.sessionAction === "complete"
+        ? this.sessions.completeSession(input.orgId, input.userId, "org_setup")
+        : this.sessions.skipSession(
+            input.orgId,
+            input.userId,
+            "org_setup",
+            input.skipReason,
+          );
+
+    const work = await Promise.allSettled([
+      seedSystemRolesForOrg(this.db, input.orgId),
+      this.checklists.ensureChecklistsForModules(input.orgId, input.moduleKeys),
+      sessionWork,
+      ...(input.sendWelcome ? [this.sendWelcome(input.userId)] : []),
+    ]);
+
+    for (const result of work) {
+      if (result.status === "rejected") {
+        logger.error("Organization post-setup task failed", {
+          orgId: input.orgId,
+          userId: input.userId,
+          error: result.reason,
+        });
+      }
+    }
+  }
+
   private slugify(name: string): string {
     return (
       name
@@ -94,15 +149,7 @@ export class OrgSetupService {
         columns: { id: true },
       });
       if (existingOrg) {
-        const orgId = u.orgId;
-        await runInTenantTransaction(
-          this.db,
-          async () => {
-            await seedSystemRolesForOrg(this.db, orgId);
-          },
-          { orgId },
-        );
-        return orgId;
+        return u.orgId;
       }
     }
 
@@ -126,13 +173,6 @@ export class OrgSetupService {
         m.orgDeletedAt === null,
     );
     if (valid) {
-      await runInTenantTransaction(
-        this.db,
-        async () => {
-          await seedSystemRolesForOrg(this.db, valid.orgId);
-        },
-        { orgId: valid.orgId },
-      );
       return valid.orgId;
     }
 
@@ -196,7 +236,6 @@ export class OrgSetupService {
         currentPeriodEnd: addDays(new Date(), trialDays),
       });
       await bumpPermissionsVersion(tx, orgId);
-      await seedSystemRolesForOrg(this.db, orgId);
     });
 
     this.audit.log({
@@ -254,12 +293,6 @@ export class OrgSetupService {
           })
           .where(eq(users.id, u.userId));
 
-        await this.checklists.ensureChecklistsForModules(
-          orgId,
-          input.enabledModules,
-        );
-        await this.sessions.completeSession(orgId, u.userId, "org_setup");
-
         await tx.insert(magicLinkTokens).values({
           id: randomUUID(),
           userId: u.userId,
@@ -271,7 +304,13 @@ export class OrgSetupService {
     );
 
     await this.cache.invalidate(CACHE_KEYS.userSession(u.userId));
-    await this.sendWelcome(u.userId);
+    this.schedulePostSetupWork({
+      orgId,
+      userId: u.userId,
+      moduleKeys: input.enabledModules,
+      sessionAction: "complete",
+      sendWelcome: true,
+    });
 
     return { success: true, orgId, autoLoginToken };
   }
@@ -329,12 +368,6 @@ export class OrgSetupService {
           .set({ lastActiveOrgId: orgId })
           .where(eq(users.id, u.userId));
 
-        await this.checklists.ensureChecklistsForModules(
-          orgId,
-          DEFAULT_SKIP_MODULES,
-        );
-        await this.sessions.skipSession(orgId, u.userId, "org_setup", reason);
-
         await tx.insert(magicLinkTokens).values({
           id: randomUUID(),
           userId: u.userId,
@@ -346,6 +379,13 @@ export class OrgSetupService {
     );
 
     await this.cache.invalidate(CACHE_KEYS.userSession(u.userId));
+    this.schedulePostSetupWork({
+      orgId,
+      userId: u.userId,
+      moduleKeys: DEFAULT_SKIP_MODULES,
+      sessionAction: "skip",
+      skipReason: reason,
+    });
 
     this.audit.log({
       action: "org.setup.skipped",

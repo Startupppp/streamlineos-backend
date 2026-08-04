@@ -105,7 +105,7 @@ export const createOrgTeamSchema = z
   .object({
     name: orgNodeName,
     code,
-    departmentId: z.string().uuid().optional(),
+    departmentId: z.string().uuid(),
     leadUserId: z.string().optional(),
     description: z.string().trim().max(500).optional(),
     capacity: z.number().int().min(1).max(9999).optional(),
@@ -118,7 +118,7 @@ export const updateOrgTeamSchema = z
   .object({
     name: optionalOrgNodeName,
     code: code.optional(),
-    departmentId: z.string().uuid().optional().nullable(),
+    departmentId: z.string().uuid().optional(),
     leadUserId: z.string().optional().nullable(),
     description: z.string().trim().max(500).optional(),
     capacity: z.number().int().min(1).max(9999).optional().nullable(),

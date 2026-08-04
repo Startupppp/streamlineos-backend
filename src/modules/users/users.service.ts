@@ -51,10 +51,10 @@ export class UsersService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly cache: CacheService,
-    private readonly invitationsSvc: InvitationsService,
     private readonly access: AccessService,
-    private readonly orgMembership: OrgMembershipService,
     private readonly planLimits: PlanLimitsService,
+    private readonly invitationsSvc: InvitationsService,
+    private readonly orgMembership: OrgMembershipService,
   ) {}
 
   private async invalidateMembershipCaches(orgId: string): Promise<void> {
@@ -106,25 +106,29 @@ export class UsersService {
           "User is already a member of this organization",
         );
       }
-      await runInTenantTransaction(this.db, async (tx) => {
-        await tx.execute(
-          sql`SELECT pg_advisory_xact_lock(hashtextextended(${`quota:${orgId}:members`}, 0))`,
-        );
-        await this.planLimits.assertWithinLimit(orgId, "members", 1, tx);
-        const inserted = await tx
-          .insert(organizationMembers)
-          .values({ userId: existing.id, orgId, role })
-          .onConflictDoNothing()
-          .returning({ id: organizationMembers.id });
-        const membershipId = inserted[0]?.id;
-        if (membershipId !== undefined) {
-          await syncStructuralRoleAssignment(tx, orgId, membershipId, role);
-        }
-        await syncOrgUnitPlacement(tx, orgId, existing.id, {
-          DEPARTMENT: departmentId ?? null,
-          BRANCH: branchId ?? null,
-        });
-      }, { orgId });
+      await runInTenantTransaction(
+        this.db,
+        async (tx) => {
+          await tx.execute(
+            sql`SELECT pg_advisory_xact_lock(hashtextextended(${`quota:${orgId}:members`}, 0))`,
+          );
+          await this.planLimits.assertWithinLimit(orgId, "members", 1, tx);
+          const inserted = await tx
+            .insert(organizationMembers)
+            .values({ userId: existing.id, orgId, role })
+            .onConflictDoNothing()
+            .returning({ id: organizationMembers.id });
+          const membershipId = inserted[0]?.id;
+          if (membershipId !== undefined)
+            await syncStructuralRoleAssignment(tx, orgId, membershipId, role);
+
+          await syncOrgUnitPlacement(tx, orgId, existing.id, {
+            DEPARTMENT: departmentId ?? null,
+            BRANCH: branchId ?? null,
+          });
+        },
+        { orgId },
+      );
       await bustMembershipStatusCache(this.cache, existing.id, orgId);
       await this.invalidateMembershipCaches(orgId);
       return { userId: existing.id, created: false };
@@ -138,40 +142,44 @@ export class UsersService {
     const emailLocal = email.split("@")[0]?.trim() || null;
     const fullName = fromNames ?? emailLocal;
 
-    await runInTenantTransaction(this.db, async (tx) => {
-      await tx.execute(
-        sql`SELECT pg_advisory_xact_lock(hashtextextended(${`quota:${orgId}:members`}, 0))`,
-      );
-      await this.planLimits.assertWithinLimit(orgId, "members", 1, tx);
-      await tx.insert(users).values({
-        id: userId,
-        email,
-        name: fullName,
-        firstName: trimmedFirst,
-        lastName: trimmedLast,
-        emailVerified: new Date(),
-        designation: designation ?? null,
-        phone: phone ?? null,
-        orgDepartmentId: departmentId ?? null,
-        branchId: branchId ?? null,
-        userStatus: "active",
-        activatedAt: new Date(),
-        isActive: true,
-      });
-      const inserted = await tx
-        .insert(organizationMembers)
-        .values({ userId, orgId, role })
-        .onConflictDoNothing()
-        .returning({ id: organizationMembers.id });
-      const membershipId = inserted[0]?.id;
-      if (membershipId !== undefined) {
-        await syncStructuralRoleAssignment(tx, orgId, membershipId, role);
-      }
-      await syncOrgUnitPlacement(tx, orgId, userId, {
-        DEPARTMENT: departmentId ?? null,
-        BRANCH: branchId ?? null,
-      });
-    }, { orgId });
+    await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtextextended(${`quota:${orgId}:members`}, 0))`,
+        );
+        await this.planLimits.assertWithinLimit(orgId, "members", 1, tx);
+        await tx.insert(users).values({
+          id: userId,
+          email,
+          name: fullName,
+          firstName: trimmedFirst,
+          lastName: trimmedLast,
+          emailVerified: new Date(),
+          designation: designation ?? null,
+          phone: phone ?? null,
+          orgDepartmentId: departmentId ?? null,
+          branchId: branchId ?? null,
+          userStatus: "active",
+          activatedAt: new Date(),
+          isActive: true,
+        });
+        const inserted = await tx
+          .insert(organizationMembers)
+          .values({ userId, orgId, role })
+          .onConflictDoNothing()
+          .returning({ id: organizationMembers.id });
+        const membershipId = inserted[0]?.id;
+        if (membershipId !== undefined) {
+          await syncStructuralRoleAssignment(tx, orgId, membershipId, role);
+        }
+        await syncOrgUnitPlacement(tx, orgId, userId, {
+          DEPARTMENT: departmentId ?? null,
+          BRANCH: branchId ?? null,
+        });
+      },
+      { orgId },
+    );
 
     await bustMembershipStatusCache(this.cache, userId, orgId);
     await this.invalidateMembershipCaches(orgId);
@@ -484,42 +492,58 @@ export class UsersService {
 
     let canonicalEmploymentSynced: boolean | null = null;
     if (hasUserUpdates || hasPlacementUpdates) {
-      await runInTenantTransaction(this.db, async (tx) => {
-        if (hasUserUpdates) {
-          await tx.update(users).set(updateData).where(eq(users.id, userId));
-        }
-        await syncOrgUnitPlacement(tx, orgId, userId, {
-          DEPARTMENT: data.departmentId,
-          TEAM: data.teamId,
-        });
-        if (data.designation !== undefined || data.departmentId !== undefined) {
-          canonicalEmploymentSynced = await syncCanonicalEmploymentFields(tx, orgId, userId, {
-            designation: data.designation,
-            departmentId: data.departmentId,
+      await runInTenantTransaction(
+        this.db,
+        async (tx) => {
+          if (hasUserUpdates) {
+            await tx.update(users).set(updateData).where(eq(users.id, userId));
+          }
+          await syncOrgUnitPlacement(tx, orgId, userId, {
+            DEPARTMENT: data.departmentId,
+            TEAM: data.teamId,
           });
-        }
-      }, { orgId });
+          if (
+            data.designation !== undefined ||
+            data.departmentId !== undefined
+          ) {
+            canonicalEmploymentSynced = await syncCanonicalEmploymentFields(
+              tx,
+              orgId,
+              userId,
+              {
+                designation: data.designation,
+                departmentId: data.departmentId,
+              },
+            );
+          }
+        },
+        { orgId },
+      );
     }
 
     if (data.role !== undefined) {
       const nextRole = data.role;
       await this.assertMayGrantRole(orgId, actor, nextRole);
-      await runInTenantTransaction(this.db, async (tx) => {
-        await assertTargetNotOwner(tx, orgId, userId);
-        const [member] = await tx
-          .update(organizationMembers)
-          .set({ role: nextRole })
-          .where(
-            and(
-              eq(organizationMembers.orgId, orgId),
-              eq(organizationMembers.userId, userId),
-            ),
-          )
-          .returning({ id: organizationMembers.id });
-        if (member) {
-          await syncStructuralRoleAssignment(tx, orgId, member.id, nextRole);
-        }
-      }, { orgId });
+      await runInTenantTransaction(
+        this.db,
+        async (tx) => {
+          await assertTargetNotOwner(tx, orgId, userId);
+          const [member] = await tx
+            .update(organizationMembers)
+            .set({ role: nextRole })
+            .where(
+              and(
+                eq(organizationMembers.orgId, orgId),
+                eq(organizationMembers.userId, userId),
+              ),
+            )
+            .returning({ id: organizationMembers.id });
+          if (member) {
+            await syncStructuralRoleAssignment(tx, orgId, member.id, nextRole);
+          }
+        },
+        { orgId },
+      );
       await bustMembershipStatusCache(this.cache, userId, orgId);
     }
 
@@ -534,7 +558,9 @@ export class UsersService {
       resourceId: userId,
       metadata: {
         changes: data,
-        ...(canonicalEmploymentSynced !== null && { canonicalEmploymentSynced }),
+        ...(canonicalEmploymentSynced !== null && {
+          canonicalEmploymentSynced,
+        }),
       },
     });
 

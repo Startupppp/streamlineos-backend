@@ -277,6 +277,7 @@ export class OrgLifecycleService {
       orgId,
       memberUserIds,
     );
+    const nextOrgId = replacements.get(userId) ?? null;
     await runInTenantTransaction(
       this.db,
       async (tx) => {
@@ -306,7 +307,7 @@ export class OrgLifecycleService {
       targetType: "organization",
       metadata: { name: org.name },
     });
-    return { success: true };
+    return { success: true as const, nextOrgId };
   }
 
   async schedulePurge(

@@ -532,14 +532,17 @@ export class InvitationsService {
     role: string;
     userExists: boolean;
   }> {
-    const invitation = await this.db.query.invitations.findFirst({
-      where: and(
-        eq(invitations.tokenHash, hashToken(token)),
-        eq(invitations.status, "PENDING"),
-        gt(invitations.expiresAt, new Date()),
-        isNull(invitations.acceptedAt),
-      ),
-    });
+    const tokenHash = hashToken(token);
+    const invitation = await withPublicToken(this.db, tokenHash, (tx) =>
+      tx.query.invitations.findFirst({
+        where: and(
+          eq(invitations.tokenHash, tokenHash),
+          eq(invitations.status, "PENDING"),
+          gt(invitations.expiresAt, new Date()),
+          isNull(invitations.acceptedAt),
+        ),
+      }),
+    );
     if (!invitation)
       throw new NotFoundException("Invalid or expired invitation");
 

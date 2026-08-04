@@ -26,9 +26,28 @@ import type {
 import { OrgHierarchyBusinessUnitsService } from "./org-hierarchy-business-units.service";
 import { OrgHierarchyBranchesService } from "./org-hierarchy-branches.service";
 import { OrgHierarchyDepartmentsService } from "./org-hierarchy-departments.service";
-import { OrgHierarchyTeamsService } from "./org-hierarchy-teams.service";
+import {
+  OrgHierarchyTeamsService,
+  toOrgTeam,
+} from "./org-hierarchy-teams.service";
 import { OrgHierarchyLocationsService } from "./org-hierarchy-locations.service";
 import { OrgHierarchyCostCentersService } from "./org-hierarchy-cost-centers.service";
+
+const ORG_TREE_COLUMNS = {
+  id: orgUnits.id,
+  orgId: orgUnits.orgId,
+  kind: orgUnits.kind,
+  parentId: orgUnits.parentId,
+  name: orgUnits.name,
+  code: orgUnits.code,
+  description: orgUnits.description,
+  headUserId: orgUnits.headUserId,
+  status: orgUnits.status,
+  metadata: orgUnits.metadata,
+  createdAt: orgUnits.createdAt,
+  updatedAt: orgUnits.updatedAt,
+  deletedAt: orgUnits.deletedAt,
+};
 
 @Injectable()
 export class OrgHierarchyService {
@@ -201,35 +220,69 @@ export class OrgHierarchyService {
 
   async getTree(orgId: string) {
     const allUnits = await this.db
-      .select()
+      .select(ORG_TREE_COLUMNS)
       .from(orgUnits)
       .where(and(eq(orgUnits.orgId, orgId), isNull(orgUnits.deletedAt)));
 
-    const bus = allUnits.filter((u) => u.kind === "BUSINESS_UNIT");
+    const byName = (a: { name: string }, b: { name: string }) =>
+      a.name.localeCompare(b.name);
+    const bus = allUnits
+      .filter((u) => u.kind === "BUSINESS_UNIT")
+      .sort(byName);
 
     return bus.map((bu) => {
       const buBranches = allUnits.filter(
         (u) => u.kind === "BRANCH" && u.parentId === bu.id,
-      );
+      ).sort(byName);
+      const {
+        kind: _buKind,
+        parentId: _buParentId,
+        headUserId: _buHeadUserId,
+        metadata: _buMetadata,
+        ...businessUnit
+      } = bu;
       return {
-        ...bu,
+        ...businessUnit,
         type: "business_unit",
         children: buBranches.map((branch) => {
           const depts = allUnits.filter(
             (u) => u.kind === "DEPARTMENT" && u.parentId === branch.id,
-          );
+          ).sort(byName);
+          const {
+            kind: _branchKind,
+            parentId: businessUnitId,
+            headUserId: managerUserId,
+            metadata: branchMetadata,
+            ...branchFields
+          } = branch;
           return {
-            ...branch,
+            ...branchFields,
+            businessUnitId,
+            managerUserId,
+            address: branchMetadata?.address ?? null,
+            city: branchMetadata?.city ?? null,
+            state: branchMetadata?.state ?? null,
+            country: branchMetadata?.country ?? null,
+            postalCode: branchMetadata?.postalCode ?? null,
+            phone: branchMetadata?.phone ?? null,
+            email: branchMetadata?.email ?? null,
             type: "branch",
             children: depts.map((dept) => {
               const teamsForDept = allUnits.filter(
                 (u) => u.kind === "TEAM" && u.parentId === dept.id,
-              );
+              ).sort(byName);
+              const {
+                kind: _deptKind,
+                parentId: branchId,
+                metadata: _deptMetadata,
+                ...department
+              } = dept;
               return {
-                ...dept,
+                ...department,
+                branchId,
                 type: "department",
                 children: teamsForDept.map((team) => ({
-                  ...team,
+                  ...toOrgTeam(team),
                   type: "team",
                   children: [],
                 })),

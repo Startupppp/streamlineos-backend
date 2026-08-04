@@ -31,6 +31,7 @@ function updateResult() {
 
 describe("OrgLifecycleService", () => {
   const cacheInvalidate = jest.fn().mockResolvedValue(undefined);
+  const cacheInvalidateNamespace = jest.fn().mockResolvedValue(undefined);
   const revokeOrgScopedAccess = jest.fn().mockResolvedValue(undefined);
   const revokeAllPending = jest.fn().mockResolvedValue(undefined);
   const auditLog = jest.fn();
@@ -63,7 +64,13 @@ describe("OrgLifecycleService", () => {
         OrgLifecycleService,
         { provide: DRIZZLE, useValue: db },
         { provide: AuditService, useValue: { log: auditLog } },
-        { provide: CacheService, useValue: { invalidate: cacheInvalidate } },
+        {
+          provide: CacheService,
+          useValue: {
+            invalidate: cacheInvalidate,
+            invalidateNamespace: cacheInvalidateNamespace,
+          },
+        },
         {
           provide: OrgMembershipService,
           useValue: { revokeOrgScopedAccess },
@@ -128,5 +135,20 @@ describe("OrgLifecycleService", () => {
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(db.transaction).toHaveBeenCalledTimes(1);
     expect(revokeOrgScopedAccess).not.toHaveBeenCalled();
+  });
+
+  it("returns the owner's next organization after deleting their active organization", async () => {
+    selectResults.push(
+      [{ id: "org-1", name: "Alpha", slug: "alpha" }],
+      [{ userId: "user-1" }],
+      [{ orgId: "org-2" }],
+    );
+
+    await expect(
+      service.deleteOrg("org-1", "user-1", "Alpha"),
+    ).resolves.toEqual({ success: true, nextOrgId: "org-2" });
+
+    expect(revokeOrgScopedAccess).toHaveBeenCalledWith("org-1", "user-1");
+    expect(cacheInvalidate).toHaveBeenCalledWith(CACHE_KEYS.userSession("user-1"));
   });
 });

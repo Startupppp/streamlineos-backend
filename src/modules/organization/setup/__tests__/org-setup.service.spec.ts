@@ -26,6 +26,7 @@ function ownerActor(orgId = "org-1"): CurrentUserContext {
 }
 
 type TxMock = {
+  execute: jest.Mock;
   insert: jest.Mock;
   update: jest.Mock;
   select: jest.Mock;
@@ -64,7 +65,8 @@ function buildTxMock(ownerMembershipId: number | null) {
   });
   const select = jest.fn().mockReturnValue({ from });
 
-  const tx: TxMock = { insert, update, select };
+  const execute = jest.fn().mockResolvedValue(undefined);
+  const tx: TxMock = { execute, insert, update, select };
   return { tx, mocks: { insert, values, onConflictDoUpdate, onConflictDoNothing, update, select, limit } };
 }
 
