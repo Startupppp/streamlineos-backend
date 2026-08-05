@@ -11,7 +11,8 @@ import { CacheService } from "../../../common/cache/cache.service";
 import type { EntitlementsService } from "../entitlements.service";
 import { makeMfaPolicyStub } from "../../../../test/helpers/mfa-policy-stub";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { OwnershipService } from "../../ownership/ownership.service";
+import { OwnershipTransfersService } from "../../ownership/ownership-transfers.service";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AuditService } from "../../../common/audit/audit.service";
 
@@ -397,8 +398,8 @@ describe("AccessService.resolveUserPermissions — HEADLINE: a \"Recruitment HR\
   });
 });
 
-describe("OwnershipService.initiateOrgTransfer — org admin (isOwner=false) is denied at the service layer", () => {
-  let svc: OwnershipService;
+describe("OwnershipTransfersService.initiateOrgTransfer — org admin (isOwner=false) is denied at the service layer", () => {
+  let svc: OwnershipTransfersService;
   let mockDb: {
     select: jest.Mock;
     insert: jest.Mock;
@@ -420,14 +421,15 @@ describe("OwnershipService.initiateOrgTransfer — org admin (isOwner=false) is 
 
     const moduleRef = await Test.createTestingModule({
       providers: [
-        OwnershipService,
+        OwnershipTransfersService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AuditService, useValue: { log: jest.fn() } },
-        { provide: CacheService, useValue: { invalidate: jest.fn().mockResolvedValue(undefined) } },
+        { provide: CacheService, useValue: { invalidate: jest.fn().mockResolvedValue(undefined), invalidateNamespace: jest.fn().mockResolvedValue(undefined) } },
+        { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
 
-    svc = moduleRef.get(OwnershipService);
+    svc = moduleRef.get(OwnershipTransfersService);
   });
 
   it("throws ForbiddenException for a non-owner actor even if ADMIN role grants them ownership:org:transfer in their permission map", async () => {

@@ -12,6 +12,8 @@ import { UsersService } from "./users.service";
 import { UserProfileService } from "./user-profile.service";
 import { UserOpsService } from "./user-ops.service";
 import { InvitationsService } from "../organization/core/invitations.service";
+import { InvitationsReadService } from "../organization/core/invitations-read.service";
+import { InvitationLifecycleService } from "../organization/core/invitation-lifecycle.service";
 import {
   listUsersSchema, updateUserSchema, updateUserStatusSchema,
   inviteUserSchema, bulkInviteSchema, updatePreferencesSchema,
@@ -36,6 +38,8 @@ export class UsersController {
     private readonly userProfile: UserProfileService,
     private readonly userOps: UserOpsService,
     private readonly invitations: InvitationsService,
+    private readonly invitationsRead: InvitationsReadService,
+    private readonly invitationsLifecycle: InvitationLifecycleService,
   ) {}
 
   // ── Static GET routes (must be before any :userId parameterized routes) ──
@@ -70,7 +74,7 @@ export class UsersController {
     @Query(new ZodValidationPipe(listInvitationsSchema)) query: ListInvitationsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.invitations.listPaginated(u.orgId, {
+    return this.invitationsRead.listPaginated(u.orgId, {
       page: query.page,
       limit: query.limit,
       includeAccepted: query.includeAccepted,
@@ -189,7 +193,7 @@ export class UsersController {
     @Body(new ZodValidationPipe(changeInviteRoleSchema)) body: ChangeInviteRoleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.invitations.changeRole(
+    return this.invitationsLifecycle.changeRole(
       u.orgId,
       invitationId,
       { userId: u.userId, isOrgOwner: u.isOrgOwner },
@@ -200,7 +204,7 @@ export class UsersController {
   @RequirePermission("settings:organization:manage")
   @Delete("invitations/:invitationId")
   cancelInvite(@Param("invitationId") invitationId: string, @CurrentUser() u: CurrentUserContext) {
-    return this.invitations.cancel(u.orgId, invitationId, u.userId);
+    return this.invitationsLifecycle.cancel(u.orgId, invitationId, u.userId);
   }
 
   // ── Parameterized :userId routes (must come after all static routes) ──
@@ -257,22 +261,6 @@ export class UsersController {
   @Delete(":userId/sessions")
   revokeAllSessions(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
     return this.userProfile.revokeAllSessions(u.orgId, userId, u.userId);
-  }
-
-  @RequirePermission("settings:organization:manage")
-  @Get(":userId/devices")
-  getDevices(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
-    return this.userProfile.getUserDevices(u.orgId, userId);
-  }
-
-  @RequirePermission("settings:organization:manage")
-  @Delete(":userId/devices/:deviceId")
-  removeDevice(
-    @Param("userId") userId: string,
-    @Param("deviceId") deviceId: string,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.userProfile.removeDevice(u.orgId, userId, deviceId, u.userId);
   }
 
   @RequirePermission("settings:organization:manage")

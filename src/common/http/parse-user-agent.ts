@@ -89,18 +89,6 @@ function isBotUserAgent(ua: string): boolean {
   return /bot|crawl|spider|slurp|mediapartners|bingpreview|facebookexternalhit/i.test(ua);
 }
 
-function looksLikeFullUserAgent(value: string): boolean {
-  return value.includes(" ") || /mozilla\//i.test(value);
-}
-
-function looksLikeStoredRawClientToken(value: string): boolean {
-  return /^[\w.-]+\/[\d.]+$/i.test(value);
-}
-
-function looksLikeElectronBrowserLabel(value: string): boolean {
-  return /^Electron(?:\s+\d+)?$/i.test(value.trim());
-}
-
 function isElectronUserAgent(ua: string, browserName: string | undefined): boolean {
   return browserName === "Electron" || /(?:^|[^a-z])Electron\//i.test(ua);
 }
@@ -212,39 +200,6 @@ export function parseUserAgent(
   };
 }
 
-export function resolveDeviceClientInfo(device: {
-  browser: string | null;
-  os: string | null;
-  platform: string | null;
-  fingerprint: string;
-}): ParsedClientInfo {
-  if (looksLikeFullUserAgent(device.fingerprint)) {
-    return parseUserAgent(device.fingerprint);
-  }
-
-  if (device.browser && looksLikeStoredRawClientToken(device.browser)) {
-    return parseUserAgent(device.browser);
-  }
-
-  if (device.browser && looksLikeElectronBrowserLabel(device.browser)) {
-    return {
-      browser: DESKTOP_APP_LABEL,
-      os: device.os,
-      platform: device.platform ?? "Desktop",
-    };
-  }
-
-  if (device.browser) {
-    return {
-      browser: device.browser,
-      os: device.os,
-      platform: device.platform,
-    };
-  }
-
-  return parseUserAgent(device.fingerprint);
-}
-
 export function isApiClientUserAgent(ua: string | null | undefined): boolean {
   if (!ua?.trim()) return false;
   return detectApiClient(ua.trim()) !== null;
@@ -256,23 +211,6 @@ export function withClientInfo<T extends { userAgent: string | null }>(
   const parsed = parseUserAgent(entry.userAgent);
   return {
     ...entry,
-    browser: parsed.browser,
-    os: parsed.os,
-    platform: parsed.platform,
-  };
-}
-
-export function withDeviceClientInfo<T extends {
-  browser: string | null;
-  os: string | null;
-  platform: string | null;
-  fingerprint: string;
-}>(
-  device: T,
-): T & { browser: string; os: string | null; platform: string | null } {
-  const parsed = resolveDeviceClientInfo(device);
-  return {
-    ...device,
     browser: parsed.browser,
     os: parsed.os,
     platform: parsed.platform,

@@ -21,6 +21,8 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { OwnershipService } from "./ownership.service";
+import { OwnershipTransfersService } from "./ownership-transfers.service";
+import { OwnershipTransferResponseService } from "./ownership-transfer-response.service";
 import {
   declineTransferSchema,
   initiateModuleTransferSchema,
@@ -37,7 +39,11 @@ import {
 @Controller("ownership")
 @UseGuards(JwtAuthGuard)
 export class OwnershipController {
-  constructor(private readonly ownership: OwnershipService) {}
+  constructor(
+    private readonly ownership: OwnershipService,
+    private readonly transfers: OwnershipTransfersService,
+    private readonly responses: OwnershipTransferResponseService,
+  ) {}
 
   @Get("modules")
   @UseGuards(PermissionGuard)
@@ -83,7 +89,7 @@ export class OwnershipController {
     if (!u.isOrgOwner) {
       throw new ForbiddenException("Only the org owner may initiate an org ownership transfer");
     }
-    return this.ownership.initiateOrgTransfer(u.orgId, u.userId, body);
+    return this.transfers.initiateOrgTransfer(u.orgId, u.userId, body);
   }
 
   @Post("modules/:moduleKey/transfer")
@@ -96,7 +102,7 @@ export class OwnershipController {
     @Body(new ZodValidationPipe(initiateModuleTransferSchema)) body: InitiateModuleTransferInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.ownership.initiateModuleTransfer(
+    return this.transfers.initiateModuleTransfer(
       u.orgId,
       u.userId,
       moduleKey,
@@ -109,7 +115,7 @@ export class OwnershipController {
   @UseGuards(PermissionGuard)
   @RequirePermission("ownership:transfer:respond")
   listIncomingTransfers(@CurrentUser() u: CurrentUserContext) {
-    return this.ownership.listIncomingTransfers(u.orgId, u.userId);
+    return this.transfers.listIncomingTransfers(u.orgId, u.userId);
   }
 
   @Get("transfers")
@@ -119,7 +125,7 @@ export class OwnershipController {
     @Query(new ZodValidationPipe(listTransfersSchema)) query: ListTransfersInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.ownership.listTransfers(u.orgId, query);
+    return this.transfers.listTransfers(u.orgId, query);
   }
 
   @Post("transfers/:transferId/accept")
@@ -131,7 +137,7 @@ export class OwnershipController {
     @Param("transferId") transferId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.ownership.acceptTransfer(u.orgId, u.userId, transferId);
+    return this.responses.acceptTransfer(u.orgId, u.userId, transferId);
   }
 
   @Post("transfers/:transferId/decline")
@@ -144,7 +150,7 @@ export class OwnershipController {
     @Body(new ZodValidationPipe(declineTransferSchema)) body: DeclineTransferInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.ownership.declineTransfer(u.orgId, u.userId, transferId, body);
+    return this.responses.declineTransfer(u.orgId, u.userId, transferId, body);
   }
 
   @Delete("transfers/:transferId")
@@ -156,7 +162,7 @@ export class OwnershipController {
     @Param("transferId") transferId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.ownership.cancelTransfer(
+    return this.responses.cancelTransfer(
       u.orgId,
       u.userId,
       transferId,

@@ -3,6 +3,7 @@ import {
   ConflictException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import type { InviteActor } from "./invitations.service";
@@ -35,6 +36,9 @@ import { SessionsService } from "../../sessions/sessions.service";
 import { stableHash } from "../../../common/cache/cache-hash";
 import type { ListMembersInput } from "./dto/organization.schemas";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { getOrgAdminUserIds } from "../../../common/tenant/org-admin-recipients";
+import { EmailService } from "../../email/email.service";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 
 const PG_FK_VIOLATION = "23503";
 
@@ -64,7 +68,51 @@ export class OrgMembershipService {
     private readonly cache: CacheService,
     private readonly sessions: SessionsService,
     private readonly access: AccessService,
+    private readonly email: EmailService,
+    private readonly dispatch: NotificationDispatchService,
   ) {}
+
+  private readonly logger = new Logger(OrgMembershipService.name);
+
+  /**
+   * Access-loss notices cannot go through the dispatch engine: `filterOrgMemberIds`
+   * only resolves ACTIVE memberships, so a removed or suspended member is silently
+   * dropped. Email is the only channel that still reaches them.
+   */
+  private async sendAccessNotice(
+    orgId: string,
+    memberUserId: string,
+    kind: "removed" | "suspended",
+  ): Promise<void> {
+    const [member, org] = await Promise.all([
+      this.db.query.users.findFirst({
+        where: eq(users.id, memberUserId),
+        columns: { email: true, name: true, firstName: true },
+      }),
+      this.db.query.organizations.findFirst({
+        where: eq(organizations.id, orgId),
+        columns: { name: true },
+      }),
+    ]);
+    if (!member?.email || !org) return;
+
+    const displayName = member.firstName ?? member.name ?? member.email;
+    await (kind === "removed"
+      ? this.email.sendMembershipRemovedEmail(member.email, displayName, org.name)
+      : this.email.sendMembershipSuspendedEmail(member.email, displayName, org.name));
+  }
+
+  private notifyAccessLoss(
+    orgId: string,
+    memberUserId: string,
+    kind: "removed" | "suspended",
+  ): void {
+    void this.sendAccessNotice(orgId, memberUserId, kind).catch((err: unknown) => {
+      this.logger.warn(
+        `Access ${kind} notice not delivered for user ${memberUserId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    });
+  }
 
   async revokeOrgScopedAccess(
     orgId: string,
@@ -314,6 +362,8 @@ export class OrgMembershipService {
       targetType: "user",
     });
 
+    this.notifyAccessLoss(orgId, memberUserId, "removed");
+
     return { success: true };
   }
 
@@ -433,6 +483,28 @@ export class OrgMembershipService {
       metadata: { status, reason: options?.reason },
     });
 
+    if (status === "active") {
+      void this.dispatch
+        .emit({
+          eventKey: "organization.member.reactivated",
+          orgId,
+          actorUserId,
+          targetUserIds: [memberUserId],
+          entityType: "user",
+          entityId: memberUserId,
+          title: "Your access was restored",
+          message: "An administrator restored your membership. You can sign in to this organization again.",
+          link: "/dashboard",
+        })
+        .catch(() => undefined);
+    } else {
+      this.notifyAccessLoss(
+        orgId,
+        memberUserId,
+        status === "suspended" ? "suspended" : "removed",
+      );
+    }
+
     return { success: true };
   }
 
@@ -520,6 +592,20 @@ export class OrgMembershipService {
       metadata: { newRole: role },
     });
 
+    void this.dispatch
+      .emit({
+        eventKey: "security.role.changed",
+        orgId,
+        actorUserId,
+        targetUserIds: [memberUserId],
+        entityType: "user",
+        entityId: memberUserId,
+        title: "Your role or permissions were updated",
+        message: `Your organization role is now ${role}. Your access permissions may have changed.`,
+        link: "/settings/security",
+      })
+      .catch(() => undefined);
+
     return { success: true };
   }
 
@@ -606,6 +692,9 @@ export class OrgMembershipService {
         targetId: userId,
         targetType: "user",
       });
+
+      void this.notifyMemberLeft(orgId, userId).catch(() => undefined);
+
       return { success: true, nextOrgId };
     } catch (err) {
       if (err instanceof BadRequestException) throw err;
@@ -616,5 +705,28 @@ export class OrgMembershipService {
       }
       throw err;
     }
+  }
+
+  private async notifyMemberLeft(orgId: string, userId: string): Promise<void> {
+    const [admins, member] = await Promise.all([
+      getOrgAdminUserIds(this.db, orgId),
+      this.db.query.users.findFirst({
+        where: eq(users.id, userId),
+        columns: { email: true, name: true },
+      }),
+    ]);
+    if (admins.length === 0) return;
+
+    await this.dispatch.emit({
+      eventKey: "organization.member.left",
+      orgId,
+      actorUserId: userId,
+      targetUserIds: admins,
+      entityType: "user",
+      entityId: userId,
+      title: "A member left the organization",
+      message: `${member?.name ?? member?.email ?? "A member"} left the organization. Their seat is now free.`,
+      link: "/users",
+    });
   }
 }

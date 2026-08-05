@@ -4,6 +4,8 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { SessionsService } from "../../sessions/sessions.service";
+import { EmailService } from "../../email/email.service";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { OrgMembershipService } from "./org-membership.service";
 
 describe("OrgMembershipService access revocation", () => {
@@ -17,6 +19,14 @@ describe("OrgMembershipService access revocation", () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         OrgMembershipService,
+        {
+          provide: EmailService,
+          useValue: {
+            sendMembershipRemovedEmail: jest.fn().mockResolvedValue(undefined),
+            sendMembershipSuspendedEmail: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
         {
           provide: DRIZZLE,
           useValue: {

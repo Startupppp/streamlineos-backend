@@ -12,6 +12,7 @@ import { assertCronSecret } from "./cron-secret";
 import { CronEmailOutboxService } from "./cron-email-outbox.service";
 import { CronNotificationDeliveryService } from "./cron-notification-delivery.service";
 import { CronOrganizationService } from "./cron-organization.service";
+import { OwnershipTransfersService } from "../ownership/ownership-transfers.service";
 import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
 import { CronIdempotencyService } from "./cron-idempotency.service";
 import { ChatReplyRemindersService } from "../chat/chat-reply-reminders.service";
@@ -25,6 +26,7 @@ export class CronPlatformController {
     private readonly emailOutbox: CronEmailOutboxService,
     private readonly notificationDelivery: CronNotificationDeliveryService,
     private readonly cronOrganization: CronOrganizationService,
+    private readonly ownershipTransfers: OwnershipTransfersService,
     private readonly orgPurgeWorker: CronOrgPurgeWorkerService,
     private readonly timesheetExceptionsDetector: ExceptionsDetectorService,
     private readonly idempotency: CronIdempotencyService,
@@ -76,6 +78,17 @@ export class CronPlatformController {
   @HttpCode(200)
   postInvitationExpiry(@Headers("authorization") authorization?: string) {
     return this.runInvitationExpiry(authorization);
+  }
+
+  @Get("ownership-transfer-expiry")
+  getOwnershipTransferExpiry(@Headers("authorization") authorization?: string) {
+    return this.runOwnershipTransferExpiry(authorization);
+  }
+
+  @Post("ownership-transfer-expiry")
+  @HttpCode(200)
+  postOwnershipTransferExpiry(@Headers("authorization") authorization?: string) {
+    return this.runOwnershipTransferExpiry(authorization);
   }
 
   @Get("org-purge-worker")
@@ -171,6 +184,21 @@ export class CronPlatformController {
       };
     } catch (error) {
       logger.error("Invitation expiry cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  private async runOwnershipTransferExpiry(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.ownershipTransfers.expireStaleTransfers();
+      return {
+        success: true,
+        message: `Expired ${result.expired} stale ownership transfers`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Ownership transfer expiry cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

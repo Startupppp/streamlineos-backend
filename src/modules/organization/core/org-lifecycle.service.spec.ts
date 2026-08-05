@@ -4,7 +4,7 @@ import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { CacheService } from "../../../common/cache/cache.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
-import { InvitationsService } from "./invitations.service";
+import { InvitationLifecycleService } from "./invitation-lifecycle.service";
 import { OrgLifecycleService } from "./org-lifecycle.service";
 import { OrgMembershipService } from "./org-membership.service";
 
@@ -75,7 +75,7 @@ describe("OrgLifecycleService", () => {
           provide: OrgMembershipService,
           useValue: { revokeOrgScopedAccess },
         },
-        { provide: InvitationsService, useValue: { revokeAllPending } },
+        { provide: InvitationLifecycleService, useValue: { revokeAllPending } },
       ],
     }).compile();
     service = moduleRef.get(OrgLifecycleService);

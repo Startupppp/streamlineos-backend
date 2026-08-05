@@ -12,6 +12,8 @@ import { AllExceptionsFilter } from "../../../common/http/all-exceptions.filter"
 import { signToken } from "../../../../test/helpers/sign-token";
 import { stubMembershipState } from "../../../../test/helpers/membership-state";
 import { OwnershipService } from "../ownership.service";
+import { OwnershipTransfersService } from "../ownership-transfers.service";
+import { OwnershipTransferResponseService } from "../ownership-transfer-response.service";
 import { AccessService } from "../../access/access.service";
 
 const TRANSFER_ID = "c8a3e1f0-aaaa-bbbb-cccc-d9e7f0a1b2c3";
@@ -40,9 +42,16 @@ const mockOwnershipService = {
   listModuleOwnerships: jest.fn(),
   getModuleOwnership: jest.fn(),
   forceSetModuleOwner: jest.fn(),
+};
+
+const mockTransfersService = {
   initiateOrgTransfer: jest.fn(),
   initiateModuleTransfer: jest.fn(),
   listTransfers: jest.fn(),
+  listIncomingTransfers: jest.fn(),
+};
+
+const mockTransferResponseService = {
   acceptTransfer: jest.fn(),
   declineTransfer: jest.fn(),
   cancelTransfer: jest.fn(),
@@ -64,6 +73,10 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       Test.createTestingModule({ imports: [AppModule] })
         .overrideProvider(OwnershipService)
         .useValue(mockOwnershipService)
+        .overrideProvider(OwnershipTransfersService)
+        .useValue(mockTransfersService)
+        .overrideProvider(OwnershipTransferResponseService)
+        .useValue(mockTransferResponseService)
         .overrideProvider(AccessService)
         .useValue(mockAccessService),
       {
@@ -86,12 +99,12 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
     mockOwnershipService.listModuleOwnerships.mockResolvedValue([stubOwnership]);
     mockOwnershipService.getModuleOwnership.mockResolvedValue(stubOwnership);
     mockOwnershipService.forceSetModuleOwner.mockResolvedValue({ success: true });
-    mockOwnershipService.initiateOrgTransfer.mockResolvedValue(stubTransferResponse);
-    mockOwnershipService.initiateModuleTransfer.mockResolvedValue(stubTransferResponse);
-    mockOwnershipService.listTransfers.mockResolvedValue(stubListResponse);
-    mockOwnershipService.acceptTransfer.mockResolvedValue({ success: true });
-    mockOwnershipService.declineTransfer.mockResolvedValue({ success: true });
-    mockOwnershipService.cancelTransfer.mockResolvedValue({ success: true });
+    mockTransfersService.initiateOrgTransfer.mockResolvedValue(stubTransferResponse);
+    mockTransfersService.initiateModuleTransfer.mockResolvedValue(stubTransferResponse);
+    mockTransfersService.listTransfers.mockResolvedValue(stubListResponse);
+    mockTransferResponseService.acceptTransfer.mockResolvedValue({ success: true });
+    mockTransferResponseService.declineTransfer.mockResolvedValue({ success: true });
+    mockTransferResponseService.cancelTransfer.mockResolvedValue({ success: true });
   });
 
   type Method = "get" | "post" | "put" | "delete" | "patch";
@@ -227,7 +240,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
 
   describe("Service-level business-rule rejections propagate correctly", () => {
     it("POST /ownership/org/transfer → 400 when target membership is not ACTIVE", async () => {
-      mockOwnershipService.initiateOrgTransfer.mockRejectedValue(
+      mockTransfersService.initiateOrgTransfer.mockRejectedValue(
         new BadRequestException("Target membership must be ACTIVE to receive ownership"),
       );
       const token = await signToken({ sub: "owner_os_1" });
@@ -240,7 +253,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
     });
 
     it("POST /ownership/org/transfer → 409 when a PENDING transfer already exists for this scope", async () => {
-      mockOwnershipService.initiateOrgTransfer.mockRejectedValue(
+      mockTransfersService.initiateOrgTransfer.mockRejectedValue(
         new ConflictException("A pending org ownership transfer already exists"),
       );
       const token = await signToken({ sub: "owner_os_1" });
@@ -255,7 +268,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       mockAccessService.resolveUserPermissions.mockResolvedValue(
         new Map<string, string>([["ownership:modules:manage", "all"]]),
       );
-      mockOwnershipService.initiateModuleTransfer.mockRejectedValue(
+      mockTransfersService.initiateModuleTransfer.mockRejectedValue(
         new ConflictException(`A pending transfer for module "hr" already exists`),
       );
       const token = await signToken({ sub: "member_os_1" });
@@ -270,7 +283,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       mockAccessService.resolveUserPermissions.mockResolvedValue(
         new Map<string, string>([["ownership:transfer:respond", "all"]]),
       );
-      mockOwnershipService.acceptTransfer.mockRejectedValue(
+      mockTransferResponseService.acceptTransfer.mockRejectedValue(
         new ForbiddenException("Only the designated recipient may accept this transfer"),
       );
       const token = await signToken({ sub: "member_os_1" });
@@ -285,7 +298,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       mockAccessService.resolveUserPermissions.mockResolvedValue(
         new Map<string, string>([["ownership:transfer:respond", "all"]]),
       );
-      mockOwnershipService.acceptTransfer.mockRejectedValue(
+      mockTransferResponseService.acceptTransfer.mockRejectedValue(
         new BadRequestException("Initiator is no longer the organization owner; transfer is invalid"),
       );
       const token = await signToken({ sub: "member_os_1" });
@@ -300,7 +313,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       mockAccessService.resolveUserPermissions.mockResolvedValue(
         new Map<string, string>([["ownership:transfer:respond", "all"]]),
       );
-      mockOwnershipService.acceptTransfer.mockRejectedValue(
+      mockTransferResponseService.acceptTransfer.mockRejectedValue(
         new BadRequestException("Transfer has expired"),
       );
       const token = await signToken({ sub: "member_os_1" });
@@ -359,7 +372,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
 
     it("listTransfers is scoped to the orgId in the JWT token", async () => {
       const ORG_A = "org-alpha-list";
-      mockOwnershipService.listTransfers.mockImplementation(
+      mockTransfersService.listTransfers.mockImplementation(
         (orgId: string) => {
           expect(orgId).toBe(ORG_A);
           return Promise.resolve(stubListResponse);
@@ -370,14 +383,14 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
         .get("/ownership/transfers")
         .set("Authorization", `Bearer ${token}`);
       expect(res.status).toBe(200);
-      expect(mockOwnershipService.listTransfers).toHaveBeenCalledWith(ORG_A, expect.anything());
+      expect(mockTransfersService.listTransfers).toHaveBeenCalledWith(ORG_A, expect.anything());
     });
 
     it("acceptTransfer for a transfer that belongs to a different org → 404", async () => {
       mockAccessService.resolveUserPermissions.mockResolvedValue(
         new Map<string, string>([["ownership:transfer:respond", "all"]]),
       );
-      mockOwnershipService.acceptTransfer.mockRejectedValue(
+      mockTransferResponseService.acceptTransfer.mockRejectedValue(
         new NotFoundException("Transfer not found"),
       );
       const token = await signToken({ sub: "member_os_1", orgId: "org-alpha" });

@@ -2,14 +2,14 @@ import { BadRequestException, Inject, Injectable, NotFoundException } from "@nes
 import { eq, desc, count, gte, and, SQL } from "drizzle-orm";
 import { DRIZZLE } from "../db/drizzle.constants";
 import { type Db } from "../db/drizzle.module";
-import { users, loginHistory, userSessions, devices, accounts } from "../db/schema";
+import { users, loginHistory, userSessions, accounts } from "../db/schema";
 import {
   decrypt,
   decryptBankDetails,
   encryptBankDetails,
 } from "../modules/hr/onboarding/core/crypto.helpers";
 import type { UpdateProfileInput } from "./dto/me.schemas";
-import { withClientInfo, withDeviceClientInfo } from "../common/http/parse-user-agent";
+import { withClientInfo } from "../common/http/parse-user-agent";
 
 @Injectable()
 export class MeService {
@@ -75,35 +75,6 @@ export class MeService {
       page,
       limit,
     };
-  }
-
-  async getDevices(userId: string) {
-    const rows = await this.db.query.devices.findMany({
-      where: eq(devices.userId, userId),
-      orderBy: [desc(devices.lastSeenAt)],
-    });
-    return rows.map(withDeviceClientInfo);
-  }
-
-  async deleteDevice(userId: string, deviceId: string): Promise<{ message: string }> {
-    const device = await this.db.query.devices.findFirst({
-      where: and(eq(devices.id, deviceId), eq(devices.userId, userId)),
-    });
-    if (!device) throw new NotFoundException("Device not found");
-    await this.db.delete(devices).where(and(eq(devices.id, deviceId), eq(devices.userId, userId)));
-    return { message: "Device removed" };
-  }
-
-  async trustDevice(userId: string, deviceId: string): Promise<{ message: string }> {
-    const device = await this.db.query.devices.findFirst({
-      where: and(eq(devices.id, deviceId), eq(devices.userId, userId)),
-    });
-    if (!device) throw new NotFoundException("Device not found");
-    await this.db
-      .update(devices)
-      .set({ trusted: true })
-      .where(and(eq(devices.id, deviceId), eq(devices.userId, userId)));
-    return { message: "Device trusted" };
   }
 
   async getConnectedAccounts(userId: string) {

@@ -8,6 +8,7 @@ import { EmailModule } from "../email/email.module";
 import { KbModule } from "../kb/kb.module";
 import { SupportModule } from "../support/core/support.module";
 import { NotificationsModule } from "../notifications/notifications.module";
+import { OwnershipModule } from "../ownership/ownership.module";
 import { HrAutomationsModule } from "../hr/automations/hr-automations.module";
 import { HrTimeModule } from "../hr/time/hr-time.module";
 import { HrWorkflowsModule } from "../hr/workflows/hr-workflows.module";
@@ -61,6 +62,7 @@ import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
     KbModule,
     SupportModule,
     NotificationsModule,
+    OwnershipModule,
     HrAutomationsModule,
     HrTimeModule,
     HrWorkflowsModule,

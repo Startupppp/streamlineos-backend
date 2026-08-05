@@ -5,6 +5,9 @@ import {
 } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { OwnershipService } from "../ownership.service";
+import { OwnershipTransfersService } from "../ownership-transfers.service";
+import { OwnershipTransferResponseService } from "../ownership-transfer-response.service";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -68,7 +71,9 @@ function makeInsertChain(result: unknown[]): InsertChain {
 }
 
 describe("OwnershipService — access / business-rule logic", () => {
-  let svc: OwnershipService;
+  let ownership: OwnershipService;
+  let transfers: OwnershipTransfersService;
+  let responses: OwnershipTransferResponseService;
   let mockDb: {
     select: jest.Mock;
     insert: jest.Mock;
@@ -97,19 +102,24 @@ describe("OwnershipService — access / business-rule logic", () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         OwnershipService,
+        OwnershipTransfersService,
+        OwnershipTransferResponseService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AuditService, useValue: { log: jest.fn() } },
         { provide: CacheService, useValue: { invalidate: jest.fn(), invalidateNamespace: jest.fn().mockResolvedValue(undefined), cached: jest.fn(), cachedVersioned: jest.fn() } },
+        { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
-    svc = moduleRef.get(OwnershipService);
+    ownership = moduleRef.get(OwnershipService);
+    transfers = moduleRef.get(OwnershipTransfersService);
+    responses = moduleRef.get(OwnershipTransferResponseService);
   });
 
   describe("initiateOrgTransfer", () => {
     it("throws ForbiddenException when actor is not a member of the org", async () => {
       mockDb.select.mockReturnValue(makeSelectChain([]));
       await expect(
-        svc.initiateOrgTransfer(ORG, ACTOR_USER, { toMembershipId: 2, expiresInHours: 48 }),
+        transfers.initiateOrgTransfer(ORG, ACTOR_USER, { toMembershipId: 2, expiresInHours: 48 }),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
@@ -117,7 +127,7 @@ describe("OwnershipService — access / business-rule logic", () => {
       const actorMembership = { id: 1, userId: ACTOR_USER, isOwner: false, status: "ACTIVE" };
       mockDb.select.mockReturnValue(makeSelectChain([actorMembership]));
       await expect(
-        svc.initiateOrgTransfer(ORG, ACTOR_USER, { toMembershipId: 2, expiresInHours: 48 }),
+        transfers.initiateOrgTransfer(ORG, ACTOR_USER, { toMembershipId: 2, expiresInHours: 48 }),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
@@ -125,7 +135,7 @@ describe("OwnershipService — access / business-rule logic", () => {
       const actorMembership = { id: 1, userId: ACTOR_USER, isOwner: true, status: "ACTIVE" };
       mockDb.select.mockReturnValue(makeSelectChain([actorMembership]));
       await expect(
-        svc.initiateOrgTransfer(ORG, ACTOR_USER, { toMembershipId: 1, expiresInHours: 48 }),
+        transfers.initiateOrgTransfer(ORG, ACTOR_USER, { toMembershipId: 1, expiresInHours: 48 }),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
@@ -135,7 +145,7 @@ describe("OwnershipService — access / business-rule logic", () => {
         .mockReturnValueOnce(makeSelectChain([actorMembership]))
         .mockReturnValueOnce(makeSelectChain([]));
       await expect(
-        svc.initiateOrgTransfer(ORG, ACTOR_USER, { toMembershipId: 2, expiresInHours: 48 }),
+        transfers.initiateOrgTransfer(ORG, ACTOR_USER, { toMembershipId: 2, expiresInHours: 48 }),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
@@ -146,7 +156,7 @@ describe("OwnershipService — access / business-rule logic", () => {
         .mockReturnValueOnce(makeSelectChain([actorMembership]))
         .mockReturnValueOnce(makeSelectChain([targetMembership]));
       await expect(
-        svc.initiateOrgTransfer(ORG, ACTOR_USER, { toMembershipId: 2, expiresInHours: 48 }),
+        transfers.initiateOrgTransfer(ORG, ACTOR_USER, { toMembershipId: 2, expiresInHours: 48 }),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
   });
@@ -155,7 +165,7 @@ describe("OwnershipService — access / business-rule logic", () => {
     it("throws NotFoundException when target membership does not exist in the org", async () => {
       mockDb.select.mockReturnValue(makeSelectChain([]));
       await expect(
-        svc.forceSetModuleOwner(ORG, ACTOR_USER, "hr", { ownerMembershipId: 99 }),
+        ownership.forceSetModuleOwner(ORG, ACTOR_USER, "hr", { ownerMembershipId: 99 }),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
@@ -163,7 +173,7 @@ describe("OwnershipService — access / business-rule logic", () => {
       const targetMembership = { id: 99, userId: TARGET_USER, isOwner: false, status: "PENDING" };
       mockDb.select.mockReturnValue(makeSelectChain([targetMembership]));
       await expect(
-        svc.forceSetModuleOwner(ORG, ACTOR_USER, "hr", { ownerMembershipId: 99 }),
+        ownership.forceSetModuleOwner(ORG, ACTOR_USER, "hr", { ownerMembershipId: 99 }),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
@@ -180,7 +190,7 @@ describe("OwnershipService — access / business-rule logic", () => {
       mockDb.update.mockReturnValue(makeUpdateChain());
       mockDb.delete.mockReturnValue({ where: jest.fn().mockResolvedValue([]) });
 
-      const result = await svc.forceSetModuleOwner(ORG, ACTOR_USER, "hr", { ownerMembershipId: 5 });
+      const result = await ownership.forceSetModuleOwner(ORG, ACTOR_USER, "hr", { ownerMembershipId: 5 });
 
       expect(result).toMatchObject({ success: true });
       expect(mockDb.transaction).toHaveBeenCalledTimes(1);
@@ -193,7 +203,7 @@ describe("OwnershipService — access / business-rule logic", () => {
     it("throws NotFoundException when transfer is not found for the given org", async () => {
       mockDb.select.mockReturnValue(makeSelectChain([]));
       await expect(
-        svc.acceptTransfer(ORG, ACTOR_USER, TRANSFER_ID),
+        responses.acceptTransfer(ORG, ACTOR_USER, TRANSFER_ID),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
@@ -209,7 +219,7 @@ describe("OwnershipService — access / business-rule logic", () => {
       };
       mockDb.select.mockReturnValue(makeSelectChain([transfer]));
       await expect(
-        svc.acceptTransfer(ORG, ACTOR_USER, TRANSFER_ID),
+        responses.acceptTransfer(ORG, ACTOR_USER, TRANSFER_ID),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
@@ -228,7 +238,7 @@ describe("OwnershipService — access / business-rule logic", () => {
         .mockReturnValueOnce(makeSelectChain([]));
       mockDb.update.mockReturnValue(makeUpdateChain());
       await expect(
-        svc.acceptTransfer(ORG, ACTOR_USER, TRANSFER_ID),
+        responses.acceptTransfer(ORG, ACTOR_USER, TRANSFER_ID),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
@@ -246,7 +256,7 @@ describe("OwnershipService — access / business-rule logic", () => {
         .mockReturnValueOnce(makeSelectChain([transfer]))
         .mockReturnValueOnce(makeSelectChain([]));
       await expect(
-        svc.acceptTransfer(ORG, ACTOR_USER, TRANSFER_ID),
+        responses.acceptTransfer(ORG, ACTOR_USER, TRANSFER_ID),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
@@ -265,7 +275,7 @@ describe("OwnershipService — access / business-rule logic", () => {
         .mockReturnValueOnce(makeSelectChain([transfer]))
         .mockReturnValueOnce(makeSelectChain([actorMembership]));
       await expect(
-        svc.acceptTransfer(ORG, ACTOR_USER, TRANSFER_ID),
+        responses.acceptTransfer(ORG, ACTOR_USER, TRANSFER_ID),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
   });
@@ -276,7 +286,7 @@ describe("OwnershipService — access / business-rule logic", () => {
     it("throws NotFoundException when transfer does not exist for the given org", async () => {
       mockDb.select.mockReturnValue(makeSelectChain([]));
       await expect(
-        svc.cancelTransfer(ORG, ACTOR_USER, TRANSFER_ID, false),
+        responses.cancelTransfer(ORG, ACTOR_USER, TRANSFER_ID, false),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
@@ -291,7 +301,7 @@ describe("OwnershipService — access / business-rule logic", () => {
       };
       mockDb.select.mockReturnValue(makeSelectChain([transfer]));
       await expect(
-        svc.cancelTransfer(ORG, ACTOR_USER, TRANSFER_ID, false),
+        responses.cancelTransfer(ORG, ACTOR_USER, TRANSFER_ID, false),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
@@ -309,7 +319,7 @@ describe("OwnershipService — access / business-rule logic", () => {
         .mockReturnValueOnce(makeSelectChain([transfer]))
         .mockReturnValueOnce(makeSelectChain([actorMembership]));
       await expect(
-        svc.cancelTransfer(ORG, ACTOR_USER, TRANSFER_ID, false),
+        responses.cancelTransfer(ORG, ACTOR_USER, TRANSFER_ID, false),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
@@ -325,7 +335,7 @@ describe("OwnershipService — access / business-rule logic", () => {
       mockDb.select.mockReturnValue(makeSelectChain([transfer]));
       mockDb.update.mockReturnValue(makeUpdateChain());
       await expect(
-        svc.cancelTransfer(ORG, ACTOR_USER, TRANSFER_ID, true),
+        responses.cancelTransfer(ORG, ACTOR_USER, TRANSFER_ID, true),
       ).resolves.toMatchObject({ success: true });
     });
   });
@@ -347,7 +357,7 @@ describe("OwnershipService — access / business-rule logic", () => {
         .mockReturnValueOnce(makeSelectChain([transfer]))
         .mockReturnValueOnce(makeSelectChain([actorMembership]));
       await expect(
-        svc.declineTransfer(ORG, ACTOR_USER, TRANSFER_ID, {}),
+        responses.declineTransfer(ORG, ACTOR_USER, TRANSFER_ID, {}),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
   });
@@ -394,7 +404,7 @@ describe("OwnershipService — access / business-rule logic", () => {
       mockDb.insert.mockReturnValue(makeInsertChain([]));
       mockDb.update.mockReturnValue(makeUpdateChain());
 
-      const result = await svc.acceptTransfer(ORG, TARGET_USER, TRANSFER_ID);
+      const result = await responses.acceptTransfer(ORG, TARGET_USER, TRANSFER_ID);
 
       expect(result).toMatchObject({ success: true });
       expect(mockDb.delete).toHaveBeenCalledTimes(1);
@@ -422,7 +432,7 @@ describe("OwnershipService — access / business-rule logic", () => {
       mockDb.insert.mockReturnValue(makeInsertChain([]));
       mockDb.update.mockReturnValue(makeUpdateChain());
 
-      const result = await svc.acceptTransfer(ORG, TARGET_USER, TRANSFER_ID);
+      const result = await responses.acceptTransfer(ORG, TARGET_USER, TRANSFER_ID);
 
       expect(result).toMatchObject({ success: true });
       expect(mockDb.delete).not.toHaveBeenCalled();
@@ -451,7 +461,7 @@ describe("OwnershipService — access / business-rule logic", () => {
       mockDb.insert.mockReturnValue(makeInsertChain([]));
       mockDb.update.mockReturnValue(makeUpdateChain());
 
-      await svc.acceptTransfer(ORG, TARGET_USER, TRANSFER_ID);
+      await responses.acceptTransfer(ORG, TARGET_USER, TRANSFER_ID);
 
       expect(mockDb.delete).toHaveBeenCalledTimes(1);
     });
@@ -469,7 +479,7 @@ describe("OwnershipService — access / business-rule logic", () => {
       mockDb.update.mockReturnValue(makeUpdateChain());
       mockDb.delete.mockReturnValue({ where: jest.fn().mockResolvedValue([]) });
 
-      const result = await svc.forceSetModuleOwner(ORG, ACTOR_USER, "hr", { ownerMembershipId: 5 });
+      const result = await ownership.forceSetModuleOwner(ORG, ACTOR_USER, "hr", { ownerMembershipId: 5 });
 
       expect(result).toMatchObject({ success: true });
       expect(mockDb.delete).not.toHaveBeenCalled();
@@ -487,7 +497,7 @@ describe("OwnershipService — access / business-rule logic", () => {
       mockDb.update.mockReturnValue(makeUpdateChain());
       mockDb.delete.mockReturnValue({ where: jest.fn().mockResolvedValue([]) });
 
-      const result = await svc.forceSetModuleOwner(ORG, ACTOR_USER, "hr", { ownerMembershipId: 5 });
+      const result = await ownership.forceSetModuleOwner(ORG, ACTOR_USER, "hr", { ownerMembershipId: 5 });
 
       expect(result).toMatchObject({ success: true });
       expect(mockDb.delete).not.toHaveBeenCalled();

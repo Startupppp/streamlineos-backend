@@ -102,6 +102,10 @@ export const acceptInvitationSchema = z.object({
   lastName: z.string().optional(),
 });
 
+export const declineInvitationSchema = z.object({
+  token: z.string().min(1),
+});
+
 export const switchOrgSchema = z.object({
   orgId: z.string().min(1),
 });
@@ -135,6 +139,7 @@ export type UpdateOrgSettingsInput = z.infer<typeof updateOrgSettingsSchema>;
 export type SecuritySettingsInput = z.infer<typeof securitySettingsSchema>;
 export type UpdateMemberRoleInput = z.infer<typeof updateMemberRoleSchema>;
 export type AcceptInvitationInput = z.infer<typeof acceptInvitationSchema>;
+export type DeclineInvitationInput = z.infer<typeof declineInvitationSchema>;
 export type SwitchOrgInput = z.infer<typeof switchOrgSchema>;
 export type RestoreOrgInput = z.infer<typeof restoreOrgSchema>;
 export type DeleteOrgInput = z.infer<typeof deleteOrgSchema>;

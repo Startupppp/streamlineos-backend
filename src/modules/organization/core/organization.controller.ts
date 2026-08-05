@@ -29,9 +29,12 @@ import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { OrganizationService } from "./organization.service";
 import { OrganizationSettingsService } from "./organization-settings.service";
 import { InvitationsService } from "./invitations.service";
+import { InvitationsReadService } from "./invitations-read.service";
+import { InvitationAcceptanceService } from "./invitation-acceptance.service";
 import {
   acceptInvitationSchema,
   addCustomDomainSchema,
+  declineInvitationSchema,
   createOrganizationSchema,
   createHolidaySchema,
   deleteOrgSchema,
@@ -44,6 +47,7 @@ import {
   updateOrgSettingsSchema,
   type AcceptInvitationInput,
   type AddCustomDomainInput,
+  type DeclineInvitationInput,
   type CreateHolidayInput,
   type CreateOrganizationInput,
   type DeleteOrgInput,
@@ -63,6 +67,8 @@ export class OrganizationController {
     private readonly organization: OrganizationService,
     private readonly settings: OrganizationSettingsService,
     private readonly invitations: InvitationsService,
+    private readonly invitationsRead: InvitationsReadService,
+    private readonly invitationAcceptance: InvitationAcceptanceService,
     private readonly rateLimit: RateLimitService,
   ) {}
 
@@ -92,7 +98,7 @@ export class OrganizationController {
   ) {
     if (!token) throw new BadRequestException("Missing token");
     await this.enforceRateLimit("invite:validate", this.getIp(req));
-    return this.invitations.validate(token);
+    return this.invitationsRead.validate(token);
   }
 
   @Get()
@@ -221,7 +227,18 @@ export class OrganizationController {
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("invite:accept", this.getIp(req));
-    return this.invitations.accept(body);
+    return this.invitationAcceptance.accept(body);
+  }
+
+  @Public()
+  @Post("invitations/decline")
+  @HttpCode(200)
+  async declineInvitation(
+    @Body(new ZodValidationPipe(declineInvitationSchema)) body: DeclineInvitationInput,
+    @Request() req: { ip?: string; headers: Record<string, string> },
+  ) {
+    await this.enforceRateLimit("invite:accept", this.getIp(req));
+    return this.invitationAcceptance.decline(body);
   }
 
   @UseGuards(PermissionGuard)

@@ -10,7 +10,6 @@ import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import {
   auditLogs,
-  devices,
   loginHistory,
   organizationMembers,
   orgUnitMembers,
@@ -25,10 +24,7 @@ import type {
   UpdateMembershipInput,
   UpdatePreferencesInput,
 } from "./dto/users.schemas";
-import {
-  withClientInfo,
-  withDeviceClientInfo,
-} from "../../common/http/parse-user-agent";
+import { withClientInfo } from "../../common/http/parse-user-agent";
 import { syncOrgUnitPlacement } from "../../common/org/sync-org-unit-placement";
 
 @Injectable()
@@ -98,37 +94,6 @@ export class UserProfileService {
       orgId,
       targetId: userId,
       targetType: "user",
-    });
-    return { success: true };
-  }
-
-  async getUserDevices(orgId: string, userId: string) {
-    await this.assertMember(orgId, userId);
-    const rows = await this.db
-      .select()
-      .from(devices)
-      .where(eq(devices.userId, userId))
-      .orderBy(desc(devices.lastSeenAt));
-    return rows.map(withDeviceClientInfo);
-  }
-
-  async removeDevice(
-    orgId: string,
-    userId: string,
-    deviceId: string,
-    actorUserId: string,
-  ) {
-    await this.assertMember(orgId, userId);
-    await this.db
-      .delete(devices)
-      .where(and(eq(devices.id, deviceId), eq(devices.userId, userId)));
-    this.audit.log({
-      action: "user.device.removed",
-      userId: actorUserId,
-      orgId,
-      targetId: userId,
-      targetType: "user",
-      metadata: { deviceId },
     });
     return { success: true };
   }

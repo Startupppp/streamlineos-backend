@@ -4,6 +4,8 @@ import { AccessService } from "../../access/access.service";
 import { ForbiddenException, ConflictException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { InvitationsService } from "./invitations.service";
+import { InvitationAcceptanceService } from "./invitation-acceptance.service";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -26,7 +28,33 @@ const BASE_INVITATION = {
 };
 const EXISTING_USER = { id: "user-existing", email: "invitee@example.com" };
 
-function buildUniversalTx() {
+type MockQuery = {
+  users: { findFirst: jest.Mock };
+  organizationMembers: { findFirst: jest.Mock };
+  organizations: { findFirst: jest.Mock };
+  invitations: { findFirst: jest.Mock };
+};
+
+/** `db` and the transaction handle must share one query object: the service reads
+ *  through `tx.query.*` inside the tenant transaction, while tests stub `db.query.*`. */
+function buildQuery(): MockQuery {
+  return {
+    users: { findFirst: jest.fn().mockResolvedValue(null) },
+    organizationMembers: { findFirst: jest.fn().mockResolvedValue(null) },
+    organizations: {
+      findFirst: jest.fn().mockResolvedValue({
+        id: ORG_ID,
+        name: "Acme",
+        status: "ACTIVE",
+        deletedAt: null,
+        allowedEmailDomains: [],
+      }),
+    },
+    invitations: { findFirst: jest.fn().mockResolvedValue(BASE_INVITATION) },
+  };
+}
+
+function buildUniversalTx(query: MockQuery) {
   const updateResult = {
     returning: jest.fn().mockResolvedValue([{ id: BASE_INVITATION.id }]),
     then: (resolve: (value: undefined) => unknown) =>
@@ -34,11 +62,7 @@ function buildUniversalTx() {
   };
   return {
     execute: jest.fn().mockResolvedValue([]),
-    query: {
-      invitations: {
-        findFirst: jest.fn().mockResolvedValue(BASE_INVITATION),
-      },
-    },
+    query,
     select: jest.fn().mockReturnThis(),
     from: jest.fn().mockReturnThis(),
     where: jest.fn().mockImplementation(function (this: unknown) {
@@ -66,23 +90,11 @@ function buildUniversalTx() {
 }
 
 function buildMockDb() {
-  const universalTx = buildUniversalTx();
+  const query = buildQuery();
+  const universalTx = buildUniversalTx(query);
   return {
     universalTx,
-    query: {
-      users: { findFirst: jest.fn().mockResolvedValue(null) },
-      organizationMembers: { findFirst: jest.fn().mockResolvedValue(null) },
-      organizations: {
-        findFirst: jest.fn().mockResolvedValue({
-          id: ORG_ID,
-          name: "Acme",
-          status: "ACTIVE",
-          deletedAt: null,
-          allowedEmailDomains: [],
-        }),
-      },
-      invitations: { findFirst: jest.fn().mockResolvedValue(null) },
-    },
+    query,
     select: jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue({
         where: jest.fn().mockResolvedValue([]),
@@ -108,6 +120,7 @@ describe("InvitationsService.invite — plan limit enforcement", () => {
     const module = await Test.createTestingModule({
       providers: [
         InvitationsService,
+        { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
         { provide: DRIZZLE, useValue: mockDb },
         { provide: PlanLimitsService, useValue: mockPlanLimits },
         { provide: AuditService, useValue: { log: jest.fn() } },
@@ -173,8 +186,8 @@ describe("InvitationsService.invite — plan limit enforcement", () => {
   });
 });
 
-describe("InvitationsService.accept — plan limit enforcement", () => {
-  let svc: InvitationsService;
+describe("InvitationAcceptanceService.accept — plan limit enforcement", () => {
+  let svc: InvitationAcceptanceService;
   let mockDb: ReturnType<typeof buildMockDb>;
   let mockPlanLimits: { assertWithinLimit: jest.Mock };
 
@@ -186,20 +199,15 @@ describe("InvitationsService.accept — plan limit enforcement", () => {
 
     const module = await Test.createTestingModule({
       providers: [
-        InvitationsService,
+        InvitationAcceptanceService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: PlanLimitsService, useValue: mockPlanLimits },
-        { provide: AuditService, useValue: { log: jest.fn() } },
         { provide: CacheService, useValue: { invalidate: jest.fn().mockResolvedValue(undefined), invalidateNamespace: jest.fn().mockResolvedValue(undefined) } },
-        { provide: EmailService, useValue: { sendInvitationEmail: jest.fn().mockResolvedValue(undefined) } },
-        {
-          provide: AccessService,
-          useValue: { resolveUserPermissions: jest.fn().mockResolvedValue(new Map()) },
-        },
+        { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
 
-    svc = module.get(InvitationsService);
+    svc = module.get(InvitationAcceptanceService);
   });
 
   it("rejects existing-user accept with invitee-friendly message when org is at member limit", async () => {

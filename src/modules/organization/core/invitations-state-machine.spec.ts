@@ -11,6 +11,8 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { EmailService } from "../../email/email.service";
 import { InvitationsService } from "./invitations.service";
+import { InvitationLifecycleService } from "./invitation-lifecycle.service";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 
 describe("InvitationsService state transitions", () => {
   const invitationFindFirst = jest.fn();
@@ -42,6 +44,7 @@ describe("InvitationsService state transitions", () => {
     ),
   };
   let service: InvitationsService;
+  let lifecycle: InvitationLifecycleService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -58,6 +61,7 @@ describe("InvitationsService state transitions", () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         InvitationsService,
+        InvitationLifecycleService,
         { provide: DRIZZLE, useValue: db },
         { provide: AuditService, useValue: { log: jest.fn() } },
         {
@@ -66,13 +70,18 @@ describe("InvitationsService state transitions", () => {
         },
         {
           provide: EmailService,
-          useValue: { sendInvitationEmail: jest.fn().mockResolvedValue(undefined) },
+          useValue: {
+            sendInvitationEmail: jest.fn().mockResolvedValue(undefined),
+            sendInvitationRevokedEmail: jest.fn().mockResolvedValue(undefined),
+          },
         },
         { provide: PlanLimitsService, useValue: {} },
         { provide: AccessService, useValue: {} },
+        { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
     service = moduleRef.get(InvitationsService);
+    lifecycle = moduleRef.get(InvitationLifecycleService);
   });
 
   it.each(["resend", "cancel"] as const)(
@@ -80,9 +89,12 @@ describe("InvitationsService state transitions", () => {
     async (operation) => {
       invitationFindFirst.mockResolvedValue(null);
 
-      await expect(
-        service[operation]("org-a", "invite-from-org-b", "actor-1"),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      const run =
+        operation === "resend"
+          ? () => service.resend("org-a", "invite-from-org-b", "actor-1")
+          : () => lifecycle.cancel("org-a", "invite-from-org-b", "actor-1");
+
+      await expect(run()).rejects.toBeInstanceOf(NotFoundException);
       expect(db.transaction).not.toHaveBeenCalled();
     },
   );
@@ -97,7 +109,7 @@ describe("InvitationsService state transitions", () => {
     });
 
     await expect(
-      service.cancel("org-a", "invite-1", "actor-1"),
+      lifecycle.cancel("org-a", "invite-1", "actor-1"),
     ).resolves.toEqual({ success: true });
 
     expect(db.transaction).toHaveBeenCalledTimes(1);
@@ -123,9 +135,12 @@ describe("InvitationsService state transitions", () => {
       });
       updateReturning.mockResolvedValueOnce([]);
 
-      await expect(
-        service[operation]("org-a", "invite-1", "actor-1"),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      const run =
+        operation === "resend"
+          ? () => service.resend("org-a", "invite-1", "actor-1")
+          : () => lifecycle.cancel("org-a", "invite-1", "actor-1");
+
+      await expect(run()).rejects.toBeInstanceOf(NotFoundException);
 
       expect(eventValues).not.toHaveBeenCalled();
     },
@@ -143,7 +158,7 @@ describe("InvitationsService state transitions", () => {
     updateReturning.mockResolvedValueOnce([]);
 
     await expect(
-      service.changeRole(
+      lifecycle.changeRole(
         "org-a",
         "invite-1",
         { userId: "actor-1", isOrgOwner: true },

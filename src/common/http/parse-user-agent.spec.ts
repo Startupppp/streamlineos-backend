@@ -1,9 +1,7 @@
 import {
   enrichUserAgent,
   parseUserAgent,
-  resolveDeviceClientInfo,
   withClientInfo,
-  withDeviceClientInfo,
 } from "./parse-user-agent";
 
 const ELECTRON_UA =
@@ -74,74 +72,12 @@ describe("enrichUserAgent", () => {
   });
 });
 
-describe("resolveDeviceClientInfo", () => {
-  it("re-parses legacy axios browser tokens from fingerprint", () => {
-    expect(
-      resolveDeviceClientInfo({
-        browser: "axios/1.18.1",
-        os: null,
-        platform: null,
-        fingerprint: "axios/1.18.1",
-      }),
-    ).toEqual({
-      browser: "Axios 1.18.1",
-      os: null,
-      platform: null,
-    });
-  });
-
-  it("parses full user agent stored in fingerprint", () => {
-    const ua =
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
-    const result = resolveDeviceClientInfo({
-      browser: "axios/1.18.1",
-      os: null,
-      platform: null,
-      fingerprint: ua,
-    });
-    expect(result.browser).toBe("Chrome 124");
-    expect(result.os).toBe("macOS");
-  });
-
-  it("relabels legacy stored Electron browser labels", () => {
-    expect(
-      resolveDeviceClientInfo({
-        browser: "Electron 39",
-        os: "Windows",
-        platform: "Desktop",
-        fingerprint: "device-fp-1",
-      }),
-    ).toEqual({
-      browser: "StreamlineOS Desktop",
-      os: "Windows",
-      platform: "Desktop",
-    });
-  });
-});
-
 describe("withClientInfo", () => {
   it("adds browser and os fields to login history rows", () => {
     expect(
       withClientInfo({
         id: "1",
         userAgent: "axios/1.18.1",
-      }),
-    ).toMatchObject({
-      browser: "Axios 1.18.1",
-      os: null,
-    });
-  });
-});
-
-describe("withDeviceClientInfo", () => {
-  it("normalizes device rows for API responses", () => {
-    expect(
-      withDeviceClientInfo({
-        id: "d1",
-        browser: "axios/1.18.1",
-        os: null,
-        platform: null,
-        fingerprint: "axios/1.18.1",
       }),
     ).toMatchObject({
       browser: "Axios 1.18.1",

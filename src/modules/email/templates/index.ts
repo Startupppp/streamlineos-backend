@@ -9,6 +9,9 @@ export {
 
 export {
   getInvitationEmailTemplate,
+  getInvitationRevokedEmailTemplate,
+  getMembershipRemovedEmailTemplate,
+  getMembershipSuspendedEmailTemplate,
   getHolidayAnnouncementEmailTemplate,
   getCompanyAnnouncementEmailTemplate,
 } from "./organization";

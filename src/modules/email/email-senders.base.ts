@@ -6,6 +6,9 @@ import {
   getMagicLinkEmailTemplate,
   getWelcomeEmailTemplate,
   getInvitationEmailTemplate,
+  getInvitationRevokedEmailTemplate,
+  getMembershipRemovedEmailTemplate,
+  getMembershipSuspendedEmailTemplate,
   getHolidayAnnouncementEmailTemplate,
   getCompanyAnnouncementEmailTemplate,
   getLeaveRequestEmailTemplate,
@@ -56,6 +59,38 @@ export abstract class EmailSendersBase {
       to: email,
       subject: `You've been invited to join ${organizationName}`,
       html: getInvitationEmailTemplate(`${appUrl}/invitation/${token}`, organizationName, inviterName),
+    });
+  }
+
+  sendInvitationRevokedEmail(email: string, organizationName: string): Promise<void> {
+    return this.sendEmail({
+      to: email,
+      subject: `Your invitation to ${organizationName} was withdrawn`,
+      html: getInvitationRevokedEmailTemplate(organizationName),
+    });
+  }
+
+  sendMembershipRemovedEmail(
+    email: string,
+    recipientName: string,
+    organizationName: string,
+  ): Promise<void> {
+    return this.sendEmail({
+      to: email,
+      subject: `Your access to ${organizationName} was removed`,
+      html: getMembershipRemovedEmailTemplate(recipientName, organizationName),
+    });
+  }
+
+  sendMembershipSuspendedEmail(
+    email: string,
+    recipientName: string,
+    organizationName: string,
+  ): Promise<void> {
+    return this.sendEmail({
+      to: email,
+      subject: `Your access to ${organizationName} is suspended`,
+      html: getMembershipSuspendedEmailTemplate(recipientName, organizationName),
     });
   }
 
