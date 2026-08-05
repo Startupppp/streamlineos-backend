@@ -13,6 +13,8 @@ import { type Db } from "../../../db/drizzle.module";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import type { CreateApiTokenInput, ListApiTokensQuery } from "./dto/api-tokens.schemas";
 
+const CRM_LEAD_INGEST_SCOPE = "leads:write";
+
 @Injectable()
 export class ApiTokensService {
   constructor(
@@ -73,7 +75,7 @@ export class ApiTokensService {
         description: input.description,
         keyHash,
         keyPrefix,
-        scopes: input.scopes,
+        scopes: [CRM_LEAD_INGEST_SCOPE],
         expiresAt: input.expiresAt ?? null,
         createdBy: userId,
       })
@@ -97,9 +99,9 @@ export class ApiTokensService {
       targetUserIds: [userId],
       entityType: "api_key",
       entityId: created.id,
-      title: "New API key created",
-      message: `A new API key "${input.name}" was created on your organization. If you did not do this, revoke it immediately.`,
-      link: "/settings/api-keys",
+      title: "New CRM API key created",
+      message: `A new CRM lead-ingestion key "${input.name}" was created. If you did not do this, revoke it immediately.`,
+      link: "/crm/api-keys",
     }).catch(() => undefined);
 
     return { token: rawKey, apiKey: created };
@@ -122,18 +124,4 @@ export class ApiTokensService {
     return { success: true };
   }
 
-  async deleteToken(orgId: string, tokenId: string) {
-    const [existing] = await this.db
-      .select({ id: apiKeys.id, orgId: apiKeys.orgId })
-      .from(apiKeys)
-      .where(and(eq(apiKeys.id, tokenId), eq(apiKeys.orgId, orgId)));
-
-    if (!existing) throw new NotFoundException("API token not found");
-
-    await this.db
-      .delete(apiKeys)
-      .where(and(eq(apiKeys.id, tokenId), eq(apiKeys.orgId, orgId)));
-
-    return { success: true };
-  }
 }

@@ -11,7 +11,7 @@ import type { Request } from "express";
 import { jwtVerify, decodeJwt } from "jose";
 import type { JWTPayload } from "jose";
 import { PORTAL_AUDIENCE } from "../portal-auth/portal-claims";
-import { and, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import * as bcrypt from "bcryptjs";
 import type { Redis } from "@upstash/redis";
 import { IS_PUBLIC } from "./public.decorator";
@@ -285,7 +285,9 @@ export class JwtAuthGuard implements CanActivate {
       permissions: [],
       isOrgOwner: state.isOwner,
       sessionId: `pat:${matched.id}`,
-      tokenScopes: matched.scopes.length > 0 ? matched.scopes : null,
+      // An empty PAT scope list must deny every permission. `null` is reserved
+      // for interactive sessions and means "not constrained by a token".
+      tokenScopes: matched.scopes,
     };
   }
 
@@ -295,7 +297,7 @@ export class JwtAuthGuard implements CanActivate {
     const now = new Date();
     const liveToken = and(
       isNull(userApiTokens.revokedAt),
-      or(isNull(userApiTokens.expiresAt), gt(userApiTokens.expiresAt, now)),
+      gt(userApiTokens.expiresAt, now),
     );
 
     const digest = hashApiToken(rawToken);

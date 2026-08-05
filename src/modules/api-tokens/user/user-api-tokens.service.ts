@@ -1,4 +1,9 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { and, eq, isNull } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { userApiTokens } from "../../../db/schema/common/auth";
@@ -11,22 +16,44 @@ import {
 } from "../../../common/auth/api-token-hash";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import type { CreateUserApiTokenInput } from "./dto/user-api-tokens.schemas";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { AccessService } from "../../access/access.service";
+import { grantablePersonalTokenPermissions } from "./personal-token-scope-policy";
 
 @Injectable()
 export class UserApiTokensService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly dispatch: NotificationDispatchService,
+    private readonly access: AccessService,
   ) {}
 
-  async create(userId: string, orgId: string, input: CreateUserApiTokenInput) {
+  async listGrantablePermissions(user: CurrentUserContext) {
+    const snapshot = await this.access.getAccessSnapshot(
+      user.orgId,
+      user.userId,
+      user,
+    );
+    return grantablePersonalTokenPermissions(snapshot);
+  }
+
+  async create(user: CurrentUserContext, input: CreateUserApiTokenInput) {
+    const grantable = await this.listGrantablePermissions(user);
+    const allowed = new Set(grantable.map((permission) => permission.name));
+    const denied = input.scopes.filter((scope) => !allowed.has(scope));
+    if (denied.length > 0) {
+      throw new ForbiddenException(
+        "One or more selected permissions are unavailable for personal tokens",
+      );
+    }
+
     const rawToken = generateApiToken();
 
     const [row] = await this.db
       .insert(userApiTokens)
       .values({
         id: randomUUID(),
-        userId,
+        userId: user.userId,
         name: input.name,
         tokenHash: hashApiToken(rawToken),
         hashAlg: "sha256",
@@ -47,14 +74,14 @@ export class UserApiTokensService {
 
     void this.dispatch.emit({
       eventKey: "security.api_key.created",
-      orgId,
-      actorUserId: userId,
-      targetUserIds: [userId],
+      orgId: user.orgId,
+      actorUserId: user.userId,
+      targetUserIds: [user.userId],
       entityType: "api_key",
       entityId: row.id,
       title: "New personal API token created",
       message: `A new personal API token "${input.name}" was created on your account. If you did not do this, revoke it immediately.`,
-      link: "/settings/security",
+      link: "/settings/api-tokens",
     }).catch(() => undefined);
 
     return { ...row, rawToken };

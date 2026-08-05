@@ -3,6 +3,7 @@ import { createHash } from "crypto";
 import { ApiKeyGuard } from "./api-key.guard";
 import type { Db } from "../../db/drizzle.module";
 import type { RateLimitService } from "../ratelimit/rate-limit.service";
+import type { EntitlementsService } from "../../modules/access/entitlements.service";
 
 function ctxWith(headers: Record<string, string>): { ctx: ExecutionContext; req: { headers: Record<string, string>; apiKey?: unknown } } {
   const req: { headers: Record<string, string>; apiKey?: unknown } = { headers };
@@ -23,52 +24,58 @@ function makeRl(allowed: boolean): RateLimitService {
   } as Partial<RateLimitService> as RateLimitService;
 }
 
+function makeEntitlements(enabled = true): EntitlementsService {
+  return {
+    isModuleEnabled: jest.fn().mockResolvedValue(enabled),
+  } as Partial<EntitlementsService> as EntitlementsService;
+}
+
 describe("ApiKeyGuard", () => {
   it("401 when X-API-Key header missing", async () => {
-    const g = new ApiKeyGuard(makeDb(undefined), makeRl(true));
+    const g = new ApiKeyGuard(makeDb(undefined), makeRl(true), makeEntitlements());
     const { ctx } = ctxWith({});
     await expect(g.canActivate(ctx)).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it("401 when key not found / revoked", async () => {
-    const g = new ApiKeyGuard(makeDb(undefined), makeRl(true));
+    const g = new ApiKeyGuard(makeDb(undefined), makeRl(true), makeEntitlements());
     const { ctx } = ctxWith({ "x-api-key": "raw" });
     await expect(g.canActivate(ctx)).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it("401 when key expired", async () => {
     const row = { id: "k", orgId: "o", scopes: ["leads:write"], expiresAt: new Date(Date.now() - 1000) };
-    const g = new ApiKeyGuard(makeDb(row), makeRl(true));
+    const g = new ApiKeyGuard(makeDb(row), makeRl(true), makeEntitlements());
     const { ctx } = ctxWith({ "x-api-key": "raw" });
     await expect(g.canActivate(ctx)).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it("403 when scopes lack leads:write", async () => {
-    const row = { id: "k", orgId: "o", scopes: ["other:read"], expiresAt: null };
-    const g = new ApiKeyGuard(makeDb(row), makeRl(true));
+    const row = { id: "k", orgId: "o", scopes: ["other:read"], expiresAt: new Date(Date.now() + 60_000) };
+    const g = new ApiKeyGuard(makeDb(row), makeRl(true), makeEntitlements());
     const { ctx } = ctxWith({ "x-api-key": "raw" });
     await expect(g.canActivate(ctx)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it("403 when scopes is empty array", async () => {
-    const row = { id: "k", orgId: "o", scopes: [], expiresAt: null };
-    const g = new ApiKeyGuard(makeDb(row), makeRl(true));
+    const row = { id: "k", orgId: "o", scopes: [], expiresAt: new Date(Date.now() + 60_000) };
+    const g = new ApiKeyGuard(makeDb(row), makeRl(true), makeEntitlements());
     const { ctx } = ctxWith({ "x-api-key": "raw" });
     await expect(g.canActivate(ctx)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it("allows and attaches req.apiKey when valid + scoped", async () => {
-    const row = { id: "k", orgId: "o", scopes: ["leads:write"], expiresAt: null };
-    const g = new ApiKeyGuard(makeDb(row), makeRl(true));
+    const row = { id: "k", orgId: "o", scopes: ["leads:write"], expiresAt: new Date(Date.now() + 60_000) };
+    const g = new ApiKeyGuard(makeDb(row), makeRl(true), makeEntitlements());
     const { ctx, req } = ctxWith({ "x-api-key": "raw" });
     await expect(g.canActivate(ctx)).resolves.toBe(true);
     expect(req.apiKey).toEqual({ id: "k", orgId: "o", scopes: ["leads:write"] });
   });
 
   it("hashes the raw key with sha256 for lookup", async () => {
-    const row = { id: "k", orgId: "o", scopes: ["*"], expiresAt: null };
+    const row = { id: "k", orgId: "o", scopes: ["leads:write"], expiresAt: new Date(Date.now() + 60_000) };
     const db = makeDb(row);
-    const g = new ApiKeyGuard(db, makeRl(true));
+    const g = new ApiKeyGuard(db, makeRl(true), makeEntitlements());
     const { ctx } = ctxWith({ "x-api-key": "secret" });
     await g.canActivate(ctx);
     const expected = createHash("sha256").update("secret").digest("hex");

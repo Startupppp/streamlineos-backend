@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -12,6 +11,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { ModuleGuard } from "../../../common/rbac/module.guard";
+import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
@@ -26,13 +27,14 @@ import {
 } from "./dto/api-tokens.schemas";
 
 @Controller("api-tokens")
-@UseGuards(JwtAuthGuard)
+@RequireModule("crm")
+@UseGuards(JwtAuthGuard, ModuleGuard)
 export class ApiTokensController {
   constructor(private readonly apiTokensService: ApiTokensService) {}
 
   @Get()
   @UseGuards(PermissionGuard)
-  @RequirePermission("settings:manage")
+  @RequirePermission("crm:settings:manage")
   listTokens(
     @CurrentUser() u: CurrentUserContext,
     @Query(new ZodValidationPipe(listApiTokensSchema)) query: ListApiTokensQuery,
@@ -42,7 +44,7 @@ export class ApiTokensController {
 
   @Post()
   @UseGuards(PermissionGuard)
-  @RequirePermission("settings:manage")
+  @RequirePermission("crm:settings:manage")
   createToken(
     @CurrentUser() u: CurrentUserContext,
     @Body(new ZodValidationPipe(createApiTokenSchema)) body: CreateApiTokenInput,
@@ -53,16 +55,9 @@ export class ApiTokensController {
   @Patch(":tokenId/revoke")
   @HttpCode(HttpStatus.OK)
   @UseGuards(PermissionGuard)
-  @RequirePermission("settings:manage")
+  @RequirePermission("crm:settings:manage")
   revokeToken(@CurrentUser() u: CurrentUserContext, @Param("tokenId") tokenId: string) {
     return this.apiTokensService.revokeToken(u.orgId, tokenId);
   }
 
-  @Delete(":tokenId")
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("settings:manage")
-  deleteToken(@CurrentUser() u: CurrentUserContext, @Param("tokenId") tokenId: string) {
-    return this.apiTokensService.deleteToken(u.orgId, tokenId);
-  }
 }

@@ -3,6 +3,7 @@ import { grantsOrgAdmin } from "../../common/rbac/grantability";
 import { isPlanGatedModule } from "../../common/rbac/module-vocabulary";
 import { moduleOf } from "./access.service";
 import type { AuthResult, DataScope } from "./access.types";
+import { isPersonalTokenPermissionDelegable } from "../../common/rbac/personal-token-policy";
 
 export interface AccessResolver {
   resolveUserPermissions(orgId: string, userId: string): Promise<Map<string, DataScope>>;
@@ -16,7 +17,11 @@ export async function authorize(
 ): Promise<AuthResult> {
   if (!ctx) return { allow: false, scope: "none", reason: "UNAUTHENTICATED" };
 
-  if (ctx.tokenScopes && !ctx.tokenScopes.includes(permissionKey)) {
+  if (
+    ctx.tokenScopes &&
+    (!isPersonalTokenPermissionDelegable(permissionKey) ||
+      !ctx.tokenScopes.includes(permissionKey))
+  ) {
     return { allow: false, scope: "none", reason: "FORBIDDEN" };
   }
 
@@ -40,7 +45,11 @@ export async function authorize(
   const granted: string[] = [];
   for (const [key, grantedScope] of resolved) {
     if (grantedScope === "none") continue;
-    if (tokenScopes && !tokenScopes.includes(key)) continue;
+    if (
+      tokenScopes &&
+      (!isPersonalTokenPermissionDelegable(key) || !tokenScopes.includes(key))
+    )
+      continue;
     granted.push(key);
   }
   return { allow: true, scope, permissions: granted };

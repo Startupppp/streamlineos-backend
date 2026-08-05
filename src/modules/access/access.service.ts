@@ -41,6 +41,7 @@ import {
 import { isPlanGatedModule } from "../../common/rbac/module-vocabulary";
 import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
 import type { AccessSnapshot, DataScope } from "./access.types";
+import { isPersonalTokenPermissionDelegable } from "../../common/rbac/personal-token-policy";
 import { EntitlementsService, MODULE_CATALOG } from "./entitlements.service";
 import { MfaPolicyService } from "./mfa-policy.service";
 
@@ -482,7 +483,12 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       const catalog = allCatalogScopes();
       const scopes: Record<string, DataScope> = {};
       for (const [key, scope] of Object.entries(catalog)) {
-        if (tokenScopes && !tokenScopes.includes(key)) continue;
+        if (
+          tokenScopes &&
+          (!isPersonalTokenPermissionDelegable(key) ||
+            !tokenScopes.includes(key))
+        )
+          continue;
         scopes[key] = scope;
       }
       return {
@@ -500,7 +506,12 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     const permissions: string[] = [];
     for (const [key, scope] of resolved) {
       if (scope === "none") continue;
-      if (tokenScopes && !tokenScopes.includes(key)) continue;
+      if (
+        tokenScopes &&
+        (!isPersonalTokenPermissionDelegable(key) ||
+          !tokenScopes.includes(key))
+      )
+        continue;
       scopes[key] = scope;
       permissions.push(key);
     }

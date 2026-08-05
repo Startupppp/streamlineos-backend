@@ -32,13 +32,19 @@ export class UserApiTokensController {
     return this.userApiTokensService.list(u.userId);
   }
 
+  @Get("permissions")
+  @RequirePermission("settings:api-tokens:read")
+  listGrantablePermissions(@CurrentUser() u: CurrentUserContext) {
+    return this.userApiTokensService.listGrantablePermissions(u);
+  }
+
   @Post()
   @RequirePermission("settings:api-tokens:write")
   create(
     @CurrentUser() u: CurrentUserContext,
     @Body(new ZodValidationPipe(createUserApiTokenSchema)) body: CreateUserApiTokenInput,
   ) {
-    return this.userApiTokensService.create(u.userId, u.orgId, body);
+    return this.userApiTokensService.create(u, body);
   }
 
   @Delete(":tokenId")

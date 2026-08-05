@@ -15,8 +15,19 @@ export const createUserApiTokenSchema = z.object({
         }),
     )
     .min(1, "Select at least one permission for this token")
-    .max(200),
-  expiresAt: z.coerce.date().optional(),
+    .max(200)
+    .refine((scopes) => new Set(scopes).size === scopes.length, {
+      message: "Duplicate permissions are not allowed",
+    }),
+  expiresAt: z.coerce
+    .date()
+    .refine((value) => value.getTime() > Date.now(), {
+      message: "Expiration must be in the future",
+    })
+    .refine(
+      (value) => value.getTime() <= Date.now() + 366 * 24 * 60 * 60 * 1000,
+      { message: "Personal tokens cannot exceed one year" },
+    ),
 });
 
 export type CreateUserApiTokenInput = z.infer<typeof createUserApiTokenSchema>;
