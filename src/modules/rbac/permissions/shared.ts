@@ -350,6 +350,12 @@ export const SHARED_PERMISSIONS: Permission[] = [
     description: "Upload and view own onboarding documents",
   },
   {
+    name: "self:recruitment",
+    resource: "self",
+    action: "recruitment",
+    description: "View assigned interviews and submit own hiring feedback",
+  },
+  {
     name: "self:cases",
     resource: "self",
     action: "cases",

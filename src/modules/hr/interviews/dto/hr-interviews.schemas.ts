@@ -35,6 +35,12 @@ export const interviewListSchema = z
   });
 export type InterviewListInput = z.output<typeof interviewListSchema>;
 
+export const selfInterviewListSchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+});
+export type SelfInterviewListInput = z.infer<typeof selfInterviewListSchema>;
+
 export const hiringFlowListSchema = z.object({
   limit: z.coerce.number().min(1).max(100).default(50),
   offset: z.coerce.number().min(0).default(0),

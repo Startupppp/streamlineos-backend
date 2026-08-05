@@ -40,7 +40,7 @@ export class NotificationEventsController {
     @Body(new ZodValidationPipe(emitEventSchema)) body: EmitEventInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.dispatch.emit({
+    return this.dispatch.emitNow({
       eventKey: body.eventKey,
       orgId: u.orgId,
       actorUserId: body.actorUserId ?? u.userId,

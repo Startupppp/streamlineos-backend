@@ -104,7 +104,10 @@ export class InvitationAcceptanceService {
     });
   }
 
-  private invalidateJoinCaches(orgId: string, userId: string): Promise<unknown[]> {
+  private invalidateJoinCaches(
+    orgId: string,
+    userId: string,
+  ): Promise<unknown[]> {
     return Promise.all([
       this.cache.invalidate(CACHE_KEYS.userSession(userId)),
       this.cache.invalidateNamespace(CACHE_KEYS.orgMembersListNamespace(orgId)),
@@ -192,7 +195,7 @@ export class InvitationAcceptanceService {
 
     await this.invalidateJoinCaches(invitedOrgId, joinedUserId);
 
-    void this.notifyAccepted(
+    await this.notifyAccepted(
       invitedOrgId,
       invitation.id,
       invitation.email,
@@ -368,7 +371,7 @@ export class InvitationAcceptanceService {
 
     await bustUsersStatsCache(this.cache, orgId);
 
-    void this.notifyDeclined(
+    await this.notifyDeclined(
       orgId,
       invitation.id,
       invitation.email,
@@ -390,7 +393,7 @@ export class InvitationAcceptanceService {
     ).filter((id) => id !== joinedUserId);
     if (targetUserIds.length === 0) return;
 
-    await this.dispatch.emit({
+    void this.dispatch.emit({
       eventKey: "organization.invitation.accepted",
       orgId,
       actorUserId: joinedUserId,
@@ -409,10 +412,12 @@ export class InvitationAcceptanceService {
     email: string,
     invitedBy: string | null,
   ): Promise<void> {
-    const targetUserIds = await getOrgAdminRecipients(this.db, orgId, [invitedBy]);
+    const targetUserIds = await getOrgAdminRecipients(this.db, orgId, [
+      invitedBy,
+    ]);
     if (targetUserIds.length === 0) return;
 
-    await this.dispatch.emit({
+    void this.dispatch.emit({
       eventKey: "organization.invitation.declined",
       orgId,
       targetUserIds,

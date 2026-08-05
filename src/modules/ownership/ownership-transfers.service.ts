@@ -19,6 +19,7 @@ import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { stableHash } from "../../common/cache/cache-hash";
+import { forEachOrg } from "../../common/tenant";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import {
   fetchMembershipById,
@@ -45,18 +46,35 @@ export class OwnershipTransfersService {
     actorUserId: string,
     input: InitiateOrgTransferInput,
   ) {
-    const actorMembership = await fetchMembershipByUser(this.db, orgId, actorUserId);
-    if (!actorMembership) throw new ForbiddenException("Not a member of this organization");
-    if (!actorMembership.isOwner) throw new ForbiddenException("Only the org owner can initiate an org ownership transfer");
+    const actorMembership = await fetchMembershipByUser(
+      this.db,
+      orgId,
+      actorUserId,
+    );
+    if (!actorMembership)
+      throw new ForbiddenException("Not a member of this organization");
+    if (!actorMembership.isOwner)
+      throw new ForbiddenException(
+        "Only the org owner can initiate an org ownership transfer",
+      );
 
     if (actorMembership.id === input.toMembershipId) {
       throw new BadRequestException("Cannot transfer ownership to yourself");
     }
 
-    const target = await fetchMembershipById(this.db, orgId, input.toMembershipId);
-    if (!target) throw new NotFoundException("Target membership not found in this organization");
+    const target = await fetchMembershipById(
+      this.db,
+      orgId,
+      input.toMembershipId,
+    );
+    if (!target)
+      throw new NotFoundException(
+        "Target membership not found in this organization",
+      );
     if (target.status !== "ACTIVE") {
-      throw new BadRequestException("Target membership must be ACTIVE to receive ownership");
+      throw new BadRequestException(
+        "Target membership must be ACTIVE to receive ownership",
+      );
     }
 
     const expiresAt = new Date(Date.now() + input.expiresInHours * 3_600_000);
@@ -74,7 +92,10 @@ export class OwnershipTransfersService {
           expiresAt,
           reason: input.reason ?? null,
         })
-        .returning({ id: ownershipTransfers.id, expiresAt: ownershipTransfers.expiresAt });
+        .returning({
+          id: ownershipTransfers.id,
+          expiresAt: ownershipTransfers.expiresAt,
+        });
 
       if (!transfer) throw new Error("Insert returned no rows");
 
@@ -106,7 +127,9 @@ export class OwnershipTransfersService {
     } catch (err: unknown) {
       const pgErr = err as { code?: string };
       if (pgErr.code === "23505") {
-        throw new ConflictException("A pending org ownership transfer already exists");
+        throw new ConflictException(
+          "A pending org ownership transfer already exists",
+        );
       }
       throw err;
     }
@@ -119,8 +142,13 @@ export class OwnershipTransfersService {
     input: InitiateModuleTransferInput,
     isOrgOwner: boolean,
   ) {
-    const actorMembership = await fetchMembershipByUser(this.db, orgId, actorUserId);
-    if (!actorMembership) throw new ForbiddenException("Not a member of this organization");
+    const actorMembership = await fetchMembershipByUser(
+      this.db,
+      orgId,
+      actorUserId,
+    );
+    if (!actorMembership)
+      throw new ForbiddenException("Not a member of this organization");
 
     if (!isOrgOwner) {
       const [currentOwnership] = await this.db
@@ -137,18 +165,31 @@ export class OwnershipTransfersService {
         throw new NotFoundException("Module ownership record not found");
       }
       if (currentOwnership.ownerMembershipId !== actorMembership.id) {
-        throw new ForbiddenException("Only the current module owner or an org owner may initiate a module ownership transfer");
+        throw new ForbiddenException(
+          "Only the current module owner or an org owner may initiate a module ownership transfer",
+        );
       }
     }
 
     if (actorMembership.id === input.toMembershipId) {
-      throw new BadRequestException("Cannot transfer module ownership to yourself");
+      throw new BadRequestException(
+        "Cannot transfer module ownership to yourself",
+      );
     }
 
-    const target = await fetchMembershipById(this.db, orgId, input.toMembershipId);
-    if (!target) throw new NotFoundException("Target membership not found in this organization");
+    const target = await fetchMembershipById(
+      this.db,
+      orgId,
+      input.toMembershipId,
+    );
+    if (!target)
+      throw new NotFoundException(
+        "Target membership not found in this organization",
+      );
     if (target.status !== "ACTIVE") {
-      throw new BadRequestException("Target membership must be ACTIVE to receive module ownership");
+      throw new BadRequestException(
+        "Target membership must be ACTIVE to receive module ownership",
+      );
     }
 
     const expiresAt = new Date(Date.now() + input.expiresInHours * 3_600_000);
@@ -166,7 +207,10 @@ export class OwnershipTransfersService {
           expiresAt,
           reason: input.reason ?? null,
         })
-        .returning({ id: ownershipTransfers.id, expiresAt: ownershipTransfers.expiresAt });
+        .returning({
+          id: ownershipTransfers.id,
+          expiresAt: ownershipTransfers.expiresAt,
+        });
 
       if (!transfer) throw new Error("Insert returned no rows");
 
@@ -186,7 +230,9 @@ export class OwnershipTransfersService {
       });
 
       await Promise.all([
-        this.cache.invalidate(CACHE_KEYS.moduleAccessOwnership(orgId, moduleKey)),
+        this.cache.invalidate(
+          CACHE_KEYS.moduleAccessOwnership(orgId, moduleKey),
+        ),
         this.cache.invalidateNamespace(`ownership:transfers:${orgId}`),
       ]);
 
@@ -202,7 +248,9 @@ export class OwnershipTransfersService {
     } catch (err: unknown) {
       const pgErr = err as { code?: string };
       if (pgErr.code === "23505") {
-        throw new ConflictException(`A pending transfer for module "${moduleKey}" already exists`);
+        throw new ConflictException(
+          `A pending transfer for module "${moduleKey}" already exists`,
+        );
       }
       throw err;
     }
@@ -247,8 +295,10 @@ export class OwnershipTransfersService {
     const offset = (filters.page - 1) * filters.limit;
 
     const conditions = [eq(ownershipTransfers.orgId, orgId)];
-    if (filters.scope) conditions.push(eq(ownershipTransfers.scope, filters.scope));
-    if (filters.status) conditions.push(eq(ownershipTransfers.status, filters.status));
+    if (filters.scope)
+      conditions.push(eq(ownershipTransfers.scope, filters.scope));
+    if (filters.status)
+      conditions.push(eq(ownershipTransfers.status, filters.status));
 
     const [rows, countResult] = await Promise.all([
       this.db
@@ -301,7 +351,12 @@ export class OwnershipTransfersService {
     const [membership] = await this.db
       .select({ id: organizationMembers.id })
       .from(organizationMembers)
-      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+      .where(
+        and(
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.userId, userId),
+        ),
+      )
       .limit(1);
 
     if (!membership) return { data: [] };
@@ -342,58 +397,66 @@ export class OwnershipTransfersService {
     return { data: rows };
   }
 
-  async expireStaleTransfers(orgId?: string): Promise<{ expired: number }> {
-    const conditions = [
-      eq(ownershipTransfers.status, "PENDING"),
-      lt(ownershipTransfers.expiresAt, new Date()),
-    ];
-    if (orgId) conditions.push(eq(ownershipTransfers.orgId, orgId));
+  async expireStaleTransfers(): Promise<{ expired: number }> {
+    const now = new Date();
+    const expired: Array<{
+      orgId: string;
+      transferId: string;
+      targetUserIds: string[];
+    }> = [];
 
-    const rows = await this.db
-      .update(ownershipTransfers)
-      .set({ status: "EXPIRED" })
-      .where(and(...conditions))
-      .returning({
-        id: ownershipTransfers.id,
-        orgId: ownershipTransfers.orgId,
-        fromMembershipId: ownershipTransfers.fromMembershipId,
-        toMembershipId: ownershipTransfers.toMembershipId,
-      });
+    await forEachOrg(
+      this.db,
+      "ownership-transfer-expiry",
+      async (tx, orgId) => {
+        const rows = await tx
+          .update(ownershipTransfers)
+          .set({ status: "EXPIRED" })
+          .where(
+            and(
+              eq(ownershipTransfers.orgId, orgId),
+              eq(ownershipTransfers.status, "PENDING"),
+              lt(ownershipTransfers.expiresAt, now),
+            ),
+          )
+          .returning({
+            id: ownershipTransfers.id,
+            fromMembershipId: ownershipTransfers.fromMembershipId,
+            toMembershipId: ownershipTransfers.toMembershipId,
+          });
+        if (rows.length === 0) return;
 
-    const affectedOrgIds = [...new Set(rows.map((r) => r.orgId))];
-    await Promise.all(
-      affectedOrgIds.map((affectedOrgId) =>
-        this.cache.invalidateNamespace(`ownership:transfers:${affectedOrgId}`),
-      ),
+          for (const row of rows)
+          expired.push({
+            orgId,
+            transferId: row.id,
+            targetUserIds: await resolveMembershipUserIds(tx, orgId, [
+              row.fromMembershipId,
+              row.toMembershipId,
+            ]),
+          });
+
+        await this.cache.invalidateNamespace(`ownership:transfers:${orgId}`);
+      },
     );
 
-    for (const row of rows) {
-      void this.notifyExpired(row.orgId, row.id, [
-        row.fromMembershipId,
-        row.toMembershipId,
-      ]).catch(() => undefined);
+    for (const row of expired) {
+      if (row.targetUserIds.length === 0) continue;
+      void this.dispatch
+        .emit({
+          eventKey: "ownership.transfer.expired",
+          orgId: row.orgId,
+          targetUserIds: row.targetUserIds,
+          entityType: "ownership_transfer",
+          entityId: row.transferId,
+          title: "Ownership transfer expired",
+          message:
+            "An ownership transfer request expired before it was answered. Ownership is unchanged.",
+          link: "/settings/organization",
+        })
+        .catch(() => undefined);
     }
 
-    return { expired: rows.length };
-  }
-
-  private async notifyExpired(
-    orgId: string,
-    transferId: string,
-    membershipIds: readonly number[],
-  ): Promise<void> {
-    const targetUserIds = await resolveMembershipUserIds(this.db, orgId, membershipIds);
-    if (targetUserIds.length === 0) return;
-
-    await this.dispatch.emit({
-      eventKey: "ownership.transfer.expired",
-      orgId,
-      targetUserIds,
-      entityType: "ownership_transfer",
-      entityId: transferId,
-      title: "Ownership transfer expired",
-      message: "An ownership transfer request expired before it was answered. Ownership is unchanged.",
-      link: "/settings/organization",
-    });
+    return { expired: expired.length };
   }
 }

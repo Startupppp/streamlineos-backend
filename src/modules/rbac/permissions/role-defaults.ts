@@ -9,6 +9,7 @@ const EMPLOYEE_SELF_SERVICE = [
   "self:payslips",
   "self:payroll",
   "self:onboarding-docs",
+  "self:recruitment",
   "self:cases",
   "hr:leaves:create",
   "hr:expenses:create",

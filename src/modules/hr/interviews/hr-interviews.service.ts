@@ -13,7 +13,11 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { buildInterviewIcs } from "./ics.util";
-import type { InterviewListInput, UpsertSlaInput } from "./dto/hr-interviews.schemas";
+import type {
+  InterviewListInput,
+  SelfInterviewListInput,
+  UpsertSlaInput,
+} from "./dto/hr-interviews.schemas";
 
 interface MonthStage {
   total: number;
@@ -67,6 +71,103 @@ export class HrInterviewsService {
       page: query.page,
       pageSize: query.pageSize,
     });
+  }
+
+  async listMine(
+    orgId: string,
+    userId: string,
+    query: SelfInterviewListInput,
+  ) {
+    const offset = (query.page - 1) * query.pageSize;
+    const rows = await this.db.execute<{
+      id: number;
+      type: string;
+      scheduled_at: Date;
+      duration: number;
+      location: string | null;
+      meeting_link: string | null;
+      result: "PENDING" | "PASSED" | "FAILED" | "NO_SHOW";
+      candidate_first_name: string;
+      candidate_last_name: string;
+      job_title: string | null;
+      scorecard_submitted_at: Date | null;
+      total_count: string;
+    }>(sql`
+      SELECT
+        i.id,
+        i.type,
+        i.scheduled_at,
+        i.duration,
+        i.location,
+        i.meeting_link,
+        i.result,
+        c.first_name AS candidate_first_name,
+        c.last_name AS candidate_last_name,
+        jp.title AS job_title,
+        sc.submitted_at AS scorecard_submitted_at,
+        COUNT(*) OVER() AS total_count
+      FROM interviews i
+      INNER JOIN candidates c
+        ON c.id = i.candidate_id AND c.org_id = ${orgId}
+      LEFT JOIN job_postings jp
+        ON jp.id = i.job_posting_id AND jp.org_id = ${orgId}
+      LEFT JOIN interview_scorecards sc
+        ON sc.interview_id = i.id AND sc.interviewer_id = ${userId}
+      WHERE i.org_id = ${orgId}
+        AND (
+          i.interviewer_id = ${userId}
+          OR EXISTS (
+            SELECT 1
+            FROM interview_panel_members ipm
+            WHERE ipm.org_id = ${orgId}
+              AND ipm.interview_id = i.id
+              AND ipm.user_id = ${userId}
+          )
+        )
+      ORDER BY i.scheduled_at DESC
+      LIMIT ${query.pageSize}
+      OFFSET ${offset}
+    `);
+
+    const total = Number(rows[0]?.total_count ?? 0);
+    return buildListResponse(
+      rows.map((row) => ({
+        id: row.id,
+        type: row.type,
+        scheduledAt: row.scheduled_at,
+        duration: row.duration,
+        location: row.location,
+        meetingLink: row.meeting_link,
+        result: row.result,
+        candidateFirstName: row.candidate_first_name,
+        candidateLastName: row.candidate_last_name,
+        jobTitle: row.job_title,
+        scorecardSubmittedAt: row.scorecard_submitted_at,
+      })),
+      total,
+      query,
+    );
+  }
+
+  async isAssignedTo(orgId: string, userId: string, interviewId: number) {
+    const rows = await this.db.execute<{ id: number }>(sql`
+      SELECT i.id
+      FROM interviews i
+      WHERE i.org_id = ${orgId}
+        AND i.id = ${interviewId}
+        AND (
+          i.interviewer_id = ${userId}
+          OR EXISTS (
+            SELECT 1
+            FROM interview_panel_members ipm
+            WHERE ipm.org_id = ${orgId}
+              AND ipm.interview_id = i.id
+              AND ipm.user_id = ${userId}
+          )
+        )
+      LIMIT 1
+    `);
+    return rows.length > 0;
   }
 
   listSlas(orgId: string) {

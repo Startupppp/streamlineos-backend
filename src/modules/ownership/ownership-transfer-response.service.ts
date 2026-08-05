@@ -22,8 +22,14 @@ import { bustMembershipStatusCache } from "../../common/auth/membership-state.se
 import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
 import { syncStructuralRoleAssignment } from "../../common/rbac/sync-structural-role";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
-import { assignModuleOwnerRole, revokeModuleOwnerRole } from "./module-owner-role.helper";
-import { fetchMembershipByUser, resolveMembershipUserIds } from "./ownership-members.helper";
+import {
+  assignModuleOwnerRole,
+  revokeModuleOwnerRole,
+} from "./module-owner-role.helper";
+import {
+  fetchMembershipByUser,
+  resolveMembershipUserIds,
+} from "./ownership-members.helper";
 import type { DeclineTransferInput } from "./dto/ownership.schemas";
 
 @Injectable()
@@ -35,15 +41,25 @@ export class OwnershipTransferResponseService {
     private readonly dispatch: NotificationDispatchService,
   ) {}
 
-  private async invalidateUserAccess(orgId: string, userId: string): Promise<void> {
+  private async invalidateUserAccess(
+    orgId: string,
+    userId: string,
+  ): Promise<void> {
     await this.cache.invalidate(CACHE_KEYS.userSession(userId));
     await bustMembershipStatusCache(this.cache, userId, orgId);
   }
 
-  private invalidateTransferCaches(orgId: string, moduleKey: string | null): Promise<unknown[]> {
+  private invalidateTransferCaches(
+    orgId: string,
+    moduleKey: string | null,
+  ): Promise<unknown[]> {
     return Promise.all([
       ...(moduleKey
-        ? [this.cache.invalidate(CACHE_KEYS.moduleAccessOwnership(orgId, moduleKey))]
+        ? [
+            this.cache.invalidate(
+              CACHE_KEYS.moduleAccessOwnership(orgId, moduleKey),
+            ),
+          ]
         : []),
       this.cache.invalidateNamespace(`ownership:transfers:${orgId}`),
     ]);
@@ -71,7 +87,9 @@ export class OwnershipTransferResponseService {
 
     if (!transfer) throw new NotFoundException("Transfer not found");
     if (transfer.status !== "PENDING") {
-      throw new BadRequestException(`Transfer is already ${transfer.status.toLowerCase()}`);
+      throw new BadRequestException(
+        `Transfer is already ${transfer.status.toLowerCase()}`,
+      );
     }
     if (transfer.expiresAt < new Date()) {
       await this.db
@@ -81,18 +99,32 @@ export class OwnershipTransferResponseService {
       throw new BadRequestException("Transfer has expired");
     }
 
-    const recipientMembership = await fetchMembershipByUser(this.db, orgId, actorUserId);
-    if (!recipientMembership) throw new ForbiddenException("Not a member of this organization");
+    const recipientMembership = await fetchMembershipByUser(
+      this.db,
+      orgId,
+      actorUserId,
+    );
+    if (!recipientMembership)
+      throw new ForbiddenException("Not a member of this organization");
     if (recipientMembership.id !== transfer.toMembershipId) {
-      throw new ForbiddenException("Only the designated recipient may accept this transfer");
+      throw new ForbiddenException(
+        "Only the designated recipient may accept this transfer",
+      );
     }
     if (recipientMembership.status !== "ACTIVE") {
-      throw new BadRequestException("Your membership must be ACTIVE to accept a transfer");
+      throw new BadRequestException(
+        "Your membership must be ACTIVE to accept a transfer",
+      );
     }
 
     const fromUserId =
       transfer.scope === "ORGANIZATION"
-        ? await this.applyOrgTransfer(orgId, transferId, transfer.fromMembershipId, transfer.toMembershipId)
+        ? await this.applyOrgTransfer(
+            orgId,
+            transferId,
+            transfer.fromMembershipId,
+            transfer.toMembershipId,
+          )
         : await this.applyModuleTransfer(
             orgId,
             transferId,
@@ -104,12 +136,15 @@ export class OwnershipTransferResponseService {
     await this.invalidateUserAccess(orgId, actorUserId);
     await this.invalidateUserAccess(orgId, fromUserId);
 
-    const moduleKeyForAccept = transfer.scope === "MODULE" ? transfer.moduleKey : null;
+    const moduleKeyForAccept =
+      transfer.scope === "MODULE" ? transfer.moduleKey : null;
     await Promise.all([
       ...(moduleKeyForAccept
         ? [
             this.cache.invalidate(CACHE_KEYS.moduleOwnershipsList(orgId)),
-            this.cache.invalidate(CACHE_KEYS.moduleOwnershipDetail(orgId, moduleKeyForAccept)),
+            this.cache.invalidate(
+              CACHE_KEYS.moduleOwnershipDetail(orgId, moduleKeyForAccept),
+            ),
           ]
         : []),
       this.invalidateTransferCaches(orgId, moduleKeyForAccept),
@@ -130,7 +165,10 @@ export class OwnershipTransferResponseService {
       },
     });
 
-    const subject = transfer.scope === "ORGANIZATION" ? "the organization" : `the ${transfer.moduleKey} module`;
+    const subject =
+      transfer.scope === "ORGANIZATION"
+        ? "the organization"
+        : `the ${transfer.moduleKey} module`;
     void this.dispatch
       .emit({
         eventKey: "ownership.transfer.accepted",
@@ -184,15 +222,21 @@ export class OwnershipTransferResponseService {
       const fromMember = memberships.find((m) => m.id === fromMembershipId);
       const toMember = memberships.find((m) => m.id === toMembershipId);
 
-      if (!fromMember) throw new BadRequestException("Initiating member no longer exists");
+      if (!fromMember)
+        throw new BadRequestException("Initiating member no longer exists");
       const isCurrentOwner =
         fromMember.isOwner ||
-        (org.ownerMembershipId != null && org.ownerMembershipId === fromMember.id);
+        (org.ownerMembershipId != null &&
+          org.ownerMembershipId === fromMember.id);
       if (!isCurrentOwner) {
-        throw new BadRequestException("Initiator is no longer the organization owner; transfer is invalid");
+        throw new BadRequestException(
+          "Initiator is no longer the organization owner; transfer is invalid",
+        );
       }
       if (!toMember || toMember.status !== "ACTIVE") {
-        throw new BadRequestException("Recipient membership is no longer active");
+        throw new BadRequestException(
+          "Recipient membership is no longer active",
+        );
       }
 
       await tx
@@ -231,7 +275,8 @@ export class OwnershipTransferResponseService {
     fromMembershipId: number,
     toMembershipId: number,
   ): Promise<string> {
-    if (!moduleKey) throw new BadRequestException("Invalid transfer: missing module key");
+    if (!moduleKey)
+      throw new BadRequestException("Invalid transfer: missing module key");
 
     return this.db.transaction(async (tx) => {
       const [currentOwnership] = await tx
@@ -266,12 +311,20 @@ export class OwnershipTransferResponseService {
       const fromMember = memberships.find((m) => m.id === fromMembershipId);
       const toMember = memberships.find((m) => m.id === toMembershipId);
 
-      if (!fromMember) throw new BadRequestException("Initiating member no longer exists");
-      if (currentOwnership && currentOwnership.ownerMembershipId !== fromMember.id) {
-        throw new BadRequestException("Initiator is no longer the module owner; transfer is invalid");
+      if (!fromMember)
+        throw new BadRequestException("Initiating member no longer exists");
+      if (
+        currentOwnership &&
+        currentOwnership.ownerMembershipId !== fromMember.id
+      ) {
+        throw new BadRequestException(
+          "Initiator is no longer the module owner; transfer is invalid",
+        );
       }
       if (!toMember || toMember.status !== "ACTIVE") {
-        throw new BadRequestException("Recipient membership is no longer active");
+        throw new BadRequestException(
+          "Recipient membership is no longer active",
+        );
       }
 
       await tx
@@ -328,18 +381,31 @@ export class OwnershipTransferResponseService {
 
     if (!transfer) throw new NotFoundException("Transfer not found");
     if (transfer.status !== "PENDING") {
-      throw new BadRequestException(`Transfer is already ${transfer.status.toLowerCase()}`);
+      throw new BadRequestException(
+        `Transfer is already ${transfer.status.toLowerCase()}`,
+      );
     }
 
-    const recipientMembership = await fetchMembershipByUser(this.db, orgId, actorUserId);
-    if (!recipientMembership) throw new ForbiddenException("Not a member of this organization");
+    const recipientMembership = await fetchMembershipByUser(
+      this.db,
+      orgId,
+      actorUserId,
+    );
+    if (!recipientMembership)
+      throw new ForbiddenException("Not a member of this organization");
     if (recipientMembership.id !== transfer.toMembershipId) {
-      throw new ForbiddenException("Only the designated recipient may decline this transfer");
+      throw new ForbiddenException(
+        "Only the designated recipient may decline this transfer",
+      );
     }
 
     await this.db
       .update(ownershipTransfers)
-      .set({ status: "DECLINED", respondedAt: new Date(), reason: input.reason ?? null })
+      .set({
+        status: "DECLINED",
+        respondedAt: new Date(),
+        reason: input.reason ?? null,
+      })
       .where(eq(ownershipTransfers.id, transferId));
 
     await this.invalidateTransferCaches(
@@ -363,13 +429,19 @@ export class OwnershipTransferResponseService {
       },
     });
 
-    void this.notifyResponders(orgId, actorUserId, transferId, transfer.fromMembershipId, {
-      eventKey: "ownership.transfer.declined",
-      title: "Ownership transfer declined",
-      message: input.reason
-        ? `Your ownership transfer request was declined. Reason: ${input.reason}`
-        : "Your ownership transfer request was declined. Ownership is unchanged.",
-    }).catch(() => undefined);
+    await this.notifyResponders(
+      orgId,
+      actorUserId,
+      transferId,
+      transfer.fromMembershipId,
+      {
+        eventKey: "ownership.transfer.declined",
+        title: "Ownership transfer declined",
+        message: input.reason
+          ? `Your ownership transfer request was declined. Reason: ${input.reason}`
+          : "Your ownership transfer request was declined. Ownership is unchanged.",
+      },
+    ).catch(() => undefined);
 
     return { success: true as const };
   }
@@ -400,14 +472,23 @@ export class OwnershipTransferResponseService {
 
     if (!transfer) throw new NotFoundException("Transfer not found");
     if (transfer.status !== "PENDING") {
-      throw new BadRequestException(`Transfer is already ${transfer.status.toLowerCase()}`);
+      throw new BadRequestException(
+        `Transfer is already ${transfer.status.toLowerCase()}`,
+      );
     }
 
-    const actorMembership = await fetchMembershipByUser(this.db, orgId, actorUserId);
-    if (!actorMembership) throw new ForbiddenException("Not a member of this organization");
+    const actorMembership = await fetchMembershipByUser(
+      this.db,
+      orgId,
+      actorUserId,
+    );
+    if (!actorMembership)
+      throw new ForbiddenException("Not a member of this organization");
 
     if (!isOrgOwner && actorMembership.id !== transfer.fromMembershipId) {
-      throw new ForbiddenException("Only the initiator or an org owner may cancel this transfer");
+      throw new ForbiddenException(
+        "Only the initiator or an org owner may cancel this transfer",
+      );
     }
 
     await this.db
@@ -435,11 +516,18 @@ export class OwnershipTransferResponseService {
       },
     });
 
-    void this.notifyResponders(orgId, actorUserId, transferId, transfer.toMembershipId, {
-      eventKey: "ownership.transfer.cancelled",
-      title: "Ownership transfer withdrawn",
-      message: "The ownership transfer nominating you was withdrawn. No action is needed.",
-    }).catch(() => undefined);
+    await this.notifyResponders(
+      orgId,
+      actorUserId,
+      transferId,
+      transfer.toMembershipId,
+      {
+        eventKey: "ownership.transfer.cancelled",
+        title: "Ownership transfer withdrawn",
+        message:
+          "The ownership transfer nominating you was withdrawn. No action is needed.",
+      },
+    ).catch(() => undefined);
 
     return { success: true as const };
   }
@@ -451,10 +539,12 @@ export class OwnershipTransferResponseService {
     membershipId: number,
     payload: { eventKey: string; title: string; message: string },
   ): Promise<void> {
-    const targetUserIds = await resolveMembershipUserIds(this.db, orgId, [membershipId]);
+    const targetUserIds = await resolveMembershipUserIds(this.db, orgId, [
+      membershipId,
+    ]);
     if (targetUserIds.length === 0) return;
 
-    await this.dispatch.emit({
+    void this.dispatch.emit({
       eventKey: payload.eventKey,
       orgId,
       actorUserId,

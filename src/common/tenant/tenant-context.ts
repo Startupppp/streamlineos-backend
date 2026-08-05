@@ -4,11 +4,14 @@ import type { TenantTx } from "./with-tenant";
 
 export type TenantAudience = "INTERNAL" | "PORTAL";
 
+export type AfterCommitHook = () => Promise<unknown>;
+
 export interface TenantContext {
   orgId: string;
   audience: TenantAudience;
   /** The in-flight transaction carrying this request's tenant GUC. */
   tx: TenantTx;
+  afterCommit?: AfterCommitHook[];
 }
 
 const storage = new AsyncLocalStorage<TenantContext>();
@@ -31,6 +34,13 @@ export function runWithTenantContext<T>(context: TenantContext, fn: () => Promis
 
 export function runOutsideTenantContext<T>(fn: () => Promise<T>): Promise<T> {
   return storage.exit(fn);
+}
+
+export function registerAfterCommit(hook: AfterCommitHook): boolean {
+  const hooks = storage.getStore()?.afterCommit;
+  if (!hooks) return false;
+  hooks.push(hook);
+  return true;
 }
 
 @Injectable()

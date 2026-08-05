@@ -9,6 +9,7 @@ import { HrScorecardsController } from "./hr-scorecards.controller";
 import { HrRecruitmentReportsController } from "./hr-recruitment-reports.controller";
 import { HrInterviewSchedulingController } from "./hr-interview-scheduling.controller";
 import { HrInterviewBookingController } from "./hr-interview-booking.controller";
+import { EmployeeRecruitmentController } from "./employee-recruitment.controller";
 import { HrInterviewsService } from "./hr-interviews.service";
 import { HrInterviewersService } from "./hr-interviewers.service";
 import { HrHiringFlowsService } from "./hr-hiring-flows.service";
@@ -22,6 +23,7 @@ import { HrInterviewBookingService } from "./hr-interview-booking.service";
 @Module({
   imports: [NotificationsModule, AutomationModule],
   controllers: [
+    EmployeeRecruitmentController,
     HrInterviewsController,
     HrInterviewersController,
     HrHiringFlowsController,

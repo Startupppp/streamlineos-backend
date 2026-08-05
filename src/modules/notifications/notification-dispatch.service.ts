@@ -1,4 +1,4 @@
-import { Inject, Injectable, BadRequestException } from "@nestjs/common";
+import { Inject, Injectable, BadRequestException, Logger } from "@nestjs/common";
 import { randomUUID } from "crypto";
 import { inArray, eq, and } from "drizzle-orm";
 import { notifications, notificationDeliveries, notificationQueue, notificationTemplates, users } from "../../db/schema";
@@ -12,6 +12,8 @@ import { NotificationRoutingService } from "./notification-routing.service";
 import { NotificationsService, type NotificationCategoryValue, type AnnounceInput } from "./notifications.service";
 import type { DispatchEventInput, NotificationChannel, NotificationEventDefinition } from "./notification.types";
 import { filterOrgMemberIds } from "../../common/tenant/org-membership";
+import { registerAfterCommit } from "../../common/tenant/tenant-context";
+import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 
 type ProviderName = "INTERNAL" | "SMTP" | "WEB_PUSH" | "TWILIO" | "WEBHOOK";
 
@@ -35,10 +37,13 @@ export interface DispatchResult {
   deliveriesQueued: number;
   suppressed: number;
   deduped: number;
+  deferred: boolean;
 }
 
 @Injectable()
 export class NotificationDispatchService {
+  private readonly logger = new Logger(NotificationDispatchService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly registry: NotificationEventRegistryService,
@@ -47,12 +52,38 @@ export class NotificationDispatchService {
     private readonly cache: CacheService,
   ) {}
 
-  async emit(input: DispatchEventInput): Promise<DispatchResult> {
+  emit(input: DispatchEventInput): Promise<DispatchResult> {
+    const queued = registerAfterCommit(() =>
+      this.emitNow(input).catch((error: unknown) => {
+        this.logger.error(
+          `notification dispatch failed for ${input.eventKey} in org ${input.orgId}: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+        );
+      }),
+    );
+
+    if (!queued) return this.emitNow(input);
+
+    return Promise.resolve({
+      eventKey: input.eventKey,
+      notified: 0,
+      deliveriesQueued: 0,
+      suppressed: 0,
+      deduped: 0,
+      deferred: true,
+    });
+  }
+
+  /** Cannot borrow the caller's transaction: by the time this runs it has often committed, and the released handle carries no tenant GUC. */
+  emitNow(input: DispatchEventInput): Promise<DispatchResult> {
+    return runInNewTenantTransaction(this.db, input.orgId, () => this.dispatch(input));
+  }
+
+  private async dispatch(input: DispatchEventInput): Promise<DispatchResult> {
     const resolved = await this.registry.resolveDefinition(input.orgId, input.eventKey);
     if (!resolved) throw new BadRequestException(`Unknown notification event: ${input.eventKey}`);
     const { definition, enabled } = resolved;
 
-    const result: DispatchResult = { eventKey: input.eventKey, notified: 0, deliveriesQueued: 0, suppressed: 0, deduped: 0 };
+    const result: DispatchResult = { eventKey: input.eventKey, notified: 0, deliveriesQueued: 0, suppressed: 0, deduped: 0, deferred: false };
     if (!enabled && !definition.mandatory) return result;
 
     const targets = await filterOrgMemberIds(this.db, input.orgId, input.targetUserIds);

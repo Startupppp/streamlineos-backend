@@ -1,6 +1,7 @@
 import {
   Inject,
   Injectable,
+  Logger,
   type CallHandler,
   type ExecutionContext,
   type NestInterceptor,
@@ -10,7 +11,11 @@ import { from, lastValueFrom, type Observable } from "rxjs";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { NO_TENANT_TRANSACTION } from "./no-tenant-transaction.decorator";
-import { TenantContextService, type TenantAudience } from "./tenant-context";
+import {
+  TenantContextService,
+  type AfterCommitHook,
+  type TenantAudience,
+} from "./tenant-context";
 import { withTenant } from "./with-tenant";
 
 interface TenantBearingRequest {
@@ -33,6 +38,8 @@ function resolveTenant(
 
 @Injectable()
 export class TenantContextInterceptor implements NestInterceptor {
+  private readonly logger = new Logger(TenantContextInterceptor.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly tenant: TenantContextService,
@@ -42,20 +49,38 @@ export class TenantContextInterceptor implements NestInterceptor {
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     if (context.getType() !== "http") return next.handle();
 
-    const optedOut = this.reflector.getAllAndOverride<boolean | undefined>(NO_TENANT_TRANSACTION, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
+    const optedOut = this.reflector.getAllAndOverride<boolean | undefined>(
+      NO_TENANT_TRANSACTION,
+      [context.getHandler(), context.getClass()],
+    );
     if (optedOut) return next.handle();
 
     const req = context.switchToHttp().getRequest<TenantBearingRequest>();
     const resolved = resolveTenant(req);
     if (!resolved) return next.handle();
 
-    return from(
-      withTenant(this.db, resolved, (tx) =>
-        this.tenant.run({ ...resolved, tx }, () => lastValueFrom(next.handle())),
+    return from(this.runInTenantTransaction(resolved, next));
+  }
+
+  private async runInTenantTransaction(
+    resolved: { orgId: string; audience: TenantAudience },
+    next: CallHandler,
+  ): Promise<unknown> {
+    const afterCommit: AfterCommitHook[] = [];
+
+    const result = await withTenant(this.db, resolved, (tx) =>
+      this.tenant.run({ ...resolved, tx, afterCommit }, () =>
+        lastValueFrom(next.handle()),
       ),
     );
+
+    for (const hook of afterCommit)
+      void hook().catch((error: unknown) => {
+        this.logger.error(
+          `after-commit hook failed for org ${resolved.orgId}: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+        );
+      });
+
+    return result;
   }
 }

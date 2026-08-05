@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
@@ -30,6 +31,8 @@ export class OwnershipService {
     private readonly cache: CacheService,
     private readonly dispatch: NotificationDispatchService,
   ) {}
+
+  private readonly logger = new Logger(OwnershipService.name);
 
   async listModuleOwnerships(orgId: string) {
     return this.cache.cached(
@@ -182,13 +185,17 @@ export class OwnershipService {
       metadata: { moduleKey, ownerMembershipId: input.ownerMembershipId },
     });
 
-    void this.notifyModuleOwnerChanged(
+    await this.notifyModuleOwnerChanged(
       orgId,
       actorUserId,
       moduleKey,
       input.ownerMembershipId,
       previousOwnerMembershipId,
-    ).catch(() => undefined);
+    ).catch((error: unknown) => {
+      this.logger.warn(
+        `module-owner-changed notification skipped for ${moduleKey}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    });
 
     return { success: true as const };
   }
@@ -207,7 +214,7 @@ export class OwnershipService {
     const targetUserIds = await resolveMembershipUserIds(this.db, orgId, membershipIds);
     if (targetUserIds.length === 0) return;
 
-    await this.dispatch.emit({
+    void this.dispatch.emit({
       eventKey: "ownership.module_owner.changed",
       orgId,
       actorUserId,

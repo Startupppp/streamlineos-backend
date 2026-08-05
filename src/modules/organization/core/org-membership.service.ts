@@ -10,7 +10,17 @@ import type { InviteActor } from "./invitations.service";
 import { assertMayGrantRole } from "../../../common/rbac/assert-may-grant-role";
 import { assertTargetNotOwner } from "../../../common/rbac/assert-target-not-owner";
 import { AccessService } from "../../access/access.service";
-import { and, count, desc, eq, ilike, inArray, isNull, lte, or } from "drizzle-orm";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  isNull,
+  lte,
+  or,
+} from "drizzle-orm";
 import {
   agentTokens,
   moduleOwnerships,
@@ -29,7 +39,10 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { bustUsersStatsCache } from "../../../common/cache/bust-users-stats";
-import { bumpPermissionsVersion, type DbOrTx } from "../../../common/rbac/access-invalidate";
+import {
+  bumpPermissionsVersion,
+  type DbOrTx,
+} from "../../../common/rbac/access-invalidate";
 import { ROLE_RANK } from "../../../common/rbac/grantability";
 import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
 import { SessionsService } from "../../sessions/sessions.service";
@@ -79,7 +92,7 @@ export class OrgMembershipService {
    * only resolves ACTIVE memberships, so a removed or suspended member is silently
    * dropped. Email is the only channel that still reaches them.
    */
-  private async sendAccessNotice(
+  private async notifyAccessLoss(
     orgId: string,
     memberUserId: string,
     kind: "removed" | "suspended",
@@ -97,17 +110,19 @@ export class OrgMembershipService {
     if (!member?.email || !org) return;
 
     const displayName = member.firstName ?? member.name ?? member.email;
-    await (kind === "removed"
-      ? this.email.sendMembershipRemovedEmail(member.email, displayName, org.name)
-      : this.email.sendMembershipSuspendedEmail(member.email, displayName, org.name));
-  }
-
-  private notifyAccessLoss(
-    orgId: string,
-    memberUserId: string,
-    kind: "removed" | "suspended",
-  ): void {
-    void this.sendAccessNotice(orgId, memberUserId, kind).catch((err: unknown) => {
+    void (
+      kind === "removed"
+        ? this.email.sendMembershipRemovedEmail(
+            member.email,
+            displayName,
+            org.name,
+          )
+        : this.email.sendMembershipSuspendedEmail(
+            member.email,
+            displayName,
+            org.name,
+          )
+    ).catch((err: unknown) => {
       this.logger.warn(
         `Access ${kind} notice not delivered for user ${memberUserId}: ${err instanceof Error ? err.message : String(err)}`,
       );
@@ -137,7 +152,10 @@ export class OrgMembershipService {
     );
   }
 
-  async revokeAccountAccess(orgId: string, memberUserId: string): Promise<void> {
+  async revokeAccountAccess(
+    orgId: string,
+    memberUserId: string,
+  ): Promise<void> {
     await this.cache.invalidate(CACHE_KEYS.userSession(memberUserId));
     await this.revokeOrgScopedAccess(orgId, memberUserId);
     await this.sessions.revokeAllForUser(memberUserId);
@@ -146,7 +164,10 @@ export class OrgMembershipService {
       .update(userApiTokens)
       .set({ revokedAt: now })
       .where(
-        and(eq(userApiTokens.userId, memberUserId), isNull(userApiTokens.revokedAt)),
+        and(
+          eq(userApiTokens.userId, memberUserId),
+          isNull(userApiTokens.revokedAt),
+        ),
       );
   }
 
@@ -216,7 +237,8 @@ export class OrgMembershipService {
     return this.cache.cachedVersioned(
       CACHE_KEYS.orgMembersListNamespace(orgId),
       hash,
-      () => this.fetchMembers(orgId, page, limit, search, userIds, includeInactive),
+      () =>
+        this.fetchMembers(orgId, page, limit, search, userIds, includeInactive),
       60,
     );
   }
@@ -287,62 +309,81 @@ export class OrgMembershipService {
 
   async removeMember(orgId: string, actorUserId: string, memberUserId: string) {
     try {
-      await runInTenantTransaction(this.db, async (tx) => {
-        const [member] = await tx
-          .select({ isOwner: organizationMembers.isOwner, id: organizationMembers.id })
-          .from(organizationMembers)
-          .where(
-            and(
-              eq(organizationMembers.userId, memberUserId),
-              eq(organizationMembers.orgId, orgId),
-            ),
-          )
-          .for("update")
-          .limit(1);
+      await runInTenantTransaction(
+        this.db,
+        async (tx) => {
+          const [member] = await tx
+            .select({
+              isOwner: organizationMembers.isOwner,
+              id: organizationMembers.id,
+            })
+            .from(organizationMembers)
+            .where(
+              and(
+                eq(organizationMembers.userId, memberUserId),
+                eq(organizationMembers.orgId, orgId),
+              ),
+            )
+            .for("update")
+            .limit(1);
 
-        if (!member) throw new NotFoundException("Member not found");
-        if (member.isOwner) {
-          throw new BadRequestException(
-            "Cannot remove the organization owner. Transfer ownership first.",
+          if (!member) throw new NotFoundException("Member not found");
+          if (member.isOwner) {
+            throw new BadRequestException(
+              "Cannot remove the organization owner. Transfer ownership first.",
+            );
+          }
+
+          const ownedModuleKeys = await this.queryOwnedModuleKeys(
+            tx,
+            orgId,
+            member.id,
           );
-        }
+          if (ownedModuleKeys.length > 0) {
+            throw new BadRequestException(
+              `Transfer module ownership before removing this member. Owned modules: ${ownedModuleKeys.join(", ")}.`,
+            );
+          }
 
-        const ownedModuleKeys = await this.queryOwnedModuleKeys(tx, orgId, member.id);
-        if (ownedModuleKeys.length > 0) {
-          throw new BadRequestException(
-            `Transfer module ownership before removing this member. Owned modules: ${ownedModuleKeys.join(", ")}.`,
+          const privilegedRoles = await this.queryPrivilegedRoleNames(
+            tx,
+            orgId,
+            member.id,
           );
-        }
+          if (privilegedRoles.length > 0) {
+            throw new BadRequestException(
+              `Remove administrative role(s) before removing this member: ${privilegedRoles.join(", ")}.`,
+            );
+          }
 
-        const privilegedRoles = await this.queryPrivilegedRoleNames(tx, orgId, member.id);
-        if (privilegedRoles.length > 0) {
-          throw new BadRequestException(
-            `Remove administrative role(s) before removing this member: ${privilegedRoles.join(", ")}.`,
-          );
-        }
+          await tx
+            .delete(organizationMembers)
+            .where(
+              and(
+                eq(organizationMembers.userId, memberUserId),
+                eq(organizationMembers.orgId, orgId),
+              ),
+            );
 
-        await tx
-          .delete(organizationMembers)
-          .where(
-            and(
-              eq(organizationMembers.userId, memberUserId),
-              eq(organizationMembers.orgId, orgId),
-            ),
-          );
+          await tx
+            .delete(orgUnitMembers)
+            .where(
+              and(
+                eq(orgUnitMembers.userId, memberUserId),
+                eq(orgUnitMembers.orgId, orgId),
+              ),
+            );
 
-        await tx
-          .delete(orgUnitMembers)
-          .where(
-            and(
-              eq(orgUnitMembers.userId, memberUserId),
-              eq(orgUnitMembers.orgId, orgId),
-            ),
-          );
-
-        await bumpPermissionsVersion(tx, orgId);
-      }, { orgId });
+          await bumpPermissionsVersion(tx, orgId);
+        },
+        { orgId },
+      );
     } catch (err) {
-      if (err instanceof BadRequestException || err instanceof NotFoundException) throw err;
+      if (
+        err instanceof BadRequestException ||
+        err instanceof NotFoundException
+      )
+        throw err;
       if ((err as { code?: string }).code === PG_FK_VIOLATION) {
         throw new BadRequestException(
           "Cannot remove a member who owns a module. Transfer module ownership first.",
@@ -390,7 +431,9 @@ export class OrgMembershipService {
       );
     }
     if (current === "archived" && status === "suspended") {
-      throw new BadRequestException("Cannot suspend an archived user. Restore the user first.");
+      throw new BadRequestException(
+        "Cannot suspend an archived user. Restore the user first.",
+      );
     }
     if (status === "suspended" && current === "suspended") {
       throw new ConflictException("Member is already suspended");
@@ -424,44 +467,56 @@ export class OrgMembershipService {
               suspendedAt: null,
             };
 
-    await runInTenantTransaction(this.db, async (tx) => {
-      if (status !== "active") {
-        const ownedModuleKeys = await this.queryOwnedModuleKeys(tx, orgId, member.id);
-        if (ownedModuleKeys.length > 0) {
-          throw new BadRequestException(
-            `Transfer module ownership before this action. Owned modules: ${ownedModuleKeys.join(", ")}.`,
+    await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        if (status !== "active") {
+          const ownedModuleKeys = await this.queryOwnedModuleKeys(
+            tx,
+            orgId,
+            member.id,
           );
+          if (ownedModuleKeys.length > 0) {
+            throw new BadRequestException(
+              `Transfer module ownership before this action. Owned modules: ${ownedModuleKeys.join(", ")}.`,
+            );
+          }
+
+          const privilegedRoles = await this.queryPrivilegedRoleNames(
+            tx,
+            orgId,
+            member.id,
+          );
+          if (privilegedRoles.length > 0) {
+            throw new BadRequestException(
+              `Remove administrative role(s) before this action: ${privilegedRoles.join(", ")}.`,
+            );
+          }
         }
 
-        const privilegedRoles = await this.queryPrivilegedRoleNames(tx, orgId, member.id);
-        if (privilegedRoles.length > 0) {
-          throw new BadRequestException(
-            `Remove administrative role(s) before this action: ${privilegedRoles.join(", ")}.`,
-          );
-        }
-      }
-
-      await tx
-        .update(organizationMembers)
-        .set(membershipUpdate)
-        .where(
-          and(
-            eq(organizationMembers.userId, memberUserId),
-            eq(organizationMembers.orgId, orgId),
-          ),
-        );
-      if (status !== "active") {
         await tx
-          .delete(orgUnitMembers)
+          .update(organizationMembers)
+          .set(membershipUpdate)
           .where(
             and(
-              eq(orgUnitMembers.userId, memberUserId),
-              eq(orgUnitMembers.orgId, orgId),
+              eq(organizationMembers.userId, memberUserId),
+              eq(organizationMembers.orgId, orgId),
             ),
           );
-      }
-      await bumpPermissionsVersion(tx, orgId);
-    }, { orgId });
+        if (status !== "active") {
+          await tx
+            .delete(orgUnitMembers)
+            .where(
+              and(
+                eq(orgUnitMembers.userId, memberUserId),
+                eq(orgUnitMembers.orgId, orgId),
+              ),
+            );
+        }
+        await bumpPermissionsVersion(tx, orgId);
+      },
+      { orgId },
+    );
 
     if (status !== "active") {
       await this.revokeOrgScopedAccess(orgId, memberUserId);
@@ -493,7 +548,8 @@ export class OrgMembershipService {
           entityType: "user",
           entityId: memberUserId,
           title: "Your access was restored",
-          message: "An administrator restored your membership. You can sign in to this organization again.",
+          message:
+            "An administrator restored your membership. You can sign in to this organization again.",
           link: "/dashboard",
         })
         .catch(() => undefined);
@@ -508,13 +564,27 @@ export class OrgMembershipService {
     return { success: true };
   }
 
-  async suspendMember(orgId: string, actorUserId: string, memberUserId: string) {
-    return this.setMemberLifecycleStatus(orgId, actorUserId, memberUserId, "suspended", {
-      auditAction: "org.member_suspended",
-    });
+  async suspendMember(
+    orgId: string,
+    actorUserId: string,
+    memberUserId: string,
+  ) {
+    return this.setMemberLifecycleStatus(
+      orgId,
+      actorUserId,
+      memberUserId,
+      "suspended",
+      {
+        auditAction: "org.member_suspended",
+      },
+    );
   }
 
-  async reactivateMember(orgId: string, actorUserId: string, memberUserId: string) {
+  async reactivateMember(
+    orgId: string,
+    actorUserId: string,
+    memberUserId: string,
+  ) {
     const member = await this.db.query.organizationMembers.findFirst({
       where: and(
         eq(organizationMembers.userId, memberUserId),
@@ -526,9 +596,15 @@ export class OrgMembershipService {
     if (member.status !== "SUSPENDED") {
       throw new ConflictException("Member is not suspended");
     }
-    return this.setMemberLifecycleStatus(orgId, actorUserId, memberUserId, "active", {
-      auditAction: "org.member_reactivated",
-    });
+    return this.setMemberLifecycleStatus(
+      orgId,
+      actorUserId,
+      memberUserId,
+      "active",
+      {
+        auditAction: "org.member_reactivated",
+      },
+    );
   }
 
   async updateMemberRole(
@@ -541,41 +617,49 @@ export class OrgMembershipService {
 
     await assertMayGrantRole(this.access, orgId, actor, role);
 
-    await runInTenantTransaction(this.db, async (tx) => {
-      await assertTargetNotOwner(tx, orgId, memberUserId);
-      const [member] = await tx
-        .select({ id: organizationMembers.id })
-        .from(organizationMembers)
-        .where(
-          and(
-            eq(organizationMembers.userId, memberUserId),
-            eq(organizationMembers.orgId, orgId),
-          ),
-        )
-        .for("update")
-        .limit(1);
+    await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        await assertTargetNotOwner(tx, orgId, memberUserId);
+        const [member] = await tx
+          .select({ id: organizationMembers.id })
+          .from(organizationMembers)
+          .where(
+            and(
+              eq(organizationMembers.userId, memberUserId),
+              eq(organizationMembers.orgId, orgId),
+            ),
+          )
+          .for("update")
+          .limit(1);
 
-      if (!member) throw new NotFoundException("Member not found");
+        if (!member) throw new NotFoundException("Member not found");
 
-      const ownedModuleKeys = await this.queryOwnedModuleKeys(tx, orgId, member.id);
-      if (ownedModuleKeys.length > 0) {
-        throw new BadRequestException(
-          `Transfer module ownership before changing this member's role. Owned modules: ${ownedModuleKeys.join(", ")}.`,
+        const ownedModuleKeys = await this.queryOwnedModuleKeys(
+          tx,
+          orgId,
+          member.id,
         );
-      }
+        if (ownedModuleKeys.length > 0) {
+          throw new BadRequestException(
+            `Transfer module ownership before changing this member's role. Owned modules: ${ownedModuleKeys.join(", ")}.`,
+          );
+        }
 
-      await tx
-        .update(organizationMembers)
-        .set({ role })
-        .where(
-          and(
-            eq(organizationMembers.userId, memberUserId),
-            eq(organizationMembers.orgId, orgId),
-          ),
-        );
+        await tx
+          .update(organizationMembers)
+          .set({ role })
+          .where(
+            and(
+              eq(organizationMembers.userId, memberUserId),
+              eq(organizationMembers.orgId, orgId),
+            ),
+          );
 
-      await syncStructuralRoleAssignment(tx, orgId, member.id, role);
-    }, { orgId });
+        await syncStructuralRoleAssignment(tx, orgId, member.id, role);
+      },
+      { orgId },
+    );
 
     await Promise.all([
       this.invalidateMemberListCaches(orgId),
@@ -629,55 +713,66 @@ export class OrgMembershipService {
     }
 
     try {
-      const nextOrgId = await runInTenantTransaction(this.db, async (tx) => {
-        const ownedModuleKeys = await this.queryOwnedModuleKeys(tx, orgId, membership.id);
-        if (ownedModuleKeys.length > 0) {
-          throw new BadRequestException(
-            `Transfer module ownership before leaving this organization. Owned modules: ${ownedModuleKeys.join(", ")}.`,
+      const nextOrgId = await runInTenantTransaction(
+        this.db,
+        async (tx) => {
+          const ownedModuleKeys = await this.queryOwnedModuleKeys(
+            tx,
+            orgId,
+            membership.id,
           );
-        }
+          if (ownedModuleKeys.length > 0) {
+            throw new BadRequestException(
+              `Transfer module ownership before leaving this organization. Owned modules: ${ownedModuleKeys.join(", ")}.`,
+            );
+          }
 
-        await tx
-          .delete(organizationMembers)
-          .where(
-            and(
-              eq(organizationMembers.orgId, orgId),
-              eq(organizationMembers.userId, userId),
-            ),
-          );
+          await tx
+            .delete(organizationMembers)
+            .where(
+              and(
+                eq(organizationMembers.orgId, orgId),
+                eq(organizationMembers.userId, userId),
+              ),
+            );
 
-        await tx
-          .delete(orgUnitMembers)
-          .where(
-            and(
-              eq(orgUnitMembers.userId, userId),
-              eq(orgUnitMembers.orgId, orgId),
-            ),
-          );
+          await tx
+            .delete(orgUnitMembers)
+            .where(
+              and(
+                eq(orgUnitMembers.userId, userId),
+                eq(orgUnitMembers.orgId, orgId),
+              ),
+            );
 
-        await bumpPermissionsVersion(tx, orgId);
+          await bumpPermissionsVersion(tx, orgId);
 
-        const [remaining] = await tx
-          .select({ orgId: organizationMembers.orgId })
-          .from(organizationMembers)
-          .innerJoin(organizations, eq(organizations.id, organizationMembers.orgId))
-          .where(
-            and(
-              eq(organizationMembers.userId, userId),
-              eq(organizationMembers.status, "ACTIVE"),
-              eq(organizations.status, "ACTIVE"),
-              isNull(organizations.deletedAt),
-            ),
-          )
-          .orderBy(desc(organizationMembers.joinedAt))
-          .limit(1);
-        const fallbackOrgId = remaining?.orgId ?? null;
-        await tx
-          .update(users)
-          .set({ lastActiveOrgId: fallbackOrgId })
-          .where(and(eq(users.id, userId), eq(users.lastActiveOrgId, orgId)));
-        return fallbackOrgId;
-      }, { orgId });
+          const [remaining] = await tx
+            .select({ orgId: organizationMembers.orgId })
+            .from(organizationMembers)
+            .innerJoin(
+              organizations,
+              eq(organizations.id, organizationMembers.orgId),
+            )
+            .where(
+              and(
+                eq(organizationMembers.userId, userId),
+                eq(organizationMembers.status, "ACTIVE"),
+                eq(organizations.status, "ACTIVE"),
+                isNull(organizations.deletedAt),
+              ),
+            )
+            .orderBy(desc(organizationMembers.joinedAt))
+            .limit(1);
+          const fallbackOrgId = remaining?.orgId ?? null;
+          await tx
+            .update(users)
+            .set({ lastActiveOrgId: fallbackOrgId })
+            .where(and(eq(users.id, userId), eq(users.lastActiveOrgId, orgId)));
+          return fallbackOrgId;
+        },
+        { orgId },
+      );
 
       await Promise.all([
         this.revokeOrgScopedAccess(orgId, userId),
@@ -693,7 +788,7 @@ export class OrgMembershipService {
         targetType: "user",
       });
 
-      void this.notifyMemberLeft(orgId, userId).catch(() => undefined);
+      await this.notifyMemberLeft(orgId, userId).catch(() => undefined);
 
       return { success: true, nextOrgId };
     } catch (err) {
@@ -717,7 +812,7 @@ export class OrgMembershipService {
     ]);
     if (admins.length === 0) return;
 
-    await this.dispatch.emit({
+    void this.dispatch.emit({
       eventKey: "organization.member.left",
       orgId,
       actorUserId: userId,
