@@ -549,6 +549,10 @@ export class OnboardingService {
     return this.details.saveBankDetails(orgId, userId, input);
   }
 
+  getBankDetails(orgId: string, userId: string) {
+    return this.details.getBankDetails(orgId, userId);
+  }
+
   getStatus(userId: string, orgId: string) {
     return this.details.getStatus(userId, orgId);
   }

@@ -21,7 +21,10 @@ function ctx(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {
 
 describe("OnboardingController — HR-only module-checklist gating", () => {
   let controller: OnboardingController;
-  let onboarding: { getPersonalDetails: jest.Mock };
+  let onboarding: {
+    getPersonalDetails: jest.Mock;
+    getBankDetails: jest.Mock;
+  };
   let checklists: { [K in keyof ModuleChecklistService]?: jest.Mock };
   let tours: { [K in keyof GuidedTourService]?: jest.Mock };
   let access: { resolveUserPermissions: jest.Mock };
@@ -33,6 +36,16 @@ describe("OnboardingController — HR-only module-checklist gating", () => {
         gender: "FEMALE",
         dateOfBirth: "1994-01-01",
         emergencyContact: null,
+      }),
+      getBankDetails: jest.fn().mockResolvedValue({
+        countryCode: "IN",
+        accountHolder: "Employee One",
+        bankName: "Example Bank",
+        accountNumber: "1234567890",
+        routingCode: "EXAM0001234",
+        iban: "",
+        swift: "",
+        statutory: { pan: "ABCDE1234F" },
       }),
     };
     checklists = {
@@ -75,6 +88,15 @@ describe("OnboardingController — HR-only module-checklist gating", () => {
       emergencyContact: null,
     });
     expect(onboarding.getPersonalDetails).toHaveBeenCalledWith("org-1", "user-1");
+  });
+
+  it("loads only the caller's tenant-scoped bank details", async () => {
+    await expect(controller.getBankDetails(ctx())).resolves.toMatchObject({
+      countryCode: "IN",
+      accountHolder: "Employee One",
+      accountNumber: "1234567890",
+    });
+    expect(onboarding.getBankDetails).toHaveBeenCalledWith("org-1", "user-1");
   });
 
   describe("getModuleChecklist", () => {

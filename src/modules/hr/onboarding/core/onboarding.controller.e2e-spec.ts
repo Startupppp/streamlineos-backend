@@ -37,7 +37,9 @@ describe("Onboarding auth/RBAC (e2e)", () => {
     ["get", "/onboarding/templates"],
     ["post", "/onboarding/templates"],
     ["patch", "/onboarding/personal-details"],
+    ["get", "/onboarding/personal-details"],
     ["patch", "/onboarding/bank-details"],
+    ["get", "/onboarding/bank-details"],
     ["post", "/onboarding/submit"],
     ["get", "/onboarding/user_1"],
   ];
@@ -71,7 +73,9 @@ describe("Onboarding auth/RBAC (e2e)", () => {
 
   const authOnlyRoutes: ReadonlyArray<[Method, string]> = [
     ["patch", "/onboarding/personal-details"],
+    ["get", "/onboarding/personal-details"],
     ["patch", "/onboarding/bank-details"],
+    ["get", "/onboarding/bank-details"],
     ["post", "/onboarding/submit"],
     ["get", "/onboarding/user_1"],
   ];

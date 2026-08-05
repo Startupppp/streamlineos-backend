@@ -98,8 +98,6 @@ export class OnboardingController {
   }
 
   @Get("session")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("hr:onboarding:tasks:view")
   getOnboardingSession(@CurrentUser() u: CurrentUserContext) {
     return this.sessions.getOrCreateSession(
       u.orgId,
@@ -109,8 +107,6 @@ export class OnboardingController {
   }
 
   @Patch("session")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("hr:onboarding:tasks:complete")
   patchOnboardingSession(
     @Body(new ZodValidationPipe(sessionPatchSchema)) body: SessionPatchInput,
     @CurrentUser() u: CurrentUserContext,
@@ -345,8 +341,6 @@ export class OnboardingController {
   }
 
   @Patch("personal-details")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("hr:onboarding:tasks:complete")
   savePersonalDetails(
     @Body(new ZodValidationPipe(personalDetailsSchema))
     body: PersonalDetailsInput,
@@ -356,15 +350,11 @@ export class OnboardingController {
   }
 
   @Get("personal-details")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("hr:onboarding:tasks:view")
   getPersonalDetails(@CurrentUser() u: CurrentUserContext) {
     return this.onboarding.getPersonalDetails(u.orgId, u.userId);
   }
 
   @Patch("bank-details")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("hr:onboarding:tasks:complete")
   saveBankDetails(
     @Body(new ZodValidationPipe(bankDetailsSchema)) body: BankDetailsInput,
     @CurrentUser() u: CurrentUserContext,
@@ -372,9 +362,12 @@ export class OnboardingController {
     return this.onboarding.saveBankDetails(u.orgId, u.userId, body);
   }
 
+  @Get("bank-details")
+  getBankDetails(@CurrentUser() u: CurrentUserContext) {
+    return this.onboarding.getBankDetails(u.orgId, u.userId);
+  }
+
   @Post("submit")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("hr:onboarding:tasks:complete")
   submit(@CurrentUser() u: CurrentUserContext) {
     return this.onboarding.submit(u.orgId, u.userId);
   }
@@ -391,15 +384,11 @@ export class OnboardingController {
   }
 
   @Get("status")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("hr:onboarding:tasks:view")
   getStatus(@CurrentUser() u: CurrentUserContext) {
     return this.onboarding.getStatus(u.userId, u.orgId);
   }
 
   @Get("requirements")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("hr:onboarding:tasks:view")
   getRequirements(
     @Query(new ZodValidationPipe(requirementsQuerySchema))
     query: RequirementsQueryInput,
@@ -421,8 +410,6 @@ export class OnboardingController {
   }
 
   @Get("me")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("hr:onboarding:tasks:view")
   getMyTasks(@CurrentUser() u: CurrentUserContext) {
     return this.onboarding.getUserTasks(u, u.userId);
   }
