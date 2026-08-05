@@ -44,6 +44,13 @@ export const selfAttendanceLogsQuerySchema = attendanceLogsQuerySchema.omit({
   userId: true,
 });
 
+export const createAttendanceRegularizationSchema = z.object({
+  attendanceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  requestedCheckIn: z.string().datetime().optional(),
+  requestedCheckOut: z.string().datetime().optional(),
+  reason: z.string().min(10).max(500),
+});
+
 export const teamStatusQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
@@ -102,6 +109,9 @@ export type SelfMonthlyQuery = z.infer<typeof selfMonthlyQuerySchema>;
 export type SelfHeatmapQuery = z.infer<typeof selfHeatmapQuerySchema>;
 export type SelfAttendanceLogsQuery = z.infer<
   typeof selfAttendanceLogsQuerySchema
+>;
+export type CreateAttendanceRegularizationInput = z.infer<
+  typeof createAttendanceRegularizationSchema
 >;
 export type TeamStatusQuery = z.infer<typeof teamStatusQuerySchema>;
 export type AttendanceEmailReportInput = z.infer<typeof attendanceEmailReportSchema>;

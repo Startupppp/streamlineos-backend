@@ -8,13 +8,10 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { AttendanceRegularizationService } from "./attendance-regularization.service";
 import { z } from "zod";
-
-const createRegularizationSchema = z.object({
-  attendanceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  requestedCheckIn: z.string().datetime().optional(),
-  requestedCheckOut: z.string().datetime().optional(),
-  reason: z.string().min(10).max(500),
-});
+import {
+  createAttendanceRegularizationSchema,
+  type CreateAttendanceRegularizationInput,
+} from "./dto/attendance.schemas";
 
 const listRegularizationsSchema = z.object({
   userId: z.string().optional(),
@@ -40,7 +37,8 @@ export class AttendanceRegularizationController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:regularize")
   create(
-    @Body(new ZodValidationPipe(createRegularizationSchema)) body: z.infer<typeof createRegularizationSchema>,
+    @Body(new ZodValidationPipe(createAttendanceRegularizationSchema))
+    body: CreateAttendanceRegularizationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.regularizationService.create(u, body);

@@ -95,7 +95,12 @@ describe("LeavesService leave type management", () => {
     const values = jest.fn().mockReturnValue({
       onConflictDoNothing: jest.fn().mockReturnValue({ returning }),
     });
-    const db = { insert: jest.fn().mockReturnValue({ values }) };
+    const tx = { insert: jest.fn().mockReturnValue({ values }) };
+    const db = {
+      transaction: jest.fn(
+        (callback: (transaction: typeof tx) => unknown) => callback(tx),
+      ),
+    };
     const service = new LeavesService(db as never, ...ctorRest);
 
     const result = await service.seedDefaultLeaveTypes("org-1");

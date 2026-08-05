@@ -31,6 +31,7 @@ import {
   DEFAULT_SKIP_MODULES,
   provisionOrgModules,
 } from "../../../common/org/provision-org-modules";
+import { provisionEmployeeSelfService } from "../../../common/org/provision-employee-self-service";
 import { seedSystemRolesForOrg } from "../../rbac/seed-system-roles";
 import { ModuleChecklistService } from "../../hr/onboarding/flow/module-checklist.service";
 import {
@@ -235,6 +236,7 @@ export class OrgSetupService {
         currentPeriodStart: new Date(),
         currentPeriodEnd: addDays(new Date(), trialDays),
       });
+      await provisionEmployeeSelfService(tx, orgId);
       await bumpPermissionsVersion(tx, orgId);
     });
 
@@ -284,6 +286,7 @@ export class OrgSetupService {
           input.enabledModules,
           u.userId,
         );
+        await provisionEmployeeSelfService(tx, orgId);
 
         await tx
           .update(users)
@@ -362,6 +365,7 @@ export class OrgSetupService {
           DEFAULT_SKIP_MODULES,
           u.userId,
         );
+        await provisionEmployeeSelfService(tx, orgId);
 
         await tx
           .update(users)

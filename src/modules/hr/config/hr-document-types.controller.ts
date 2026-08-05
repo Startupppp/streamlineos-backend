@@ -29,9 +29,7 @@ import {
   type ListDocumentTypesInput,
   type UpdateDocumentTypeInput,
 } from "./dto/document-types.schemas";
-import { RequireModule } from "../../../common/rbac/require-module.decorator";
 
-@RequireModule("hr")
 @Controller("hr/document-types")
 @UseGuards(JwtAuthGuard)
 export class HrDocumentTypesController {

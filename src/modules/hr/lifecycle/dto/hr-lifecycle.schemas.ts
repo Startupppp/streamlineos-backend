@@ -127,6 +127,10 @@ export const createOnboardingDocSchema = z.object({
   targetUserId: z.string().optional(),
 });
 
+export const createOwnOnboardingDocSchema = createOnboardingDocSchema.omit({
+  targetUserId: true,
+});
+
 export const reviewOnboardingDocSchema = z.object({
   status: z.enum(["APPROVED", "REJECTED", "RE_UPLOAD_REQUESTED"]),
   remarks: z.string().optional(),
@@ -135,6 +139,9 @@ export const reviewOnboardingDocSchema = z.object({
 export type ListOnboardingDocsQueryInput = z.infer<typeof listOnboardingDocsQuerySchema>;
 export type OnboardingDocsSummaryQueryInput = z.infer<typeof onboardingDocsSummaryQuerySchema>;
 export type CreateOnboardingDocInput = z.infer<typeof createOnboardingDocSchema>;
+export type CreateOwnOnboardingDocInput = z.infer<
+  typeof createOwnOnboardingDocSchema
+>;
 export type ReviewOnboardingDocInput = z.infer<typeof reviewOnboardingDocSchema>;
 
 export type ResignationCreateInput = z.infer<typeof resignationCreateSchema>;

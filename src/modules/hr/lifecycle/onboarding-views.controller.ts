@@ -21,10 +21,12 @@ import { OnboardingViewsService } from "./onboarding-views.service";
 import { resolveOnboardingManageScope } from "./onboarding-scope";
 import {
   createOnboardingDocSchema,
+  createOwnOnboardingDocSchema,
   listOnboardingDocsQuerySchema,
   onboardingDocsSummaryQuerySchema,
   reviewOnboardingDocSchema,
   type CreateOnboardingDocInput,
+  type CreateOwnOnboardingDocInput,
   type ListOnboardingDocsQueryInput,
   type OnboardingDocsSummaryQueryInput,
   type ReviewOnboardingDocInput,
@@ -61,6 +63,17 @@ export class OnboardingViewsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.onboardingViews.list(u.orgId, u.userId, false, query, "own");
+  }
+
+  @Post("me")
+  @HttpCode(201)
+  @RequirePermission("self:onboarding-docs")
+  createMine(
+    @Body(new ZodValidationPipe(createOwnOnboardingDocSchema))
+    body: CreateOwnOnboardingDocInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.onboardingViews.create(u.orgId, u.userId, false, body, "own");
   }
 
   @Get()

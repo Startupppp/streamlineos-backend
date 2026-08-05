@@ -68,10 +68,14 @@ describe("authorize", () => {
     expect(result).toEqual({ allow: false, scope: "none", reason: "NO_MODULE" });
   });
 
-  it("skips the module gate for internal settings and self keys", async () => {
-    const resolver = makeResolver(new Map([["settings:rbac:manage", "all"]]), []);
-    const result = await authorize(resolver, makeCtx(), "settings:rbac:manage");
-    expect(result).toEqual({ allow: true, scope: "all" });
+  it("keeps employee self-service available without the HR module", async () => {
+    const resolver = makeResolver(new Map([["self:leaves", "own"]]), ["build"]);
+    const result = await authorize(resolver, makeCtx(), "self:leaves");
+    expect(result).toEqual({
+      allow: true,
+      scope: "own",
+      permissions: ["self:leaves"],
+    });
   });
 
   it("BOLA: passes ctx.orgId to resolveUserPermissions (not from request params)", async () => {

@@ -23,6 +23,7 @@ import {
   provisionOrgModules,
   DEFAULT_SKIP_MODULES,
 } from "../../../common/org/provision-org-modules";
+import { provisionEmployeeSelfService } from "../../../common/org/provision-employee-self-service";
 
 @Injectable()
 export class OrgProfileService {
@@ -182,6 +183,7 @@ export class OrgProfileService {
         currentPeriodStart: new Date(),
         currentPeriodEnd: addDays(new Date(), trialDays),
       });
+      await provisionEmployeeSelfService(tx, orgId);
       await bumpPermissionsVersion(tx, orgId);
       await seedSystemRolesForOrg(this.db, orgId);
       await provisionOrgModules(tx, orgId, DEFAULT_SKIP_MODULES, userId);

@@ -16,22 +16,28 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import {
   checkInSchema,
   checkOutSchema,
+  createAttendanceRegularizationSchema,
   selfAttendanceLogsQuerySchema,
   selfHeatmapQuerySchema,
   selfMonthlyQuerySchema,
   type CheckInInput,
   type CheckOutInput,
+  type CreateAttendanceRegularizationInput,
   type SelfAttendanceLogsQuery,
   type SelfHeatmapQuery,
   type SelfMonthlyQuery,
 } from "./dto/attendance.schemas";
 import { AttendanceService } from "./attendance.service";
+import { AttendanceRegularizationService } from "./attendance-regularization.service";
 
 @Controller("me/attendance")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @RequirePermission("self:attendance")
 export class EmployeeAttendanceController {
-  constructor(private readonly attendance: AttendanceService) {}
+  constructor(
+    private readonly attendance: AttendanceService,
+    private readonly regularizations: AttendanceRegularizationService,
+  ) {}
 
   @Get("status")
   status(@CurrentUser() user: CurrentUserContext) {
@@ -99,5 +105,15 @@ export class EmployeeAttendanceController {
   @Get("holidays")
   holidays(@CurrentUser() user: CurrentUserContext) {
     return this.attendance.listHolidays(user.orgId);
+  }
+
+  @Post("regularizations")
+  @HttpCode(201)
+  createRegularization(
+    @Body(new ZodValidationPipe(createAttendanceRegularizationSchema))
+    body: CreateAttendanceRegularizationInput,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.regularizations.create(user, body);
   }
 }

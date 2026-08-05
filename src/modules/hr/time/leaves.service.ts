@@ -29,6 +29,10 @@ import { HrPolicyEvaluationService } from "../policies/hr-policy-evaluation.serv
 import { LeaveLedgerService } from "./leave-ledger.service";
 
 import { DEFAULT_COMP_OFF_MAX_ACCRUAL } from "../policies/hr-policy-defaults.constants";
+import {
+  DEFAULT_LEAVE_TYPES,
+  provisionEmployeeSelfService,
+} from "../../../common/org/provision-employee-self-service";
 
 const COMP_OFF_LEAVE_TYPE_NAME = "Compensatory Off";
 const TEAM_LEAVES_CAP = 500;
@@ -429,19 +433,10 @@ export class LeavesService {
   }
 
   async seedDefaultLeaveTypes(orgId: string) {
-    const defaults = [
-      { name: "Casual Leave", daysPerYear: 12, carryForward: false },
-      { name: "Sick Leave", daysPerYear: 12, carryForward: false },
-      { name: "Earned Leave", daysPerYear: 15, carryForward: true },
-      { name: "Maternity Leave", daysPerYear: 182, carryForward: false },
-      { name: "Paternity Leave", daysPerYear: 5, carryForward: false },
-    ];
-    const inserted = await this.db
-      .insert(leaveTypes)
-      .values(defaults.map((d) => ({ orgId, ...d })))
-      .onConflictDoNothing()
-      .returning({ id: leaveTypes.id, name: leaveTypes.name });
-    return { seeded: inserted.length, skipped: defaults.length - inserted.length };
+    const seeded = await this.db.transaction((tx) =>
+      provisionEmployeeSelfService(tx, orgId),
+    );
+    return { seeded, skipped: DEFAULT_LEAVE_TYPES.length - seeded };
   }
 
   async updateLeaveType(

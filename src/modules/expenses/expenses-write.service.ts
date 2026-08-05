@@ -143,6 +143,8 @@ export class ExpensesWriteService {
         ...(body.receiptFileName !== undefined && {
           receiptFileName: body.receiptFileName,
         }),
+        status: sql`CASE WHEN ${expenses.status} = 'REJECTED' THEN 'PENDING' ELSE ${expenses.status} END`,
+        rejectionReason: sql`CASE WHEN ${expenses.status} = 'REJECTED' THEN NULL ELSE ${expenses.rejectionReason} END`,
         updatedAt: new Date(),
       })
       .where(
