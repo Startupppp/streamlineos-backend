@@ -19,6 +19,8 @@ import { GeofencingController } from "./geofencing.controller";
 import { BiometricController } from "./biometric.controller";
 import { LeavePoliciesController } from "./leave-policies.controller";
 import { LeavePolicySummaryController } from "./leave-policy-summary.controller";
+import { EmployeeAttendanceController } from "./employee-attendance.controller";
+import { EmployeeTimeOffController } from "./employee-time-off.controller";
 import { LeavesService } from "./leaves.service";
 import { LeavesWriteService } from "./leaves-write.service";
 import { LeavesApprovalService } from "./leaves-approval.service";
@@ -50,6 +52,8 @@ import { LeaveLedgerService } from "./leave-ledger.service";
     forwardRef(() => HrPayrollInputsModule),
   ],
   controllers: [
+    EmployeeAttendanceController,
+    EmployeeTimeOffController,
     LeavesController,
     LeaveCalendarController,
     AttendanceController,

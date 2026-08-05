@@ -39,6 +39,8 @@ export const pageDataSchema = z.object({
   search: z.string().optional(),
 });
 
+export const selfExpensePageDataSchema = pageDataSchema.omit({ userId: true });
+
 export const reportSchema = z.object({
   startDate: z.string().min(1),
   endDate: z.string().min(1),
@@ -174,6 +176,9 @@ export const updateExpensePatchSchema = z.union([
 export type AllExpenseStatus = (typeof ALL_EXPENSE_STATUSES)[number];
 export type ListInput = z.infer<typeof listSchema>;
 export type PageDataInput = z.infer<typeof pageDataSchema>;
+export type SelfExpensePageDataInput = z.infer<
+  typeof selfExpensePageDataSchema
+>;
 export type ReportInput = z.infer<typeof reportSchema>;
 export type ExportInput = z.infer<typeof exportSchema>;
 export type EmailReportFilters = z.infer<typeof emailReportFiltersSchema>;
@@ -182,3 +187,6 @@ export type CreateCategoryInput = z.infer<typeof createCategorySchema>;
 export type CreateExpenseInput = z.infer<typeof createExpenseSchema>;
 export type RejectExpenseInput = z.infer<typeof rejectExpenseSchema>;
 export type UpdateExpensePatchInput = z.infer<typeof updateExpensePatchSchema>;
+export type UpdateExpenseDetailsInput = z.infer<
+  typeof updateExpenseDetailsSchema
+>;

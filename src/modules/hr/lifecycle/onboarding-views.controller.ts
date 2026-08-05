@@ -29,9 +29,7 @@ import {
   type OnboardingDocsSummaryQueryInput,
   type ReviewOnboardingDocInput,
 } from "./dto/hr-lifecycle.schemas";
-import { RequireModule } from "../../../common/rbac/require-module.decorator";
 
-@RequireModule("hr")
 @Controller("hr/onboarding-docs")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class OnboardingViewsController {
@@ -66,7 +64,7 @@ export class OnboardingViewsController {
   }
 
   @Get()
-  @RequirePermission("self:onboarding-docs")
+  @RequirePermission("hr:onboarding:manage")
   async list(
     @Query(new ZodValidationPipe(listOnboardingDocsQuerySchema)) query: ListOnboardingDocsQueryInput,
     @CurrentUser() u: CurrentUserContext,
@@ -78,7 +76,7 @@ export class OnboardingViewsController {
 
   @Post()
   @HttpCode(201)
-  @RequirePermission("self:onboarding-docs")
+  @RequirePermission("hr:onboarding:manage")
   async create(
     @Body(new ZodValidationPipe(createOnboardingDocSchema)) body: CreateOnboardingDocInput,
     @CurrentUser() u: CurrentUserContext,

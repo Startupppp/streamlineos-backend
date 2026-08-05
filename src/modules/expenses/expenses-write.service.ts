@@ -26,6 +26,7 @@ import {
   type EmailReportFilters,
   type EmailReportInput,
   type AllExpenseStatus,
+  type UpdateExpenseDetailsInput,
 } from "./dto/expense.schemas";
 
 const statusProbeSchema = z.object({ status: z.string().min(1) });
@@ -119,6 +120,57 @@ export class ExpensesWriteService {
     }
 
     return this.updateStatus(u, expenseId, rawBody);
+  }
+
+  async updateOwn(
+    orgId: string,
+    userId: string,
+    expenseId: number,
+    body: UpdateExpenseDetailsInput,
+  ) {
+    const [updated] = await this.db
+      .update(expenses)
+      .set({
+        ...(body.category && { category: body.category }),
+        ...(body.amount !== undefined && { amount: body.amount.toString() }),
+        ...(body.description !== undefined && { description: body.description }),
+        ...(body.merchant !== undefined && { merchant: body.merchant }),
+        ...(body.paymentMethod !== undefined && {
+          paymentMethod: body.paymentMethod,
+        }),
+        ...(body.expenseDate && { expenseDate: body.expenseDate }),
+        ...(body.receiptUrl !== undefined && { receiptUrl: body.receiptUrl }),
+        ...(body.receiptFileName !== undefined && {
+          receiptFileName: body.receiptFileName,
+        }),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(expenses.id, expenseId),
+          eq(expenses.orgId, orgId),
+          eq(expenses.userId, userId),
+          inArray(expenses.status, ["DRAFT", "PENDING", "REJECTED"]),
+        ),
+      )
+      .returning({ id: expenses.id });
+
+    if (!updated) {
+      throw new NotFoundException(
+        "Expense not found or it can no longer be edited.",
+      );
+    }
+
+    this.audit.log({
+      action: "expense.updated",
+      userId,
+      orgId,
+      targetId: String(expenseId),
+      targetType: "expense",
+    });
+
+    await this.cache.invalidateNamespace(CACHE_KEYS.expensesListNamespace(orgId));
+    return { success: true };
   }
 
   private async updateDetails(orgId: string, expenseId: number, rawBody: unknown) {

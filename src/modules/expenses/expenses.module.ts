@@ -11,10 +11,11 @@ import { ExpensesImportService } from "./expenses-import.service";
 import { ExpenseLifecycleService } from "./expense-lifecycle.service";
 import { TravelController } from "./travel.controller";
 import { TravelService } from "./travel.service";
+import { EmployeeExpensesController } from "./employee-expenses.controller";
 
 @Module({
   imports: [AutomationModule, AccountingModule, NotificationsModule],
-  controllers: [ExpensesController, ExpenseCategoriesController, ExpensesImportController, TravelController],
+  controllers: [EmployeeExpensesController, ExpensesController, ExpenseCategoriesController, ExpensesImportController, TravelController],
   providers: [ExpensesService, ExpensesWriteService, ExpensesImportService, ExpenseLifecycleService, TravelService],
   exports: [ExpensesService, ExpenseLifecycleService],
 })
