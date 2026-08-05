@@ -1,8 +1,8 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { eq, desc, count, gte, and, SQL } from "drizzle-orm";
 import { DRIZZLE } from "../db/drizzle.constants";
 import { type Db } from "../db/drizzle.module";
-import { users, loginHistory, userSessions, accounts } from "../db/schema";
+import { users, loginHistory, userSessions } from "../db/schema";
 import {
   decrypt,
   decryptBankDetails,
@@ -75,27 +75,6 @@ export class MeService {
       page,
       limit,
     };
-  }
-
-  async getConnectedAccounts(userId: string) {
-    return this.db
-      .select({ provider: accounts.provider, providerAccountId: accounts.providerAccountId })
-      .from(accounts)
-      .where(eq(accounts.userId, userId));
-  }
-
-  async unlinkProvider(userId: string, provider: string) {
-    const existing = await this.db
-      .select({ provider: accounts.provider })
-      .from(accounts)
-      .where(eq(accounts.userId, userId));
-    if (existing.length <= 1) {
-      throw new BadRequestException("Cannot unlink the only connected account");
-    }
-    await this.db
-      .delete(accounts)
-      .where(and(eq(accounts.userId, userId), eq(accounts.provider, provider)));
-    return { success: true as const };
   }
 
   async getAuthAnalytics(userId: string) {

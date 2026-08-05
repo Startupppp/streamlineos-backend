@@ -122,7 +122,7 @@ const CHECKLIST_SEEDS: Record<string, ChecklistItemSeed[]> = {
   accounting: [
     { itemKey: "set_fiscal_year", title: "Set fiscal year", actionHref: "/accounting", required: true },
     { itemKey: "configure_taxes", title: "Configure taxes", actionHref: "/accounting", required: true },
-    { itemKey: "add_payment_provider", title: "Add bank/payment provider", actionHref: "/settings/payments", required: false },
+    { itemKey: "add_payment_provider", title: "Add bank/payment provider", actionHref: "/accounting/settings/payment-providers", required: false },
     { itemKey: "create_first_invoice", title: "Create first invoice", actionHref: "/billing/invoices/new", required: false },
   ],
   build: [

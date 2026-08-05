@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Patch, Query } from "@nestjs/common";
+import { Body, Controller, Get, Patch, Query } from "@nestjs/common";
 import { CurrentUser } from "../common/auth/current-user.decorator";
 import { AllowWithoutMfa } from "../common/auth/allow-without-mfa.decorator";
 import type { CurrentUserContext } from "../common/auth/backend-claims";
@@ -57,16 +57,4 @@ export class MeController {
     return this.meService.getAuthAnalytics(u.userId);
   }
 
-  @Get("connected-accounts")
-  getConnectedAccounts(@CurrentUser() u: CurrentUserContext) {
-    return this.meService.getConnectedAccounts(u.userId);
-  }
-
-  @Delete("connected-accounts")
-  unlinkProvider(
-    @Body() body: { provider: string },
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.meService.unlinkProvider(u.userId, body.provider);
-  }
 }

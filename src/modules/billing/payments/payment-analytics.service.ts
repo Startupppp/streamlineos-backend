@@ -43,7 +43,7 @@ export class PaymentAnalyticsService {
       priority: input.priority ?? "NORMAL",
       title: input.title,
       message: input.message,
-      link: "/settings/payments",
+      link: "/accounting/settings/payment-providers",
     });
   }
 }

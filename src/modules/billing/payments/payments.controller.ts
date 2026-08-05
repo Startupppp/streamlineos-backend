@@ -81,6 +81,8 @@ export class PaymentsController {
   }
 
   @Get("providers/catalog")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("payments:providers:view")
   getCatalog() {
     return this.providers.getCatalog();
   }

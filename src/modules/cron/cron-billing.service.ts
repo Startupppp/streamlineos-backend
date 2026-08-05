@@ -98,7 +98,7 @@ export class CronBillingService {
         if (soonExpiring.length === 0) continue;
 
         await this.email
-          .sendTrialReminderEmail(owner.email, owner.orgName ?? "Your Organization", days, `${appUrl}/settings/subscription`)
+          .sendTrialReminderEmail(owner.email, owner.orgName ?? "Your Organization", days, `${appUrl}/billing?tab=plan`)
           .catch((err: unknown) => logger.warn("[billing-cron] email send failed", { err }));
         reminded++;
       }
