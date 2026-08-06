@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, gte, lte, isNotNull, inArray } from "drizzle-orm";
+import { and, desc, eq, exists, gte, lte, isNotNull, inArray, or } from "drizzle-orm";
 import {
   calendarEvents,
   eventAttendees,
@@ -11,6 +11,9 @@ import {
   tickets,
   projects,
   projectMembers,
+  attendance,
+  wfhRequests,
+  interviewPanelMembers,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -27,7 +30,16 @@ export class CalendarEventsAggregateService {
     start: Date,
     end: Date,
   ): Promise<CalendarEventItem[]> {
-    const [eventsData, leavesData, interviewsData, tasksData, holidaysData, projectTicketsData] =
+    const [
+      eventsData,
+      leavesData,
+      interviewsData,
+      tasksData,
+      holidaysData,
+      projectTicketsData,
+      attendanceData,
+      wfhData,
+    ] =
       await Promise.all([
         this.db.query.calendarEvents.findMany({
           where: and(
@@ -75,6 +87,21 @@ export class CalendarEventsAggregateService {
               eq(interviews.orgId, orgId),
               gte(interviews.scheduledAt, start),
               lte(interviews.scheduledAt, end),
+              or(
+                eq(interviews.interviewerId, userId),
+                exists(
+                  this.db
+                    .select({ id: interviewPanelMembers.id })
+                    .from(interviewPanelMembers)
+                    .where(
+                      and(
+                        eq(interviewPanelMembers.orgId, orgId),
+                        eq(interviewPanelMembers.interviewId, interviews.id),
+                        eq(interviewPanelMembers.userId, userId),
+                      ),
+                    ),
+                ),
+              ),
             ),
           ),
 
@@ -90,6 +117,7 @@ export class CalendarEventsAggregateService {
           .where(
             and(
               eq(tasks.orgId, orgId),
+              eq(tasks.assigneeId, userId),
               isNotNull(tasks.dueDate),
               gte(tasks.dueDate, start),
               lte(tasks.dueDate, end),
@@ -132,6 +160,39 @@ export class CalendarEventsAggregateService {
               isNotNull(tickets.dueDate),
               gte(tickets.dueDate, dateOnly(start)),
               lte(tickets.dueDate, dateOnly(end)),
+            ),
+          ),
+
+        this.db
+          .select({
+            id: attendance.id,
+            date: attendance.date,
+            checkIn: attendance.checkIn,
+            checkOut: attendance.checkOut,
+            status: attendance.status,
+            workHours: attendance.workHours,
+          })
+          .from(attendance)
+          .where(
+            and(
+              eq(attendance.orgId, orgId),
+              eq(attendance.userId, userId),
+              gte(attendance.date, dateOnly(start)),
+              lte(attendance.date, dateOnly(end)),
+            ),
+          )
+          .orderBy(desc(attendance.createdAt)),
+
+        this.db
+          .select({ id: wfhRequests.id, date: wfhRequests.date })
+          .from(wfhRequests)
+          .where(
+            and(
+              eq(wfhRequests.orgId, orgId),
+              eq(wfhRequests.userId, userId),
+              eq(wfhRequests.status, "APPROVED"),
+              gte(wfhRequests.date, dateOnly(start)),
+              lte(wfhRequests.date, dateOnly(end)),
             ),
           ),
       ]);
@@ -290,6 +351,53 @@ export class CalendarEventsAggregateService {
         category: "holiday",
         source: "holiday",
         description: hd.message ?? null,
+      });
+    }
+
+    const approvedWfhDates = new Set(wfhData.map((request) => request.date));
+    const recordedAttendanceDates = new Set<string>();
+    for (const log of attendanceData) {
+      if (recordedAttendanceDates.has(log.date)) continue;
+      recordedAttendanceDates.add(log.date);
+
+      const isWfh = approvedWfhDates.has(log.date);
+      const hours = log.workHours ? Number.parseFloat(log.workHours) : 0;
+      const statusLabel = log.status === "ON_BREAK" ? "On break" : null;
+      const details = [
+        isWfh ? "Work from home" : null,
+        statusLabel,
+        hours > 0 ? `${hours.toFixed(1)} hours recorded` : null,
+        log.checkIn ? `Check-in ${log.checkIn.toISOString()}` : null,
+        log.checkOut ? `Check-out ${log.checkOut.toISOString()}` : null,
+      ].filter((value): value is string => Boolean(value));
+
+      const day = new Date(`${log.date}T12:00:00.000Z`);
+      result.push({
+        id: `attendance-${log.id}`,
+        title: `Attendance${isWfh ? " - WFH" : ""}${hours > 0 ? ` - ${hours.toFixed(1)}h` : ""}`,
+        start: day,
+        end: day,
+        allDay: true,
+        color: "green",
+        category: "attendance",
+        source: "attendance",
+        description: details.join(" - ") || null,
+      });
+    }
+
+    for (const request of wfhData) {
+      if (recordedAttendanceDates.has(request.date)) continue;
+      const day = new Date(`${request.date}T12:00:00.000Z`);
+      result.push({
+        id: `attendance-wfh-${request.id}`,
+        title: "Attendance - WFH",
+        start: day,
+        end: day,
+        allDay: true,
+        color: "green",
+        category: "attendance",
+        source: "attendance",
+        description: "Approved work-from-home day",
       });
     }
 
