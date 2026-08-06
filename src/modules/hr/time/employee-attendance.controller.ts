@@ -18,12 +18,14 @@ import {
   checkOutSchema,
   createAttendanceRegularizationSchema,
   selfAttendanceLogsQuerySchema,
+  selfAttendanceHistoryQuerySchema,
   selfHeatmapQuerySchema,
   selfMonthlyQuerySchema,
   type CheckInInput,
   type CheckOutInput,
   type CreateAttendanceRegularizationInput,
   type SelfAttendanceLogsQuery,
+  type SelfAttendanceHistoryQuery,
   type SelfHeatmapQuery,
   type SelfMonthlyQuery,
 } from "./dto/attendance.schemas";
@@ -75,6 +77,20 @@ export class EmployeeAttendanceController {
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.attendance.logs(user, undefined, query.year, query.month);
+  }
+
+  @Get("history")
+  history(
+    @Query(new ZodValidationPipe(selfAttendanceHistoryQuerySchema))
+    query: SelfAttendanceHistoryQuery,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.attendance.history(
+      user.orgId,
+      user.userId,
+      query.page,
+      query.limit,
+    );
   }
 
   @Get("monthly")

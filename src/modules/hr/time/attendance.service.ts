@@ -52,6 +52,10 @@ export class AttendanceService {
     return this.reader.status(orgId, userId);
   }
 
+  history(orgId: string, userId: string, page: number, limit: number) {
+    return this.reader.history(orgId, userId, page, limit);
+  }
+
   logs(
     u: CurrentUserContext,
     requestedUserId: string | undefined,

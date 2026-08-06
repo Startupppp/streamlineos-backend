@@ -12,6 +12,7 @@ const DEFAULT_AUTO_CHECKOUT_TIME = "19:00";
 const DEFAULT_BREAK_MINUTES_AUTO_CHECKOUT = 60;
 const DEFAULT_RECLOCK_IN_COOLDOWN_MINUTES = 2;
 const DEFAULT_ENFORCE_GEOFENCE = false;
+const DEFAULT_WEEKLY_OFF_DAYS = ["sat", "sun"] as const;
 
 export interface AttendancePolicyRules {
   graceMinutes: number;
@@ -25,6 +26,10 @@ export interface AttendancePolicyRules {
 
 export interface OvertimePolicyRules {
   dailyThresholdMinutes: number;
+}
+
+export interface ShiftRosterPolicyRules {
+  weeklyOffDays: string[];
 }
 
 export interface EffectiveShift {
@@ -60,6 +65,25 @@ export class AttendancePolicyService {
     const rules = result?.rules ?? {};
     return {
       dailyThresholdMinutes: typeof rules["dailyThresholdMinutes"] === "number" ? rules["dailyThresholdMinutes"] : DEFAULT_OVERTIME_THRESHOLD_MINUTES,
+    };
+  }
+
+  async getShiftRosterRules(
+    orgId: string,
+    employeeId: string,
+    date: string,
+  ): Promise<ShiftRosterPolicyRules> {
+    const result = await this.policyEval.evaluatePolicy(
+      orgId,
+      employeeId,
+      "shift_roster",
+      date,
+    );
+    const configured = result?.rules?.["weeklyOffDays"];
+    return {
+      weeklyOffDays: Array.isArray(configured)
+        ? configured.filter((day): day is string => typeof day === "string")
+        : [...DEFAULT_WEEKLY_OFF_DAYS],
     };
   }
 

@@ -32,7 +32,7 @@ const shiftRosterRulesSchema = z.object({
   breakMinutes: z.number().int().min(0).default(60),
   weeklyOffDays: z
     .array(z.enum(["sun", "mon", "tue", "wed", "thu", "fri", "sat"]))
-    .default(["sun"]),
+    .default(["sat", "sun"]),
   flexibleTiming: z.boolean().default(false),
 });
 

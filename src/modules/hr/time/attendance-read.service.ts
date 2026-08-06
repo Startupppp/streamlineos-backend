@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { and, asc, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { attendance } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -113,6 +113,33 @@ export class AttendanceReadService {
       );
     }
     return this.getAttendanceLogs(u.orgId, userId, year, month);
+  }
+
+  async history(orgId: string, userId: string, page: number, limit: number) {
+    const where = and(
+      eq(attendance.orgId, orgId),
+      eq(attendance.userId, userId),
+    );
+    const offset = (page - 1) * limit;
+    const [data, totalRows] = await Promise.all([
+      this.db.query.attendance.findMany({
+        where,
+        orderBy: [desc(attendance.date), desc(attendance.createdAt)],
+        limit,
+        offset,
+      }),
+      this.db.select({ total: count() }).from(attendance).where(where),
+    ]);
+    const total = totalRows[0]?.total ?? 0;
+    return {
+      data,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 
   private getAttendanceLogs(

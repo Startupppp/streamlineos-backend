@@ -5,9 +5,10 @@ import { CalendarEventsAggregateService } from "./calendar-events-aggregate.serv
 import { ExternalCalendarEventsService } from "./external-calendar-events.service";
 import { ExternalCalendarSyncService } from "./external-calendar-sync.service";
 import { IntegrationsModule } from "../integrations/core/integrations.module";
+import { HrTimeModule } from "../hr/time/hr-time.module";
 
 @Module({
-  imports: [IntegrationsModule],
+  imports: [IntegrationsModule, HrTimeModule],
   controllers: [CalendarController],
   providers: [CalendarEventsAggregateService, CalendarService, ExternalCalendarEventsService, ExternalCalendarSyncService],
   exports: [CalendarService],

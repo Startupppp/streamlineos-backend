@@ -45,6 +45,19 @@ export function buildDefaultPolicies(): DefaultPolicySpec[] {
       },
     },
     {
+      policyType: "shift_roster",
+      name: "Standard Workweek",
+      description: "Default weekday schedule and weekly-off days",
+      priority: 0,
+      rules: {
+        defaultShiftStartTime: "09:00",
+        defaultShiftEndTime: "18:00",
+        breakMinutes: 60,
+        weeklyOffDays: ["sat", "sun"],
+        flexibleTiming: false,
+      },
+    },
+    {
       policyType: "probation",
       name: "Standard Probation Policy",
       description: "Default 90-day probation with one 30-day extension",
