@@ -1,5 +1,15 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, exists, gte, lte, isNotNull, inArray, or } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  exists,
+  gte,
+  lte,
+  isNotNull,
+  inArray,
+  or,
+} from "drizzle-orm";
 import {
   calendarEvents,
   eventAttendees,
@@ -374,7 +384,9 @@ export class CalendarEventsAggregateService {
       const day = new Date(`${log.date}T12:00:00.000Z`);
       result.push({
         id: `attendance-${log.id}`,
-        title: `Attendance${isWfh ? " - WFH" : ""}${hours > 0 ? ` - ${hours.toFixed(1)}h` : ""}`,
+        title: `Attendance${isWfh ? " - WFH" : ""}${
+          hours > 0 ? ` - ${hours.toFixed(1)}h` : ""
+        }`,
         start: day,
         end: day,
         allDay: true,
