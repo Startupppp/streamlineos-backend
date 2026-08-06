@@ -7,7 +7,7 @@ import { clients } from "../../../db/schema/crm/contacts";
 import { journalLines } from "../../../db/schema/accounting/accounting";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
-import { FinancePostingService } from "../../accounting/core/finance-posting.service";
+import { FinancePostingService } from "../../accounting/posting/finance-posting.service";
 import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
 import type { TaxDateRangeQuery } from "./dto/tax-reports.schemas";
 

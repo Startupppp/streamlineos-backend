@@ -14,8 +14,8 @@ import { type Db } from "../../../db/drizzle.module";
 import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
 import { AuditService } from "../../../common/audit/audit.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
-import { JournalPostingService, type DraftLine } from "./journal-posting.service";
-import { FinancePostingService } from "./finance-posting.service";
+import { JournalPostingService, type DraftLine } from "../posting/journal-posting.service";
+import { FinancePostingService } from "../posting/finance-posting.service";
 import { addDecimals, compareDecimals } from "./money.util";
 import {
   type CreateAccountInput,

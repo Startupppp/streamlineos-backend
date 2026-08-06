@@ -1,4 +1,4 @@
-import { Inject, Injectable, forwardRef } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -17,7 +17,6 @@ import { NotificationsService } from "../../notifications/notifications.service"
 import { AutomationEmailService } from "../../automation/automation-email.service";
 import type { StudioEventPayload, RunStepLog } from "./types";
 import { evaluateConditions, type StudioCondition } from "./crm-automation-condition-evaluator";
-import type { CrmAutomationBusService } from "./crm-automation-bus.service";
 
 const ALLOWLISTED_LEAD_FIELDS = ["status", "priority", "source", "assignedToId", "score"];
 const ALLOWLISTED_DEAL_FIELDS = ["stage", "priority", "assignedToId"];
@@ -28,8 +27,6 @@ export class CrmAutomationRunnerService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly notifications: NotificationsService,
     private readonly email: AutomationEmailService,
-    @Inject(forwardRef(() => "CrmAutomationBusService"))
-    private readonly bus: CrmAutomationBusService,
   ) {}
 
   async executeRule(

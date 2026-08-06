@@ -9,7 +9,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
-import { JournalPostingService, type DraftLine } from "../../accounting/core/journal-posting.service";
+import { JournalPostingService, type DraftLine } from "../../accounting/posting/journal-posting.service";
 import { paginateOffset, buildListResponse } from "../../../common/pagination/pagination";
 import {
   accFixedAssets, accAssetCategories, accDepreciationRuns, accDepreciationSchedules,

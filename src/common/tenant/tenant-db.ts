@@ -1,4 +1,4 @@
-import type { Db } from "../../db/drizzle.module";
+import type { Db } from "../../db/drizzle.types";
 import { getTenantContext } from "./tenant-context";
 
 export type DbWithClient = Db & { __client: { end: (opts: { timeout: number }) => Promise<void> } };

@@ -1,9 +1,8 @@
 import { sql } from "drizzle-orm";
-import type { Db } from "../../db/drizzle.module";
+import type { Db, TenantTx } from "../../db/drizzle.types";
 import type { TenantAudience } from "./tenant-context";
 
-/** The transaction handle Drizzle hands to `db.transaction`. */
-export type TenantTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+export type { TenantTx };
 
 /** Runs `fn` inside a transaction whose tenant GUCs are set for its duration. */
 export async function withTenant<T>(

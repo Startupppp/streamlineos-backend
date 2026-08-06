@@ -21,7 +21,7 @@ import {
   fnfStatusEnum,
 } from "../common/enums";
 import { organizations, users } from "../common/auth";
-import { journalEntries, ledgerAccounts } from "../accounting";
+import { journalEntries, ledgerAccounts } from "../accounting/accounting";
 import { projects } from "../build";
 import { resignations } from "./offboarding";
 import { assets } from "./assets";

@@ -7,7 +7,7 @@ import { journalLines } from "../../../db/schema/accounting/accounting";
 import { accTaxPayments } from "../../../db/schema/accounting/finance-tax";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
-import { FinancePostingService } from "../../accounting/core/finance-posting.service";
+import { FinancePostingService } from "../../accounting/posting/finance-posting.service";
 import type { TaxDashboardQuery } from "./dto/tax-reports.schemas";
 
 const INVOICE_POSTED = ["ISSUED", "PAID", "FAILED"] as const;

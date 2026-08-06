@@ -17,8 +17,8 @@ import {
 } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
-import { FinancePostingService } from "../../accounting/core/finance-posting.service";
-import { JournalPostingService } from "../../accounting/core/journal-posting.service";
+import { FinancePostingService } from "../../accounting/posting/finance-posting.service";
+import { JournalPostingService } from "../../accounting/posting/journal-posting.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
 import type {

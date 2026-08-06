@@ -12,7 +12,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { AuditService } from "../../common/audit/audit.service";
-import { JournalPostingService, type DbOrTx } from "../accounting/core/journal-posting.service";
+import { JournalPostingService, type DbOrTx } from "../accounting/posting/journal-posting.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { InvoicesLifecycleService } from "./invoices-lifecycle.service";
 import { RateResolverService } from "../finance/controls/rate-resolver.service";

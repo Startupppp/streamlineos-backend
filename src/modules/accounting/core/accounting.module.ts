@@ -1,10 +1,8 @@
-import { forwardRef, Module } from "@nestjs/common";
+import { Module } from "@nestjs/common";
 import { AccountingLedgerController } from "./accounting-ledger.controller";
 import { AccountingStatementsController } from "./accounting-statements.controller";
 import { AccountingPayablesReceivablesController } from "./accounting-payables-receivables.controller";
 import { AccountingGstController } from "./accounting-gst.controller";
-import { JournalPostingService } from "./journal-posting.service";
-import { FinancePostingService } from "./finance-posting.service";
 import { AccountingLedgerService } from "./accounting-ledger.service";
 import { AccountingStatementsService } from "./accounting-statements.service";
 import { AccountingPayablesService } from "./accounting-payables.service";
@@ -13,9 +11,10 @@ import { AccountingReceivablesService } from "./accounting-receivables.service";
 import { AccountingGstService } from "./accounting-gst.service";
 import { NotificationsModule } from "../../notifications/notifications.module";
 import { FinanceControlsModule } from "../../finance/controls/finance-controls.module";
+import { AccountingPostingModule } from "../posting/accounting-posting.module";
 
 @Module({
-  imports: [NotificationsModule, forwardRef(() => FinanceControlsModule)],
+  imports: [NotificationsModule, AccountingPostingModule, FinanceControlsModule],
   controllers: [
     AccountingLedgerController,
     AccountingStatementsController,
@@ -23,8 +22,6 @@ import { FinanceControlsModule } from "../../finance/controls/finance-controls.m
     AccountingGstController,
   ],
   providers: [
-    JournalPostingService,
-    FinancePostingService,
     AccountingLedgerService,
     AccountingStatementsService,
     AccountingPayablesQueryService,
@@ -32,6 +29,6 @@ import { FinanceControlsModule } from "../../finance/controls/finance-controls.m
     AccountingReceivablesService,
     AccountingGstService,
   ],
-  exports: [JournalPostingService, FinancePostingService],
+  exports: [AccountingPostingModule],
 })
 export class AccountingModule {}

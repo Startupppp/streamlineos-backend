@@ -1,5 +1,5 @@
-import { Module, forwardRef } from "@nestjs/common";
-import { HrTimeModule } from "../time/hr-time.module";
+import { Module } from "@nestjs/common";
+import { HrTimeLedgerModule } from "../time/hr-time-ledger.module";
 import { HrCoreModule } from "../core/hr-core.module";
 import { HrBenefitsModule } from "../benefits/hr-benefits.module";
 import { HrAutomationsModule } from "../automations/hr-automations.module";
@@ -9,7 +9,7 @@ import { PayrollInputsBuildService } from "./payroll-inputs-build.service";
 
 @Module({
   imports: [
-    forwardRef(() => HrTimeModule),
+    HrTimeLedgerModule,
     HrCoreModule,
     HrBenefitsModule,
     HrAutomationsModule,

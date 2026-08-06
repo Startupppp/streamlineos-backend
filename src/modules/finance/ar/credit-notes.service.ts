@@ -10,7 +10,7 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { JournalPostingService, type DraftLine } from "../../accounting/core/journal-posting.service";
+import { JournalPostingService, type DraftLine } from "../../accounting/posting/journal-posting.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";

@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { Injectable } from "@nestjs/common";
-import type { TenantTx } from "./with-tenant";
+import type { TenantTx } from "../../db/drizzle.types";
 
 export type TenantAudience = "INTERNAL" | "PORTAL";
 

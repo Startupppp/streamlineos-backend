@@ -15,7 +15,7 @@ import {
 import { accNumberSequences, accSystemAccountMap } from "../../../db/schema/accounting/accounting-core";
 import { ledgerAccounts } from "../../../db/schema/accounting/accounting";
 import { purchaseBills } from "../../../db/schema/crm/invoicing";
-import { JournalPostingService, type DraftLine, type DbOrTx } from "../../accounting/core/journal-posting.service";
+import { JournalPostingService, type DraftLine, type DbOrTx } from "../../accounting/posting/journal-posting.service";
 import type { SystemAccountPurpose } from "../../accounting/core/finance-posting.types";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { CreateAssetInput, DisposeAssetInput, ListAssetsQuery, UpdateAssetInput } from "./dto/assets.schemas";

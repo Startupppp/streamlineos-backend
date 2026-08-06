@@ -8,7 +8,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { SETTINGS_CACHE_KEY } from "./accounting-settings.constants";
 import type { PostOpeningBalancesInput } from "./dto/settings.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { FinancePostingService } from "../core/finance-posting.service";
+import { FinancePostingService } from "../posting/finance-posting.service";
 import type { PostJournalLine } from "../core/finance-posting.types";
 
 @Injectable()

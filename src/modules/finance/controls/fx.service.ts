@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { FinancePostingService } from "../../accounting/core/finance-posting.service";
+import { FinancePostingService } from "../../accounting/posting/finance-posting.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 export interface PostRealizedGainLossInput {

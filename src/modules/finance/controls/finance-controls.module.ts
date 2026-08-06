@@ -1,5 +1,5 @@
-import { forwardRef, Module } from "@nestjs/common";
-import { AccountingModule } from "../../accounting/core/accounting.module";
+import { Module } from "@nestjs/common";
+import { AccountingPostingModule } from "../../accounting/posting/accounting-posting.module";
 import { NotificationsModule } from "../../notifications/notifications.module";
 import { ApprovalPoliciesController } from "./approval-policies.controller";
 import { ApprovalsController } from "./approvals.controller";
@@ -14,7 +14,7 @@ import { FxService } from "./fx.service";
 import { ProviderBridgeService } from "./provider-bridge.service";
 
 @Module({
-  imports: [forwardRef(() => AccountingModule), NotificationsModule],
+  imports: [AccountingPostingModule, NotificationsModule],
   controllers: [
     ApprovalPoliciesController,
     ApprovalsController,

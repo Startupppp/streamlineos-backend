@@ -23,7 +23,7 @@ import {
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
-import { FinancePostingService } from "../../accounting/core/finance-posting.service";
+import { FinancePostingService } from "../../accounting/posting/finance-posting.service";
 import {
   paginateOffset,
   buildListResponse,

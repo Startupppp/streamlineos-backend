@@ -24,14 +24,14 @@ import {
   formatDecimal,
   isZero,
   multiplyDecimals,
-} from "./money.util";
+} from "../core/money.util";
 import type {
   PostJournalInput,
   PostJournalLine,
   PostJournalResult,
   ReverseJournalResult,
   SystemAccountPurpose,
-} from "./finance-posting.types";
+} from "../core/finance-posting.types";
 
 const PURPOSE_DEFAULT_CODE: Record<SystemAccountPurpose, string> = {
   AR: "1200",

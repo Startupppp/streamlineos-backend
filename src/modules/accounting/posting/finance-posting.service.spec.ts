@@ -5,7 +5,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AuditService } from "../../../common/audit/audit.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import type { PostJournalInput } from "./finance-posting.types";
+import type { PostJournalInput } from "../core/finance-posting.types";
 
 const USER: CurrentUserContext = {
   userId: "u1",

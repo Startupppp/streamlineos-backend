@@ -23,7 +23,7 @@ import {
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
-import { JournalPostingService } from "../../accounting/core/journal-posting.service";
+import { JournalPostingService } from "../../accounting/posting/journal-posting.service";
 import { RateResolverService } from "../controls/rate-resolver.service";
 import { FxService } from "../controls/fx.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";

@@ -1,4 +1,4 @@
-import { Module, forwardRef } from "@nestjs/common";
+import { Module } from "@nestjs/common";
 import { AutomationModule } from "../../automation/automation.module";
 import { WebhooksModule } from "../../webhooks/webhooks.module";
 import { NotificationsModule } from "../../notifications/notifications.module";
@@ -28,9 +28,8 @@ import { LeavesPageService } from "./leaves-page.service";
 import { AttendanceService } from "./attendance.service";
 import { AttendanceClockService } from "./attendance-clock.service";
 import { AttendanceReadService } from "./attendance-read.service";
-import { AttendancePolicyService } from "./attendance-policy.service";
+import { HrTimeLedgerModule } from "./hr-time-ledger.module";
 import { AttendanceRegularizationService } from "./attendance-regularization.service";
-import { AttendanceSummaryService } from "./attendance-summary.service";
 import { WfhService } from "./wfh.service";
 import { WorkLogsService } from "./work-logs.service";
 import { ShiftsService } from "./shifts.service";
@@ -39,7 +38,6 @@ import { OvertimeService } from "./overtime.service";
 import { GeofencingService } from "./geofencing.service";
 import { BiometricService } from "./biometric.service";
 import { LeavePoliciesService } from "./leave-policies.service";
-import { LeaveLedgerService } from "./leave-ledger.service";
 
 @Module({
   imports: [
@@ -48,8 +46,9 @@ import { LeaveLedgerService } from "./leave-ledger.service";
     NotificationsModule,
     HrAutomationsModule,
     HrPoliciesModule,
+    HrTimeLedgerModule,
     HrWorkflowsModule,
-    forwardRef(() => HrPayrollInputsModule),
+    HrPayrollInputsModule,
   ],
   controllers: [
     EmployeeAttendanceController,
@@ -73,14 +72,11 @@ import { LeaveLedgerService } from "./leave-ledger.service";
     LeavesService,
     LeavesWriteService,
     LeavesApprovalService,
-    LeaveLedgerService,
     LeavesPageService,
     AttendanceClockService,
     AttendanceReadService,
     AttendanceService,
-    AttendancePolicyService,
     AttendanceRegularizationService,
-    AttendanceSummaryService,
     WfhService,
     WorkLogsService,
     ShiftsService,
@@ -90,6 +86,6 @@ import { LeaveLedgerService } from "./leave-ledger.service";
     BiometricService,
     LeavePoliciesService,
   ],
-  exports: [AttendancePolicyService, AttendanceSummaryService, LeaveLedgerService],
+  exports: [HrTimeLedgerModule],
 })
 export class HrTimeModule {}

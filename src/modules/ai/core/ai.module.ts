@@ -1,4 +1,4 @@
-import { forwardRef, Module } from "@nestjs/common";
+import { Module } from "@nestjs/common";
 import { CrmAiController } from "./controllers/crm-ai.controller";
 import { CrmCopilotController } from "./controllers/crm-copilot.controller";
 import { HrAiController } from "./controllers/hr-ai.controller";
@@ -6,7 +6,6 @@ import { KbRagController } from "./controllers/kb-rag.controller";
 import { ChatAssistantController } from "./controllers/chat-assistant.controller";
 import { ProjectsAiController } from "./controllers/projects-ai.controller";
 import { AiFeedbackController } from "./controllers/ai-feedback.controller";
-import { LlmService } from "./providers/llm.service";
 import { EmbeddingsService } from "./providers/embeddings.service";
 import { CrmScoringService } from "./services/crm-scoring.service";
 import { CrmContentService } from "./services/crm-content.service";
@@ -18,7 +17,6 @@ import { HrAiService } from "./services/hr-ai.service";
 import { KbRagService } from "./services/kb-rag.service";
 import { ChatAssistantService } from "./services/chat-assistant.service";
 import { ChatHistoryService } from "./services/chat-history.service";
-import { AiUsageService } from "./services/ai-usage.service";
 import { OrgFeaturesService } from "./services/org-features.service";
 import { ProjectsAiService } from "./services/projects-ai.service";
 import { TicketAiService } from "./services/ticket-ai.service";
@@ -34,10 +32,7 @@ import { ToolAccessService } from "./tool-access.service";
 import { AiFeedbackService } from "./services/ai-feedback.service";
 import { CalendarModule } from "../../calendar/calendar.module";
 import { ChatModule } from "../../chat/chat.module";
-import { AiGatewayService } from "./gateway/ai-gateway.service";
-import { AI_CREDIT_LEDGER } from "./gateway/credit-ledger.interface";
 import { BillingModule } from "../../billing/core/billing.module";
-import { AiCreditsService } from "../../billing/core/ai-credits.service";
 import { AiConfirmationModule } from "../confirmation/ai-confirmation.module";
 import { ProjectsModule } from "../../build/core/projects.module";
 import { IntegrationsModule } from "../../integrations/core/integrations.module";
@@ -46,16 +41,16 @@ import { MeetingsPrepService } from "./services/meetings-prep.service";
 import { ExecutiveBriefModule } from "./executive-brief/executive-brief.module";
 import { AiJobsModule } from "../jobs/ai-jobs.module";
 import { MailModule } from "../../mail/mail.module";
+import { AiGatewayModule } from "./gateway/ai-gateway.module";
 import { BlogAiController } from "./controllers/blog-ai.controller";
 import { BlogAiService } from "./services/blog-ai.service";
 import { SurveyAiController } from "./controllers/survey-ai.controller";
 import { SurveyAiService } from "./services/survey-ai.service";
 
 @Module({
-  imports: [CalendarModule, ChatModule, BillingModule, AiConfirmationModule, ProjectsModule, IntegrationsModule, ExecutiveBriefModule, AiJobsModule, forwardRef(() => MailModule)],
+  imports: [CalendarModule, ChatModule, BillingModule, AiConfirmationModule, ProjectsModule, IntegrationsModule, ExecutiveBriefModule, AiJobsModule, MailModule, AiGatewayModule],
   controllers: [CrmAiController, CrmCopilotController, HrAiController, KbRagController, ChatAssistantController, ProjectsAiController, AiFeedbackController, MeetingsAiController, BlogAiController, SurveyAiController],
   providers: [
-    LlmService,
     EmbeddingsService,
     CrmScoringService,
     CrmContentService,
@@ -67,7 +62,6 @@ import { SurveyAiService } from "./services/survey-ai.service";
     KbRagService,
     ChatAssistantService,
     ChatHistoryService,
-    AiUsageService,
     OrgFeaturesService,
     ProjectsAiService,
     TicketAiService,
@@ -80,13 +74,11 @@ import { SurveyAiService } from "./services/survey-ai.service";
     CommsActionsTools,
     MailCopilotTools,
     ToolAccessService,
-    AiGatewayService,
     AiFeedbackService,
     MeetingsPrepService,
     BlogAiService,
     SurveyAiService,
-    { provide: AI_CREDIT_LEDGER, useExisting: AiCreditsService },
   ],
-  exports: [LlmService, EmbeddingsService, AiUsageService, OrgFeaturesService, AiGatewayService],
+  exports: [AiGatewayModule, EmbeddingsService, OrgFeaturesService],
 })
 export class AiModule {}

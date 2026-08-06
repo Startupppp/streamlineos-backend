@@ -7,13 +7,14 @@ import {
   type OnApplicationShutdown,
 } from "@nestjs/common";
 import { sql } from "drizzle-orm";
-import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { createTenantAwareDb } from "../common/tenant/tenant-db";
+import type { Db } from "./drizzle.types";
 import { DRIZZLE } from "./drizzle.constants";
 import * as schema from "./schema";
 
-export type Db = PostgresJsDatabase<typeof schema>;
+export type { Db } from "./drizzle.types";
 
 function normalizeDatabaseUrl(url: string): string {
   if (!/\.neon\.tech/i.test(url)) return url;

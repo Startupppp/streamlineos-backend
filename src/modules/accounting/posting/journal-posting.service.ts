@@ -5,7 +5,7 @@ import { ledgerAccounts, journalEntries, journalLines } from "../../../db/schema
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
-import { ACCOUNT_CODES, type GstSplit, paymentMethodToAccountCode, splitTaxPool } from "./posting-rules";
+import { ACCOUNT_CODES, type GstSplit, paymentMethodToAccountCode, splitTaxPool } from "../core/posting-rules";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 export type DbOrTx = Db | Tx;

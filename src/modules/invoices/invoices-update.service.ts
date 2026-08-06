@@ -6,7 +6,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { AuditService } from "../../common/audit/audit.service";
-import { JournalPostingService } from "../accounting/core/journal-posting.service";
+import { JournalPostingService } from "../accounting/posting/journal-posting.service";
 import { resolveSupplierStateCode } from "./lib/invoice-helpers";
 import type { UpdateInvoiceInput } from "./dto/invoice-write.schemas";
 

@@ -9,7 +9,6 @@ export * from "./whiteboards";
 export * from "./git";
 export * from "./activity";
 export * from "./qa";
-export * from "./bugs";
 export * from "./change-requests";
 export * from "./approvals";
 export * from "./governance";

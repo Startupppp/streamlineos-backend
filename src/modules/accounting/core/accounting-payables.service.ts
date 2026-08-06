@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   ConflictException,
-  forwardRef,
   Inject,
   Injectable,
   Logger,
@@ -17,7 +16,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
-import { JournalPostingService } from "./journal-posting.service";
+import { JournalPostingService } from "../posting/journal-posting.service";
 import { AccountingPayablesQueryService } from "./accounting-payables-query.service";
 import { RateResolverService } from "../../finance/controls/rate-resolver.service";
 import { FxService } from "../../finance/controls/fx.service";
@@ -45,8 +44,8 @@ export class AccountingPayablesService {
     private readonly posting: JournalPostingService,
     private readonly audit: AuditService,
     private readonly query: AccountingPayablesQueryService,
-    @Inject(forwardRef(() => RateResolverService)) private readonly rateResolver: RateResolverService,
-    @Inject(forwardRef(() => FxService)) private readonly fx: FxService,
+    private readonly rateResolver: RateResolverService,
+    private readonly fx: FxService,
   ) {}
 
   listPurchaseBills(orgId: string, q: ListPurchaseBillsQuery, scope: DataScope, userId: string) {

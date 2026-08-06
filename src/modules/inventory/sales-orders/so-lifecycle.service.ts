@@ -21,7 +21,7 @@ import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { ReservationService } from "../stock-engine/reservation.service";
-import { JournalPostingService } from "../../accounting/core/journal-posting.service";
+import { JournalPostingService } from "../../accounting/posting/journal-posting.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 
 @Injectable()

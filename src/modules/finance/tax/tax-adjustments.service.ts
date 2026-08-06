@@ -2,7 +2,7 @@ import { BadRequestException, Injectable } from "@nestjs/common";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
-import { FinancePostingService } from "../../accounting/core/finance-posting.service";
+import { FinancePostingService } from "../../accounting/posting/finance-posting.service";
 import type { CreateTaxAdjustmentInput } from "./dto/tax-adjustments.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { PostJournalLine } from "../../accounting/core/finance-posting.types";

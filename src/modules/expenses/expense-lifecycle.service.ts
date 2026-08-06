@@ -20,7 +20,7 @@ import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import { compareDecimals, formatDecimal } from "../accounting/core/money.util";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
-import { FinancePostingService } from "../accounting/core/finance-posting.service";
+import { FinancePostingService } from "../accounting/posting/finance-posting.service";
 import type { PostJournalLine } from "../accounting/core/finance-posting.types";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
