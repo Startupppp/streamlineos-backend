@@ -544,7 +544,7 @@ export class OwnershipTransferResponseService {
     ]);
     if (targetUserIds.length === 0) return;
 
-    void this.dispatch.emit({
+    await this.dispatch.emit({
       eventKey: payload.eventKey,
       orgId,
       actorUserId,

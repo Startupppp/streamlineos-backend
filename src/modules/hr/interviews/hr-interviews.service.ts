@@ -24,6 +24,28 @@ interface MonthStage {
   breached: number;
 }
 
+export interface AssignedInterviewItem {
+  id: number;
+  type: string;
+  scheduledAt: Date;
+  duration: number;
+  location: string | null;
+  meetingLink: string | null;
+  result: "PENDING" | "PASSED" | "FAILED" | "NO_SHOW";
+  candidateFirstName: string;
+  candidateLastName: string;
+  jobTitle: string | null;
+  scorecardSubmittedAt: Date | null;
+}
+
+export interface AssignedInterviewsPage {
+  items: AssignedInterviewItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
 @Injectable()
 export class HrInterviewsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
@@ -77,7 +99,7 @@ export class HrInterviewsService {
     orgId: string,
     userId: string,
     query: SelfInterviewListInput,
-  ) {
+  ): Promise<AssignedInterviewsPage> {
     const offset = (query.page - 1) * query.pageSize;
     const rows = await this.db.execute<{
       id: number;
@@ -149,7 +171,11 @@ export class HrInterviewsService {
     );
   }
 
-  async isAssignedTo(orgId: string, userId: string, interviewId: number) {
+  async isAssignedTo(
+    orgId: string,
+    userId: string,
+    interviewId: number,
+  ): Promise<boolean> {
     const rows = await this.db.execute<{ id: number }>(sql`
       SELECT i.id
       FROM interviews i

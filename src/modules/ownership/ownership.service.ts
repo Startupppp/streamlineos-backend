@@ -214,7 +214,7 @@ export class OwnershipService {
     const targetUserIds = await resolveMembershipUserIds(this.db, orgId, membershipIds);
     if (targetUserIds.length === 0) return;
 
-    void this.dispatch.emit({
+    await this.dispatch.emit({
       eventKey: "ownership.module_owner.changed",
       orgId,
       actorUserId,

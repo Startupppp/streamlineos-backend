@@ -25,7 +25,10 @@ import {
   type SubmitScorecardInput,
 } from "./dto/interview-scheduling.schemas";
 import { HrInterviewResultsService } from "./hr-interview-results.service";
-import { HrInterviewsService } from "./hr-interviews.service";
+import {
+  HrInterviewsService,
+  type AssignedInterviewsPage,
+} from "./hr-interviews.service";
 
 @Controller("me/recruitment")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -41,7 +44,7 @@ export class EmployeeRecruitmentController {
     @Query(new ZodValidationPipe(selfInterviewListSchema))
     query: SelfInterviewListInput,
     @CurrentUser() user: CurrentUserContext,
-  ) {
+  ): Promise<AssignedInterviewsPage> {
     return this.interviews.listMine(user.orgId, user.userId, query);
   }
 
@@ -52,7 +55,7 @@ export class EmployeeRecruitmentController {
     @Body(new ZodValidationPipe(submitScorecardSchema))
     body: SubmitScorecardInput,
     @CurrentUser() user: CurrentUserContext,
-  ) {
+  ): Promise<unknown> {
     const assigned = await this.interviews.isAssignedTo(
       user.orgId,
       user.userId,

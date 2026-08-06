@@ -393,7 +393,7 @@ export class InvitationAcceptanceService {
     ).filter((id) => id !== joinedUserId);
     if (targetUserIds.length === 0) return;
 
-    void this.dispatch.emit({
+    await this.dispatch.emit({
       eventKey: "organization.invitation.accepted",
       orgId,
       actorUserId: joinedUserId,
@@ -417,7 +417,7 @@ export class InvitationAcceptanceService {
     ]);
     if (targetUserIds.length === 0) return;
 
-    void this.dispatch.emit({
+    await this.dispatch.emit({
       eventKey: "organization.invitation.declined",
       orgId,
       targetUserIds,

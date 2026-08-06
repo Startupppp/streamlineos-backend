@@ -403,7 +403,7 @@ export class OrgMembershipService {
       targetType: "user",
     });
 
-    this.notifyAccessLoss(orgId, memberUserId, "removed");
+    await this.notifyAccessLoss(orgId, memberUserId, "removed").catch(() => undefined);
 
     return { success: true };
   }
@@ -554,11 +554,11 @@ export class OrgMembershipService {
         })
         .catch(() => undefined);
     } else {
-      this.notifyAccessLoss(
+      await this.notifyAccessLoss(
         orgId,
         memberUserId,
         status === "suspended" ? "suspended" : "removed",
-      );
+      ).catch(() => undefined);
     }
 
     return { success: true };
@@ -812,7 +812,7 @@ export class OrgMembershipService {
     ]);
     if (admins.length === 0) return;
 
-    void this.dispatch.emit({
+    await this.dispatch.emit({
       eventKey: "organization.member.left",
       orgId,
       actorUserId: userId,
