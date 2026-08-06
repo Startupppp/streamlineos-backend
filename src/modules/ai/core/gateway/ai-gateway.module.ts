@@ -14,6 +14,6 @@ import { AI_CREDIT_LEDGER } from "./credit-ledger.interface";
     AiGatewayService,
     { provide: AI_CREDIT_LEDGER, useExisting: AiCreditsService },
   ],
-  exports: [LlmService, AiUsageService, AiGatewayService],
+  exports: [LlmService, AiUsageService, AiGatewayService, AI_CREDIT_LEDGER],
 })
 export class AiGatewayModule {}
