@@ -1,5 +1,8 @@
 export type { Permission } from "./types";
-export { ACCESS_MANAGED_MODULES, MODULE_ACCESS_PERMISSIONS } from "./module-access";
+export {
+  ACCESS_MANAGED_MODULES,
+  MODULE_ACCESS_PERMISSIONS,
+} from "./module-access";
 export { SIGN_PERMISSIONS } from "./sign";
 export { NOTIFICATIONS_PERMISSIONS } from "./notifications";
 export { HR_PERMISSIONS } from "./hr";
@@ -42,8 +45,17 @@ export { AI_SUMMARIES_PERMISSIONS, EXECUTIVE_BRIEF_PERMISSIONS } from "./ai";
 export { DIRECTORY_PERMISSIONS } from "./directory";
 export { PARTY_PERMISSIONS } from "./party";
 export { MAIL_PERMISSIONS } from "./mail";
-export { PERMISSIONS, ALL_PERMISSION_NAMES, moduleScopedPermissions } from "./catalog";
-export { ROLE_DEFAULT_PERMISSIONS, ALL_ROLES } from "./role-defaults";
+export {
+  PERMISSIONS,
+  ALL_PERMISSION_NAMES,
+  moduleScopedPermissions,
+} from "./catalog";
+export {
+  ALL_ROLES,
+  ROLE_DEFAULT_PERMISSIONS,
+  UNIVERSAL_MEMBER_PERMISSION_GRANTS,
+  UNIVERSAL_MEMBER_PERMISSIONS,
+} from "./role-defaults";
 
 import { PERMISSIONS } from "./catalog";
 
@@ -54,4 +66,3 @@ const SCOPABLE_PERMISSIONS = new Set(
 export function isScopable(key: string): boolean {
   return SCOPABLE_PERMISSIONS.has(key);
 }
-

@@ -31,10 +31,17 @@ import {
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
 import { AccessService } from "../access/access.service";
-import { PERMISSIONS, ROLE_DEFAULT_PERMISSIONS } from "./permissions";
+import {
+  PERMISSIONS,
+  ROLE_DEFAULT_PERMISSIONS,
+  UNIVERSAL_MEMBER_PERMISSIONS,
+} from "./permissions";
 import type { SetRolePermissionsInput } from "./dto/rbac.schemas";
 
 const CATALOG_KEYS = new Set(PERMISSIONS.map((permission) => permission.name));
+const UNIVERSAL_PERMISSION_KEYS = new Set<string>(
+  UNIVERSAL_MEMBER_PERMISSIONS,
+);
 const ROLES_PAGE_LIMIT = 100;
 
 export interface RolePermissionMatrixEntry {
@@ -220,6 +227,7 @@ export class RolePermissionService {
           `Unknown permission key: ${item.permissionKey}`,
         );
       }
+      if (UNIVERSAL_PERMISSION_KEYS.has(item.permissionKey)) continue;
       deduped.set(item.permissionKey, item.scope);
     }
 
@@ -339,7 +347,11 @@ export class RolePermissionService {
 
     return orgRoles.map((role) => {
       const explicit = grantsByRole.get(role.id);
-      const permissions = explicit ?? ROLE_DEFAULT_PERMISSIONS[role.slug] ?? [];
+      const rolePermissions =
+        explicit ?? ROLE_DEFAULT_PERMISSIONS[role.slug] ?? [];
+      const permissions = Array.from(
+        new Set([...UNIVERSAL_MEMBER_PERMISSIONS, ...rolePermissions]),
+      );
       return {
         roleId: role.id,
         roleName: role.name,

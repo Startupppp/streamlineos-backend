@@ -20,7 +20,14 @@ import {
   ROLE_RANK,
   toGrantableSet,
 } from "../../common/rbac/grantability";
-import { PERMISSIONS, ROLE_DEFAULT_PERMISSIONS, type Permission, isScopable } from "./permissions";
+import {
+  PERMISSIONS,
+  ROLE_DEFAULT_PERMISSIONS,
+  UNIVERSAL_MEMBER_PERMISSION_GRANTS,
+  UNIVERSAL_MEMBER_PERMISSIONS,
+  type Permission,
+  isScopable,
+} from "./permissions";
 import type {
   AssignRolePermissionInput,
   DiscoveryGrantableResult,
@@ -35,6 +42,20 @@ import { ROLE_TEMPLATES } from "./role-templates.constants";
 
 const RBAC_MANAGE_KEY = "settings:rbac:manage";
 const CATALOG_KEYS = new Set(PERMISSIONS.map((p) => p.name));
+const UNIVERSAL_PERMISSION_KEYS = new Set<string>(
+  UNIVERSAL_MEMBER_PERMISSIONS,
+);
+const UNIVERSAL_PERMISSION_SCOPE_BY_KEY = new Map<
+  string,
+  "own" | "all"
+>();
+for (const grant of UNIVERSAL_MEMBER_PERMISSION_GRANTS) {
+  UNIVERSAL_PERMISSION_SCOPE_BY_KEY.set(grant.permissionKey, grant.scope);
+}
+const DISCOVERABLE_PERMISSIONS: Permission[] = PERMISSIONS.map((permission) => {
+  const baselineScope = UNIVERSAL_PERMISSION_SCOPE_BY_KEY.get(permission.name);
+  return baselineScope ? { ...permission, baselineScope } : permission;
+});
 
 @Injectable()
 export class RbacService {
@@ -46,14 +67,15 @@ export class RbacService {
   ) {}
 
   getAllPermissions(): Permission[] {
-    return PERMISSIONS;
+    return DISCOVERABLE_PERMISSIONS;
   }
 
   async getUserPermissions(userId: string, orgId: string): Promise<string[]> {
     const membership = await this.db.query.organizationMembers.findFirst({
       where: and(eq(organizationMembers.userId, userId), eq(organizationMembers.orgId, orgId)),
-      columns: { role: true },
+      columns: { role: true, status: true },
     });
+    if (membership?.status !== "ACTIVE") return [];
     const role = membership?.role;
 
     const rolePerms = role ? await this.grantsForRoleSlug(role, orgId) : [];
@@ -61,6 +83,7 @@ export class RbacService {
 
     const permissionSet = new Set<string>();
 
+    UNIVERSAL_MEMBER_PERMISSIONS.forEach((key) => permissionSet.add(key));
     rolePerms.forEach((key) => permissionSet.add(key));
     defaultPerms.forEach((perm) => permissionSet.add(perm));
 
@@ -69,7 +92,7 @@ export class RbacService {
 
   async getRolePermissions(role: string, orgId: string): Promise<string[]> {
     const keys = await this.grantsForRoleSlug(role, orgId);
-    return Array.from(new Set(keys));
+    return Array.from(new Set([...UNIVERSAL_MEMBER_PERMISSIONS, ...keys]));
   }
 
   private async grantsForRoleSlug(role: string, orgId: string): Promise<string[]> {
@@ -98,6 +121,11 @@ export class RbacService {
 
     if (!CATALOG_KEYS.has(input.permissionKey)) {
       throw new BadRequestException(`Unknown permission key: ${input.permissionKey}`);
+    }
+    if (UNIVERSAL_PERMISSION_KEYS.has(input.permissionKey)) {
+      throw new BadRequestException(
+        `Permission ${input.permissionKey} is included for every active member`,
+      );
     }
 
     if (!actor.isOrgOwner) {
@@ -140,6 +168,12 @@ export class RbacService {
   ): Promise<{ success: true }> {
     const hasAccess = await this.checkActorAccess(actor);
     if (!hasAccess) throw new ForbiddenException("Permission denied");
+
+    if (UNIVERSAL_PERMISSION_KEYS.has(input.permissionKey)) {
+      throw new BadRequestException(
+        `Permission ${input.permissionKey} is included for every active member`,
+      );
+    }
 
     if (input.permissionKey === RBAC_MANAGE_KEY) {
       const willLockOut = await this.rolesService.wouldLockOutLastAdmin(

@@ -76,7 +76,10 @@ export class EntitlementsService implements OnModuleInit {
         where: eq(modulesCatalog.isCore, true),
         columns: { moduleKey: true },
       });
-      this.coreModuleKeys = new Set(rows.map((r) => r.moduleKey));
+      this.coreModuleKeys = new Set([
+        ...FALLBACK_CORE_MODULE_KEYS,
+        ...rows.map((r) => r.moduleKey),
+      ]);
     } catch {
       logger.warn("entitlements: modules_catalog unavailable at init, using compile-time core fallback");
     }
@@ -147,6 +150,10 @@ export class EntitlementsService implements OnModuleInit {
       );
     }
     return enabled;
+  }
+
+  isCoreModule(moduleKey: string): boolean {
+    return this.coreModuleKeys.has(moduleKey);
   }
 
   async setModuleEnabled(

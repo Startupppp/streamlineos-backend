@@ -13,7 +13,10 @@ import type { Db } from "../../db/drizzle.module";
 import type { CacheService } from "../../common/cache/cache.service";
 import type { EntitlementsService } from "./entitlements.service";
 import { bumpPermissionsVersion, type DbOrTx } from "../../common/rbac/access-invalidate";
-import { ALL_PERMISSION_NAMES } from "../rbac/permissions";
+import {
+  ALL_PERMISSION_NAMES,
+  UNIVERSAL_MEMBER_PERMISSIONS,
+} from "../rbac/permissions";
 import { logger } from "../../common/logger/logger.service";
 import { makeMfaPolicyStub } from "../../../test/helpers/mfa-policy-stub";
 
@@ -257,6 +260,7 @@ function buildService(db: unknown): AccessService {
   };
   const entitlements = {
     isModuleEnabled: jest.fn().mockResolvedValue(true),
+    isCoreModule: jest.fn((moduleKey: string) => moduleKey === "kb" || moduleKey === "chat"),
     getModuleMap: jest.fn().mockResolvedValue({}),
     getEffectiveModuleMap: jest.fn().mockResolvedValue({}),
   };
@@ -269,7 +273,7 @@ function buildService(db: unknown): AccessService {
 }
 
 describe("AccessService.resolveUserPermissions", () => {
-  it("resolves to an empty map for an active member with no role assignments (deny-by-default)", async () => {
+  it("resolves only universal capabilities for an active member with no role assignments", async () => {
     const db = {
       query: {
         accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
@@ -287,7 +291,10 @@ describe("AccessService.resolveUserPermissions", () => {
 
     const result = await buildService(db).resolveUserPermissions("org-1", "user-1");
 
-    expect(result.size).toBe(0);
+    expect(Array.from(result.keys())).toEqual(
+      expect.arrayContaining([...UNIVERSAL_MEMBER_PERMISSIONS]),
+    );
+    expect(result.size).toBe(UNIVERSAL_MEMBER_PERMISSIONS.length);
   });
 
   it("resolves role grants for an active member with a role_assignments row", async () => {
@@ -338,7 +345,7 @@ describe("AccessService.resolveUserPermissions", () => {
     expect(result.get("hr:employees:view")).toBe("own");
   });
 
-  it("group membership with no group_role_assignments contributes no permissions", async () => {
+  it("group membership with no group role contributes only universal permissions", async () => {
     const db = {
       query: {
         accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
@@ -357,7 +364,7 @@ describe("AccessService.resolveUserPermissions", () => {
 
     const result = await buildService(db).resolveUserPermissions("org-1", "user-6");
 
-    expect(result.size).toBe(0);
+    expect(result.size).toBe(UNIVERSAL_MEMBER_PERMISSIONS.length);
   });
 
   it("merges group-inherited role grants with direct role grants (broadest scope wins)", async () => {
@@ -390,7 +397,7 @@ describe("AccessService.resolveUserPermissions", () => {
     expect(result.get("hr:employees:view")).toBe("all");
   });
 
-  it("returns empty permissions when all role assignments are revoked (single-source revocation is complete)", async () => {
+  it("keeps only universal permissions when all role assignments are revoked", async () => {
     const db = {
       query: {
         accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
@@ -408,10 +415,10 @@ describe("AccessService.resolveUserPermissions", () => {
 
     const result = await buildService(db).resolveUserPermissions("org-1", "user-3");
 
-    expect(result.size).toBe(0);
+    expect(result.size).toBe(UNIVERSAL_MEMBER_PERMISSIONS.length);
   });
 
-  it("returns empty permissions when the DB returns no rows after filtering expired assignments", async () => {
+  it("keeps only universal permissions when all assignments are expired", async () => {
     const db = {
       query: {
         accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
@@ -429,7 +436,7 @@ describe("AccessService.resolveUserPermissions", () => {
 
     const result = await buildService(db).resolveUserPermissions("org-1", "user-4");
 
-    expect(result.size).toBe(0);
+    expect(result.size).toBe(UNIVERSAL_MEMBER_PERMISSIONS.length);
   });
 });
 
@@ -454,9 +461,8 @@ describe("AccessService.resolveUserPermissions — module ownership grants", () 
 
     expect(result.size).toBeGreaterThan(0);
     expect(result.get("hr:employees:view")).toBe("all");
-    for (const [key] of result) {
-      expect(key.startsWith("hr:")).toBe(true);
-    }
+    expect(result.get("kb:pages:view")).toBe("all");
+    expect(result.get("self:onboarding-docs")).toBe("own");
   });
 
   it("a user-denied module yields no permissions for its module owner (strip step still runs post-ownership-grant)", async () => {
@@ -477,7 +483,8 @@ describe("AccessService.resolveUserPermissions — module ownership grants", () 
 
     const result = await buildService(db).resolveUserPermissions("org-owner", "user-owner");
 
-    expect(result.size).toBe(0);
+    expect(result.size).toBe(UNIVERSAL_MEMBER_PERMISSIONS.length);
+    expect(result.has("hr:employees:view")).toBe(false);
   });
 });
 
@@ -582,7 +589,7 @@ describe("AccessService.resolveUserPermissions — unknown permission keys are o
     const result = await buildService(db).resolveUserPermissions("org-stale", "user-stale");
 
     expect(result.has(STALE_KEY)).toBe(false);
-    expect(result.size).toBe(0);
+    expect(result.size).toBe(UNIVERSAL_MEMBER_PERMISSIONS.length);
   });
 
   it("a known role-grant key still resolves normally when accompanied by a stale key", async () => {
@@ -610,7 +617,9 @@ describe("AccessService.resolveUserPermissions — unknown permission keys are o
 
     expect(result.has(STALE_KEY)).toBe(false);
     expect(result.get(KNOWN_KEY)).toBe("all");
-    expect(result.size).toBe(1);
+    expect(result.size).toBe(
+      new Set([...UNIVERSAL_MEMBER_PERMISSIONS, KNOWN_KEY]).size,
+    );
   });
 
   it("a stale key in a delegation row is dropped and does not appear in the resolved map", async () => {
@@ -632,7 +641,7 @@ describe("AccessService.resolveUserPermissions — unknown permission keys are o
     const result = await buildService(db).resolveUserPermissions("org-del", "user-del");
 
     expect(result.has(STALE_KEY)).toBe(false);
-    expect(result.size).toBe(0);
+    expect(result.size).toBe(UNIVERSAL_MEMBER_PERMISSIONS.length);
   });
 
   it("the same stale key triggers the warning log only once across multiple resolve calls (per-instance dedup)", async () => {

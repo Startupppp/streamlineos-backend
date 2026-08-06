@@ -1,5 +1,18 @@
 import { ALL_PERMISSION_NAMES } from "./catalog";
 
+export const UNIVERSAL_MEMBER_PERMISSION_GRANTS = [
+  { permissionKey: "self:onboarding-docs", scope: "own" },
+  { permissionKey: "kb:articles:view", scope: "all" },
+  { permissionKey: "kb:spaces:view", scope: "all" },
+  { permissionKey: "kb:pages:view", scope: "all" },
+] as const;
+
+export const UNIVERSAL_MEMBER_PERMISSIONS = Object.freeze(
+  UNIVERSAL_MEMBER_PERMISSION_GRANTS.map(
+    ({ permissionKey }) => permissionKey,
+  ),
+);
+
 const EMPLOYEE_SELF_SERVICE = [
   "branch:view",
   "ownership:transfer:respond",
@@ -8,7 +21,7 @@ const EMPLOYEE_SELF_SERVICE = [
   "self:expenses",
   "self:payslips",
   "self:payroll",
-  "self:onboarding-docs",
+  ...UNIVERSAL_MEMBER_PERMISSIONS,
   "self:recruitment",
   "self:cases",
   "hr:leaves:create",
@@ -45,9 +58,6 @@ const EMPLOYEE_SELF_SERVICE = [
   "timesheets:entries:update",
   "tasks:read",
   "directory:people:view",
-  "kb:articles:view",
-  "kb:spaces:view",
-  "kb:pages:view",
 ];
 
 export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {

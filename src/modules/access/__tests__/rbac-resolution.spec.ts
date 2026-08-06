@@ -4,6 +4,7 @@ import { Test } from "@nestjs/testing";
 import { AccessService } from "../access.service";
 import {
   ALL_PERMISSION_NAMES,
+  UNIVERSAL_MEMBER_PERMISSIONS,
   moduleScopedPermissions,
 } from "../../rbac/permissions";
 import type { Db } from "../../../db/drizzle.module";
@@ -71,6 +72,7 @@ function buildService(db: unknown): AccessService {
   };
   const entitlements = {
     isModuleEnabled: jest.fn().mockResolvedValue(true),
+    isCoreModule: jest.fn((moduleKey: string) => moduleKey === "kb" || moduleKey === "chat"),
     getModuleMap: jest.fn().mockResolvedValue({}),
     getEffectiveModuleMap: jest.fn().mockResolvedValue({}),
   };
@@ -202,8 +204,8 @@ describe("AccessService.resolveUserPermissions — ORG_ADMIN role grants every c
   });
 });
 
-describe("AccessService.resolveUserPermissions — module owner: all permissions within their module and none outside", () => {
-  it("grants exactly moduleScopedPermissions('hr') when the member owns the hr module and has no other role", async () => {
+describe("AccessService.resolveUserPermissions — module owner access", () => {
+  it("grants the owned module plus universal member capabilities", async () => {
     const db = {
       query: {
         accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
@@ -223,15 +225,14 @@ describe("AccessService.resolveUserPermissions — module owner: all permissions
 
     const hrKeys = new Set(moduleScopedPermissions("hr"));
     expect(hrKeys.size).toBeGreaterThan(0);
-    expect(result.size).toBe(hrKeys.size);
+    expect(result.size).toBe(hrKeys.size + UNIVERSAL_MEMBER_PERMISSIONS.length);
 
     for (const key of hrKeys) {
       expect(result.get(key)).toBe("all");
     }
 
-    for (const [key] of result) {
-      expect(key.startsWith("hr:")).toBe(true);
-    }
+    expect(result.get("kb:pages:view")).toBe("all");
+    expect(result.get("self:onboarding-docs")).toBe("own");
 
     expect(result.has("crm:leads:view")).toBe(false);
     expect(result.has("ownership:org:transfer")).toBe(false);
@@ -262,7 +263,7 @@ describe("AccessService.resolveUserPermissions — member with a single role inh
 
     const result = await buildService(db).resolveUserPermissions(ORG_A, USER);
 
-    expect(result.size).toBe(2);
+    expect(result.size).toBe(2 + UNIVERSAL_MEMBER_PERMISSIONS.length);
     expect(result.get("hr:employees:view")).toBe("own");
     expect(result.get("hr:leaves:view")).toBe("own");
 
@@ -310,8 +311,8 @@ describe("AccessService.resolveUserPermissions — member with two role sources:
   });
 });
 
-describe("AccessService.resolveUserPermissions — member with no role assignments is denied everything (deny by default)", () => {
-  it("returns an empty permission map when an active member has no role assignments, no group memberships and no module ownerships", async () => {
+describe("AccessService.resolveUserPermissions — member with no role assignments", () => {
+  it("returns only universal capabilities for an active member", async () => {
     const db = {
       query: {
         accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
@@ -329,7 +330,7 @@ describe("AccessService.resolveUserPermissions — member with no role assignmen
 
     const result = await buildService(db).resolveUserPermissions(ORG_A, USER);
 
-    expect(result.size).toBe(0);
+    expect(result.size).toBe(UNIVERSAL_MEMBER_PERMISSIONS.length);
   });
 });
 
@@ -394,7 +395,7 @@ describe("AccessService.resolveUserPermissions — HEADLINE: a \"Recruitment HR\
     expect(result.has("hr:payroll:view")).toBe(false);
     expect(result.has("hr:salary:manage")).toBe(false);
 
-    expect(result.size).toBe(7);
+    expect(result.size).toBe(7 + UNIVERSAL_MEMBER_PERMISSIONS.length);
   });
 });
 

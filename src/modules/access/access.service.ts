@@ -31,6 +31,7 @@ import {
   ALL_PERMISSION_NAMES,
   PERMISSIONS,
   ROLE_DEFAULT_PERMISSIONS,
+  UNIVERSAL_MEMBER_PERMISSION_GRANTS,
   moduleScopedPermissions,
 } from "../rbac/permissions";
 
@@ -194,7 +195,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     this.unsubscribeVersionBump = subscribeVersionBump((orgId) => {
       this.versionCache.delete(orgId);
-      this.deleteOrgEntries(this.ownerCache, orgId);
+      this.deleteOrgEntries(this.membershipAccessCache, orgId);
       this.deleteOrgEntries(this.permsCache, orgId);
       this.deleteOrgEntries(this.deniedModulesCache, orgId);
       void Promise.all([
@@ -303,10 +304,18 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
           map = new Map(Object.entries(resolved));
         }
 
-        // Structural organization administrators have the same product access as
-        // the owner. Ownership transfer/deletion remains protected by explicit
-        // isOrgOwner checks in those lifecycle services.
-        if (await this.isOrgOwnerOrAdmin(orgId, userId)) return map;
+        const membership = await this.getMembershipAccessState(orgId, userId);
+        if (!membership.active) return new Map();
+
+        for (const grant of UNIVERSAL_MEMBER_PERMISSION_GRANTS) {
+          const existing = map.get(grant.permissionKey);
+          map.set(
+            grant.permissionKey,
+            existing ? broadest(existing, grant.scope) : grant.scope,
+          );
+        }
+
+        if (membership.isOwnerOrAdmin) return map;
 
         const denied = await this.getUserDeniedModules(orgId, userId);
         if (denied.size > 0) {
@@ -321,19 +330,27 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  private readonly ownerCache = new Map<
+  private readonly membershipAccessCache = new Map<
     string,
-    { isOwner: boolean; expiresAt: number }
+    {
+      exists: boolean;
+      active: boolean;
+      isOwnerOrAdmin: boolean;
+      expiresAt: number;
+    }
   >();
 
-  /** Cached structural owner/admin status for the deny exemption above. */
-  private async isOrgOwnerOrAdmin(
+  private async getMembershipAccessState(
     orgId: string,
     userId: string,
-  ): Promise<boolean> {
+  ): Promise<{
+    exists: boolean;
+    active: boolean;
+    isOwnerOrAdmin: boolean;
+  }> {
     const cacheKey = `${orgId}:${userId}`;
-    const cached = this.ownerCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) return cached.isOwner;
+    const cached = this.membershipAccessCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) return cached;
 
     const member = await this.db.query.organizationMembers.findFirst({
       where: and(
@@ -342,14 +359,18 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       ),
       columns: { isOwner: true, role: true, status: true },
     });
-    const isOwner =
-      member?.status === "ACTIVE" &&
-      (member.isOwner === true || member.role === ORG_MEMBER_ROLES.ORG_ADMIN);
-    this.ownerCache.set(cacheKey, {
-      isOwner,
+    const exists = Boolean(member);
+    const active = member?.status === "ACTIVE";
+    const isOwnerOrAdmin =
+      active &&
+      (member?.isOwner === true || member?.role === ORG_MEMBER_ROLES.ORG_ADMIN);
+    this.membershipAccessCache.set(cacheKey, {
+      exists,
+      active,
+      isOwnerOrAdmin,
       expiresAt: Date.now() + AccessService.DENIED_MODULES_TTL_MS,
     });
-    return isOwner;
+    return { exists, active, isOwnerOrAdmin };
   }
 
   async getUserDeniedModules(
@@ -380,7 +401,11 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
         ),
       { orgId },
     );
-    const modules = new Set(rows.map((row) => row.moduleKey));
+    const modules = new Set(
+      rows
+        .map((row) => row.moduleKey)
+        .filter((moduleKey) => !this.entitlements.isCoreModule(moduleKey)),
+    );
     this.deniedModulesCache.set(cacheKey, {
       modules,
       expiresAt: Date.now() + AccessService.DENIED_MODULES_TTL_MS,
@@ -391,11 +416,16 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
   async getUserModuleAccess(
     orgId: string,
     userId: string,
-  ): Promise<{ moduleKey: string; enabled: boolean }[]> {
+  ): Promise<{ moduleKey: string; enabled: boolean; core: boolean }[]> {
+    const membership = await this.getMembershipAccessState(orgId, userId);
+    if (!membership.exists) {
+      throw new NotFoundException("User is not a member of this organization");
+    }
     const denied = await this.getUserDeniedModules(orgId, userId);
     return MODULE_CATALOG.map((moduleKey) => ({
       moduleKey,
       enabled: !denied.has(moduleKey),
+      core: this.entitlements.isCoreModule(moduleKey),
     }));
   }
 
@@ -405,9 +435,41 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     moduleKey: string,
     enabled: boolean,
     updatedBy: string,
-  ): Promise<{ moduleKey: string; enabled: boolean }[]> {
+  ): Promise<{ moduleKey: string; enabled: boolean; core: boolean }[]> {
     if (!MANAGEABLE_MODULE_SET.has(moduleKey)) {
       throw new BadRequestException(`Unknown module "${moduleKey}"`);
+    }
+    const isCoreModule = this.entitlements.isCoreModule(moduleKey);
+    if (isCoreModule) {
+      const member = await runInTenantTransaction(
+        this.db,
+        () =>
+          this.db.query.organizationMembers.findFirst({
+            where: and(
+              eq(organizationMembers.orgId, orgId),
+              eq(organizationMembers.userId, userId),
+            ),
+            columns: { userId: true, status: true },
+          }),
+        { orgId },
+      );
+      if (!member) {
+        throw new NotFoundException(
+          "User is not a member of this organization",
+        );
+      }
+      if (member.status !== "ACTIVE") {
+        throw new BadRequestException(
+          "Module access can only be changed for active members",
+        );
+      }
+      if (!enabled) {
+        throw new BadRequestException(
+          `Module "${moduleKey}" is always available to organization members`,
+        );
+      }
+      this.membershipAccessCache.delete(`${orgId}:${userId}`);
+      return this.getUserModuleAccess(orgId, userId);
     }
 
     await runInTenantTransaction(
@@ -421,7 +483,9 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
           columns: { userId: true, status: true },
         });
         if (!member)
-          throw new NotFoundException("User is not a member of this organization");
+          throw new NotFoundException(
+            "User is not a member of this organization",
+          );
         if (member.status !== "ACTIVE") {
           throw new BadRequestException(
             "Module access can only be changed for active members",
@@ -508,8 +572,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       if (scope === "none") continue;
       if (
         tokenScopes &&
-        (!isPersonalTokenPermissionDelegable(key) ||
-          !tokenScopes.includes(key))
+        (!isPersonalTokenPermissionDelegable(key) || !tokenScopes.includes(key))
       )
         continue;
       scopes[key] = scope;
@@ -560,6 +623,14 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       columns: { isOwner: true, status: true, id: true, role: true },
     });
     const gate = evaluateMembershipGate(member);
+    this.membershipAccessCache.set(`${orgId}:${userId}`, {
+      exists: Boolean(member),
+      active: gate.active,
+      isOwnerOrAdmin:
+        gate.active &&
+        (gate.isOwner || member?.role === ORG_MEMBER_ROLES.ORG_ADMIN),
+      expiresAt: Date.now() + AccessService.DENIED_MODULES_TTL_MS,
+    });
     if (!gate.active) return {};
     if (gate.isOwner) return allCatalogScopes();
     if (member?.role === ORG_MEMBER_ROLES.ORG_ADMIN) return allCatalogScopes();
@@ -667,6 +738,10 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
         );
       }
     };
+
+    for (const grant of UNIVERSAL_MEMBER_PERMISSION_GRANTS) {
+      merge(grant.permissionKey, grant.scope);
+    }
 
     const roleIdList = Array.from(roleIds);
     if (roleIdList.length > 0) {
@@ -1068,7 +1143,9 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
 
     const deniedUserIds = new Set(deniedRows.map((r) => r.userId));
     return {
-      data: candidates.filter((candidate) => !deniedUserIds.has(candidate.userId)),
+      data: candidates.filter(
+        (candidate) => !deniedUserIds.has(candidate.userId),
+      ),
       nextCursor: scanThrough,
       exhausted,
     };

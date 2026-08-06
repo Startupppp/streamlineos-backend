@@ -6,13 +6,12 @@ import { RequirePermission } from "./require-permission.decorator";
 import { PermissionGuard } from "./permission.guard";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { AccessService } from "./access.service";
-import { z } from "zod";
-
-const setModuleAccessSchema = z.object({
-  moduleKey: z.string().min(1).max(64),
-  enabled: z.boolean(),
-});
-type SetModuleAccessInput = z.infer<typeof setModuleAccessSchema>;
+import {
+  setUserModuleAccessSchema,
+  userModuleAccessParamsSchema,
+  type SetUserModuleAccessInput,
+  type UserModuleAccessParams,
+} from "./dto/user-module-access.schemas";
 
 @Controller("access/user-module-access")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -22,23 +21,25 @@ export class UserModuleAccessController {
   @Get(":userId")
   @RequirePermission("settings:view")
   getModuleAccess(
-    @Param("userId") userId: string,
+    @Param(new ZodValidationPipe(userModuleAccessParamsSchema))
+    params: UserModuleAccessParams,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.access.getUserModuleAccess(u.orgId, userId);
+    return this.access.getUserModuleAccess(u.orgId, params.userId);
   }
 
   @Patch(":userId")
   @RequirePermission("settings:organization:manage")
   setModuleAccess(
-    @Param("userId") userId: string,
-    @Body(new ZodValidationPipe(setModuleAccessSchema))
-    body: SetModuleAccessInput,
+    @Param(new ZodValidationPipe(userModuleAccessParamsSchema))
+    params: UserModuleAccessParams,
+    @Body(new ZodValidationPipe(setUserModuleAccessSchema))
+    body: SetUserModuleAccessInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.access.setUserModuleAccess(
       u.orgId,
-      userId,
+      params.userId,
       body.moduleKey,
       body.enabled,
       u.userId,
