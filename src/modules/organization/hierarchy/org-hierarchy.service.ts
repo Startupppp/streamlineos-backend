@@ -1,8 +1,9 @@
 import {
+  BadRequestException,
   Inject,
   Injectable,
 } from "@nestjs/common";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, ne } from "drizzle-orm";
 import {
   orgUnits,
 } from "../../../db/schema/common/organization";
@@ -32,6 +33,7 @@ import {
 } from "./org-hierarchy-teams.service";
 import { OrgHierarchyLocationsService } from "./org-hierarchy-locations.service";
 import { OrgHierarchyCostCentersService } from "./org-hierarchy-cost-centers.service";
+import { OrgHierarchyDependenciesService } from "./org-hierarchy-dependencies.service";
 
 const ORG_TREE_COLUMNS = {
   id: orgUnits.id,
@@ -59,7 +61,44 @@ export class OrgHierarchyService {
     private readonly teams: OrgHierarchyTeamsService,
     private readonly locations: OrgHierarchyLocationsService,
     private readonly costCenters: OrgHierarchyCostCentersService,
+    private readonly dependencies: OrgHierarchyDependenciesService,
   ) {}
+
+  private async assertActiveParent(
+    orgId: string,
+    parentId: string | null | undefined,
+    kind: "BUSINESS_UNIT" | "BRANCH" | "DEPARTMENT",
+    label: string,
+    required = false,
+  ) {
+    if (!parentId) {
+      if (required) {
+        throw new BadRequestException(`Select an active ${label}.`);
+      }
+      return;
+    }
+
+    const [parent] = await this.db
+      .select({ id: orgUnits.id })
+      .from(orgUnits)
+      .where(
+        and(
+          eq(orgUnits.id, parentId),
+          eq(orgUnits.orgId, orgId),
+          eq(orgUnits.kind, kind),
+          eq(orgUnits.status, "ACTIVE"),
+          isNull(orgUnits.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    if (!parent) {
+      throw new BadRequestException({
+        code: "ORG_UNIT_PARENT_UNAVAILABLE",
+        message: `Select an active ${label}. Archived, disabled, or removed units cannot receive new assignments.`,
+      });
+    }
+  }
 
   async listBusinessUnits(orgId: string, query: ListQueryInput) {
     return this.businessUnits.listBusinessUnits(orgId, query);
@@ -74,10 +113,14 @@ export class OrgHierarchyService {
   }
 
   async updateBusinessUnit(orgId: string, userId: string, id: string, body: UpdateBusinessUnitInput) {
+    if (body.status === "ARCHIVED") {
+      await this.dependencies.assertCanArchive(orgId, id, "BUSINESS_UNIT");
+    }
     return this.businessUnits.updateBusinessUnit(orgId, userId, id, body);
   }
 
   async deleteBusinessUnit(orgId: string, userId: string, id: string) {
+    await this.dependencies.assertCanRetire(orgId, id, "BUSINESS_UNIT");
     return this.businessUnits.deleteBusinessUnit(orgId, userId, id);
   }
 
@@ -94,18 +137,48 @@ export class OrgHierarchyService {
   }
 
   async createOrgBranch(orgId: string, userId: string, body: CreateOrgBranchInput) {
+    await this.assertActiveParent(
+      orgId,
+      body.businessUnitId,
+      "BUSINESS_UNIT",
+      "business unit",
+    );
     return this.branches.createOrgBranch(orgId, userId, body);
   }
 
   async updateOrgBranch(orgId: string, userId: string, id: string, body: UpdateOrgBranchInput) {
+    if (body.status === "ARCHIVED") {
+      await this.dependencies.assertCanArchive(orgId, id, "BRANCH");
+    }
+    if (body.businessUnitId !== undefined || body.status === "ACTIVE") {
+      const existing =
+        body.businessUnitId === undefined
+          ? await this.branches.getOrgBranch(orgId, id)
+          : null;
+      await this.assertActiveParent(
+        orgId,
+        body.businessUnitId === undefined
+          ? existing?.businessUnitId
+          : body.businessUnitId,
+        "BUSINESS_UNIT",
+        "business unit",
+      );
+    }
     return this.branches.updateOrgBranch(orgId, userId, id, body);
   }
 
   async deleteOrgBranch(orgId: string, userId: string, id: string) {
+    await this.dependencies.assertCanRetire(orgId, id, "BRANCH");
     return this.branches.deleteOrgBranch(orgId, userId, id);
   }
 
   async moveBranch(orgId: string, branchId: string, newBusinessUnitId: string | null) {
+    await this.assertActiveParent(
+      orgId,
+      newBusinessUnitId,
+      "BUSINESS_UNIT",
+      "business unit",
+    );
     return this.branches.moveBranch(orgId, branchId, newBusinessUnitId);
   }
 
@@ -118,18 +191,46 @@ export class OrgHierarchyService {
   }
 
   async createDepartment(orgId: string, userId: string, body: CreateOrgDepartmentInput) {
+    await this.assertActiveParent(
+      orgId,
+      body.branchId,
+      "BRANCH",
+      "branch",
+    );
     return this.departments.createDepartment(orgId, userId, body);
   }
 
   async updateDepartment(orgId: string, userId: string, id: string, body: UpdateOrgDepartmentInput) {
+    if (body.status === "ARCHIVED") {
+      await this.dependencies.assertCanArchive(orgId, id, "DEPARTMENT");
+    }
+    if (body.branchId !== undefined || body.status === "ACTIVE") {
+      const existing =
+        body.branchId === undefined
+          ? await this.departments.getDepartment(orgId, id)
+          : null;
+      await this.assertActiveParent(
+        orgId,
+        body.branchId === undefined ? existing?.branchId : body.branchId,
+        "BRANCH",
+        "branch",
+      );
+    }
     return this.departments.updateDepartment(orgId, userId, id, body);
   }
 
   async deleteDepartment(orgId: string, userId: string, id: string) {
+    await this.dependencies.assertCanRetire(orgId, id, "DEPARTMENT");
     return this.departments.deleteDepartment(orgId, userId, id);
   }
 
   async moveDepartment(orgId: string, departmentId: string, newBranchId: string | null) {
+    await this.assertActiveParent(
+      orgId,
+      newBranchId,
+      "BRANCH",
+      "branch",
+    );
     return this.departments.moveDepartment(orgId, departmentId, newBranchId);
   }
 
@@ -142,18 +243,49 @@ export class OrgHierarchyService {
   }
 
   async createTeam(orgId: string, userId: string, body: CreateOrgTeamInput) {
+    await this.assertActiveParent(
+      orgId,
+      body.departmentId,
+      "DEPARTMENT",
+      "department",
+      true,
+    );
     return this.teams.createTeam(orgId, userId, body);
   }
 
   async updateTeam(orgId: string, userId: string, id: string, body: UpdateOrgTeamInput) {
+    if (body.status === "ARCHIVED") {
+      await this.dependencies.assertCanArchive(orgId, id, "TEAM");
+    }
+    if (body.departmentId !== undefined || body.status === "ACTIVE") {
+      const existing =
+        body.departmentId === undefined
+          ? await this.teams.getTeam(orgId, id)
+          : null;
+      await this.assertActiveParent(
+        orgId,
+        body.departmentId ?? existing?.departmentId,
+        "DEPARTMENT",
+        "department",
+        true,
+      );
+    }
     return this.teams.updateTeam(orgId, userId, id, body);
   }
 
   async deleteTeam(orgId: string, userId: string, id: string) {
+    await this.dependencies.assertCanRetire(orgId, id, "TEAM");
     return this.teams.deleteTeam(orgId, userId, id);
   }
 
   async moveTeam(orgId: string, teamId: string, newDepartmentId: string) {
+    await this.assertActiveParent(
+      orgId,
+      newDepartmentId,
+      "DEPARTMENT",
+      "department",
+      true,
+    );
     return this.teams.moveTeam(orgId, teamId, newDepartmentId);
   }
 
@@ -170,10 +302,14 @@ export class OrgHierarchyService {
   }
 
   async updateLocation(orgId: string, userId: string, id: string, body: UpdateOrgLocationInput) {
+    if (body.status === "ARCHIVED") {
+      await this.dependencies.assertCanArchive(orgId, id, "LOCATION");
+    }
     return this.locations.updateLocation(orgId, userId, id, body);
   }
 
   async deleteLocation(orgId: string, userId: string, id: string) {
+    await this.dependencies.assertCanRetire(orgId, id, "LOCATION");
     return this.locations.deleteLocation(orgId, userId, id);
   }
 
@@ -190,10 +326,14 @@ export class OrgHierarchyService {
   }
 
   async updateCostCenter(orgId: string, userId: string, id: string, body: UpdateCostCenterInput) {
+    if (body.status === "ARCHIVED") {
+      await this.dependencies.assertCanArchive(orgId, id, "COST_CENTER");
+    }
     return this.costCenters.updateCostCenter(orgId, userId, id, body);
   }
 
   async deleteCostCenter(orgId: string, userId: string, id: string) {
+    await this.dependencies.assertCanRetire(orgId, id, "COST_CENTER");
     return this.costCenters.deleteCostCenter(orgId, userId, id);
   }
 
@@ -201,7 +341,13 @@ export class OrgHierarchyService {
     const rows = await this.db
       .select({ kind: orgUnits.kind })
       .from(orgUnits)
-      .where(and(eq(orgUnits.orgId, orgId), isNull(orgUnits.deletedAt)));
+      .where(
+        and(
+          eq(orgUnits.orgId, orgId),
+          ne(orgUnits.status, "ARCHIVED"),
+          isNull(orgUnits.deletedAt),
+        ),
+      );
 
     const counts: Record<string, number> = {};
     for (const row of rows) {
@@ -222,7 +368,13 @@ export class OrgHierarchyService {
     const allUnits = await this.db
       .select(ORG_TREE_COLUMNS)
       .from(orgUnits)
-      .where(and(eq(orgUnits.orgId, orgId), isNull(orgUnits.deletedAt)));
+      .where(
+        and(
+          eq(orgUnits.orgId, orgId),
+          ne(orgUnits.status, "ARCHIVED"),
+          isNull(orgUnits.deletedAt),
+        ),
+      );
 
     const byName = (a: { name: string }, b: { name: string }) =>
       a.name.localeCompare(b.name);

@@ -4,6 +4,7 @@ import { organizationPeople, workers, workerEngagements } from "../../db/schema/
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
+import { DirectoryIdentityService } from "./directory-identity.service";
 import type {
   CreatePersonInput,
   ListPeopleQuery,
@@ -29,6 +30,7 @@ export class DirectoryService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly identities: DirectoryIdentityService,
   ) {}
 
   private async loadPerson(organizationId: string, organizationPersonId: string): Promise<PersonRow> {
@@ -78,7 +80,7 @@ export class DirectoryService {
 
     const total = Number(totalRow?.total ?? 0);
     return {
-      data: rows,
+      data: await this.identities.resolvePeopleAccess(organizationId, rows),
       pagination: {
         page,
         limit,
@@ -89,21 +91,31 @@ export class DirectoryService {
   }
 
   async getPerson(organizationId: string, organizationPersonId: string) {
-    return this.loadPerson(organizationId, organizationPersonId);
+    const person = await this.loadPerson(organizationId, organizationPersonId);
+    return this.identities.resolvePersonAccess(organizationId, person, true);
   }
 
   async createPerson(organizationId: string, userId: string, input: CreatePersonInput) {
+    const workEmail = input.workEmail?.trim().toLowerCase();
+    const identity = await this.identities.resolveLinkForPersonWrite(
+      organizationId,
+      {
+        memberUserId: input.userId,
+        organizationMembershipId: input.organizationMembershipId,
+        workEmail,
+      },
+    );
     const [row] = await this.db
       .insert(organizationPeople)
       .values({
         organizationId,
         firstName: input.firstName,
         lastName: input.lastName,
-        workEmail: input.workEmail ?? null,
-        personalEmail: input.personalEmail ?? null,
+        workEmail: workEmail ?? null,
+        personalEmail: input.personalEmail?.trim().toLowerCase() ?? null,
         phone: input.phone ?? null,
-        userId: input.userId ?? null,
-        organizationMembershipId: input.organizationMembershipId ?? null,
+        userId: identity?.userId ?? null,
+        organizationMembershipId: identity?.organizationMembershipId ?? null,
       })
       .returning()
       .catch((err: unknown) => {
@@ -132,7 +144,7 @@ export class DirectoryService {
         lastName: row.lastName,
       },
     });
-    return row;
+    return this.identities.resolvePersonAccess(organizationId, row);
   }
 
   async updatePerson(
@@ -141,15 +153,36 @@ export class DirectoryService {
     organizationPersonId: string,
     input: UpdatePersonInput,
   ) {
-    await this.loadPerson(organizationId, organizationPersonId);
+    const existingPerson = await this.loadPerson(
+      organizationId,
+      organizationPersonId,
+    );
+    const proposedWorkEmail =
+      input.workEmail === undefined
+        ? existingPerson.workEmail
+        : input.workEmail?.trim().toLowerCase() || null;
+    const identity = await this.identities.resolveLinkForPersonWrite(
+      organizationId,
+      {
+        memberUserId:
+          input.userId === undefined ? existingPerson.userId : input.userId,
+        organizationMembershipId:
+          input.organizationMembershipId === undefined
+            ? existingPerson.organizationMembershipId
+            : input.organizationMembershipId,
+        workEmail: proposedWorkEmail,
+      },
+      organizationPersonId,
+    );
 
     const patch: PersonPatch = {};
     if (input.firstName !== undefined) patch.firstName = input.firstName;
     if (input.lastName !== undefined) patch.lastName = input.lastName;
     if (input.displayName !== undefined) patch.displayName = input.displayName ?? null;
     if (input.preferredName !== undefined) patch.preferredName = input.preferredName ?? null;
-    if (input.workEmail !== undefined) patch.workEmail = input.workEmail ?? null;
-    if (input.personalEmail !== undefined) patch.personalEmail = input.personalEmail ?? null;
+    if (input.workEmail !== undefined) patch.workEmail = proposedWorkEmail;
+    if (input.personalEmail !== undefined)
+      patch.personalEmail = input.personalEmail?.trim().toLowerCase() ?? null;
     if (input.phone !== undefined) patch.phone = input.phone ?? null;
     if (input.whatsappNumber !== undefined) patch.whatsappNumber = input.whatsappNumber ?? null;
     if (input.avatarUrl !== undefined) patch.avatarUrl = input.avatarUrl ?? null;
@@ -161,9 +194,14 @@ export class DirectoryService {
     if (input.linkedinUrl !== undefined) patch.linkedinUrl = input.linkedinUrl ?? null;
     if (input.githubUrl !== undefined) patch.githubUrl = input.githubUrl ?? null;
     if (input.bio !== undefined) patch.bio = input.bio ?? null;
-    if (input.userId !== undefined) patch.userId = input.userId ?? null;
-    if (input.organizationMembershipId !== undefined)
-      patch.organizationMembershipId = input.organizationMembershipId ?? null;
+    if (identity) {
+      patch.userId = identity.userId;
+      patch.organizationMembershipId = identity.organizationMembershipId;
+    } else {
+      if (input.userId !== undefined) patch.userId = input.userId ?? null;
+      if (input.organizationMembershipId !== undefined)
+        patch.organizationMembershipId = input.organizationMembershipId ?? null;
+    }
 
     const [updated] = await this.db
       .update(organizationPeople)
@@ -197,7 +235,7 @@ export class DirectoryService {
       resourceId: organizationPersonId,
       metadata: { organizationPersonId },
     });
-    return updated;
+    return this.identities.resolvePersonAccess(organizationId, updated);
   }
 
   async softDeletePerson(organizationId: string, userId: string, organizationPersonId: string) {
@@ -322,13 +360,18 @@ export class DirectoryService {
   }
 
   async createWorker(organizationId: string, userId: string, input: CreateWorkerInput) {
-    await this.loadPerson(organizationId, input.organizationPersonId);
+    const person = input.organizationPersonId
+      ? await this.loadPerson(organizationId, input.organizationPersonId)
+      : await this.identities.ensurePersonForMember(
+          organizationId,
+          input.memberUserId!,
+        );
 
     const [row] = await this.db
       .insert(workers)
       .values({
         organizationId,
-        organizationPersonId: input.organizationPersonId,
+        organizationPersonId: person.organizationPersonId,
         workerNumber: input.workerNumber ?? null,
         isPayee: input.isPayee ?? false,
       })

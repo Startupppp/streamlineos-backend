@@ -19,6 +19,51 @@ import type {
   ListQueryInput,
 } from "./dto/org-hierarchy.schemas";
 
+const ORG_DEPT_COLUMNS = {
+  id: orgUnits.id,
+  orgId: orgUnits.orgId,
+  name: orgUnits.name,
+  code: orgUnits.code,
+  description: orgUnits.description,
+  status: orgUnits.status,
+  parentId: orgUnits.parentId,
+  headUserId: orgUnits.headUserId,
+  createdAt: orgUnits.createdAt,
+  updatedAt: orgUnits.updatedAt,
+  deletedAt: orgUnits.deletedAt,
+};
+
+type OrgDepartmentRow = Pick<
+  typeof orgUnits.$inferSelect,
+  | "id"
+  | "orgId"
+  | "name"
+  | "code"
+  | "description"
+  | "status"
+  | "parentId"
+  | "headUserId"
+  | "createdAt"
+  | "updatedAt"
+  | "deletedAt"
+>;
+
+export function toOrgDepartment(row: OrgDepartmentRow) {
+  return {
+    id: row.id,
+    orgId: row.orgId,
+    branchId: row.parentId,
+    headUserId: row.headUserId,
+    name: row.name,
+    code: row.code,
+    description: row.description,
+    status: row.status,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    deletedAt: row.deletedAt,
+  };
+}
+
 @Injectable()
 export class OrgHierarchyDepartmentsService {
   constructor(
@@ -38,23 +83,26 @@ export class OrgHierarchyDepartmentsService {
       ...(status ? [sql`${orgUnits.status} = ${status}`] : []),
     );
     const [rows, [{ count }]] = await Promise.all([
-      this.db.select().from(orgUnits).where(filters).limit(limit).offset(offset),
+      this.db.select(ORG_DEPT_COLUMNS).from(orgUnits).where(filters).limit(limit).offset(offset),
       this.db.select({ count: sql<number>`count(*)::int` }).from(orgUnits).where(filters),
     ]);
-    return { data: rows, total: count, page, limit };
+    return { data: rows.map(toOrgDepartment), total: count, page, limit };
   }
 
   async getDepartment(orgId: string, id: string) {
-    return (
-      (await this.db.query.orgUnits.findFirst({
-        where: and(
+    const [row] = await this.db
+      .select(ORG_DEPT_COLUMNS)
+      .from(orgUnits)
+      .where(
+        and(
           eq(orgUnits.id, id),
           eq(orgUnits.orgId, orgId),
           eq(orgUnits.kind, "DEPARTMENT"),
           isNull(orgUnits.deletedAt),
         ),
-      })) ?? null
-    );
+      )
+      .limit(1);
+    return row ? toOrgDepartment(row) : null;
   }
 
   async createDepartment(orgId: string, userId: string, body: CreateOrgDepartmentInput) {
@@ -80,12 +128,14 @@ export class OrgHierarchyDepartmentsService {
         headUserId: body.headUserId ?? undefined,
         parentId: body.branchId ?? undefined,
       })
-      .returning();
+      .returning(ORG_DEPT_COLUMNS);
+
+    if (!row) throw new Error("Failed to create department");
 
     await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "DEPARTMENT"));
-    await this.audit.log({ action: "org.department.created", userId, orgId, targetId: row!.id, targetType: "org_unit" });
+    await this.audit.log({ action: "org.department.created", userId, orgId, targetId: row.id, targetType: "org_unit" });
 
-    return row;
+    return toOrgDepartment(row);
   }
 
   async updateDepartment(orgId: string, userId: string, id: string, body: UpdateOrgDepartmentInput) {
@@ -114,12 +164,14 @@ export class OrgHierarchyDepartmentsService {
         ...(branchId !== undefined && { parentId: branchId }),
       })
       .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "DEPARTMENT")))
-      .returning();
+      .returning(ORG_DEPT_COLUMNS);
+
+    if (!row) throw new NotFoundException("Department not found");
 
     await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "DEPARTMENT"));
     await this.audit.log({ action: "org.department.updated", userId, orgId, targetId: id, targetType: "org_unit" });
 
-    return row;
+    return toOrgDepartment(row);
   }
 
   async deleteDepartment(orgId: string, userId: string, id: string) {

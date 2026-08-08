@@ -7,7 +7,7 @@ import {
 } from "@nestjs/common";
 import { and, eq, ilike, isNull, or, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { orgUnits } from "../../../db/schema/common/organization";
+import { orgUnits, type OrgUnitMetadata } from "../../../db/schema/common/organization";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -18,6 +18,57 @@ import type {
   UpdateOrgBranchInput,
   ListQueryInput,
 } from "./dto/org-hierarchy.schemas";
+
+const ORG_BRANCH_COLUMNS = {
+  id: orgUnits.id,
+  orgId: orgUnits.orgId,
+  name: orgUnits.name,
+  code: orgUnits.code,
+  status: orgUnits.status,
+  parentId: orgUnits.parentId,
+  headUserId: orgUnits.headUserId,
+  metadata: orgUnits.metadata,
+  createdAt: orgUnits.createdAt,
+  updatedAt: orgUnits.updatedAt,
+  deletedAt: orgUnits.deletedAt,
+};
+
+type OrgBranchRow = Pick<
+  typeof orgUnits.$inferSelect,
+  | "id"
+  | "orgId"
+  | "name"
+  | "code"
+  | "status"
+  | "parentId"
+  | "headUserId"
+  | "metadata"
+  | "createdAt"
+  | "updatedAt"
+  | "deletedAt"
+>;
+
+export function toOrgBranch(row: OrgBranchRow) {
+  return {
+    id: row.id,
+    orgId: row.orgId,
+    businessUnitId: row.parentId,
+    managerUserId: row.headUserId,
+    name: row.name,
+    code: row.code,
+    address: row.metadata?.address ?? null,
+    city: row.metadata?.city ?? null,
+    state: row.metadata?.state ?? null,
+    country: row.metadata?.country ?? null,
+    postalCode: row.metadata?.postalCode ?? null,
+    phone: row.metadata?.phone ?? null,
+    email: row.metadata?.email ?? null,
+    status: row.status,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    deletedAt: row.deletedAt,
+  };
+}
 
 @Injectable()
 export class OrgHierarchyBranchesService {
@@ -38,23 +89,26 @@ export class OrgHierarchyBranchesService {
       ...(status ? [sql`${orgUnits.status} = ${status}`] : []),
     );
     const [rows, [{ count }]] = await Promise.all([
-      this.db.select().from(orgUnits).where(filters).limit(limit).offset(offset),
+      this.db.select(ORG_BRANCH_COLUMNS).from(orgUnits).where(filters).limit(limit).offset(offset),
       this.db.select({ count: sql<number>`count(*)::int` }).from(orgUnits).where(filters),
     ]);
-    return { data: rows, total: count, page, limit };
+    return { data: rows.map(toOrgBranch), total: count, page, limit };
   }
 
   async getOrgBranch(orgId: string, id: string) {
-    return (
-      (await this.db.query.orgUnits.findFirst({
-        where: and(
+    const [row] = await this.db
+      .select(ORG_BRANCH_COLUMNS)
+      .from(orgUnits)
+      .where(
+        and(
           eq(orgUnits.id, id),
           eq(orgUnits.orgId, orgId),
           eq(orgUnits.kind, "BRANCH"),
           isNull(orgUnits.deletedAt),
         ),
-      })) ?? null
-    );
+      )
+      .limit(1);
+    return row ? toOrgBranch(row) : null;
   }
 
   async createOrgBranch(orgId: string, userId: string, body: CreateOrgBranchInput) {
@@ -81,21 +135,23 @@ export class OrgHierarchyBranchesService {
         headUserId: managerUserId ?? undefined,
         parentId: businessUnitId ?? undefined,
         metadata: {
-          ...(address !== undefined && { address }),
-          ...(city !== undefined && { city }),
-          ...(state !== undefined && { state }),
-          ...(country !== undefined && { country }),
-          ...(postalCode !== undefined && { postalCode }),
-          ...(phone !== undefined && { phone }),
-          ...(email && email !== "" ? { email } : {}),
+          ...(address !== undefined ? { address: address ?? undefined } : {}),
+          ...(city !== undefined ? { city: city ?? undefined } : {}),
+          ...(state !== undefined ? { state: state ?? undefined } : {}),
+          ...(country !== undefined ? { country: country ?? undefined } : {}),
+          ...(postalCode !== undefined ? { postalCode: postalCode ?? undefined } : {}),
+          ...(phone !== undefined ? { phone: phone ?? undefined } : {}),
+          ...(email !== undefined ? { email: email || undefined } : {}),
         },
       })
-      .returning();
+      .returning(ORG_BRANCH_COLUMNS);
+
+    if (!row) throw new Error("Failed to create branch");
 
     await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "BRANCH"));
-    await this.audit.log({ action: "org.branch.created", userId, orgId, targetId: row!.id, targetType: "org_unit" });
+    await this.audit.log({ action: "org.branch.created", userId, orgId, targetId: row.id, targetType: "org_unit" });
 
-    return row;
+    return toOrgBranch(row);
   }
 
   async updateOrgBranch(orgId: string, userId: string, id: string, body: UpdateOrgBranchInput) {
@@ -115,7 +171,15 @@ export class OrgHierarchyBranchesService {
     }
 
     const { address, city, state, country, postalCode, phone, email, businessUnitId, managerUserId, status, name, code } = body;
-    const existingMeta = (existing.metadata ?? {}) as Record<string, unknown>;
+
+    const existingMeta: OrgUnitMetadata = {};
+    if (existing.address !== null) existingMeta.address = existing.address;
+    if (existing.city !== null) existingMeta.city = existing.city;
+    if (existing.state !== null) existingMeta.state = existing.state;
+    if (existing.country !== null) existingMeta.country = existing.country;
+    if (existing.postalCode !== null) existingMeta.postalCode = existing.postalCode;
+    if (existing.phone !== null) existingMeta.phone = existing.phone;
+    if (existing.email !== null) existingMeta.email = existing.email;
 
     const [row] = await this.db
       .update(orgUnits)
@@ -127,22 +191,24 @@ export class OrgHierarchyBranchesService {
         ...(businessUnitId !== undefined && { parentId: businessUnitId }),
         metadata: {
           ...existingMeta,
-          ...(address !== undefined && { address }),
-          ...(city !== undefined && { city }),
-          ...(state !== undefined && { state }),
-          ...(country !== undefined && { country }),
-          ...(postalCode !== undefined && { postalCode }),
-          ...(phone !== undefined && { phone }),
-          ...(email !== undefined && { email: email || undefined }),
+          ...(address !== undefined ? { address: address ?? undefined } : {}),
+          ...(city !== undefined ? { city: city ?? undefined } : {}),
+          ...(state !== undefined ? { state: state ?? undefined } : {}),
+          ...(country !== undefined ? { country: country ?? undefined } : {}),
+          ...(postalCode !== undefined ? { postalCode: postalCode ?? undefined } : {}),
+          ...(phone !== undefined ? { phone: phone ?? undefined } : {}),
+          ...(email !== undefined ? { email: email || undefined } : {}),
         },
       })
       .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "BRANCH")))
-      .returning();
+      .returning(ORG_BRANCH_COLUMNS);
+
+    if (!row) throw new NotFoundException("Branch not found");
 
     await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "BRANCH"));
     await this.audit.log({ action: "org.branch.updated", userId, orgId, targetId: id, targetType: "org_unit" });
 
-    return row;
+    return toOrgBranch(row);
   }
 
   async deleteOrgBranch(orgId: string, userId: string, id: string) {

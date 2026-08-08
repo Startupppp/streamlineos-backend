@@ -61,11 +61,24 @@ export const listWorkersQuerySchema = z.object({
   search: z.string().optional(),
 });
 
-export const createWorkerSchema = z.object({
-  organizationPersonId: z.string().uuid(),
-  workerNumber: z.string().max(100).optional(),
-  isPayee: z.boolean().optional(),
-});
+export const createWorkerSchema = z
+  .object({
+    organizationPersonId: z.string().uuid().optional(),
+    memberUserId: z.string().min(1).optional(),
+    workerNumber: z.string().max(100).optional(),
+    isPayee: z.boolean().optional(),
+  })
+  .superRefine((value, ctx) => {
+    const subjectCount = Number(Boolean(value.organizationPersonId)) +
+      Number(Boolean(value.memberUserId));
+    if (subjectCount !== 1) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["organizationPersonId"],
+        message: "Select exactly one person or organization member",
+      });
+    }
+  });
 
 export const createEngagementSchema = z.object({
   workerId: z.string().uuid(),

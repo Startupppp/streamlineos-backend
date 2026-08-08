@@ -32,7 +32,7 @@ export const updateBusinessUnitSchema = z
   .object({
     name: optionalOrgNodeName,
     code: code.optional(),
-    description: z.string().trim().max(500).optional(),
+    description: z.string().trim().max(500).optional().nullable(),
     status: nodeStatus.optional(),
   })
   .strict();
@@ -63,13 +63,13 @@ export const updateOrgBranchSchema = z
     code: code.optional(),
     businessUnitId: z.string().uuid().optional().nullable(),
     managerUserId: z.string().optional().nullable(),
-    address: z.string().trim().max(500).optional(),
-    city: z.string().trim().max(100).optional(),
-    state: z.string().trim().max(100).optional(),
-    country: z.string().trim().max(100).optional(),
-    postalCode: z.string().trim().max(20).optional(),
-    phone: z.string().trim().max(30).optional(),
-    email: z.string().email().optional().or(z.literal("")),
+    address: z.string().trim().max(500).optional().nullable(),
+    city: z.string().trim().max(100).optional().nullable(),
+    state: z.string().trim().max(100).optional().nullable(),
+    country: z.string().trim().max(100).optional().nullable(),
+    postalCode: z.string().trim().max(20).optional().nullable(),
+    phone: z.string().trim().max(30).optional().nullable(),
+    email: z.string().email().or(z.literal("")).optional().nullable(),
     status: nodeStatus.optional(),
   })
   .strict();
@@ -94,7 +94,7 @@ export const updateOrgDepartmentSchema = z
     code: code.optional(),
     branchId: z.string().uuid().optional().nullable(),
     headUserId: z.string().optional().nullable(),
-    description: z.string().trim().max(500).optional(),
+    description: z.string().trim().max(500).optional().nullable(),
     status: nodeStatus.optional(),
   })
   .strict();
@@ -120,7 +120,7 @@ export const updateOrgTeamSchema = z
     code: code.optional(),
     departmentId: z.string().uuid().optional(),
     leadUserId: z.string().optional().nullable(),
-    description: z.string().trim().max(500).optional(),
+    description: z.string().trim().max(500).optional().nullable(),
     capacity: z.number().int().min(1).max(9999).optional().nullable(),
     status: nodeStatus.optional(),
   })
@@ -150,7 +150,7 @@ export const updateOrgLocationSchema = z
   .object({
     name: optionalOrgNodeName,
     type: z.enum(["OFFICE", "WAREHOUSE", "STORE", "FACTORY", "REMOTE"]).optional(),
-    address: z.string().trim().max(500).optional(),
+    address: z.string().trim().max(500).optional().nullable(),
     latitude: z.number().min(-90).max(90).optional().nullable(),
     longitude: z.number().min(-180).max(180).optional().nullable(),
     status: nodeStatus.optional(),
@@ -173,7 +173,7 @@ export const updateCostCenterSchema = z
   .object({
     code: code.optional(),
     name: optionalOrgNodeName,
-    description: z.string().trim().max(500).optional(),
+    description: z.string().trim().max(500).optional().nullable(),
     status: nodeStatus.optional(),
   })
   .strict();

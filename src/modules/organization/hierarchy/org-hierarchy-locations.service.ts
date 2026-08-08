@@ -5,7 +5,7 @@ import {
 } from "@nestjs/common";
 import { and, eq, isNull } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { orgUnits } from "../../../db/schema/common/organization";
+import { orgUnits, type OrgUnitMetadata } from "../../../db/schema/common/organization";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -15,6 +15,45 @@ import type {
   CreateOrgLocationInput,
   UpdateOrgLocationInput,
 } from "./dto/org-hierarchy.schemas";
+
+const ORG_LOCATION_COLUMNS = {
+  id: orgUnits.id,
+  orgId: orgUnits.orgId,
+  name: orgUnits.name,
+  status: orgUnits.status,
+  metadata: orgUnits.metadata,
+  createdAt: orgUnits.createdAt,
+  updatedAt: orgUnits.updatedAt,
+  deletedAt: orgUnits.deletedAt,
+};
+
+type OrgLocationRow = Pick<
+  typeof orgUnits.$inferSelect,
+  | "id"
+  | "orgId"
+  | "name"
+  | "status"
+  | "metadata"
+  | "createdAt"
+  | "updatedAt"
+  | "deletedAt"
+>;
+
+export function toOrgLocation(row: OrgLocationRow) {
+  return {
+    id: row.id,
+    orgId: row.orgId,
+    name: row.name,
+    type: row.metadata?.locationType ?? "OFFICE",
+    address: row.metadata?.address ?? null,
+    latitude: row.metadata?.latitude != null ? String(row.metadata.latitude) : null,
+    longitude: row.metadata?.longitude != null ? String(row.metadata.longitude) : null,
+    status: row.status,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    deletedAt: row.deletedAt,
+  };
+}
 
 @Injectable()
 export class OrgHierarchyLocationsService {
@@ -27,25 +66,31 @@ export class OrgHierarchyLocationsService {
   listLocations(orgId: string) {
     return this.cache.cached(
       CACHE_KEYS.orgUnits(orgId, "LOCATION"),
-      () =>
-        this.db
-          .select()
+      async () => {
+        const rows = await this.db
+          .select(ORG_LOCATION_COLUMNS)
           .from(orgUnits)
-          .where(and(eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "LOCATION"), isNull(orgUnits.deletedAt))),
+          .where(and(eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "LOCATION"), isNull(orgUnits.deletedAt)));
+        return rows.map(toOrgLocation);
+      },
       CACHE_TTL.MEDIUM,
     );
   }
 
   async getLocation(orgId: string, id: string) {
-    return (
-      (await this.db.query.orgUnits.findFirst({
-        where: and(
+    const [row] = await this.db
+      .select(ORG_LOCATION_COLUMNS)
+      .from(orgUnits)
+      .where(
+        and(
           eq(orgUnits.id, id),
           eq(orgUnits.orgId, orgId),
           eq(orgUnits.kind, "LOCATION"),
+          isNull(orgUnits.deletedAt),
         ),
-      })) ?? null
-    );
+      )
+      .limit(1);
+    return row ? toOrgLocation(row) : null;
   }
 
   async createLocation(orgId: string, userId: string, body: CreateOrgLocationInput) {
@@ -59,24 +104,32 @@ export class OrgHierarchyLocationsService {
         code: body.name.substring(0, 8).toUpperCase().replace(/\s/g, ""),
         metadata: {
           locationType: body.type ?? "OFFICE",
-          ...(body.address !== undefined && { address: body.address }),
-          ...(body.latitude !== undefined && { latitude: body.latitude }),
-          ...(body.longitude !== undefined && { longitude: body.longitude }),
+          ...(body.address !== undefined ? { address: body.address ?? undefined } : {}),
+          ...(body.latitude !== undefined && body.latitude !== null ? { latitude: body.latitude } : {}),
+          ...(body.longitude !== undefined && body.longitude !== null ? { longitude: body.longitude } : {}),
         },
       })
-      .returning();
+      .returning(ORG_LOCATION_COLUMNS);
+
+    if (!row) throw new Error("Failed to create location");
 
     await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "LOCATION"));
-    await this.audit.log({ action: "org.location.created", userId, orgId, targetId: row!.id, targetType: "org_unit" });
+    await this.audit.log({ action: "org.location.created", userId, orgId, targetId: row.id, targetType: "org_unit" });
 
-    return row;
+    return toOrgLocation(row);
   }
 
   async updateLocation(orgId: string, userId: string, id: string, body: UpdateOrgLocationInput) {
     const existing = await this.getLocation(orgId, id);
     if (!existing) throw new NotFoundException("Location not found");
 
-    const existingMeta = (existing.metadata ?? {}) as Record<string, unknown>;
+    const existingMeta: OrgUnitMetadata = {
+      locationType: existing.type,
+    };
+    if (existing.address !== null) existingMeta.address = existing.address;
+    if (existing.latitude !== null) existingMeta.latitude = Number(existing.latitude);
+    if (existing.longitude !== null) existingMeta.longitude = Number(existing.longitude);
+
     const [row] = await this.db
       .update(orgUnits)
       .set({
@@ -85,18 +138,20 @@ export class OrgHierarchyLocationsService {
         metadata: {
           ...existingMeta,
           ...(body.type !== undefined && { locationType: body.type }),
-          ...(body.address !== undefined && { address: body.address }),
-          ...(body.latitude !== undefined && { latitude: body.latitude ?? undefined }),
-          ...(body.longitude !== undefined && { longitude: body.longitude ?? undefined }),
+          ...(body.address !== undefined ? { address: body.address ?? undefined } : {}),
+          ...(body.latitude !== undefined ? { latitude: body.latitude ?? undefined } : {}),
+          ...(body.longitude !== undefined ? { longitude: body.longitude ?? undefined } : {}),
         },
       })
       .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "LOCATION")))
-      .returning();
+      .returning(ORG_LOCATION_COLUMNS);
+
+    if (!row) throw new NotFoundException("Location not found");
 
     await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "LOCATION"));
     await this.audit.log({ action: "org.location.updated", userId, orgId, targetId: id, targetType: "org_unit" });
 
-    return row;
+    return toOrgLocation(row);
   }
 
   async deleteLocation(orgId: string, userId: string, id: string) {

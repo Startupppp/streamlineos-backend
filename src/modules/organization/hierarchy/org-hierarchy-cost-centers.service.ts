@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { orgUnits } from "../../../db/schema/common/organization";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -17,6 +17,45 @@ import type {
   UpdateCostCenterInput,
 } from "./dto/org-hierarchy.schemas";
 
+const ORG_COST_CENTER_COLUMNS = {
+  id: orgUnits.id,
+  orgId: orgUnits.orgId,
+  name: orgUnits.name,
+  code: orgUnits.code,
+  description: orgUnits.description,
+  status: orgUnits.status,
+  createdAt: orgUnits.createdAt,
+  updatedAt: orgUnits.updatedAt,
+  deletedAt: orgUnits.deletedAt,
+};
+
+type OrgCostCenterRow = Pick<
+  typeof orgUnits.$inferSelect,
+  | "id"
+  | "orgId"
+  | "name"
+  | "code"
+  | "description"
+  | "status"
+  | "createdAt"
+  | "updatedAt"
+  | "deletedAt"
+>;
+
+export function toOrgCostCenter(row: OrgCostCenterRow) {
+  return {
+    id: row.id,
+    orgId: row.orgId,
+    code: row.code,
+    name: row.name,
+    description: row.description,
+    status: row.status,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    deletedAt: row.deletedAt,
+  };
+}
+
 @Injectable()
 export class OrgHierarchyCostCentersService {
   constructor(
@@ -28,21 +67,31 @@ export class OrgHierarchyCostCentersService {
   listCostCenters(orgId: string) {
     return this.cache.cached(
       CACHE_KEYS.orgUnits(orgId, "COST_CENTER"),
-      () =>
-        this.db
-          .select()
+      async () => {
+        const rows = await this.db
+          .select(ORG_COST_CENTER_COLUMNS)
           .from(orgUnits)
-          .where(and(eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "COST_CENTER"))),
+          .where(and(eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "COST_CENTER"), isNull(orgUnits.deletedAt)));
+        return rows.map(toOrgCostCenter);
+      },
       CACHE_TTL.MEDIUM,
     );
   }
 
   async getCostCenter(orgId: string, id: string) {
-    return (
-      (await this.db.query.orgUnits.findFirst({
-        where: and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "COST_CENTER")),
-      })) ?? null
-    );
+    const [row] = await this.db
+      .select(ORG_COST_CENTER_COLUMNS)
+      .from(orgUnits)
+      .where(
+        and(
+          eq(orgUnits.id, id),
+          eq(orgUnits.orgId, orgId),
+          eq(orgUnits.kind, "COST_CENTER"),
+          isNull(orgUnits.deletedAt),
+        ),
+      )
+      .limit(1);
+    return row ? toOrgCostCenter(row) : null;
   }
 
   async createCostCenter(orgId: string, userId: string, body: CreateCostCenterInput) {
@@ -65,12 +114,14 @@ export class OrgHierarchyCostCentersService {
         name: body.name,
         description: body.description,
       })
-      .returning();
+      .returning(ORG_COST_CENTER_COLUMNS);
+
+    if (!row) throw new Error("Failed to create cost center");
 
     await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "COST_CENTER"));
-    await this.audit.log({ action: "org.costCenter.created", userId, orgId, targetId: row!.id, targetType: "org_unit" });
+    await this.audit.log({ action: "org.costCenter.created", userId, orgId, targetId: row.id, targetType: "org_unit" });
 
-    return row;
+    return toOrgCostCenter(row);
   }
 
   async updateCostCenter(orgId: string, userId: string, id: string, body: UpdateCostCenterInput) {
@@ -90,14 +141,16 @@ export class OrgHierarchyCostCentersService {
 
     const [row] = await this.db
       .update(orgUnits)
-      .set({ ...body, code: body.code?.toUpperCase() })
+      .set({ ...body, ...(body.code !== undefined && { code: body.code.toUpperCase() }) })
       .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "COST_CENTER")))
-      .returning();
+      .returning(ORG_COST_CENTER_COLUMNS);
+
+    if (!row) throw new NotFoundException("Cost center not found");
 
     await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "COST_CENTER"));
     await this.audit.log({ action: "org.costCenter.updated", userId, orgId, targetId: id, targetType: "org_unit" });
 
-    return row;
+    return toOrgCostCenter(row);
   }
 
   async deleteCostCenter(orgId: string, userId: string, id: string) {
@@ -105,8 +158,15 @@ export class OrgHierarchyCostCentersService {
     if (!existing) throw new NotFoundException("Cost center not found");
 
     await this.db
-      .delete(orgUnits)
-      .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "COST_CENTER")));
+      .update(orgUnits)
+      .set({ deletedAt: new Date() })
+      .where(
+        and(
+          eq(orgUnits.id, id),
+          eq(orgUnits.orgId, orgId),
+          eq(orgUnits.kind, "COST_CENTER"),
+        ),
+      );
 
     await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "COST_CENTER"));
     await this.audit.log({ action: "org.costCenter.deleted", userId, orgId, targetId: id, targetType: "org_unit" });

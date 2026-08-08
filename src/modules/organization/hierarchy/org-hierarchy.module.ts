@@ -7,6 +7,7 @@ import { OrgHierarchyDepartmentsService } from "./org-hierarchy-departments.serv
 import { OrgHierarchyTeamsService } from "./org-hierarchy-teams.service";
 import { OrgHierarchyLocationsService } from "./org-hierarchy-locations.service";
 import { OrgHierarchyCostCentersService } from "./org-hierarchy-cost-centers.service";
+import { OrgHierarchyDependenciesService } from "./org-hierarchy-dependencies.service";
 
 @Module({
   controllers: [OrgHierarchyController],
@@ -18,6 +19,7 @@ import { OrgHierarchyCostCentersService } from "./org-hierarchy-cost-centers.ser
     OrgHierarchyTeamsService,
     OrgHierarchyLocationsService,
     OrgHierarchyCostCentersService,
+    OrgHierarchyDependenciesService,
   ],
   exports: [OrgHierarchyService],
 })

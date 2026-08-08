@@ -3,6 +3,7 @@ import { Test } from "@nestjs/testing";
 import { DirectoryService } from "./directory.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
+import { DirectoryIdentityService } from "./directory-identity.service";
 
 const ORG_ID = "org-aaaaaaaa-0000-0000-0000-000000000001";
 const OTHER_ORG = "org-aaaaaaaa-0000-0000-0000-000000000099";
@@ -12,6 +13,13 @@ const WORKER_ID = "worker-aa-0000-0000-0000-000000000001";
 const ENGAGEMENT_ID = "engage-aa-0000-0000-0000-000000000001";
 
 const mockAudit = { log: jest.fn() } as unknown as AuditService;
+const mockIdentities = {
+  reconcilePersonIdentity: jest.fn(),
+  resolveLinkForPersonWrite: jest.fn(),
+  ensurePersonForMember: jest.fn(),
+  resolvePersonAccess: jest.fn(),
+  resolvePeopleAccess: jest.fn(),
+};
 
 function makePerson(overrides: Record<string, unknown> = {}) {
   return {
@@ -111,6 +119,16 @@ describe("DirectoryService", () => {
 
   beforeEach(async () => {
     jest.resetAllMocks();
+    mockIdentities.reconcilePersonIdentity.mockImplementation(
+      async (_organizationId: string, person: unknown) => person,
+    );
+    mockIdentities.resolvePersonAccess.mockImplementation(
+      async (_organizationId: string, person: unknown) => person,
+    );
+    mockIdentities.resolvePeopleAccess.mockImplementation(
+      async (_organizationId: string, people: unknown[]) => people,
+    );
+    mockIdentities.resolveLinkForPersonWrite.mockResolvedValue(null);
 
     mockDb = {
       select: jest.fn(),
@@ -125,6 +143,7 @@ describe("DirectoryService", () => {
         DirectoryService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AuditService, useValue: mockAudit },
+        { provide: DirectoryIdentityService, useValue: mockIdentities },
       ],
     }).compile();
 
@@ -216,6 +235,35 @@ describe("DirectoryService", () => {
           orgId: ORG_ID,
           userId: USER_ID,
           resourceType: "organization_person",
+        }),
+      );
+    });
+
+    it("links a matching organization membership when creating by work email", async () => {
+      mockIdentities.resolveLinkForPersonWrite.mockResolvedValue({
+        userId: USER_ID,
+        organizationMembershipId: 42,
+      });
+      const values = jest.fn().mockReturnValue({
+        returning: jest.fn().mockReturnValue({
+          catch: jest.fn().mockResolvedValue([
+            makePerson({ userId: USER_ID, organizationMembershipId: 42 }),
+          ]),
+        }),
+      });
+      (mockDb as { insert: jest.Mock }).insert.mockReturnValue({ values });
+
+      await svc.createPerson(ORG_ID, USER_ID, {
+        firstName: "Jane",
+        lastName: "Doe",
+        workEmail: " JANE@EXAMPLE.COM ",
+      });
+
+      expect(values).toHaveBeenCalledWith(
+        expect.objectContaining({
+          workEmail: "jane@example.com",
+          userId: USER_ID,
+          organizationMembershipId: 42,
         }),
       );
     });
@@ -488,6 +536,30 @@ describe("DirectoryService", () => {
           userId: USER_ID,
           resourceType: "worker",
         }),
+      );
+    });
+
+    it("creates the missing person record when a member is selected", async () => {
+      const person = makePerson({
+        userId: USER_ID,
+        organizationMembershipId: 42,
+      });
+      const worker = makeWorker();
+      mockIdentities.ensurePersonForMember.mockResolvedValue(person);
+      (mockDb as { insert: jest.Mock }).insert.mockReturnValue({
+        values: jest.fn().mockReturnValue({
+          returning: jest.fn().mockReturnValue({
+            catch: jest.fn().mockResolvedValue([worker]),
+          }),
+        }),
+      });
+
+      await expect(
+        svc.createWorker(ORG_ID, USER_ID, { memberUserId: USER_ID }),
+      ).resolves.toMatchObject({ workerId: WORKER_ID });
+      expect(mockIdentities.ensurePersonForMember).toHaveBeenCalledWith(
+        ORG_ID,
+        USER_ID,
       );
     });
   });

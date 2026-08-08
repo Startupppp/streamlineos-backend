@@ -19,6 +19,45 @@ import type {
   ListQueryInput,
 } from "./dto/org-hierarchy.schemas";
 
+const ORG_BU_COLUMNS = {
+  id: orgUnits.id,
+  orgId: orgUnits.orgId,
+  name: orgUnits.name,
+  code: orgUnits.code,
+  description: orgUnits.description,
+  status: orgUnits.status,
+  createdAt: orgUnits.createdAt,
+  updatedAt: orgUnits.updatedAt,
+  deletedAt: orgUnits.deletedAt,
+};
+
+type OrgBusinessUnitRow = Pick<
+  typeof orgUnits.$inferSelect,
+  | "id"
+  | "orgId"
+  | "name"
+  | "code"
+  | "description"
+  | "status"
+  | "createdAt"
+  | "updatedAt"
+  | "deletedAt"
+>;
+
+export function toOrgBusinessUnit(row: OrgBusinessUnitRow) {
+  return {
+    id: row.id,
+    orgId: row.orgId,
+    name: row.name,
+    code: row.code,
+    description: row.description,
+    status: row.status,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    deletedAt: row.deletedAt,
+  };
+}
+
 @Injectable()
 export class OrgHierarchyBusinessUnitsService {
   constructor(
@@ -38,22 +77,26 @@ export class OrgHierarchyBusinessUnitsService {
       ...(status ? [sql`${orgUnits.status} = ${status}`] : []),
     );
     const [rows, [{ count }]] = await Promise.all([
-      this.db.select().from(orgUnits).where(filters).limit(limit).offset(offset),
+      this.db.select(ORG_BU_COLUMNS).from(orgUnits).where(filters).limit(limit).offset(offset),
       this.db.select({ count: sql<number>`count(*)::int` }).from(orgUnits).where(filters),
     ]);
-    return { data: rows, total: count, page, limit };
+    return { data: rows.map(toOrgBusinessUnit), total: count, page, limit };
   }
 
   async getBusinessUnit(orgId: string, id: string) {
-    const row = await this.db.query.orgUnits.findFirst({
-      where: and(
-        eq(orgUnits.id, id),
-        eq(orgUnits.orgId, orgId),
-        eq(orgUnits.kind, "BUSINESS_UNIT"),
-        isNull(orgUnits.deletedAt),
-      ),
-    });
-    return row ?? null;
+    const [row] = await this.db
+      .select(ORG_BU_COLUMNS)
+      .from(orgUnits)
+      .where(
+        and(
+          eq(orgUnits.id, id),
+          eq(orgUnits.orgId, orgId),
+          eq(orgUnits.kind, "BUSINESS_UNIT"),
+          isNull(orgUnits.deletedAt),
+        ),
+      )
+      .limit(1);
+    return row ? toOrgBusinessUnit(row) : null;
   }
 
   async createBusinessUnit(orgId: string, userId: string, body: CreateBusinessUnitInput) {
@@ -77,12 +120,14 @@ export class OrgHierarchyBusinessUnitsService {
         code: body.code.toUpperCase(),
         description: body.description,
       })
-      .returning();
+      .returning(ORG_BU_COLUMNS);
+
+    if (!row) throw new Error("Failed to create business unit");
 
     await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "BUSINESS_UNIT"));
-    await this.audit.log({ action: "org.businessUnit.created", userId, orgId, targetId: row!.id, targetType: "org_unit" });
+    await this.audit.log({ action: "org.businessUnit.created", userId, orgId, targetId: row.id, targetType: "org_unit" });
 
-    return row;
+    return toOrgBusinessUnit(row);
   }
 
   async updateBusinessUnit(orgId: string, userId: string, id: string, body: UpdateBusinessUnitInput) {
@@ -103,14 +148,16 @@ export class OrgHierarchyBusinessUnitsService {
 
     const [row] = await this.db
       .update(orgUnits)
-      .set({ ...body, code: body.code?.toUpperCase() })
+      .set({ ...body, ...(body.code !== undefined && { code: body.code.toUpperCase() }) })
       .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "BUSINESS_UNIT")))
-      .returning();
+      .returning(ORG_BU_COLUMNS);
+
+    if (!row) throw new NotFoundException("Business unit not found");
 
     await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "BUSINESS_UNIT"));
     await this.audit.log({ action: "org.businessUnit.updated", userId, orgId, targetId: id, targetType: "org_unit" });
 
-    return row;
+    return toOrgBusinessUnit(row);
   }
 
   async deleteBusinessUnit(orgId: string, userId: string, id: string) {
