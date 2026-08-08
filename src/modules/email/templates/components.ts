@@ -66,14 +66,27 @@ export function renderKeyValueRows(rows: Array<{ label: string; value: string }>
           ? `border-bottom:1px solid ${EMAIL_THEME.canvas};`
           : "";
       return `<tr>
-  <td class="kv-label" style="padding:11px 14px;${border}font-family:${FONT};font-size:12px;font-weight:600;color:${EMAIL_THEME.textMuted};letter-spacing:0.02em;width:36%;vertical-align:top;">${escapeHtml(row.label)}</td>
-  <td class="kv-value" style="padding:11px 14px;${border}font-family:${FONT};font-size:13px;font-weight:600;color:${EMAIL_THEME.ink};vertical-align:top;word-break:break-word;">${escapeHtml(row.value)}</td>
+  <td class="kv-label" style="padding:11px 14px;${border}font-family:${FONT};font-size:12px;font-weight:600;color:${EMAIL_THEME.textMuted};letter-spacing:0.02em;width:36%;vertical-align:top;text-align:left;">${escapeHtml(row.label)}</td>
+  <td class="kv-value" style="padding:11px 14px;${border}font-family:${FONT};font-size:13px;font-weight:600;color:${EMAIL_THEME.ink};vertical-align:top;text-align:left;word-break:break-word;">${escapeHtml(row.value)}</td>
 </tr>`;
     })
     .join("");
 
   return `<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin:18px 0;width:100%;background-color:${EMAIL_THEME.surface};border:1px solid ${EMAIL_THEME.surfaceBorder};border-radius:12px;overflow:hidden;">
   ${items}
+</table>`;
+}
+
+export function renderCredentialField(label: string, value: string): string {
+  return `<table role="presentation" class="credential-box" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin:18px 0;width:100%;background-color:${EMAIL_THEME.surface};border:1px solid ${EMAIL_THEME.surfaceBorder};border-radius:10px;overflow:hidden;">
+  <tr>
+    <td style="padding:14px 16px;">
+      <p class="credential-item" style="margin:0;font-family:${FONT};font-size:13px;line-height:1.8;color:${EMAIL_THEME.text};">
+        <span class="credential-label" style="font-weight:600;color:${EMAIL_THEME.ink};">${escapeHtml(label)}</span>
+        <span class="credential-value" style="color:${EMAIL_THEME.accentDeep};font-weight:600;background-color:#eff6ff;padding:2px 8px;border-radius:5px;display:inline-block;margin-left:6px;font-size:13px;word-break:break-word;">${escapeHtml(value)}</span>
+      </p>
+    </td>
+  </tr>
 </table>`;
 }
 

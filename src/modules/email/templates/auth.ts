@@ -3,6 +3,7 @@ import { getEmailTemplate, appUrl, escapeHtml } from "./base";
 import {
   renderButton,
   renderCallout,
+  renderCredentialField,
   renderFallbackLink,
   renderKeyValueRows,
   renderOtpCode,
@@ -56,7 +57,7 @@ export function getWelcomeEmailTemplate(name: string, email: string, setupUrl: s
     <p class="email-text">
       Hi ${sName}, your ${sBrand} account has been created. Set up your account to get started.
     </p>
-    ${renderKeyValueRows([{ label: "Login email", value: email }])}
+    ${renderCredentialField("Login email", email)}
     ${renderButton("Set up your account", setupUrl)}
     ${renderCallout("This setup link is valid for 7 days. If you were not expecting this email, contact your administrator.")}
   `;

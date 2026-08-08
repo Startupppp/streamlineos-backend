@@ -185,6 +185,13 @@ export function getEmailTemplate({
       line-height: 1.5;
       display: block;
     }
+    .kv-value a,
+    .fallback-url a,
+    .credential-value a {
+      color: inherit !important;
+      text-decoration: none !important;
+      font-weight: inherit !important;
+    }
     @media only screen and (max-width: 620px) {
       .email-outer-pad { padding: 12px 8px !important; }
       .email-shell {
