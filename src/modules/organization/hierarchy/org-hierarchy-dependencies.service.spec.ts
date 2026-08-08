@@ -5,6 +5,20 @@ import {
   OrgHierarchyDependenciesService,
 } from "./org-hierarchy-dependencies.service";
 
+function sqlText(value: unknown, seen = new Set<object>()): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (typeof value !== "object" || seen.has(value)) return "";
+  seen.add(value);
+  if (Array.isArray(value)) {
+    return value.map((item) => sqlText(item, seen)).join(" ");
+  }
+  const record = value as { queryChunks?: unknown[]; value?: unknown };
+  return [sqlText(record.queryChunks, seen), sqlText(record.value, seen)].join(
+    " ",
+  );
+}
+
 describe("OrgHierarchyDependenciesService", () => {
   const orgId = "org-1";
   const unitId = "00000000-0000-0000-0000-000000000001";
@@ -77,5 +91,38 @@ describe("OrgHierarchyDependenciesService", () => {
       details: { action: string };
     };
     expect(response.details.action).toBe("remove");
+  });
+
+  it.each(["DEPARTMENT", "LOCATION"] as const)(
+    "excludes completed employment lifecycle values from %s archive checks",
+    async (kind) => {
+      execute.mockResolvedValue([]);
+
+      await service.assertCanArchive(orgId, unitId, kind);
+
+      const query = sqlText(execute.mock.calls[0]?.[0]);
+      expect(query).toContain("EXITED");
+      expect(query).toContain("ALUMNI");
+    },
+  );
+
+  it("does not treat completed department records as active archive blockers", async () => {
+    execute.mockResolvedValue([]);
+
+    await service.assertCanArchive(orgId, unitId, "DEPARTMENT");
+    const archiveQuery = sqlText(execute.mock.calls[0]?.[0]);
+
+    expect(archiveQuery).toEqual(expect.stringContaining("CLOSED"));
+    expect(archiveQuery).toEqual(expect.stringContaining("FILLED"));
+    expect(archiveQuery).toEqual(expect.stringContaining("REJECTED"));
+    expect(archiveQuery).toEqual(expect.stringContaining("JOB_CREATED"));
+    expect(archiveQuery).toEqual(expect.stringContaining("closed"));
+
+    execute.mockClear();
+    await service.assertCanRetire(orgId, unitId, "DEPARTMENT");
+    const retireQuery = sqlText(execute.mock.calls[0]?.[0]);
+
+    expect(retireQuery).not.toEqual(expect.stringContaining("JOB_CREATED"));
+    expect(retireQuery).not.toEqual(expect.stringContaining("'closed'"));
   });
 });

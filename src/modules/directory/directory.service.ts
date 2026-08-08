@@ -1,6 +1,15 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { and, count, eq, ilike, isNull, or } from "drizzle-orm";
-import { organizationPeople, workers, workerEngagements } from "../../db/schema/directory";
+import {
+  organizationPeople,
+  workers,
+  workerEngagements,
+} from "../../db/schema/directory";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
@@ -33,7 +42,10 @@ export class DirectoryService {
     private readonly identities: DirectoryIdentityService,
   ) {}
 
-  private async loadPerson(organizationId: string, organizationPersonId: string): Promise<PersonRow> {
+  private async loadPerson(
+    organizationId: string,
+    organizationPersonId: string,
+  ): Promise<PersonRow> {
     const [row] = await this.db
       .select()
       .from(organizationPeople)
@@ -75,7 +87,10 @@ export class DirectoryService {
         .where(conditions)
         .limit(limit)
         .offset(offset),
-      this.db.select({ total: count() }).from(organizationPeople).where(conditions),
+      this.db
+        .select({ total: count() })
+        .from(organizationPeople)
+        .where(conditions),
     ]);
 
     const total = Number(totalRow?.total ?? 0);
@@ -95,14 +110,20 @@ export class DirectoryService {
     return this.identities.resolvePersonAccess(organizationId, person, true);
   }
 
-  async createPerson(organizationId: string, userId: string, input: CreatePersonInput) {
+  async createPerson(
+    organizationId: string,
+    userId: string,
+    input: CreatePersonInput,
+  ) {
     const workEmail = input.workEmail?.trim().toLowerCase();
+    const personalEmail = input.personalEmail?.trim().toLowerCase();
     const identity = await this.identities.resolveLinkForPersonWrite(
       organizationId,
       {
         memberUserId: input.userId,
         organizationMembershipId: input.organizationMembershipId,
         workEmail,
+        personalEmail,
       },
     );
     const [row] = await this.db
@@ -112,7 +133,7 @@ export class DirectoryService {
         firstName: input.firstName,
         lastName: input.lastName,
         workEmail: workEmail ?? null,
-        personalEmail: input.personalEmail?.trim().toLowerCase() ?? null,
+        personalEmail: personalEmail ?? null,
         phone: input.phone ?? null,
         userId: identity?.userId ?? null,
         organizationMembershipId: identity?.organizationMembershipId ?? null,
@@ -161,6 +182,10 @@ export class DirectoryService {
       input.workEmail === undefined
         ? existingPerson.workEmail
         : input.workEmail?.trim().toLowerCase() || null;
+    const proposedPersonalEmail =
+      input.personalEmail === undefined
+        ? existingPerson.personalEmail
+        : input.personalEmail?.trim().toLowerCase() || null;
     const identity = await this.identities.resolveLinkForPersonWrite(
       organizationId,
       {
@@ -171,6 +196,7 @@ export class DirectoryService {
             ? existingPerson.organizationMembershipId
             : input.organizationMembershipId,
         workEmail: proposedWorkEmail,
+        personalEmail: proposedPersonalEmail,
       },
       organizationPersonId,
     );
@@ -178,21 +204,30 @@ export class DirectoryService {
     const patch: PersonPatch = {};
     if (input.firstName !== undefined) patch.firstName = input.firstName;
     if (input.lastName !== undefined) patch.lastName = input.lastName;
-    if (input.displayName !== undefined) patch.displayName = input.displayName ?? null;
-    if (input.preferredName !== undefined) patch.preferredName = input.preferredName ?? null;
+    if (input.displayName !== undefined)
+      patch.displayName = input.displayName ?? null;
+    if (input.preferredName !== undefined)
+      patch.preferredName = input.preferredName ?? null;
     if (input.workEmail !== undefined) patch.workEmail = proposedWorkEmail;
     if (input.personalEmail !== undefined)
-      patch.personalEmail = input.personalEmail?.trim().toLowerCase() ?? null;
+      patch.personalEmail = proposedPersonalEmail;
     if (input.phone !== undefined) patch.phone = input.phone ?? null;
-    if (input.whatsappNumber !== undefined) patch.whatsappNumber = input.whatsappNumber ?? null;
-    if (input.avatarUrl !== undefined) patch.avatarUrl = input.avatarUrl ?? null;
-    if (input.dateOfBirth !== undefined) patch.dateOfBirth = input.dateOfBirth ?? null;
+    if (input.whatsappNumber !== undefined)
+      patch.whatsappNumber = input.whatsappNumber ?? null;
+    if (input.avatarUrl !== undefined)
+      patch.avatarUrl = input.avatarUrl ?? null;
+    if (input.dateOfBirth !== undefined)
+      patch.dateOfBirth = input.dateOfBirth ?? null;
     if (input.gender !== undefined) patch.gender = input.gender ?? null;
-    if (input.nationality !== undefined) patch.nationality = input.nationality ?? null;
+    if (input.nationality !== undefined)
+      patch.nationality = input.nationality ?? null;
     if (input.timezone !== undefined) patch.timezone = input.timezone ?? null;
-    if (input.languageCode !== undefined) patch.languageCode = input.languageCode ?? null;
-    if (input.linkedinUrl !== undefined) patch.linkedinUrl = input.linkedinUrl ?? null;
-    if (input.githubUrl !== undefined) patch.githubUrl = input.githubUrl ?? null;
+    if (input.languageCode !== undefined)
+      patch.languageCode = input.languageCode ?? null;
+    if (input.linkedinUrl !== undefined)
+      patch.linkedinUrl = input.linkedinUrl ?? null;
+    if (input.githubUrl !== undefined)
+      patch.githubUrl = input.githubUrl ?? null;
     if (input.bio !== undefined) patch.bio = input.bio ?? null;
     if (identity) {
       patch.userId = identity.userId;
@@ -238,7 +273,11 @@ export class DirectoryService {
     return this.identities.resolvePersonAccess(organizationId, updated);
   }
 
-  async softDeletePerson(organizationId: string, userId: string, organizationPersonId: string) {
+  async softDeletePerson(
+    organizationId: string,
+    userId: string,
+    organizationPersonId: string,
+  ) {
     await this.loadPerson(organizationId, organizationPersonId);
     await this.db
       .update(organizationPeople)
@@ -259,7 +298,10 @@ export class DirectoryService {
     });
   }
 
-  private async loadWorker(organizationId: string, workerId: string): Promise<WorkerRow> {
+  private async loadWorker(
+    organizationId: string,
+    workerId: string,
+  ): Promise<WorkerRow> {
     const [row] = await this.db
       .select()
       .from(workers)
@@ -312,6 +354,10 @@ export class DirectoryService {
       status ? eq(workers.status, status) : undefined,
       searchCondition,
     );
+    const personJoin = and(
+      eq(workers.organizationPersonId, organizationPeople.organizationPersonId),
+      eq(workers.organizationId, organizationPeople.organizationId),
+    );
 
     const [rows, [totalRow]] = await Promise.all([
       this.db
@@ -333,14 +379,15 @@ export class DirectoryService {
           userId: organizationPeople.userId,
         })
         .from(workers)
-        .innerJoin(
-          organizationPeople,
-          eq(workers.organizationPersonId, organizationPeople.organizationPersonId),
-        )
+        .innerJoin(organizationPeople, personJoin)
         .where(conditions)
         .limit(limit)
         .offset(offset),
-      this.db.select({ total: count() }).from(workers).where(conditions),
+      this.db
+        .select({ total: count() })
+        .from(workers)
+        .innerJoin(organizationPeople, personJoin)
+        .where(conditions),
     ]);
 
     const total = Number(totalRow?.total ?? 0);
@@ -359,7 +406,11 @@ export class DirectoryService {
     return this.loadWorker(organizationId, workerId);
   }
 
-  async createWorker(organizationId: string, userId: string, input: CreateWorkerInput) {
+  async createWorker(
+    organizationId: string,
+    userId: string,
+    input: CreateWorkerInput,
+  ) {
     const person = input.organizationPersonId
       ? await this.loadPerson(organizationId, input.organizationPersonId)
       : await this.identities.ensurePersonForMember(
@@ -383,7 +434,9 @@ export class DirectoryService {
           "code" in err &&
           (err as { code: string }).code === PG_UNIQUE_VIOLATION
         ) {
-          throw new ConflictException("This person is already a worker in this organization.");
+          throw new ConflictException(
+            "This person is already a worker in this organization.",
+          );
         }
         throw err;
       });
@@ -394,7 +447,10 @@ export class DirectoryService {
       orgId: organizationId,
       resourceType: "worker",
       resourceId: row.workerId,
-      metadata: { workerId: row.workerId, organizationPersonId: row.organizationPersonId },
+      metadata: {
+        workerId: row.workerId,
+        organizationPersonId: row.organizationPersonId,
+      },
     });
     return row;
   }
@@ -437,11 +493,7 @@ export class DirectoryService {
       })
       .returning()
       .catch((err: unknown) => {
-        if (
-          typeof err === "object" &&
-          err !== null &&
-          "code" in err
-        ) {
+        if (typeof err === "object" && err !== null && "code" in err) {
           const code = (err as { code: string }).code;
           if (code === PG_UNIQUE_VIOLATION) {
             throw new ConflictException(
@@ -463,7 +515,10 @@ export class DirectoryService {
       orgId: organizationId,
       resourceType: "worker_engagement",
       resourceId: row.workerEngagementId,
-      metadata: { workerEngagementId: row.workerEngagementId, workerId: row.workerId },
+      metadata: {
+        workerEngagementId: row.workerEngagementId,
+        workerId: row.workerId,
+      },
     });
     return row;
   }
@@ -481,16 +536,22 @@ export class DirectoryService {
     if (input.endsOn !== undefined) patch.endsOn = input.endsOn ?? null;
     if (input.workerType !== undefined) patch.workerType = input.workerType;
     if (input.isPrimary !== undefined) patch.isPrimary = input.isPrimary;
-    if (input.designation !== undefined) patch.designation = input.designation ?? null;
-    if (input.departmentId !== undefined) patch.departmentId = input.departmentId ?? null;
-    if (input.businessUnitId !== undefined) patch.businessUnitId = input.businessUnitId ?? null;
+    if (input.designation !== undefined)
+      patch.designation = input.designation ?? null;
+    if (input.departmentId !== undefined)
+      patch.departmentId = input.departmentId ?? null;
+    if (input.businessUnitId !== undefined)
+      patch.businessUnitId = input.businessUnitId ?? null;
     if (input.branchId !== undefined) patch.branchId = input.branchId ?? null;
-    if (input.locationId !== undefined) patch.locationId = input.locationId ?? null;
+    if (input.locationId !== undefined)
+      patch.locationId = input.locationId ?? null;
     if (input.teamId !== undefined) patch.teamId = input.teamId ?? null;
     if (input.managerEngagementId !== undefined)
       patch.managerEngagementId = input.managerEngagementId ?? null;
-    if (input.jobRoleId !== undefined) patch.jobRoleId = input.jobRoleId ?? null;
-    if (input.jobLevelId !== undefined) patch.jobLevelId = input.jobLevelId ?? null;
+    if (input.jobRoleId !== undefined)
+      patch.jobRoleId = input.jobRoleId ?? null;
+    if (input.jobLevelId !== undefined)
+      patch.jobLevelId = input.jobLevelId ?? null;
     if (input.employmentTypeId !== undefined)
       patch.employmentTypeId = input.employmentTypeId ?? null;
     if (input.probationEndsOn !== undefined)
@@ -509,11 +570,7 @@ export class DirectoryService {
       )
       .returning()
       .catch((err: unknown) => {
-        if (
-          typeof err === "object" &&
-          err !== null &&
-          "code" in err
-        ) {
+        if (typeof err === "object" && err !== null && "code" in err) {
           const code = (err as { code: string }).code;
           if (code === PG_UNIQUE_VIOLATION) {
             throw new ConflictException(
@@ -546,7 +603,10 @@ export class DirectoryService {
     workerEngagementId: string,
     input: TerminateEngagementInput,
   ) {
-    const existing = await this.loadEngagement(organizationId, workerEngagementId);
+    const existing = await this.loadEngagement(
+      organizationId,
+      workerEngagementId,
+    );
 
     const [updated] = await this.db
       .update(workerEngagements)
@@ -570,7 +630,10 @@ export class DirectoryService {
       orgId: organizationId,
       resourceType: "worker_engagement",
       resourceId: workerEngagementId,
-      metadata: { workerEngagementId, terminationReason: input.terminationReason },
+      metadata: {
+        workerEngagementId,
+        terminationReason: input.terminationReason,
+      },
     });
     return updated;
   }

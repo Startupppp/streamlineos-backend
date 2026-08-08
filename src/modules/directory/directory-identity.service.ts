@@ -5,7 +5,16 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  or,
+  sql,
+} from "drizzle-orm";
 import {
   invitations,
   organizationMembers,
@@ -54,11 +63,19 @@ type IdentitySelector = {
   memberUserId?: string | null;
   organizationMembershipId?: number | null;
   workEmail?: string | null;
+  personalEmail?: string | null;
 };
 
 function normalizeEmail(email?: string | null): string | null {
   const normalized = email?.trim().toLowerCase();
   return normalized || null;
+}
+
+function effectiveEmail(input: {
+  workEmail?: string | null;
+  personalEmail?: string | null;
+}): string | null {
+  return normalizeEmail(input.workEmail) ?? normalizeEmail(input.personalEmail);
 }
 
 function postgresCode(error: unknown): string | undefined {
@@ -75,7 +92,7 @@ export class DirectoryIdentityService {
     organizationId: string,
     selector: IdentitySelector,
   ): Promise<MemberIdentity | null> {
-    const email = normalizeEmail(selector.workEmail);
+    const email = effectiveEmail(selector);
     const identityCondition = selector.organizationMembershipId
       ? eq(organizationMembers.id, selector.organizationMembershipId)
       : selector.memberUserId
@@ -116,6 +133,7 @@ export class DirectoryIdentityService {
   private async findPersonForIdentity(
     organizationId: string,
     identity: MemberIdentity,
+    lifecycle: "active" | "deleted" = "active",
   ): Promise<PersonRow | null> {
     const email = normalizeEmail(identity.email)!;
     const [person] = await this.db
@@ -124,7 +142,9 @@ export class DirectoryIdentityService {
       .where(
         and(
           eq(organizationPeople.organizationId, organizationId),
-          isNull(organizationPeople.deletedAt),
+          lifecycle === "active"
+            ? isNull(organizationPeople.deletedAt)
+            : isNotNull(organizationPeople.deletedAt),
           or(
             eq(organizationPeople.userId, identity.userId),
             eq(
@@ -132,57 +152,18 @@ export class DirectoryIdentityService {
               identity.membershipId,
             ),
             sql`lower(trim(${organizationPeople.workEmail})) = ${email}`,
+            and(
+              or(
+                isNull(organizationPeople.workEmail),
+                sql`trim(${organizationPeople.workEmail}) = ''`,
+              ),
+              sql`lower(trim(${organizationPeople.personalEmail})) = ${email}`,
+            ),
           ),
         ),
       )
       .limit(1);
     return person ?? null;
-  }
-
-  private async findOpenInvitation(organizationId: string, person: PersonRow) {
-    const emails = [
-      normalizeEmail(person.workEmail),
-      normalizeEmail(person.personalEmail),
-    ].filter((email): email is string => Boolean(email));
-    if (emails.length === 0) return null;
-
-    const [invitation] = await this.db
-      .select({
-        id: invitations.id,
-        email: invitations.email,
-        role: invitations.role,
-        status: invitations.status,
-        expiresAt: invitations.expiresAt,
-      })
-      .from(invitations)
-      .where(
-        and(
-          eq(invitations.orgId, organizationId),
-          inArray(invitations.status, ["PENDING", "EXPIRED"]),
-          isNull(invitations.acceptedAt),
-          inArray(sql<string>`lower(trim(${invitations.email}))`, emails),
-        ),
-      )
-      .orderBy(desc(invitations.createdAt))
-      .limit(1);
-
-    return invitation ?? null;
-  }
-
-  private async attachAccountAccess(
-    organizationId: string,
-    person: PersonRow,
-  ): Promise<DirectoryPersonWithAccess> {
-    if (person.userId || person.organizationMembershipId)
-      return { ...person, accountAccess: { state: "MEMBER" } };
-
-    const invitation = await this.findOpenInvitation(organizationId, person);
-    if (!invitation) return { ...person, accountAccess: { state: "NONE" } };
-
-    return {
-      ...person,
-      accountAccess: this.invitationAccess(invitation),
-    };
   }
 
   private invitationAccess(invitation: {
@@ -208,7 +189,8 @@ export class DirectoryIdentityService {
     if (
       (person.userId && person.userId !== identity.userId) ||
       (person.organizationMembershipId &&
-        person.organizationMembershipId !== identity.membershipId)
+        person.organizationMembershipId !== identity.membershipId &&
+        person.userId !== identity.userId)
     ) {
       throw new ConflictException({
         code: "DIRECTORY_PERSON_IDENTITY_CONFLICT",
@@ -259,16 +241,23 @@ export class DirectoryIdentityService {
     organizationId: string,
     person: PersonRow,
   ): Promise<PersonRow> {
-    if (person.userId && person.organizationMembershipId) return person;
-
     const identity = await this.findMemberIdentity(organizationId, {
       memberUserId: person.userId,
-      organizationMembershipId: person.organizationMembershipId,
+      organizationMembershipId: person.userId
+        ? undefined
+        : person.organizationMembershipId,
       workEmail: person.workEmail,
+      personalEmail: person.personalEmail,
     });
     if (!identity) return person;
 
     this.assertCompatibleLink(person, identity);
+    if (
+      person.userId === identity.userId &&
+      person.organizationMembershipId === identity.membershipId
+    ) {
+      return person;
+    }
     try {
       const [updated] = await this.db
         .update(organizationPeople)
@@ -313,21 +302,99 @@ export class DirectoryIdentityService {
     const resolvedPerson = reconcileIdentity
       ? await this.reconcilePersonIdentity(organizationId, person)
       : person;
-    return this.attachAccountAccess(organizationId, resolvedPerson);
+    const [withAccess] = await this.resolvePeopleAccess(organizationId, [
+      resolvedPerson,
+    ]);
+    return withAccess!;
   }
 
   async resolvePeopleAccess(
     organizationId: string,
     people: PersonRow[],
   ): Promise<DirectoryPersonWithAccess[]> {
-    const emails = Array.from(
+    if (people.length === 0) return [];
+
+    const membershipIds = Array.from(
+      new Set(
+        people
+          .map((person) => person.organizationMembershipId)
+          .filter((id): id is number => id !== null),
+      ),
+    );
+    const userIds = Array.from(
+      new Set(
+        people
+          .map((person) => person.userId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    );
+    const memberEmails = Array.from(
       new Set(
         people
           .filter(
             (person) => !person.userId && !person.organizationMembershipId,
           )
-          .flatMap((person) => [person.workEmail, person.personalEmail])
-          .map(normalizeEmail)
+          .map(effectiveEmail)
+          .filter((email): email is string => Boolean(email)),
+      ),
+    );
+    const memberMatch = or(
+      membershipIds.length > 0
+        ? inArray(organizationMembers.id, membershipIds)
+        : undefined,
+      userIds.length > 0
+        ? inArray(organizationMembers.userId, userIds)
+        : undefined,
+      memberEmails.length > 0
+        ? inArray(sql<string>`lower(trim(${users.email}))`, memberEmails)
+        : undefined,
+    );
+    const memberIdentities = memberMatch
+      ? await this.db
+          .select({
+            membershipId: organizationMembers.id,
+            userId: users.id,
+            email: users.email,
+          })
+          .from(organizationMembers)
+          .innerJoin(users, eq(users.id, organizationMembers.userId))
+          .where(
+            and(
+              eq(organizationMembers.orgId, organizationId),
+              inArray(organizationMembers.status, LINKABLE_MEMBERSHIP_STATUSES),
+              memberMatch,
+            ),
+          )
+      : [];
+
+    const membersByMembershipId = new Map(
+      memberIdentities.map((member) => [member.membershipId, member]),
+    );
+    const membersByUserId = new Map(
+      memberIdentities.map((member) => [member.userId, member]),
+    );
+    const membersByEmail = new Map(
+      memberIdentities.map((member) => [normalizeEmail(member.email)!, member]),
+    );
+    const matchedMembers = people.map((person) => {
+      if (person.organizationMembershipId !== null) {
+        const member = membersByMembershipId.get(
+          person.organizationMembershipId,
+        );
+        if (member && (!person.userId || member.userId === person.userId)) {
+          return member;
+        }
+      }
+      if (person.userId) return membersByUserId.get(person.userId) ?? null;
+      const email = effectiveEmail(person);
+      return email ? (membersByEmail.get(email) ?? null) : null;
+    });
+
+    const emails = Array.from(
+      new Set(
+        people
+          .filter((_person, index) => !matchedMembers[index])
+          .map(effectiveEmail)
           .filter((email): email is string => Boolean(email)),
       ),
     );
@@ -364,15 +431,12 @@ export class DirectoryIdentityService {
         invitationsByEmail.set(email, invitation);
     }
 
-    return people.map((person) => {
-      if (person.userId || person.organizationMembershipId)
+    return people.map((person, index) => {
+      if (matchedMembers[index])
         return { ...person, accountAccess: { state: "MEMBER" } };
 
-      const invitation = [person.workEmail, person.personalEmail]
-        .map(normalizeEmail)
-        .filter((email): email is string => Boolean(email))
-        .map((email) => invitationsByEmail.get(email))
-        .find((candidate) => candidate !== undefined);
+      const email = effectiveEmail(person);
+      const invitation = email ? invitationsByEmail.get(email) : undefined;
       return {
         ...person,
         accountAccess: invitation
@@ -399,6 +463,43 @@ export class DirectoryIdentityService {
     if (existing) {
       this.assertCompatibleLink(existing, identity);
       return this.reconcilePersonIdentity(organizationId, existing);
+    }
+
+    const deleted = await this.findPersonForIdentity(
+      organizationId,
+      identity,
+      "deleted",
+    );
+    if (deleted) {
+      this.assertCompatibleLink(deleted, identity);
+      try {
+        const [restored] = await this.db
+          .update(organizationPeople)
+          .set({
+            deletedAt: null,
+            userId: identity.userId,
+            organizationMembershipId: identity.membershipId,
+          })
+          .where(
+            and(
+              eq(
+                organizationPeople.organizationPersonId,
+                deleted.organizationPersonId,
+              ),
+              eq(organizationPeople.organizationId, organizationId),
+              isNotNull(organizationPeople.deletedAt),
+            ),
+          )
+          .returning();
+        if (restored) return restored;
+      } catch (error) {
+        if (postgresCode(error) !== PG_UNIQUE_VIOLATION) throw error;
+        throw new ConflictException({
+          code: "DIRECTORY_MEMBER_ALREADY_LINKED",
+          message:
+            "This member is already linked to another directory person record. Refresh and select that person instead.",
+        });
+      }
     }
 
     const fullNameParts =

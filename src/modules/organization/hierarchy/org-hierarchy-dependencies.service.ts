@@ -1,11 +1,14 @@
 import { ConflictException, Inject, Injectable } from "@nestjs/common";
-import { sql, type SQL } from "drizzle-orm";
+import { sql, type SQL, type SQLWrapper } from "drizzle-orm";
 import {
   clientAccounts,
   documents,
+  employeeSalaryProfiles,
   finBudgetLines,
   headcountRequests,
   hrCompBudgetPools,
+  hrCompCycles,
+  hrEmergencyEvents,
   hrEmployments,
   hrHeadcountPlans,
   hrPositions,
@@ -19,8 +22,11 @@ import {
   onboardingTemplates,
   orgUnitMembers,
   orgUnits,
+  organizationMembers,
   principalGroups,
+  payrollJournalBatchLines,
   workerEngagements,
+  users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -51,12 +57,7 @@ const KIND_LABELS: Record<OrgUnitKind, string> = {
   COST_CENTER: "cost center",
 };
 
-function countQuery(
-  key: string,
-  label: string,
-  table: SQL,
-  where: SQL,
-): SQL {
+function countQuery(key: string, label: string, table: SQL, where: SQL): SQL {
   return sql`SELECT ${key}::text AS key, ${label}::text AS label, count(*)::int AS count FROM ${table} WHERE ${where}`;
 }
 
@@ -74,7 +75,9 @@ export class OrgHierarchyDependenciesService {
     const queries: SQL[] = [
       countQuery(
         "child_units",
-        strict ? "Child organization units" : "Active child organization units",
+        strict
+          ? "Child organization units"
+          : "Non-archived child organization units",
         sql`${orgUnits}`,
         sql`${orgUnits.orgId} = ${orgId} AND ${orgUnits.parentId} = ${unitId} AND ${orgUnits.deletedAt} IS NULL ${
           strict ? sql`` : sql`AND ${orgUnits.status} <> 'ARCHIVED'`
@@ -94,9 +97,15 @@ export class OrgHierarchyDependenciesService {
       ),
       countQuery(
         "legal_entities",
-        "Legal entities linked to this unit",
+        strict
+          ? "Legal entity history linked to this unit"
+          : "Active legal entities linked to this unit",
         sql`${legalEntities}`,
-        sql`${legalEntities.orgId} = ${orgId} AND ${legalEntities.orgUnitId} = ${unitId}`,
+        sql`${legalEntities.orgId} = ${orgId} AND ${legalEntities.orgUnitId} = ${unitId} ${
+          strict
+            ? sql``
+            : sql`AND ${legalEntities.status} = 'ACTIVE' AND ${legalEntities.deletedAt} IS NULL`
+        }`,
       ),
     ];
 
@@ -127,7 +136,18 @@ export class OrgHierarchyDependenciesService {
     }
 
     if (kind === "BRANCH") {
+      const memberStatus = strict
+        ? sql``
+        : sql`AND ${organizationMembers.status} IN ('INVITED', 'ACTIVE', 'SUSPENDED')`;
       queries.push(
+        countQuery(
+          "member_profiles",
+          strict
+            ? "Organization member profile history"
+            : "Current organization member profiles",
+          sql`${users} INNER JOIN ${organizationMembers} ON ${organizationMembers.userId} = ${users.id} AND ${organizationMembers.orgId} = ${orgId}`,
+          sql`${users.branchId} = ${unitId} ${memberStatus}`,
+        ),
         countQuery(
           "client_accounts",
           "Client accounts assigned to this branch",
@@ -136,9 +156,13 @@ export class OrgHierarchyDependenciesService {
         ),
         countQuery(
           "warehouses",
-          "Inventory warehouses assigned to this branch",
+          strict
+            ? "Inventory warehouse history"
+            : "Active inventory warehouses assigned to this branch",
           sql`${invWarehouses}`,
-          sql`${invWarehouses.orgId} = ${orgId} AND ${invWarehouses.branchId} = ${unitId}`,
+          sql`${invWarehouses.orgId} = ${orgId} AND ${invWarehouses.branchId} = ${unitId} ${
+            strict ? sql`` : sql`AND ${invWarehouses.isActive} = true`
+          }`,
         ),
         countQuery(
           "incentive_rules",
@@ -165,7 +189,18 @@ export class OrgHierarchyDependenciesService {
       const currentEmployment = strict
         ? sql``
         : sql`AND ${hrEmployments.lifecycleStatus} NOT IN ('EXITED', 'ALUMNI')`;
+      const memberStatus = strict
+        ? sql``
+        : sql`AND ${organizationMembers.status} IN ('INVITED', 'ACTIVE', 'SUSPENDED')`;
       queries.push(
+        countQuery(
+          "member_profiles",
+          strict
+            ? "Organization member profile history"
+            : "Current organization member profiles",
+          sql`${users} INNER JOIN ${organizationMembers} ON ${organizationMembers.userId} = ${users.id} AND ${organizationMembers.orgId} = ${orgId}`,
+          sql`${users.orgDepartmentId} = ${unitId} ${memberStatus}`,
+        ),
         countQuery(
           "employee_assignments",
           strict ? "Employee history" : "Current employee assignments",
@@ -174,21 +209,37 @@ export class OrgHierarchyDependenciesService {
         ),
         countQuery(
           "positions",
-          "Positions assigned to this department",
+          strict
+            ? "Position history"
+            : "Current positions assigned to this department",
           sql`${hrPositions}`,
-          sql`${hrPositions.orgId} = ${orgId} AND ${hrPositions.departmentId} = ${unitId}`,
+          sql`${hrPositions.orgId} = ${orgId} AND ${hrPositions.departmentId} = ${unitId} ${
+            strict ? sql`` : sql`AND ${hrPositions.deletedAt} IS NULL`
+          }`,
         ),
         countQuery(
           "job_postings",
-          "Job postings assigned to this department",
+          strict
+            ? "Job posting history"
+            : "Current job postings assigned to this department",
           sql`${jobPostings}`,
-          sql`${jobPostings.orgId} = ${orgId} AND ${jobPostings.orgDepartmentId} = ${unitId}`,
+          sql`${jobPostings.orgId} = ${orgId} AND ${jobPostings.orgDepartmentId} = ${unitId} ${
+            strict
+              ? sql``
+              : sql`AND ${jobPostings.status} NOT IN ('CLOSED', 'FILLED')`
+          }`,
         ),
         countQuery(
           "headcount_requests",
-          "Headcount requests assigned to this department",
+          strict
+            ? "Headcount request history"
+            : "Open headcount requests assigned to this department",
           sql`${headcountRequests}`,
-          sql`${headcountRequests.orgId} = ${orgId} AND ${headcountRequests.orgDepartmentId} = ${unitId}`,
+          sql`${headcountRequests.orgId} = ${orgId} AND ${headcountRequests.orgDepartmentId} = ${unitId} ${
+            strict
+              ? sql``
+              : sql`AND ${headcountRequests.status} NOT IN ('REJECTED', 'JOB_CREATED')`
+          }`,
         ),
         countQuery(
           "headcount_plans",
@@ -198,15 +249,25 @@ export class OrgHierarchyDependenciesService {
         ),
         countQuery(
           "onboarding_templates",
-          "Onboarding templates assigned to this department",
+          strict
+            ? "Onboarding template history"
+            : "Active onboarding templates assigned to this department",
           sql`${onboardingTemplates}`,
-          sql`${onboardingTemplates.orgId} = ${orgId} AND ${onboardingTemplates.departmentId} = ${unitId}`,
+          sql`${onboardingTemplates.orgId} = ${orgId} AND ${onboardingTemplates.departmentId} = ${unitId} ${
+            strict ? sql`` : sql`AND ${onboardingTemplates.isActive} = true`
+          }`,
         ),
         countQuery(
           "compensation_budgets",
-          "Compensation budgets assigned to this department",
-          sql`${hrCompBudgetPools}`,
-          sql`${hrCompBudgetPools.orgId} = ${orgId} AND ${hrCompBudgetPools.departmentId} = ${unitId}`,
+          strict
+            ? "Compensation budget history"
+            : "Open compensation budgets assigned to this department",
+          strict
+            ? sql`${hrCompBudgetPools}`
+            : sql`${hrCompBudgetPools} INNER JOIN ${hrCompCycles} ON ${hrCompCycles.id} = ${hrCompBudgetPools.cycleId} AND ${hrCompCycles.orgId} = ${orgId}`,
+          sql`${hrCompBudgetPools.orgId} = ${orgId} AND ${hrCompBudgetPools.departmentId} = ${unitId} ${
+            strict ? sql`` : sql`AND ${hrCompCycles.status} <> 'closed'`
+          }`,
         ),
       );
       if (strict) {
@@ -252,7 +313,56 @@ export class OrgHierarchyDependenciesService {
             strict ? sql`` : sql`AND ${hrTimeDevices.status} = 'active'`
           }`,
         ),
+        countQuery(
+          "emergency_events",
+          strict ? "Emergency event history" : "Active emergency events",
+          sql`${hrEmergencyEvents}`,
+          sql`${hrEmergencyEvents.orgId} = ${orgId} AND ${hrEmergencyEvents.locationId} = ${unitId} ${
+            strict ? sql`` : sql`AND ${hrEmergencyEvents.status} = 'active'`
+          }`,
+        ),
       );
+    }
+
+    if (kind === "COST_CENTER") {
+      const matchesUnitCodeOrName = (
+        value: SQLWrapper,
+      ) => sql`lower(trim(${value})) IN (
+        SELECT lower(trim(${orgUnits.code}))
+        FROM ${orgUnits}
+        WHERE ${orgUnits.orgId} = ${orgId} AND ${orgUnits.id} = ${unitId}
+        UNION ALL
+        SELECT lower(trim(${orgUnits.name}))
+        FROM ${orgUnits}
+        WHERE ${orgUnits.orgId} = ${orgId} AND ${orgUnits.id} = ${unitId}
+      )`;
+      queries.push(
+        countQuery(
+          "salary_profiles",
+          strict
+            ? "Employee salary profile history"
+            : "Current employee salary profiles",
+          sql`${employeeSalaryProfiles}`,
+          sql`${employeeSalaryProfiles.orgId} = ${orgId} AND ${matchesUnitCodeOrName(
+            employeeSalaryProfiles.costCenter,
+          )} ${
+            strict
+              ? sql``
+              : sql`AND ${employeeSalaryProfiles.status} IN ('UPCOMING', 'ACTIVE')`
+          }`,
+        ),
+      );
+      if (strict)
+        queries.push(
+          countQuery(
+            "payroll_journal_lines",
+            "Payroll journal history",
+            sql`${payrollJournalBatchLines}`,
+            sql`${payrollJournalBatchLines.orgId} = ${orgId} AND ${matchesUnitCodeOrName(
+              payrollJournalBatchLines.costCenter,
+            )}`,
+          ),
+        );
     }
 
     return queries;

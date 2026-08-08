@@ -83,7 +83,8 @@ export class OrgHierarchyController {
   @HttpCode(201)
   @RequirePermission("settings:organization:manage")
   createBusinessUnit(
-    @Body(new ZodValidationPipe(createBusinessUnitSchema)) body: CreateBusinessUnitInput,
+    @Body(new ZodValidationPipe(createBusinessUnitSchema))
+    body: CreateBusinessUnitInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.createBusinessUnit(u.orgId, u.userId, body);
@@ -93,10 +94,16 @@ export class OrgHierarchyController {
   @RequirePermission("settings:organization:manage")
   updateBusinessUnit(
     @Param("businessUnitId") businessUnitId: string,
-    @Body(new ZodValidationPipe(updateBusinessUnitSchema)) body: UpdateBusinessUnitInput,
+    @Body(new ZodValidationPipe(updateBusinessUnitSchema))
+    body: UpdateBusinessUnitInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.updateBusinessUnit(u.orgId, u.userId, businessUnitId, body);
+    return this.service.updateBusinessUnit(
+      u.orgId,
+      u.userId,
+      businessUnitId,
+      body,
+    );
   }
 
   @Delete("business-units/:businessUnitId")
@@ -106,7 +113,7 @@ export class OrgHierarchyController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.service.deleteBusinessUnit(u.orgId, u.userId, businessUnitId);
-    return { message: "Business unit deleted" };
+    return { message: "Business unit retired; its history was preserved" };
   }
 
   // ─── Org Branches ───────────────────────────────────────────────────
@@ -124,7 +131,8 @@ export class OrgHierarchyController {
   @HttpCode(201)
   @RequirePermission("settings:organization:manage")
   createOrgBranch(
-    @Body(new ZodValidationPipe(createOrgBranchSchema)) body: CreateOrgBranchInput,
+    @Body(new ZodValidationPipe(createOrgBranchSchema))
+    body: CreateOrgBranchInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.createOrgBranch(u.orgId, u.userId, body);
@@ -134,7 +142,8 @@ export class OrgHierarchyController {
   @RequirePermission("settings:organization:manage")
   updateOrgBranch(
     @Param("branchId") branchId: string,
-    @Body(new ZodValidationPipe(updateOrgBranchSchema)) body: UpdateOrgBranchInput,
+    @Body(new ZodValidationPipe(updateOrgBranchSchema))
+    body: UpdateOrgBranchInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.updateOrgBranch(u.orgId, u.userId, branchId, body);
@@ -147,7 +156,7 @@ export class OrgHierarchyController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.service.deleteOrgBranch(u.orgId, u.userId, branchId);
-    return { message: "Branch deleted" };
+    return { message: "Branch retired; its history was preserved" };
   }
 
   // ─── Departments ────────────────────────────────────────────────────
@@ -165,7 +174,8 @@ export class OrgHierarchyController {
   @HttpCode(201)
   @RequirePermission("settings:organization:manage")
   createDepartment(
-    @Body(new ZodValidationPipe(createOrgDepartmentSchema)) body: CreateOrgDepartmentInput,
+    @Body(new ZodValidationPipe(createOrgDepartmentSchema))
+    body: CreateOrgDepartmentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.createDepartment(u.orgId, u.userId, body);
@@ -175,7 +185,8 @@ export class OrgHierarchyController {
   @RequirePermission("settings:organization:manage")
   updateDepartment(
     @Param("departmentId") departmentId: string,
-    @Body(new ZodValidationPipe(updateOrgDepartmentSchema)) body: UpdateOrgDepartmentInput,
+    @Body(new ZodValidationPipe(updateOrgDepartmentSchema))
+    body: UpdateOrgDepartmentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.updateDepartment(u.orgId, u.userId, departmentId, body);
@@ -188,7 +199,7 @@ export class OrgHierarchyController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.service.deleteDepartment(u.orgId, u.userId, departmentId);
-    return { message: "Department deleted" };
+    return { message: "Department retired; its history was preserved" };
   }
 
   // ─── Teams ──────────────────────────────────────────────────────────
@@ -229,7 +240,7 @@ export class OrgHierarchyController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.service.deleteTeam(u.orgId, u.userId, teamId);
-    return { message: "Team deleted" };
+    return { message: "Team retired; its history was preserved" };
   }
 
   // ─── Locations ──────────────────────────────────────────────────────
@@ -244,7 +255,8 @@ export class OrgHierarchyController {
   @HttpCode(201)
   @RequirePermission("settings:organization:manage")
   createLocation(
-    @Body(new ZodValidationPipe(createOrgLocationSchema)) body: CreateOrgLocationInput,
+    @Body(new ZodValidationPipe(createOrgLocationSchema))
+    body: CreateOrgLocationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.createLocation(u.orgId, u.userId, body);
@@ -254,7 +266,8 @@ export class OrgHierarchyController {
   @RequirePermission("settings:organization:manage")
   updateLocation(
     @Param("locationId") locationId: string,
-    @Body(new ZodValidationPipe(updateOrgLocationSchema)) body: UpdateOrgLocationInput,
+    @Body(new ZodValidationPipe(updateOrgLocationSchema))
+    body: UpdateOrgLocationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.updateLocation(u.orgId, u.userId, locationId, body);
@@ -267,7 +280,7 @@ export class OrgHierarchyController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.service.deleteLocation(u.orgId, u.userId, locationId);
-    return { message: "Location deleted" };
+    return { message: "Location retired; its history was preserved" };
   }
 
   // ─── Cost Centers ────────────────────────────────────────────────────
@@ -282,7 +295,8 @@ export class OrgHierarchyController {
   @HttpCode(201)
   @RequirePermission("settings:organization:manage")
   createCostCenter(
-    @Body(new ZodValidationPipe(createCostCenterSchema)) body: CreateCostCenterInput,
+    @Body(new ZodValidationPipe(createCostCenterSchema))
+    body: CreateCostCenterInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.createCostCenter(u.orgId, u.userId, body);
@@ -292,7 +306,8 @@ export class OrgHierarchyController {
   @RequirePermission("settings:organization:manage")
   updateCostCenter(
     @Param("costCenterId") costCenterId: string,
-    @Body(new ZodValidationPipe(updateCostCenterSchema)) body: UpdateCostCenterInput,
+    @Body(new ZodValidationPipe(updateCostCenterSchema))
+    body: UpdateCostCenterInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.updateCostCenter(u.orgId, u.userId, costCenterId, body);
@@ -305,7 +320,7 @@ export class OrgHierarchyController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.service.deleteCostCenter(u.orgId, u.userId, costCenterId);
-    return { message: "Cost center deleted" };
+    return { message: "Cost center retired; its history was preserved" };
   }
 
   @Patch("business-units/:businessUnitId/move")
@@ -315,7 +330,11 @@ export class OrgHierarchyController {
     @Body() body: { parentId: string | null },
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.moveBusinessUnit(u.orgId, businessUnitId, body.parentId ?? null);
+    return this.service.moveBusinessUnit(
+      u.orgId,
+      businessUnitId,
+      body.parentId ?? null,
+    );
   }
 
   @Patch("branches/:branchId/move")
@@ -325,7 +344,11 @@ export class OrgHierarchyController {
     @Body() body: { businessUnitId: string | null },
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.moveBranch(u.orgId, branchId, body.businessUnitId ?? null);
+    return this.service.moveBranch(
+      u.orgId,
+      branchId,
+      body.businessUnitId ?? null,
+    );
   }
 
   @Patch("departments/:departmentId/move")
@@ -335,7 +358,11 @@ export class OrgHierarchyController {
     @Body() body: { branchId: string | null },
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.moveDepartment(u.orgId, departmentId, body.branchId ?? null);
+    return this.service.moveDepartment(
+      u.orgId,
+      departmentId,
+      body.branchId ?? null,
+    );
   }
 
   @Patch("teams/:teamId/move")

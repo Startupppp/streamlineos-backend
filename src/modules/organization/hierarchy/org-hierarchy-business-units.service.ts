@@ -22,6 +22,7 @@ import type {
 const ORG_BU_COLUMNS = {
   id: orgUnits.id,
   orgId: orgUnits.orgId,
+  parentId: orgUnits.parentId,
   name: orgUnits.name,
   code: orgUnits.code,
   description: orgUnits.description,
@@ -35,6 +36,7 @@ type OrgBusinessUnitRow = Pick<
   typeof orgUnits.$inferSelect,
   | "id"
   | "orgId"
+  | "parentId"
   | "name"
   | "code"
   | "description"
@@ -48,6 +50,7 @@ export function toOrgBusinessUnit(row: OrgBusinessUnitRow) {
   return {
     id: row.id,
     orgId: row.orgId,
+    parentId: row.parentId,
     name: row.name,
     code: row.code,
     description: row.description,

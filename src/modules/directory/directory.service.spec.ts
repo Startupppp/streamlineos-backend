@@ -267,6 +267,34 @@ describe("DirectoryService", () => {
         }),
       );
     });
+
+    it("uses normalized personal email as the identity fallback", async () => {
+      const row = makePerson({
+        workEmail: null,
+        personalEmail: "jane.personal@example.com",
+      });
+      (mockDb as { insert: jest.Mock }).insert.mockReturnValue({
+        values: jest.fn().mockReturnValue({
+          returning: jest.fn().mockReturnValue({
+            catch: jest.fn().mockResolvedValue([row]),
+          }),
+        }),
+      });
+
+      await svc.createPerson(ORG_ID, USER_ID, {
+        firstName: "Jane",
+        lastName: "Doe",
+        personalEmail: " JANE.PERSONAL@EXAMPLE.COM ",
+      });
+
+      expect(mockIdentities.resolveLinkForPersonWrite).toHaveBeenCalledWith(
+        ORG_ID,
+        expect.objectContaining({
+          workEmail: undefined,
+          personalEmail: "jane.personal@example.com",
+        }),
+      );
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -406,6 +434,11 @@ describe("DirectoryService", () => {
       const result = await svc.listPeople(ORG_ID, { page: 1, limit: 20 });
 
       expect(result.data).toHaveLength(2);
+      expect(mockIdentities.resolvePeopleAccess).toHaveBeenCalledTimes(1);
+      expect(mockIdentities.resolvePeopleAccess).toHaveBeenCalledWith(
+        ORG_ID,
+        rows,
+      );
       expect(result.pagination).toEqual({
         page: 1,
         limit: 20,
@@ -574,6 +607,8 @@ describe("DirectoryService", () => {
       ];
 
       let selectCount = 0;
+      const countWhere = jest.fn().mockResolvedValue([{ total: 1 }]);
+      const countInnerJoin = jest.fn().mockReturnValue({ where: countWhere });
       (mockDb as { select: jest.Mock }).select.mockImplementation(() => {
         selectCount++;
         if (selectCount === 1) {
@@ -590,15 +625,19 @@ describe("DirectoryService", () => {
             }),
           };
         }
-        // Count: .select({total}).from().where()
+        // Count mirrors the person join because search filters use person fields.
         return {
           from: jest.fn().mockReturnValue({
-            where: jest.fn().mockResolvedValue([{ total: 1 }]),
+            innerJoin: countInnerJoin,
           }),
         };
       });
 
-      const result = await svc.listWorkers(ORG_ID, { page: 1, limit: 20 });
+      const result = await svc.listWorkers(ORG_ID, {
+        page: 1,
+        limit: 20,
+        search: "Jane",
+      });
 
       expect(result.data).toHaveLength(1);
       expect(result.pagination).toEqual({
@@ -607,6 +646,8 @@ describe("DirectoryService", () => {
         total: 1,
         totalPages: 1,
       });
+      expect(countInnerJoin).toHaveBeenCalledTimes(1);
+      expect(countWhere).toHaveBeenCalledTimes(1);
     });
   });
 

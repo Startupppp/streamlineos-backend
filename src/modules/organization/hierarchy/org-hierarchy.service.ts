@@ -116,6 +116,15 @@ export class OrgHierarchyService {
     if (body.status === "ARCHIVED") {
       await this.dependencies.assertCanArchive(orgId, id, "BUSINESS_UNIT");
     }
+    if (body.status === "ACTIVE") {
+      const existing = await this.businessUnits.getBusinessUnit(orgId, id);
+      await this.assertActiveParent(
+        orgId,
+        existing?.parentId,
+        "BUSINESS_UNIT",
+        "business unit",
+      );
+    }
     return this.businessUnits.updateBusinessUnit(orgId, userId, id, body);
   }
 
@@ -125,6 +134,12 @@ export class OrgHierarchyService {
   }
 
   async moveBusinessUnit(orgId: string, buId: string, newParentId: string | null) {
+    await this.assertActiveParent(
+      orgId,
+      newParentId,
+      "BUSINESS_UNIT",
+      "business unit",
+    );
     return this.businessUnits.moveBusinessUnit(orgId, buId, newParentId);
   }
 
