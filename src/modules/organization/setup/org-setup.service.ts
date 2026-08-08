@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { ORG_MEMBER_ROLES } from "../../../common/rbac/org-roles";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
@@ -27,6 +27,8 @@ import {
   runInTenantTransaction,
 } from "../../../common/tenant/run-in-tenant-transaction";
 import type { TenantTx } from "../../../common/tenant/with-tenant";
+import { withIdentity } from "../../../common/tenant/with-identity";
+import { runOutsideTenantContext } from "../../../common/tenant/tenant-context";
 import {
   DEFAULT_SKIP_MODULES,
   provisionOrgModules,
@@ -40,6 +42,22 @@ import {
 } from "../../billing/core/plan-entitlements.constants";
 
 export { DEFAULT_SKIP_MODULES, provisionOrgModules };
+
+type SetupMembership = {
+  id: number;
+  orgId: string;
+  existingOrgId: string | null;
+  orgName: string | null;
+  orgStatus: string | null;
+  orgDeletedAt: Date | null;
+  status: "INVITED" | "ACTIVE" | "SUSPENDED" | "LEFT";
+  isOwner: boolean;
+};
+
+type SetupTarget = {
+  orgId: string;
+  isOwner: boolean;
+};
 
 @Injectable()
 export class OrgSetupService {
@@ -78,13 +96,15 @@ export class OrgSetupService {
     sendWelcome?: boolean;
   }): void {
     setImmediate(() => {
-      void this.runPostSetupWork(input).catch((error: unknown) => {
-        logger.error("Organization post-setup work failed", {
-          orgId: input.orgId,
-          userId: input.userId,
-          error,
-        });
-      });
+      void runOutsideTenantContext(() => this.runPostSetupWork(input)).catch(
+        (error: unknown) => {
+          logger.error("Organization post-setup work failed", {
+            orgId: input.orgId,
+            userId: input.userId,
+            error,
+          });
+        },
+      );
     });
   }
 
@@ -96,19 +116,47 @@ export class OrgSetupService {
     skipReason?: string;
     sendWelcome?: boolean;
   }): Promise<void> {
+    const roleWork = runInTenantTransaction(
+      this.db,
+      () => seedSystemRolesForOrg(this.db, input.orgId),
+      { orgId: input.orgId },
+    );
+    const checklistWork = runInTenantTransaction(
+      this.db,
+      () =>
+        this.checklists.ensureChecklistsForModules(
+          input.orgId,
+          input.moduleKeys,
+        ),
+      { orgId: input.orgId },
+    );
     const sessionWork =
       input.sessionAction === "complete"
-        ? this.sessions.completeSession(input.orgId, input.userId, "org_setup")
-        : this.sessions.skipSession(
-            input.orgId,
-            input.userId,
-            "org_setup",
-            input.skipReason,
+        ? runInTenantTransaction(
+            this.db,
+            () =>
+              this.sessions.completeSession(
+                input.orgId,
+                input.userId,
+                "org_setup",
+              ),
+            { orgId: input.orgId },
+          )
+        : runInTenantTransaction(
+            this.db,
+            () =>
+              this.sessions.skipSession(
+                input.orgId,
+                input.userId,
+                "org_setup",
+                input.skipReason,
+              ),
+            { orgId: input.orgId },
           );
 
     const work = await Promise.allSettled([
-      seedSystemRolesForOrg(this.db, input.orgId),
-      this.checklists.ensureChecklistsForModules(input.orgId, input.moduleKeys),
+      roleWork,
+      checklistWork,
       sessionWork,
       ...(input.sendWelcome ? [this.sendWelcome(input.userId)] : []),
     ]);
@@ -136,46 +184,125 @@ export class OrgSetupService {
     );
   }
 
-  private async resolveOrCreateOrg(
+  private async listSetupMemberships(userId: string): Promise<SetupMembership[]> {
+    return withIdentity(this.db, userId, (tx) =>
+      tx
+        .select({
+          id: organizationMembers.id,
+          orgId: organizationMembers.orgId,
+          existingOrgId: organizations.id,
+          orgName: organizations.name,
+          orgStatus: organizations.status,
+          orgDeletedAt: organizations.deletedAt,
+          status: organizationMembers.status,
+          isOwner: organizationMembers.isOwner,
+        })
+        .from(organizationMembers)
+        .leftJoin(
+          organizations,
+          eq(organizations.id, organizationMembers.orgId),
+        )
+        .where(eq(organizationMembers.userId, userId))
+        .orderBy(desc(organizationMembers.joinedAt)),
+    );
+  }
+
+  private suspendedAccessError(organizationName: string | null) {
+    const displayName = organizationName?.trim() || "this organization";
+    return new ForbiddenException({
+      code: "ORG_MEMBERSHIP_SUSPENDED",
+      message: `Your access to ${displayName} is suspended. Ask an organization admin to restore it.`,
+      details: { organizationName },
+    });
+  }
+
+  private async resolveCurrentSetupTarget(
     u: CurrentUserContext,
-    input: Pick<SetupInput, "companyName">,
-  ): Promise<string> {
-    if (u.orgId) {
-      const existingOrg = await this.db.query.organizations.findFirst({
+  ): Promise<SetupTarget | null> {
+    if (!u.orgId) return null;
+
+    const [membership, organization] = await Promise.all([
+      this.db.query.organizationMembers.findFirst({
+        where: and(
+          eq(organizationMembers.userId, u.userId),
+          eq(organizationMembers.orgId, u.orgId),
+        ),
+        columns: { status: true, isOwner: true },
+      }),
+      this.db.query.organizations.findFirst({
         where: and(
           eq(organizations.id, u.orgId),
           eq(organizations.status, "ACTIVE"),
           isNull(organizations.deletedAt),
         ),
-        columns: { id: true },
-      });
-      if (existingOrg) {
-        return u.orgId;
-      }
+        columns: { id: true, name: true },
+      }),
+    ]);
+
+    if (!organization || !membership) return null;
+    if (membership.status === "ACTIVE") {
+      return { orgId: organization.id, isOwner: membership.isOwner };
+    }
+    if (membership.status === "SUSPENDED") {
+      throw this.suspendedAccessError(organization.name);
+    }
+    return null;
+  }
+
+  private resolveExistingSetupTarget(
+    u: CurrentUserContext,
+    memberships: SetupMembership[],
+  ): SetupTarget | null {
+    const isAvailable = (membership: SetupMembership) =>
+      membership.existingOrgId !== null &&
+      membership.orgStatus === "ACTIVE" &&
+      membership.orgDeletedAt === null;
+
+    const active =
+      memberships.find(
+        (membership) =>
+          membership.orgId === u.orgId &&
+          membership.status === "ACTIVE" &&
+          isAvailable(membership),
+      ) ??
+      memberships.find(
+        (membership) =>
+          membership.status === "ACTIVE" && isAvailable(membership),
+      );
+
+    if (active) {
+      return { orgId: active.orgId, isOwner: active.isOwner };
     }
 
-    const memberships = await this.db
-      .select({
-        id: organizationMembers.id,
-        orgId: organizationMembers.orgId,
-        existingOrgId: organizations.id,
-        orgStatus: organizations.status,
-        orgDeletedAt: organizations.deletedAt,
-      })
-      .from(organizationMembers)
-      .leftJoin(organizations, eq(organizations.id, organizationMembers.orgId))
-      .where(eq(organizationMembers.userId, u.userId))
-      .orderBy(desc(organizationMembers.joinedAt));
+    const suspended =
+      memberships.find(
+        (membership) =>
+          membership.orgId === u.orgId &&
+          membership.status === "SUSPENDED" &&
+          isAvailable(membership),
+      ) ??
+      memberships.find(
+        (membership) =>
+          membership.status === "SUSPENDED" && isAvailable(membership),
+      );
 
-    const valid = memberships.find(
-      (m) =>
-        m.existingOrgId !== null &&
-        m.orgStatus === "ACTIVE" &&
-        m.orgDeletedAt === null,
-    );
-    if (valid) {
-      return valid.orgId;
+    if (suspended) {
+      throw this.suspendedAccessError(suspended.orgName);
     }
+
+    return null;
+  }
+
+  private async resolveOrCreateOrg(
+    u: CurrentUserContext,
+    input: Pick<SetupInput, "companyName">,
+  ): Promise<SetupTarget> {
+    const currentTarget = await this.resolveCurrentSetupTarget(u);
+    if (currentTarget) return currentTarget;
+
+    const memberships = await this.listSetupMemberships(u.userId);
+    const existingTarget = this.resolveExistingSetupTarget(u, memberships);
+    if (existingTarget) return existingTarget;
 
     const orphansByOrg = new Map<string, number[]>();
     for (const m of memberships) {
@@ -247,7 +374,7 @@ export class OrgSetupService {
       targetId: orgId,
       targetType: "organization",
     });
-    return orgId;
+    return { orgId, isOwner: true };
   }
 
   private provisionOrgModules(
@@ -260,8 +387,9 @@ export class OrgSetupService {
   }
 
   async completeSetup(u: CurrentUserContext, input: SetupInput) {
-    const orgId = await this.resolveOrCreateOrg(u, input);
-    if (u.orgId && !u.isOrgOwner) return { success: true, orgId };
+    const target = await this.resolveOrCreateOrg(u, input);
+    const { orgId } = target;
+    if (!target.isOwner) return { success: true, orgId };
 
     const autoLoginToken = randomBytes(32).toString("hex");
 
@@ -332,16 +460,46 @@ export class OrgSetupService {
   }
 
   async getSetupSession(u: CurrentUserContext) {
-    if (!u.orgId) return this.ephemeralSession();
-    return this.sessions.getOrCreateSession(u.orgId, u.userId, "org_setup");
+    const currentTarget = await this.resolveCurrentSetupTarget(u);
+    if (currentTarget) {
+      return runInTenantTransaction(
+        this.db,
+        () =>
+          this.sessions.getOrCreateSession(
+            currentTarget.orgId,
+            u.userId,
+            "org_setup",
+          ),
+        { orgId: currentTarget.orgId },
+      );
+    }
+
+    const memberships = await this.listSetupMemberships(u.userId);
+    const target = this.resolveExistingSetupTarget(u, memberships);
+    if (!target) return this.ephemeralSession();
+    return runInTenantTransaction(
+      this.db,
+      () =>
+        this.sessions.getOrCreateSession(
+          target.orgId,
+          u.userId,
+          "org_setup",
+        ),
+      { orgId: target.orgId },
+    );
   }
 
   /** Minimal-defaults path for "Set up later" — mirrors the frontend's existing skip defaults. */
   async skipSetup(u: CurrentUserContext, reason?: string) {
-    const orgId = await this.resolveOrCreateOrg(u, {});
+    const target = await this.resolveOrCreateOrg(u, {});
+    const { orgId } = target;
 
-    if (u.orgId && !u.isOrgOwner) {
-      await this.sessions.skipSession(orgId, u.userId, "org_setup", reason);
+    if (!target.isOwner) {
+      await runInTenantTransaction(
+        this.db,
+        () => this.sessions.skipSession(orgId, u.userId, "org_setup", reason),
+        { orgId },
+      );
       return { success: true, orgId };
     }
 

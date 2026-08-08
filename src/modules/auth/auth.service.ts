@@ -168,6 +168,8 @@ export class AuthService {
     orgOnboardingCompletedAt: string | null;
     userOnboardingCompletedAt: string | null;
     plan: string | null;
+    organizationAccess: "active" | "suspended" | "none";
+    suspendedOrganizationName: string | null;
   }> {
     return this.cache.cached(
       CACHE_KEYS.userSession(userId),
@@ -200,7 +202,14 @@ export class AuthService {
         const membership = await this.authTokens.resolveActiveMembership(
           userId,
           user.lastActiveOrgId ?? null,
+          { honorSuspendedPreference: true },
         );
+        const suspendedMembership = membership
+          ? null
+          : await this.authTokens.resolveSuspendedMembership(
+              userId,
+              user.lastActiveOrgId ?? null,
+            );
 
         let enabledModules: string[] = [];
         let orgOnboardingCompletedAt: string | null = null;
@@ -255,6 +264,12 @@ export class AuthService {
           userOnboardingCompletedAt:
             user.onboardingCompletedAt?.toISOString() ?? null,
           plan,
+          organizationAccess: membership
+            ? "active"
+            : suspendedMembership
+              ? "suspended"
+              : "none",
+          suspendedOrganizationName: suspendedMembership?.orgName ?? null,
         };
       },
       60,

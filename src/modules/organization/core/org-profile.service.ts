@@ -7,7 +7,12 @@ import {
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
-import { organizationMembers, organizations, subscriptions, users } from "../../../db/schema";
+import {
+  organizationMembers,
+  organizations,
+  subscriptions,
+  users,
+} from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { seedSystemRolesForOrg } from "../../rbac/seed-system-roles";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
@@ -18,12 +23,16 @@ import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import type { CreateOrganizationInput } from "./dto/organization.schemas";
 import { addDays } from "date-fns";
 import { bumpPermissionsVersion } from "../../../common/rbac/access-invalidate";
-import { getTrialDays, TRIAL_PLAN } from "../../billing/core/plan-entitlements.constants";
+import {
+  getTrialDays,
+  TRIAL_PLAN,
+} from "../../billing/core/plan-entitlements.constants";
 import {
   provisionOrgModules,
   DEFAULT_SKIP_MODULES,
 } from "../../../common/org/provision-org-modules";
 import { provisionEmployeeSelfService } from "../../../common/org/provision-employee-self-service";
+import { withIdentity } from "../../../common/tenant/with-identity";
 
 @Injectable()
 export class OrgProfileService {
@@ -34,25 +43,30 @@ export class OrgProfileService {
   ) {}
 
   async listUserOrganizations(userId: string) {
-    const memberships = await this.db
-      .select({
-        id: organizations.id,
-        name: organizations.name,
-        slug: organizations.slug,
-        role: organizationMembers.role,
-        joinedAt: organizationMembers.joinedAt,
-      })
-      .from(organizationMembers)
-      .innerJoin(organizations, eq(organizations.id, organizationMembers.orgId))
-      .where(
-        and(
-          eq(organizationMembers.userId, userId),
-          eq(organizationMembers.status, "ACTIVE"),
-          eq(organizations.status, "ACTIVE"),
-          isNull(organizations.deletedAt),
-        ),
-      )
-      .orderBy(desc(organizationMembers.joinedAt));
+    const memberships = await withIdentity(this.db, userId, (tx) =>
+      tx
+        .select({
+          id: organizations.id,
+          name: organizations.name,
+          slug: organizations.slug,
+          role: organizationMembers.role,
+          joinedAt: organizationMembers.joinedAt,
+        })
+        .from(organizationMembers)
+        .innerJoin(
+          organizations,
+          eq(organizations.id, organizationMembers.orgId),
+        )
+        .where(
+          and(
+            eq(organizationMembers.userId, userId),
+            eq(organizationMembers.status, "ACTIVE"),
+            eq(organizations.status, "ACTIVE"),
+            isNull(organizations.deletedAt),
+          ),
+        )
+        .orderBy(desc(organizationMembers.joinedAt)),
+    );
 
     return memberships.map((m) => ({
       id: m.id,
@@ -64,67 +78,70 @@ export class OrgProfileService {
   }
 
   async switchOrg(userId: string, targetOrgId: string) {
-    const membership = await this.db.query.organizationMembers.findFirst({
-      where: and(
-        eq(organizationMembers.userId, userId),
-        eq(organizationMembers.orgId, targetOrgId),
-      ),
-      columns: { role: true, status: true },
+    const result = await withIdentity(this.db, userId, async (tx) => {
+      const membership = await tx.query.organizationMembers.findFirst({
+        where: and(
+          eq(organizationMembers.userId, userId),
+          eq(organizationMembers.orgId, targetOrgId),
+        ),
+        columns: { role: true, status: true },
+      });
+      if (!membership)
+        throw new BadRequestException(
+          "You are not a member of this organization",
+        );
+
+      if (membership.status === "SUSPENDED")
+        throw new ConflictException(
+          "Your membership in this organization is suspended. Ask an admin to restore access.",
+        );
+
+      if (membership.status === "LEFT")
+        throw new ForbiddenException(
+          "You are no longer a member of this organization",
+        );
+
+      if (membership.status !== "ACTIVE")
+        throw new ForbiddenException(
+          "You are not an active member of this organization",
+        );
+
+      const [org] = await tx
+        .select({
+          id: organizations.id,
+          name: organizations.name,
+          slug: organizations.slug,
+          status: organizations.status,
+          deletedAt: organizations.deletedAt,
+        })
+        .from(organizations)
+        .where(eq(organizations.id, targetOrgId))
+        .limit(1);
+      if (!org) throw new BadRequestException("Organization not found");
+      if (org.status !== "ACTIVE" || org.deletedAt !== null) {
+        throw new ConflictException(
+          "This organization is archived or unavailable. Restore it before switching to it.",
+        );
+      }
+
+      await tx
+        .update(users)
+        .set({ lastActiveOrgId: targetOrgId })
+        .where(eq(users.id, userId));
+
+      return {
+        orgId: org.id,
+        name: org.name,
+        slug: org.slug,
+        role: membership.role,
+      };
     });
-    if (!membership) {
-      throw new BadRequestException(
-        "You are not a member of this organization",
-      );
-    }
-    if (membership.status === "SUSPENDED") {
-      throw new ConflictException(
-        "Your membership in this organization is suspended. Ask an admin to restore access.",
-      );
-    }
-    if (membership.status === "LEFT") {
-      throw new ForbiddenException(
-        "You are no longer a member of this organization",
-      );
-    }
-    if (membership.status !== "ACTIVE") {
-      throw new ForbiddenException(
-        "You are not an active member of this organization",
-      );
-    }
-
-    const [org] = await this.db
-      .select({
-        id: organizations.id,
-        name: organizations.name,
-        slug: organizations.slug,
-        status: organizations.status,
-        deletedAt: organizations.deletedAt,
-      })
-      .from(organizations)
-      .where(eq(organizations.id, targetOrgId))
-      .limit(1);
-    if (!org) throw new BadRequestException("Organization not found");
-    if (org.status !== "ACTIVE" || org.deletedAt !== null) {
-      throw new ConflictException(
-        "This organization is archived or unavailable. Restore it before switching to it.",
-      );
-    }
-
-    await this.db
-      .update(users)
-      .set({ lastActiveOrgId: targetOrgId })
-      .where(eq(users.id, userId));
 
     await this.cache.invalidate(CACHE_KEYS.userSession(userId));
 
     this.audit.log({ action: "org.switched", userId, orgId: targetOrgId });
 
-    return {
-      orgId: org.id,
-      name: org.name,
-      slug: org.slug,
-      role: membership.role,
-    };
+    return result;
   }
 
   async createOrganization(userId: string, input: CreateOrganizationInput) {
@@ -187,7 +204,10 @@ export class OrgProfileService {
       await bumpPermissionsVersion(tx, orgId);
       await seedSystemRolesForOrg(this.db, orgId);
       await provisionOrgModules(tx, orgId, DEFAULT_SKIP_MODULES, userId);
-      await tx.update(users).set({ lastActiveOrgId: orgId }).where(eq(users.id, userId));
+      await tx
+        .update(users)
+        .set({ lastActiveOrgId: orgId })
+        .where(eq(users.id, userId));
     });
 
     await this.cache.invalidate(CACHE_KEYS.userSession(userId));

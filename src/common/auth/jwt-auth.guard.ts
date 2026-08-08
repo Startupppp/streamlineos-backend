@@ -173,7 +173,15 @@ export class JwtAuthGuard implements CanActivate {
         const state = await this.membership.resolve(claims.sub, orgId);
         if (!state.active) {
           if (!allowNoOrg) {
-            throw new UnauthorizedException("Unauthorized");
+            // The login is still valid; only this organization membership is
+            // no longer usable. A 401 would incorrectly sign the person out of
+            // every other organization and can send a stale browser session
+            // back through first-time organization setup.
+            throw new ForbiddenException({
+              code: "ORG_MEMBERSHIP_INACTIVE",
+              message:
+                "Your access to this organization is no longer active. Refresh to continue with an available organization.",
+            });
           }
           resolvedOrgId = "";
         } else {

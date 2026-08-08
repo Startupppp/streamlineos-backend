@@ -6,9 +6,14 @@ import { NotificationDispatchService } from "../../notifications/notification-di
 import { OrgMembershipService } from "./org-membership.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { SessionsService } from "../../sessions/sessions.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
-import { orgUnitMembers } from "../../../db/schema";
+import { orgUnitMembers, users } from "../../../db/schema";
+import {
+  runWithTenantContext,
+  type AfterCommitHook,
+} from "../../../common/tenant/tenant-context";
 
 const ORG_ID = "org-1";
 const ACTOR_ID = "actor-1";
@@ -99,12 +104,15 @@ function makeSelectChain(result: unknown[], endWithLimit = false) {
   const chain: Record<string, unknown> = {};
   chain.from = jest.fn().mockReturnValue(chain);
   chain.innerJoin = jest.fn().mockReturnValue(chain);
-  chain.where = jest.fn().mockImplementation(() => {
+  chain.leftJoin = jest.fn().mockReturnValue(chain);
+  const awaitableResult = () => {
     const awaitable: Record<string, unknown> = Object.create(chain);
     awaitable["then"] = (resolve: (value: unknown[]) => unknown) =>
       Promise.resolve(result).then(resolve);
     return awaitable;
-  });
+  };
+  chain.orderBy = jest.fn().mockImplementation(awaitableResult);
+  chain.where = jest.fn().mockImplementation(awaitableResult);
   if (endWithLimit) {
     chain.for = jest.fn().mockReturnValue({
       limit: jest.fn().mockResolvedValue(result),
@@ -352,13 +360,16 @@ describe("OrgMembershipService — module-ownership guards", () => {
       expect(revokeAllForUser).not.toHaveBeenCalled();
     });
 
-    it("removes organization-unit membership in the lifecycle transaction", async () => {
+    it("preserves the selected suspended org and invalidates again after commit", async () => {
       const findFirst = jest.fn().mockResolvedValue({
         isOwner: false,
         status: "ACTIVE",
         id: 4,
       });
-      const tx = buildTxMock([{ result: [] }, { result: [] }]);
+      const tx = buildTxMock([
+        { result: [] },
+        { result: [] },
+      ]);
       const db = {
         query: { organizationMembers: { findFirst } },
         transaction: jest.fn().mockImplementation(
@@ -371,11 +382,98 @@ describe("OrgMembershipService — module-ownership guards", () => {
         }),
       };
       const svc = await buildService(db);
+      const afterCommit: AfterCommitHook[] = [];
 
-      await svc.suspendMember(ORG_ID, ACTOR_ID, MEMBER_ID);
+      await runWithTenantContext(
+        {
+          orgId: ORG_ID,
+          audience: "INTERNAL",
+          tx: tx as never,
+          afterCommit,
+        },
+        () => svc.suspendMember(ORG_ID, ACTOR_ID, MEMBER_ID),
+      );
 
       expect(tx.delete).toHaveBeenCalledWith(orgUnitMembers);
       expect(revokeAllForUser).not.toHaveBeenCalled();
+      expect(cacheInvalidate).toHaveBeenCalledWith(
+        CACHE_KEYS.userSession(MEMBER_ID),
+      );
+      expect(tx.update).not.toHaveBeenCalledWith(users);
+      expect(afterCommit).toHaveLength(1);
+
+      await afterCommit[0]?.();
+      expect(
+        cacheInvalidate.mock.calls.filter(
+          ([key]) => key === CACHE_KEYS.userSession(MEMBER_ID),
+        ),
+      ).toHaveLength(2);
+    });
+
+    it("selects the restored organization without changing global account state", async () => {
+      const findFirst = jest
+        .fn()
+        .mockResolvedValueOnce({ status: "SUSPENDED" })
+        .mockResolvedValueOnce({
+          isOwner: false,
+          status: "SUSPENDED",
+          id: 4,
+        });
+      const tx = buildTxMock([
+        {
+          result: [{ previousOrgId: null, activeOrgId: null }],
+        },
+      ]);
+      const db = {
+        query: { organizationMembers: { findFirst } },
+        transaction: jest.fn().mockImplementation(
+          async (fn: (transaction: unknown) => Promise<unknown>) => fn(tx),
+        ),
+      };
+      const svc = await buildService(db);
+
+      await svc.reactivateMember(ORG_ID, ACTOR_ID, MEMBER_ID);
+
+      expect(tx.update).toHaveBeenCalledWith(users);
+      const updateBuilder = tx.update.mock.results[1]?.value as {
+        set: jest.Mock;
+      };
+      expect(updateBuilder.set).toHaveBeenCalledWith({
+        lastActiveOrgId: ORG_ID,
+      });
+    });
+
+    it("does not pull a restored member away from another active organization", async () => {
+      const findFirst = jest
+        .fn()
+        .mockResolvedValueOnce({ status: "SUSPENDED" })
+        .mockResolvedValueOnce({
+          isOwner: false,
+          status: "SUSPENDED",
+          id: 4,
+        });
+      const tx = buildTxMock([
+        {
+          result: [
+            { previousOrgId: "org-2", activeOrgId: "org-2" },
+            { previousOrgId: "org-2", activeOrgId: null },
+          ],
+        },
+      ]);
+      const db = {
+        query: { organizationMembers: { findFirst } },
+        transaction: jest.fn().mockImplementation(
+          async (fn: (transaction: unknown) => Promise<unknown>) => fn(tx),
+        ),
+      };
+      const svc = await buildService(db);
+
+      await svc.reactivateMember(ORG_ID, ACTOR_ID, MEMBER_ID);
+
+      expect(tx.update).not.toHaveBeenCalledWith(users);
+      expect(cacheInvalidate).toHaveBeenCalledWith(
+        CACHE_KEYS.userSession(MEMBER_ID),
+      );
     });
   });
 });

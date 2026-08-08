@@ -20,6 +20,7 @@ import { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { Public } from "../../../common/auth/public.decorator";
 import { AllowNoOrg } from "../../../common/auth/allow-no-org.decorator";
+import { NoTenantTransaction } from "../../../common/tenant";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
@@ -102,12 +103,15 @@ export class OrganizationController {
   }
 
   @Get()
+  @AllowNoOrg()
+  @NoTenantTransaction()
   listOrganizations(@CurrentUser() u: CurrentUserContext) {
     return this.organization.listUserOrganizations(u.userId);
   }
 
   @Get("archived")
   @AllowNoOrg()
+  @NoTenantTransaction()
   listArchivedOrganizations(@CurrentUser() u: CurrentUserContext) {
     return this.organization.listArchivedOwnedOrganizations(u.userId);
   }
@@ -127,6 +131,8 @@ export class OrganizationController {
 
   @Post("switch")
   @HttpCode(200)
+  @AllowNoOrg()
+  @NoTenantTransaction()
   switchOrg(
     @Body(new ZodValidationPipe(switchOrgSchema)) body: SwitchOrgInput,
     @CurrentUser() u: CurrentUserContext,
@@ -315,6 +321,7 @@ export class OrganizationController {
   @Post("restore")
   @HttpCode(200)
   @AllowNoOrg()
+  @NoTenantTransaction()
   restoreOrg(
     @Body(new ZodValidationPipe(restoreOrgSchema)) body: RestoreOrgInput,
     @CurrentUser() u: CurrentUserContext,

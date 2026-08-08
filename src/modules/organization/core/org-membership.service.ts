@@ -49,6 +49,11 @@ import { SessionsService } from "../../sessions/sessions.service";
 import { stableHash } from "../../../common/cache/cache-hash";
 import type { ListMembersInput } from "./dto/organization.schemas";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { withIdentity } from "../../../common/tenant/with-identity";
+import {
+  registerAfterCommit,
+  runOutsideTenantContext,
+} from "../../../common/tenant/tenant-context";
 import { getOrgAdminUserIds } from "../../../common/tenant/org-admin-recipients";
 import { EmailService } from "../../email/email.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
@@ -133,7 +138,7 @@ export class OrgMembershipService {
     orgId: string,
     memberUserId: string,
   ): Promise<void> {
-    await bustMembershipStatusCache(this.cache, memberUserId, orgId);
+    await this.invalidateMemberSessionCaches(orgId, memberUserId);
     const now = new Date();
     await runInTenantTransaction(
       this.db,
@@ -156,7 +161,6 @@ export class OrgMembershipService {
     orgId: string,
     memberUserId: string,
   ): Promise<void> {
-    await this.cache.invalidate(CACHE_KEYS.userSession(memberUserId));
     await this.revokeOrgScopedAccess(orgId, memberUserId);
     await this.sessions.revokeAllForUser(memberUserId);
     const now = new Date();
@@ -178,6 +182,118 @@ export class OrgMembershipService {
       this.cache.invalidate(CACHE_KEYS.moduleAccessCandidates(orgId)),
       bustUsersStatsCache(this.cache, orgId),
     ]);
+  }
+
+  private async invalidateMemberSessionCaches(
+    orgId: string,
+    memberUserId: string,
+  ): Promise<void> {
+    const invalidate = () =>
+      Promise.all([
+        this.cache.invalidate(CACHE_KEYS.userSession(memberUserId)),
+        bustMembershipStatusCache(this.cache, memberUserId, orgId),
+      ]).then(() => undefined);
+
+    // Invalidate immediately to close access quickly, then again after the
+    // request transaction commits. Without the second bust, a concurrent MVCC
+    // reader can repopulate ACTIVE state between this call and commit.
+    await invalidate();
+    registerAfterCommit(invalidate);
+  }
+
+  /**
+   * Plan the user's selected organization from an identity-scoped view of all
+   * their memberships. This is intentionally calculated before the tenant
+   * mutation so RLS can see active sibling organizations without weakening the
+   * organization-scoped write transaction.
+   */
+  private async planLastActiveOrganizationChange(
+    userId: string,
+    affectedOrgId: string,
+    nextStatus: MemberLifecycleStatus,
+  ): Promise<{
+    previousOrgId: string | null;
+    nextOrgId: string | null;
+  } | null> {
+    // Keep a suspended selected org as the preference. Recovery will explain
+    // the suspension and offer active siblings instead of silently changing
+    // the person's workspace.
+    if (nextStatus === "suspended") return null;
+
+    // The injected DB is tenant-aware. Exit the ambient admin transaction so
+    // app.user_id is scoped to a separate identity transaction and cannot
+    // survive a nested savepoint or widen later RLS reads in this request.
+    const rows = await runOutsideTenantContext(() =>
+      withIdentity(this.db, userId, (tx) =>
+        tx
+          .select({
+            previousOrgId: users.lastActiveOrgId,
+            activeOrgId: organizations.id,
+          })
+          .from(users)
+          .leftJoin(
+            organizationMembers,
+            and(
+              eq(organizationMembers.userId, users.id),
+              eq(organizationMembers.status, "ACTIVE"),
+            ),
+          )
+          .leftJoin(
+            organizations,
+            and(
+              eq(organizations.id, organizationMembers.orgId),
+              eq(organizations.status, "ACTIVE"),
+              isNull(organizations.deletedAt),
+            ),
+          )
+          .where(and(eq(users.id, userId), isNull(users.deletedAt)))
+          .orderBy(desc(organizationMembers.joinedAt)),
+      ),
+    );
+
+    if (rows.length === 0) return null;
+
+    const previousOrgId = rows[0]?.previousOrgId ?? null;
+    const activeOrgIds = rows
+      .map((row) => row.activeOrgId)
+      .filter((orgId): orgId is string => typeof orgId === "string");
+    const eligibleOrgIds =
+      nextStatus === "active"
+        ? [affectedOrgId, ...activeOrgIds.filter((id) => id !== affectedOrgId)]
+        : activeOrgIds.filter((id) => id !== affectedOrgId);
+
+    // Restoration should add an option, not pull someone away from another
+    // organization where they are already working.
+    if (previousOrgId && eligibleOrgIds.includes(previousOrgId)) return null;
+
+    return {
+      previousOrgId,
+      nextOrgId: eligibleOrgIds[0] ?? null,
+    };
+  }
+
+  private async applyLastActiveOrganizationChange(
+    tx: DbOrTx,
+    userId: string,
+    change: {
+      previousOrgId: string | null;
+      nextOrgId: string | null;
+    } | null,
+  ): Promise<void> {
+    if (!change) return;
+
+    await tx
+      .update(users)
+      .set({ lastActiveOrgId: change.nextOrgId })
+      .where(
+        and(
+          eq(users.id, userId),
+          isNull(users.deletedAt),
+          change.previousOrgId === null
+            ? isNull(users.lastActiveOrgId)
+            : eq(users.lastActiveOrgId, change.previousOrgId),
+        ),
+      );
   }
 
   private async queryOwnedModuleKeys(
@@ -467,6 +583,12 @@ export class OrgMembershipService {
               suspendedAt: null,
             };
 
+    const lastActiveOrgChange = await this.planLastActiveOrganizationChange(
+      memberUserId,
+      orgId,
+      status,
+    );
+
     await runInTenantTransaction(
       this.db,
       async (tx) => {
@@ -513,6 +635,15 @@ export class OrgMembershipService {
               ),
             );
         }
+
+        // Keep global account activation untouched. A membership restore must
+        // never undo an independent account/HR deactivation.
+        await this.applyLastActiveOrganizationChange(
+          tx,
+          memberUserId,
+          lastActiveOrgChange,
+        );
+
         await bumpPermissionsVersion(tx, orgId);
       },
       { orgId },
@@ -521,8 +652,7 @@ export class OrgMembershipService {
     if (status !== "active") {
       await this.revokeOrgScopedAccess(orgId, memberUserId);
     } else {
-      await this.cache.invalidate(CACHE_KEYS.userSession(memberUserId));
-      await bustMembershipStatusCache(this.cache, memberUserId, orgId);
+      await this.invalidateMemberSessionCaches(orgId, memberUserId);
     }
     await this.invalidateMemberListCaches(orgId);
 
@@ -776,7 +906,6 @@ export class OrgMembershipService {
 
       await Promise.all([
         this.revokeOrgScopedAccess(orgId, userId),
-        this.cache.invalidate(CACHE_KEYS.userSession(userId)),
         this.cache.invalidateNamespace(CACHE_KEYS.orgProfileNamespace(orgId)),
         this.invalidateMemberListCaches(orgId),
       ]);

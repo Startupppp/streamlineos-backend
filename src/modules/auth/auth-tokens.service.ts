@@ -5,7 +5,7 @@ import {
   ServiceUnavailableException,
   UnauthorizedException,
 } from "@nestjs/common";
-import { and, desc, eq, gt, gte, isNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gt, gte, inArray, isNull, lt, sql } from "drizzle-orm";
 import {
   randomBytes,
   randomInt,
@@ -57,6 +57,7 @@ export class AuthTokensService {
   async resolveActiveMembership(
     userId: string,
     preferredOrgId: string | null,
+    options?: { honorSuspendedPreference?: boolean },
   ): Promise<{
     orgId: string;
     isOwner: boolean;
@@ -70,6 +71,7 @@ export class AuthTokensService {
           orgId: organizationMembers.orgId,
           isOwner: organizationMembers.isOwner,
           role: organizationMembers.role,
+          status: organizationMembers.status,
           maxConcurrentSessions: organizations.maxConcurrentSessions,
           orgOnboardingCompletedAt: organizations.onboardingCompletedAt,
         })
@@ -78,7 +80,9 @@ export class AuthTokensService {
         .where(
           and(
             eq(organizationMembers.userId, userId),
-            eq(organizationMembers.status, "ACTIVE"),
+            options?.honorSuspendedPreference
+              ? inArray(organizationMembers.status, ["ACTIVE", "SUSPENDED"])
+              : eq(organizationMembers.status, "ACTIVE"),
             eq(organizations.status, "ACTIVE"),
             isNull(organizations.deletedAt),
           ),
@@ -88,6 +92,44 @@ export class AuthTokensService {
 
     if (preferredOrgId) {
       const preferred = rows.find((r) => r.orgId === preferredOrgId);
+      // Preserve a suspended selected workspace so recovery can explain the
+      // state and let the person explicitly choose an active sibling.
+      if (
+        options?.honorSuspendedPreference &&
+        preferred?.status === "SUSPENDED"
+      ) {
+        return null;
+      }
+      if (preferred?.status === "ACTIVE") return preferred;
+    }
+    return rows.find((row) => row.status === "ACTIVE") ?? null;
+  }
+
+  async resolveSuspendedMembership(
+    userId: string,
+    preferredOrgId: string | null,
+  ): Promise<{ orgId: string; orgName: string } | null> {
+    const rows = await withIdentity(this.db, userId, async (tx) =>
+      tx
+        .select({
+          orgId: organizationMembers.orgId,
+          orgName: organizations.name,
+        })
+        .from(organizationMembers)
+        .innerJoin(organizations, eq(organizations.id, organizationMembers.orgId))
+        .where(
+          and(
+            eq(organizationMembers.userId, userId),
+            eq(organizationMembers.status, "SUSPENDED"),
+            eq(organizations.status, "ACTIVE"),
+            isNull(organizations.deletedAt),
+          ),
+        )
+        .orderBy(desc(organizationMembers.suspendedAt), desc(organizationMembers.joinedAt)),
+    );
+
+    if (preferredOrgId) {
+      const preferred = rows.find((row) => row.orgId === preferredOrgId);
       if (preferred) return preferred;
     }
     return rows[0] ?? null;
