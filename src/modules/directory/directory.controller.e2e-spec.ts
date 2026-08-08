@@ -53,6 +53,7 @@ describe("Directory auth/RBAC (e2e)", () => {
     ["get", `/directory/workers/${WORKER_ID}/engagements`],
     ["post", `/directory/workers/${WORKER_ID}/engagements`],
     ["patch", `/directory/engagements/${ENGAGEMENT_ID}`],
+    ["post", `/directory/engagements/${ENGAGEMENT_ID}/cancel`],
     ["post", `/directory/engagements/${ENGAGEMENT_ID}/terminate`],
   ];
 
@@ -91,6 +92,15 @@ describe("Directory auth/RBAC (e2e)", () => {
       .post(`/directory/engagements/${ENGAGEMENT_ID}/terminate`)
       .set("Authorization", `Bearer ${token}`)
       .send({ reason: "test" });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: "Permission denied" });
+  });
+
+  it("403 on POST /directory/engagements/:id/cancel without workforce:workers:manage permission", async () => {
+    const token = await signToken({ permissions: [], enabledModules: [] });
+    const res = await request(app.getHttpServer())
+      .post(`/directory/engagements/${ENGAGEMENT_ID}/cancel`)
+      .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ error: "Permission denied" });
   });

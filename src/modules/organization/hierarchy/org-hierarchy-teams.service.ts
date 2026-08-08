@@ -92,7 +92,10 @@ export class OrgHierarchyTeamsService {
     return { data: rows.map(toOrgTeam), total: count, page, limit };
   }
 
-  async getTeam(orgId: string, id: string) {
+  private async getTeamRow(
+    orgId: string,
+    id: string,
+  ): Promise<OrgTeamRow | null> {
     const [row] = await this.db
       .select(ORG_TEAM_COLUMNS)
       .from(orgUnits)
@@ -103,6 +106,11 @@ export class OrgHierarchyTeamsService {
           isNull(orgUnits.deletedAt),
         ))
       .limit(1);
+    return row ?? null;
+  }
+
+  async getTeam(orgId: string, id: string) {
+    const row = await this.getTeamRow(orgId, id);
     return row ? toOrgTeam(row) : null;
   }
 
@@ -181,7 +189,7 @@ export class OrgHierarchyTeamsService {
   }
 
   async updateTeam(orgId: string, userId: string, id: string, body: UpdateOrgTeamInput) {
-    const existing = await this.getTeam(orgId, id);
+    const existing = await this.getTeamRow(orgId, id);
     if (!existing) throw new NotFoundException("Team not found");
     if (body.departmentId !== undefined) {
       await this.assertDepartment(orgId, body.departmentId);
@@ -203,8 +211,7 @@ export class OrgHierarchyTeamsService {
     }
 
     const { departmentId, leadUserId, capacity, code, ...rest } = body;
-    const existingMeta =
-      existing.capacity === null ? {} : { capacity: existing.capacity };
+    const existingMeta = existing.metadata ?? {};
     const [row] = await this.db
       .update(orgUnits)
       .set({

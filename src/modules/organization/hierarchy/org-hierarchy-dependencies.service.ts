@@ -70,6 +70,7 @@ export class OrgHierarchyDependenciesService {
     unitId: string,
     kind: OrgUnitKind,
     mode: DependencyMode,
+    includeLegalEntities: boolean,
   ): SQL[] {
     const strict = mode === "retire";
     const queries: SQL[] = [
@@ -95,19 +96,27 @@ export class OrgHierarchyDependenciesService {
         sql`${principalGroups}`,
         sql`${principalGroups.orgId} = ${orgId} AND ${principalGroups.orgUnitId} = ${unitId}`,
       ),
-      countQuery(
-        "legal_entities",
-        strict
-          ? "Legal entity history linked to this unit"
-          : "Active legal entities linked to this unit",
-        sql`${legalEntities}`,
-        sql`${legalEntities.orgId} = ${orgId} AND ${legalEntities.orgUnitId} = ${unitId} ${
-          strict
-            ? sql``
-            : sql`AND ${legalEntities.status} = 'ACTIVE' AND ${legalEntities.deletedAt} IS NULL`
-        }`,
-      ),
     ];
+
+    // Legal entities are being introduced behind a staged schema rollout. A
+    // workspace on the earlier schema cannot contain legal-entity references,
+    // so omit this dependency query until the relation exists instead of
+    // turning every hierarchy archive into an undefined-table 500.
+    if (includeLegalEntities)
+      queries.push(
+        countQuery(
+          "legal_entities",
+          strict
+            ? "Legal entity history linked to this unit"
+            : "Active legal entities linked to this unit",
+          sql`${legalEntities}`,
+          sql`${legalEntities.orgId} = ${orgId} AND ${legalEntities.orgUnitId} = ${unitId} ${
+            strict
+              ? sql``
+              : sql`AND ${legalEntities.status} = 'ACTIVE' AND ${legalEntities.deletedAt} IS NULL`
+          }`,
+        ),
+      );
 
     const engagementStatus = strict
       ? sql``
@@ -374,8 +383,20 @@ export class OrgHierarchyDependenciesService {
     kind: OrgUnitKind,
     mode: DependencyMode,
   ): Promise<OrgUnitDependency[]> {
+    const [capability] = await this.db.execute<{ available: boolean }>(sql`
+      SELECT to_regclass('public.legal_entities') IS NOT NULL AS available
+    `);
     const rows = await this.db.execute<DependencyCountRow>(
-      sql.join(this.buildQueries(orgId, unitId, kind, mode), sql` UNION ALL `),
+      sql.join(
+        this.buildQueries(
+          orgId,
+          unitId,
+          kind,
+          mode,
+          capability?.available === true,
+        ),
+        sql` UNION ALL `,
+      ),
     );
     return rows
       .map((row) => ({

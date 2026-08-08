@@ -147,6 +147,20 @@ export class DirectoryController {
     return this.svc.updateEngagement(u.orgId, u.userId, workerEngagementId, body);
   }
 
+  @Post("engagements/:workerEngagementId/cancel")
+  @HttpCode(200)
+  @RequirePermission("workforce:workers:manage")
+  cancelEngagement(
+    @Param("workerEngagementId") workerEngagementId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.cancelEngagement(
+      u.orgId,
+      u.userId,
+      workerEngagementId,
+    );
+  }
+
   @Post("engagements/:workerEngagementId/terminate")
   @HttpCode(200)
   @RequirePermission("workforce:workers:terminate")

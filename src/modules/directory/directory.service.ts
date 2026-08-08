@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
@@ -13,6 +14,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
+import { getPostgresErrorCode } from "../../common/db/postgres-error";
 import { DirectoryIdentityService } from "./directory-identity.service";
 import type {
   CreatePersonInput,
@@ -27,6 +29,43 @@ import type {
 
 const PG_UNIQUE_VIOLATION = "23505";
 const PG_EXCLUSION_VIOLATION = "23P01";
+
+const ENGAGEMENT_ERROR = {
+  DATE_OVERLAP: "WORKER_ENGAGEMENT_DATE_OVERLAP",
+  PRIMARY_EXISTS: "WORKER_PRIMARY_ENGAGEMENT_EXISTS",
+  INVALID_DATES: "WORKER_ENGAGEMENT_INVALID_DATES",
+  NOT_PLANNED: "WORKER_ENGAGEMENT_NOT_PLANNED",
+} as const;
+
+function assertValidEngagementPeriod(
+  startsOn: string,
+  endsOn?: string | null,
+): void {
+  if (!endsOn || endsOn > startsOn) return;
+  throw new BadRequestException({
+    code: ENGAGEMENT_ERROR.INVALID_DATES,
+    message: "End date must be after the start date.",
+  });
+}
+
+function throwEngagementWriteError(error: unknown): never {
+  const code = getPostgresErrorCode(error);
+  if (code === PG_UNIQUE_VIOLATION) {
+    throw new ConflictException({
+      code: ENGAGEMENT_ERROR.PRIMARY_EXISTS,
+      message:
+        "This worker already has an active primary engagement. Unmark Primary, or end the current primary engagement first.",
+    });
+  }
+  if (code === PG_EXCLUSION_VIOLATION) {
+    throw new ConflictException({
+      code: ENGAGEMENT_ERROR.DATE_OVERLAP,
+      message:
+        "These dates overlap an existing planned or active engagement. Change the dates, or cancel or end the existing engagement first.",
+    });
+  }
+  throw error;
+}
 
 type PersonRow = typeof organizationPeople.$inferSelect;
 type PersonPatch = Partial<typeof organizationPeople.$inferInsert>;
@@ -107,7 +146,7 @@ export class DirectoryService {
 
   async getPerson(organizationId: string, organizationPersonId: string) {
     const person = await this.loadPerson(organizationId, organizationPersonId);
-    return this.identities.resolvePersonAccess(organizationId, person, true);
+    return this.identities.resolvePersonAccess(organizationId, person);
   }
 
   async createPerson(
@@ -411,12 +450,18 @@ export class DirectoryService {
     userId: string,
     input: CreateWorkerInput,
   ) {
-    const person = input.organizationPersonId
-      ? await this.loadPerson(organizationId, input.organizationPersonId)
-      : await this.identities.ensurePersonForMember(
-          organizationId,
-          input.memberUserId!,
-        );
+    let person: PersonRow;
+    if (input.organizationPersonId)
+      person = await this.loadPerson(organizationId, input.organizationPersonId);
+    else if (input.memberUserId)
+      person = await this.identities.ensurePersonForMember(
+        organizationId,
+        input.memberUserId,
+      );
+    else
+      throw new BadRequestException(
+        "Select a directory person or an organization member.",
+      );
 
     const [row] = await this.db
       .insert(workers)
@@ -475,6 +520,7 @@ export class DirectoryService {
     input: CreateEngagementInput,
   ) {
     await this.loadWorker(organizationId, input.workerId);
+    assertValidEngagementPeriod(input.startsOn, input.endsOn);
 
     const status = input.isPrimary ? "ACTIVE" : "PLANNED";
 
@@ -492,22 +538,7 @@ export class DirectoryService {
         createdBy: userId,
       })
       .returning()
-      .catch((err: unknown) => {
-        if (typeof err === "object" && err !== null && "code" in err) {
-          const code = (err as { code: string }).code;
-          if (code === PG_UNIQUE_VIOLATION) {
-            throw new ConflictException(
-              "This worker already has an active primary engagement.",
-            );
-          }
-          if (code === PG_EXCLUSION_VIOLATION) {
-            throw new ConflictException(
-              "Engagement dates overlap with an existing active engagement for this worker.",
-            );
-          }
-        }
-        throw err;
-      });
+      .catch(throwEngagementWriteError);
     if (!row) throw new NotFoundException("Failed to create engagement");
     this.audit.log({
       action: "directory.engagement.created",
@@ -529,7 +560,14 @@ export class DirectoryService {
     workerEngagementId: string,
     input: UpdateEngagementInput,
   ) {
-    await this.loadEngagement(organizationId, workerEngagementId);
+    const existing = await this.loadEngagement(
+      organizationId,
+      workerEngagementId,
+    );
+    assertValidEngagementPeriod(
+      input.startsOn ?? existing.startsOn,
+      input.endsOn === undefined ? existing.endsOn : input.endsOn,
+    );
 
     const patch: EngagementPatch = {};
     if (input.startsOn !== undefined) patch.startsOn = input.startsOn;
@@ -569,25 +607,57 @@ export class DirectoryService {
         ),
       )
       .returning()
-      .catch((err: unknown) => {
-        if (typeof err === "object" && err !== null && "code" in err) {
-          const code = (err as { code: string }).code;
-          if (code === PG_UNIQUE_VIOLATION) {
-            throw new ConflictException(
-              "This worker already has an active primary engagement.",
-            );
-          }
-          if (code === PG_EXCLUSION_VIOLATION) {
-            throw new ConflictException(
-              "Engagement dates overlap with an existing active engagement for this worker.",
-            );
-          }
-        }
-        throw err;
-      });
+      .catch(throwEngagementWriteError);
     if (!updated) throw new NotFoundException("Engagement not found");
     this.audit.log({
       action: "directory.engagement.updated",
+      userId,
+      orgId: organizationId,
+      resourceType: "worker_engagement",
+      resourceId: workerEngagementId,
+      metadata: { workerEngagementId },
+    });
+    return updated;
+  }
+
+  async cancelEngagement(
+    organizationId: string,
+    userId: string,
+    workerEngagementId: string,
+  ) {
+    const existing = await this.loadEngagement(
+      organizationId,
+      workerEngagementId,
+    );
+    if (existing.status === "CANCELLED") return existing;
+    if (existing.status !== "PLANNED") {
+      throw new ConflictException({
+        code: ENGAGEMENT_ERROR.NOT_PLANNED,
+        message:
+          "Only a planned engagement can be cancelled. End an active engagement instead.",
+      });
+    }
+
+    const [updated] = await this.db
+      .update(workerEngagements)
+      .set({ status: "CANCELLED", isPrimary: false })
+      .where(
+        and(
+          eq(workerEngagements.workerEngagementId, workerEngagementId),
+          eq(workerEngagements.organizationId, organizationId),
+          eq(workerEngagements.status, "PLANNED"),
+        ),
+      )
+      .returning();
+    if (!updated) {
+      throw new ConflictException({
+        code: ENGAGEMENT_ERROR.NOT_PLANNED,
+        message:
+          "This engagement changed while you were viewing it. Refresh and try again.",
+      });
+    }
+    this.audit.log({
+      action: "directory.engagement.cancelled",
       userId,
       orgId: organizationId,
       resourceType: "worker_engagement",

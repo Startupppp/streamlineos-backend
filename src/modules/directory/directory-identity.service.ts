@@ -23,6 +23,7 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { getPostgresErrorCode } from "../../common/db/postgres-error";
 
 const LINKABLE_MEMBERSHIP_STATUSES = [
   "INVITED",
@@ -78,12 +79,6 @@ function effectiveEmail(input: {
   return normalizeEmail(input.workEmail) ?? normalizeEmail(input.personalEmail);
 }
 
-function postgresCode(error: unknown): string | undefined {
-  return typeof error === "object" && error !== null && "code" in error
-    ? String((error as { code: unknown }).code)
-    : undefined;
-}
-
 @Injectable()
 export class DirectoryIdentityService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
@@ -135,7 +130,7 @@ export class DirectoryIdentityService {
     identity: MemberIdentity,
     lifecycle: "active" | "deleted" = "active",
   ): Promise<PersonRow | null> {
-    const email = normalizeEmail(identity.email)!;
+    const email = normalizeEmail(identity.email);
     const [person] = await this.db
       .select()
       .from(organizationPeople)
@@ -151,14 +146,18 @@ export class DirectoryIdentityService {
               organizationPeople.organizationMembershipId,
               identity.membershipId,
             ),
-            sql`lower(trim(${organizationPeople.workEmail})) = ${email}`,
-            and(
-              or(
-                isNull(organizationPeople.workEmail),
-                sql`trim(${organizationPeople.workEmail}) = ''`,
-              ),
-              sql`lower(trim(${organizationPeople.personalEmail})) = ${email}`,
-            ),
+            ...(email
+              ? [
+                  sql`lower(trim(${organizationPeople.workEmail})) = ${email}`,
+                  and(
+                    or(
+                      isNull(organizationPeople.workEmail),
+                      sql`trim(${organizationPeople.workEmail}) = ''`,
+                    ),
+                    sql`lower(trim(${organizationPeople.personalEmail})) = ${email}`,
+                  ),
+                ]
+              : []),
           ),
         ),
       )
@@ -284,7 +283,7 @@ export class DirectoryIdentityService {
         }
       );
     } catch (error) {
-      if (postgresCode(error) !== PG_UNIQUE_VIOLATION) throw error;
+      if (getPostgresErrorCode(error) !== PG_UNIQUE_VIOLATION) throw error;
       throw new ConflictException({
         code: "DIRECTORY_MEMBER_ALREADY_LINKED",
         message:
@@ -297,13 +296,9 @@ export class DirectoryIdentityService {
   async resolvePersonAccess(
     organizationId: string,
     person: PersonRow,
-    reconcileIdentity = false,
   ): Promise<DirectoryPersonWithAccess> {
-    const resolvedPerson = reconcileIdentity
-      ? await this.reconcilePersonIdentity(organizationId, person)
-      : person;
     const [withAccess] = await this.resolvePeopleAccess(organizationId, [
-      resolvedPerson,
+      person,
     ]);
     return withAccess!;
   }
@@ -493,7 +488,7 @@ export class DirectoryIdentityService {
           .returning();
         if (restored) return restored;
       } catch (error) {
-        if (postgresCode(error) !== PG_UNIQUE_VIOLATION) throw error;
+        if (getPostgresErrorCode(error) !== PG_UNIQUE_VIOLATION) throw error;
         throw new ConflictException({
           code: "DIRECTORY_MEMBER_ALREADY_LINKED",
           message:
@@ -530,7 +525,12 @@ export class DirectoryIdentityService {
         throw new NotFoundException("Failed to create person record");
       return created;
     } catch (error) {
-      if (postgresCode(error) !== PG_UNIQUE_VIOLATION) throw error;
+      if (getPostgresErrorCode(error) !== PG_UNIQUE_VIOLATION) throw error;
+      const winner = await this.findPersonForIdentity(organizationId, identity);
+      if (winner) {
+        this.assertCompatibleLink(winner, identity);
+        return this.reconcilePersonIdentity(organizationId, winner);
+      }
       throw new ConflictException({
         code: "DIRECTORY_MEMBER_ALREADY_LINKED",
         message:

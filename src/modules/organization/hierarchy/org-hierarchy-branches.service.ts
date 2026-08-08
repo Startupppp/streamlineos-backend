@@ -95,7 +95,10 @@ export class OrgHierarchyBranchesService {
     return { data: rows.map(toOrgBranch), total: count, page, limit };
   }
 
-  async getOrgBranch(orgId: string, id: string) {
+  private async getOrgBranchRow(
+    orgId: string,
+    id: string,
+  ): Promise<OrgBranchRow | null> {
     const [row] = await this.db
       .select(ORG_BRANCH_COLUMNS)
       .from(orgUnits)
@@ -108,6 +111,11 @@ export class OrgHierarchyBranchesService {
         ),
       )
       .limit(1);
+    return row ?? null;
+  }
+
+  async getOrgBranch(orgId: string, id: string) {
+    const row = await this.getOrgBranchRow(orgId, id);
     return row ? toOrgBranch(row) : null;
   }
 
@@ -149,13 +157,14 @@ export class OrgHierarchyBranchesService {
     if (!row) throw new Error("Failed to create branch");
 
     await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "BRANCH"));
+    await this.cache.invalidate(CACHE_KEYS.branchesList(orgId));
     await this.audit.log({ action: "org.branch.created", userId, orgId, targetId: row.id, targetType: "org_unit" });
 
     return toOrgBranch(row);
   }
 
   async updateOrgBranch(orgId: string, userId: string, id: string, body: UpdateOrgBranchInput) {
-    const existing = await this.getOrgBranch(orgId, id);
+    const existing = await this.getOrgBranchRow(orgId, id);
     if (!existing) throw new NotFoundException("Branch not found");
 
     if (body.code && body.code !== existing.code) {
@@ -172,14 +181,7 @@ export class OrgHierarchyBranchesService {
 
     const { address, city, state, country, postalCode, phone, email, businessUnitId, managerUserId, status, name, code } = body;
 
-    const existingMeta: OrgUnitMetadata = {};
-    if (existing.address !== null) existingMeta.address = existing.address;
-    if (existing.city !== null) existingMeta.city = existing.city;
-    if (existing.state !== null) existingMeta.state = existing.state;
-    if (existing.country !== null) existingMeta.country = existing.country;
-    if (existing.postalCode !== null) existingMeta.postalCode = existing.postalCode;
-    if (existing.phone !== null) existingMeta.phone = existing.phone;
-    if (existing.email !== null) existingMeta.email = existing.email;
+    const existingMeta: OrgUnitMetadata = { ...(existing.metadata ?? {}) };
 
     const [row] = await this.db
       .update(orgUnits)
@@ -206,6 +208,7 @@ export class OrgHierarchyBranchesService {
     if (!row) throw new NotFoundException("Branch not found");
 
     await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "BRANCH"));
+    await this.cache.invalidate(CACHE_KEYS.branchesList(orgId));
     await this.audit.log({ action: "org.branch.updated", userId, orgId, targetId: id, targetType: "org_unit" });
 
     return toOrgBranch(row);
@@ -221,6 +224,7 @@ export class OrgHierarchyBranchesService {
       .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "BRANCH")));
 
     await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "BRANCH"));
+    await this.cache.invalidate(CACHE_KEYS.branchesList(orgId));
     await this.audit.log({ action: "org.branch.deleted", userId, orgId, targetId: id, targetType: "org_unit" });
   }
 

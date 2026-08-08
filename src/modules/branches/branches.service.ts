@@ -188,6 +188,7 @@ export class BranchesService {
     });
 
     await this.cache.invalidate(CACHE_KEYS.branchesList(orgId));
+    await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "BRANCH"));
     return branch;
   }
 
@@ -282,6 +283,7 @@ export class BranchesService {
 
     if (!updated) return null;
     await this.cache.invalidate(CACHE_KEYS.branchesList(orgId));
+    await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "BRANCH"));
     return updated;
   }
 
@@ -334,6 +336,7 @@ export class BranchesService {
     });
 
     await this.cache.invalidate(CACHE_KEYS.branchesList(orgId));
+    await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "BRANCH"));
     return { success: true };
   }
 }

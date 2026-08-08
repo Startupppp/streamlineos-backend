@@ -30,8 +30,14 @@ describe("OrgHierarchyDependenciesService", () => {
     service = new OrgHierarchyDependenciesService({ execute } as unknown as Db);
   });
 
+  function mockDependencyRows(rows: unknown[], legalEntitiesAvailable = false) {
+    execute
+      .mockResolvedValueOnce([{ available: legalEntitiesAvailable }])
+      .mockResolvedValueOnce(rows);
+  }
+
   it("allows an archive when every dependency count is zero", async () => {
-    execute.mockResolvedValue([
+    mockDependencyRows([
       { key: "child_units", label: "Active child organization units", count: 0 },
       { key: "worker_assignments", label: "Current worker assignments", count: "0" },
     ]);
@@ -39,11 +45,11 @@ describe("OrgHierarchyDependenciesService", () => {
     await expect(
       service.assertCanArchive(orgId, unitId, "BUSINESS_UNIT"),
     ).resolves.toBeUndefined();
-    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledTimes(2);
   });
 
   it("returns structured, actionable dependency details instead of archiving", async () => {
-    execute.mockResolvedValue([
+    mockDependencyRows([
       { key: "child_units", label: "Active child organization units", count: "2" },
       { key: "worker_assignments", label: "Current worker assignments", count: 3 },
       { key: "access_groups", label: "Access groups scoped to this unit", count: 0 },
@@ -75,7 +81,7 @@ describe("OrgHierarchyDependenciesService", () => {
   });
 
   it("uses the stricter remove action for legacy DELETE endpoints", async () => {
-    execute.mockResolvedValue([
+    mockDependencyRows([
       { key: "documents", label: "Documents filed under this department", count: 1 },
     ]);
 
@@ -96,21 +102,21 @@ describe("OrgHierarchyDependenciesService", () => {
   it.each(["DEPARTMENT", "LOCATION"] as const)(
     "excludes completed employment lifecycle values from %s archive checks",
     async (kind) => {
-      execute.mockResolvedValue([]);
+      mockDependencyRows([]);
 
       await service.assertCanArchive(orgId, unitId, kind);
 
-      const query = sqlText(execute.mock.calls[0]?.[0]);
+      const query = sqlText(execute.mock.calls[1]?.[0]);
       expect(query).toContain("EXITED");
       expect(query).toContain("ALUMNI");
     },
   );
 
   it("does not treat completed department records as active archive blockers", async () => {
-    execute.mockResolvedValue([]);
+    mockDependencyRows([]);
 
     await service.assertCanArchive(orgId, unitId, "DEPARTMENT");
-    const archiveQuery = sqlText(execute.mock.calls[0]?.[0]);
+    const archiveQuery = sqlText(execute.mock.calls[1]?.[0]);
 
     expect(archiveQuery).toEqual(expect.stringContaining("CLOSED"));
     expect(archiveQuery).toEqual(expect.stringContaining("FILLED"));
@@ -119,10 +125,29 @@ describe("OrgHierarchyDependenciesService", () => {
     expect(archiveQuery).toEqual(expect.stringContaining("closed"));
 
     execute.mockClear();
+    mockDependencyRows([]);
     await service.assertCanRetire(orgId, unitId, "DEPARTMENT");
-    const retireQuery = sqlText(execute.mock.calls[0]?.[0]);
+    const retireQuery = sqlText(execute.mock.calls[1]?.[0]);
 
     expect(retireQuery).not.toEqual(expect.stringContaining("JOB_CREATED"));
     expect(retireQuery).not.toEqual(expect.stringContaining("'closed'"));
+  });
+
+  it("omits staged legal-entity checks when that relation is unavailable", async () => {
+    mockDependencyRows([]);
+
+    await service.assertCanArchive(orgId, unitId, "TEAM");
+
+    const query = sqlText(execute.mock.calls[1]?.[0]);
+    expect(query).not.toContain("legal_entities");
+  });
+
+  it("includes legal-entity dependencies after that relation is available", async () => {
+    mockDependencyRows([], true);
+
+    await service.assertCanArchive(orgId, unitId, "TEAM");
+
+    const query = sqlText(execute.mock.calls[1]?.[0]);
+    expect(query).toContain("legal_entities");
   });
 });

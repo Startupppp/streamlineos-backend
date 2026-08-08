@@ -64,7 +64,7 @@ export const listWorkersQuerySchema = z.object({
 export const createWorkerSchema = z
   .object({
     organizationPersonId: z.string().uuid().optional(),
-    memberUserId: z.string().min(1).optional(),
+    memberUserId: z.string().trim().min(1).max(128).optional(),
     workerNumber: z.string().max(100).optional(),
     isPayee: z.boolean().optional(),
   })
@@ -80,14 +80,24 @@ export const createWorkerSchema = z
     }
   });
 
-export const createEngagementSchema = z.object({
-  workerId: z.string().uuid(),
-  startsOn: z.string().date(),
-  endsOn: z.string().date().optional(),
-  workerType: z.enum(workerTypeValues),
-  isPrimary: z.boolean().optional(),
-  designation: z.string().max(255).optional(),
-});
+export const createEngagementSchema = z
+  .object({
+    workerId: z.string().uuid(),
+    startsOn: z.string().date(),
+    endsOn: z.string().date().optional(),
+    workerType: z.enum(workerTypeValues),
+    isPrimary: z.boolean().optional(),
+    designation: z.string().max(255).optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.endsOn && value.endsOn <= value.startsOn) {
+      context.addIssue({
+        code: "custom",
+        path: ["endsOn"],
+        message: "End date must be after the start date",
+      });
+    }
+  });
 
 export const updateEngagementSchema = z.object({
   startsOn: z.string().date().optional(),

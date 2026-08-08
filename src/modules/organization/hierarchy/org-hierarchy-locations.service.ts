@@ -77,7 +77,10 @@ export class OrgHierarchyLocationsService {
     );
   }
 
-  async getLocation(orgId: string, id: string) {
+  private async getLocationRow(
+    orgId: string,
+    id: string,
+  ): Promise<OrgLocationRow | null> {
     const [row] = await this.db
       .select(ORG_LOCATION_COLUMNS)
       .from(orgUnits)
@@ -90,6 +93,11 @@ export class OrgHierarchyLocationsService {
         ),
       )
       .limit(1);
+    return row ?? null;
+  }
+
+  async getLocation(orgId: string, id: string) {
+    const row = await this.getLocationRow(orgId, id);
     return row ? toOrgLocation(row) : null;
   }
 
@@ -120,15 +128,13 @@ export class OrgHierarchyLocationsService {
   }
 
   async updateLocation(orgId: string, userId: string, id: string, body: UpdateOrgLocationInput) {
-    const existing = await this.getLocation(orgId, id);
+    const existing = await this.getLocationRow(orgId, id);
     if (!existing) throw new NotFoundException("Location not found");
 
     const existingMeta: OrgUnitMetadata = {
-      locationType: existing.type,
+      locationType: "OFFICE",
+      ...(existing.metadata ?? {}),
     };
-    if (existing.address !== null) existingMeta.address = existing.address;
-    if (existing.latitude !== null) existingMeta.latitude = Number(existing.latitude);
-    if (existing.longitude !== null) existingMeta.longitude = Number(existing.longitude);
 
     const [row] = await this.db
       .update(orgUnits)

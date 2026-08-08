@@ -690,7 +690,7 @@ describe("DirectoryService", () => {
   // ---------------------------------------------------------------------------
   // createEngagement — isPrimary sets status=ACTIVE
   // ---------------------------------------------------------------------------
-  describe("createEngagement — isPrimary invariant + 23505 → 409", () => {
+  describe("createEngagement — status and database conflict mapping", () => {
     it("throws 404 when the worker does not exist in tenant", async () => {
       const { selectChain } = makeSelectChain([]);
       (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
@@ -756,16 +756,23 @@ describe("DirectoryService", () => {
       );
     });
 
-    it("maps Postgres unique violation to ConflictException (duplicate primary)", async () => {
+    it("maps a wrapped Postgres unique violation to an actionable 409", async () => {
       const worker = makeWorker();
       const { selectChain } = makeSelectChain([worker]);
       (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
 
+      const drizzleError = Object.assign(new Error("Failed query"), {
+        cause: Object.assign(new Error("duplicate key"), {
+          code: "23505",
+          constraint: "uniq_worker_engagements_active_primary",
+        }),
+      });
+
       (mockDb as { insert: jest.Mock }).insert.mockReturnValue({
         values: jest.fn().mockReturnValue({
           returning: jest.fn().mockReturnValue({
-            catch: jest.fn().mockRejectedValue(
-              new ConflictException("This worker already has an active primary engagement."),
+            catch: jest.fn((onRejected: (error: unknown) => never) =>
+              Promise.reject(drizzleError).catch(onRejected),
             ),
           }),
         }),
@@ -778,8 +785,69 @@ describe("DirectoryService", () => {
           workerType: "FULL_TIME",
           isPrimary: true,
         }),
-      ).rejects.toBeInstanceOf(ConflictException);
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          code: "WORKER_PRIMARY_ENGAGEMENT_EXISTS",
+          message: expect.stringContaining("active primary engagement"),
+        }),
+      });
       expect(mockAudit.log).not.toHaveBeenCalled();
+    });
+
+    it("maps a wrapped exclusion violation to an actionable overlap 409", async () => {
+      const worker = makeWorker();
+      const { selectChain } = makeSelectChain([worker]);
+      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
+
+      const drizzleError = Object.assign(new Error("Failed query"), {
+        cause: Object.assign(new Error("conflicting key"), {
+          code: "23P01",
+          constraint: "excl_worker_engagements_overlap",
+        }),
+      });
+      (mockDb as { insert: jest.Mock }).insert.mockReturnValue({
+        values: jest.fn().mockReturnValue({
+          returning: jest.fn().mockReturnValue({
+            catch: jest.fn((onRejected: (error: unknown) => never) =>
+              Promise.reject(drizzleError).catch(onRejected),
+            ),
+          }),
+        }),
+      });
+
+      await expect(
+        svc.createEngagement(ORG_ID, USER_ID, {
+          workerId: WORKER_ID,
+          startsOn: "2024-02-01",
+          workerType: "FULL_TIME",
+        }),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          code: "WORKER_ENGAGEMENT_DATE_OVERLAP",
+          message: expect.stringContaining("planned or active engagement"),
+        }),
+      });
+      expect(mockAudit.log).not.toHaveBeenCalled();
+    });
+
+    it("rejects an end date before the start date before inserting", async () => {
+      const worker = makeWorker();
+      const { selectChain } = makeSelectChain([worker]);
+      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
+
+      await expect(
+        svc.createEngagement(ORG_ID, USER_ID, {
+          workerId: WORKER_ID,
+          startsOn: "2024-02-02",
+          endsOn: "2024-02-01",
+          workerType: "FULL_TIME",
+        }),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          code: "WORKER_ENGAGEMENT_INVALID_DATES",
+        }),
+      });
+      expect((mockDb as { insert: jest.Mock }).insert).not.toHaveBeenCalled();
     });
 
     it("inserts and audit-logs on success", async () => {
@@ -859,17 +927,24 @@ describe("DirectoryService", () => {
       );
     });
 
-    it("maps Postgres unique violation to ConflictException on update", async () => {
+    it("maps a wrapped Postgres exclusion violation on update", async () => {
       const existing = makeEngagement();
       const { selectChain } = makeSelectChain([existing]);
       (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
+
+      const drizzleError = Object.assign(new Error("Failed query"), {
+        cause: Object.assign(new Error("conflicting key"), {
+          code: "23P01",
+          constraint: "excl_worker_engagements_overlap",
+        }),
+      });
 
       (mockDb as { update: jest.Mock }).update.mockReturnValue({
         set: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
             returning: jest.fn().mockReturnValue({
-              catch: jest.fn().mockRejectedValue(
-                new ConflictException("This worker already has an active primary engagement."),
+              catch: jest.fn((onRejected: (error: unknown) => never) =>
+                Promise.reject(drizzleError).catch(onRejected),
               ),
             }),
           }),
@@ -877,8 +952,70 @@ describe("DirectoryService", () => {
       });
 
       await expect(
-        svc.updateEngagement(ORG_ID, USER_ID, ENGAGEMENT_ID, { isPrimary: true }),
-      ).rejects.toBeInstanceOf(ConflictException);
+        svc.updateEngagement(ORG_ID, USER_ID, ENGAGEMENT_ID, {
+          startsOn: "2024-02-01",
+        }),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          code: "WORKER_ENGAGEMENT_DATE_OVERLAP",
+        }),
+      });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // cancelEngagement
+  // ---------------------------------------------------------------------------
+  describe("cancelEngagement — preserves history and frees planned dates", () => {
+    it("changes a planned engagement to CANCELLED and audit-logs", async () => {
+      const existing = makeEngagement({ status: "PLANNED", isPrimary: false });
+      const cancelled = makeEngagement({
+        status: "CANCELLED",
+        isPrimary: false,
+      });
+      const { selectChain } = makeSelectChain([existing]);
+      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
+
+      const setSpy = jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          returning: jest.fn().mockResolvedValue([cancelled]),
+        }),
+      });
+      (mockDb as { update: jest.Mock }).update.mockReturnValue({ set: setSpy });
+
+      const result = await svc.cancelEngagement(
+        ORG_ID,
+        USER_ID,
+        ENGAGEMENT_ID,
+      );
+
+      expect(setSpy).toHaveBeenCalledWith({
+        status: "CANCELLED",
+        isPrimary: false,
+      });
+      expect(result).toMatchObject({ status: "CANCELLED" });
+      expect(mockAudit.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "directory.engagement.cancelled",
+          resourceId: ENGAGEMENT_ID,
+        }),
+      );
+    });
+
+    it("does not cancel an active engagement", async () => {
+      const { selectChain } = makeSelectChain([
+        makeEngagement({ status: "ACTIVE" }),
+      ]);
+      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
+
+      await expect(
+        svc.cancelEngagement(ORG_ID, USER_ID, ENGAGEMENT_ID),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          code: "WORKER_ENGAGEMENT_NOT_PLANNED",
+        }),
+      });
+      expect((mockDb as { update: jest.Mock }).update).not.toHaveBeenCalled();
     });
   });
 
