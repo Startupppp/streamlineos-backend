@@ -17,20 +17,20 @@ export class DelegationsController {
   constructor(private readonly service: DelegationsService) {}
 
   @Get()
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("settings:rbac:manage")
   list(@CurrentUser() u: CurrentUserContext) {
     return this.service.list(u.orgId, u.userId);
   }
 
   @Get("given")
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("settings:rbac:manage")
   listGiven(@CurrentUser() u: CurrentUserContext) {
     return this.service.listGiven(u.orgId, u.userId);
   }
 
   @Post()
   @HttpCode(201)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("settings:rbac:manage")
   create(
     @Body(new ZodValidationPipe(createDelegationSchema)) body: CreateDelegationInput,
     @CurrentUser() u: CurrentUserContext,
@@ -40,7 +40,7 @@ export class DelegationsController {
 
   @Delete(":delegationId")
   @HttpCode(204)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("settings:rbac:manage")
   revoke(@Param("delegationId") delegationId: string, @CurrentUser() u: CurrentUserContext) {
     return this.service.revoke(u.orgId, delegationId, u);
   }

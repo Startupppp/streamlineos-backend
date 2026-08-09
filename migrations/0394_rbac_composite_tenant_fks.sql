@@ -6,6 +6,13 @@
 SET statement_timeout = 0;
 SET lock_timeout = '5s';
 
+-- Composite tenant foreign keys require an exact unique key on the parent.
+-- The Drizzle schema already declares this index, but the original
+-- principal-groups migration predated that declaration.
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_principal_groups_org_id"
+  ON "principal_groups" ("org_id", "id");
+--> statement-breakpoint
+
 DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint c
@@ -79,4 +86,3 @@ DO $$ BEGIN
       ON DELETE CASCADE NOT VALID;
   END IF;
 END $$;
-

@@ -300,7 +300,8 @@ export class DirectoryIdentityService {
     const [withAccess] = await this.resolvePeopleAccess(organizationId, [
       person,
     ]);
-    return withAccess!;
+    if (!withAccess) throw new Error("Failed to resolve person access");
+    return withAccess;
   }
 
   async resolvePeopleAccess(

@@ -105,6 +105,31 @@ describe("getDiscoveryGrantable — Module Admin scoping", () => {
     expect(result.assignableRanks).toContain(ROLE_RANK.MODULE_CUSTOM);
     expect(result.assignableRanks).toContain(ROLE_RANK.FUNCTIONAL);
   });
+
+  it("does not advertise reserved admin permissions to a non-admin holder", async () => {
+    const actor = {
+      orgId: "org-1",
+      userId: "user-role-manager",
+      isOrgOwner: false,
+    };
+    const hrPermission = HR_KEYS[0] ?? "hr:employees:view";
+    const svc = makeRbacService({
+      resolveUserPermissions: () =>
+        Promise.resolve(
+          resolvedMapFor(["settings:rbac:manage", hrPermission]),
+        ),
+      resolveRankContext: () =>
+        Promise.resolve({
+          bestRank: ROLE_RANK.FUNCTIONAL,
+          allowedModules: null,
+        }),
+    });
+
+    const result = await svc.getDiscoveryGrantable(actor as never);
+
+    expect(result.grantableKeys).not.toContain("settings:rbac:manage");
+    expect(result.grantableKeys).toContain(hrPermission);
+  });
 });
 
 describe("assertPermissionsGrantable — Module Admin rank boundary", () => {

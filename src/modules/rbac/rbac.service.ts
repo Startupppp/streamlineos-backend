@@ -17,6 +17,8 @@ import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transa
 import {
   assertPermissionsGrantable,
   buildPermissionModuleMap,
+  ORG_ADMIN_PERMISSION_KEY,
+  RESERVED_PROPAGATION_KEYS,
   ROLE_RANK,
   toGrantableSet,
 } from "../../common/rbac/grantability";
@@ -309,12 +311,16 @@ export class RbacService {
     ]);
 
     const grantable = toGrantableSet(resolved);
+    const canPropagateReserved = grantable.has(ORG_ADMIN_PERMISSION_KEY);
     const permMeta = buildPermissionModuleMap(PERMISSIONS.map((p) => p.name));
 
     const grantableKeys = PERMISSIONS
       .map((p) => p.name)
       .filter((key) => {
         if (!grantable.has(key)) return false;
+        if (!canPropagateReserved && RESERVED_PROPAGATION_KEYS.has(key)) {
+          return false;
+        }
         if (allowedModules !== null) {
           const mod = permMeta.get(key);
           if (!mod || !allowedModules.has(mod)) return false;

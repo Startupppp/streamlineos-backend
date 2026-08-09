@@ -869,6 +869,13 @@
       "when": 1785775400000,
       "tag": "0396_drop_verified_dead_learning_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 124,
+      "version": "7",
+      "when": 1785775500000,
+      "tag": "0397_normalize_delegation_permissions",
+      "breakpoints": true
     }
   ]
 }

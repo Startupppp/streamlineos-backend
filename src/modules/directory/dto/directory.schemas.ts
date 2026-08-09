@@ -59,6 +59,7 @@ export const listWorkersQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   status: z.enum(workerStatusValues).optional(),
   search: z.string().optional(),
+  organizationPersonId: z.string().uuid().optional(),
 });
 
 export const createWorkerSchema = z

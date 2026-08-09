@@ -536,15 +536,17 @@ describe("AccessService.resolveUserPermissions — version bump invalidates loca
 
     await svc.resolveUserPermissions("org-bump", "user-bump");
     expect(db.query.accessVersions.findFirst).toHaveBeenCalledTimes(1);
-    svc["ownerCache"].set("org-bump:user-bump", {
-      isOwner: false,
+    svc["membershipAccessCache"].set("org-bump:user-bump", {
+      exists: true,
+      active: true,
+      isOwnerOrAdmin: false,
       expiresAt: Date.now() + 30_000,
     });
 
     currentVersion = 2;
     await bumpPermissionsVersion(db as unknown as DbOrTx, "org-bump");
 
-    expect(svc["ownerCache"].has("org-bump:user-bump")).toBe(false);
+    expect(svc["membershipAccessCache"].has("org-bump:user-bump")).toBe(false);
     expect(cache.invalidatePattern).not.toHaveBeenCalled();
     expect(cache.invalidate).toHaveBeenCalledWith("rbac:members:org-bump");
     expect(cache.invalidate).toHaveBeenCalledWith(
@@ -634,7 +636,7 @@ describe("AccessService.resolveUserPermissions — unknown permission keys are o
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
-        .mockReturnValueOnce(makeSelectChain([{ permissions: [STALE_KEY] }]))
+        .mockReturnValueOnce(makeSelectChain([{ permissionKey: STALE_KEY }]))
         .mockReturnValueOnce(makeSelectChain([])),
     };
 

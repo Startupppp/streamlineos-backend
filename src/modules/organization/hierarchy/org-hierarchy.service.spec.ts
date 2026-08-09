@@ -28,6 +28,7 @@ describe("OrgHierarchyService integrity boundaries", () => {
   let dependencies: {
     assertCanArchive: jest.Mock;
     assertCanRetire: jest.Mock;
+    listDependencies: jest.Mock;
   };
   let service: OrgHierarchyService;
 
@@ -56,6 +57,7 @@ describe("OrgHierarchyService integrity boundaries", () => {
     dependencies = {
       assertCanArchive: jest.fn().mockResolvedValue(undefined),
       assertCanRetire: jest.fn().mockResolvedValue(undefined),
+      listDependencies: jest.fn().mockResolvedValue([]),
     };
 
     service = new OrgHierarchyService(
@@ -68,6 +70,33 @@ describe("OrgHierarchyService integrity boundaries", () => {
       {} as OrgHierarchyCostCentersService,
       dependencies as unknown as OrgHierarchyDependenciesService,
     );
+  });
+
+  it("previews dependencies without mutating the organization unit", async () => {
+    branches.getOrgBranch.mockResolvedValue({ id: unitId, name: "North" });
+    dependencies.listDependencies.mockResolvedValue([
+      { key: "workers", label: "Current worker assignments", count: 3 },
+    ]);
+
+    await expect(
+      service.getDependencyPreview(orgId, unitId, "BRANCH", "archive"),
+    ).resolves.toEqual({
+      unitId,
+      unitKind: "BRANCH",
+      mode: "archive",
+      dependencies: [
+        { key: "workers", label: "Current worker assignments", count: 3 },
+      ],
+      totalDependencies: 3,
+    });
+
+    expect(dependencies.listDependencies).toHaveBeenCalledWith(
+      orgId,
+      unitId,
+      "BRANCH",
+      "archive",
+    );
+    expect(branches.updateOrgBranch).not.toHaveBeenCalled();
   });
 
   it("does not mutate a unit when the dependency guard blocks archival", async () => {

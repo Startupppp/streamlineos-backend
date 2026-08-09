@@ -375,7 +375,7 @@ export class DirectoryService {
   }
 
   async listWorkers(organizationId: string, query: ListWorkersQuery) {
-    const { page, limit, status, search } = query;
+    const { page, limit, status, search, organizationPersonId } = query;
     const offset = (page - 1) * limit;
 
     const searchCondition = search
@@ -383,6 +383,7 @@ export class DirectoryService {
           ilike(organizationPeople.firstName, `%${search}%`),
           ilike(organizationPeople.lastName, `%${search}%`),
           ilike(organizationPeople.displayName, `%${search}%`),
+          ilike(organizationPeople.workEmail, `%${search}%`),
           ilike(workers.workerNumber, `%${search}%`),
         )
       : undefined;
@@ -391,6 +392,7 @@ export class DirectoryService {
       eq(workers.organizationId, organizationId),
       isNull(workers.deletedAt),
       status ? eq(workers.status, status) : undefined,
+      organizationPersonId ? eq(workers.organizationPersonId, organizationPersonId) : undefined,
       searchCondition,
     );
     const personJoin = and(

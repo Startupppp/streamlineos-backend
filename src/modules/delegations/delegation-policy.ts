@@ -10,6 +10,17 @@ import { ALL_PERMISSION_NAMES } from "../rbac/permissions";
 
 const CATALOG_KEYS: ReadonlySet<string> = new Set(ALL_PERMISSION_NAMES);
 
+export function assertDelegationTarget(
+  delegatorId: string,
+  delegateeId: string,
+): void {
+  if (delegatorId === delegateeId) {
+    throw new BadRequestException(
+      "Choose another organization member. You cannot delegate permissions to yourself.",
+    );
+  }
+}
+
 export function assertDelegationPolicy(
   actor: CurrentUserContext,
   resolved: ReadonlyMap<string, DataScope>,

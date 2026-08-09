@@ -33,8 +33,8 @@ import { type Db } from "../../../db/drizzle.module";
 
 export const ORG_UNIT_DEPENDENCY_ERROR = "ORG_UNIT_HAS_DEPENDENCIES";
 
-type OrgUnitKind = typeof orgUnits.$inferSelect.kind;
-type DependencyMode = "archive" | "retire";
+export type OrgUnitKind = typeof orgUnits.$inferSelect.kind;
+export type DependencyMode = "archive" | "retire";
 
 export type OrgUnitDependency = {
   key: string;

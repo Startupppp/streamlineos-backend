@@ -28,7 +28,7 @@ async function main(): Promise<void> {
     }
     if (cleanupRetired && retainedKeys.length > 0) {
       console.log(
-        `${retainedKeys.length} retired key(s) remain because role grants reference them:`,
+        `${retainedKeys.length} retired key(s) remain because role or delegation grants reference them:`,
       );
       for (const key of retainedKeys) console.log(`  ${key}`);
     } else if (staleKeys.length > 0 && !cleanupRetired) {

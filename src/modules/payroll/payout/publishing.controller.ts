@@ -20,7 +20,6 @@ import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { PublishingService } from "./publishing.service";
 import { publishSchema, type PublishInput } from "./dto/payout.schemas";
 
-@RequireModule("payroll")
 @Controller("payroll")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class PublishingController {
@@ -28,6 +27,7 @@ export class PublishingController {
 
   @Post("runs/:runId/payslips/publish")
   @HttpCode(200)
+  @RequireModule("payroll")
   @RequirePermission("payroll:payslips:manage")
   @Idempotent("payroll.payslips.publish")
   publish(
@@ -40,6 +40,7 @@ export class PublishingController {
 
   @Post("runs/:runId/payslips/retry-failed")
   @HttpCode(200)
+  @RequireModule("payroll")
   @RequirePermission("payroll:payslips:manage")
   retryFailed(
     @Param("runId", ParseIntPipe) runId: number,
@@ -50,6 +51,7 @@ export class PublishingController {
 
   @Post("payslips/:publicationId/retry")
   @HttpCode(200)
+  @RequireModule("payroll")
   @RequirePermission("payroll:payslips:manage")
   retryOne(
     @Param("publicationId", ParseIntPipe) publicationId: number,
@@ -59,6 +61,7 @@ export class PublishingController {
   }
 
   @Get("runs/:runId/payslips")
+  @RequireModule("payroll")
   @RequirePermission("payroll:payslips:view")
   listPublications(
     @Param("runId", ParseIntPipe) runId: number,

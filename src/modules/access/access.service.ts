@@ -16,6 +16,7 @@ import {
   roleAssignments,
   rolePermissionGrants,
   roles,
+  userDelegationPermissions,
   userDelegations,
   userModuleAccess,
 } from "../../db/schema";
@@ -156,6 +157,20 @@ const CATALOG_MODULES = Array.from(
 );
 
 const EMPTY_DENIED_MODULES: ReadonlySet<string> = new Set<string>();
+
+function employeeSelfServiceScope(key: string): DataScope {
+  return key.startsWith("self:") ? "own" : "all";
+}
+
+const EMPLOYEE_SELF_SERVICE_GRANTS: ReadonlyArray<{
+  readonly permissionKey: string;
+  readonly scope: DataScope;
+}> = Object.freeze(
+  (ROLE_DEFAULT_PERMISSIONS["MEMBER"] ?? []).map((key) => ({
+    permissionKey: key,
+    scope: employeeSelfServiceScope(key),
+  })),
+);
 
 function allCatalogScopes(): Record<string, DataScope> {
   const scopes: Record<string, DataScope> = {};
@@ -308,6 +323,13 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
         if (!membership.active) return new Map();
 
         for (const grant of UNIVERSAL_MEMBER_PERMISSION_GRANTS) {
+          const existing = map.get(grant.permissionKey);
+          map.set(
+            grant.permissionKey,
+            existing ? broadest(existing, grant.scope) : grant.scope,
+          );
+        }
+        for (const grant of EMPLOYEE_SELF_SERVICE_GRANTS) {
           const existing = map.get(grant.permissionKey);
           map.set(
             grant.permissionKey,
@@ -742,6 +764,9 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     for (const grant of UNIVERSAL_MEMBER_PERMISSION_GRANTS) {
       merge(grant.permissionKey, grant.scope);
     }
+    for (const grant of EMPLOYEE_SELF_SERVICE_GRANTS) {
+      merge(grant.permissionKey, grant.scope);
+    }
 
     const roleIdList = Array.from(roleIds);
     if (roleIdList.length > 0) {
@@ -795,11 +820,20 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    const delegationRows = await this.safeAccessTableRead(
+    const delegatedPermissionRows = await this.safeAccessTableRead(
       () =>
         this.db
-          .select({ permissions: userDelegations.permissions })
-          .from(userDelegations)
+          .select({
+            permissionKey: userDelegationPermissions.permissionKey,
+          })
+          .from(userDelegationPermissions)
+          .innerJoin(
+            userDelegations,
+            and(
+              eq(userDelegations.orgId, userDelegationPermissions.orgId),
+              eq(userDelegations.id, userDelegationPermissions.delegationId),
+            ),
+          )
           .where(
             and(
               eq(userDelegations.orgId, orgId),
@@ -809,12 +843,10 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
               gt(userDelegations.endsAt, now),
             ),
           ),
-      [] as { permissions: string[] }[],
+      [] as { permissionKey: string }[],
     );
-    for (const row of delegationRows) {
-      for (const key of row.permissions) {
-        mergeIfKnown(key, "all", "delegation");
-      }
+    for (const row of delegatedPermissionRows) {
+      mergeIfKnown(row.permissionKey, "all", "delegation");
     }
 
     for (const { moduleKey } of ownershipRows) {

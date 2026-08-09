@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  NotFoundException,
 } from "@nestjs/common";
 import { and, eq, isNull, ne } from "drizzle-orm";
 import {
@@ -33,7 +34,11 @@ import {
 } from "./org-hierarchy-teams.service";
 import { OrgHierarchyLocationsService } from "./org-hierarchy-locations.service";
 import { OrgHierarchyCostCentersService } from "./org-hierarchy-cost-centers.service";
-import { OrgHierarchyDependenciesService } from "./org-hierarchy-dependencies.service";
+import {
+  OrgHierarchyDependenciesService,
+  type DependencyMode,
+  type OrgUnitKind,
+} from "./org-hierarchy-dependencies.service";
 
 const ORG_TREE_COLUMNS = {
   id: orgUnits.id,
@@ -352,6 +357,53 @@ export class OrgHierarchyService {
     return this.costCenters.deleteCostCenter(orgId, userId, id);
   }
 
+  async getDependencyPreview(
+    orgId: string,
+    unitId: string,
+    kind: OrgUnitKind,
+    mode: DependencyMode,
+  ) {
+    const unit = await this.getUnitByKind(orgId, unitId, kind);
+    if (!unit) {
+      throw new NotFoundException("Organization unit not found");
+    }
+
+    const dependencies = await this.dependencies.listDependencies(
+      orgId,
+      unitId,
+      kind,
+      mode,
+    );
+
+    return {
+      unitId,
+      unitKind: kind,
+      mode,
+      dependencies,
+      totalDependencies: dependencies.reduce(
+        (total, dependency) => total + dependency.count,
+        0,
+      ),
+    };
+  }
+
+  private getUnitByKind(orgId: string, unitId: string, kind: OrgUnitKind) {
+    switch (kind) {
+      case "BUSINESS_UNIT":
+        return this.businessUnits.getBusinessUnit(orgId, unitId);
+      case "BRANCH":
+        return this.branches.getOrgBranch(orgId, unitId);
+      case "DEPARTMENT":
+        return this.departments.getDepartment(orgId, unitId);
+      case "TEAM":
+        return this.teams.getTeam(orgId, unitId);
+      case "LOCATION":
+        return this.locations.getLocation(orgId, unitId);
+      case "COST_CENTER":
+        return this.costCenters.getCostCenter(orgId, unitId);
+    }
+  }
+
   async getHierarchy(orgId: string) {
     const rows = await this.db
       .select({ kind: orgUnits.kind })
@@ -393,14 +445,95 @@ export class OrgHierarchyService {
 
     const byName = (a: { name: string }, b: { name: string }) =>
       a.name.localeCompare(b.name);
-    const bus = allUnits
-      .filter((u) => u.kind === "BUSINESS_UNIT")
-      .sort(byName);
 
-    return bus.map((bu) => {
-      const buBranches = allUnits.filter(
-        (u) => u.kind === "BRANCH" && u.parentId === bu.id,
-      ).sort(byName);
+    type Row = (typeof allUnits)[number];
+
+    const buIds = new Set(
+      allUnits.filter((u) => u.kind === "BUSINESS_UNIT").map((u) => u.id),
+    );
+    const branchIds = new Set(
+      allUnits.filter((u) => u.kind === "BRANCH").map((u) => u.id),
+    );
+    const deptIds = new Set(
+      allUnits.filter((u) => u.kind === "DEPARTMENT").map((u) => u.id),
+    );
+
+    const branchesByBu = new Map<string | null, Row[]>();
+    const deptsByBranch = new Map<string | null, Row[]>();
+    const teamsByDept = new Map<string | null, Row[]>();
+
+    for (const u of allUnits) {
+      if (u.kind === "BRANCH") {
+        const key =
+          u.parentId !== null && buIds.has(u.parentId) ? u.parentId : null;
+        const bucket = branchesByBu.get(key) ?? [];
+        bucket.push(u);
+        branchesByBu.set(key, bucket);
+      } else if (u.kind === "DEPARTMENT") {
+        const key =
+          u.parentId !== null && branchIds.has(u.parentId)
+            ? u.parentId
+            : null;
+        const bucket = deptsByBranch.get(key) ?? [];
+        bucket.push(u);
+        deptsByBranch.set(key, bucket);
+      } else if (u.kind === "TEAM") {
+        const key =
+          u.parentId !== null && deptIds.has(u.parentId) ? u.parentId : null;
+        const bucket = teamsByDept.get(key) ?? [];
+        bucket.push(u);
+        teamsByDept.set(key, bucket);
+      }
+    }
+
+    const buildTeam = (team: Row) => ({
+      ...toOrgTeam(team),
+      type: "team" as const,
+      children: [],
+    });
+
+    const buildDept = (dept: Row) => {
+      const {
+        kind: _deptKind,
+        parentId: branchId,
+        metadata: _deptMetadata,
+        ...department
+      } = dept;
+      return {
+        ...department,
+        branchId,
+        type: "department" as const,
+        children: (teamsByDept.get(dept.id) ?? []).sort(byName).map(buildTeam),
+      };
+    };
+
+    const buildBranch = (branch: Row) => {
+      const {
+        kind: _branchKind,
+        parentId: businessUnitId,
+        headUserId: managerUserId,
+        metadata: branchMetadata,
+        ...branchFields
+      } = branch;
+      return {
+        ...branchFields,
+        businessUnitId,
+        managerUserId,
+        address: branchMetadata?.address ?? null,
+        city: branchMetadata?.city ?? null,
+        state: branchMetadata?.state ?? null,
+        country: branchMetadata?.country ?? null,
+        postalCode: branchMetadata?.postalCode ?? null,
+        phone: branchMetadata?.phone ?? null,
+        email: branchMetadata?.email ?? null,
+        type: "branch" as const,
+        children: (deptsByBranch.get(branch.id) ?? [])
+          .sort(byName)
+          .map(buildDept),
+      };
+    };
+
+    const buildBu = (bu: Row) => {
       const {
         kind: _buKind,
         parentId: _buParentId,
@@ -410,54 +543,33 @@ export class OrgHierarchyService {
       } = bu;
       return {
         ...businessUnit,
-        type: "business_unit",
-        children: buBranches.map((branch) => {
-          const depts = allUnits.filter(
-            (u) => u.kind === "DEPARTMENT" && u.parentId === branch.id,
-          ).sort(byName);
-          const {
-            kind: _branchKind,
-            parentId: businessUnitId,
-            headUserId: managerUserId,
-            metadata: branchMetadata,
-            ...branchFields
-          } = branch;
-          return {
-            ...branchFields,
-            businessUnitId,
-            managerUserId,
-            address: branchMetadata?.address ?? null,
-            city: branchMetadata?.city ?? null,
-            state: branchMetadata?.state ?? null,
-            country: branchMetadata?.country ?? null,
-            postalCode: branchMetadata?.postalCode ?? null,
-            phone: branchMetadata?.phone ?? null,
-            email: branchMetadata?.email ?? null,
-            type: "branch",
-            children: depts.map((dept) => {
-              const teamsForDept = allUnits.filter(
-                (u) => u.kind === "TEAM" && u.parentId === dept.id,
-              ).sort(byName);
-              const {
-                kind: _deptKind,
-                parentId: branchId,
-                metadata: _deptMetadata,
-                ...department
-              } = dept;
-              return {
-                ...department,
-                branchId,
-                type: "department",
-                children: teamsForDept.map((team) => ({
-                  ...toOrgTeam(team),
-                  type: "team",
-                  children: [],
-                })),
-              };
-            }),
-          };
-        }),
+        type: "business_unit" as const,
+        children: (branchesByBu.get(bu.id) ?? [])
+          .sort(byName)
+          .map(buildBranch),
       };
-    });
+    };
+
+    const buRoots = allUnits
+      .filter((u) => u.kind === "BUSINESS_UNIT")
+      .sort(byName)
+      .map(buildBu);
+
+    const orphanBranchRoots = (branchesByBu.get(null) ?? [])
+      .sort(byName)
+      .map(buildBranch);
+    const orphanDeptRoots = (deptsByBranch.get(null) ?? [])
+      .sort(byName)
+      .map(buildDept);
+    const orphanTeamRoots = (teamsByDept.get(null) ?? [])
+      .sort(byName)
+      .map(buildTeam);
+
+    return [
+      ...buRoots,
+      ...orphanBranchRoots,
+      ...orphanDeptRoots,
+      ...orphanTeamRoots,
+    ];
   }
 }

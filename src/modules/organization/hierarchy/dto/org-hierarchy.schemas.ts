@@ -190,3 +190,31 @@ export const listQuerySchema = z
   .strict();
 
 export type ListQueryInput = z.infer<typeof listQuerySchema>;
+
+export const dependencyPreviewParamsSchema = z
+  .object({
+    unitKind: z.enum([
+      "BUSINESS_UNIT",
+      "BRANCH",
+      "DEPARTMENT",
+      "TEAM",
+      "LOCATION",
+      "COST_CENTER",
+    ]),
+    unitId: z.string().uuid(),
+  })
+  .strict();
+
+export type DependencyPreviewParamsInput = z.infer<
+  typeof dependencyPreviewParamsSchema
+>;
+
+export const dependencyPreviewQuerySchema = z
+  .object({
+    mode: z.enum(["archive", "retire"]).default("archive"),
+  })
+  .strict();
+
+export type DependencyPreviewQueryInput = z.infer<
+  typeof dependencyPreviewQuerySchema
+>;

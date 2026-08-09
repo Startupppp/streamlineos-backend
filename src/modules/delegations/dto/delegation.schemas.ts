@@ -3,10 +3,16 @@ import { z } from "zod";
 export const createDelegationSchema = z
   .object({
     delegateeId: z.string().min(1),
-    permissions: z.array(z.string().min(1)).min(1),
+    permissions: z
+      .array(z.string().trim().min(1))
+      .min(1)
+      .max(200)
+      .refine((items) => new Set(items).size === items.length, {
+        message: "Permissions must be unique",
+      }),
     startsAt: z.string().datetime().optional(),
     endsAt: z.string().datetime(),
-    reason: z.string().trim().min(1).optional(),
+    reason: z.string().trim().min(1).max(500).optional(),
   })
   .strict();
 

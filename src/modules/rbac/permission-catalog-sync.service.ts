@@ -6,6 +6,7 @@ import {
   permissions,
   permissionSupportedScopes,
   rolePermissionGrants,
+  userDelegationPermissions,
 } from "../../db/schema";
 import { PERMISSIONS } from "./permissions";
 
@@ -118,15 +119,26 @@ export class PermissionCatalogSyncService implements OnModuleInit {
           .where(inArray(permissions.name, staleKeys))
           .for("update");
         const lockedKeys = lockedRows.map((row) => row.name);
-        const referencedRows = await tx
+        const roleReferencedRows = await tx
           .selectDistinct({
             permissionKey: rolePermissionGrants.permissionKey,
           })
           .from(rolePermissionGrants)
           .where(inArray(rolePermissionGrants.permissionKey, lockedKeys));
+        const delegationReferencedRows = await tx
+          .selectDistinct({
+            permissionKey: userDelegationPermissions.permissionKey,
+          })
+          .from(userDelegationPermissions)
+          .where(
+            inArray(userDelegationPermissions.permissionKey, lockedKeys),
+          );
         const classification = classifyRetiredPermissions(
           lockedKeys,
-          referencedRows.map((row) => row.permissionKey),
+          [
+            ...roleReferencedRows,
+            ...delegationReferencedRows,
+          ].map((row) => row.permissionKey),
         );
         if (classification.deletableKeys.length > 0) {
           await tx
@@ -141,7 +153,7 @@ export class PermissionCatalogSyncService implements OnModuleInit {
 
     if (options?.cleanupRetired === true && retainedKeys.length > 0) {
       this.logger.warn(
-        `Permission catalog has ${retainedKeys.length} retired key(s) retained because role grants still reference them: ${retainedKeys.join(", ")}`,
+        `Permission catalog has ${retainedKeys.length} retired key(s) retained because role or delegation grants still reference them: ${retainedKeys.join(", ")}`,
       );
     } else if (staleKeys.length > 0) {
       this.logger.warn(

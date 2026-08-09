@@ -34,6 +34,8 @@ import {
   createCostCenterSchema,
   updateCostCenterSchema,
   listQuerySchema,
+  dependencyPreviewParamsSchema,
+  dependencyPreviewQuerySchema,
   type CreateBusinessUnitInput,
   type UpdateBusinessUnitInput,
   type CreateOrgBranchInput,
@@ -48,6 +50,8 @@ import {
   type CreateCostCenterInput,
   type UpdateCostCenterInput,
   type ListQueryInput,
+  type DependencyPreviewParamsInput,
+  type DependencyPreviewQueryInput,
 } from "./dto/org-hierarchy.schemas";
 
 @RequireModule("hr")
@@ -66,6 +70,23 @@ export class OrgHierarchyController {
   @Get("tree")
   getTree(@CurrentUser() u: CurrentUserContext) {
     return this.service.getTree(u.orgId);
+  }
+
+  @RequirePermission("settings:view")
+  @Get("dependencies/:unitKind/:unitId")
+  getDependencyPreview(
+    @Param(new ZodValidationPipe(dependencyPreviewParamsSchema))
+    params: DependencyPreviewParamsInput,
+    @Query(new ZodValidationPipe(dependencyPreviewQuerySchema))
+    query: DependencyPreviewQueryInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.service.getDependencyPreview(
+      u.orgId,
+      params.unitId,
+      params.unitKind,
+      query.mode,
+    );
   }
 
   // ─── Business Units ─────────────────────────────────────────────────

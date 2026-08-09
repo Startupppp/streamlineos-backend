@@ -1,7 +1,10 @@
 import { BadRequestException, ForbiddenException } from "@nestjs/common";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
-import { assertDelegationPolicy } from "./delegation-policy";
+import {
+  assertDelegationPolicy,
+  assertDelegationTarget,
+} from "./delegation-policy";
 import { DelegationsService } from "./delegations.service";
 
 const actor: CurrentUserContext = {
@@ -71,5 +74,17 @@ describe("assertDelegationPolicy", () => {
         now,
       ),
     ).toThrow(BadRequestException);
+  });
+});
+
+describe("assertDelegationTarget", () => {
+  it("rejects a self-delegation", () => {
+    expect(() => assertDelegationTarget("user-1", "user-1")).toThrow(
+      BadRequestException,
+    );
+  });
+
+  it("accepts another organization member", () => {
+    expect(() => assertDelegationTarget("user-1", "user-2")).not.toThrow();
   });
 });

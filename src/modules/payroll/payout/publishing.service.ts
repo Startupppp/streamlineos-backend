@@ -416,7 +416,7 @@ export class PublishingService {
 
     if (!isOwnPayslip) {
       if (publication.orgId !== caller.orgId) {
-        throw new ForbiddenException("Access denied");
+        throw new NotFoundException("Payslip publication not found");
       }
       const perms = await this.access.resolveUserPermissions(caller.orgId, caller.userId);
       const memberRow = await this.db.query.organizationMembers.findFirst({
