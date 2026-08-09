@@ -328,7 +328,7 @@ export class OnboardingController {
 
   @Post("reminders")
   @UseGuards(PermissionGuard)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:onboarding:manage")
   @HttpCode(201)
   sendReminders(@CurrentUser() u: CurrentUserContext, @Req() req: Request) {
     const protocol =

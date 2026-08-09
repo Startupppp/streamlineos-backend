@@ -876,6 +876,13 @@
       "when": 1785775500000,
       "tag": "0397_normalize_delegation_permissions",
       "breakpoints": true
+    },
+    {
+      "idx": 125,
+      "version": "7",
+      "when": 1785775600000,
+      "tag": "0398_backfill_hr_admin_branch_hr_recruitment_grants",
+      "breakpoints": true
     }
   ]
 }

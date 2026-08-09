@@ -436,7 +436,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
   });
 
   describe("Ownership transfer within module-access screen", () => {
-    it("POST /module-access/hr/ownership/transfer → 201 when module admin initiates transfer", async () => {
+    it("POST /module-access/hr/ownership/transfer → 201 when the authenticated org-owner request delegates successfully", async () => {
       const token = await signToken({ sub: "owner_ma_1" });
       const res = await request(app.getHttpServer())
         .post("/module-access/hr/ownership/transfer")

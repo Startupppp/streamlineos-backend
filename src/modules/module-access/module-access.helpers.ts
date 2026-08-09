@@ -1,7 +1,112 @@
-import { and, eq } from "drizzle-orm";
-import { organizationMembers, roleAssignments, roles } from "../../db/schema";
+import { and, eq, gt, isNull, or } from "drizzle-orm";
+import {
+  moduleOwnerships,
+  organizationMembers,
+  roleAssignments,
+  roles,
+} from "../../db/schema";
 import type { Db } from "../../db/drizzle.module";
-import { ROLE_RANK } from "../../common/rbac/grantability";
+import { grantsOrgAdmin, ROLE_RANK } from "../../common/rbac/grantability";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import type { DataScope } from "../access/access.types";
+
+export async function resolveModuleOwnerUserId(
+  db: Db,
+  orgId: string,
+  moduleKey: string,
+): Promise<string | null> {
+  const [row] = await db
+    .select({ userId: organizationMembers.userId })
+    .from(moduleOwnerships)
+    .innerJoin(
+      organizationMembers,
+      and(
+        eq(moduleOwnerships.orgId, organizationMembers.orgId),
+        eq(moduleOwnerships.ownerMembershipId, organizationMembers.id),
+      ),
+    )
+    .where(
+      and(
+        eq(moduleOwnerships.orgId, orgId),
+        eq(moduleOwnerships.moduleKey, moduleKey),
+      ),
+    )
+    .limit(1);
+  return row?.userId ?? null;
+}
+
+export interface ModuleAuthorityFacts {
+  isModuleOwner: boolean;
+  isModuleAdmin: boolean;
+}
+
+export async function resolveModuleAuthorityFacts(
+  db: Db,
+  actor: CurrentUserContext,
+  moduleKey: string,
+): Promise<ModuleAuthorityFacts> {
+  const now = new Date();
+  const [ownerUserId, moduleAdminRows] = await Promise.all([
+    resolveModuleOwnerUserId(db, actor.orgId, moduleKey),
+    db
+      .select({ rank: roles.rank, moduleKey: roles.moduleKey })
+      .from(roleAssignments)
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, roleAssignments.orgId),
+          eq(organizationMembers.id, roleAssignments.organizationMembershipId),
+        ),
+      )
+      .innerJoin(
+        roles,
+        and(
+          eq(roles.id, roleAssignments.roleId),
+          eq(roles.orgId, roleAssignments.orgId),
+        ),
+      )
+      .where(
+        and(
+          eq(roleAssignments.orgId, actor.orgId),
+          eq(organizationMembers.userId, actor.userId),
+          eq(organizationMembers.status, "ACTIVE"),
+          eq(roles.moduleKey, moduleKey),
+          eq(roles.rank, ROLE_RANK.MODULE_ADMIN),
+          or(
+            isNull(roleAssignments.expiresAt),
+            gt(roleAssignments.expiresAt, now),
+          ),
+        ),
+      )
+      .limit(1),
+  ]);
+
+  return {
+    isModuleOwner: ownerUserId === actor.userId,
+    isModuleAdmin: moduleAdminRows.some(
+      (row) =>
+        row.rank === ROLE_RANK.MODULE_ADMIN && row.moduleKey === moduleKey,
+    ),
+  };
+}
+
+/**
+ * Write authority is intentionally structural. A module-scoped effective
+ * `access:manage` grant does not manufacture Module Admin status. Org Admin is
+ * the canonical reserved-key policy; Module Owner is the ownership row; and
+ * Module Admin is an active, unexpired rank-20 assignment for this module.
+ */
+export async function hasModuleAccessManagementAuthority(
+  db: Db,
+  actor: CurrentUserContext,
+  moduleKey: string,
+  resolvedPermissions: ReadonlyMap<string, DataScope>,
+): Promise<boolean> {
+  if (actor.isOrgOwner || grantsOrgAdmin(resolvedPermissions)) return true;
+
+  const authority = await resolveModuleAuthorityFacts(db, actor, moduleKey);
+  return authority.isModuleOwner || authority.isModuleAdmin;
+}
 
 export async function resolveActorRankContext(
   db: Db,
@@ -22,7 +127,12 @@ export async function resolveActorRankContext(
         eq(organizationMembers.id, roleAssignments.organizationMembershipId),
       ),
     )
-    .where(and(eq(roleAssignments.orgId, orgId), eq(organizationMembers.userId, userId)))
+    .where(
+      and(
+        eq(roleAssignments.orgId, orgId),
+        eq(organizationMembers.userId, userId),
+      ),
+    )
     .limit(100);
 
   if (rows.length === 0) {

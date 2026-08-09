@@ -32,6 +32,19 @@ function actor(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext 
   };
 }
 
+function makeSelectChain(rows: unknown[]) {
+  const chain: Record<string, unknown> = {
+    from: jest.fn(),
+    innerJoin: jest.fn(),
+    where: jest.fn(),
+    limit: jest.fn().mockResolvedValue(rows),
+  };
+  (chain.from as jest.Mock).mockReturnValue(chain);
+  (chain.innerJoin as jest.Mock).mockReturnValue(chain);
+  (chain.where as jest.Mock).mockReturnValue(chain);
+  return chain;
+}
+
 describe("invalidateRoleAssigneePages", () => {
   it("continues invalidating after the first 500 assignees", async () => {
     const pages = Array.from({ length: 5 }, (_, pageIndex) =>
@@ -64,7 +77,7 @@ describe("ModuleAccessService", () => {
     jest.resetAllMocks();
     resolveUserPermissions = jest.fn().mockResolvedValue(new Map<string, string>());
     mockDb = {
-      select: jest.fn(),
+      select: jest.fn().mockReturnValue(makeSelectChain([])),
       insert: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
@@ -104,28 +117,58 @@ describe("ModuleAccessService", () => {
       expect(resolveUserPermissions).not.toHaveBeenCalled();
     });
 
-    it("allows an org admin (holds settings:rbac:manage)", async () => {
+    it("allows an org admin through the canonical reserved-key policy", async () => {
       resolveUserPermissions.mockResolvedValue(
         new Map([["settings:rbac:manage", "all"]]),
       );
       await expect(
         svc.assertModuleAccess(actor(), "hr", "manage"),
       ).resolves.toBeUndefined();
+      expect(resolveUserPermissions).toHaveBeenCalledWith("org-1", "u1");
     });
 
-    it("allows a module admin that holds <module>:access:<action>", async () => {
-      resolveUserPermissions.mockResolvedValue(
-        new Map([["hr:access:manage", "all"]]),
-      );
+    it("allows the actual module owner", async () => {
+      (mockDb.select as jest.Mock)
+        .mockReturnValueOnce(makeSelectChain([{ userId: "u1" }]))
+        .mockReturnValueOnce(makeSelectChain([]));
+
       await expect(
         svc.assertModuleAccess(actor(), "hr", "manage"),
       ).resolves.toBeUndefined();
     });
 
-    it("forbids a caller without the module access permission", async () => {
+    it.each(["hr", "crm"])(
+      "allows a directly assigned Module Admin for the requested %s module",
+      async (moduleKey) => {
+        (mockDb.select as jest.Mock)
+          .mockReturnValueOnce(makeSelectChain([]))
+          .mockReturnValueOnce(
+            makeSelectChain([{ rank: 20, moduleKey }]),
+          );
+
+        await expect(
+          svc.assertModuleAccess(actor(), moduleKey, "manage"),
+        ).resolves.toBeUndefined();
+      },
+    );
+
+    it("forbids a functional member even when an effective grant contains manage", async () => {
       resolveUserPermissions.mockResolvedValue(
-        new Map([["crm:access:manage", "all"]]),
+        new Map([["hr:access:manage", "all"]]),
       );
+      await expect(
+        svc.assertModuleAccess(actor(), "hr", "manage"),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(resolveUserPermissions).toHaveBeenCalledWith("org-1", "u1");
+    });
+
+    it("forbids a Module Admin assigned only to another module", async () => {
+      (mockDb.select as jest.Mock)
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(
+          makeSelectChain([{ rank: 20, moduleKey: "crm" }]),
+        );
+
       await expect(
         svc.assertModuleAccess(actor(), "hr", "manage"),
       ).rejects.toBeInstanceOf(ForbiddenException);

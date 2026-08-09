@@ -37,7 +37,7 @@ export class DelegationsController {
   constructor(private readonly service: DelegationsService) {}
 
   @Get("my")
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:workflows:view")
   async listMy(
     @CurrentUser() user: CurrentUserContext,
     @Query(new ZodValidationPipe(listProxiesSchema)) query: ListProxiesInput,
@@ -46,7 +46,7 @@ export class DelegationsController {
   }
 
   @Get()
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:workflows:manage")
   async listOrg(
     @CurrentUser() user: CurrentUserContext,
     @Query(new ZodValidationPipe(listProxiesSchema)) query: ListProxiesInput,
@@ -55,7 +55,7 @@ export class DelegationsController {
   }
 
   @Post()
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:workflows:view")
   async create(
     @CurrentUser() user: CurrentUserContext,
     @Body(new ZodValidationPipe(createProxySchema)) body: CreateProxyInput,
@@ -65,7 +65,7 @@ export class DelegationsController {
   }
 
   @Patch(":proxyId")
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:workflows:view")
   async update(
     @CurrentUser() user: CurrentUserContext,
     @Param("proxyId", ParseIntPipe) proxyId: number,
@@ -76,7 +76,7 @@ export class DelegationsController {
   }
 
   @Delete(":proxyId")
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:workflows:view")
   @HttpCode(204)
   async revoke(
     @CurrentUser() user: CurrentUserContext,

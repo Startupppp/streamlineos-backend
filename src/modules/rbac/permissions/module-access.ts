@@ -25,6 +25,6 @@ export const MODULE_ACCESS_PERMISSIONS: Permission[] =
       name: `${moduleKey}:access:manage`,
       resource: `${moduleKey}:access`,
       action: "manage",
-      description: `Manage roles, permissions and assignments for the ${moduleKey} module`,
+      description: `View access administration for the ${moduleKey} module; changing roles, permissions, or assignments additionally requires Module Admin, Module Owner, Org Admin, or Org Owner authority`,
     },
   ]);

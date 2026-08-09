@@ -31,7 +31,7 @@ export class RecruitmentPipelineController {
   }
 
   @Get("bgv-compliance")
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:sensitive:view")
   bgvCompliance(@CurrentUser() u: CurrentUserContext) {
     return this.pipeline.bgvCompliance(u.orgId);
   }

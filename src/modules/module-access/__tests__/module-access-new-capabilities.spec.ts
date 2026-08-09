@@ -101,6 +101,7 @@ describe("ModuleAccessService.getCallerPermissions", () => {
     expect(result.permissions).toHaveLength(2);
     expect(result.permissions.every((p) => p.key.startsWith("hr:"))).toBe(true);
     expect(result.permissions.find((p) => p.key === "crm:leads:view")).toBeUndefined();
+    expect(result.isOrgAdmin).toBe(true);
   });
 
   it("marks the caller as module owner when they own the module", async () => {
@@ -109,6 +110,24 @@ describe("ModuleAccessService.getCallerPermissions", () => {
     const result = await svc.getCallerPermissions(makeActor({ userId: "u-owner" }), "hr");
 
     expect(result.isModuleOwner).toBe(true);
+  });
+
+  it("does not label a custom-role manage grant as Module Admin authority", async () => {
+    resolveUserPermissions.mockResolvedValue(
+      new Map([["hr:access:manage", "all"]]),
+    );
+
+    const result = await svc.getCallerPermissions(
+      makeActor({ userId: "u-custom-role" }),
+      "hr",
+    );
+
+    expect(result.permissions).toContainEqual({
+      key: "hr:access:manage",
+      scope: "all",
+    });
+    expect(result.isModuleOwner).toBe(false);
+    expect(result.isModuleAdmin).toBe(false);
   });
 
   it("throws ForbiddenException when the caller is not an active org member", async () => {
@@ -344,4 +363,155 @@ describe("ModuleAccessGroupsService.addMember — self-assignment block", () => 
 
     expect(result).toEqual({ success: true });
   });
+});
+
+describe("ModuleAccessGroupsService ownership authority", () => {
+  const ownership = {
+    moduleKey: "hr",
+    ownerId: "u-owner",
+    ownerDisplayName: "Module Owner",
+    ownerEmail: "owner@example.com",
+    pendingTransfer: null,
+  };
+
+  async function buildOwnershipService(ownerUserId = "u-owner") {
+    const select = jest
+      .fn()
+      .mockReturnValue(makeFlexChain([{ userId: ownerUserId }]));
+    const cached = jest.fn().mockResolvedValue(ownership);
+    const resolveUserPermissions = jest
+      .fn()
+      .mockResolvedValue(new Map([["hr:access:manage", "all"]]));
+    const findFirst = jest.fn();
+    const insertValues = jest.fn().mockResolvedValue(undefined);
+    const tx = {
+      execute: jest.fn().mockResolvedValue(undefined),
+      insert: jest.fn().mockReturnValue({ values: insertValues }),
+    };
+    const transaction = jest
+      .fn()
+      .mockImplementation(async (work: (value: typeof tx) => Promise<unknown>) =>
+        work(tx),
+      );
+    const invalidate = jest.fn().mockResolvedValue(undefined);
+    const invalidateNamespace = jest.fn().mockResolvedValue(undefined);
+
+    const m = await Test.createTestingModule({
+      providers: [
+        ModuleAccessGroupsService,
+        {
+          provide: DRIZZLE,
+          useValue: {
+            select,
+            transaction,
+            query: {
+              organizationMembers: { findFirst },
+              roles: { findFirst: jest.fn() },
+            },
+          },
+        },
+        {
+          provide: AccessService,
+          useValue: {
+            resolveUserPermissions,
+            isModuleEnabled: jest.fn().mockResolvedValue(true),
+          },
+        },
+        {
+          provide: CacheService,
+          useValue: { cached, invalidate, invalidateNamespace },
+        },
+        { provide: AuditService, useValue: { log: jest.fn() } },
+      ],
+    }).compile();
+
+    return {
+      svc: m.get(ModuleAccessGroupsService),
+      cached,
+      resolveUserPermissions,
+      select,
+      findFirst,
+      insertValues,
+    };
+  }
+
+  it("allows the actual module owner to read ownership details", async () => {
+    const { svc, cached } = await buildOwnershipService();
+
+    await expect(
+      svc.getOwnership(makeActor({ userId: "u-owner" }), "hr"),
+    ).resolves.toEqual(ownership);
+    expect(cached).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows the organization owner as the documented break-glass owner", async () => {
+    const { svc, cached, select } = await buildOwnershipService();
+
+    await expect(
+      svc.getOwnership(
+        makeActor({ userId: "u-org-owner", isOrgOwner: true }),
+        "hr",
+      ),
+    ).resolves.toEqual(ownership);
+    expect(cached).toHaveBeenCalledTimes(1);
+    expect(select).not.toHaveBeenCalled();
+  });
+
+  it("allows the actual module owner to initiate an ownership transfer", async () => {
+    const { svc, findFirst, insertValues } = await buildOwnershipService();
+    findFirst
+      .mockResolvedValueOnce({ id: 11 })
+      .mockResolvedValueOnce({ id: 12, status: "ACTIVE" });
+
+    await expect(
+      svc.initiateOwnershipTransfer(
+        makeActor({ userId: "u-owner" }),
+        "hr",
+        { toUserId: "u-target" },
+      ),
+    ).resolves.toEqual({ success: true });
+    expect(insertValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orgId: "org-1",
+        moduleKey: "hr",
+        fromMembershipId: 11,
+        toMembershipId: 12,
+      }),
+    );
+  });
+
+  it.each([
+    ["Org Admin", { role: "ORG_ADMIN" }],
+    ["Module Admin", {}],
+    ["functional member", { userId: "u-functional" }],
+  ])(
+    "denies ownership details to a non-owner %s even when manage is effectively granted",
+    async (_label, overrides) => {
+      const { svc, cached, resolveUserPermissions } =
+        await buildOwnershipService("u-owner");
+
+      await expect(
+        svc.getOwnership(makeActor(overrides), "hr"),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(cached).not.toHaveBeenCalled();
+      expect(resolveUserPermissions).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["initiate", "cancel"] as const)(
+    "denies a Module Admin attempting to %s an ownership transfer",
+    async (operation) => {
+      const { svc } = await buildOwnershipService("u-owner");
+      const moduleAdmin = makeActor({ userId: "u-module-admin" });
+
+      const request =
+        operation === "initiate"
+          ? svc.initiateOwnershipTransfer(moduleAdmin, "hr", {
+              toUserId: "u-target",
+            })
+          : svc.cancelOwnershipTransfer(moduleAdmin, "hr");
+
+      await expect(request).rejects.toBeInstanceOf(ForbiddenException);
+    },
+  );
 });

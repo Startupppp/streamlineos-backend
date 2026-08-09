@@ -7,7 +7,14 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, asc, count, desc, eq, gt, inArray, sql } from "drizzle-orm";
-import { auditLogs, moduleOwnerships, organizationMembers, roleAssignments, rolePermissionGrants, roles, users } from "../../db/schema";
+import {
+  auditLogs,
+  organizationMembers,
+  roleAssignments,
+  rolePermissionGrants,
+  roles,
+  users,
+} from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -23,7 +30,11 @@ import {
   toGrantableSet,
 } from "../../common/rbac/grantability";
 import { moduleAccessDenied } from "./module-access-errors";
-import { resolveActorRankContext } from "./module-access.helpers";
+import {
+  hasModuleAccessManagementAuthority,
+  resolveActorRankContext,
+  resolveModuleAuthorityFacts,
+} from "./module-access.helpers";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
 import { AccessService } from "../access/access.service";
@@ -33,12 +44,20 @@ import {
   ROLE_DEFAULT_PERMISSIONS,
   type Permission,
 } from "../rbac/permissions";
-import type { AuditLogQuery, SetModuleRolePermissionsInput } from "./dto/module-access.schemas";
+import type {
+  AuditLogQuery,
+  SetModuleRolePermissionsInput,
+} from "./dto/module-access.schemas";
 
 const MANAGED_MODULES = new Set<string>(ACCESS_MANAGED_MODULES);
 const PERM_DIFF_CAP = 50;
 const ROLE_ASSIGNEE_PAGE_SIZE = 100;
-const SCOPE_RANK: Record<DataScope, number> = { none: 0, own: 1, team: 2, all: 3 };
+const SCOPE_RANK: Record<DataScope, number> = {
+  none: 0,
+  own: 1,
+  team: 2,
+  all: 3,
+};
 
 interface RoleAssignee {
   membershipId: number;
@@ -54,11 +73,10 @@ export async function invalidateRoleAssigneePages(
 ): Promise<void> {
   let afterMembershipId: number | null = null;
   for (;;) {
-    const page = await fetchPage(
-      afterMembershipId,
-      ROLE_ASSIGNEE_PAGE_SIZE,
+    const page = await fetchPage(afterMembershipId, ROLE_ASSIGNEE_PAGE_SIZE);
+    await Promise.all(
+      page.map((assignee) => invalidateSession(assignee.userId)),
     );
-    await Promise.all(page.map((assignee) => invalidateSession(assignee.userId)));
     if (page.length < ROLE_ASSIGNEE_PAGE_SIZE) return;
     const last = page[page.length - 1];
     if (!last) return;
@@ -77,7 +95,14 @@ function normalizeModulePermissionItems(
   const normalized = new Map(items);
   for (const [permissionKey, scope] of items) {
     const [moduleKey, resource, action] = permissionKey.split(":");
-    if (!moduleKey || !resource || !action || action === "view" || scope === "none") continue;
+    if (
+      !moduleKey ||
+      !resource ||
+      !action ||
+      action === "view" ||
+      scope === "none"
+    )
+      continue;
     const viewKey = `${moduleKey}:${resource}:view`;
     if (!catalog.has(viewKey)) continue;
     const existing = normalized.get(viewKey);
@@ -140,6 +165,25 @@ export class ModuleAccessService {
     if (!(await this.access.isModuleEnabled(actor.orgId, moduleKey))) {
       throw new ForbiddenException(`The ${moduleKey} module is not enabled`);
     }
+    if (action === "manage") {
+      if (actor.isOrgOwner) return;
+      const resolved = await this.access.resolveUserPermissions(
+        actor.orgId,
+        actor.userId,
+      );
+      if (
+        await hasModuleAccessManagementAuthority(
+          this.db,
+          actor,
+          moduleKey,
+          resolved,
+        )
+      ) {
+        return;
+      }
+      throw moduleAccessDenied(action);
+    }
+
     if (actor.isOrgOwner) return;
 
     const resolved = await this.access.resolveUserPermissions(
@@ -151,7 +195,9 @@ export class ModuleAccessService {
 
     const scope =
       resolved.get(`${moduleKey}:access:${action}`) ??
-      (action === "view" ? resolved.get(`${moduleKey}:access:manage`) : undefined);
+      (action === "view"
+        ? resolved.get(`${moduleKey}:access:manage`)
+        : undefined);
     if (!scope || scope === "none") {
       throw moduleAccessDenied(action);
     }
@@ -178,7 +224,10 @@ export class ModuleAccessService {
     );
   }
 
-  private async fetchRoles(orgId: string, moduleKey: string): Promise<ModuleRoleView[]> {
+  private async fetchRoles(
+    orgId: string,
+    moduleKey: string,
+  ): Promise<ModuleRoleView[]> {
     const catalog = this.moduleCatalogKeys(moduleKey);
 
     const orgRoles = await this.db
@@ -285,7 +334,9 @@ export class ModuleAccessService {
       throw new NotFoundException("Role not found");
     }
     if (isImmutableSystemRole(role)) {
-      throw new ForbiddenException("Organization-level system roles cannot be edited");
+      throw new ForbiddenException(
+        "Organization-level system roles cannot be edited",
+      );
     }
 
     if (!actor.isOrgOwner) {
@@ -312,93 +363,104 @@ export class ModuleAccessService {
 
     const nextVersion = role.version + 1;
 
-    let permDiff: { added: string[]; removed: string[]; truncated: boolean } = { added: [], removed: [], truncated: false };
+    let permDiff: { added: string[]; removed: string[]; truncated: boolean } = {
+      added: [],
+      removed: [],
+      truncated: false,
+    };
 
-    await runInTenantTransaction(this.db, async (tx): Promise<void> => {
-      const updated = await tx
-        .update(roles)
-        .set({ version: nextVersion })
-        .where(
-          and(
-            eq(roles.id, roleId),
-            eq(roles.orgId, actor.orgId),
-            eq(roles.version, input.version),
-          ),
-        )
-        .returning({ id: roles.id });
+    await runInTenantTransaction(
+      this.db,
+      async (tx): Promise<void> => {
+        const updated = await tx
+          .update(roles)
+          .set({ version: nextVersion })
+          .where(
+            and(
+              eq(roles.id, roleId),
+              eq(roles.orgId, actor.orgId),
+              eq(roles.version, input.version),
+            ),
+          )
+          .returning({ id: roles.id });
 
-      if (updated.length === 0) {
-        throw new ConflictException(
-          "This role was changed by someone else. Reload and try again.",
-        );
-      }
-
-      const existingGrants = await tx
-        .select({
-          permissionKey: rolePermissionGrants.permissionKey,
-          scope: rolePermissionGrants.scope,
-        })
-        .from(rolePermissionGrants)
-        .where(
-          and(
-            eq(rolePermissionGrants.orgId, actor.orgId),
-            eq(rolePermissionGrants.roleId, roleId),
-          ),
-        );
-
-      const base = new Map<string, DataScope>();
-      if (existingGrants.length > 0) {
-        for (const grant of existingGrants) base.set(grant.permissionKey, grant.scope);
-      } else {
-        for (const key of ROLE_DEFAULT_PERMISSIONS[role.slug] ?? []) {
-          base.set(key, "all");
+        if (updated.length === 0) {
+          throw new ConflictException(
+            "This role was changed by someone else. Reload and try again.",
+          );
         }
-      }
 
-      const oldModuleKeys = new Set<string>(
-        Array.from(base.keys()).filter((k) => moduleOf(k) === moduleKey),
-      );
+        const existingGrants = await tx
+          .select({
+            permissionKey: rolePermissionGrants.permissionKey,
+            scope: rolePermissionGrants.scope,
+          })
+          .from(rolePermissionGrants)
+          .where(
+            and(
+              eq(rolePermissionGrants.orgId, actor.orgId),
+              eq(rolePermissionGrants.roleId, roleId),
+            ),
+          );
 
-      for (const key of Array.from(base.keys())) {
-        if (moduleOf(key) === moduleKey) base.delete(key);
-      }
-      for (const [key, scope] of deduped) base.set(key, scope);
+        const base = new Map<string, DataScope>();
+        if (existingGrants.length > 0) {
+          for (const grant of existingGrants)
+            base.set(grant.permissionKey, grant.scope);
+        } else {
+          for (const key of ROLE_DEFAULT_PERMISSIONS[role.slug] ?? []) {
+            base.set(key, "all");
+          }
+        }
 
-      const addedKeys: string[] = [];
-      const removedKeys: string[] = [];
-      for (const key of deduped.keys()) {
-        if (!oldModuleKeys.has(key)) addedKeys.push(key);
-      }
-      for (const key of oldModuleKeys) {
-        if (!deduped.has(key)) removedKeys.push(key);
-      }
-      const rawTruncated = addedKeys.length > PERM_DIFF_CAP || removedKeys.length > PERM_DIFF_CAP;
-      permDiff = {
-        added: addedKeys.slice(0, PERM_DIFF_CAP),
-        removed: removedKeys.slice(0, PERM_DIFF_CAP),
-        truncated: rawTruncated,
-      };
-
-      await tx
-        .delete(rolePermissionGrants)
-        .where(
-          and(
-            eq(rolePermissionGrants.orgId, actor.orgId),
-            eq(rolePermissionGrants.roleId, roleId),
-          ),
+        const oldModuleKeys = new Set<string>(
+          Array.from(base.keys()).filter((k) => moduleOf(k) === moduleKey),
         );
-      if (base.size > 0) {
-        await tx.insert(rolePermissionGrants).values(
-          Array.from(base, ([permissionKey, scope]) => ({
-            orgId: actor.orgId,
-            roleId,
-            permissionKey,
-            scope,
-          })),
-        );
-      }
-      await bumpPermissionsVersion(tx, actor.orgId);
-    }, { orgId: actor.orgId });
+
+        for (const key of Array.from(base.keys())) {
+          if (moduleOf(key) === moduleKey) base.delete(key);
+        }
+        for (const [key, scope] of deduped) base.set(key, scope);
+
+        const addedKeys: string[] = [];
+        const removedKeys: string[] = [];
+        for (const key of deduped.keys()) {
+          if (!oldModuleKeys.has(key)) addedKeys.push(key);
+        }
+        for (const key of oldModuleKeys) {
+          if (!deduped.has(key)) removedKeys.push(key);
+        }
+        const rawTruncated =
+          addedKeys.length > PERM_DIFF_CAP ||
+          removedKeys.length > PERM_DIFF_CAP;
+        permDiff = {
+          added: addedKeys.slice(0, PERM_DIFF_CAP),
+          removed: removedKeys.slice(0, PERM_DIFF_CAP),
+          truncated: rawTruncated,
+        };
+
+        await tx
+          .delete(rolePermissionGrants)
+          .where(
+            and(
+              eq(rolePermissionGrants.orgId, actor.orgId),
+              eq(rolePermissionGrants.roleId, roleId),
+            ),
+          );
+        if (base.size > 0) {
+          await tx.insert(rolePermissionGrants).values(
+            Array.from(base, ([permissionKey, scope]) => ({
+              orgId: actor.orgId,
+              roleId,
+              permissionKey,
+              scope,
+            })),
+          );
+        }
+        await bumpPermissionsVersion(tx, actor.orgId);
+      },
+      { orgId: actor.orgId },
+    );
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
 
@@ -413,10 +475,7 @@ export class ModuleAccessService {
             ];
             if (afterMembershipId !== null) {
               conditions.push(
-                gt(
-                  roleAssignments.organizationMembershipId,
-                  afterMembershipId,
-                ),
+                gt(roleAssignments.organizationMembershipId, afterMembershipId),
               );
             }
             return tx
@@ -481,41 +540,23 @@ export class ModuleAccessService {
       ),
       columns: { id: true },
     });
-    if (!membership) throw new ForbiddenException("Not an active member of this organization");
+    if (!membership)
+      throw new ForbiddenException("Not an active member of this organization");
 
-    const [resolved, ownerRow] = await Promise.all([
+    const [resolved, moduleAuthority] = await Promise.all([
       this.access.resolveUserPermissions(actor.orgId, actor.userId),
-      this.db
-        .select({ userId: organizationMembers.userId })
-        .from(moduleOwnerships)
-        .innerJoin(
-          organizationMembers,
-          and(
-            eq(moduleOwnerships.orgId, organizationMembers.orgId),
-            eq(moduleOwnerships.ownerMembershipId, organizationMembers.id),
-          ),
-        )
-        .where(
-          and(
-            eq(moduleOwnerships.orgId, actor.orgId),
-            eq(moduleOwnerships.moduleKey, moduleKey),
-          ),
-        )
-        .limit(1),
+      resolveModuleAuthorityFacts(this.db, actor, moduleKey),
     ]);
 
     const permissions = Array.from(resolved.entries())
       .filter(([key]) => key.startsWith(`${moduleKey}:`))
       .map(([key, scope]) => ({ key, scope }));
 
-    const isModuleAdmin = (resolved.get(`${moduleKey}:access:manage`) ?? "none") !== "none";
-
     return {
       permissions,
       isOrgOwner: actor.isOrgOwner,
       isOrgAdmin: grantsOrgAdmin(resolved),
-      isModuleOwner: ownerRow[0]?.userId === actor.userId,
-      isModuleAdmin,
+      ...moduleAuthority,
     };
   }
 
@@ -537,7 +578,12 @@ export class ModuleAccessService {
       ipAddress: string | null;
       createdAt: string;
     }[];
-    pagination: { page: number; pageSize: number; total: number; totalPages: number };
+    pagination: {
+      page: number;
+      pageSize: number;
+      total: number;
+      totalPages: number;
+    };
   }> {
     await this.assertModuleAccess(actor, moduleKey, "view");
 
@@ -598,7 +644,12 @@ export class ModuleAccessService {
         ? this.db
             .select({ id: roles.id, name: roles.name })
             .from(roles)
-            .where(and(eq(roles.orgId, actor.orgId), inArray(roles.id, targetRoleIds)))
+            .where(
+              and(
+                eq(roles.orgId, actor.orgId),
+                inArray(roles.id, targetRoleIds),
+              ),
+            )
         : [],
     ]);
     const userNames = new Map(
@@ -616,9 +667,9 @@ export class ModuleAccessService {
       targetType: r.targetType,
       targetName:
         r.targetType === "user" && r.targetId
-          ? userNames.get(r.targetId) ?? null
+          ? (userNames.get(r.targetId) ?? null)
           : r.targetType === "role" && r.targetId
-            ? roleNames.get(Number(r.targetId)) ?? null
+            ? (roleNames.get(Number(r.targetId)) ?? null)
             : null,
       metadata: r.metadata,
       ipAddress: r.ipAddress,
@@ -627,7 +678,12 @@ export class ModuleAccessService {
 
     return {
       data,
-      pagination: { page, pageSize: limit, total, totalPages: total > 0 ? Math.ceil(total / limit) : 0 },
+      pagination: {
+        page,
+        pageSize: limit,
+        total,
+        totalPages: total > 0 ? Math.ceil(total / limit) : 0,
+      },
     };
   }
 }

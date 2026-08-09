@@ -6,8 +6,8 @@ export function moduleAccessDenied(action: "view" | "manage"): ForbiddenExceptio
   );
 }
 
-export function moduleOwnershipTransferDenied(): ForbiddenException {
+export function moduleOwnershipDenied(): ForbiddenException {
   return new ForbiddenException(
-    "Only the module owner or an organization owner can transfer module ownership",
+    "Only the module owner or an organization owner can view or change module ownership",
   );
 }

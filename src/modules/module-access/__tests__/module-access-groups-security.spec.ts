@@ -81,13 +81,31 @@ function buildTxMock() {
 
 async function buildSvc(opts: {
   actorOverrides?: Partial<CurrentUserContext>;
+  authority?: "module-admin" | "module-owner" | "org-owner";
   selectResultSets?: unknown[][];
   orgMember?: { id: number; status: "ACTIVE" | "SUSPENDED" } | null;
   groupRow?: { id: number; orgId: string; moduleKey: string; isSystem: boolean } | null;
   permissionsMap?: Map<string, string>;
 }) {
   const permissionsMap = opts.permissionsMap ?? new Map([["hr:access:manage", "all"]]);
-  const selectResultSets = opts.selectResultSets ?? [[]];
+  const operationSelectResultSets = opts.selectResultSets ?? [[]];
+  const authority = opts.actorOverrides?.isOrgOwner
+    ? "org-owner"
+    : (opts.authority ?? "module-admin");
+  const ownerRows = (operationSelectResultSets[0] ?? []).filter(
+    (row): row is { userId: unknown } =>
+      typeof row === "object" && row !== null && "userId" in row,
+  );
+  const selectResultSets =
+    authority === "org-owner"
+      ? operationSelectResultSets
+      : [
+          ownerRows,
+          authority === "module-admin"
+            ? [{ rank: 20, moduleKey: "hr" }]
+            : [],
+          ...operationSelectResultSets,
+        ];
   const orgMember =
     opts.orgMember !== undefined ? opts.orgMember : { id: 42, status: "ACTIVE" as const };
   const groupRow =
@@ -204,6 +222,7 @@ describe("ModuleAccessGroupsService — P0-2: module owner protection", () => {
 
   it("allows the module owner to remove themselves from a group", async () => {
     const { svc } = await buildSvc({
+      authority: "module-owner",
       selectResultSets: [[{ userId: "u-owner" }]],
       orgMember: { id: 42, status: "ACTIVE" },
     });
@@ -220,6 +239,7 @@ describe("ModuleAccessGroupsService — P0-2: module owner protection", () => {
 
   it("allows an org owner to remove the module owner from a group", async () => {
     const { svc } = await buildSvc({
+      authority: "org-owner",
       selectResultSets: [[{ userId: "u-owner" }]],
       orgMember: { id: 42, status: "ACTIVE" },
     });
@@ -254,6 +274,7 @@ describe("ModuleAccessGroupsService — P0-2: module owner protection", () => {
 describe("ModuleAccessGroupsService — P0-3: duplicate group name guard", () => {
   it("rejects createGroup when a group with the same name (case-insensitive) already exists", async () => {
     const { svc } = await buildSvc({
+      authority: "org-owner",
       selectResultSets: [[{ id: 5 }]],
     });
 
@@ -264,6 +285,7 @@ describe("ModuleAccessGroupsService — P0-3: duplicate group name guard", () =>
 
   it("allows createGroup when no group with that name exists in the module", async () => {
     const { svc } = await buildSvc({
+      authority: "org-owner",
       selectResultSets: [[]],
     });
 
@@ -276,6 +298,7 @@ describe("ModuleAccessGroupsService — P0-3: duplicate group name guard", () =>
 
   it("rejects renameGroup when the new name (differing only in case) already exists", async () => {
     const { svc } = await buildSvc({
+      authority: "org-owner",
       selectResultSets: [[{ id: 77 }]],
     });
 
@@ -286,6 +309,7 @@ describe("ModuleAccessGroupsService — P0-3: duplicate group name guard", () =>
 
   it("allows renameGroup to the same name as the current group (excludes self from check)", async () => {
     const { svc } = await buildSvc({
+      authority: "org-owner",
       selectResultSets: [
         [],
         [

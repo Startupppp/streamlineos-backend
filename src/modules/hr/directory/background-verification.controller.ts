@@ -29,14 +29,14 @@ export class BackgroundVerificationController {
   constructor(private readonly bgv: BackgroundVerificationService) {}
 
   @Get()
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:sensitive:view")
   list(@CurrentUser() u: CurrentUserContext) {
     return this.bgv.list(u.orgId);
   }
 
   @Post()
   @HttpCode(201)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:sensitive:manage")
   create(
     @Body(new ZodValidationPipe(createBgvSchema)) body: CreateBgvInput,
     @CurrentUser() u: CurrentUserContext,
@@ -45,7 +45,7 @@ export class BackgroundVerificationController {
   }
 
   @Patch()
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:sensitive:manage")
   update(
     @Body(new ZodValidationPipe(updateBgvSchema)) body: UpdateBgvInput,
     @CurrentUser() u: CurrentUserContext,

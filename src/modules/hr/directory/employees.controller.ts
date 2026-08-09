@@ -60,7 +60,7 @@ export class EmployeesController {
   ) {}
 
   @Post("onboard")
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:onboarding:manage")
   @HttpCode(201)
   onboard(
     @Body(new ZodValidationPipe(onboardEmployeeSchema)) body: OnboardEmployeeInput,
@@ -70,7 +70,7 @@ export class EmployeesController {
   }
 
   @Post("onboard/bulk")
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:onboarding:manage")
   @HttpCode(200)
   onboardBulk(
     @Body(new ZodValidationPipe(bulkOnboardEmployeesSchema)) body: BulkOnboardEmployeesInput,
@@ -135,7 +135,7 @@ export class EmployeesController {
   }
 
   @Get("check-email")
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:onboarding:manage")
   checkEmail(
     @Query("email") email: string | undefined,
     @CurrentUser() u: CurrentUserContext,

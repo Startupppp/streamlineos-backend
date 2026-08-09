@@ -30,8 +30,17 @@ function makeChain(rows: unknown[]) {
   return { from: fromMock };
 }
 
-function buildSelectChain(resolvedRows: { rank: number; moduleKey: string | null }[]) {
+function buildSelectChain(
+  resolvedRows: { rank: number; moduleKey: string | null }[],
+  ownerUserId: string | null,
+) {
   const selectFn = jest.fn();
+  // Structural manage gate: ownership lookup, exact Module Admin lookup.
+  selectFn.mockImplementationOnce(() =>
+    makeChain(ownerUserId === null ? [] : [{ userId: ownerUserId }]),
+  );
+  selectFn.mockImplementationOnce(() => makeChain(resolvedRows));
+  // Grantability then resolves the actor's rank independently.
   selectFn.mockImplementationOnce(() => makeChain(resolvedRows));
   selectFn.mockImplementation(() => makeChain([]));
   return selectFn;
@@ -54,6 +63,7 @@ async function buildSvc(
   rankRows: { rank: number; moduleKey: string | null }[],
   permissionsMap: Map<string, string>,
   createdRow = { id: 1, name: "Test Group", isSystem: false },
+  ownerUserId: string | null = null,
 ) {
   const resolveUserPermissions = jest.fn().mockResolvedValue(permissionsMap);
   const txMock = buildTxMock(createdRow);
@@ -62,7 +72,7 @@ async function buildSvc(
   );
 
   const mockDb = {
-    select: buildSelectChain(rankRows),
+    select: buildSelectChain(rankRows, ownerUserId),
     insert: jest.fn(),
     transaction,
     query: {
@@ -127,6 +137,19 @@ describe("ModuleAccessGroupsService.createGroup — rank check", () => {
     const result = await svc.createGroup(actor(), "hr", { name: "Reviewers" });
 
     expect(result).toMatchObject({ id: 1, name: "Test Group", isSystem: false, memberCount: 0, permissions: [] });
+  });
+
+  it("allows the canonical Module Owner to create a group", async () => {
+    const { svc } = await buildSvc(
+      [{ rank: ROLE_RANK.MODULE_OWNER, moduleKey: "hr" }],
+      MODULE_PERM_MAP,
+      undefined,
+      "u1",
+    );
+
+    const result = await svc.createGroup(actor(), "hr", { name: "Reviewers" });
+
+    expect(result).toMatchObject({ id: 1, name: "Test Group" });
   });
 
   it("allows an org owner to create a group, bypassing rank check entirely", async () => {
