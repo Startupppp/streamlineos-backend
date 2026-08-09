@@ -4,18 +4,20 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, ilike, isNull, or, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { orgUnits } from "../../../db/schema/common/organization";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
+import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { AuditService } from "../../../common/audit/audit.service";
 import type {
   CreateCostCenterInput,
+  ListQueryInput,
   UpdateCostCenterInput,
 } from "./dto/org-hierarchy.schemas";
+import { getOrgUnitStatusFilter } from "./org-hierarchy-list-filters";
 
 const ORG_COST_CENTER_COLUMNS = {
   id: orgUnits.id,
@@ -64,18 +66,38 @@ export class OrgHierarchyCostCentersService {
     private readonly audit: AuditService,
   ) {}
 
-  listCostCenters(orgId: string) {
-    return this.cache.cached(
-      CACHE_KEYS.orgUnits(orgId, "COST_CENTER"),
-      async () => {
-        const rows = await this.db
-          .select(ORG_COST_CENTER_COLUMNS)
-          .from(orgUnits)
-          .where(and(eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "COST_CENTER"), isNull(orgUnits.deletedAt)));
-        return rows.map(toOrgCostCenter);
-      },
-      CACHE_TTL.MEDIUM,
+  async listCostCenters(orgId: string, query: ListQueryInput) {
+    const { page, limit, search, status } = query;
+    const offset = (page - 1) * limit;
+    const statusFilter = getOrgUnitStatusFilter(status);
+    const filters = and(
+      eq(orgUnits.orgId, orgId),
+      eq(orgUnits.kind, "COST_CENTER"),
+      isNull(orgUnits.deletedAt),
+      ...(search
+        ? [
+            or(
+              ilike(orgUnits.name, `%${search}%`),
+              ilike(orgUnits.code, `%${search}%`),
+            ),
+          ]
+        : []),
+      ...(statusFilter ? [statusFilter] : []),
     );
+    const [rows, [{ count }]] = await Promise.all([
+      this.db
+        .select(ORG_COST_CENTER_COLUMNS)
+        .from(orgUnits)
+        .where(filters)
+        .orderBy(asc(orgUnits.name), asc(orgUnits.id))
+        .limit(limit)
+        .offset(offset),
+      this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(orgUnits)
+        .where(filters),
+    ]);
+    return { data: rows.map(toOrgCostCenter), total: count, page, limit };
   }
 
   async getCostCenter(orgId: string, id: string) {

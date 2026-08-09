@@ -31,3 +31,14 @@ export const createUserApiTokenSchema = z.object({
 });
 
 export type CreateUserApiTokenInput = z.infer<typeof createUserApiTokenSchema>;
+
+export const listUserApiTokensSchema = z
+  .object({
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+  })
+  .strict();
+
+export type ListUserApiTokensInput = z.infer<
+  typeof listUserApiTokensSchema
+>;

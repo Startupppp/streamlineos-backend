@@ -36,6 +36,8 @@ const actor = {
 describe("DelegationsService normalized permission grants", () => {
   beforeEach(() => jest.clearAllMocks());
 
+  afterEach(() => jest.useRealTimers());
+
   it("writes lifecycle data to the header and permissions to child rows", async () => {
     const startsAt = new Date(Date.now() + 24 * 60 * 60 * 1_000);
     const endsAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1_000);
@@ -111,23 +113,34 @@ describe("DelegationsService normalized permission grants", () => {
   });
 
   it("hydrates API-compatible permission collections and participant names", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-08-09T12:00:00.000Z"));
     const row = {
       id: "delegation-1",
       orgId: actor.orgId,
       delegatorId: actor.userId,
       delegateeId: "delegatee-1",
       startsAt: new Date("2026-08-01T00:00:00.000Z"),
-      endsAt: new Date("2026-08-12T00:00:00.000Z"),
+      endsAt: new Date("2026-08-08T00:00:00.000Z"),
       reason: null,
       status: "ACTIVE",
       createdAt: new Date(),
       revokedAt: null,
       revokedBy: null,
     };
+    const offset = jest.fn().mockResolvedValue([row]);
+    const limit = jest.fn().mockReturnValue({ offset });
+    const orderBy = jest.fn().mockReturnValue({ limit });
+    const pageWhere = jest.fn().mockReturnValue({ orderBy });
+    const countWhere = jest.fn().mockResolvedValue([{ total: 21 }]);
     const select = jest.fn((selection?: Record<string, unknown>) => {
       if (!selection) {
         return {
-          from: () => ({ where: jest.fn().mockResolvedValue([row]) }),
+          from: () => ({ where: pageWhere }),
+        };
+      }
+      if ("total" in selection) {
+        return {
+          from: () => ({ where: countWhere }),
         };
       }
       if ("delegationId" in selection) {
@@ -147,8 +160,20 @@ describe("DelegationsService normalized permission grants", () => {
       return {
         from: () => ({
           where: jest.fn().mockResolvedValue([
-            { id: actor.userId, name: "Alex Admin", email: "alex@example.com" },
-            { id: row.delegateeId, name: null, email: "sam@example.com" },
+            {
+              id: actor.userId,
+              name: "Alex Admin",
+              firstName: null,
+              lastName: null,
+              email: "alex@example.com",
+            },
+            {
+              id: row.delegateeId,
+              name: null,
+              firstName: "Sam",
+              lastName: "Lee",
+              email: "sam@example.com",
+            },
           ]),
         }),
       };
@@ -160,15 +185,35 @@ describe("DelegationsService normalized permission grants", () => {
       {} as AccessService,
     );
 
-    await expect(service.listGiven(actor.orgId, actor.userId)).resolves.toEqual([
-      {
-        ...row,
-        permissions: ["hr:employees:view"],
-        delegatorName: "Alex Admin",
-        delegateeName: "sam@example.com",
+    await expect(
+      service.listGiven(actor.orgId, actor.userId, {
+        page: 2,
+        limit: 10,
+        search: "Sam",
+      }),
+    ).resolves.toEqual({
+      data: [
+        {
+          ...row,
+          permissions: ["hr:employees:view"],
+          delegatorName: "Alex Admin",
+          delegateeName: "Sam Lee",
+          lifecycle: "EXPIRED",
+        },
+      ],
+      pagination: {
+        page: 2,
+        limit: 10,
+        total: 21,
+        totalPages: 3,
       },
-    ]);
-    expect(select).toHaveBeenCalledTimes(3);
+    });
+    expect(limit).toHaveBeenCalledWith(10);
+    expect(offset).toHaveBeenCalledWith(10);
+    expect(orderBy).toHaveBeenCalledTimes(1);
+    expect(pageWhere).toHaveBeenCalledTimes(1);
+    expect(countWhere).toHaveBeenCalledTimes(1);
+    expect(select).toHaveBeenCalledTimes(4);
     expect(select).toHaveBeenCalledWith({
       delegationId: userDelegationPermissions.delegationId,
       permissionKey: userDelegationPermissions.permissionKey,

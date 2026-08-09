@@ -30,6 +30,8 @@ describe("OrgHierarchyService integrity boundaries", () => {
     assertCanRetire: jest.Mock;
     listDependencies: jest.Mock;
   };
+  let locations: { listLocations: jest.Mock };
+  let costCenters: { listCostCenters: jest.Mock };
   let service: OrgHierarchyService;
 
   beforeEach(() => {
@@ -59,6 +61,8 @@ describe("OrgHierarchyService integrity boundaries", () => {
       assertCanRetire: jest.fn().mockResolvedValue(undefined),
       listDependencies: jest.fn().mockResolvedValue([]),
     };
+    locations = { listLocations: jest.fn() };
+    costCenters = { listCostCenters: jest.fn() };
 
     service = new OrgHierarchyService(
       db,
@@ -66,10 +70,28 @@ describe("OrgHierarchyService integrity boundaries", () => {
       branches as unknown as OrgHierarchyBranchesService,
       {} as OrgHierarchyDepartmentsService,
       {} as OrgHierarchyTeamsService,
-      {} as OrgHierarchyLocationsService,
-      {} as OrgHierarchyCostCentersService,
+      locations as unknown as OrgHierarchyLocationsService,
+      costCenters as unknown as OrgHierarchyCostCentersService,
       dependencies as unknown as OrgHierarchyDependenciesService,
     );
+  });
+
+  it("forwards pagination filters to location and cost-center lists", async () => {
+    const query = {
+      page: 2,
+      limit: 25,
+      search: "north",
+      status: "ACTIVE" as const,
+    };
+    const page = { data: [], total: 0, page: 2, limit: 25 };
+    locations.listLocations.mockResolvedValue(page);
+    costCenters.listCostCenters.mockResolvedValue(page);
+
+    await expect(service.listLocations(orgId, query)).resolves.toBe(page);
+    await expect(service.listCostCenters(orgId, query)).resolves.toBe(page);
+
+    expect(locations.listLocations).toHaveBeenCalledWith(orgId, query);
+    expect(costCenters.listCostCenters).toHaveBeenCalledWith(orgId, query);
   });
 
   it("previews dependencies without mutating the organization unit", async () => {

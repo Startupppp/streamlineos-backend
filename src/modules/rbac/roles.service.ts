@@ -5,7 +5,19 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, count, eq, gte, ilike, inArray, like, or } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  countDistinct,
+  eq,
+  gte,
+  ilike,
+  inArray,
+  like,
+  or,
+  sql,
+} from "drizzle-orm";
 import {
   auditLogs,
   groupRoleAssignments,
@@ -18,8 +30,6 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
-import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
@@ -39,6 +49,8 @@ import { AccessService } from "../access/access.service";
 import { ROLE_TEMPLATES, type RoleTemplate } from "./role-templates.constants";
 import {
   PERMISSIONS,
+  ROLE_DEFAULT_PERMISSIONS,
+  UNIVERSAL_MEMBER_PERMISSIONS,
 } from "./permissions";
 import { RoleLockoutService } from "./role-lockout.service";
 import {
@@ -49,6 +61,7 @@ import { RoleMemberService } from "./role-member.service";
 import type {
   CloneTemplateInput,
   CreateRoleInput,
+  ListRolesQuery,
   RoleMemberInput,
   SetRolePermissionsInput,
   SimulationCandidatesQuery,
@@ -56,13 +69,15 @@ import type {
 } from "./dto/rbac.schemas";
 
 const CATALOG_KEYS = new Set(PERMISSIONS.map((permission) => permission.name));
-const ROLES_PAGE_LIMIT = 100;
+
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, "\\$&");
+}
 
 @Injectable()
 export class RolesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly cache: CacheService,
     private readonly audit: AuditService,
     private readonly access: AccessService,
     private readonly lockout: RoleLockoutService,
@@ -88,7 +103,12 @@ export class RolesService {
           eq(organizationMembers.id, roleAssignments.organizationMembershipId),
         ),
       )
-      .where(and(eq(roleAssignments.orgId, orgId), eq(organizationMembers.userId, userId)))
+      .where(
+        and(
+          eq(roleAssignments.orgId, orgId),
+          eq(organizationMembers.userId, userId),
+        ),
+      )
       .limit(100);
 
     if (rows.length === 0) {
@@ -140,13 +160,20 @@ export class RolesService {
 
   async listAssignableDepartments(orgId: string) {
     return this.db
-      .select({ id: principalGroups.id, name: principalGroups.name, kind: principalGroups.kind })
+      .select({
+        id: principalGroups.id,
+        name: principalGroups.name,
+        kind: principalGroups.kind,
+      })
       .from(principalGroups)
       .where(eq(principalGroups.orgId, orgId))
       .orderBy(asc(principalGroups.name));
   }
 
-  async listSimulationCandidates(orgId: string, input: SimulationCandidatesQuery) {
+  async listSimulationCandidates(
+    orgId: string,
+    input: SimulationCandidatesQuery,
+  ) {
     const offset = (input.page - 1) * input.limit;
     const conditions = [
       eq(organizationMembers.orgId, orgId),
@@ -206,17 +233,75 @@ export class RolesService {
     return target;
   }
 
-  async getRoles(orgId: string) {
-    return this.cache.cached(
-      CACHE_KEYS.rolesList(orgId),
-      () =>
-        this.db.query.roles.findMany({
-          where: eq(roles.orgId, orgId),
-          orderBy: [asc(roles.name)],
-          limit: ROLES_PAGE_LIMIT,
-        }),
-      CACHE_TTL.LONG,
+  async getRoles(orgId: string, input: ListRolesQuery) {
+    const offset = (input.page - 1) * input.limit;
+    const search = input.search?.trim();
+    const where = search
+      ? and(
+          eq(roles.orgId, orgId),
+          ilike(roles.name, `%${escapeLike(search)}%`),
+        )
+      : eq(roles.orgId, orgId);
+
+    const [pageRows, totalRows] = await Promise.all([
+      this.db
+        .select({
+          id: roles.id,
+          name: roles.name,
+          slug: roles.slug,
+          rank: roles.rank,
+          orgId: roles.orgId,
+          version: roles.version,
+          isSystem: roles.isSystem,
+          moduleKey: roles.moduleKey,
+          createdBy: roles.createdBy,
+          createdAt: roles.createdAt,
+          updatedAt: roles.updatedAt,
+          description: roles.description,
+          explicitPermissionCount: count(rolePermissionGrants.id),
+          universalGrantCount: sql<number>`count(${rolePermissionGrants.id}) filter (where ${inArray(rolePermissionGrants.permissionKey, [...UNIVERSAL_MEMBER_PERMISSIONS])})`,
+        })
+        .from(roles)
+        .leftJoin(
+          rolePermissionGrants,
+          and(
+            eq(rolePermissionGrants.orgId, orgId),
+            eq(rolePermissionGrants.roleId, roles.id),
+          ),
+        )
+        .where(where)
+        .groupBy(roles.id)
+        .orderBy(asc(sql`lower(${roles.name})`), asc(roles.id))
+        .limit(input.limit)
+        .offset(offset),
+      this.db.select({ value: count() }).from(roles).where(where),
+    ]);
+    const total = Number(totalRows[0]?.value ?? 0);
+    const data = pageRows.map(
+      ({ explicitPermissionCount, universalGrantCount, ...role }) => {
+        const explicitCount = Number(explicitPermissionCount);
+        const permissionCount =
+          explicitCount > 0
+            ? UNIVERSAL_MEMBER_PERMISSIONS.length +
+              explicitCount -
+              Number(universalGrantCount)
+            : new Set([
+                ...UNIVERSAL_MEMBER_PERMISSIONS,
+                ...(ROLE_DEFAULT_PERMISSIONS[role.slug] ?? []),
+              ]).size;
+        return { ...role, permissionCount };
+      },
     );
+
+    return {
+      data,
+      pagination: {
+        page: input.page,
+        limit: input.limit,
+        total,
+        totalPages: Math.ceil(total / input.limit),
+      },
+    };
   }
 
   async getRole(orgId: string, roleId: number) {
@@ -231,44 +316,50 @@ export class RolesService {
     assertKnownPermissionKeys(input.permissions, CATALOG_KEYS);
     const targetRank = input.rank ?? ROLE_RANK.FUNCTIONAL;
     const targetModuleKey = input.moduleKey ?? null;
-    const target: RoleGrantTarget = { rank: targetRank, moduleKey: targetModuleKey };
+    const target: RoleGrantTarget = {
+      rank: targetRank,
+      moduleKey: targetModuleKey,
+    };
     await this.assertGrantable(actor, input.permissions, target);
 
-    const created = await runInTenantTransaction(this.db, async (tx) => {
-      const existing = await tx.query.roles.findFirst({
-        where: and(eq(roles.slug, input.slug), eq(roles.orgId, actor.orgId)),
-      });
-      if (existing)
-        throw new ConflictException("A role with this slug already exists");
+    const created = await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const existing = await tx.query.roles.findFirst({
+          where: and(eq(roles.slug, input.slug), eq(roles.orgId, actor.orgId)),
+        });
+        if (existing)
+          throw new ConflictException("A role with this slug already exists");
 
-      const [row] = await tx
-        .insert(roles)
-        .values({
-          name: input.name,
-          slug: input.slug,
-          orgId: actor.orgId,
-          isSystem: false,
-          moduleKey: targetModuleKey,
-          rank: targetRank,
-        })
-        .returning();
-
-      if (input.permissions.length > 0) {
-        await tx.insert(rolePermissionGrants).values(
-          input.permissions.map((permissionKey) => ({
+        const [row] = await tx
+          .insert(roles)
+          .values({
+            name: input.name,
+            slug: input.slug,
             orgId: actor.orgId,
-            roleId: row.id,
-            permissionKey,
-            scope: "all" as const,
-          })),
-        );
-      }
+            isSystem: false,
+            moduleKey: targetModuleKey,
+            rank: targetRank,
+          })
+          .returning();
 
-      await bumpPermissionsVersion(tx, actor.orgId);
-      return row;
-    }, { orgId: actor.orgId });
+        if (input.permissions.length > 0) {
+          await tx.insert(rolePermissionGrants).values(
+            input.permissions.map((permissionKey) => ({
+              orgId: actor.orgId,
+              roleId: row.id,
+              permissionKey,
+              scope: "all" as const,
+            })),
+          );
+        }
 
-    await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
+        await bumpPermissionsVersion(tx, actor.orgId);
+        return row;
+      },
+      { orgId: actor.orgId },
+    );
+
     return created;
   }
 
@@ -277,63 +368,70 @@ export class RolesService {
     roleId: number,
     input: UpdateRoleInput,
   ): Promise<{ success: true }> {
-    await runInTenantTransaction(this.db, async (tx): Promise<void> => {
-      const existing = await tx.query.roles.findFirst({
-        where: and(eq(roles.id, roleId), eq(roles.orgId, actor.orgId)),
-      });
-      if (!existing) throw new NotFoundException("Role not found");
+    await runInTenantTransaction(
+      this.db,
+      async (tx): Promise<void> => {
+        const existing = await tx.query.roles.findFirst({
+          where: and(eq(roles.id, roleId), eq(roles.orgId, actor.orgId)),
+        });
+        if (!existing) throw new NotFoundException("Role not found");
 
-      if (
-        isImmutableSystemRole(existing) &&
-        (input.name !== undefined || input.permissions !== undefined)
-      ) {
-        throw new ForbiddenException("Organization-level system roles cannot be modified");
-      }
-
-      if (input.permissions !== undefined) {
-        assertKnownPermissionKeys(input.permissions, CATALOG_KEYS);
-        const target: RoleGrantTarget = { rank: existing.rank, moduleKey: existing.moduleKey };
-        await this.assertGrantable(actor, input.permissions, target);
-      }
-
-      const updateData: {
-        updatedAt: Date;
-        name?: string;
-      } = {
-        updatedAt: new Date(),
-      };
-      if (input.name) updateData.name = input.name;
-
-      await tx
-        .update(roles)
-        .set(updateData)
-        .where(and(eq(roles.id, roleId), eq(roles.orgId, actor.orgId)));
-
-      if (input.permissions !== undefined) {
-        await tx
-          .delete(rolePermissionGrants)
-          .where(
-            and(
-              eq(rolePermissionGrants.orgId, actor.orgId),
-              eq(rolePermissionGrants.roleId, roleId),
-            ),
-          );
-        if (input.permissions.length > 0) {
-          await tx.insert(rolePermissionGrants).values(
-            input.permissions.map((permissionKey) => ({
-              orgId: actor.orgId,
-              roleId,
-              permissionKey,
-              scope: "all" as const,
-            })),
+        if (
+          isImmutableSystemRole(existing) &&
+          (input.name !== undefined || input.permissions !== undefined)
+        ) {
+          throw new ForbiddenException(
+            "Organization-level system roles cannot be modified",
           );
         }
-      }
 
-      await bumpPermissionsVersion(tx, actor.orgId);
-    }, { orgId: actor.orgId });
+        if (input.permissions !== undefined) {
+          assertKnownPermissionKeys(input.permissions, CATALOG_KEYS);
+          const target: RoleGrantTarget = {
+            rank: existing.rank,
+            moduleKey: existing.moduleKey,
+          };
+          await this.assertGrantable(actor, input.permissions, target);
+        }
 
-    await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
+        const updateData: {
+          updatedAt: Date;
+          name?: string;
+        } = {
+          updatedAt: new Date(),
+        };
+        if (input.name) updateData.name = input.name;
+
+        await tx
+          .update(roles)
+          .set(updateData)
+          .where(and(eq(roles.id, roleId), eq(roles.orgId, actor.orgId)));
+
+        if (input.permissions !== undefined) {
+          await tx
+            .delete(rolePermissionGrants)
+            .where(
+              and(
+                eq(rolePermissionGrants.orgId, actor.orgId),
+                eq(rolePermissionGrants.roleId, roleId),
+              ),
+            );
+          if (input.permissions.length > 0) {
+            await tx.insert(rolePermissionGrants).values(
+              input.permissions.map((permissionKey) => ({
+                orgId: actor.orgId,
+                roleId,
+                permissionKey,
+                scope: "all" as const,
+              })),
+            );
+          }
+        }
+
+        await bumpPermissionsVersion(tx, actor.orgId);
+      },
+      { orgId: actor.orgId },
+    );
 
     this.audit.log({
       action: "role.changed",
@@ -351,49 +449,62 @@ export class RolesService {
     actor: CurrentUserContext,
     roleId: number,
   ): Promise<{ success: true }> {
-    const willLockOut = await this.lockout.wouldLockOutLastAdmin(actor.orgId, undefined, roleId);
+    const willLockOut = await this.lockout.wouldLockOutLastAdmin(
+      actor.orgId,
+      undefined,
+      roleId,
+    );
     if (willLockOut) {
       throw new ForbiddenException(
         "Cannot delete a role that would remove all role-management access",
       );
     }
 
-    await runInTenantTransaction(this.db, async (tx): Promise<void> => {
-      const existing = await tx.query.roles.findFirst({
-        where: and(eq(roles.id, roleId), eq(roles.orgId, actor.orgId)),
-      });
-      if (!existing) throw new NotFoundException("Role not found");
-      if (existing.isSystem)
-        throw new ForbiddenException("System roles cannot be deleted");
+    await runInTenantTransaction(
+      this.db,
+      async (tx): Promise<void> => {
+        const existing = await tx.query.roles.findFirst({
+          where: and(eq(roles.id, roleId), eq(roles.orgId, actor.orgId)),
+        });
+        if (!existing) throw new NotFoundException("Role not found");
+        if (existing.isSystem)
+          throw new ForbiddenException("System roles cannot be deleted");
 
-      const [{ value: directCount }] = await tx
-        .select({ value: count() })
-        .from(roleAssignments)
-        .where(
-          and(eq(roleAssignments.orgId, actor.orgId), eq(roleAssignments.roleId, roleId)),
-        );
+        const [{ value: directCount }] = await tx
+          .select({ value: count() })
+          .from(roleAssignments)
+          .where(
+            and(
+              eq(roleAssignments.orgId, actor.orgId),
+              eq(roleAssignments.roleId, roleId),
+            ),
+          );
 
-      const [{ value: groupCount }] = await tx
-        .select({ value: count() })
-        .from(groupRoleAssignments)
-        .where(
-          and(eq(groupRoleAssignments.orgId, actor.orgId), eq(groupRoleAssignments.roleId, roleId)),
-        );
+        const [{ value: groupCount }] = await tx
+          .select({ value: count() })
+          .from(groupRoleAssignments)
+          .where(
+            and(
+              eq(groupRoleAssignments.orgId, actor.orgId),
+              eq(groupRoleAssignments.roleId, roleId),
+            ),
+          );
 
-      const total = Number(directCount) + Number(groupCount);
-      if (total > 0) {
-        throw new ConflictException(
-          `Cannot delete role — ${total} member assignment${total !== 1 ? "s are" : " is"} attached to it. Reassign them first.`,
-        );
-      }
+        const total = Number(directCount) + Number(groupCount);
+        if (total > 0) {
+          throw new ConflictException(
+            `Cannot delete role — ${total} member assignment${total !== 1 ? "s are" : " is"} attached to it. Reassign them first.`,
+          );
+        }
 
-      await tx
-        .delete(roles)
-        .where(and(eq(roles.id, roleId), eq(roles.orgId, actor.orgId)));
-      await bumpPermissionsVersion(tx, actor.orgId);
-    }, { orgId: actor.orgId });
+        await tx
+          .delete(roles)
+          .where(and(eq(roles.id, roleId), eq(roles.orgId, actor.orgId)));
+        await bumpPermissionsVersion(tx, actor.orgId);
+      },
+      { orgId: actor.orgId },
+    );
 
-    await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
     return { success: true };
   }
 
@@ -430,42 +541,43 @@ export class RolesService {
   }> {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    const orgRoles = await this.db
-      .select({ id: roles.id, isSystem: roles.isSystem })
-      .from(roles)
-      .where(eq(roles.orgId, orgId))
-      .limit(ROLES_PAGE_LIMIT);
-
-    const totalRoles = orgRoles.length;
-    const systemRoles = orgRoles.filter((r) => r.isSystem).length;
-    const customRoles = totalRoles - systemRoles;
-
-    const roleIds = orgRoles.map((r) => r.id);
-    const [assignedRow] = roleIds.length > 0
-      ? await this.db
-          .select({ value: count() })
-          .from(roleAssignments)
-          .where(and(eq(roleAssignments.orgId, orgId), inArray(roleAssignments.roleId, roleIds)))
-      : [{ value: 0 }];
-
-    const [changesRow] = await this.db
-      .select({ value: count() })
-      .from(auditLogs)
-      .where(
-        and(
-          eq(auditLogs.orgId, orgId),
-          like(auditLogs.action, "role.%"),
-          gte(auditLogs.createdAt, sevenDaysAgo),
+    const [roleTotalsRows, assignedRows, changesRows] = await Promise.all([
+      this.db
+        .select({
+          totalRoles: count(),
+          systemRoles: sql<number>`count(*) filter (where ${roles.isSystem})`,
+          customRoles: sql<number>`count(*) filter (where not ${roles.isSystem})`,
+        })
+        .from(roles)
+        .where(eq(roles.orgId, orgId)),
+      this.db
+        .select({
+          value: countDistinct(roleAssignments.organizationMembershipId),
+        })
+        .from(roleAssignments)
+        .where(eq(roleAssignments.orgId, orgId)),
+      this.db
+        .select({ value: count() })
+        .from(auditLogs)
+        .where(
+          and(
+            eq(auditLogs.orgId, orgId),
+            like(auditLogs.action, "role.%"),
+            gte(auditLogs.createdAt, sevenDaysAgo),
+          ),
         ),
-      );
+    ]);
+    const roleTotals = roleTotalsRows[0];
+    const assignedRow = assignedRows[0];
+    const changesRow = changesRows[0];
 
     return {
-      totalRoles,
-      customRoles,
-      systemRoles,
+      totalRoles: Number(roleTotals?.totalRoles ?? 0),
+      customRoles: Number(roleTotals?.customRoles ?? 0),
+      systemRoles: Number(roleTotals?.systemRoles ?? 0),
       totalPermissions: PERMISSIONS.length,
-      usersAssigned: Number(assignedRow.value),
-      recentChanges: Number(changesRow.value),
+      usersAssigned: Number(assignedRow?.value ?? 0),
+      recentChanges: Number(changesRow?.value ?? 0),
     };
   }
 
@@ -521,46 +633,52 @@ export class RolesService {
       CATALOG_KEYS.has(key),
     );
 
-    const cloneTarget: RoleGrantTarget = { rank: ROLE_RANK.FUNCTIONAL, moduleKey: null };
+    const cloneTarget: RoleGrantTarget = {
+      rank: ROLE_RANK.FUNCTIONAL,
+      moduleKey: null,
+    };
     await this.assertGrantable(actor, validPermissions, cloneTarget);
 
-    const created = await runInTenantTransaction(this.db, async (tx) => {
-      const existing = await tx.query.roles.findFirst({
-        where: and(eq(roles.slug, slug), eq(roles.orgId, actor.orgId)),
-      });
-      if (existing)
-        throw new ConflictException(
-          `A role with slug "${slug}" already exists`,
-        );
+    const created = await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const existing = await tx.query.roles.findFirst({
+          where: and(eq(roles.slug, slug), eq(roles.orgId, actor.orgId)),
+        });
+        if (existing)
+          throw new ConflictException(
+            `A role with slug "${slug}" already exists`,
+          );
 
-      const [row] = await tx
-        .insert(roles)
-        .values({
-          name,
-          slug,
-          orgId: actor.orgId,
-          isSystem: false,
-          rank: ROLE_RANK.FUNCTIONAL,
-          moduleKey: null,
-        })
-        .returning();
-
-      if (validPermissions.length > 0) {
-        await tx.insert(rolePermissionGrants).values(
-          validPermissions.map((permissionKey) => ({
+        const [row] = await tx
+          .insert(roles)
+          .values({
+            name,
+            slug,
             orgId: actor.orgId,
-            roleId: row.id,
-            permissionKey,
-            scope: "all" as const,
-          })),
-        );
-      }
+            isSystem: false,
+            rank: ROLE_RANK.FUNCTIONAL,
+            moduleKey: null,
+          })
+          .returning();
 
-      await bumpPermissionsVersion(tx, actor.orgId);
-      return row;
-    }, { orgId: actor.orgId });
+        if (validPermissions.length > 0) {
+          await tx.insert(rolePermissionGrants).values(
+            validPermissions.map((permissionKey) => ({
+              orgId: actor.orgId,
+              roleId: row.id,
+              permissionKey,
+              scope: "all" as const,
+            })),
+          );
+        }
 
-    await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
+        await bumpPermissionsVersion(tx, actor.orgId);
+        return row;
+      },
+      { orgId: actor.orgId },
+    );
+
     return created;
   }
 

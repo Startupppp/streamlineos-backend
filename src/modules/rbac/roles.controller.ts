@@ -25,12 +25,14 @@ import { RolesService } from "./roles.service";
 import {
   cloneTemplateSchema,
   createRoleSchema,
+  listRolesQuerySchema,
   roleMemberSchema,
   setRolePermissionsSchema,
   simulationCandidatesQuerySchema,
   updateRoleSchema,
   type CloneTemplateInput,
   type CreateRoleInput,
+  type ListRolesQuery,
   type RoleMemberInput,
   type SetRolePermissionsInput,
   type SimulationCandidatesQuery,
@@ -55,8 +57,11 @@ export class RolesController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
-  list(@CurrentUser() u: CurrentUserContext) {
-    return this.roles.getRoles(u.orgId);
+  list(
+    @Query(new ZodValidationPipe(listRolesQuerySchema)) query: ListRolesQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.roles.getRoles(u.orgId, query);
   }
 
   @Post()
@@ -104,7 +109,10 @@ export class RolesController {
   ): Promise<SimulateAccessResponse> {
     if (!targetUserId) throw new NotFoundException("targetUserId is required");
     const target = await this.roles.getSimulationTarget(u.orgId, targetUserId);
-    const resolved = await this.access.resolveUserPermissions(u.orgId, targetUserId);
+    const resolved = await this.access.resolveUserPermissions(
+      u.orgId,
+      targetUserId,
+    );
     const permissions: string[] = [];
     const scopes: Record<string, DataScope> = {};
     for (const [key, scope] of resolved) {
@@ -112,7 +120,12 @@ export class RolesController {
       permissions.push(key);
       scopes[key] = scope;
     }
-    return { userId: targetUserId, permissions, scopes, isOrgOwner: target.isOwner };
+    return {
+      userId: targetUserId,
+      permissions,
+      scopes,
+      isOrgOwner: target.isOwner,
+    };
   }
 
   @Post("seed-defaults")
@@ -167,14 +180,20 @@ export class RolesController {
   @Delete(":roleId")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
-  remove(@Param("roleId") roleId: string, @CurrentUser() u: CurrentUserContext) {
+  remove(
+    @Param("roleId") roleId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
     return this.roles.deleteRole(u, this.parseRoleId(roleId));
   }
 
   @Get(":roleId/permissions")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
-  getPermissions(@Param("roleId") roleId: string, @CurrentUser() u: CurrentUserContext) {
+  getPermissions(
+    @Param("roleId") roleId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
     return this.roles.getRolePermissions(u.orgId, this.parseRoleId(roleId));
   }
 
@@ -183,7 +202,8 @@ export class RolesController {
   @RequirePermission("settings:rbac:manage")
   setPermissions(
     @Param("roleId") roleId: string,
-    @Body(new ZodValidationPipe(setRolePermissionsSchema)) body: SetRolePermissionsInput,
+    @Body(new ZodValidationPipe(setRolePermissionsSchema))
+    body: SetRolePermissionsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.roles.setRolePermissions(u, this.parseRoleId(roleId), body);
@@ -192,7 +212,10 @@ export class RolesController {
   @Get(":roleId/members")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
-  getMembers(@Param("roleId") roleId: string, @CurrentUser() u: CurrentUserContext) {
+  getMembers(
+    @Param("roleId") roleId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
     return this.roles.getRoleMembers(u.orgId, this.parseRoleId(roleId));
   }
 

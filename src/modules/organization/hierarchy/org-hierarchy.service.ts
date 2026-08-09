@@ -309,8 +309,8 @@ export class OrgHierarchyService {
     return this.teams.moveTeam(orgId, teamId, newDepartmentId);
   }
 
-  listLocations(orgId: string) {
-    return this.locations.listLocations(orgId);
+  listLocations(orgId: string, query: ListQueryInput) {
+    return this.locations.listLocations(orgId, query);
   }
 
   async getLocation(orgId: string, id: string) {
@@ -333,8 +333,8 @@ export class OrgHierarchyService {
     return this.locations.deleteLocation(orgId, userId, id);
   }
 
-  listCostCenters(orgId: string) {
-    return this.costCenters.listCostCenters(orgId);
+  listCostCenters(orgId: string, query: ListQueryInput) {
+    return this.costCenters.listCostCenters(orgId, query);
   }
 
   async getCostCenter(orgId: string, id: string) {

@@ -1,5 +1,22 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, eq, gt, inArray, lte } from "drizzle-orm";
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gt,
+  ilike,
+  inArray,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import {
   organizationMembers,
@@ -16,11 +33,32 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { AccessService } from "../access/access.service";
-import type { CreateDelegationInput } from "./dto/delegation.schemas";
+import type {
+  CreateDelegationInput,
+  ListDelegationsQuery,
+} from "./dto/delegation.schemas";
 import {
   assertDelegationPolicy,
   assertDelegationTarget,
 } from "./delegation-policy";
+
+type DelegationRow = typeof userDelegations.$inferSelect;
+type DelegationDirection = "received" | "given";
+type DelegationLifecycle = "ACTIVE" | "SCHEDULED" | "EXPIRED" | "REVOKED";
+
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (character) => `\\${character}`);
+}
+
+function resolveLifecycle(
+  row: DelegationRow,
+  now: Date,
+): DelegationLifecycle {
+  if (row.status !== "ACTIVE") return "REVOKED";
+  if (row.startsAt > now) return "SCHEDULED";
+  if (row.endsAt <= now) return "EXPIRED";
+  return "ACTIVE";
+}
 
 @Injectable()
 export class DelegationsService {
@@ -37,7 +75,8 @@ export class DelegationsService {
   }
 
   private async withPermissions(
-    rows: (typeof userDelegations.$inferSelect)[],
+    rows: DelegationRow[],
+    now: Date,
   ) {
     if (rows.length === 0) return [];
     const participantIds = Array.from(
@@ -64,7 +103,13 @@ export class DelegationsService {
           asc(userDelegationPermissions.permissionKey),
         ),
       this.db
-        .select({ id: users.id, name: users.name, email: users.email })
+        .select({
+          id: users.id,
+          name: users.name,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          email: users.email,
+        })
         .from(users)
         .where(inArray(users.id, participantIds)),
     ]);
@@ -75,44 +120,109 @@ export class DelegationsService {
       byDelegation.set(row.delegationId, values);
     }
     const nameById = new Map(
-      participantRows.map((user) => [user.id, user.name ?? user.email]),
+      participantRows.map((user) => {
+        const structuredName = [user.firstName, user.lastName]
+          .filter(Boolean)
+          .join(" ");
+        return [user.id, user.name?.trim() || structuredName || user.email];
+      }),
     );
     return rows.map((row) => ({
       ...row,
       permissions: byDelegation.get(row.id) ?? [],
       delegatorName: nameById.get(row.delegatorId) ?? null,
       delegateeName: nameById.get(row.delegateeId) ?? null,
+      lifecycle: resolveLifecycle(row, now),
     }));
   }
 
-  async list(orgId: string, userId: string) {
+  private async listPage(
+    orgId: string,
+    userId: string,
+    direction: DelegationDirection,
+    query: ListDelegationsQuery,
+  ) {
     const now = new Date();
-    const rows = await this.db
-      .select()
-      .from(userDelegations)
-      .where(
-        and(
-          eq(userDelegations.orgId, orgId),
-          eq(userDelegations.delegateeId, userId),
-          eq(userDelegations.status, "ACTIVE"),
-          lte(userDelegations.startsAt, now),
-          gt(userDelegations.endsAt, now),
-        ),
-      );
-    return this.withPermissions(rows);
+    const participantColumn =
+      direction === "received"
+        ? userDelegations.delegatorId
+        : userDelegations.delegateeId;
+    const actorColumn =
+      direction === "received"
+        ? userDelegations.delegateeId
+        : userDelegations.delegatorId;
+    const search = query.search?.trim();
+    const searchPattern = search ? `%${escapeLike(search)}%` : null;
+    const participantSearch = searchPattern
+      ? or(
+          ilike(userDelegations.reason, searchPattern),
+          sql`EXISTS (
+            SELECT 1
+            FROM ${users}
+            WHERE ${users.id} = ${participantColumn}
+              AND (
+                ${users.name} ILIKE ${searchPattern}
+                OR ${users.email} ILIKE ${searchPattern}
+                OR concat_ws(' ', ${users.firstName}, ${users.lastName}) ILIKE ${searchPattern}
+              )
+          )`,
+        )
+      : undefined;
+    const conditions = and(
+      eq(userDelegations.orgId, orgId),
+      eq(actorColumn, userId),
+      direction === "received"
+        ? and(
+            eq(userDelegations.status, "ACTIVE"),
+            lte(userDelegations.startsAt, now),
+            gt(userDelegations.endsAt, now),
+          )
+        : undefined,
+      participantSearch,
+    );
+    const offset = (query.page - 1) * query.limit;
+
+    const [rows, [totalRow]] = await Promise.all([
+      this.db
+        .select()
+        .from(userDelegations)
+        .where(conditions)
+        .orderBy(desc(userDelegations.createdAt), desc(userDelegations.id))
+        .limit(query.limit)
+        .offset(offset),
+      this.db
+        .select({ total: count() })
+        .from(userDelegations)
+        .where(conditions),
+    ]);
+    const total = Number(totalRow?.total ?? 0);
+    const data = await this.withPermissions(rows, now);
+
+    return {
+      data,
+      pagination: {
+        page: query.page,
+        limit: query.limit,
+        total,
+        totalPages: Math.ceil(total / query.limit),
+      },
+    };
   }
 
-  async listGiven(orgId: string, delegatorId: string) {
-    const rows = await this.db
-      .select()
-      .from(userDelegations)
-      .where(
-        and(
-          eq(userDelegations.orgId, orgId),
-          eq(userDelegations.delegatorId, delegatorId),
-        ),
-      );
-    return this.withPermissions(rows);
+  async list(
+    orgId: string,
+    userId: string,
+    query: ListDelegationsQuery = { page: 1, limit: 20 },
+  ) {
+    return this.listPage(orgId, userId, "received", query);
+  }
+
+  async listGiven(
+    orgId: string,
+    delegatorId: string,
+    query: ListDelegationsQuery = { page: 1, limit: 20 },
+  ) {
+    return this.listPage(orgId, delegatorId, "given", query);
   }
 
   async create(actor: CurrentUserContext, body: CreateDelegationInput) {

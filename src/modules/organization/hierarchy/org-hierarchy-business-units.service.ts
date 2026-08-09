@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, ilike, isNull, or, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { orgUnits } from "../../../db/schema/common/organization";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -18,6 +18,7 @@ import type {
   UpdateBusinessUnitInput,
   ListQueryInput,
 } from "./dto/org-hierarchy.schemas";
+import { getOrgUnitStatusFilter } from "./org-hierarchy-list-filters";
 
 const ORG_BU_COLUMNS = {
   id: orgUnits.id,
@@ -72,15 +73,22 @@ export class OrgHierarchyBusinessUnitsService {
   async listBusinessUnits(orgId: string, query: ListQueryInput) {
     const { page, limit, search, status } = query;
     const offset = (page - 1) * limit;
+    const statusFilter = getOrgUnitStatusFilter(status);
     const filters = and(
       eq(orgUnits.orgId, orgId),
       eq(orgUnits.kind, "BUSINESS_UNIT"),
       isNull(orgUnits.deletedAt),
       ...(search ? [or(ilike(orgUnits.name, `%${search}%`), ilike(orgUnits.code, `%${search}%`))] : []),
-      ...(status ? [sql`${orgUnits.status} = ${status}`] : []),
+      ...(statusFilter ? [statusFilter] : []),
     );
     const [rows, [{ count }]] = await Promise.all([
-      this.db.select(ORG_BU_COLUMNS).from(orgUnits).where(filters).limit(limit).offset(offset),
+      this.db
+        .select(ORG_BU_COLUMNS)
+        .from(orgUnits)
+        .where(filters)
+        .orderBy(asc(orgUnits.name), asc(orgUnits.id))
+        .limit(limit)
+        .offset(offset),
       this.db.select({ count: sql<number>`count(*)::int` }).from(orgUnits).where(filters),
     ]);
     return { data: rows.map(toOrgBusinessUnit), total: count, page, limit };

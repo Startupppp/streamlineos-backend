@@ -7,6 +7,7 @@ import {
   HttpStatus,
   Param,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
@@ -19,6 +20,8 @@ import { UserApiTokensService } from "./user-api-tokens.service";
 import {
   createUserApiTokenSchema,
   type CreateUserApiTokenInput,
+  listUserApiTokensSchema,
+  type ListUserApiTokensInput,
 } from "./dto/user-api-tokens.schemas";
 
 @Controller("me/api-tokens")
@@ -28,8 +31,12 @@ export class UserApiTokensController {
 
   @Get()
   @RequirePermission("settings:api-tokens:read")
-  list(@CurrentUser() u: CurrentUserContext) {
-    return this.userApiTokensService.list(u.userId);
+  list(
+    @CurrentUser() u: CurrentUserContext,
+    @Query(new ZodValidationPipe(listUserApiTokensSchema))
+    query: ListUserApiTokensInput,
+  ) {
+    return this.userApiTokensService.list(u.userId, query);
   }
 
   @Get("permissions")

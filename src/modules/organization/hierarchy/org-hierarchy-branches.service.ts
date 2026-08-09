@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, ilike, isNull, or, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { orgUnits, type OrgUnitMetadata } from "../../../db/schema/common/organization";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -18,6 +18,7 @@ import type {
   UpdateOrgBranchInput,
   ListQueryInput,
 } from "./dto/org-hierarchy.schemas";
+import { getOrgUnitStatusFilter } from "./org-hierarchy-list-filters";
 
 const ORG_BRANCH_COLUMNS = {
   id: orgUnits.id,
@@ -81,15 +82,30 @@ export class OrgHierarchyBranchesService {
   async listOrgBranches(orgId: string, query: ListQueryInput) {
     const { page, limit, search, status } = query;
     const offset = (page - 1) * limit;
+    const statusFilter = getOrgUnitStatusFilter(status);
     const filters = and(
       eq(orgUnits.orgId, orgId),
       eq(orgUnits.kind, "BRANCH"),
       isNull(orgUnits.deletedAt),
-      ...(search ? [or(ilike(orgUnits.name, `%${search}%`), ilike(orgUnits.code, `%${search}%`))] : []),
-      ...(status ? [sql`${orgUnits.status} = ${status}`] : []),
+      ...(search
+        ? [
+            or(
+              ilike(orgUnits.name, `%${search}%`),
+              ilike(orgUnits.code, `%${search}%`),
+              sql<boolean>`coalesce(${orgUnits.metadata}->>'email', '') ilike ${`%${search}%`}`,
+            ),
+          ]
+        : []),
+      ...(statusFilter ? [statusFilter] : []),
     );
     const [rows, [{ count }]] = await Promise.all([
-      this.db.select(ORG_BRANCH_COLUMNS).from(orgUnits).where(filters).limit(limit).offset(offset),
+      this.db
+        .select(ORG_BRANCH_COLUMNS)
+        .from(orgUnits)
+        .where(filters)
+        .orderBy(asc(orgUnits.name), asc(orgUnits.id))
+        .limit(limit)
+        .offset(offset),
       this.db.select({ count: sql<number>`count(*)::int` }).from(orgUnits).where(filters),
     ]);
     return { data: rows.map(toOrgBranch), total: count, page, limit };

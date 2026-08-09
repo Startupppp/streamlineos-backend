@@ -75,6 +75,20 @@ export const simulationCandidatesQuerySchema = z.object({
   search: z.string().trim().max(100).optional(),
 });
 
+export const listRolesQuerySchema = z
+  .object({
+    page: z.coerce.number().int().positive().default(1),
+    limit: z.coerce
+      .number()
+      .int()
+      .refine((value) => [10, 20, 50, 100].includes(value), {
+        message: "Limit must be 10, 20, 50, or 100",
+      })
+      .default(20),
+    search: z.string().trim().max(100).optional(),
+  })
+  .strict();
+
 export type RolePermissionsQuery = z.infer<typeof rolePermissionsQuerySchema>;
 export type AssignRolePermissionInput = z.infer<typeof assignRolePermissionSchema>;
 export type RevokeRolePermissionInput = z.infer<typeof revokeRolePermissionSchema>;
@@ -84,6 +98,7 @@ export type CloneTemplateInput = z.infer<typeof cloneTemplateSchema>;
 export type SetRolePermissionsInput = z.infer<typeof setRolePermissionsSchema>;
 export type RoleMemberInput = z.infer<typeof roleMemberSchema>;
 export type SimulationCandidatesQuery = z.infer<typeof simulationCandidatesQuerySchema>;
+export type ListRolesQuery = z.infer<typeof listRolesQuerySchema>;
 
 export interface DiscoveryPermissionEntry {
   name: string;

@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, ilike, isNull, or, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { organizationMembers, orgUnits } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -18,6 +18,7 @@ import type {
   UpdateOrgTeamInput,
   ListQueryInput,
 } from "./dto/org-hierarchy.schemas";
+import { getOrgUnitStatusFilter } from "./org-hierarchy-list-filters";
 
 const ORG_TEAM_COLUMNS = {
   id: orgUnits.id,
@@ -78,16 +79,33 @@ export class OrgHierarchyTeamsService {
   async listTeams(orgId: string, query: ListQueryInput) {
     const { page, limit, search, status } = query;
     const offset = (page - 1) * limit;
+    const statusFilter = getOrgUnitStatusFilter(status);
     const filters = and(
       eq(orgUnits.orgId, orgId),
       eq(orgUnits.kind, "TEAM"),
       isNull(orgUnits.deletedAt),
-      ...(search ? [or(ilike(orgUnits.name, `%${search}%`), ilike(orgUnits.code, `%${search}%`))] : []),
-      ...(status ? [sql`${orgUnits.status} = ${status}`] : []),
+      ...(search
+        ? [
+            or(
+              ilike(orgUnits.name, `%${search}%`),
+              ilike(orgUnits.code, `%${search}%`),
+            ),
+          ]
+        : []),
+      ...(statusFilter ? [statusFilter] : []),
     );
     const [rows, [{ count }]] = await Promise.all([
-      this.db.select(ORG_TEAM_COLUMNS).from(orgUnits).where(filters).limit(limit).offset(offset),
-      this.db.select({ count: sql<number>`count(*)::int` }).from(orgUnits).where(filters),
+      this.db
+        .select(ORG_TEAM_COLUMNS)
+        .from(orgUnits)
+        .where(filters)
+        .orderBy(asc(orgUnits.name), asc(orgUnits.id))
+        .limit(limit)
+        .offset(offset),
+      this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(orgUnits)
+        .where(filters),
     ]);
     return { data: rows.map(toOrgTeam), total: count, page, limit };
   }
@@ -99,12 +117,14 @@ export class OrgHierarchyTeamsService {
     const [row] = await this.db
       .select(ORG_TEAM_COLUMNS)
       .from(orgUnits)
-      .where(and(
+      .where(
+        and(
           eq(orgUnits.id, id),
           eq(orgUnits.orgId, orgId),
           eq(orgUnits.kind, "TEAM"),
           isNull(orgUnits.deletedAt),
-        ))
+        ),
+      )
       .limit(1);
     return row ?? null;
   }
@@ -126,7 +146,9 @@ export class OrgHierarchyTeamsService {
       columns: { id: true },
     });
     if (!department) {
-      throw new BadRequestException("Select a valid department from this organization");
+      throw new BadRequestException(
+        "Select a valid department from this organization",
+      );
     }
   }
 
@@ -176,19 +198,31 @@ export class OrgHierarchyTeamsService {
         description: body.description,
         headUserId: body.leadUserId ?? undefined,
         parentId: body.departmentId ?? undefined,
-        metadata: body.capacity !== undefined ? { capacity: body.capacity } : undefined,
+        metadata:
+          body.capacity !== undefined ? { capacity: body.capacity } : undefined,
       })
       .returning(ORG_TEAM_COLUMNS);
 
     if (!row) throw new Error("Failed to create team");
 
     await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "TEAM"));
-    await this.audit.log({ action: "org.team.created", userId, orgId, targetId: row.id, targetType: "org_unit" });
+    await this.audit.log({
+      action: "org.team.created",
+      userId,
+      orgId,
+      targetId: row.id,
+      targetType: "org_unit",
+    });
 
     return toOrgTeam(row);
   }
 
-  async updateTeam(orgId: string, userId: string, id: string, body: UpdateOrgTeamInput) {
+  async updateTeam(
+    orgId: string,
+    userId: string,
+    id: string,
+    body: UpdateOrgTeamInput,
+  ) {
     const existing = await this.getTeamRow(orgId, id);
     if (!existing) throw new NotFoundException("Team not found");
     if (body.departmentId !== undefined) {
@@ -223,13 +257,25 @@ export class OrgHierarchyTeamsService {
           metadata: { ...existingMeta, capacity: capacity ?? undefined },
         }),
       })
-      .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "TEAM")))
+      .where(
+        and(
+          eq(orgUnits.id, id),
+          eq(orgUnits.orgId, orgId),
+          eq(orgUnits.kind, "TEAM"),
+        ),
+      )
       .returning(ORG_TEAM_COLUMNS);
 
     if (!row) throw new NotFoundException("Team not found");
 
     await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "TEAM"));
-    await this.audit.log({ action: "org.team.updated", userId, orgId, targetId: id, targetType: "org_unit" });
+    await this.audit.log({
+      action: "org.team.updated",
+      userId,
+      orgId,
+      targetId: id,
+      targetType: "org_unit",
+    });
 
     return toOrgTeam(row);
   }
@@ -241,10 +287,22 @@ export class OrgHierarchyTeamsService {
     await this.db
       .update(orgUnits)
       .set({ deletedAt: new Date() })
-      .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "TEAM")));
+      .where(
+        and(
+          eq(orgUnits.id, id),
+          eq(orgUnits.orgId, orgId),
+          eq(orgUnits.kind, "TEAM"),
+        ),
+      );
 
     await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "TEAM"));
-    await this.audit.log({ action: "org.team.deleted", userId, orgId, targetId: id, targetType: "org_unit" });
+    await this.audit.log({
+      action: "org.team.deleted",
+      userId,
+      orgId,
+      targetId: id,
+      targetType: "org_unit",
+    });
   }
 
   async moveTeam(orgId: string, teamId: string, newDepartmentId: string) {

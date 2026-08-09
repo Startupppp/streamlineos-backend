@@ -268,8 +268,11 @@ export class OrgHierarchyController {
 
   @RequirePermission("settings:view")
   @Get("locations")
-  listLocations(@CurrentUser() u: CurrentUserContext) {
-    return this.service.listLocations(u.orgId);
+  listLocations(
+    @Query(new ZodValidationPipe(listQuerySchema)) query: ListQueryInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.service.listLocations(u.orgId, query);
   }
 
   @Post("locations")
@@ -308,8 +311,11 @@ export class OrgHierarchyController {
 
   @RequirePermission("settings:view")
   @Get("cost-centers")
-  listCostCenters(@CurrentUser() u: CurrentUserContext) {
-    return this.service.listCostCenters(u.orgId);
+  listCostCenters(
+    @Query(new ZodValidationPipe(listQuerySchema)) query: ListQueryInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.service.listCostCenters(u.orgId, query);
   }
 
   @Post("cost-centers")
