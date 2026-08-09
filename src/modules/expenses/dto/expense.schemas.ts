@@ -135,6 +135,45 @@ const optionalMerchantSchema = z
     },
   );
 
+const clearableMerchantSchema = z
+  .string()
+  .nullable()
+  .optional()
+  .transform((v) => {
+    if (v === undefined) return undefined;
+    if (v === null) return null;
+    const t = v.trim();
+    return t ? t : null;
+  })
+  .refine(
+    (v) =>
+      v === undefined ||
+      v === null ||
+      (v.length <= 200 && EXPENSE_LABEL_RE.test(v) && !CONSECUTIVE_SPECIAL_RE.test(v)),
+    {
+      message:
+        "Merchant can only use letters, numbers, spaces, apostrophes, periods, and hyphens",
+    },
+  );
+
+const clearableExpenseLabelSchema = z
+  .string()
+  .nullable()
+  .optional()
+  .transform((v) => {
+    if (v === undefined) return undefined;
+    if (v === null) return null;
+    const t = v.trim();
+    return t ? t : null;
+  })
+  .refine(
+    (v) => v === undefined || v === null || (v.length <= 100 && isValidExpenseLabel(v)),
+    {
+      message:
+        "Can only use letters, numbers, spaces, apostrophes, periods, and hyphens",
+    },
+  );
+
 export const createExpenseSchema = z.object({
   category: expenseLabelSchema,
   categoryId: z.number().int().optional(),
@@ -157,8 +196,8 @@ export const updateExpenseDetailsSchema = z.object({
   category: expenseLabelSchema.optional(),
   amount: AMOUNT.optional(),
   description: z.string().max(1000).optional(),
-  merchant: optionalMerchantSchema,
-  paymentMethod: optionalExpenseLabelSchema,
+  merchant: clearableMerchantSchema,
+  paymentMethod: clearableExpenseLabelSchema,
   expenseDate: z.string().optional(),
   receiptUrl: z.string().optional(),
   receiptFileName: z.string().optional(),
