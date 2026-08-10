@@ -1,4 +1,6 @@
+import { ForbiddenException } from "@nestjs/common";
 import { and, eq, gt, isNull, or } from "drizzle-orm";
+import { moduleAccessDenied } from "./module-access-errors";
 import {
   moduleOwnerships,
   organizationMembers,
@@ -108,11 +110,55 @@ export async function hasModuleAccessManagementAuthority(
   return authority.isModuleOwner || authority.isModuleAdmin;
 }
 
+interface ModuleAccessPolicyDeps {
+  db: Db;
+  isModuleEnabled: (orgId: string, moduleKey: string) => Promise<boolean>;
+  resolveUserPermissions: (
+    orgId: string,
+    userId: string,
+  ) => Promise<ReadonlyMap<string, DataScope>>;
+}
+
+export async function assertModuleAccessPolicy(
+  deps: ModuleAccessPolicyDeps,
+  actor: CurrentUserContext,
+  moduleKey: string,
+  action: "view" | "manage",
+): Promise<void> {
+  if (!(await deps.isModuleEnabled(actor.orgId, moduleKey)))
+    throw new ForbiddenException(`The ${moduleKey} module is not enabled`);
+
+  if (actor.isOrgOwner) return;
+
+  const resolved = await deps.resolveUserPermissions(actor.orgId, actor.userId);
+
+  if (action === "manage") {
+    if (
+      await hasModuleAccessManagementAuthority(
+        deps.db,
+        actor,
+        moduleKey,
+        resolved,
+      )
+    )
+      return;
+
+    throw moduleAccessDenied(action);
+  }
+
+  if (grantsOrgAdmin(resolved)) return;
+  const scope =
+    resolved.get(`${moduleKey}:access:${action}`) ??
+    resolved.get(`${moduleKey}:access:manage`);
+  if (!scope || scope === "none") throw moduleAccessDenied(action);
+}
+
 export async function resolveActorRankContext(
   db: Db,
   orgId: string,
   userId: string,
 ): Promise<{ bestRank: number; allowedModules: Set<string> | null }> {
+  const now = new Date();
   const rows = await db
     .select({ rank: roles.rank, moduleKey: roles.moduleKey })
     .from(roleAssignments)
@@ -131,6 +177,11 @@ export async function resolveActorRankContext(
       and(
         eq(roleAssignments.orgId, orgId),
         eq(organizationMembers.userId, userId),
+        eq(organizationMembers.status, "ACTIVE"),
+        or(
+          isNull(roleAssignments.expiresAt),
+          gt(roleAssignments.expiresAt, now),
+        ),
       ),
     )
     .limit(100);

@@ -31,7 +31,7 @@ import {
 } from "../../common/rbac/grantability";
 import { moduleAccessDenied } from "./module-access-errors";
 import {
-  hasModuleAccessManagementAuthority,
+  assertModuleAccessPolicy,
   resolveActorRankContext,
   resolveModuleAuthorityFacts,
 } from "./module-access.helpers";
@@ -162,45 +162,17 @@ export class ModuleAccessService {
     action: "view" | "manage",
   ): Promise<void> {
     this.assertKnownModule(moduleKey);
-    if (!(await this.access.isModuleEnabled(actor.orgId, moduleKey))) {
-      throw new ForbiddenException(`The ${moduleKey} module is not enabled`);
-    }
-    if (action === "manage") {
-      if (actor.isOrgOwner) return;
-      const resolved = await this.access.resolveUserPermissions(
-        actor.orgId,
-        actor.userId,
-      );
-      if (
-        await hasModuleAccessManagementAuthority(
-          this.db,
-          actor,
-          moduleKey,
-          resolved,
-        )
-      ) {
-        return;
-      }
-      throw moduleAccessDenied(action);
-    }
-
-    if (actor.isOrgOwner) return;
-
-    const resolved = await this.access.resolveUserPermissions(
-      actor.orgId,
-      actor.userId,
+    await assertModuleAccessPolicy(
+      {
+        db: this.db,
+        isModuleEnabled: (orgId, key) => this.access.isModuleEnabled(orgId, key),
+        resolveUserPermissions: (orgId, userId) =>
+          this.access.resolveUserPermissions(orgId, userId),
+      },
+      actor,
+      moduleKey,
+      action,
     );
-    const isOrgAdmin = grantsOrgAdmin(resolved);
-    if (isOrgAdmin) return;
-
-    const scope =
-      resolved.get(`${moduleKey}:access:${action}`) ??
-      (action === "view"
-        ? resolved.get(`${moduleKey}:access:manage`)
-        : undefined);
-    if (!scope || scope === "none") {
-      throw moduleAccessDenied(action);
-    }
   }
 
   async listCatalog(

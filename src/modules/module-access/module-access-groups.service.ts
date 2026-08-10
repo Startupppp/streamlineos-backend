@@ -49,7 +49,7 @@ import {
   moduleOwnershipDenied,
 } from "./module-access-errors";
 import {
-  hasModuleAccessManagementAuthority,
+  assertModuleAccessPolicy,
   resolveActorRankContext,
   resolveModuleOwnerUserId,
 } from "./module-access.helpers";
@@ -153,43 +153,17 @@ export class ModuleAccessGroupsService {
     action: "view" | "manage",
   ): Promise<void> {
     this.assertKnownModule(moduleKey);
-    if (!(await this.access.isModuleEnabled(actor.orgId, moduleKey))) {
-      throw new ForbiddenException(`The ${moduleKey} module is not enabled`);
-    }
-    if (action === "manage") {
-      if (actor.isOrgOwner) return;
-      const resolved = await this.access.resolveUserPermissions(
-        actor.orgId,
-        actor.userId,
-      );
-      if (
-        await hasModuleAccessManagementAuthority(
-          this.db,
-          actor,
-          moduleKey,
-          resolved,
-        )
-      ) {
-        return;
-      }
-      throw moduleAccessDenied(action);
-    }
-
-    if (actor.isOrgOwner) return;
-    const resolved = await this.access.resolveUserPermissions(
-      actor.orgId,
-      actor.userId,
+    await assertModuleAccessPolicy(
+      {
+        db: this.db,
+        isModuleEnabled: (orgId, key) => this.access.isModuleEnabled(orgId, key),
+        resolveUserPermissions: (orgId, userId) =>
+          this.access.resolveUserPermissions(orgId, userId),
+      },
+      actor,
+      moduleKey,
+      action,
     );
-    const isOrgAdmin = grantsOrgAdmin(resolved);
-    if (isOrgAdmin) return;
-    const scope =
-      resolved.get(`${moduleKey}:access:${action}`) ??
-      (action === "view"
-        ? resolved.get(`${moduleKey}:access:manage`)
-        : undefined);
-    if (!scope || scope === "none") {
-      throw moduleAccessDenied(action);
-    }
   }
 
   /**
@@ -502,8 +476,8 @@ export class ModuleAccessGroupsService {
 
     const [row] = await runInTenantTransaction(
       this.db,
-      (tx) =>
-        tx
+      async (tx) => {
+        const updated = await tx
           .update(roles)
           .set({ name: input.name, updatedAt: new Date() })
           .where(
@@ -518,7 +492,10 @@ export class ModuleAccessGroupsService {
             name: roles.name,
             isSystem: roles.isSystem,
             version: roles.version,
-          }),
+          });
+        await bumpPermissionsVersion(tx, actor.orgId);
+        return updated;
+      },
       { orgId: actor.orgId },
     ).catch((err: unknown) => {
       if (
@@ -746,6 +723,12 @@ export class ModuleAccessGroupsService {
   ): Promise<{ success: true }> {
     await this.assertAccess(actor, moduleKey, "manage");
     await this.assertGroupBelongsToModule(actor.orgId, moduleKey, groupId);
+
+    if (!actor.isOrgOwner && userId === actor.userId) {
+      throw new ForbiddenException(
+        "You cannot remove yourself from a module group",
+      );
+    }
 
     const ownerUserId = await this.resolveModuleOwnerUserId(
       actor.orgId,
@@ -1049,8 +1032,12 @@ export class ModuleAccessGroupsService {
         { orgId: actor.orgId },
       );
     } catch (err: unknown) {
-      const pgErr = err as { code?: string };
-      if (pgErr.code === "23505") {
+      if (
+        typeof err === "object" &&
+        err !== null &&
+        "code" in err &&
+        err.code === "23505"
+      ) {
         throw new ConflictException(
           `A pending transfer for module "${moduleKey}" already exists`,
         );
