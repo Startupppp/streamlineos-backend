@@ -80,7 +80,7 @@ export class CrmSupportDashboardService {
     const [
       statusAggs,
       priorityAggs,
-      resolvedTickets,
+      resolvedAvgMs,
       prevMonthResolved,
       recentMessages,
       assigneeAggs,
@@ -100,8 +100,7 @@ export class CrmSupportDashboardService {
 
       this.db
         .select({
-          resolvedAt: supportTickets.resolvedAt,
-          createdAt: supportTickets.createdAt,
+          avgMs: sql<string>`EXTRACT(EPOCH FROM AVG(${supportTickets.resolvedAt} - ${supportTickets.createdAt})) * 1000`,
         })
         .from(supportTickets)
         .where(
@@ -110,8 +109,7 @@ export class CrmSupportDashboardService {
             isNotNull(supportTickets.resolvedAt),
             gte(supportTickets.createdAt, monthStart),
           ),
-        )
-        .limit(500),
+        ),
 
       this.db
         .select({ cnt: count() })
@@ -185,13 +183,7 @@ export class CrmSupportDashboardService {
         ? Math.round((closedOrResolved / totalTickets) * 1000) / 10
         : 0;
 
-    const avgResolveMs =
-      resolvedTickets.length > 0
-        ? resolvedTickets.reduce((s, t) => {
-            if (!t.resolvedAt || !t.createdAt) return s;
-            return s + (t.resolvedAt.getTime() - t.createdAt.getTime());
-          }, 0) / resolvedTickets.length
-        : 0;
+    const avgResolveMs = Number(resolvedAvgMs[0]?.avgMs ?? 0);
     const avgResolveH = Math.floor(avgResolveMs / (1000 * 60 * 60));
     const avgResolveM = Math.round((avgResolveMs / (1000 * 60)) % 60);
     const avgResolutionStr =
@@ -344,7 +336,7 @@ export class CrmSupportDashboardService {
       ceMetrics,
       ceActivities,
       supportTicketStats,
-      resolvedCeTickets,
+      ceResolvedAvg,
     ] = await Promise.all([
       this.db
         .select({ health: crmCompanies.health, cnt: count() })
@@ -410,14 +402,17 @@ export class CrmSupportDashboardService {
         .where(eq(crmSupportTickets.orgId, orgId))
         .groupBy(crmSupportTickets.status),
 
-      this.db.query.crmSupportTickets.findMany({
-        where: and(
-          eq(crmSupportTickets.orgId, orgId),
-          isNotNull(crmSupportTickets.resolvedAt),
+      this.db
+        .select({
+          avgMs: sql<string>`EXTRACT(EPOCH FROM AVG(${crmSupportTickets.resolvedAt} - ${crmSupportTickets.createdAt})) * 1000`,
+        })
+        .from(crmSupportTickets)
+        .where(
+          and(
+            eq(crmSupportTickets.orgId, orgId),
+            isNotNull(crmSupportTickets.resolvedAt),
+          ),
         ),
-        columns: { resolvedAt: true, createdAt: true },
-        limit: 500,
-      }),
     ]);
 
     const totalClients = healthAggs.reduce((sum, r) => sum + r.cnt, 0);
@@ -515,13 +510,7 @@ export class CrmSupportDashboardService {
     const openTickets =
       (ticketStatusMap.get("new") ?? 0) +
       (ticketStatusMap.get("in_progress") ?? 0);
-    const avgResMs =
-      resolvedCeTickets.length > 0
-        ? resolvedCeTickets.reduce((sum, t) => {
-            if (!t.resolvedAt || !t.createdAt) return sum;
-            return sum + (t.resolvedAt.getTime() - t.createdAt.getTime());
-          }, 0) / resolvedCeTickets.length
-        : 0;
+    const avgResMs = Number(ceResolvedAvg[0]?.avgMs ?? 0);
     const avgResHours = avgResMs / (1000 * 60 * 60);
     const avgResMinutes = Math.round((avgResMs / (1000 * 60)) % 60);
     const ceAvgResolution =

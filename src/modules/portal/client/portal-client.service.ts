@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   changeRequests,
   projectClientGrants,
@@ -130,6 +130,7 @@ export class PortalClientService {
                 eq(tickets.orgId, orgId),
                 eq(tickets.projectId, projectId),
                 eq(tickets.clientVisible, true),
+                isNull(tickets.deletedAt),
               ),
             )
             .limit(100)
@@ -149,6 +150,7 @@ export class PortalClientService {
                 eq(tickets.id, ticketAttachments.ticketId),
                 eq(tickets.projectId, projectId),
                 eq(tickets.orgId, orgId),
+                isNull(tickets.deletedAt),
               ),
             )
             .where(
@@ -175,6 +177,7 @@ export class PortalClientService {
                 eq(tickets.id, ticketComments.ticketId),
                 eq(tickets.projectId, projectId),
                 eq(tickets.orgId, orgId),
+                isNull(tickets.deletedAt),
               ),
             )
             .leftJoin(users, eq(users.id, ticketComments.userId))

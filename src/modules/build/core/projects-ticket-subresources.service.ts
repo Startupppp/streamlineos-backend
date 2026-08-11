@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, lt } from "drizzle-orm";
+import { and, desc, eq, isNull, lt } from "drizzle-orm";
 import {
   ticketActivityLog,
   ticketAttachments,
@@ -125,6 +125,7 @@ export class ProjectsTicketSubresourcesService {
         eq(tickets.id, ticketId),
         eq(tickets.projectId, projectId),
         eq(tickets.orgId, orgId),
+        isNull(tickets.deletedAt),
       ),
       columns: { id: true },
     });
@@ -177,7 +178,7 @@ export class ProjectsTicketSubresourcesService {
 
   getSubtasks(orgId: string, ticketId: number) {
     return this.db.query.tickets.findMany({
-      where: and(eq(tickets.parentTicketId, ticketId), eq(tickets.orgId, orgId)),
+      where: and(eq(tickets.parentTicketId, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)),
       columns: {
         completionPercentage: false,
         clientVisible: false,
@@ -204,7 +205,7 @@ export class ProjectsTicketSubresourcesService {
 
   private async requireTicket(orgId: string, ticketId: number): Promise<void> {
     const ticket = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)),
+      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)),
       columns: { id: true },
     });
     if (!ticket) throw new NotFoundException("Ticket not found");

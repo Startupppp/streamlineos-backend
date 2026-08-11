@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { sprints, tickets } from "../../../db/schema";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -44,7 +44,7 @@ export class SprintsService {
         sprintId: tickets.sprintId,
       })
       .from(tickets)
-      .where(and(eq(tickets.orgId, orgId), inArray(tickets.sprintId, sprintIds)))
+      .where(and(eq(tickets.orgId, orgId), isNull(tickets.deletedAt), inArray(tickets.sprintId, sprintIds)))
       .limit(500);
 
     const ticketsBySprintId = new Map<number, typeof ticketRows>();
@@ -85,6 +85,7 @@ export class SprintsService {
       where: and(eq(sprints.id, sprintId), eq(sprints.orgId, orgId)),
       with: {
         tickets: {
+          where: isNull(tickets.deletedAt),
           limit: 200,
           with: {
             assignee: {

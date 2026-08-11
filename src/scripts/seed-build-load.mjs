@@ -87,18 +87,12 @@ async function seedProjects(orgId, workspaceId, count, users) {
   log(`projects: ${ids.length}`);
 
   await sql`
-    insert into custom_states (project_id, org_id, name, "group", created_at)
-    select p.id, ${orgId}, s.name, s.grp::state_group, now()
+    insert into project_statuses (org_id, project_id, name, "order", type, created_at)
+    select ${orgId}, p.id, s.name, s.ord, s.typ, now()
     from unnest(${sql.array(ids)}::int[]) p(id)
     cross join (values
-      ('Backlog','backlog'),('To Do','unstarted'),('In Progress','started'),
-      ('In Review','started'),('Done','completed')) s(name, grp)`;
-
-  await sql`
-    insert into project_statuses (org_id, project_id, name, "order", created_at)
-    select ${orgId}, p.id, s.name, s.ord, now()
-    from unnest(${sql.array(ids)}::int[]) p(id)
-    cross join (values ('TODO',0),('IN_PROGRESS',1),('IN_REVIEW',2),('DONE',3)) s(name, ord)`;
+      ('TODO',0,'unstarted'),('IN_PROGRESS',1,'started'),
+      ('IN_REVIEW',2,'started'),('DONE',3,'completed')) s(name, ord, typ)`;
 
   await sql`
     insert into sprints (org_id, project_id, name, start_date, end_date)
@@ -130,7 +124,7 @@ async function seedTickets(orgId, projectIds, total, users) {
     await sql`
       insert into tickets (
         org_id, project_id, title, description, ticket_number, type, status, priority,
-        assignee_id, reporter_id, points, "order", start_date, due_date,
+        assignee_id, reporter_id, points, rank, start_date, due_date,
         completion_percentage, created_at, updated_at)
       select ${orgId},
              p.id,
@@ -138,12 +132,12 @@ async function seedTickets(orgId, projectIds, total, users) {
              case when g % 4 = 0 then null else repeat('Body text for seeded work item. ', 8) end,
              ((g - 1) / ${projectIds.length}) + 1,
              (array['EPIC','STORY','TASK','TASK','TASK','BUG'])[1 + (g % 6)]::ticket_type,
-             (array['TODO','IN_PROGRESS','IN_REVIEW','DONE','Backlog'])[1 + (g % 5)],
+             (array['TODO','IN_PROGRESS','IN_REVIEW','DONE'])[1 + (g % 4)],
              (array['LOW','MEDIUM','HIGH','URGENT'])[1 + (g % 4)]::ticket_priority,
              case when g % 7 = 0 then null else u.uid end,
              u2.uid,
              case when g % 3 = 0 then null else (g % 13) end,
-             ((g - 1) / ${projectIds.length}) + 1,
+             ((((g - 1) / ${projectIds.length}) + 1) * 1000)::numeric,
              (now() - ((g % 300) || ' days')::interval)::date,
              (now() + ((g % 60) || ' days')::interval)::date,
              (g % 101),
@@ -275,7 +269,7 @@ async function analyze() {
   const tables = [
     "projects", "tickets", "ticket_comments", "ticket_activity_log", "ticket_assignees",
     "ticket_label_mappings", "ticket_labels", "work_item_relations", "sprints",
-    "project_members", "project_statuses", "custom_states", "timesheets", "pm_workspaces",
+    "project_members", "project_statuses", "timesheets", "pm_workspaces",
   ];
   for (const t of tables) await sql.unsafe(`analyze public.${t}`);
   log(`analyze: ${tables.length} tables`);

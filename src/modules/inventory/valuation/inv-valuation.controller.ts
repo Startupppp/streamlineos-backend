@@ -28,7 +28,7 @@ export class InvValuationController {
     @Query(new ZodValidationPipe(valuationSummarySchema)) filters: ValuationSummaryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.valuation.getValuationSummary(u.orgId, filters);
+    return this.valuation.getValuationSummary(u.orgId, u.userId, filters);
   }
 
   @Get("layers")
@@ -38,6 +38,6 @@ export class InvValuationController {
     @Query(new ZodValidationPipe(valuationLayersSchema)) filters: ValuationLayersInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.valuation.getValuationLayers(u.orgId, filters);
+    return this.valuation.getValuationLayers(u.orgId, u.userId, filters);
   }
 }

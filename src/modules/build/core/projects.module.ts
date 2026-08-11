@@ -25,6 +25,7 @@ import { ProjectsWriteService } from "./projects-write.service";
 import { ProjectsProvisionService } from "./projects-provision.service";
 import { ProjectsEmailService } from "./projects-email.service";
 import { ProjectsMembersService } from "./projects-members.service";
+import { BuildNotificationVisibility } from "./build-notification-visibility";
 import { ProjectsTicketsService } from "./projects-tickets.service";
 import { ProjectsTicketsCreateService } from "./projects-tickets-create.service";
 import { ProjectsTicketsUpdateService } from "./projects-tickets-update.service";
@@ -72,6 +73,7 @@ import { BuildAutomationRunnerService } from "./build-automation-runner.service"
     ProjectsController,
   ],
   providers: [
+    BuildNotificationVisibility,
     ProjectsService,
     ProjectsQueryService,
     ProjectsWriteService,

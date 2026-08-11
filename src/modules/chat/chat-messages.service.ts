@@ -210,9 +210,12 @@ export class ChatMessagesService {
       attachments: insertedAttachments,
     });
 
+    // RT-001: neither the sender's name nor the message text crosses the push
+    // boundary. The client opens the channel and loads it over an authenticated
+    // request. This costs the lock-screen preview deliberately — a chat message can
+    // contain anything, and the push service is a third party.
     await this.webPush.sendToChannelMembers(channelId, message.senderId, {
-      title: senderName ?? "New message",
-      body: message.content?.slice(0, 80) ?? "Sent an attachment",
+      category: "CHAT",
       url: `/chat?channel=${channelId}`,
     });
 

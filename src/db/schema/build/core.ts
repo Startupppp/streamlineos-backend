@@ -4,7 +4,6 @@ import {
   text,
   serial,
   timestamp,
-  boolean,
   jsonb,
   decimal,
   date,
@@ -112,27 +111,24 @@ export const sprints = pgTable(
   ],
 );
 
-export const customStates = pgTable(
-  "custom_states",
+export const projectStatuses = pgTable(
+  "project_statuses",
   {
     id: serial("id").primaryKey(),
-    projectId: integer("project_id")
-      .references(() => projects.id, { onDelete: "cascade" })
-      .notNull(),
-    orgId: text("org_id")
-      .references(() => organizations.id, { onDelete: "cascade" })
-      .notNull(),
+    orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+    projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
     name: text("name").notNull(),
-    color: text("color").notNull().default("#3B82F6"),
-    group: stateGroupEnum("group").notNull(),
-    sequence: integer("sequence").notNull().default(0),
-    isDefault: boolean("is_default").default(false).notNull(),
+    order: integer("order").notNull().default(0),
+    color: text("color"),
+    type: stateGroupEnum("type").default("unstarted"),
+    wipLimit: integer("wip_limit"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
-    index("idx_custom_states_project").on(table.projectId),
-    index("idx_custom_states_org").on(table.orgId),
-    unique("uniq_custom_states_org_id").on(table.orgId, table.id),
+    index("idx_project_statuses_project").on(table.projectId),
+    unique("uniq_project_statuses_org_id").on(table.orgId, table.id),
+    unique("uniq_project_statuses_org_project_name").on(table.orgId, table.projectId, table.name),
   ],
 );
 

@@ -6,6 +6,7 @@ import { InventorySettingsService } from "./inventory-settings.service";
 import { InventoryAuditService } from "./inventory-audit.service";
 import { ValuationService } from "./valuation.service";
 import { WarehouseScopeService } from "./warehouse-scope.service";
+import { CostVisibilityService } from "./cost-visibility";
 
 @Module({
   providers: [
@@ -16,6 +17,7 @@ import { WarehouseScopeService } from "./warehouse-scope.service";
     InventoryAuditService,
     ValuationService,
     WarehouseScopeService,
+    CostVisibilityService,
   ],
   exports: [
     StockEngineService,
@@ -25,6 +27,7 @@ import { WarehouseScopeService } from "./warehouse-scope.service";
     InventoryAuditService,
     ValuationService,
     WarehouseScopeService,
+    CostVisibilityService,
   ],
 })
 export class InvStockEngineModule {}

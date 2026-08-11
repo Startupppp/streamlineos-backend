@@ -62,7 +62,8 @@ export class CronNotificationRetentionService {
             limit ${limit}
           )`,
         )
-        .then((r) => r.rowCount ?? 0),
+        .returning({ id: emailOutbox.id })
+        .then((rows) => rows.length),
     );
 
     result.emailRecordsDeleted = await this.batched((limit) =>
@@ -75,7 +76,8 @@ export class CronNotificationRetentionService {
             limit ${limit}
           )`,
         )
-        .then((r) => r.rowCount ?? 0),
+        .returning({ id: emailOutbox.id })
+        .then((rows) => rows.length),
     );
 
     // notification_deliveries enforces org_id = app.current_org_id(), so a global
@@ -90,8 +92,9 @@ export class CronNotificationRetentionService {
             lt(notificationDeliveries.createdAt, bodyCutoff),
             isNotNull(notificationDeliveries.metadata),
           ),
-        );
-      result.deliveryBodiesPurged += purged.rowCount ?? 0;
+        )
+        .returning({ id: notificationDeliveries.id });
+      result.deliveryBodiesPurged += purged.length;
 
       const deleted = await tx
         .delete(notificationDeliveries)
@@ -100,8 +103,9 @@ export class CronNotificationRetentionService {
             eq(notificationDeliveries.orgId, orgId),
             lt(notificationDeliveries.createdAt, recordCutoff),
           ),
-        );
-      result.deliveryRecordsDeleted += deleted.rowCount ?? 0;
+        )
+        .returning({ id: notificationDeliveries.id });
+      result.deliveryRecordsDeleted += deleted.length;
     });
 
     this.logger.log(

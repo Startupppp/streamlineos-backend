@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, count, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { cycles, projects, ticketAssignees, tickets, timesheets, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -19,7 +19,7 @@ export class ProjectsAnalyticsService {
   }
 
   private async computeProjectAnalytics(orgId: string, projectId: number) {
-    const orgFilter = and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId));
+    const orgFilter = and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt));
 
     const today = new Date();
     const twelveWeeksAgo = new Date();
@@ -68,7 +68,7 @@ export class ProjectsAnalyticsService {
           completedPoints: sql<number>`COALESCE(SUM(CASE WHEN ${tickets.status} = 'DONE' THEN COALESCE(${tickets.storyPoints}, ${tickets.estimate}, 0) ELSE 0 END), 0)`,
         })
         .from(cycles)
-        .leftJoin(tickets, eq(tickets.cycleId, cycles.id))
+        .leftJoin(tickets, and(eq(tickets.cycleId, cycles.id), isNull(tickets.deletedAt)))
         .where(and(eq(cycles.projectId, projectId), eq(cycles.orgId, orgId)))
         .groupBy(cycles.id, cycles.name)
         .orderBy(cycles.startDate),
@@ -161,7 +161,7 @@ export class ProjectsAnalyticsService {
           overdue: sql<number>`COUNT(*) FILTER (WHERE ${tickets.status} NOT IN ('DONE', 'CANCELLED') AND ${tickets.dueDate} IS NOT NULL AND ${tickets.dueDate} < ${todayStr})::int`,
         })
         .from(tickets)
-        .where(eq(tickets.orgId, orgId))
+        .where(and(eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
         .groupBy(tickets.projectId),
       this.db
         .select({
@@ -257,6 +257,7 @@ export class ProjectsAnalyticsService {
               and(
                 eq(tickets.orgId, orgId),
                 inArray(tickets.projectId, projectIds),
+                isNull(tickets.deletedAt),
                 sql`${tickets.status} NOT IN ('DONE', 'CANCELLED', 'CLOSED')`,
               ),
             )
@@ -273,6 +274,7 @@ export class ProjectsAnalyticsService {
               and(
                 eq(tickets.orgId, orgId),
                 inArray(tickets.projectId, projectIds),
+                isNull(tickets.deletedAt),
                 sql`${tickets.status} NOT IN ('DONE', 'CANCELLED', 'CLOSED')`,
               ),
             )

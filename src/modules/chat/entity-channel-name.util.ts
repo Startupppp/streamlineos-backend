@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import {
   clients,
   projectIncidents,
@@ -60,7 +60,7 @@ export async function resolveEntityChannelName(
     }
     case "task": {
       const row = await db.query.tickets.findFirst({
-        where: and(eq(tickets.id, parsedId), eq(tickets.orgId, orgId)),
+        where: and(eq(tickets.id, parsedId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)),
         columns: { title: true },
       });
       return row?.title ?? null;

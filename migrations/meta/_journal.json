@@ -1016,6 +1016,41 @@
       "when": 1786422501612,
       "tag": "0412_email_suppressions",
       "breakpoints": true
+    },
+    {
+      "idx": 145,
+      "version": "7",
+      "when": 1786422561612,
+      "tag": "0413_notification_retention_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 146,
+      "version": "7",
+      "when": 1786425191097,
+      "tag": "0146_status_model_single_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 147,
+      "version": "7",
+      "when": 1786425251097,
+      "tag": "0414_rename_project_event_keys_to_build",
+      "breakpoints": true
+    },
+    {
+      "idx": 148,
+      "version": "7",
+      "when": 1786425311097,
+      "tag": "0415_notification_preference_and_catalog_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 149,
+      "version": "7",
+      "when": 1786427769241,
+      "tag": "0416_tickets_soft_delete_and_version",
+      "breakpoints": true
     }
   ]
 }

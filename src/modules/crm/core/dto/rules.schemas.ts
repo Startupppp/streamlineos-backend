@@ -59,26 +59,26 @@ export const scoringRuleCreateSchema = z.object({
   operator: scoringOperatorEnum,
   value: z.string().min(1),
   points: z.number().int().min(-1000).max(1000),
-});
+}).strict();
 
 export const scoringRuleUpdateSchema = z.object({
   field: z.string().min(1).optional(),
   operator: scoringOperatorEnum.optional(),
   value: z.string().min(1).optional(),
   points: z.number().int().min(-1000).max(1000).optional(),
-});
+}).strict();
 
 export const emailTemplateCreateSchema = z.object({
   name: z.string().min(1, "Name is required"),
   subject: z.string().min(1, "Subject is required"),
   body: z.string().min(1, "Body is required"),
-});
+}).strict();
 
 export const emailTemplateUpdateSchema = z.object({
   name: z.string().min(1).optional(),
   subject: z.string().min(1).optional(),
   body: z.string().min(1).optional(),
-});
+}).strict();
 
 const sampleLeadSchema = z.object({
   source: z.string().optional(),
@@ -91,7 +91,7 @@ const sampleLeadSchema = z.object({
 
 export const assignmentPreviewSchema = z.object({
   sampleLead: sampleLeadSchema,
-});
+}).strict();
 
 export type AssignmentRuleCreateInput = z.infer<typeof assignmentRuleCreateSchema>;
 export type AssignmentRuleUpdateInput = z.infer<typeof assignmentRuleUpdateSchema>;

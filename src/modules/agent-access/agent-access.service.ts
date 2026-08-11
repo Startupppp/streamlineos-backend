@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { projects, ticketAttachments, ticketComments, tickets, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -23,7 +23,7 @@ export class AgentAccessService {
 
   async resolveTicketOrgScoped(orgId: string, ticketId: number) {
     const ticket = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)),
+      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)),
       columns: { id: true, projectId: true },
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
@@ -32,7 +32,7 @@ export class AgentAccessService {
 
   async getTicketDetail(orgId: string, ticketId: number) {
     const ticket = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)),
+      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)),
       columns: {
         id: true, title: true, status: true, priority: true, type: true,
         description: true, ticketNumber: true, projectId: true,

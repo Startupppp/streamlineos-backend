@@ -5,9 +5,10 @@ import {
   eq,
   exists,
   gte,
-  lte,
   isNotNull,
+  isNull,
   inArray,
+  lte,
   or,
 } from "drizzle-orm";
 import { formatInTimeZone, toZonedTime } from "date-fns-tz";
@@ -200,6 +201,7 @@ export class CalendarEventsAggregateService {
             and(
               eq(tickets.orgId, orgId),
               eq(projectMembers.userId, userId),
+              isNull(tickets.deletedAt),
               isNotNull(tickets.dueDate),
               gte(tickets.dueDate, dateOnly(start)),
               lte(tickets.dueDate, dateOnly(end)),

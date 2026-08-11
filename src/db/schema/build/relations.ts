@@ -3,7 +3,7 @@ import { organizations, users } from "../common/auth";
 import {
   projects,
   sprints,
-  customStates,
+  projectStatuses,
   cycles,
   modules,
   projectTemplates,
@@ -28,7 +28,6 @@ import {
   projectAutomations,
 } from "./tasks";
 import {
-  projectStatuses,
   projectMembers,
   projectViews,
   intakeItems,
@@ -47,12 +46,6 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
 
 export const sprintsRelations = relations(sprints, ({ one, many }) => ({
   project: one(projects, { fields: [sprints.projectId], references: [projects.id] }),
-  tickets: many(tickets),
-}));
-
-export const customStatesRelations = relations(customStates, ({ one, many }) => ({
-  project: one(projects, { fields: [customStates.projectId], references: [projects.id] }),
-  organization: one(organizations, { fields: [customStates.orgId], references: [organizations.id] }),
   tickets: many(tickets),
 }));
 
@@ -86,7 +79,6 @@ export const ticketsRelations = relations(tickets, ({ one, many }) => ({
   sprint: one(sprints, { fields: [tickets.sprintId], references: [sprints.id] }),
   assignee: one(users, { fields: [tickets.assigneeId], references: [users.id], relationName: "assignee" }),
   reporter: one(users, { fields: [tickets.reporterId], references: [users.id], relationName: "reporter" }),
-  state: one(customStates, { fields: [tickets.stateId], references: [customStates.id] }),
   module: one(modules, { fields: [tickets.moduleId], references: [modules.id] }),
   cycle: one(cycles, { fields: [tickets.cycleId], references: [cycles.id] }),
   comments: many(ticketComments),

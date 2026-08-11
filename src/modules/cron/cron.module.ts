@@ -31,6 +31,7 @@ import { CronPlatformController } from "./cron-platform.controller";
 import { CronSupportController } from "./cron-support.controller";
 import { CronBuildController } from "./cron-build.controller";
 import { CronNotificationDeliveryService } from "./cron-notification-delivery.service";
+import { CronNotificationRetentionService } from "./cron-notification-retention.service";
 import { CronAttendanceService } from "./cron-attendance.service";
 import { CronBillingService } from "./cron-billing.service";
 import { CronHolidayService } from "./cron-holiday.service";
@@ -102,6 +103,7 @@ import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
     CronEmailOutboxService,
     CronSupportService,
     CronNotificationDeliveryService,
+    CronNotificationRetentionService,
     CronFinanceService,
     CronCrmTasksService,
     CronIdempotencyService,

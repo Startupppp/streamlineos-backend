@@ -204,7 +204,7 @@ export const calendarEvents = pgTable("calendar_events", {
 
 export const notificationPreferences = pgTable("notification_preferences", {
   id: serial("id").primaryKey(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull().unique(),
+  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   emailEnabled: boolean("email_enabled").default(true).notNull(),
   pushEnabled: boolean("push_enabled").default(true).notNull(),
@@ -214,6 +214,10 @@ export const notificationPreferences = pgTable("notification_preferences", {
   soundEnabled: boolean("sound_enabled").default(true).notNull(),
   quietHoursStart: text("quiet_hours_start"),
   quietHoursEnd: text("quiet_hours_end"),
+  // SCH-012: no longer read. Quiet hours resolve from user_preferences.timezone,
+  // which is NOT NULL and defaults Asia/Kolkata; this defaulted UTC, so an IST
+  // user's window was applied 5.5h out. Retained for the expand-contract window;
+  // dropped once nothing reads it.
   quietHoursTimezone: text("quiet_hours_timezone").default("UTC"),
   digestMode: text("digest_mode").$type<"disabled" | "hourly" | "daily" | "weekly">().default("disabled").notNull(),
   quietHoursWeekends: boolean("quiet_hours_weekends").default(true).notNull(),
@@ -227,6 +231,9 @@ export const notificationPreferences = pgTable("notification_preferences", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_notification_preferences_org_id").on(table.orgId, table.id),
+  // SCH-011: was a bare UNIQUE(user_id), so a user in two orgs shared one row and
+  // the second org's write overwrote the first.
+  uniqueIndex("uniq_notification_preferences_org_user").on(table.orgId, table.userId),
 ]);
 
 export const webhookEndpoints = pgTable("webhook_endpoints", {

@@ -27,6 +27,8 @@ export const CACHE_KEYS = {
     `crm:contacts:list:${orgId}:${hash}`,
   contactsListNamespace: (orgId: string) => `crm:contacts:list:${orgId}`,
 
+  crmOrganizationDetailNamespace: (orgId: string) =>
+    `crm:organizations:detail:${orgId}`,
   crmOrganizationsListNamespace: (orgId: string) =>
     `crm:organizations:list:${orgId}`,
 

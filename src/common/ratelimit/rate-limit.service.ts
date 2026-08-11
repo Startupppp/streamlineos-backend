@@ -20,6 +20,12 @@ const TIERS: Record<string, Tier> = {
   // Provider bounce/complaint callbacks. Generous — a real provider can burst — but
   // bounded so an attacker who obtains the signing secret cannot flood the write path.
   "webhook:email": { limit: 600, windowSecs: 60 },
+  // SEC-004. These three were called with no TIERS entry, so check() returned
+  // allowed for an unknown key and the guard was a no-op while looking protected.
+  // Both hr-form routes are @Public() and one of them writes.
+  "hr-form:public-view": { limit: 60, windowSecs: 60 },
+  "hr-form:public-submit": { limit: 5, windowSecs: 3600 },
+  "platform-visit": { limit: 120, windowSecs: 60 },
   "public:contact": { limit: 5, windowSecs: 3600 },
   "public:roadmap": { limit: 60, windowSecs: 60 },
   "public:roadmap-vote": { limit: 10, windowSecs: 3600 },
@@ -79,7 +85,18 @@ export class RateLimitService {
 
   async check(tier: string, identifier: string): Promise<RateLimitResult> {
     const t = TIERS[tier];
-    if (!t) return { allowed: true, retryAfterSecs: 0 };
+    // SEC-004. This used to `return { allowed: true }`, so a decorator or a call
+    // with a typo'd or unregistered tier looked protected in review and silently
+    // was not — which is how hr-form:public-view, hr-form:public-submit and
+    // platform-visit ran unlimited. Deny-by-default (§20): every tier reaching this
+    // method has been enumerated and declared, so an unknown one is a bug, and a
+    // 429 is trivially reversible by adding the entry. Silent exposure is not.
+    if (!t) {
+      this.logger.error(
+        `Unknown rate-limit tier "${tier}" — denying. Add it to TIERS in rate-limit.service.ts.`,
+      );
+      return { allowed: false, retryAfterSecs: 60 };
+    }
     const effectiveLimit = t.limit * DEV_LIMIT_MULTIPLIER;
     const now = Date.now();
     const windowMs = t.windowSecs * 1000;

@@ -8,25 +8,30 @@ import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import type { ListHoldsQueryInput, CreateHoldInput } from "./dto/quality.schemas";
+import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 
 @Injectable()
 export class HoldsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly warehouseScope: WarehouseScopeService,
     private readonly engine: StockEngineService,
     private readonly audit: InventoryAuditService,
   ) {}
 
-  async list(orgId: string, query: ListHoldsQueryInput) {
+  async list(orgId: string, userId: string, query: ListHoldsQueryInput) {
     const { status, productVariantId, page, limit } = query;
     const offset = (page - 1) * limit;
-    const hash = `${status ?? ""}:${productVariantId ?? ""}:${limit}:${offset}`;
+    const scope = await this.warehouseScope.resolve(orgId, userId);
+    const scopeKey = scope === null ? "all" : ([...scope].sort((a, b) => a - b).join(".") || "none");
+    const hash = `${scopeKey}:${status ?? ""}:${productVariantId ?? ""}:${limit}:${offset}`;
     return this.cache.cachedVersioned(
       CACHE_KEYS.invQualityHoldsNamespace(orgId),
       `list:${hash}`,
       async () => {
         const conditions = [eq(invQualityHolds.orgId, orgId)];
+        conditions.push(this.warehouseScope.locationPredicate(scope, sql`${invQualityHolds.locationId}`));
         if (status) conditions.push(eq(invQualityHolds.status, status));
         if (productVariantId) conditions.push(eq(invQualityHolds.productVariantId, productVariantId));
         const where = and(...conditions);

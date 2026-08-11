@@ -55,7 +55,7 @@ export class ProjectsAiService {
     return this.db
       .select({ status: tickets.status, dueDate: tickets.dueDate, sprintId: tickets.sprintId })
       .from(tickets)
-      .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)));
+      .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)));
   }
 
   private async fetchAssigneeStats(orgId: string, projectId: number) {
@@ -71,7 +71,7 @@ export class ProjectsAiService {
       })
       .from(tickets)
       .leftJoin(users, eq(users.id, tickets.assigneeId))
-      .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)))
+      .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
       .groupBy(tickets.assigneeId, users.firstName, users.lastName, users.name)
       .limit(50);
   }
@@ -196,7 +196,7 @@ export class ProjectsAiService {
       this.db
         .select({ title: tickets.title, status: tickets.status, priority: tickets.priority })
         .from(tickets)
-        .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId), eq(tickets.clientVisible, true)))
+        .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId), eq(tickets.clientVisible, true), isNull(tickets.deletedAt)))
         .limit(50),
       this.db
         .select({ title: roadmapItems.title, status: roadmapItems.status })
@@ -227,7 +227,7 @@ export class ProjectsAiService {
     const openTitles = await this.db
       .select({ title: tickets.title })
       .from(tickets)
-      .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId), ne(tickets.status, "DONE")))
+      .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId), ne(tickets.status, "DONE"), isNull(tickets.deletedAt)))
       .limit(50);
 
     const truncatedDescription = project.description ? project.description.slice(0, TEXT_LIMIT) : null;
@@ -255,7 +255,7 @@ export class ProjectsAiService {
     const openTitles = await this.db
       .select({ title: tickets.title })
       .from(tickets)
-      .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId), ne(tickets.status, "DONE")))
+      .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId), ne(tickets.status, "DONE"), isNull(tickets.deletedAt)))
       .limit(50);
 
     const truncatedText = text.slice(0, TEXT_LIMIT);
@@ -323,12 +323,12 @@ export class ProjectsAiService {
       this.db
         .select({ title: tickets.title })
         .from(tickets)
-        .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId), eq(tickets.status, "DONE"), gte(tickets.updatedAt, startDateObj), lte(tickets.updatedAt, endDateObj)))
+        .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId), eq(tickets.status, "DONE"), isNull(tickets.deletedAt), gte(tickets.updatedAt, startDateObj), lte(tickets.updatedAt, endDateObj)))
         .limit(30),
       this.db
         .select({ title: tickets.title })
         .from(tickets)
-        .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId), eq(tickets.status, "BLOCKED")))
+        .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId), eq(tickets.status, "BLOCKED"), isNull(tickets.deletedAt)))
         .limit(10),
       this.db
         .select({ title: projectRisks.title, probability: projectRisks.probability, impact: projectRisks.impact })

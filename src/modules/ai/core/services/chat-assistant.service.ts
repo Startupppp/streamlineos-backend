@@ -4,7 +4,7 @@ import { ModuleRef } from "@nestjs/core";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { google } from "@ai-sdk/google";
 import { stepCountIs, streamText, tool, type LanguageModel, type ModelMessage } from "ai";
-import { and, count, desc, eq, ilike, ne, sql } from "drizzle-orm";
+import { and, count, desc, eq, ilike, isNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   attendance,
@@ -109,7 +109,7 @@ export class ChatAssistantService {
       topLeads,
     ] = await Promise.all([
       this.db.select({ count: sql<number>`count(*)` }).from(projects).where(eq(projects.orgId, orgId)),
-      this.db.select({ count: sql<number>`count(*)` }).from(tickets).where(eq(tickets.orgId, orgId)),
+      this.db.select({ count: sql<number>`count(*)` }).from(tickets).where(and(eq(tickets.orgId, orgId), isNull(tickets.deletedAt))),
       this.db.query.attendance.findFirst({
         where: and(eq(attendance.userId, userId), eq(attendance.date, today), eq(attendance.orgId, orgId)),
       }),

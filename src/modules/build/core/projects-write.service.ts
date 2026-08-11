@@ -162,6 +162,7 @@ export class ProjectsWriteService {
                   eq(tickets.orgId, orgId),
                   eq(tickets.projectId, projectId),
                   inArray(tickets.assigneeId, removedMembers),
+                  isNull(tickets.deletedAt),
                   ne(tickets.status, "DONE"),
                   ne(tickets.status, "CANCELLED"),
                 ),

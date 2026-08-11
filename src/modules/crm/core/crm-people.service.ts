@@ -90,6 +90,7 @@ export class CrmPeopleService {
     const people = await this.db.query.crmPeople.findMany({
       where: eq(crmPeople.orgId, orgId),
       columns: { slug: true, name: true },
+      limit: 1000,
     });
 
     const slugMap: Record<string, string> = {};
@@ -112,12 +113,18 @@ export class CrmPeopleService {
     const [performance, personDealsRaw, accounts, activities] = await Promise.all([
       this.db.query.crmTeamPerformance.findMany({
         where: and(eq(crmTeamPerformance.orgId, orgId), eq(crmTeamPerformance.personId, person.id)),
+        columns: { month: true, value: true },
+        limit: 100,
       }),
       this.db.query.crmDeals.findMany({
         where: and(eq(crmDeals.orgId, orgId), eq(crmDeals.salesRepId, person.id)),
+        columns: { companyName: true, value: true, stage: true, probability: true, closeDate: true },
+        limit: 100,
       }),
       this.db.query.crmCompanies.findMany({
         where: and(eq(crmCompanies.orgId, orgId), eq(crmCompanies.csmId, person.id)),
+        columns: { name: true, revenue: true, health: true, customerSince: true, renewalDate: true },
+        limit: 100,
       }),
       this.db.query.crmActivities.findMany({
         where: and(eq(crmActivities.orgId, orgId), eq(crmActivities.personId, person.id)),

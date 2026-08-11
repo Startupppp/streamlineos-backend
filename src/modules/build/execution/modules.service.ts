@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, count, eq, ilike, sql } from "drizzle-orm";
+import { and, asc, count, eq, ilike, isNull, sql } from "drizzle-orm";
 import { modules, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -51,6 +51,7 @@ export class ModulesService {
       .where(
         and(
           eq(tickets.orgId, orgId),
+          isNull(tickets.deletedAt),
           sql`${tickets.moduleId} IN (${sql.join(
             moduleIds.map((mid) => sql`${mid}`),
             sql`, `,

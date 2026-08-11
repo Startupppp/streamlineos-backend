@@ -74,7 +74,6 @@ const TICKET_LIST_COLUMNS = {
   timeSpent: true,
   startDate: true,
   dueDate: true,
-  stateId: true,
   moduleId: true,
   cycleId: true,
   sequenceId: true,
@@ -295,6 +294,7 @@ export class ProjectsTicketsReadService {
     const where = and(
       eq(tickets.orgId, u.orgId),
       eq(tickets.projectId, projectId),
+      isNull(tickets.deletedAt),
       ...(scopeClause ? [scopeClause] : []),
       ...filterConditions,
     );
@@ -322,6 +322,7 @@ export class ProjectsTicketsReadService {
            FROM ${tickets}
            WHERE ${tickets.orgId} = ${u.orgId}
              AND ${tickets.projectId} = ${projectId}
+             AND ${tickets.deletedAt} IS NULL
              AND (${tickets.assigneeId} = ${u.userId} OR ${tickets.reporterId} = ${u.userId})
              ${filterWhere ? sql`AND ${filterWhere}` : sql``}
            ORDER BY ${tickets.rank} ASC, ${tickets.createdAt} DESC, ${tickets.id} ASC
@@ -335,6 +336,7 @@ export class ProjectsTicketsReadService {
              AND ${ticketAssignees.orgId} = ${u.orgId}
            WHERE ${tickets.orgId} = ${u.orgId}
              AND ${tickets.projectId} = ${projectId}
+             AND ${tickets.deletedAt} IS NULL
              ${filterWhere ? sql`AND ${filterWhere}` : sql``}
            ORDER BY ${tickets.rank} ASC, ${tickets.createdAt} DESC, ${tickets.id} ASC
            LIMIT ${branchLimit})
@@ -391,7 +393,7 @@ export class ProjectsTicketsReadService {
 
   async getTicket(u: CurrentUserContext, ticketId: number) {
     const ticket = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, u.orgId)),
+      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, u.orgId), isNull(tickets.deletedAt)),
       with: {
         project: {
           columns: { id: true, name: true, key: true, orgId: true },

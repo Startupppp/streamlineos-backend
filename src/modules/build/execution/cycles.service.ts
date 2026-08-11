@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, eq, gte, lte, or, sql } from "drizzle-orm";
+import { and, count, eq, gte, isNull, lte, or, sql } from "drizzle-orm";
 import { cycles, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -45,6 +45,7 @@ export class CyclesService {
       .where(
         and(
           eq(tickets.orgId, orgId),
+          isNull(tickets.deletedAt),
           sql`${tickets.cycleId} IN (${sql.join(cycleIds.map((cid) => sql`${cid}`), sql`, `)})`,
         ),
       )

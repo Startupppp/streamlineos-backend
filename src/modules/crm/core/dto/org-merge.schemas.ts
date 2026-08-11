@@ -3,7 +3,7 @@ import { z } from "zod";
 export const mergeOrgsSchema = z.object({
   primaryId: z.number().int().positive(),
   duplicateId: z.number().int().positive(),
-}).refine((v) => v.primaryId !== v.duplicateId, {
+}).strict().refine((v) => v.primaryId !== v.duplicateId, {
   message: "primaryId and duplicateId must differ",
 });
 

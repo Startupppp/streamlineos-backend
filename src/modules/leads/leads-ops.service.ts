@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { eq, and, or, inArray, lte, gte, type SQL } from "drizzle-orm";
+import { eq, and, or, inArray, isNull, lte, gte, type SQL } from "drizzle-orm";
 import { AccessService } from "../access/access.service";
 import {
   leads,
@@ -511,7 +511,7 @@ export class LeadsOpsService {
     }
 
     const leadsToDistribute = await this.db.query.leads.findMany({
-      where: and(inArray(leads.id, input.leadIds), eq(leads.orgId, orgId)),
+      where: and(inArray(leads.id, input.leadIds), eq(leads.orgId, orgId), isNull(leads.deletedAt)),
     });
 
     if (leadsToDistribute.length === 0) {

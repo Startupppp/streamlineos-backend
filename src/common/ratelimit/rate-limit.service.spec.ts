@@ -33,8 +33,14 @@ describe("RateLimitService (in-memory fallback, no redis)", () => {
     expect((await instance.check("api-key-ingest", "b")).allowed).toBe(true);
   });
 
-  it("allows any identifier for an unknown tier", async () => {
+  // SEC-004. This previously asserted the opposite — that an unknown tier allows
+  // everything — which is what let hr-form:public-view, hr-form:public-submit and
+  // platform-visit run unlimited while appearing protected. An unregistered tier is
+  // a bug, and denying is the only failure mode that is visible.
+  it("denies an unknown tier rather than failing open", async () => {
     const instance = svc();
-    expect((await instance.check("unknown-tier", "x")).allowed).toBe(true);
+    const result = await instance.check("unknown-tier", "x");
+    expect(result.allowed).toBe(false);
+    expect(result.retryAfterSecs).toBeGreaterThan(0);
   });
 });

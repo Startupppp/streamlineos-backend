@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, avg, count, desc, eq, ilike, inArray, or } from "drizzle-orm";
+import { and, avg, count, desc, eq, ilike, inArray, isNull, or } from "drizzle-orm";
 import {
   okrGoals,
   okrKeyResults,
@@ -511,7 +511,7 @@ export class GoalsService {
         projectKey: projects.key,
       })
       .from(okrLinks)
-      .leftJoin(tickets, eq(okrLinks.ticketId, tickets.id))
+      .leftJoin(tickets, and(eq(okrLinks.ticketId, tickets.id), isNull(tickets.deletedAt)))
       .leftJoin(projects, eq(okrLinks.projectId, projects.id))
       .where(and(eq(okrLinks.goalId, goalId), eq(okrLinks.orgId, orgId)))
       .orderBy(desc(okrLinks.createdAt))
@@ -527,7 +527,7 @@ export class GoalsService {
 
     if (input.ticketId !== undefined) {
       const ticket = await this.db.query.tickets.findFirst({
-        where: and(eq(tickets.id, input.ticketId), eq(tickets.orgId, orgId)),
+        where: and(eq(tickets.id, input.ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)),
         columns: { id: true },
       });
       if (!ticket) return { error: "ticket_not_found" as const };

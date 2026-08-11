@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, isNotNull, lte, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import { projectStatuses, tickets, ticketActivityLog, ticketWatchers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -38,6 +38,7 @@ export class CronProjectsService {
           and(
             eq(tickets.orgId, orgId),
             eq(tickets.isRecurring, true),
+            isNull(tickets.deletedAt),
             isNotNull(tickets.recurrenceNextRunAt),
             lte(tickets.recurrenceNextRunAt, now),
             isNotNull(tickets.projectId),

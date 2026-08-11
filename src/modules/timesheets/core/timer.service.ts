@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -89,7 +89,7 @@ export class TimerService {
       })
       .from(timerSessions)
       .leftJoin(timerProj, eq(timerSessions.projectId, timerProj.id))
-      .leftJoin(tickets, eq(timerSessions.ticketId, tickets.id))
+      .leftJoin(tickets, and(eq(timerSessions.ticketId, tickets.id), isNull(tickets.deletedAt)))
       .where(and(eq(timerSessions.id, timerId), eq(timerSessions.orgId, orgId)));
 
     return row ?? null;
@@ -119,7 +119,7 @@ export class TimerService {
       })
       .from(timerSessions)
       .leftJoin(timerProj, eq(timerSessions.projectId, timerProj.id))
-      .leftJoin(tickets, eq(timerSessions.ticketId, tickets.id))
+      .leftJoin(tickets, and(eq(timerSessions.ticketId, tickets.id), isNull(tickets.deletedAt)))
       .where(
         and(
           eq(timerSessions.orgId, u.orgId),

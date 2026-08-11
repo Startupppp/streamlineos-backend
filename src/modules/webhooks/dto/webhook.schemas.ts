@@ -1,15 +1,24 @@
 import { z } from "zod";
-import { isPubliclyRoutableUrl } from "../../../common/security/safe-external-url";
+import { assertSafeWebhookUrl } from "../../../common/security/ssrf-guard";
 
 export const WEBHOOK_RESPONSE_BODY_LIMIT = 2000;
 
 const PRIVATE_URL_MESSAGE =
   "URL must be a public http(s) endpoint; private, loopback, link-local and metadata addresses are not allowed";
 
+function isSyntacticallySafeUrl(value: string): boolean {
+  try {
+    assertSafeWebhookUrl(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const webhookUrl = z
   .string()
   .url()
-  .refine(isPubliclyRoutableUrl, { message: PRIVATE_URL_MESSAGE });
+  .refine(isSyntacticallySafeUrl, { message: PRIVATE_URL_MESSAGE });
 
 export const listSchema = z
   .object({

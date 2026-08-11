@@ -15,7 +15,7 @@ export const webFormCreateSchema = z.object({
   submitMessage: z.string().optional(),
   redirectUrl: z.string().url().optional().or(z.literal("")),
   isActive: z.boolean().optional().default(true),
-});
+}).strict();
 
 export const webFormUpdateSchema = z.object({
   name: z.string().min(1).optional(),
@@ -24,7 +24,7 @@ export const webFormUpdateSchema = z.object({
   submitMessage: z.string().optional(),
   redirectUrl: z.string().optional().nullable(),
   isActive: z.boolean().optional(),
-});
+}).strict();
 
 export type WebFormCreateInput = z.infer<typeof webFormCreateSchema>;
 export type WebFormUpdateInput = z.infer<typeof webFormUpdateSchema>;

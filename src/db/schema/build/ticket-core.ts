@@ -21,7 +21,7 @@ import {
   workItemRelationTypeEnum,
 } from "../common/enums";
 import { organizations, users } from "../common/auth";
-import { projects, sprints, customStates, modules, cycles } from "./core";
+import { projects, sprints, projectStatuses, modules, cycles } from "./core";
 import { clients } from "../crm/contacts";
 
 export const tickets = pgTable(
@@ -61,9 +61,6 @@ export const tickets = pgTable(
       .notNull(),
     startDate: date("start_date"),
     dueDate: date("due_date"),
-    stateId: integer("state_id").references(() => customStates.id, {
-      onDelete: "set null",
-    }),
     moduleId: integer("module_id").references(() => modules.id, {
       onDelete: "set null",
     }),
@@ -86,6 +83,8 @@ export const tickets = pgTable(
       withTimezone: true,
     }),
     customerId: integer("customer_id"),
+    version: integer("version").notNull().default(1),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -108,6 +107,11 @@ export const tickets = pgTable(
       columns: [t.customerId],
       foreignColumns: [clients.id],
     }).onDelete("set null"),
+    foreignKey({
+      name: "fk_tickets_status",
+      columns: [t.orgId, t.projectId, t.status],
+      foreignColumns: [projectStatuses.orgId, projectStatuses.projectId, projectStatuses.name],
+    }).onUpdate("cascade"),
     uniqueIndex("uniq_tickets_project_number").on(t.projectId, t.ticketNumber),
     index("idx_tickets_project_status").on(t.projectId, t.status),
     index("idx_tickets_org_assignee_status").on(t.orgId, t.assigneeId, t.status),
@@ -117,7 +121,9 @@ export const tickets = pgTable(
     index("idx_tickets_sprint").on(t.sprintId),
     index("idx_tickets_org_status_priority").on(t.orgId, t.status, t.priority),
     index("idx_tickets_org_project_status").on(t.orgId, t.projectId, t.status),
-    index("idx_tickets_org_project_rank").on(t.orgId, t.projectId, t.rank),
+    index("idx_tickets_org_project_rank")
+      .on(t.orgId, t.projectId, t.rank)
+      .where(sql`deleted_at IS NULL`),
     index("idx_tickets_cycle").on(t.cycleId),
     index("idx_tickets_parent").on(t.parentTicketId),
     index("idx_tickets_recurrence_next")

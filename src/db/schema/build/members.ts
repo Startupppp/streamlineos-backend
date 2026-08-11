@@ -9,22 +9,6 @@ import { organizations, users } from "../common/auth";
 import { projects } from "./core";
 import { tickets } from "./tasks";
 
-export const projectStatuses = pgTable("project_statuses", {
-  id: serial("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
-  name: text("name").notNull(),
-  order: integer("order").notNull().default(0),
-  color: text("color"),
-  type: text("type").default("unstarted"),
-  wipLimit: integer("wip_limit"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
-}, (table) => [
-  index("idx_project_statuses_project").on(table.projectId),
-  unique("uniq_project_statuses_org_id").on(table.orgId, table.id),
-]);
-
 export const projectMembers = pgTable("project_members", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),

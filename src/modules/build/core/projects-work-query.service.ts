@@ -55,6 +55,7 @@ export class ProjectsWorkQueryService {
         and(
           eq(tickets.orgId, orgId),
           inArray(tickets.projectId, ids),
+          isNull(tickets.deletedAt),
           q.length > 0
             ? or(
                 sql`${tickets.title} ILIKE ${"%" + q + "%"}`,
@@ -103,6 +104,7 @@ export class ProjectsWorkQueryService {
         and(
           eq(tickets.orgId, orgId),
           ne(projects.status, "ARCHIVED"),
+          isNull(tickets.deletedAt),
           assigneeCondition,
         ),
       )
@@ -177,6 +179,7 @@ export class ProjectsWorkQueryService {
       eq(tickets.orgId, u.orgId),
       inArray(tickets.projectId, allowedProjectIds),
       ne(projects.status, "ARCHIVED"),
+      isNull(tickets.deletedAt),
     ];
 
     if (scope === "mine") {

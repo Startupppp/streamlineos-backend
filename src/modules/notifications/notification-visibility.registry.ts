@@ -15,7 +15,7 @@ import { Injectable, Logger } from "@nestjs/common";
  * enforces it, so annotating an event without shipping its resolver fails CI rather
  * than silently suppressing every delivery at runtime.
  */
-export const IMPLEMENTED_VISIBILITY_RESOURCE_KINDS = ["kb.page"] as const;
+export const IMPLEMENTED_VISIBILITY_RESOURCE_KINDS = ["kb.page", "build.ticket"] as const;
 
 export type VisibilityResolver = (
   orgId: string,

@@ -54,6 +54,12 @@ export interface DispatchEventInput {
   orgId: string;
   actorUserId?: string | null;
   targetUserIds: string[];
+  /**
+   * PIPE-011. The actor is excluded from `targetUserIds` by default — nobody wants
+   * to be told about their own action. Set true only where self-notification is the
+   * point, e.g. a security alert about your own session.
+   */
+  notifySelf?: boolean;
   entityType?: string;
   entityId?: string;
   title?: string;

@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { projectMilestones, projects, ticketAttachments, ticketComments, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -32,7 +32,7 @@ export class ClientVisibilityService {
           clientVisible: tickets.clientVisible,
         })
         .from(tickets)
-        .where(and(eq(tickets.orgId, orgId), eq(tickets.projectId, projectId)))
+        .where(and(eq(tickets.orgId, orgId), eq(tickets.projectId, projectId), isNull(tickets.deletedAt)))
         .orderBy(tickets.ticketNumber)
         .limit(500),
 
@@ -52,7 +52,7 @@ export class ClientVisibilityService {
 
   async toggleTicketVisibility(orgId: string, userId: string, projectId: number, ticketId: number, clientVisible: boolean) {
     const existing = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), eq(tickets.projectId, projectId)),
+      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), eq(tickets.projectId, projectId), isNull(tickets.deletedAt)),
       columns: { id: true },
     });
     if (!existing) throw new NotFoundException("Ticket not found");
@@ -104,6 +104,7 @@ export class ClientVisibilityService {
         eq(tickets.id, ticketComments.ticketId),
         eq(tickets.projectId, projectId),
         eq(tickets.orgId, orgId),
+        isNull(tickets.deletedAt),
       ))
       .where(and(eq(ticketComments.id, commentId), eq(ticketComments.orgId, orgId)))
       .limit(1);
@@ -131,6 +132,7 @@ export class ClientVisibilityService {
         eq(tickets.id, ticketAttachments.ticketId),
         eq(tickets.projectId, projectId),
         eq(tickets.orgId, orgId),
+        isNull(tickets.deletedAt),
       ))
       .where(and(eq(ticketAttachments.id, attachmentId), eq(ticketAttachments.orgId, orgId)))
       .limit(1);

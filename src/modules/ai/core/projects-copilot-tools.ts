@@ -1,7 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { tool } from "ai";
 import { z } from "zod";
-import { and, eq, ilike } from "drizzle-orm";
+import { and, eq, ilike, isNull } from "drizzle-orm";
 import { tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -47,7 +47,7 @@ export class ProjectsCopilotTools {
               createdAt: tickets.createdAt,
             })
             .from(tickets)
-            .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)))
+            .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
             .limit(1);
 
           const ticket = rows[0];
@@ -68,7 +68,7 @@ export class ProjectsCopilotTools {
           const deny = await this.toolAccess.denyReason(orgId, userId, "build:tickets:view");
           if (deny) return { denied: true, reason: deny };
 
-          const conditions = [eq(tickets.orgId, orgId), ilike(tickets.title, `%${query}%`)];
+          const conditions = [eq(tickets.orgId, orgId), ilike(tickets.title, `%${query}%`), isNull(tickets.deletedAt)];
           if (projectId !== undefined) conditions.push(eq(tickets.projectId, projectId));
           if (status !== undefined) conditions.push(eq(tickets.status, status));
 
@@ -140,7 +140,7 @@ export class ProjectsCopilotTools {
           const existing = await this.db
             .select({ id: tickets.id, title: tickets.title })
             .from(tickets)
-            .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)))
+            .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
             .limit(1);
 
           if (!existing[0]) return { denied: false, found: false, message: "Ticket not found in this org." };
@@ -180,7 +180,7 @@ export class ProjectsCopilotTools {
           const existing = await this.db
             .select({ id: tickets.id, title: tickets.title })
             .from(tickets)
-            .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)))
+            .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
             .limit(1);
 
           if (!existing[0]) return { denied: false, found: false, message: "Ticket not found in this org." };

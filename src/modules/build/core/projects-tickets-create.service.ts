@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import {
   projects,
@@ -20,6 +20,7 @@ import { logger } from "../../../common/logger/logger.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { NotificationsService } from "../../notifications/notifications.service";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { BuildAutomationRunnerService } from "./build-automation-runner.service";
 import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
 import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
@@ -33,6 +34,7 @@ export class ProjectsTicketsCreateService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly notifications: NotificationsService,
+    private readonly dispatch: NotificationDispatchService,
     private readonly query: ProjectsTicketsQueryService,
     private readonly read: ProjectsTicketsReadService,
     private readonly webhooksDispatch: ProjectsWebhooksDispatchService,
@@ -61,6 +63,7 @@ export class ProjectsTicketsCreateService {
           eq(tickets.id, body.epicId),
           eq(tickets.orgId, u.orgId),
           eq(tickets.projectId, projectId),
+          isNull(tickets.deletedAt),
         ),
         columns: { id: true },
       });
@@ -191,36 +194,31 @@ export class ProjectsTicketsCreateService {
         : String(ticket.ticketNumber);
       const ticketLink = `/projects/${projectId}/tickets/${encodeURIComponent(ticketKey)}`;
 
-      await Promise.all(
-        notifyTargets.map((userId) =>
-          this.notifications
-            .create({
-              orgId: u.orgId,
-              userId,
-              type: "INFO",
-              category: "PROJECTS",
-              sourceModule: "build",
-              eventKey: "build:ticket:assigned",
-              entityType: "ticket",
-              entityId: String(ticket.id),
-              title: "Ticket Assigned to You",
-              message: `You have been assigned to ticket "${body.title}" (${body.type}).`,
-              link: ticketLink,
-              metadata: {
-                ticketId: ticket.id,
-                ticketKey,
-                priority: ticket.priority,
-                status: ticket.status,
-                type: ticket.type,
-              },
-            })
-            .catch((error) =>
-              logger.error("Failed to create ticket assignment notification", {
-                error,
-              }),
-            ),
-        ),
-      );
+      // REG-004: was a raw notifications.create() per target, which bypassed
+      // routing, preferences, dedupe and the PIPE-003 visibility check. One emit
+      // for the whole target set also batches routing instead of N round trips.
+      await this.dispatch
+        .emit({
+          eventKey: "build.ticket.assigned",
+          orgId: u.orgId,
+          actorUserId: u.userId,
+          targetUserIds: notifyTargets,
+          entityType: "ticket",
+          entityId: String(ticket.id),
+          title: "Ticket Assigned to You",
+          message: `You have been assigned to ticket "${body.title}" (${body.type}).`,
+          link: ticketLink,
+          metadata: {
+            ticketId: ticket.id,
+            ticketKey,
+            priority: ticket.priority,
+            status: ticket.status,
+            type: ticket.type,
+          },
+        })
+        .catch((error: unknown) =>
+          logger.error("Failed to dispatch ticket assignment notification", { error }),
+        );
     }
 
     this.webhooksDispatch.dispatch(u.orgId, projectId, "ticket.created", {

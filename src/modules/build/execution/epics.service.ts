@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -15,6 +15,7 @@ export class EpicsService {
         eq(tickets.orgId, orgId),
         eq(tickets.projectId, projectId),
         eq(tickets.type, "EPIC"),
+        isNull(tickets.deletedAt),
       ),
       columns: {
         completionPercentage: false,
@@ -99,6 +100,7 @@ export class EpicsService {
         eq(tickets.orgId, orgId),
         eq(tickets.projectId, projectId),
         eq(tickets.type, "EPIC"),
+        isNull(tickets.deletedAt),
       ),
       columns: { id: true },
     });

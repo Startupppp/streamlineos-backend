@@ -85,7 +85,7 @@ export class EntriesReadService {
       })
       .from(timesheets)
       .leftJoin(dp, eq(timesheets.projectId, dp.id))
-      .leftJoin(tickets, eq(timesheets.ticketId, tickets.id))
+      .leftJoin(tickets, and(eq(timesheets.ticketId, tickets.id), isNull(tickets.deletedAt)))
       .leftJoin(tp, eq(tickets.projectId, tp.id))
       .where(and(...conditions))
       .orderBy(desc(timesheets.date))
@@ -137,7 +137,7 @@ export class EntriesReadService {
       })
       .from(timesheets)
       .leftJoin(dp, eq(timesheets.projectId, dp.id))
-      .leftJoin(tickets, eq(timesheets.ticketId, tickets.id))
+      .leftJoin(tickets, and(eq(timesheets.ticketId, tickets.id), isNull(tickets.deletedAt)))
       .leftJoin(tp, eq(tickets.projectId, tp.id))
       .where(and(eq(timesheets.id, entryId), eq(timesheets.orgId, orgId)));
 

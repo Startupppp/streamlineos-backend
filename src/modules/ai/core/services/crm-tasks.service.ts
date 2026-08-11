@@ -170,7 +170,7 @@ Also return a short summary (2-3 sentences) with overall advice for the rep.`,
 
   async suggestTaskAssignments(orgId: string, projectId: number): Promise<TaskSuggestion[]> {
     const projectTickets = await this.db.query.tickets.findMany({
-      where: and(eq(tickets.orgId, orgId), eq(tickets.projectId, projectId), eq(tickets.status, "TODO")),
+      where: and(eq(tickets.orgId, orgId), eq(tickets.projectId, projectId), eq(tickets.status, "TODO"), isNull(tickets.deletedAt)),
       columns: { id: true, title: true, priority: true, assigneeId: true },
       limit: 100,
     });
@@ -202,6 +202,7 @@ Also return a short summary (2-3 sentences) with overall advice for the rep.`,
         .where(
           and(
             eq(tickets.orgId, orgId),
+            isNull(tickets.deletedAt),
             sql`${tickets.status} IN ('TODO', 'IN_PROGRESS', 'IN_REVIEW')`,
           ),
         )

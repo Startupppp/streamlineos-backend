@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, or } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 import { projectMembers, tickets, workItemRelations } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -40,6 +40,7 @@ export class ProjectsTicketRelationsService {
         eq(tickets.id, ticketId),
         eq(tickets.orgId, orgId),
         eq(tickets.projectId, projectId),
+        isNull(tickets.deletedAt),
       ),
       columns: { id: true },
     });
@@ -159,6 +160,7 @@ export class ProjectsTicketRelationsService {
         eq(tickets.id, body.relatedTicketId),
         eq(tickets.projectId, projectId),
         eq(tickets.orgId, u.orgId),
+        isNull(tickets.deletedAt),
       ),
       columns: { id: true },
     });

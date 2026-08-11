@@ -10,6 +10,7 @@ import {
   lte,
   or,
   inArray,
+  isNull,
   type SQL,
 } from "drizzle-orm";
 import {
@@ -117,7 +118,7 @@ export class LeadsService {
   }
 
   async listLeads(orgId: string, filters?: ListFilters) {
-    const where = [eq(leads.orgId, orgId)];
+    const where = [eq(leads.orgId, orgId), isNull(leads.deletedAt)];
 
     pushLeadsViewScope(where, orgId, filters?.scope, filters?.userId);
     if (filters?.status) where.push(eq(leads.status, filters.status));
@@ -193,7 +194,7 @@ export class LeadsService {
 
   async getLead(orgId: string, id: number) {
     return this.db.query.leads.findFirst({
-      where: and(eq(leads.id, id), eq(leads.orgId, orgId)),
+      where: and(eq(leads.id, id), eq(leads.orgId, orgId), isNull(leads.deletedAt)),
       with: {
         assignedTo: { columns: { id: true, name: true, image: true, email: true } },
         assignedBy: { columns: { id: true, name: true } },
@@ -346,7 +347,7 @@ export class LeadsService {
 
   async update(orgId: string, userId: string, id: number, input: UpdateInput) {
     const existing = await this.db.query.leads.findFirst({
-      where: and(eq(leads.id, id), eq(leads.orgId, orgId)),
+      where: and(eq(leads.id, id), eq(leads.orgId, orgId), isNull(leads.deletedAt)),
     });
     if (!existing) return null;
 

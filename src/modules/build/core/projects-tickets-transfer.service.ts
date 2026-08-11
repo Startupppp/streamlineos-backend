@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   projectMembers,
   projects,
@@ -11,6 +11,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
 import { NotificationsService } from "../../notifications/notifications.service";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { ProjectsEmailService } from "./projects-email.service";
 import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -23,6 +24,7 @@ export class ProjectsTicketsTransferService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly read: ProjectsTicketsReadService,
     private readonly notifications: NotificationsService,
+    private readonly dispatch: NotificationDispatchService,
     private readonly projectsEmail: ProjectsEmailService,
   ) {}
 
@@ -46,7 +48,7 @@ export class ProjectsTicketsTransferService {
       })
       .from(tickets)
       .leftJoin(users, eq(tickets.assigneeId, users.id))
-      .where(and(eq(tickets.orgId, u.orgId), eq(tickets.projectId, projectId)))
+      .where(and(eq(tickets.orgId, u.orgId), eq(tickets.projectId, projectId), isNull(tickets.deletedAt)))
       .orderBy(tickets.ticketNumber);
 
     return rows.map((r) => ({
@@ -180,7 +182,7 @@ export class ProjectsTicketsTransferService {
     if (notifyTargets.length === 0) return;
 
     const ticketData = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)),
+      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)),
       columns: {
         title: true,
         projectId: true,
@@ -206,32 +208,30 @@ export class ProjectsTicketsTransferService {
       ticketLink = `/projects/${ticketData.projectId}/tickets/${encodeURIComponent(ticketKey)}`;
     }
 
-    await Promise.all(
-      notifyTargets.map((userId) =>
-        this.notifications
-          .create({
-            orgId,
-            userId,
-            type: "INFO",
-            category: "PROJECTS",
-            sourceModule: "build",
-            eventKey: "build:ticket:assigned",
-            entityType: "ticket",
-            entityId: String(ticketId),
-            title: "Ticket Assigned to You",
-            message: `You have been assigned to ticket "${ticketData?.title ?? `#${ticketId}`}".`,
-            link: ticketLink,
-            metadata: {
-              ticketId,
-              ticketKey: ticketKey ?? null,
-              priority: ticketData?.priority ?? null,
-              status: ticketData?.status ?? null,
-              type: ticketData?.type ?? null,
-            },
-          })
-          .catch((error) => logger.error("Failed to create ticket assignment notification", { error })),
-      ),
-    );
+    // REG-004: see projects-tickets-create.service.ts — one engine emit for the
+    // whole target set, replacing a raw create() per user.
+    await this.dispatch
+      .emit({
+        eventKey: "build.ticket.assigned",
+        orgId,
+        actorUserId: actingUserId,
+        targetUserIds: notifyTargets,
+        entityType: "ticket",
+        entityId: String(ticketId),
+        title: "Ticket Assigned to You",
+        message: `You have been assigned to ticket "${ticketData?.title ?? `#${ticketId}`}".`,
+        link: ticketLink,
+        metadata: {
+          ticketId,
+          ticketKey: ticketKey ?? null,
+          priority: ticketData?.priority ?? null,
+          status: ticketData?.status ?? null,
+          type: ticketData?.type ?? null,
+        },
+      })
+      .catch((error: unknown) =>
+        logger.error("Failed to dispatch ticket assignment notification", { error }),
+      );
 
     void this.projectsEmail
       .notifyTicketAssignees(actingUserId, ticketId, Array.from(notifyIds))

@@ -93,7 +93,18 @@ export class NotificationDispatchService {
     const result: DispatchResult = { eventKey: input.eventKey, notified: 0, deliveriesQueued: 0, suppressed: 0, deduped: 0, deferred: false };
     if (!enabled && !definition.mandatory) return result;
 
-    const targets = await filterOrgMemberIds(this.db, input.orgId, input.targetUserIds);
+    // PIPE-011: never notify someone about their own action. This was a per-caller
+    // convention that most callers implemented by hand and some forgot; making it a
+    // pipeline rule means it cannot be forgotten. `notifySelf: true` on the input is
+    // the explicit opt-out, for the rare event (a security alert about your own
+    // session) where self-notification is the point.
+    const requested =
+      input.actorUserId && input.notifySelf !== true
+        ? input.targetUserIds.filter((id) => id !== input.actorUserId)
+        : input.targetUserIds;
+    if (requested.length === 0) return result;
+
+    const targets = await filterOrgMemberIds(this.db, input.orgId, requested);
     if (targets.length === 0) return result;
 
     const priority = input.priority ?? definition.defaultPriority;

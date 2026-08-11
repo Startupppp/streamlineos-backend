@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { SQL, and, avg, count, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
+import { SQL, and, avg, count, desc, eq, gte, ilike, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import {
   attendance,
   leaveRequests,
@@ -278,7 +278,7 @@ export class EmployeesService {
         ticketNumber: tickets.ticketNumber,
       })
       .from(tickets)
-      .where(and(eq(tickets.assigneeId, userId), eq(tickets.orgId, orgId)))
+      .where(and(eq(tickets.assigneeId, userId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
       .orderBy(desc(tickets.id))
       .limit(50);
 

@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import {
   projects,
   ticketCommentReactions,
@@ -32,7 +32,7 @@ export class ProjectsTicketCommentsService {
 
   private async resolveTicketForComment(u: CurrentUserContext, ticketId: number) {
     const ticket = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, u.orgId)),
+      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, u.orgId), isNull(tickets.deletedAt)),
       with: { assignees: { columns: { userId: true } } },
       columns: { id: true, assigneeId: true, reporterId: true, ticketNumber: true, title: true, projectId: true },
     });
@@ -50,7 +50,7 @@ export class ProjectsTicketCommentsService {
 
   async addComment(u: CurrentUserContext, ticketId: number, body: CommentInput) {
     const ticket = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, u.orgId)),
+      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, u.orgId), isNull(tickets.deletedAt)),
       columns: { id: true, title: true, projectId: true, ticketNumber: true },
     });
     if (!ticket) throw new NotFoundException("Ticket not found");

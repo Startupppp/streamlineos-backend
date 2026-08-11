@@ -1,8 +1,7 @@
 import { pgTable, text, serial, integer, boolean, jsonb, timestamp, index, unique } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
-import { projects } from "./core";
-import { projectStatuses } from "./members";
+import { projects, projectStatuses } from "./core";
 
 export const workflowTransitions = pgTable("workflow_transitions", {
   id: serial("id").primaryKey(),

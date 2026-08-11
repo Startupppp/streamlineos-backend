@@ -27,6 +27,10 @@ export const emailOutbox = pgTable(
     index("email_outbox_status_next_idx").on(t.status, t.nextAttemptAt),
     index("email_outbox_email_created_idx").on(t.toEmail, t.createdAt),
     index("email_outbox_org_idx").on(t.organizationId, t.status),
+    // SEC-009 retention sweep. Partial: after the first purge most rows have an
+    // empty body, so this stays small and only covers rows still holding content.
+    index("idx_email_outbox_body_retention").on(t.createdAt).where(sql`${t.html} <> ''`),
+    index("idx_email_outbox_created_at").on(t.createdAt),
   ],
 );
 

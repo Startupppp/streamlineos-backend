@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, and, desc, asc, sql, count, gte, lte, inArray, type SQL } from "drizzle-orm";
+import { eq, and, desc, asc, sql, count, gte, lte, inArray, isNull, type SQL } from "drizzle-orm";
 import { leads, users, crmOptions, crmPipelines, crmPipelineStages } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -62,7 +62,7 @@ export class LeadsBoardService {
       const existing = await this.db
         .select({ status: leads.status })
         .from(leads)
-        .where(eq(leads.orgId, orgId))
+        .where(and(eq(leads.orgId, orgId), isNull(leads.deletedAt)))
         .groupBy(leads.status);
       return existing.map((r) => r.status);
     }, CACHE_TTL.MEDIUM);
@@ -72,7 +72,7 @@ export class LeadsBoardService {
     const hash = Buffer.from(JSON.stringify(opts ?? {})).toString("base64");
 
     return this.cache.cachedVersioned(`leads:${orgId}`, `board:${hash}`, async () => {
-      const baseFilters = [eq(leads.orgId, orgId)];
+      const baseFilters = [eq(leads.orgId, orgId), isNull(leads.deletedAt)];
 
       pushLeadsViewScope(baseFilters, orgId, opts?.scope, opts?.userId);
 
@@ -144,7 +144,7 @@ export class LeadsBoardService {
   }
 
   async getStats(orgId: string, filters?: StatsFilters) {
-    const statsFilters = [eq(leads.orgId, orgId)];
+    const statsFilters = [eq(leads.orgId, orgId), isNull(leads.deletedAt)];
     pushLeadsViewScope(statsFilters, orgId, filters?.scope, filters?.userId);
 
     if (filters?.dateFrom) {

@@ -1,12 +1,13 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { ticketAssignees, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -139,7 +140,7 @@ export class ProjectsTicketsUpdateService {
     }
 
     const before = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)),
+      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)),
       columns: {
         title: true,
         status: true,
@@ -152,6 +153,7 @@ export class ProjectsTicketsUpdateService {
         points: true,
         type: true,
         cycleId: true,
+        version: true,
       },
     });
     if (!before || !before.projectId)
@@ -231,10 +233,17 @@ export class ProjectsTicketsUpdateService {
     }
 
     await this.db.transaction(async (tx) => {
-      await tx
+      const versionCondition =
+        input.version !== undefined
+          ? and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt), eq(tickets.version, input.version))
+          : and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt));
+      const affected = await tx
         .update(tickets)
-        .set(updateData)
-        .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)));
+        .set({ ...updateData, version: sql`${tickets.version} + 1` })
+        .where(versionCondition)
+        .returning({ id: tickets.id });
+      if (affected.length === 0)
+        throw new ConflictException("Ticket was modified by another request — refresh and retry");
 
       if (input.status && input.status !== before.status) {
         await OutboxWriter.emit(tx, {

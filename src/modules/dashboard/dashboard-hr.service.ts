@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, desc, eq, gte, lt, or, sql, sum } from "drizzle-orm";
+import { and, count, desc, eq, gte, isNull, lt, or, sql, sum } from "drizzle-orm";
 import {
   attendance,
   calendarEvents,
@@ -318,6 +318,7 @@ export class DashboardHrService {
               where: and(
                 eq(tickets.orgId, orgId),
                 eq(tickets.assigneeId, userId),
+                isNull(tickets.deletedAt),
                 or(
                   eq(tickets.status, "TODO"),
                   eq(tickets.status, "IN_PROGRESS"),

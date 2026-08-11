@@ -63,7 +63,7 @@ export class TicketAiService {
         projectId: tickets.projectId,
       })
       .from(tickets)
-      .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)))
+      .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
       .limit(1);
 
     if (!ticket || ticket.projectId !== projectId) throw new NotFoundException("Ticket not found");
@@ -191,7 +191,7 @@ Produce an improved HTML description.`;
     const existingSubtasks = await this.db
       .select({ title: tickets.title })
       .from(tickets)
-      .where(and(eq(tickets.parentTicketId, ticketId), eq(tickets.orgId, orgId)))
+      .where(and(eq(tickets.parentTicketId, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
       .limit(50);
 
     const existingTitles = existingSubtasks.map((s) => s.title);

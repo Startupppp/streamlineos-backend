@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { commentDrafts } from "../../../db/schema/build/comment-drafts";
 import { tickets } from "../../../db/schema/build/tasks";
 import { projects } from "../../../db/schema/build/core";
@@ -42,7 +42,7 @@ export class CommentDraftsService {
       )
       .leftJoin(users, eq(users.id, tickets.assigneeId))
       .where(
-        and(eq(commentDrafts.orgId, orgId), eq(commentDrafts.userId, userId)),
+        and(eq(commentDrafts.orgId, orgId), eq(commentDrafts.userId, userId), isNull(tickets.deletedAt)),
       )
       .orderBy(commentDrafts.updatedAt)
       .limit(100);
@@ -85,7 +85,7 @@ export class CommentDraftsService {
     const [ticket] = await this.db
       .select({ id: tickets.id })
       .from(tickets)
-      .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)))
+      .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
       .limit(1);
 
     if (!ticket) throw new NotFoundException("Ticket not found");

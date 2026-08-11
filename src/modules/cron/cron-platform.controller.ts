@@ -11,6 +11,7 @@ import { logger } from "../../common/logger/logger.service";
 import { assertCronSecret } from "./cron-secret";
 import { CronEmailOutboxService } from "./cron-email-outbox.service";
 import { CronNotificationDeliveryService } from "./cron-notification-delivery.service";
+import { CronNotificationRetentionService } from "./cron-notification-retention.service";
 import { CronOrganizationService } from "./cron-organization.service";
 import { OwnershipTransfersService } from "../ownership/ownership-transfers.service";
 import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
@@ -30,7 +31,36 @@ export class CronPlatformController {
     private readonly orgPurgeWorker: CronOrgPurgeWorkerService,
     private readonly timesheetExceptionsDetector: ExceptionsDetectorService,
     private readonly idempotency: CronIdempotencyService,
+    private readonly notificationRetention: CronNotificationRetentionService,
   ) {}
+
+  @Get("notifications-retention-sweep")
+  getNotificationsRetentionSweep(@Headers("authorization") authorization?: string) {
+    return this.runNotificationsRetentionSweep(authorization);
+  }
+
+  @Post("notifications-retention-sweep")
+  @HttpCode(200)
+  postNotificationsRetentionSweep(@Headers("authorization") authorization?: string) {
+    return this.runNotificationsRetentionSweep(authorization);
+  }
+
+  private async runNotificationsRetentionSweep(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.notificationRetention.sweep();
+      return {
+        success: true,
+        message:
+          `Purged ${result.emailBodiesPurged} email bodies and ${result.deliveryBodiesPurged} delivery bodies; ` +
+          `deleted ${result.emailRecordsDeleted} email rows and ${result.deliveryRecordsDeleted} delivery rows`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Notification retention sweep cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
 
   @Get("chat-reply-reminders")
   getChatReplyReminders(@Headers("authorization") authorization?: string) {

@@ -21,7 +21,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { InventorySettingsService } from "./inventory-settings.service";
 import { InventoryAuditService } from "./inventory-audit.service";
-import { addDec, mulDec, isPositive, isNegative } from "./decimal";
+import { addDec, mulDec, isPositive, isNegative, cmpDec } from "./decimal";
 import { ValuationService } from "./valuation.service";
 import { WarehouseScopeService } from "./warehouse-scope.service";
 import {
@@ -259,51 +259,7 @@ export class StockEngineService {
       after: { transactionIds: txnIds },
     });
 
-    if (decreasedVariantIds.size > 0) {
-      const variantIds = Array.from(decreasedVariantIds);
-      const variants = await tx
-        .select({
-          id: invProductVariants.id,
-          reorderPoint: invProducts.reorderPoint,
-        })
-        .from(invProductVariants)
-        .innerJoin(
-          invProducts,
-          eq(invProducts.id, invProductVariants.productId),
-        )
-        .where(inArray(invProductVariants.id, variantIds));
-
-      const onHandByVariant = new Map<number, string>();
-      for (const level of levels) {
-        if (decreasedVariantIds.has(level.productVariantId)) {
-          onHandByVariant.set(level.productVariantId, level.onHand);
-        }
-      }
-
-      for (const variant of variants) {
-        const reorderPoint = parseFloat(variant.reorderPoint ?? "0");
-        if (reorderPoint <= 0) continue;
-        const onHand = parseFloat(onHandByVariant.get(variant.id) ?? "0");
-        if (onHand <= reorderPoint) {
-          await OutboxWriter.emit(tx, {
-            eventId: randomUUID(),
-            organizationId: orgId,
-            aggregateType: "inv_product_variant",
-            aggregateId: String(variant.id),
-            aggregateVersion: Date.now(),
-            eventType: "inventory.stock.low",
-            payload: {
-              productVariantId: variant.id,
-              onHand: onHandByVariant.get(variant.id) ?? "0",
-              reorderPoint: variant.reorderPoint,
-              sourceType: cmd.sourceType,
-              sourceId: cmd.sourceId,
-            },
-            occurredAt: new Date(),
-          });
-        }
-      }
-    }
+    await this.emitLowStock(tx, orgId, decreasedVariantIds, levels, cmd.sourceType, cmd.sourceId);
 
     const engineResult: StockEngineResult = { transactionIds: txnIds, levels };
     const responsePayload: Record<string, unknown> = { ...engineResult };
@@ -603,51 +559,7 @@ export class StockEngineService {
           after: { transactionIds: txnIds },
         });
 
-        if (decreasedVariantIds.size > 0) {
-          const variantIds = Array.from(decreasedVariantIds);
-          const variants = await tx
-            .select({
-              id: invProductVariants.id,
-              reorderPoint: invProducts.reorderPoint,
-            })
-            .from(invProductVariants)
-            .innerJoin(
-              invProducts,
-              eq(invProducts.id, invProductVariants.productId),
-            )
-            .where(inArray(invProductVariants.id, variantIds));
-
-          const onHandByVariant = new Map<number, string>();
-          for (const lvl of cmdLevels) {
-            if (decreasedVariantIds.has(lvl.productVariantId)) {
-              onHandByVariant.set(lvl.productVariantId, lvl.onHand);
-            }
-          }
-
-          for (const variant of variants) {
-            const reorderPoint = parseFloat(variant.reorderPoint ?? "0");
-            if (reorderPoint <= 0) continue;
-            const onHand = parseFloat(onHandByVariant.get(variant.id) ?? "0");
-            if (onHand <= reorderPoint) {
-              await OutboxWriter.emit(tx, {
-                eventId: randomUUID(),
-                organizationId: orgId,
-                aggregateType: "inv_product_variant",
-                aggregateId: String(variant.id),
-                aggregateVersion: Date.now(),
-                eventType: "inventory.stock.low",
-                payload: {
-                  productVariantId: variant.id,
-                  onHand: onHandByVariant.get(variant.id) ?? "0",
-                  reorderPoint: variant.reorderPoint,
-                  sourceType: cmd.sourceType,
-                  sourceId: cmd.sourceId,
-                },
-                occurredAt: new Date(),
-              });
-            }
-          }
-        }
+        await this.emitLowStock(tx, orgId, decreasedVariantIds, cmdLevels, cmd.sourceType, cmd.sourceId);
 
         const engineResult: StockEngineResult = {
           transactionIds: txnIds,
@@ -884,6 +796,56 @@ export class StockEngineService {
       .where(eq(invStockTransactions.id, txnId));
 
     return averageCostBefore;
+  }
+
+  /**
+   * Emits inventory.stock.low for variants that fell to or below their reorder
+   * point. Extracted because executeInTx and executeMany carried byte-identical
+   * copies of this block.
+   */
+  private async emitLowStock(
+    tx: Tx,
+    orgId: string,
+    decreasedVariantIds: ReadonlySet<number>,
+    levels: StockEngineResult["levels"],
+    sourceType: string,
+    sourceId: string,
+  ): Promise<void> {
+    if (decreasedVariantIds.size === 0) return;
+
+    const variantIds = Array.from(decreasedVariantIds);
+    const variants = await tx
+      .select({ id: invProductVariants.id, reorderPoint: invProducts.reorderPoint })
+      .from(invProductVariants)
+      .innerJoin(invProducts, eq(invProducts.id, invProductVariants.productId))
+      .where(inArray(invProductVariants.id, variantIds));
+
+    const onHandByVariant = new Map<number, string>();
+    for (const level of levels)
+      if (decreasedVariantIds.has(level.productVariantId))
+        onHandByVariant.set(level.productVariantId, level.onHand);
+
+    for (const variant of variants) {
+      if (cmpDec(variant.reorderPoint ?? "0", "0") <= 0) continue;
+      const onHand = onHandByVariant.get(variant.id) ?? "0";
+      if (cmpDec(onHand, variant.reorderPoint ?? "0") > 0) continue;
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        organizationId: orgId,
+        aggregateType: "inv_product_variant",
+        aggregateId: String(variant.id),
+        aggregateVersion: Date.now(),
+        eventType: "inventory.stock.low",
+        payload: {
+          productVariantId: variant.id,
+          onHand,
+          reorderPoint: variant.reorderPoint,
+          sourceType,
+          sourceId,
+        },
+        occurredAt: new Date(),
+      });
+    }
   }
 
   async invalidateCaches(orgId: string): Promise<void> {

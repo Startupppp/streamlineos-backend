@@ -1,5 +1,5 @@
 import { pgTable, text, serial, integer, boolean, jsonb, timestamp, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   notificationTypeEnum,
   notificationPriorityEnum,
@@ -41,6 +41,10 @@ export const notificationEvents = pgTable("notification_events", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uq_notification_events_org_key").on(table.orgId, table.eventKey),
+  // SCH-013: the composite above enforces nothing for the catalog, because every
+  // catalog row has org_id IS NULL and NULL <> NULL in a btree unique. This partial
+  // index covers exactly the global rows.
+  uniqueIndex("uniq_notification_events_global_key").on(table.eventKey).where(sql`org_id is null`),
   index("idx_notification_events_module").on(table.sourceModule),
   index("idx_notification_events_category").on(table.category),
   unique("uniq_notification_events_org_id").on(table.orgId, table.id),
@@ -81,6 +85,9 @@ export const notificationDeliveries = pgTable("notification_deliveries", {
   index("idx_notification_deliveries_due").on(table.orgId, table.status, table.nextAttemptAt),
   index("idx_notification_deliveries_notification").on(table.notificationId),
   index("idx_notification_deliveries_user_channel").on(table.orgId, table.userId, table.channel, table.createdAt),
+  // SEC-009 retention sweep, which runs per tenant via forEachOrg — a global sweep
+  // is denied 42501 by this table's RLS policy.
+  index("idx_notification_deliveries_retention").on(table.orgId, table.createdAt),
   index("idx_notification_deliveries_event").on(table.orgId, table.eventKey, table.createdAt),
   unique("uniq_notification_deliveries_org_id").on(table.orgId, table.id),
 ]);

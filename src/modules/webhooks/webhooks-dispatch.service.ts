@@ -4,7 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { webhookEndpoints, webhookLogs } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { resolvesToPublicHost } from "../../common/security/safe-external-url";
+import { checkWebhookUrl } from "../../common/security/ssrf-guard";
 import { WEBHOOK_RESPONSE_BODY_LIMIT } from "./dto/webhook.schemas";
 
 const WEBHOOK_TIMEOUT_MS = 10_000;
@@ -52,14 +52,15 @@ export class WebhooksDispatchService {
     let responseBody: string | null;
     let success = false;
 
-    if (!(await resolvesToPublicHost(endpoint.url))) {
+    const urlCheck = await checkWebhookUrl(endpoint.url);
+    if (!urlCheck.allowed) {
       await this.db.insert(webhookLogs).values({
         endpointId: endpoint.id,
         orgId,
         event: eventName,
         payload,
         statusCode: null,
-        responseBody: "Blocked: endpoint does not resolve to a public address",
+        responseBody: `Blocked: ${urlCheck.reason}`,
         success: false,
       });
       return;
@@ -113,8 +114,11 @@ export class WebhooksDispatchService {
     if (!log) throw new NotFoundException("Delivery log not found");
     if (!endpoint.isActive)
       throw new BadRequestException("Webhook endpoint is inactive; enable it before retrying");
-    if (!(await resolvesToPublicHost(endpoint.url)))
-      throw new BadRequestException("Endpoint URL no longer resolves to a public address");
+    const retryUrlCheck = await checkWebhookUrl(endpoint.url);
+    if (!retryUrlCheck.allowed)
+      throw new BadRequestException(
+        `Endpoint URL is no longer safe to call: ${retryUrlCheck.reason}`,
+      );
 
     await this.deliver(endpoint, orgId, log.event, log.payload ?? {});
     return { success: true };

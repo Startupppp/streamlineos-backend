@@ -8,6 +8,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { WarehouseScopeService, type WarehouseScope } from "../stock-engine/warehouse-scope.service";
+import { CostVisibilityService, stripCostFields } from "../stock-engine/cost-visibility";
 import type {
   ListStockLevelsInput, ListTransactionsInput, AvailabilityQueryInput,
 } from "./dto/inv-stock.schemas";
@@ -18,6 +19,7 @@ export class InvStockService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly warehouseScope: WarehouseScopeService,
+    private readonly costVisibility: CostVisibilityService,
   ) {}
 
   /**
@@ -39,7 +41,8 @@ export class InvStockService {
     const { warehouseId, locationId, productId, variantId, lotId, serialId, lowStock, negative, search, page, limit } = filters;
     const offset = (page - 1) * limit;
     const scope = this.scopeFragment(await this.warehouseScope.resolve(orgId, userId), orgId);
-    const hash = `${scope.key}:${warehouseId ?? ""}:${locationId ?? ""}:${productId ?? ""}:${variantId ?? ""}:${lotId ?? ""}:${serialId ?? ""}:${lowStock ?? ""}:${negative ?? ""}:${search ?? ""}:${limit}:${offset}`;
+    const showCost = await this.costVisibility.canSeeCost(orgId, userId);
+    const hash = `${showCost ? "cost" : "nocost"}:${scope.key}:${warehouseId ?? ""}:${locationId ?? ""}:${productId ?? ""}:${variantId ?? ""}:${lotId ?? ""}:${serialId ?? ""}:${lowStock ?? ""}:${negative ?? ""}:${search ?? ""}:${limit}:${offset}`;
 
     return this.cache.cachedVersioned(`inv:stock:levels:${orgId}`, hash, async () => {
 
@@ -97,7 +100,8 @@ export class InvStockService {
 
       const countRow = countRows[0];
       const total = Number(countRow?.["count"] ?? 0);
-      return { items: rows, total, page, totalPages: Math.ceil(total / limit) };
+      const items = showCost ? rows : stripCostFields(rows);
+      return { items, total, page, totalPages: Math.ceil(total / limit) };
     }, CACHE_TTL.SHORT);
   }
 
@@ -124,6 +128,7 @@ export class InvStockService {
       sql`${invStockTransactions.productVariantId} IN (SELECT v.id FROM inv_product_variants v JOIN inv_products p ON p.id = v.product_id WHERE p.org_id = ${orgId} AND (p.name ILIKE ${"%" + search + "%"} OR p.sku ILIKE ${"%" + search + "%"} OR v.sku ILIKE ${"%" + search + "%"} OR v.barcode ILIKE ${"%" + search + "%"}))`,
     );
 
+    const showCost = await this.costVisibility.canSeeCost(orgId, userId);
     const where = and(...conditions);
     const [items, countResult] = await Promise.all([
       this.db.query.invStockTransactions.findMany({
@@ -143,7 +148,12 @@ export class InvStockService {
       this.db.select({ count: sql<number>`count(*)::int` }).from(invStockTransactions).where(where),
     ]);
 
-    return { items, total: countResult[0]?.count ?? 0, page, totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit) };
+    return {
+      items: showCost ? items : stripCostFields(items),
+      total: countResult[0]?.count ?? 0,
+      page,
+      totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit),
+    };
   }
 
   async getAvailability(orgId: string, userId: string, filters: AvailabilityQueryInput) {

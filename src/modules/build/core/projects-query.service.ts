@@ -3,7 +3,7 @@ import {
   ProjectsForbiddenProjectException,
   ProjectsNotFoundException,
 } from "../../../common/http/api-exceptions";
-import { and, asc, count, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   projectMembers,
   projectStatuses,
@@ -156,7 +156,7 @@ export class ProjectsQueryService {
           ),
         })
         .from(tickets)
-        .where(inArray(tickets.projectId, projectIds))
+        .where(and(inArray(tickets.projectId, projectIds), isNull(tickets.deletedAt)))
         .groupBy(tickets.projectId),
       this.db
         .select({

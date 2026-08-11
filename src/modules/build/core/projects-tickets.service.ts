@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, or } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 import {
   ticketAssignees,
   ticketAttachments,
@@ -95,7 +95,7 @@ export class ProjectsTicketsService {
     force: boolean,
   ) {
     const existing = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)),
+      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)),
       columns: { id: true, projectId: true, title: true },
     });
     if (!existing || !existing.projectId)
@@ -159,7 +159,10 @@ export class ProjectsTicketsService {
           ),
         );
 
-      await tx.delete(tickets).where(eq(tickets.id, ticketId));
+      await tx
+        .update(tickets)
+        .set({ deletedAt: new Date() })
+        .where(eq(tickets.id, ticketId));
     });
 
     this.webhooksDispatch.dispatch(

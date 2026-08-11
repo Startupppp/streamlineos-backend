@@ -1,5 +1,5 @@
 import { Injectable, Inject, NotFoundException, ConflictException } from "@nestjs/common";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { customFieldDefinitions } from "../../../db/schema/custom-field-engine";
@@ -136,6 +136,7 @@ export class ProjectsCustomFieldsService {
         eq(tickets.id, ticketId),
         eq(tickets.projectId, projectId),
         eq(tickets.orgId, orgId),
+        isNull(tickets.deletedAt),
       ),
       columns: { id: true },
     });
@@ -205,6 +206,7 @@ export class ProjectsCustomFieldsService {
         eq(tickets.id, ticketId),
         eq(tickets.projectId, projectId),
         eq(tickets.orgId, orgId),
+        isNull(tickets.deletedAt),
       ),
       columns: { id: true },
     });

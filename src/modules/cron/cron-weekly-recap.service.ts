@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, eq, gte, sql } from "drizzle-orm";
+import { and, count, eq, gte, isNull, sql } from "drizzle-orm";
 import { subDays, format } from "date-fns";
 import {
   leadActivities,
@@ -103,14 +103,14 @@ export class CronWeeklyRecapService {
           .select({ count: count() })
           .from(tickets)
           .where(
-            and(eq(tickets.orgId, orgId), sql`${tickets.status} NOT IN ('DONE', 'CANCELLED')`),
+            and(eq(tickets.orgId, orgId), isNull(tickets.deletedAt), sql`${tickets.status} NOT IN ('DONE', 'CANCELLED')`),
           );
 
         const [closedTicketCount] = await tx
           .select({ count: count() })
           .from(tickets)
           .where(
-            and(eq(tickets.orgId, orgId), eq(tickets.status, "DONE"), gte(tickets.updatedAt, weekStart)),
+            and(eq(tickets.orgId, orgId), isNull(tickets.deletedAt), eq(tickets.status, "DONE"), gte(tickets.updatedAt, weekStart)),
           );
 
         const [pendingLeaveCount] = await tx

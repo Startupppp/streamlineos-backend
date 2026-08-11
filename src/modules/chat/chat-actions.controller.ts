@@ -1,5 +1,5 @@
 import { Body, Controller, Inject, Post, UseGuards } from "@nestjs/common";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -54,7 +54,7 @@ export class ChatActionsController {
     }
 
     const ticket = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, body.ticketId), eq(tickets.projectId, body.projectId), eq(tickets.orgId, u.orgId)),
+      where: and(eq(tickets.id, body.ticketId), eq(tickets.projectId, body.projectId), eq(tickets.orgId, u.orgId), isNull(tickets.deletedAt)),
       columns: { id: true, status: true },
     });
 
@@ -219,7 +219,7 @@ export class ChatActionsController {
     }
 
     const ticket = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, body.ticketId), eq(tickets.projectId, body.projectId), eq(tickets.orgId, u.orgId)),
+      where: and(eq(tickets.id, body.ticketId), eq(tickets.projectId, body.projectId), eq(tickets.orgId, u.orgId), isNull(tickets.deletedAt)),
       columns: { id: true, assigneeId: true },
     });
 
@@ -275,7 +275,7 @@ export class ChatActionsController {
     }
 
     const ticket = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, body.ticketId), eq(tickets.projectId, body.projectId), eq(tickets.orgId, u.orgId)),
+      where: and(eq(tickets.id, body.ticketId), eq(tickets.projectId, body.projectId), eq(tickets.orgId, u.orgId), isNull(tickets.deletedAt)),
       columns: { id: true, dueDate: true },
     });
 

@@ -26,7 +26,7 @@ export class InvWarehousesController {
     @Query(new ZodValidationPipe(listWarehousesSchema)) filters: ListWarehousesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.warehouses.listWarehouses(u.orgId, filters);
+    return this.warehouses.listWarehouses(u.orgId, u.userId, filters);
   }
 
   @Get(":warehouseId")

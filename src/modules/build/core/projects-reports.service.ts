@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
-import { customStates, projectDailySnapshots, projects, sprints, tickets, workItemRelations } from "../../../db/schema";
+import { and, asc, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
+import { projectDailySnapshots, projectStatuses, projects, sprints, tickets, workItemRelations } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { addDays, differenceInCalendarDays, formatDateOnly } from "../../../common/date";
@@ -77,8 +77,7 @@ export class ProjectsReportsService {
             totalScope: sql<number>`COALESCE(SUM(${tickets.storyPoints}), 0)::int`,
           })
           .from(tickets)
-          .leftJoin(customStates, eq(tickets.stateId, customStates.id))
-          .where(and(eq(tickets.orgId, orgId), eq(tickets.sprintId, sprint.id)));
+          .where(and(eq(tickets.orgId, orgId), eq(tickets.sprintId, sprint.id), isNull(tickets.deletedAt)));
 
         const totalScope = scopeRow?.totalScope ?? 0;
 
@@ -88,12 +87,20 @@ export class ProjectsReportsService {
             pts: sql<number>`COALESCE(SUM(${tickets.storyPoints}), 0)::int`,
           })
           .from(tickets)
-          .leftJoin(customStates, eq(tickets.stateId, customStates.id))
+          .leftJoin(
+            projectStatuses,
+            and(
+              eq(tickets.orgId, projectStatuses.orgId),
+              eq(tickets.projectId, projectStatuses.projectId),
+              eq(tickets.status, projectStatuses.name),
+            ),
+          )
           .where(
             and(
               eq(tickets.orgId, orgId),
               eq(tickets.sprintId, sprint.id),
-              sql`(${customStates.group} = 'completed' OR (${customStates.id} IS NULL AND ${tickets.status} = 'DONE'))`,
+              isNull(tickets.deletedAt),
+              eq(projectStatuses.type, "completed"),
             ),
           )
           .groupBy(sql`date_trunc('day', ${tickets.updatedAt})`)
@@ -197,12 +204,19 @@ export class ProjectsReportsService {
             sprintId: tickets.sprintId,
             committedCount: sql<number>`COUNT(*)::int`,
             committedPoints: sql<number>`COALESCE(SUM(${tickets.storyPoints}), 0)::int`,
-            completedCount: sql<number>`COUNT(*) FILTER (WHERE ${customStates.group} = 'completed' OR (${customStates.id} IS NULL AND ${tickets.status} = 'DONE'))::int`,
-            completedPoints: sql<number>`COALESCE(SUM(CASE WHEN ${customStates.group} = 'completed' OR (${customStates.id} IS NULL AND ${tickets.status} = 'DONE') THEN ${tickets.storyPoints} ELSE 0 END), 0)::int`,
+            completedCount: sql<number>`COUNT(*) FILTER (WHERE ${projectStatuses.type} = 'completed')::int`,
+            completedPoints: sql<number>`COALESCE(SUM(CASE WHEN ${projectStatuses.type} = 'completed' THEN ${tickets.storyPoints} ELSE 0 END), 0)::int`,
           })
           .from(tickets)
-          .leftJoin(customStates, eq(tickets.stateId, customStates.id))
-          .where(and(eq(tickets.orgId, orgId), inArray(tickets.sprintId, sprintIds)))
+          .leftJoin(
+            projectStatuses,
+            and(
+              eq(tickets.orgId, projectStatuses.orgId),
+              eq(tickets.projectId, projectStatuses.projectId),
+              eq(tickets.status, projectStatuses.name),
+            ),
+          )
+          .where(and(eq(tickets.orgId, orgId), inArray(tickets.sprintId, sprintIds), isNull(tickets.deletedAt)))
           .groupBy(tickets.sprintId);
 
         const statsMap = new Map(statsRows.map((r) => [r.sprintId, r]));
@@ -230,14 +244,21 @@ export class ProjectsReportsService {
 
     const statsRows = await this.db
       .select({
-        group: sql<string>`COALESCE(${customStates.group}, CASE WHEN ${tickets.status} = 'DONE' THEN 'completed' ELSE 'backlog' END)`,
+        group: sql<StateGroup>`${projectStatuses.type}`,
         count: sql<number>`COUNT(*)::int`,
         points: sql<number>`COALESCE(SUM(${tickets.storyPoints}), 0)::int`,
       })
       .from(tickets)
-      .leftJoin(customStates, eq(tickets.stateId, customStates.id))
-      .where(and(eq(tickets.orgId, orgId), eq(tickets.projectId, projectId)))
-      .groupBy(sql`COALESCE(${customStates.group}, CASE WHEN ${tickets.status} = 'DONE' THEN 'completed' ELSE 'backlog' END)`);
+      .innerJoin(
+        projectStatuses,
+        and(
+          eq(tickets.orgId, projectStatuses.orgId),
+          eq(tickets.projectId, projectStatuses.projectId),
+          eq(tickets.status, projectStatuses.name),
+        ),
+      )
+      .where(and(eq(tickets.orgId, orgId), eq(tickets.projectId, projectId), isNull(tickets.deletedAt)))
+      .groupBy(projectStatuses.type);
 
     const totals = new Map<StateGroup, { count: number; points: number }>();
     for (const group of STATE_GROUPS) {
@@ -294,6 +315,7 @@ export class ProjectsReportsService {
             and(
               eq(tickets.orgId, orgId),
               eq(tickets.projectId, projectId),
+              isNull(tickets.deletedAt),
               eq(tickets.status, "DONE"),
               gte(tickets.updatedAt, sql`NOW() - INTERVAL '12 weeks'`),
             ),
@@ -324,6 +346,7 @@ export class ProjectsReportsService {
             and(
               eq(tickets.orgId, orgId),
               eq(tickets.projectId, projectId),
+              isNull(tickets.deletedAt),
               eq(tickets.status, "DONE"),
               gte(tickets.updatedAt, sql`NOW() - INTERVAL '12 weeks'`),
             ),
@@ -344,7 +367,7 @@ export class ProjectsReportsService {
         const ticketRows = await this.db
           .select({ id: tickets.id, title: tickets.title, storyPoints: tickets.storyPoints })
           .from(tickets)
-          .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)));
+          .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)));
 
         const ticketIds = ticketRows.map((t) => t.id);
         const validIds = new Set(ticketIds);

@@ -13,6 +13,7 @@ const IA_PUSH_EMAIL: NotificationChannel[] = ["IN_APP", "PUSH", "EMAIL"];
  * The owning module registers the resolver; a declared kind with no resolver denies.
  */
 const KB_PAGE = "kb.page";
+const BUILD_TICKET = "build.ticket";
 
 const ALLOWED_DEFAULT: NotificationChannel[] = ["IN_APP", "EMAIL", "PUSH"];
 const ALLOWED_URGENT: NotificationChannel[] = ["IN_APP", "EMAIL", "PUSH", "SMS", "WHATSAPP"];
@@ -56,15 +57,15 @@ const CHAT = [
 ];
 
 const PROJECTS = [
-  e("project.task.assigned", "build", "PROJECTS", "Task assigned to you", { defaultPriority: "HIGH", defaultChannels: IA_PUSH_EMAIL }),
-  e("project.task.due_soon", "build", "PROJECTS", "Task due soon", { defaultChannels: IA_EMAIL }),
-  e("project.task.overdue", "build", "PROJECTS", "Task overdue", { defaultPriority: "HIGH", defaultType: "WARNING", defaultChannels: IA_EMAIL }),
-  e("project.task.comment.mention", "build", "PROJECTS", "Mentioned in a comment", { defaultPriority: "HIGH", defaultChannels: IA_PUSH_EMAIL, dedupeWindowSeconds: 0 }),
-  e("project.task.status.changed", "build", "PROJECTS", "Task status changed", { defaultPriority: "LOW", defaultChannels: IA }),
-  e("project.sprint.started", "build", "PROJECTS", "Sprint started", { defaultChannels: IA }),
-  e("project.sprint.ending", "build", "PROJECTS", "Sprint ending soon", { defaultChannels: IA_EMAIL }),
-  e("project.blocker.created", "build", "PROJECTS", "Blocker reported", { defaultPriority: "HIGH", defaultType: "WARNING", defaultChannels: IA_EMAIL }),
-  e("project.approval.requested", "build", "WORKFLOW", "Approval requested", { defaultPriority: "HIGH", defaultChannels: IA_EMAIL }),
+  e("build.ticket.assigned", "build", "PROJECTS", "Task assigned to you", { defaultPriority: "HIGH", defaultChannels: IA_PUSH_EMAIL , visibilityResourceKind: BUILD_TICKET }),
+  e("build.ticket.due_soon", "build", "PROJECTS", "Task due soon", { defaultChannels: IA_EMAIL }),
+  e("build.ticket.overdue", "build", "PROJECTS", "Task overdue", { defaultPriority: "HIGH", defaultType: "WARNING", defaultChannels: IA_EMAIL }),
+  e("build.comment.mention", "build", "PROJECTS", "Mentioned in a comment", { defaultPriority: "HIGH", defaultChannels: IA_PUSH_EMAIL, dedupeWindowSeconds: 0 , visibilityResourceKind: BUILD_TICKET }),
+  e("build.ticket.status_changed", "build", "PROJECTS", "Task status changed", { defaultPriority: "LOW", defaultChannels: IA }),
+  e("build.sprint.started", "build", "PROJECTS", "Sprint started", { defaultChannels: IA }),
+  e("build.sprint.ending", "build", "PROJECTS", "Sprint ending soon", { defaultChannels: IA_EMAIL }),
+  e("build.blocker.created", "build", "PROJECTS", "Blocker reported", { defaultPriority: "HIGH", defaultType: "WARNING", defaultChannels: IA_EMAIL }),
+  e("build.approval.requested", "build", "WORKFLOW", "Approval requested", { defaultPriority: "HIGH", defaultChannels: IA_EMAIL }),
 ];
 
 const CRM = [

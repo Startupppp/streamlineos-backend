@@ -1,6 +1,6 @@
 import { Injectable, Inject, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
@@ -107,7 +107,7 @@ export class ProjectsReleasesService {
     if (!release) throw new NotFoundException("Release not found");
 
     const ticket = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)),
+      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)),
       columns: { id: true },
     });
     if (!ticket) throw new NotFoundException("Ticket not found");

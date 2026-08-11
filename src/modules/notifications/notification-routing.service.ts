@@ -6,6 +6,7 @@ import {
   notificationProviderAccounts,
   notificationSuppressionRules,
   notificationDeliveries,
+  userPreferences,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -220,7 +221,10 @@ export class NotificationRoutingService {
     return new Set<NotificationChannel>(["IN_APP", "EMAIL", ...enabled]);
   }
 
-  private resolvePrefs(row: typeof notificationPreferences.$inferSelect | undefined): ResolvedPreferences {
+  private resolvePrefs(
+    row: typeof notificationPreferences.$inferSelect | undefined,
+    userTimezone?: string,
+  ): ResolvedPreferences {
     const channelEnabled: Record<NotificationChannel, boolean> = {
       IN_APP: row?.inAppEnabled ?? true,
       EMAIL: row?.emailEnabled ?? true,
@@ -234,7 +238,7 @@ export class NotificationRoutingService {
       quietHours: {
         start: row?.quietHoursStart ?? null,
         end: row?.quietHoursEnd ?? null,
-        timezone: row?.quietHoursTimezone ?? "UTC",
+        timezone: userTimezone ?? "UTC",
         includeWeekends: row?.quietHoursWeekends ?? true,
       },
       categories: (row?.categories as Record<string, boolean> | undefined) ?? {},
@@ -359,15 +363,24 @@ export class NotificationRoutingService {
     const results = new Map<string, RoutingResult>();
     if (userIds.length === 0) return results;
 
-    const [availableChannels, orgPolicy, prefRows] = await Promise.all([
+    const [availableChannels, orgPolicy, prefRows, tzRows] = await Promise.all([
       this.loadOrgAvailability(orgId),
       this.loadOrgPolicy(orgId, definition),
       this.db
         .select()
         .from(notificationPreferences)
         .where(and(eq(notificationPreferences.orgId, orgId), inArray(notificationPreferences.userId, userIds))),
+      // SCH-012: quiet hours resolve from the canonical per-user timezone.
+      // notification_preferences.quiet_hours_timezone defaulted 'UTC' while this
+      // column defaults 'Asia/Kolkata', so an IST user's 22:00-07:00 window was
+      // applied in UTC — silencing the working day and letting the night through.
+      this.db
+        .select({ userId: userPreferences.userId, timezone: userPreferences.timezone })
+        .from(userPreferences)
+        .where(inArray(userPreferences.userId, userIds)),
     ]);
     const prefsByUser = new Map(prefRows.map((r) => [r.userId, r]));
+    const tzByUser = new Map(tzRows.map((r) => [r.userId, r.timezone]));
     const suppressionByUser = await this.loadSuppressionBatch(orgId, userIds, definition);
     await this.applyRateLimitsBatch(orgId, userIds, definition, suppressionByUser);
 
@@ -377,7 +390,7 @@ export class NotificationRoutingService {
         definition,
         priority,
         now,
-        prefs: this.resolvePrefs(prefsByUser.get(userId)),
+        prefs: this.resolvePrefs(prefsByUser.get(userId), tzByUser.get(userId)),
         orgPolicy,
         availableChannels,
         suppressedChannels: suppressionByUser.get(userId) ?? new Map(),
