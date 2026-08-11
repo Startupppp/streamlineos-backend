@@ -10,12 +10,16 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
-import { AblyService } from "./ably.service";
+import { AblyService } from "../realtime/ably.service";
+import { ChatChannelsService } from "./chat-channels.service";
 
 @Controller("chat")
 @UseGuards(JwtAuthGuard, PermissionGuard)
-export class RealtimeController {
-  constructor(private readonly ably: AblyService) {}
+export class ChatRealtimeController {
+  constructor(
+    private readonly ably: AblyService,
+    private readonly channels: ChatChannelsService,
+  ) {}
 
   @RequirePermission("chat:messages:read")
   @Get("ably-token")
@@ -23,8 +27,9 @@ export class RealtimeController {
     if (!this.ably.configured) {
       throw new ServiceUnavailableException("Ably is not configured");
     }
+    const channelIds = await this.channels.listMemberChannelIds(u.orgId, u.userId);
     try {
-      return await this.ably.createChatTokenRequest(u.userId, u.orgId);
+      return await this.ably.createChatTokenRequest(u.userId, u.orgId, channelIds);
     } catch {
       throw new InternalServerErrorException("Failed to create Ably token");
     }

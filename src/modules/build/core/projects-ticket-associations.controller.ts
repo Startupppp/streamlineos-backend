@@ -1,0 +1,206 @@
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from "@nestjs/common";
+import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../../access/permission.guard";
+import { RequirePermission } from "../../access/require-permission.decorator";
+import { CurrentUser } from "../../../common/auth/current-user.decorator";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { ProjectsTicketSubresourcesService } from "./projects-ticket-subresources.service";
+import {
+  addLabelSchema,
+  addRelatedLinkSchema,
+  addRelationSchema,
+  addWatcherSchema,
+  attachmentSchema,
+  removeRelationQuerySchema,
+  updateRelatedLinkSchema,
+  type AddLabelInput,
+  type AddRelatedLinkInput,
+  type AddRelationInput,
+  type AddWatcherInput,
+  type AttachmentInput,
+  type RemoveRelationQuery,
+  type UpdateRelatedLinkInput,
+} from "./dto/projects.schemas";
+import { RequireModule } from "../../../common/rbac/require-module.decorator";
+
+@RequireModule("build")
+@Controller("build")
+@UseGuards(JwtAuthGuard, PermissionGuard)
+export class ProjectsTicketAssociationsController {
+  constructor(private readonly subresources: ProjectsTicketSubresourcesService) {}
+
+  @Get(":projectId/tickets/:ticketId/subtasks")
+  @RequirePermission("build:tickets:view")
+  getSubtasks(
+    @Param("ticketId", ParseIntPipe) ticketId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.subresources.getSubtasks(u.orgId, ticketId);
+  }
+
+  @Get(":projectId/tickets/:ticketId/relations")
+  @RequirePermission("build:tickets:view")
+  listRelations(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("ticketId", ParseIntPipe) ticketId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.subresources.listRelations(u, projectId, ticketId);
+  }
+
+  @Post(":projectId/tickets/:ticketId/relations")
+  @RequirePermission("build:tickets:update")
+  @HttpCode(201)
+  addRelation(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("ticketId", ParseIntPipe) ticketId: number,
+    @Body(new ZodValidationPipe(addRelationSchema)) body: AddRelationInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.subresources.addRelation(u, projectId, ticketId, body);
+  }
+
+  @Delete(":projectId/tickets/:ticketId/relations")
+  @RequirePermission("build:tickets:update")
+  @HttpCode(204)
+  removeRelation(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("ticketId", ParseIntPipe) ticketId: number,
+    @Query(new ZodValidationPipe(removeRelationQuerySchema)) query: RemoveRelationQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.subresources.removeRelation(u, projectId, ticketId, query.relatedId);
+  }
+
+  @Get(":projectId/tickets/:ticketId/watchers")
+  @RequirePermission("build:tickets:view")
+  getWatchers(
+    @Param("ticketId", ParseIntPipe) ticketId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.subresources.getWatchers(u.orgId, ticketId);
+  }
+
+  @Post(":projectId/tickets/:ticketId/watchers")
+  @RequirePermission("build:tickets:update")
+  @HttpCode(201)
+  addWatcher(
+    @Param("ticketId", ParseIntPipe) ticketId: number,
+    @Body(new ZodValidationPipe(addWatcherSchema)) body: AddWatcherInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.subresources.addWatcher(u, ticketId, body);
+  }
+
+  @Delete(":projectId/tickets/:ticketId/watchers")
+  @RequirePermission("build:tickets:update")
+  @HttpCode(204)
+  removeWatcher(
+    @Param("ticketId", ParseIntPipe) ticketId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.subresources.removeWatcher(u, ticketId);
+  }
+
+  @Post(":projectId/tickets/:ticketId/labels")
+  @RequirePermission("build:tickets:update")
+  @HttpCode(201)
+  addLabel(
+    @Param("ticketId", ParseIntPipe) ticketId: number,
+    @Body(new ZodValidationPipe(addLabelSchema)) body: AddLabelInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.subresources.addLabel(u.orgId, u.userId, ticketId, body);
+  }
+
+  @Delete(":projectId/tickets/:ticketId/labels/:labelId")
+  @RequirePermission("build:tickets:update")
+  @HttpCode(204)
+  removeLabel(
+    @Param("ticketId", ParseIntPipe) ticketId: number,
+    @Param("labelId", ParseIntPipe) labelId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.subresources.removeLabel(u.orgId, u.userId, ticketId, labelId);
+  }
+
+  @Post(":projectId/tickets/:ticketId/attachments")
+  @RequirePermission("build:tickets:update")
+  @HttpCode(201)
+  addAttachment(
+    @Param("ticketId", ParseIntPipe) ticketId: number,
+    @Body(new ZodValidationPipe(attachmentSchema)) body: AttachmentInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.subresources.addAttachment(u, ticketId, body);
+  }
+
+  @Get(":projectId/tickets/:ticketId/git-links")
+  @RequirePermission("build:tickets:view")
+  getGitLinks(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("ticketId", ParseIntPipe) ticketId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.subresources.getGitLinks(u.orgId, projectId, ticketId);
+  }
+
+  @Get(":projectId/tickets/:ticketId/related-links")
+  @RequirePermission("build:tickets:view")
+  listRelatedLinks(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("ticketId", ParseIntPipe) ticketId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.subresources.listRelatedLinks(u, projectId, ticketId);
+  }
+
+  @Post(":projectId/tickets/:ticketId/related-links")
+  @RequirePermission("build:tickets:update")
+  @HttpCode(201)
+  addRelatedLink(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("ticketId", ParseIntPipe) ticketId: number,
+    @Body(new ZodValidationPipe(addRelatedLinkSchema)) body: AddRelatedLinkInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.subresources.addRelatedLink(u, projectId, ticketId, body);
+  }
+
+  @Patch(":projectId/tickets/:ticketId/related-links/:linkId")
+  @RequirePermission("build:tickets:update")
+  updateRelatedLink(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("ticketId", ParseIntPipe) ticketId: number,
+    @Param("linkId", ParseIntPipe) linkId: number,
+    @Body(new ZodValidationPipe(updateRelatedLinkSchema)) body: UpdateRelatedLinkInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.subresources.updateRelatedLink(u, projectId, ticketId, linkId, body);
+  }
+
+  @Delete(":projectId/tickets/:ticketId/related-links/:linkId")
+  @RequirePermission("build:tickets:update")
+  @HttpCode(204)
+  deleteRelatedLink(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("ticketId", ParseIntPipe) ticketId: number,
+    @Param("linkId", ParseIntPipe) linkId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.subresources.deleteRelatedLink(u, projectId, ticketId, linkId);
+  }
+}

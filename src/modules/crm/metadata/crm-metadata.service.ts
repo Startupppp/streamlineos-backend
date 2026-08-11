@@ -3,8 +3,9 @@ import { and, eq, asc } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import {
-  crmPipelines, crmPipelineStages, crmOptions, crmUiMetadata, auditLogs,
+  crmPipelines, crmPipelineStages, crmOptions, crmUiMetadata,
 } from "../../../db/schema";
+import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -20,6 +21,7 @@ export class CrmMetadataService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly audit: AuditService,
   ) {}
 
   async getAggregate(orgId: string) {
@@ -49,7 +51,7 @@ export class CrmMetadataService {
     if (existing.length > 0) throw new ConflictException(`Pipeline key "${input.key}" already exists`);
     const [row] = await this.db.insert(crmPipelines).values({ orgId: u.orgId, ...input }).returning();
     await this.invalidateMeta(u.orgId);
-    void this.auditLog(u, "crm_pipeline.created", row!.id, { key: input.key, name: input.name });
+    await this.auditLog(u, "crm_pipeline.created", row!.id, { key: input.key, name: input.name });
     return row;
   }
 
@@ -58,7 +60,7 @@ export class CrmMetadataService {
     const [row] = await this.db.update(crmPipelines).set({ ...input, updatedAt: new Date() }).where(and(eq(crmPipelines.id, pipelineId), eq(crmPipelines.orgId, u.orgId))).returning();
     if (!row) throw new NotFoundException("Pipeline not found");
     await this.invalidateMeta(u.orgId);
-    void this.auditLog(u, "crm_pipeline.updated", pipelineId, input as Record<string, unknown>);
+    await this.auditLog(u, "crm_pipeline.updated", pipelineId, input as Record<string, unknown>);
     return row;
   }
 
@@ -66,7 +68,7 @@ export class CrmMetadataService {
     await this.assertPipelineOwner(u.orgId, pipelineId);
     await this.db.update(crmPipelines).set({ deletedAt: new Date(), isActive: false, updatedAt: new Date() }).where(and(eq(crmPipelines.id, pipelineId), eq(crmPipelines.orgId, u.orgId)));
     await this.invalidateMeta(u.orgId);
-    void this.auditLog(u, "crm_pipeline.deleted", pipelineId, {});
+    await this.auditLog(u, "crm_pipeline.deleted", pipelineId, {});
     return { success: true };
   }
 
@@ -87,7 +89,7 @@ export class CrmMetadataService {
       allowedNextStageKeys: input.allowedNextStageKeys ?? null,
     }).returning();
     await this.invalidateMeta(u.orgId);
-    void this.auditLog(u, "crm_stage.created", row!.id, { pipelineId, key: input.key });
+    await this.auditLog(u, "crm_stage.created", row!.id, { pipelineId, key: input.key });
     return row;
   }
 
@@ -96,7 +98,7 @@ export class CrmMetadataService {
     const [row] = await this.db.update(crmPipelineStages).set({ ...input, updatedAt: new Date() }).where(and(eq(crmPipelineStages.id, stageId), eq(crmPipelineStages.orgId, u.orgId))).returning();
     if (!row) throw new NotFoundException("Stage not found");
     await this.invalidateMeta(u.orgId);
-    void this.auditLog(u, "crm_stage.updated", stageId, input as Record<string, unknown>);
+    await this.auditLog(u, "crm_stage.updated", stageId, input as Record<string, unknown>);
     return row;
   }
 
@@ -104,7 +106,7 @@ export class CrmMetadataService {
     const stage = await this.assertStageOwner(u.orgId, stageId);
     await this.db.update(crmPipelineStages).set({ isActive: false, updatedAt: new Date() }).where(and(eq(crmPipelineStages.id, stageId), eq(crmPipelineStages.orgId, u.orgId)));
     await this.invalidateMeta(u.orgId);
-    void this.auditLog(u, "crm_stage.deleted", stageId, { key: stage.key });
+    await this.auditLog(u, "crm_stage.deleted", stageId, { key: stage.key });
     return { success: true };
   }
 
@@ -128,7 +130,7 @@ export class CrmMetadataService {
     if (existing.length > 0) throw new ConflictException(`Option key "${input.key}" already exists for type "${optionType}"`);
     const [row] = await this.db.insert(crmOptions).values({ orgId: u.orgId, type: optionType, ...input }).returning();
     await this.invalidateMeta(u.orgId);
-    void this.auditLog(u, "crm_option.created", row!.id, { type: optionType, key: input.key });
+    await this.auditLog(u, "crm_option.created", row!.id, { type: optionType, key: input.key });
     return row;
   }
 
@@ -138,7 +140,7 @@ export class CrmMetadataService {
     const [row] = await this.db.update(crmOptions).set({ ...input, updatedAt: new Date() }).where(and(eq(crmOptions.id, optionId), eq(crmOptions.orgId, u.orgId))).returning();
     if (!row) throw new NotFoundException("Option not found");
     await this.invalidateMeta(u.orgId);
-    void this.auditLog(u, "crm_option.updated", optionId, input as Record<string, unknown>);
+    await this.auditLog(u, "crm_option.updated", optionId, input as Record<string, unknown>);
     return row;
   }
 
@@ -147,7 +149,7 @@ export class CrmMetadataService {
     if (!opt || opt.type !== optionType) throw new NotFoundException("Option not found");
     await this.db.update(crmOptions).set({ isActive: false, updatedAt: new Date() }).where(and(eq(crmOptions.id, optionId), eq(crmOptions.orgId, u.orgId)));
     await this.invalidateMeta(u.orgId);
-    void this.auditLog(u, "crm_option.deleted", optionId, { type: optionType, key: opt.key });
+    await this.auditLog(u, "crm_option.deleted", optionId, { type: optionType, key: opt.key });
     return { success: true };
   }
 
@@ -168,13 +170,13 @@ export class CrmMetadataService {
   }
 
   private auditLog(u: CurrentUserContext, action: string, targetId: string, metadata: Record<string, unknown>): Promise<void> {
-    return this.db.insert(auditLogs).values({
+    return this.audit.logCritical({
       action,
       userId: u.userId,
       orgId: u.orgId,
       targetId,
       targetType: "crm_metadata",
       metadata,
-    }).then(() => undefined);
+    });
   }
 }

@@ -1,4 +1,5 @@
 import type { NotificationChannel, NotificationEventDefinition } from "./notification.types";
+import type { NotificationCategoryValue } from "./notifications.types";
 
 type EventOverrides = Partial<Omit<NotificationEventDefinition, "eventKey" | "sourceModule" | "category" | "displayName">>;
 
@@ -6,13 +7,20 @@ const IA: NotificationChannel[] = ["IN_APP"];
 const IA_EMAIL: NotificationChannel[] = ["IN_APP", "EMAIL"];
 const IA_PUSH: NotificationChannel[] = ["IN_APP", "PUSH"];
 const IA_PUSH_EMAIL: NotificationChannel[] = ["IN_APP", "PUSH", "EMAIL"];
+/**
+ * PIPE-003 resource kinds. An event carrying one is delivered only to recipients
+ * who can still see the record, re-checked per recipient immediately before render.
+ * The owning module registers the resolver; a declared kind with no resolver denies.
+ */
+const KB_PAGE = "kb.page";
+
 const ALLOWED_DEFAULT: NotificationChannel[] = ["IN_APP", "EMAIL", "PUSH"];
 const ALLOWED_URGENT: NotificationChannel[] = ["IN_APP", "EMAIL", "PUSH", "SMS", "WHATSAPP"];
 
 function e(
   eventKey: string,
   sourceModule: string,
-  category: string,
+  category: NotificationCategoryValue,
   displayName: string,
   overrides: EventOverrides = {},
 ): NotificationEventDefinition {
@@ -116,10 +124,10 @@ const KNOWLEDGE = [
   e("knowledge.article.published", "knowledge", "KNOWLEDGE", "Article published", { defaultPriority: "LOW", defaultChannels: IA }),
   e("knowledge.ai.answer_ready", "knowledge", "AI", "AI answer ready", { defaultChannels: IA }),
   e("knowledge.document.ingestion_failed", "knowledge", "KNOWLEDGE", "Document ingestion failed", { defaultPriority: "HIGH", defaultType: "ERROR", defaultChannels: IA_EMAIL }),
-  e("knowledge.page.comment_created", "knowledge", "KNOWLEDGE", "New comment on your page", { defaultChannels: IA }),
-  e("knowledge.page.review_requested", "knowledge", "WORKFLOW", "Page review requested", { defaultPriority: "HIGH", defaultChannels: IA_EMAIL }),
-  e("knowledge.page.review_approved", "knowledge", "KNOWLEDGE", "Page review approved", { defaultType: "SUCCESS", defaultChannels: IA }),
-  e("knowledge.page.review_rejected", "knowledge", "KNOWLEDGE", "Page review rejected", { defaultType: "WARNING", defaultChannels: IA }),
+  e("knowledge.page.comment_created", "knowledge", "KNOWLEDGE", "New comment on your page", { defaultChannels: IA, visibilityResourceKind: KB_PAGE }),
+  e("knowledge.page.review_requested", "knowledge", "WORKFLOW", "Page review requested", { defaultPriority: "HIGH", defaultChannels: IA_EMAIL, visibilityResourceKind: KB_PAGE }),
+  e("knowledge.page.review_approved", "knowledge", "KNOWLEDGE", "Page review approved", { defaultType: "SUCCESS", defaultChannels: IA, visibilityResourceKind: KB_PAGE }),
+  e("knowledge.page.review_rejected", "knowledge", "KNOWLEDGE", "Page review rejected", { defaultType: "WARNING", defaultChannels: IA, visibilityResourceKind: KB_PAGE }),
 ];
 
 const SIGN = [

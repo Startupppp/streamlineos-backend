@@ -2,6 +2,7 @@ export * from "./campaigns";
 export * from "./leads";
 export * from "./contacts";
 export * from "./contact-roles";
+export * from "./consent";
 export * from "./deals";
 export * from "./invoicing";
 export * from "./analytics";

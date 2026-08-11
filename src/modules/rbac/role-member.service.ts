@@ -12,9 +12,17 @@ import {
   principalGroupMembers,
   principalGroups,
   roleAssignments,
+  rolePermissionGrants,
   roles,
   users,
 } from "../../db/schema";
+import {
+  assertPermissionsGrantable,
+  buildPermissionModuleMap,
+  toGrantableSet,
+} from "../../common/rbac/grantability";
+import { resolveActorRankContext } from "../../common/rbac/resolve-actor-rank";
+import { AccessService } from "../access/access.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -35,7 +43,47 @@ export class RoleMemberService {
     private readonly audit: AuditService,
     private readonly dispatch: NotificationDispatchService,
     private readonly lockout: RoleLockoutService,
+    private readonly access: AccessService,
   ) {}
+
+  /**
+   * Assigning a role hands the principal every permission that role carries, so
+   * the actor must be able to grant those permissions and must out-rank the role.
+   */
+  private async assertMayAssignRole(
+    actor: CurrentUserContext,
+    role: { id: number; rank: number; moduleKey: string | null },
+  ): Promise<void> {
+    if (actor.isOrgOwner) return;
+
+    const grants = await this.db
+      .select({ permissionKey: rolePermissionGrants.permissionKey })
+      .from(rolePermissionGrants)
+      .where(
+        and(
+          eq(rolePermissionGrants.orgId, actor.orgId),
+          eq(rolePermissionGrants.roleId, role.id),
+        ),
+      );
+    const requestedKeys = grants.map((g) => g.permissionKey);
+
+    const [resolved, { bestRank, allowedModules }] = await Promise.all([
+      this.access.resolveUserPermissions(actor.orgId, actor.userId),
+      resolveActorRankContext(this.db, actor.orgId, actor.userId),
+    ]);
+
+    assertPermissionsGrantable(
+      {
+        isOrgOwner: false,
+        grantable: toGrantableSet(resolved),
+        bestRank,
+        allowedModules,
+      },
+      requestedKeys,
+      { rank: role.rank, moduleKey: role.moduleKey },
+      buildPermissionModuleMap(requestedKeys),
+    );
+  }
 
   private async invalidateRoleHolderSessions(orgId: string, roleId: number): Promise<void> {
     const assignees = await this.db
@@ -186,7 +234,7 @@ export class RoleMemberService {
     roleId: number,
     input: RoleMemberInput,
   ): Promise<{ success: true }> {
-    await this.getRole(actor.orgId, roleId);
+    const role = await this.getRole(actor.orgId, roleId);
 
     if (
       !actor.isOrgOwner &&
@@ -195,6 +243,8 @@ export class RoleMemberService {
     ) {
       throw new ForbiddenException("You cannot assign a role to yourself");
     }
+
+    await this.assertMayAssignRole(actor, role);
 
     if (input.principalType === "user") {
       const member = await this.db.query.organizationMembers.findFirst({

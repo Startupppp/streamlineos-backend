@@ -3,6 +3,7 @@ import { BillingModule } from "../billing/core/billing.module";
 import { AiModule } from "../ai/core/ai.module";
 import { AiJobsModule } from "../ai/jobs/ai-jobs.module";
 import { NotificationsModule } from "../notifications/notifications.module";
+import { KbNotificationVisibility } from "./kb-notification-visibility";
 import { KbCreditsService } from "./kb-credits.service";
 import { KbAccessService } from "./kb-access.service";
 import { KbEventsService } from "./kb-events.service";
@@ -105,6 +106,7 @@ import { KbArticleAiController } from "./kb-article-ai.controller";
     KbArticleAiController,
   ],
   providers: [
+    KbNotificationVisibility,
     KbCreditsService,
     KbAccessService,
     KbEventsService,

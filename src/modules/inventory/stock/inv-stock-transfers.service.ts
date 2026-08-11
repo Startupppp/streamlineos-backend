@@ -1,8 +1,8 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, gte, lte, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm";
 import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
-import { invStockTransfers, invStockTransferLines, invStockReservations } from "../../../db/schema";
+import { invStockTransfers, invStockTransferLines, invStockReservations, invStockTransactions } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -194,7 +194,7 @@ export class InvStockTransfersService {
     }
 
     await this.db.transaction(async (tx) => {
-      await this.engine.executeInTx(tx, orgId, userId, {
+      const result = await this.engine.executeInTx(tx, orgId, userId, {
         idempotencyKey,
         sourceType: "inv_transfer",
         sourceId: transferId.toString(),
@@ -208,6 +208,11 @@ export class InvStockTransfersService {
           serialId: line.serialId ?? undefined,
         })),
       });
+
+      // Carry the cost the source layers were actually consumed at onto the
+      // line, so completion can rebuild it at the destination. Cost layers are
+      // keyed per location, so without this the stock arrives with no basis.
+      await this.stampDispatchedCost(tx, orgId, transfer.lines, result.transactionIds);
 
       if (transfer.status === "RESERVED") {
         const activeReservations = await tx
@@ -239,6 +244,44 @@ export class InvStockTransfersService {
     ]);
   }
 
+  /**
+   * Reads back the unit cost the engine derived for each TRANSFER_OUT and stores
+   * it on the matching transfer line. Matched on (variant, lot) because a
+   * transfer may move several lots of the same variant.
+   */
+  private async stampDispatchedCost(
+    tx: Tx,
+    orgId: string,
+    lines: ReadonlyArray<{ id: number; productVariantId: number; lotId: number | null }>,
+    transactionIds: readonly number[],
+  ): Promise<void> {
+    if (transactionIds.length === 0) return;
+
+    const txns = await tx
+      .select({
+        productVariantId: invStockTransactions.productVariantId,
+        lotId: invStockTransactions.lotId,
+        unitCost: invStockTransactions.unitCost,
+      })
+      .from(invStockTransactions)
+      .where(and(
+        eq(invStockTransactions.orgId, orgId),
+        inArray(invStockTransactions.id, [...transactionIds]),
+      ));
+
+    const costByKey = new Map<string, string>();
+    for (const t of txns)
+      if (t.unitCost) costByKey.set(`${t.productVariantId}:${t.lotId ?? ""}`, t.unitCost);
+
+    for (const line of lines) {
+      const cost = costByKey.get(`${line.productVariantId}:${line.lotId ?? ""}`);
+      if (!cost) continue;
+      await tx.update(invStockTransferLines)
+        .set({ dispatchedUnitCost: cost })
+        .where(eq(invStockTransferLines.id, line.id));
+    }
+  }
+
   // B1-07: engine.executeInTx + line quantityReceived updates + status update in one transaction.
   // invalidateCaches called after.
   async completeTransfer(orgId: string, userId: string, transferId: number, data: CompleteTransferInput, idempotencyKey: string) {
@@ -262,6 +305,7 @@ export class InvStockTransfersService {
           quantityDelta: completion.quantityReceived.toFixed(4),
           lotId: line.lotId ?? undefined,
           serialId: line.serialId ?? undefined,
+          unitCost: line.dispatchedUnitCost ?? undefined,
         };
       })
       .filter((m): m is NonNullable<typeof m> => m !== null);

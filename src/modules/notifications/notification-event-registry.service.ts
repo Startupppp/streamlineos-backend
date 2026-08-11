@@ -8,6 +8,7 @@ import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { NOTIF_CACHE } from "./notification-cache-keys";
 import { NOTIFICATION_EVENT_CATALOG, NOTIFICATION_EVENT_MAP } from "./notification-events.catalog";
 import { ALL_CHANNELS } from "./notification.types";
+import { isNotificationCategory } from "./notifications.types";
 import type { NotificationChannel, NotificationEventDefinition, NotificationPriority, QuietHoursBehavior } from "./notification.types";
 
 type EventRow = typeof notificationEvents.$inferSelect;
@@ -88,6 +89,7 @@ export class NotificationEventRegistryService implements OnModuleInit {
         rateLimitMax: d.rateLimitMax,
         templateKey: d.templateKey ?? null,
         audienceResolver: d.audienceResolver ?? null,
+        visibilityResourceKind: d.visibilityResourceKind ?? null,
       })),
     );
     this.logger.log(`Seeded ${missing.length} global notification events`);
@@ -101,7 +103,7 @@ export class NotificationEventRegistryService implements OnModuleInit {
     return {
       eventKey: row.eventKey,
       sourceModule: row.sourceModule,
-      category: row.category,
+      category: isNotificationCategory(row.category) ? row.category : (base?.category ?? "SYSTEM"),
       displayName: row.displayName,
       description: row.description ?? row.displayName,
       defaultPriority: row.defaultPriority,
@@ -117,6 +119,11 @@ export class NotificationEventRegistryService implements OnModuleInit {
       rateLimitMax: row.rateLimitMax,
       templateKey: row.templateKey ?? undefined,
       audienceResolver: row.audienceResolver ?? undefined,
+      // The catalog wins deliberately. This is an authorization control, so a
+      // tenant override row may ADD a visibility check but must never remove one.
+      // It also covers rows seeded before the column existed, since seedGlobalCatalog
+      // only inserts missing events and never updates existing ones.
+      visibilityResourceKind: base?.visibilityResourceKind ?? row.visibilityResourceKind ?? undefined,
     };
   }
 

@@ -4,6 +4,9 @@ import { NotificationsModule } from "../../notifications/notifications.module";
 import { UsersModule } from "../../users/users.module";
 import { ProjectsController } from "./projects.controller";
 import { ProjectsTicketsController } from "./projects-tickets.controller";
+import { ProjectsTicketCommentsController } from "./projects-ticket-comments.controller";
+import { ProjectsTicketChecklistsController } from "./projects-ticket-checklists.controller";
+import { ProjectsTicketAssociationsController } from "./projects-ticket-associations.controller";
 import { ProjectsReportsController } from "./projects-reports.controller";
 import { ProjectsBudgetController } from "./projects-budget.controller";
 import { ProjectsTemplatesController } from "./projects-templates.controller";
@@ -57,6 +60,9 @@ import { BuildAutomationRunnerService } from "./build-automation-runner.service"
     ProjectsReportsController,
     ProjectsBudgetController,
     ProjectsTicketsController,
+    ProjectsTicketCommentsController,
+    ProjectsTicketChecklistsController,
+    ProjectsTicketAssociationsController,
     ProjectsCustomFieldsController,
     ProjectsReleasesController,
     ProjectsWebhooksController,

@@ -33,7 +33,8 @@ export class ClientVisibilityService {
         })
         .from(tickets)
         .where(and(eq(tickets.orgId, orgId), eq(tickets.projectId, projectId)))
-        .orderBy(tickets.ticketNumber),
+        .orderBy(tickets.ticketNumber)
+        .limit(500),
 
       this.db
         .select({
@@ -43,7 +44,8 @@ export class ClientVisibilityService {
         })
         .from(projectMilestones)
         .where(and(eq(projectMilestones.orgId, orgId), eq(projectMilestones.projectId, projectId)))
-        .orderBy(projectMilestones.id),
+        .orderBy(projectMilestones.id)
+        .limit(200),
     ]);
     return { tickets: ticketList, milestones: milestoneList };
   }

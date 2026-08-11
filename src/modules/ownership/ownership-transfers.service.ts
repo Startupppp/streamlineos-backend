@@ -19,7 +19,8 @@ import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { stableHash } from "../../common/cache/cache-hash";
-import { forEachOrg } from "../../common/tenant";
+import { forEachOrg, registerAfterCommit } from "../../common/tenant";
+import { logger } from "../../common/logger/logger.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import {
   fetchMembershipById,
@@ -115,13 +116,21 @@ export class OwnershipTransfersService {
 
       await this.cache.invalidateNamespace(`ownership:transfers:${orgId}`);
 
-      void this.notifyRequested(
-        orgId,
-        actorUserId,
-        transfer.id,
-        target.userId,
-        "the entire organization",
-      ).catch(() => undefined);
+      registerAfterCommit(() =>
+        this.notifyRequested(
+          orgId,
+          actorUserId,
+          transfer.id,
+          target.userId,
+          "the entire organization",
+        ).catch((error: unknown) => {
+          logger.error("ownership transfer notification failed", {
+            error,
+            transferId: transfer.id,
+            scope: "organization",
+          });
+        }),
+      );
 
       return { transferId: transfer.id, expiresAt: transfer.expiresAt };
     } catch (err: unknown) {
@@ -236,13 +245,21 @@ export class OwnershipTransfersService {
         this.cache.invalidateNamespace(`ownership:transfers:${orgId}`),
       ]);
 
-      void this.notifyRequested(
-        orgId,
-        actorUserId,
-        transfer.id,
-        target.userId,
-        `the ${moduleKey} module`,
-      ).catch(() => undefined);
+      registerAfterCommit(() =>
+        this.notifyRequested(
+          orgId,
+          actorUserId,
+          transfer.id,
+          target.userId,
+          `the ${moduleKey} module`,
+        ).catch((error: unknown) => {
+          logger.error("ownership transfer notification failed", {
+            error,
+            transferId: transfer.id,
+            scope: moduleKey,
+          });
+        }),
+      );
 
       return { transferId: transfer.id, expiresAt: transfer.expiresAt };
     } catch (err: unknown) {
@@ -454,7 +471,13 @@ export class OwnershipTransfersService {
             "An ownership transfer request expired before it was answered. Ownership is unchanged.",
           link: "/settings/organization",
         })
-        .catch(() => undefined);
+        .catch((error: unknown) => {
+          logger.error("ownership transfer expiry notification failed", {
+            error,
+            transferId: row.transferId,
+            orgId: row.orgId,
+          });
+        });
     }
 
     return { expired: expired.length };

@@ -44,7 +44,8 @@ export class CommentDraftsService {
       .where(
         and(eq(commentDrafts.orgId, orgId), eq(commentDrafts.userId, userId)),
       )
-      .orderBy(commentDrafts.updatedAt);
+      .orderBy(commentDrafts.updatedAt)
+      .limit(100);
 
     return rows.map((r) => ({
       id: r.id,

@@ -11,6 +11,9 @@ import type {
   OrganizationUpdateInput,
 } from "./dto/organizations.schemas";
 
+const HIERARCHY_MAX_DEPTH = 100;
+const ORG_CONTACTS_LIMIT = 100;
+
 export interface OrgHierarchyNode {
   id: number;
   name: string;
@@ -139,17 +142,21 @@ export class CrmOrganizationsService {
   }
 
   async getWithContacts(orgId: string, id: number) {
-    const [org] = await this.db
-      .select()
-      .from(crmOrganizations)
-      .where(and(eq(crmOrganizations.id, id), eq(crmOrganizations.orgId, orgId)));
+    const [orgRows, orgContacts] = await Promise.all([
+      this.db
+        .select()
+        .from(crmOrganizations)
+        .where(and(eq(crmOrganizations.id, id), eq(crmOrganizations.orgId, orgId)))
+        .limit(1),
+      this.db
+        .select()
+        .from(contacts)
+        .where(and(eq(contacts.orgId, orgId), eq(contacts.organizationId, id)))
+        .limit(ORG_CONTACTS_LIMIT),
+    ]);
 
+    const [org] = orgRows;
     if (!org) return null;
-
-    const orgContacts = await this.db
-      .select()
-      .from(contacts)
-      .where(and(eq(contacts.orgId, orgId), eq(contacts.organizationId, id)));
 
     return { ...org, contacts: orgContacts };
   }
@@ -194,54 +201,40 @@ export class CrmOrganizationsService {
   async wouldCreateCycle(orgId: string, accountId: number, candidateParentId: number): Promise<boolean> {
     if (candidateParentId === accountId) return true;
 
-    const allOrgs = await this.db
-      .select({ id: crmOrganizations.id, parentId: crmOrganizations.parentId })
-      .from(crmOrganizations)
-      .where(eq(crmOrganizations.orgId, orgId));
+    const result = await this.db.execute(sql`
+      WITH RECURSIVE ancestors AS (
+        SELECT id, parent_id, 1 AS depth
+        FROM crm_organizations
+        WHERE org_id = ${orgId} AND id = ${candidateParentId}
+        UNION ALL
+        SELECT o.id, o.parent_id, a.depth + 1
+        FROM crm_organizations o
+        JOIN ancestors a ON o.id = a.parent_id
+        WHERE o.org_id = ${orgId} AND a.depth < ${HIERARCHY_MAX_DEPTH}
+      )
+      SELECT 1 FROM ancestors WHERE id = ${accountId} LIMIT 1
+    `);
 
-    const parentMap = new Map(allOrgs.map((o) => [o.id, o.parentId]));
-
-    let currentId: number | null = candidateParentId;
-    const visited = new Set<number>();
-
-    while (currentId !== null) {
-      if (visited.has(currentId)) return false;
-      visited.add(currentId);
-      if (currentId === accountId) return true;
-      currentId = parentMap.get(currentId) ?? null;
-    }
-
-    return false;
+    return result.length > 0;
   }
 
   private async getAllDescendantIds(orgId: string, accountId: number): Promise<number[]> {
-    const allOrgs = await this.db
-      .select({ id: crmOrganizations.id, parentId: crmOrganizations.parentId })
-      .from(crmOrganizations)
-      .where(eq(crmOrganizations.orgId, orgId));
+    const rows = await this.db.execute(sql`
+      WITH RECURSIVE descendants AS (
+        SELECT id, 1 AS depth
+        FROM crm_organizations
+        WHERE org_id = ${orgId} AND id = ${accountId}
+        UNION
+        SELECT o.id, d.depth + 1
+        FROM crm_organizations o
+        JOIN descendants d ON o.parent_id = d.id
+        WHERE o.org_id = ${orgId} AND d.depth < ${HIERARCHY_MAX_DEPTH}
+      )
+      SELECT id FROM descendants
+    `);
 
-    const childrenMap = new Map<number, number[]>();
-    for (const o of allOrgs) {
-      if (o.parentId !== null) {
-        const arr = childrenMap.get(o.parentId) ?? [];
-        arr.push(o.id);
-        childrenMap.set(o.parentId, arr);
-      }
-    }
-
-    const allIds: number[] = [accountId];
-    const queue: number[] = [accountId];
-    while (queue.length > 0) {
-      const cur = queue.shift()!;
-      for (const childId of childrenMap.get(cur) ?? []) {
-        if (!allIds.includes(childId)) {
-          allIds.push(childId);
-          queue.push(childId);
-        }
-      }
-    }
-
-    return allIds;
+    const ids = rows.map((row) => Number(row.id)).filter((id) => Number.isInteger(id));
+    return ids.length > 0 ? ids : [accountId];
   }
 
   async getAccountHierarchy(orgId: string, accountId: number): Promise<OrgHierarchyNode | null> {

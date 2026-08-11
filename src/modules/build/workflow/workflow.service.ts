@@ -60,7 +60,8 @@ export class WorkflowService {
         eq(workflowTransitions.orgId, orgId),
         eq(workflowTransitions.projectId, projectId),
         isNull(workflowTransitions.deletedAt),
-      ));
+      ))
+      .limit(500);
   }
 
   async createTransition(orgId: string, userId: string, projectId: number, input: CreateTransitionInput) {
@@ -166,7 +167,8 @@ export class WorkflowService {
           eq(workflowTransitions.fromStatusId, fromStatusId),
           isNull(workflowTransitions.fromStatusId),
         ),
-      ));
+      ))
+      .limit(500);
   }
 
   async updateWipLimit(orgId: string, userId: string, projectId: number, statusId: number, input: WipLimitInput) {

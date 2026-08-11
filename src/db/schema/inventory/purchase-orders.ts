@@ -3,7 +3,7 @@ import { relations } from "drizzle-orm";
 import { invPoStatusEnum, invGrnQualityEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
 import { clients } from "../crm/contacts";
-import { invProductVariants } from "./core";
+import { invProductVariants, invUom } from "./core";
 import { invLocations, invWarehouses } from "./warehouses";
 
 export const invVendors = pgTable("inv_vendors", {
@@ -67,6 +67,8 @@ export const invPoLines = pgTable("inv_po_lines", {
   quantity: decimal("quantity", { precision: 18, scale: 4 }).notNull(),
   quantityReceived: decimal("quantity_received", { precision: 18, scale: 4 }).default("0").notNull(),
   unitCost: decimal("unit_cost", { precision: 18, scale: 4 }).notNull(),
+  uomId: integer("uom_id").references(() => invUom.id, { onDelete: "set null" }),
+  quantityEntered: decimal("quantity_entered", { precision: 18, scale: 4 }),
   taxRate: decimal("tax_rate", { precision: 5, scale: 2 }).default("0").notNull(),
   amount: decimal("amount", { precision: 18, scale: 4 }).notNull(),
   lineOrder: integer("line_order").default(0).notNull(),
@@ -96,6 +98,8 @@ export const invGrnLines = pgTable("inv_grn_lines", {
   grnId: integer("grn_id").references(() => invGrns.id, { onDelete: "cascade" }).notNull(),
   poLineId: integer("po_line_id").references(() => invPoLines.id, { onDelete: "restrict" }).notNull(),
   quantityReceived: decimal("quantity_received", { precision: 18, scale: 4 }).notNull(),
+  uomId: integer("uom_id").references(() => invUom.id, { onDelete: "set null" }),
+  quantityEntered: decimal("quantity_entered", { precision: 18, scale: 4 }),
   qualityStatus: invGrnQualityEnum("quality_status").default("ACCEPTED").notNull(),
   rejectionReason: text("rejection_reason"),
 }, (table) => [

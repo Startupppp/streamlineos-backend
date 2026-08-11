@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, desc, eq, ilike, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, or } from "drizzle-orm";
 import { changelogEntries, feedbackPosts, roadmapItems } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -19,7 +19,7 @@ import type {
 export class ProjectsRoadmapService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  listRoadmap(orgId: string, query: RoadmapListQuery) {
+  async listRoadmap(orgId: string, query: RoadmapListQuery) {
     const { page, limit } = query;
     const effectiveLimit = Math.min(limit, 100);
     const offset = (page - 1) * effectiveLimit;
@@ -30,12 +30,26 @@ export class ProjectsRoadmapService {
       const match = or(ilike(roadmapItems.title, term), ilike(roadmapItems.description, term));
       if (match) conditions.push(match);
     }
-    return this.db.query.roadmapItems.findMany({
-      where: and(...conditions),
-      orderBy: [asc(roadmapItems.sortOrder), asc(roadmapItems.id)],
-      limit: effectiveLimit,
-      offset,
-    });
+    const where = and(...conditions);
+    const [data, [countRow]] = await Promise.all([
+      this.db.query.roadmapItems.findMany({
+        where,
+        orderBy: [asc(roadmapItems.sortOrder), asc(roadmapItems.id)],
+        limit: effectiveLimit,
+        offset,
+      }),
+      this.db.select({ total: count() }).from(roadmapItems).where(where),
+    ]);
+    const total = Number(countRow?.total ?? 0);
+    return {
+      data,
+      pagination: {
+        page,
+        limit: effectiveLimit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / effectiveLimit)),
+      },
+    };
   }
 
   async createRoadmap(orgId: string, userId: string, input: CreateRoadmapInput) {
@@ -85,7 +99,7 @@ export class ProjectsRoadmapService {
     return { success: true };
   }
 
-  listFeedback(orgId: string, query: FeedbackListQuery) {
+  async listFeedback(orgId: string, query: FeedbackListQuery) {
     const { page, limit } = query;
     const effectiveLimit = Math.min(limit, 100);
     const offset = (page - 1) * effectiveLimit;
@@ -96,12 +110,26 @@ export class ProjectsRoadmapService {
       const match = or(ilike(feedbackPosts.title, term), ilike(feedbackPosts.description, term));
       if (match) conditions.push(match);
     }
-    return this.db.query.feedbackPosts.findMany({
-      where: and(...conditions),
-      orderBy: [desc(feedbackPosts.votes), asc(feedbackPosts.id)],
-      limit: effectiveLimit,
-      offset,
-    });
+    const where = and(...conditions);
+    const [data, [countRow]] = await Promise.all([
+      this.db.query.feedbackPosts.findMany({
+        where,
+        orderBy: [desc(feedbackPosts.votes), asc(feedbackPosts.id)],
+        limit: effectiveLimit,
+        offset,
+      }),
+      this.db.select({ total: count() }).from(feedbackPosts).where(where),
+    ]);
+    const total = Number(countRow?.total ?? 0);
+    return {
+      data,
+      pagination: {
+        page,
+        limit: effectiveLimit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / effectiveLimit)),
+      },
+    };
   }
 
   async createFeedback(orgId: string, userId: string, input: CreateFeedbackInput) {
@@ -149,18 +177,32 @@ export class ProjectsRoadmapService {
     return { success: true };
   }
 
-  listChangelog(orgId: string, query: ChangelogListQuery) {
+  async listChangelog(orgId: string, query: ChangelogListQuery) {
     const { page, limit } = query;
     const effectiveLimit = Math.min(limit, 100);
     const offset = (page - 1) * effectiveLimit;
     const conditions = [eq(changelogEntries.orgId, orgId)];
     if (query.type) conditions.push(eq(changelogEntries.type, query.type));
-    return this.db.query.changelogEntries.findMany({
-      where: and(...conditions),
-      orderBy: [desc(changelogEntries.createdAt), desc(changelogEntries.id)],
-      limit: effectiveLimit,
-      offset,
-    });
+    const where = and(...conditions);
+    const [data, [countRow]] = await Promise.all([
+      this.db.query.changelogEntries.findMany({
+        where,
+        orderBy: [desc(changelogEntries.createdAt), desc(changelogEntries.id)],
+        limit: effectiveLimit,
+        offset,
+      }),
+      this.db.select({ total: count() }).from(changelogEntries).where(where),
+    ]);
+    const total = Number(countRow?.total ?? 0);
+    return {
+      data,
+      pagination: {
+        page,
+        limit: effectiveLimit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / effectiveLimit)),
+      },
+    };
   }
 
   async createChangelog(orgId: string, userId: string, input: CreateChangelogInput) {

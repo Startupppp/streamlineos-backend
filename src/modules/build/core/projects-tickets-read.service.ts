@@ -1,10 +1,24 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, count, desc, eq, gte, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNull,
+  lte,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import {
   projectMembers,
   projects,
   projectTeamAssignments,
   projectTeamMembers,
+  ticketAssignees,
   ticketComments,
   tickets,
 } from "../../../db/schema";
@@ -28,6 +42,47 @@ const TICKET_ORDERBY_COLUMNS = {
   order: tickets.order,
 } as const;
 
+const USER_COLS = {
+  id: true,
+  name: true,
+  firstName: true,
+  lastName: true,
+  email: true,
+  image: true,
+} as const;
+
+const TICKET_LIST_COLUMNS = {
+  id: true,
+  orgId: true,
+  title: true,
+  description: true,
+  type: true,
+  status: true,
+  priority: true,
+  projectId: true,
+  ticketNumber: true,
+  sprintId: true,
+  epicId: true,
+  assigneeId: true,
+  reporterId: true,
+  points: true,
+  storyPoints: true,
+  link: true,
+  order: true,
+  parentTicketId: true,
+  originalEstimate: true,
+  timeSpent: true,
+  startDate: true,
+  dueDate: true,
+  stateId: true,
+  moduleId: true,
+  cycleId: true,
+  sequenceId: true,
+  estimate: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
 @Injectable()
 export class ProjectsTicketsReadService {
   constructor(
@@ -35,6 +90,43 @@ export class ProjectsTicketsReadService {
     private readonly access: AccessService,
     private readonly audit: AuditService,
   ) {}
+
+  private queryTickets(
+    where: SQL<unknown> | undefined,
+    orderBy: SQL<unknown>[],
+    limit: number,
+    offset?: number,
+  ) {
+    return this.db.query.tickets.findMany({
+      where,
+      columns: TICKET_LIST_COLUMNS,
+      with: {
+        assignee: { columns: USER_COLS },
+        assignees: {
+          with: { user: { columns: USER_COLS } },
+        },
+        labels: {
+          with: {
+            label: {
+              columns: { id: true, name: true, color: true },
+            },
+          },
+        },
+        cycle: {
+          columns: {
+            id: true,
+            name: true,
+            status: true,
+            startDate: true,
+            endDate: true,
+          },
+        },
+      },
+      orderBy,
+      limit,
+      offset,
+    });
+  }
 
   async checkProjectAccess(
     orgId: string,
@@ -50,11 +142,17 @@ export class ProjectsTicketsReadService {
     ]);
     if (perms.has("build:manage")) return { hasAccess: true, role: "OWNER" };
     if (!project) return { hasAccess: false, role: null };
-    if (project.managerId === userId) return { hasAccess: true, role: "MANAGER" };
+    if (project.managerId === userId)
+      return { hasAccess: true, role: "MANAGER" };
     const membership = await this.db
       .select({ id: projectMembers.id, role: projectMembers.role })
       .from(projectMembers)
-      .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)))
+      .where(
+        and(
+          eq(projectMembers.projectId, projectId),
+          eq(projectMembers.userId, userId),
+        ),
+      )
       .limit(1);
     if (membership.length > 0) {
       return { hasAccess: true, role: membership[0]?.role ?? null };
@@ -78,9 +176,19 @@ export class ProjectsTicketsReadService {
     return { hasAccess: false, role: null };
   }
 
-  async listTickets(u: CurrentUserContext, projectId: number, query: TicketsListQuery) {
-    const { hasAccess } = await this.checkProjectAccess(u.orgId, u.userId, projectId);
+  async listTickets(
+    u: CurrentUserContext,
+    projectId: number,
+    query: TicketsListQuery,
+  ) {
+    const { hasAccess } = await this.checkProjectAccess(
+      u.orgId,
+      u.userId,
+      projectId,
+    );
     if (!hasAccess) throw new NotFoundException("Not found");
+
+    const scope = await resolveTicketsScope(this.access, u);
 
     const {
       page,
@@ -101,10 +209,19 @@ export class ProjectsTicketsReadService {
     } = query;
     const offset = (page - 1) * limit;
 
-    const conditions: SQL<unknown>[] = [
-      eq(tickets.orgId, u.orgId),
-      eq(tickets.projectId, projectId),
-    ];
+    if (scope === "none")
+      return { data: [], total: 0, page, limit, totalPages: 0 };
+
+    const scopeClause =
+      scope !== "all"
+        ? or(
+            eq(tickets.assigneeId, u.userId),
+            eq(tickets.reporterId, u.userId),
+            sql`EXISTS (SELECT 1 FROM ${ticketAssignees} ta WHERE ta.ticket_id = ${tickets.id} AND ta.user_id = ${u.userId})`,
+          )
+        : undefined;
+
+    const filterConditions: SQL<unknown>[] = [];
 
     if (search && search.trim()) {
       const term = search.trim();
@@ -116,25 +233,24 @@ export class ProjectsTicketsReadService {
           sql`${tickets.title} ILIKE ${"%" + term + "%"}`,
           isNaN(num) ? sql`false` : eq(tickets.ticketNumber, num),
         );
-        if (searchCondition) {
-          conditions.push(searchCondition);
-        }
+        if (searchCondition) filterConditions.push(searchCondition);
       } else {
-        conditions.push(sql`${tickets.title} ILIKE ${"%" + term + "%"}`);
+        filterConditions.push(sql`${tickets.title} ILIKE ${"%" + term + "%"}`);
       }
     }
 
-    if (status && status.length > 0) {
-      conditions.push(inArray(tickets.status, status));
-    }
+    if (status && status.length > 0)
+      filterConditions.push(inArray(tickets.status, status));
 
-    if (priority && priority.length > 0) {
-      conditions.push(inArray(tickets.priority, priority));
-    }
+    if (priority && priority.length > 0)
+      filterConditions.push(inArray(tickets.priority, priority));
 
     if (type && type.length > 0) {
-      conditions.push(
-        sql`${tickets.type}::text = ANY(ARRAY[${sql.join(type.map((t) => sql`${t}`), sql`, `)}])`,
+      filterConditions.push(
+        sql`${tickets.type}::text = ANY(ARRAY[${sql.join(
+          type.map((t) => sql`${t}`),
+          sql`, `,
+        )}])`,
       );
     }
 
@@ -143,152 +259,137 @@ export class ProjectsTicketsReadService {
       const unassigned = resolved.includes("__unassigned__");
       const realIds = resolved.filter((id) => id !== "__unassigned__");
       if (unassigned && realIds.length > 0) {
-        const assigneeCondition = or(isNull(tickets.assigneeId), inArray(tickets.assigneeId, realIds));
-        if (assigneeCondition) {
-          conditions.push(assigneeCondition);
-        }
+        const assigneeCondition = or(
+          isNull(tickets.assigneeId),
+          inArray(tickets.assigneeId, realIds),
+        );
+        if (assigneeCondition) filterConditions.push(assigneeCondition);
       } else if (unassigned) {
-        conditions.push(isNull(tickets.assigneeId));
+        filterConditions.push(isNull(tickets.assigneeId));
       } else {
-        conditions.push(inArray(tickets.assigneeId, realIds));
+        filterConditions.push(inArray(tickets.assigneeId, realIds));
       }
     }
 
     if (labelIds && labelIds.length > 0) {
-      conditions.push(
+      filterConditions.push(
         sql`EXISTS (
           SELECT 1 FROM ticket_label_mappings tlm
           WHERE tlm.ticket_id = ${tickets.id}
-          AND tlm.label_id = ANY(ARRAY[${sql.join(labelIds.map((id) => sql`${id}`), sql`, `)}]::int[])
+          AND tlm.label_id = ANY(ARRAY[${sql.join(
+            labelIds.map((id) => sql`${id}`),
+            sql`, `,
+          )}]::int[])
         )`,
       );
     }
 
-    if (sprintId !== undefined) {
-      conditions.push(eq(tickets.sprintId, sprintId));
-    }
+    if (sprintId !== undefined)
+      filterConditions.push(eq(tickets.sprintId, sprintId));
+    if (cycleId && cycleId.length > 0)
+      filterConditions.push(inArray(tickets.cycleId, cycleId));
+    if (epicId !== undefined) filterConditions.push(eq(tickets.epicId, epicId));
+    if (dueDateFrom) filterConditions.push(gte(tickets.dueDate, dueDateFrom));
+    if (dueDateTo) filterConditions.push(lte(tickets.dueDate, dueDateTo));
 
-    if (cycleId && cycleId.length > 0) {
-      conditions.push(inArray(tickets.cycleId, cycleId));
-    }
-
-    if (epicId !== undefined) {
-      conditions.push(eq(tickets.epicId, epicId));
-    }
-
-    if (dueDateFrom) {
-      conditions.push(gte(tickets.dueDate, dueDateFrom));
-    }
-
-    if (dueDateTo) {
-      conditions.push(lte(tickets.dueDate, dueDateTo));
-    }
-
-    const where = and(...conditions);
+    const where = and(
+      eq(tickets.orgId, u.orgId),
+      eq(tickets.projectId, projectId),
+      ...(scopeClause ? [scopeClause] : []),
+      ...filterConditions,
+    );
 
     const col = TICKET_ORDERBY_COLUMNS[orderBy];
-    const defaultDir = orderBy === "created" || orderBy === "updated" ? "desc" : "asc";
+    const defaultDir =
+      orderBy === "created" || orderBy === "updated" ? "desc" : "asc";
     const dir = orderDir ?? defaultDir;
 
-    const sortExpr =
+    const sortExpr: SQL<unknown>[] =
       orderBy === "order"
         ? [asc(tickets.order), desc(tickets.createdAt)]
         : dir === "asc"
-        ? [asc(col), desc(tickets.createdAt)]
-        : [desc(col), desc(tickets.createdAt)];
+          ? [asc(col), desc(tickets.createdAt)]
+          : [desc(col), desc(tickets.createdAt)];
 
-    const userCols = {
-      id: true,
-      name: true,
-      firstName: true,
-      lastName: true,
-      email: true,
-      image: true,
-    } as const;
+    if (scope !== "all" && orderBy === "order") {
+      const filterWhere =
+        filterConditions.length > 0 ? and(...filterConditions) : undefined;
+      const branchLimit = offset + limit;
+
+      const idQuery = sql`
+        SELECT id FROM (
+          (SELECT ${tickets.id}, ${tickets.order}, ${tickets.createdAt}
+           FROM ${tickets}
+           WHERE ${tickets.orgId} = ${u.orgId}
+             AND ${tickets.projectId} = ${projectId}
+             AND (${tickets.assigneeId} = ${u.userId} OR ${tickets.reporterId} = ${u.userId})
+             ${filterWhere ? sql`AND ${filterWhere}` : sql``}
+           ORDER BY ${tickets.order} ASC, ${tickets.createdAt} DESC
+           LIMIT ${branchLimit})
+          UNION
+          (SELECT ${tickets.id}, ${tickets.order}, ${tickets.createdAt}
+           FROM ${tickets}
+           INNER JOIN ${ticketAssignees}
+             ON ${ticketAssignees.ticketId} = ${tickets.id}
+             AND ${ticketAssignees.userId} = ${u.userId}
+             AND ${ticketAssignees.orgId} = ${u.orgId}
+           WHERE ${tickets.orgId} = ${u.orgId}
+             AND ${tickets.projectId} = ${projectId}
+             ${filterWhere ? sql`AND ${filterWhere}` : sql``}
+           ORDER BY ${tickets.order} ASC, ${tickets.createdAt} DESC
+           LIMIT ${branchLimit})
+        ) u
+        ORDER BY u."order" ASC, u.created_at DESC
+        LIMIT ${limit} OFFSET ${offset}
+      `;
+
+      const [idRows, countResult] = await Promise.all([
+        this.db.execute(idQuery),
+        this.db.select({ total: count() }).from(tickets).where(where),
+      ]);
+
+      const ids = idRows.map((r) => Number(r["id"]));
+      const total = Number(countResult[0]?.total ?? 0);
+
+      if (ids.length === 0)
+        return {
+          data: [],
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit),
+        };
+
+      const dataResult = await this.queryTickets(
+        inArray(tickets.id, ids),
+        sortExpr,
+        limit,
+      );
+      return {
+        data: dataResult,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      };
+    }
 
     const [dataResult, countResult] = await Promise.all([
-      this.db.query.tickets.findMany({
-        where,
-        columns: {
-          id: true,
-          orgId: true,
-          title: true,
-          description: true,
-          type: true,
-          status: true,
-          priority: true,
-          projectId: true,
-          ticketNumber: true,
-          sprintId: true,
-          epicId: true,
-          assigneeId: true,
-          reporterId: true,
-          points: true,
-          storyPoints: true,
-          link: true,
-          order: true,
-          parentTicketId: true,
-          originalEstimate: true,
-          timeSpent: true,
-          startDate: true,
-          dueDate: true,
-          stateId: true,
-          moduleId: true,
-          cycleId: true,
-          sequenceId: true,
-          estimate: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-        with: {
-          assignee: { columns: userCols },
-          assignees: {
-            with: { user: { columns: userCols } },
-          },
-          labels: {
-            with: {
-              label: {
-                columns: { id: true, name: true, color: true },
-              },
-            },
-          },
-          cycle: {
-            columns: {
-              id: true,
-              name: true,
-              status: true,
-              startDate: true,
-              endDate: true,
-            },
-          },
-        },
-        orderBy: sortExpr,
-        limit,
-        offset,
-      }),
+      this.queryTickets(where, sortExpr, limit, offset),
       this.db.select({ total: count() }).from(tickets).where(where),
     ]);
 
-    const total = countResult[0]?.total ?? 0;
+    const total = Number(countResult[0]?.total ?? 0);
     return {
       data: dataResult,
-      total: Number(total),
+      total,
       page,
       limit,
-      totalPages: Math.ceil(Number(total) / limit),
+      totalPages: Math.ceil(total / limit),
     };
   }
 
   async getTicket(u: CurrentUserContext, ticketId: number) {
-    const userCols = {
-      id: true,
-      name: true,
-      firstName: true,
-      lastName: true,
-      email: true,
-      image: true,
-    } as const;
-
     const ticket = await this.db.query.tickets.findFirst({
       where: and(eq(tickets.id, ticketId), eq(tickets.orgId, u.orgId)),
       with: {
@@ -298,19 +399,19 @@ export class ProjectsTicketsReadService {
         sprint: {
           columns: { id: true, name: true },
         },
-        assignee: { columns: userCols },
-        reporter: { columns: userCols },
+        assignee: { columns: USER_COLS },
+        reporter: { columns: USER_COLS },
         assignees: {
-          with: { user: { columns: userCols } },
+          with: { user: { columns: USER_COLS } },
         },
         comments: {
-          with: { user: { columns: userCols } },
+          with: { user: { columns: USER_COLS } },
           orderBy: [desc(ticketComments.createdAt)],
           limit: 50,
         },
         attachments: {
           with: {
-            uploader: { columns: userCols },
+            uploader: { columns: USER_COLS },
           },
         },
         labels: {
@@ -327,7 +428,8 @@ export class ProjectsTicketsReadService {
     const scope = await resolveTicketsScope(this.access, u);
     if (scope !== "all") {
       const isAssignee =
-        ticket.assigneeId === u.userId || ticket.assignees.some((a) => a.userId === u.userId);
+        ticket.assigneeId === u.userId ||
+        ticket.assignees.some((a) => a.userId === u.userId);
       const isReporter = ticket.reporterId === u.userId;
       if (!isAssignee && !isReporter) {
         this.audit.log({
@@ -336,7 +438,11 @@ export class ProjectsTicketsReadService {
           orgId: u.orgId,
           targetId: String(ticketId),
           targetType: "ticket",
-          metadata: { ticketId, projectId: ticket.projectId, reason: "RESTRICTED_SCOPE" },
+          metadata: {
+            ticketId,
+            projectId: ticket.projectId,
+            reason: "RESTRICTED_SCOPE",
+          },
           result: "FAILURE",
         });
         throw new ProjectsForbiddenTicketException();

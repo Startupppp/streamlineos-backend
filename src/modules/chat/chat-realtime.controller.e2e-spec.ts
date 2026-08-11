@@ -4,7 +4,7 @@ import request from "supertest";
 import { AppModule } from "../../app.module";
 import { AllExceptionsFilter } from "../../common/http/all-exceptions.filter";
 
-describe("Realtime auth (e2e)", () => {
+describe("Chat realtime auth (e2e)", () => {
   let app: INestApplication;
   beforeAll(async () => {
     process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";

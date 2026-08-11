@@ -9,6 +9,7 @@ import {
   isTransientError,
   sendEmailOnceDirect,
 } from "./email.provider";
+import { EmailSuppressionService, canonicalEmail } from "./email-suppression.service";
 
 const MAX_ATTEMPTS = 8;
 const BATCH_SIZE = 20;
@@ -17,9 +18,56 @@ const BATCH_SIZE = 20;
 export class EmailOutboxService {
   private readonly logger = new Logger(EmailOutboxService.name);
 
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly suppression: EmailSuppressionService,
+  ) {}
+
+  /**
+   * Drops suppressed recipients. Returns null when nothing is left to send, in
+   * which case a SUPPRESSED outbox row records that the send was withheld — callers
+   * must not be able to tell the difference, since many `void` this method and a
+   * throw would surface as an unhandled rejection on an unrelated request.
+   */
+  private async applySuppression(options: EmailOptions): Promise<EmailOptions | null> {
+    const recipients = Array.isArray(options.to) ? options.to : [options.to];
+    const orgId = options.organizationId ?? null;
+    const suppressed = await this.suppression.findSuppressed(recipients, orgId);
+    if (suppressed.size === 0) return options;
+
+    const remaining = recipients.filter((r) => !suppressed.has(canonicalEmail(r)));
+
+    await this.db.insert(emailOutbox).values({
+      organizationId: orgId,
+      toEmail: [...suppressed].join(","),
+      subject: options.subject,
+      // The body is deliberately not stored for a withheld send: there is no
+      // delivery to reconstruct, and email_outbox has no retention sweep (SEC-009).
+      html: "",
+      status: "SUPPRESSED",
+      attempts: 0,
+      lastError: "Recipient is on the email suppression list",
+    });
+
+    this.logger.warn(
+      `EMAIL_OUTBOX: ${suppressed.size} recipient(s) suppressed, ${remaining.length} remaining`,
+      { subject: options.subject },
+    );
+
+    if (remaining.length === 0) return null;
+    return { ...options, to: Array.isArray(options.to) ? remaining : remaining[0] };
+  }
 
   async enqueueAndTry(options: EmailOptions): Promise<void> {
+    // SEC-002/SEC-003: the suppression gate. Every named sender on EmailService
+    // routes through here, so this one check covers all 75 direct-send call sites.
+    // It applies to mandatory notification types too — a hard-bounced address is
+    // not deliverable regardless of policy, and continuing to send to it degrades
+    // delivery for every other recipient on the domain.
+    const filtered = await this.applySuppression(options);
+    if (!filtered) return;
+    options = filtered;
+
     const toEmail = Array.isArray(options.to) ? options.to.join(",") : options.to;
     const now = new Date();
 

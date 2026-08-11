@@ -13,6 +13,7 @@ import { NotificationPreferencesService } from "./notification-preferences.servi
 import { NotificationEventRegistryService } from "./notification-event-registry.service";
 import { NotificationRoutingService } from "./notification-routing.service";
 import { NotificationDispatchService } from "./notification-dispatch.service";
+import { NotificationVisibilityRegistry } from "./notification-visibility.registry";
 import { NotificationDeliveryWorker } from "./notification-delivery-worker.service";
 import { NotificationEmailProvider } from "./providers/notification-email.provider";
 import { NotificationWebPushProvider } from "./providers/notification-web-push.provider";
@@ -52,6 +53,7 @@ import { NotificationPolicyController } from "./notification-policy.controller";
     NotificationProviderRegistry,
     NotificationProvidersService,
     NotificationPolicyService,
+    NotificationVisibilityRegistry,
   ],
   exports: [
     NotificationsService,
@@ -59,6 +61,7 @@ import { NotificationPolicyController } from "./notification-policy.controller";
     NotificationDispatchService,
     NotificationEventRegistryService,
     NotificationDeliveryWorker,
+    NotificationVisibilityRegistry,
   ],
 })
 export class NotificationsModule {}

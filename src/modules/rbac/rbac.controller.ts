@@ -25,6 +25,8 @@ export class RbacController {
   ) {}
 
   @Get("permissions")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("settings:rbac:manage")
   getPermissions() {
     return this.rbac.getAllPermissions();
   }

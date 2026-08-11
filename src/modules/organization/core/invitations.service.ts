@@ -8,7 +8,7 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { randomUUID, randomBytes } from "node:crypto";
-import { and, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { addDays } from "date-fns";
 import { hashToken } from "../../../common/security/token.util";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
@@ -334,10 +334,11 @@ export class InvitationsService {
         eq(invitations.id, invitationId),
         eq(invitations.orgId, orgId),
         isNull(invitations.acceptedAt),
+        inArray(invitations.status, ["PENDING", "EXPIRED"]),
       ),
     });
     if (!invitation)
-      throw new NotFoundException("Invitation not found or already accepted");
+      throw new NotFoundException("Invitation is not awaiting a response");
 
     const rawToken = randomBytes(32).toString("hex");
     const newExpiresAt = addDays(new Date(), 7);

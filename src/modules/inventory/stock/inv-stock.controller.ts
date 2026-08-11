@@ -33,7 +33,7 @@ export class InvStockController {
     @Query(new ZodValidationPipe(listStockLevelsSchema)) filters: ListStockLevelsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.stock.listStockLevels(u.orgId, filters);
+    return this.stock.listStockLevels(u.orgId, u.userId, filters);
   }
 
   @Get("transactions")
@@ -53,7 +53,7 @@ export class InvStockController {
     @Query(new ZodValidationPipe(availabilityQuerySchema)) query: AvailabilityQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.stock.getAvailability(u.orgId, query);
+    return this.stock.getAvailability(u.orgId, u.userId, query);
   }
 
   @Get("reservations")

@@ -59,7 +59,7 @@ export class InvStockAdjustmentsController {
 
   @Post(":adjustmentId/approve")
   @UseGuards(PermissionGuard)
-  @RequirePermission("inventory:stock:adjust")
+  @RequirePermission("inventory:adjustments:approve")
   approveAdjustment(
     @Param("adjustmentId", ParseIntPipe) adjustmentId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -69,7 +69,7 @@ export class InvStockAdjustmentsController {
 
   @Post(":adjustmentId/post")
   @UseGuards(PermissionGuard)
-  @RequirePermission("inventory:stock:adjust")
+  @RequirePermission("inventory:adjustments:post")
   postAdjustment(
     @Headers("idempotency-key") idempotencyKey: string,
     @Param("adjustmentId", ParseIntPipe) adjustmentId: number,

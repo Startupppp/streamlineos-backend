@@ -35,6 +35,7 @@ export const notificationEvents = pgTable("notification_events", {
   rateLimitMax: integer("rate_limit_max").default(0).notNull(),
   templateKey: text("template_key"),
   audienceResolver: text("audience_resolver"),
+  visibilityResourceKind: text("visibility_resource_kind"),
   enabled: boolean("enabled").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),

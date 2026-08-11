@@ -9,6 +9,7 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import type {
   CreatePricebookInput,
   UpdatePricebookInput,
@@ -34,24 +35,30 @@ export class CrmPricebooksService {
 
   async createPricebook(orgId: string, input: CreatePricebookInput) {
     try {
-      const [pb] = await this.db
-        .insert(crmPricebooks)
-        .values({
-          orgId,
-          name: input.name,
-          description: input.description ?? null,
-          currency: input.currency,
-          isDefault: input.isDefault,
-          isActive: input.isActive,
-        })
-        .returning();
-      if (input.isDefault && pb) {
-        await this.db
-          .update(crmPricebooks)
-          .set({ isDefault: false })
-          .where(and(eq(crmPricebooks.orgId, orgId), sql`${crmPricebooks.id} != ${pb.id}`));
-      }
-      return pb;
+      return await runInTenantTransaction(
+        this.db,
+        async (tx) => {
+          const [pb] = await tx
+            .insert(crmPricebooks)
+            .values({
+              orgId,
+              name: input.name,
+              description: input.description ?? null,
+              currency: input.currency,
+              isDefault: input.isDefault,
+              isActive: input.isActive,
+            })
+            .returning();
+          if (input.isDefault && pb) {
+            await tx
+              .update(crmPricebooks)
+              .set({ isDefault: false })
+              .where(and(eq(crmPricebooks.orgId, orgId), sql`${crmPricebooks.id} != ${pb.id}`));
+          }
+          return pb;
+        },
+        { orgId },
+      );
     } catch (e: unknown) {
       const err = e as { code?: string };
       if (err.code === "23505") throw new ConflictException("A pricebook with this name already exists");
@@ -66,18 +73,24 @@ export class CrmPricebooksService {
     });
     if (!existing) throw new NotFoundException("Pricebook not found");
     try {
-      const [pb] = await this.db
-        .update(crmPricebooks)
-        .set({ ...input, updatedAt: new Date() })
-        .where(and(eq(crmPricebooks.id, pricebookId), eq(crmPricebooks.orgId, orgId)))
-        .returning();
-      if (input.isDefault) {
-        await this.db
-          .update(crmPricebooks)
-          .set({ isDefault: false })
-          .where(and(eq(crmPricebooks.orgId, orgId), sql`${crmPricebooks.id} != ${pricebookId}`));
-      }
-      return pb;
+      return await runInTenantTransaction(
+        this.db,
+        async (tx) => {
+          const [pb] = await tx
+            .update(crmPricebooks)
+            .set({ ...input, updatedAt: new Date() })
+            .where(and(eq(crmPricebooks.id, pricebookId), eq(crmPricebooks.orgId, orgId)))
+            .returning();
+          if (input.isDefault) {
+            await tx
+              .update(crmPricebooks)
+              .set({ isDefault: false })
+              .where(and(eq(crmPricebooks.orgId, orgId), sql`${crmPricebooks.id} != ${pricebookId}`));
+          }
+          return pb;
+        },
+        { orgId },
+      );
     } catch (e: unknown) {
       const err = e as { code?: string };
       if (err.code === "23505") throw new ConflictException("A pricebook with this name already exists");

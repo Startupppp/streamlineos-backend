@@ -1,5 +1,5 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, eq, isNull, sql } from "drizzle-orm";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, count, eq, inArray, isNull, sql } from "drizzle-orm";
 import { bugs, projects, testCases, testRunResults, testRuns } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -131,6 +131,19 @@ export class TestRunsService {
         .returning();
       let caseIds: number[];
       if (input.caseIds && input.caseIds.length > 0) {
+        const validCases = await tx
+          .select({ id: testCases.id })
+          .from(testCases)
+          .where(
+            and(
+              inArray(testCases.id, input.caseIds),
+              eq(testCases.orgId, orgId),
+              eq(testCases.projectId, projectId),
+              isNull(testCases.deletedAt),
+            ),
+          );
+        if (validCases.length !== input.caseIds.length)
+          throw new BadRequestException("One or more test case IDs do not belong to this project");
         caseIds = input.caseIds;
       } else if (input.suiteId !== undefined) {
         const rows = await tx
@@ -283,7 +296,7 @@ export class TestRunsService {
     });
     if (!result) throw new NotFoundException("Test run result not found");
     const tc = await this.db.query.testCases.findFirst({
-      where: eq(testCases.id, result.testCaseId),
+      where: and(eq(testCases.id, result.testCaseId), eq(testCases.orgId, orgId)),
       columns: { id: true, title: true, steps: true, expectedResult: true },
     });
     if (!tc) throw new NotFoundException("Test case not found");

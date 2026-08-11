@@ -56,7 +56,7 @@ export const createReservationSchema = z.object({
   sourceLineId: z.string().max(100).optional(),
   productVariantId: z.number().int().positive(),
   warehouseId: z.number().int().positive().optional(),
-  locationId: z.number().int().positive().optional(),
+  locationId: z.number().int().positive(),
   lotId: z.number().int().positive().optional(),
   serialId: z.number().int().positive().optional(),
   qty: z.string().regex(/^\d+(\.\d+)?$/, "must be a positive decimal"),

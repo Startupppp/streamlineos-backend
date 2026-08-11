@@ -1,4 +1,9 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
@@ -47,8 +52,20 @@ export class ProjectsTicketsCreateService {
     );
     if (!hasAccess) throw new NotFoundException("Not found");
 
-    if (body.status !== undefined) {
+    if (body.status !== undefined)
       await this.query.validateTicketStatus(projectId, u.orgId, body.status);
+
+    if (body.epicId != null) {
+      const epicRow = await this.db.query.tickets.findFirst({
+        where: and(
+          eq(tickets.id, body.epicId),
+          eq(tickets.orgId, u.orgId),
+          eq(tickets.projectId, projectId),
+        ),
+        columns: { id: true },
+      });
+      if (!epicRow)
+        throw new BadRequestException("Epic ticket not found in this project");
     }
 
     const [ticket] = await this.db.transaction(async (tx) => {

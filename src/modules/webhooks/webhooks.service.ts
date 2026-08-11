@@ -2,13 +2,15 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { randomBytes } from "crypto";
 
-import type {
-  ListInput,
-  UpdateInput,
-  CreateInput,
+import {
+  WEBHOOK_RESPONSE_BODY_LIMIT,
+  type ListInput,
+  type LogsInput,
+  type UpdateInput,
+  type CreateInput,
 } from "./dto/webhook.schemas";
 import { type Db } from "../../db/drizzle.module";
-import { webhookEndpoints } from "../../db/schema";
+import { webhookEndpoints, webhookLogs } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 
 @Injectable()
@@ -96,5 +98,41 @@ export class WebhooksService {
 
     if (!deleted) return null;
     return { success: true };
+  }
+
+  async listLogs(orgId: string, endpointId: number, filters: LogsInput) {
+    const endpoint = await this.getEndpoint(orgId, endpointId);
+    if (!endpoint) return null;
+
+    const where = and(
+      eq(webhookLogs.endpointId, endpointId),
+      eq(webhookLogs.orgId, orgId),
+    );
+    const [logs, [{ total }]] = await Promise.all([
+      this.db
+        .select()
+        .from(webhookLogs)
+        .where(where)
+        .orderBy(desc(webhookLogs.createdAt))
+        .limit(filters.limit)
+        .offset((filters.page - 1) * filters.limit),
+      this.db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(webhookLogs)
+        .where(where),
+    ]);
+
+    return {
+      data: logs.map((log) => ({
+        ...log,
+        responseBody: log.responseBody?.slice(0, WEBHOOK_RESPONSE_BODY_LIMIT) ?? null,
+      })),
+      pagination: {
+        total,
+        page: filters.page,
+        limit: filters.limit,
+        totalPages: Math.ceil(total / filters.limit),
+      },
+    };
   }
 }

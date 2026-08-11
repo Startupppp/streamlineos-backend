@@ -1,0 +1,21 @@
+-- 0399.down — Revert UoM conversion.
+SET statement_timeout = 0;
+SET lock_timeout = '5s';
+ALTER TABLE "inv_stock_transfer_lines" DROP CONSTRAINT IF EXISTS "inv_stock_transfer_lines_uom_id_inv_uom_id_fk";
+ALTER TABLE "inv_stock_transfer_lines" DROP COLUMN IF EXISTS "quantity_entered";
+ALTER TABLE "inv_stock_transfer_lines" DROP COLUMN IF EXISTS "uom_id";
+ALTER TABLE "inv_stock_adjustment_lines" DROP CONSTRAINT IF EXISTS "inv_stock_adjustment_lines_uom_id_inv_uom_id_fk";
+ALTER TABLE "inv_stock_adjustment_lines" DROP COLUMN IF EXISTS "quantity_entered";
+ALTER TABLE "inv_stock_adjustment_lines" DROP COLUMN IF EXISTS "uom_id";
+ALTER TABLE "inv_so_lines" DROP CONSTRAINT IF EXISTS "inv_so_lines_uom_id_inv_uom_id_fk";
+ALTER TABLE "inv_so_lines" DROP COLUMN IF EXISTS "quantity_entered";
+ALTER TABLE "inv_so_lines" DROP COLUMN IF EXISTS "uom_id";
+ALTER TABLE "inv_grn_lines" DROP CONSTRAINT IF EXISTS "inv_grn_lines_uom_id_inv_uom_id_fk";
+ALTER TABLE "inv_grn_lines" DROP COLUMN IF EXISTS "quantity_entered";
+ALTER TABLE "inv_grn_lines" DROP COLUMN IF EXISTS "uom_id";
+ALTER TABLE "inv_po_lines" DROP CONSTRAINT IF EXISTS "inv_po_lines_uom_id_inv_uom_id_fk";
+ALTER TABLE "inv_po_lines" DROP COLUMN IF EXISTS "quantity_entered";
+ALTER TABLE "inv_po_lines" DROP COLUMN IF EXISTS "uom_id";
+DROP INDEX IF EXISTS "idx_inv_product_uom_conversions_product";
+DROP INDEX IF EXISTS "uniq_inv_product_uom_conversions_key";
+DROP TABLE IF EXISTS "inv_product_uom_conversions";

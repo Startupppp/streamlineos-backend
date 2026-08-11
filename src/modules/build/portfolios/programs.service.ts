@@ -88,7 +88,8 @@ export class ProgramsService {
       })
       .from(programProjects)
       .innerJoin(projects, eq(projects.id, programProjects.projectId))
-      .where(and(eq(programProjects.programId, programId), eq(programProjects.orgId, orgId)));
+      .where(and(eq(programProjects.programId, programId), eq(programProjects.orgId, orgId)))
+      .limit(200);
     return { ...program, projects: linkedProjects };
   }
 

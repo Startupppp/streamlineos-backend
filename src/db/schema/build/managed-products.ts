@@ -54,6 +54,6 @@ export const managedProducts = pgTable(
     foreignKey({
       columns: [table.orgId, table.ownerMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
-    }).onDelete("restrict"),
+    }).onDelete("set null"),
   ],
 );

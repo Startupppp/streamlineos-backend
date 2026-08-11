@@ -1,5 +1,5 @@
 import { pgTable, pgEnum, text, serial, timestamp, boolean, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
 import { tickets } from "./tasks";
@@ -15,7 +15,7 @@ export const roadmapItems = pgTable("roadmap_items", {
   description: text("description"),
   status: roadmapStatusEnum("status").default("planned").notNull(),
   category: text("category"),
-  isPublic: boolean("is_public").default(true).notNull(),
+  isPublic: boolean("is_public").default(false).notNull(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
   epicTicketId: integer("epic_ticket_id").references(() => tickets.id, { onDelete: "set null" }),
   targetQuarter: text("target_quarter"),
@@ -34,9 +34,11 @@ export const roadmapVotes = pgTable("roadmap_votes", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   roadmapItemId: integer("roadmap_item_id").references(() => roadmapItems.id, { onDelete: "cascade" }).notNull(),
   voterKey: text("voter_key").notNull(),
+  voterIpHash: text("voter_ip_hash"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uniq_roadmap_votes_item_voter").on(table.roadmapItemId, table.voterKey),
+  uniqueIndex("uniq_roadmap_votes_item_ip").on(table.roadmapItemId, table.voterIpHash).where(sql`voter_ip_hash IS NOT NULL`),
   unique("uniq_roadmap_votes_org_id").on(table.orgId, table.id),
 ]);
 
@@ -64,9 +66,11 @@ export const feedbackVotes = pgTable("feedback_votes", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   feedbackPostId: integer("feedback_post_id").references(() => feedbackPosts.id, { onDelete: "cascade" }).notNull(),
   voterKey: text("voter_key").notNull(),
+  voterIpHash: text("voter_ip_hash"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uniq_feedback_votes_post_voter").on(table.feedbackPostId, table.voterKey),
+  uniqueIndex("uniq_feedback_votes_post_ip").on(table.feedbackPostId, table.voterIpHash).where(sql`voter_ip_hash IS NOT NULL`),
   unique("uniq_feedback_votes_org_id").on(table.orgId, table.id),
 ]);
 

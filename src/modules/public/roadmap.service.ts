@@ -1,3 +1,4 @@
+import { createHmac } from "crypto";
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import {
@@ -79,8 +80,17 @@ export class RoadmapService {
     };
   }
 
-  async vote(orgId: string, input: RoadmapVoteInput) {
+  private hashIp(ip: string): string {
+    const secret = process.env.VOTE_IP_SALT ?? process.env.BACKEND_JWT_SECRET;
+    if (!secret) throw new Error("VOTE_IP_SALT or BACKEND_JWT_SECRET is required to hash voter IPs");
+    return createHmac("sha256", secret)
+      .update(`roadmap-vote:${ip}`)
+      .digest("hex");
+  }
+
+  async vote(orgId: string, input: RoadmapVoteInput, voterIp?: string) {
     const { type, id, voterKey } = input;
+    const voterIpHash = voterIp ? this.hashIp(voterIp) : null;
 
     if (type === "roadmap") {
       const item = await this.db.query.roadmapItems.findFirst({
@@ -96,10 +106,8 @@ export class RoadmapService {
       const votes = await this.db.transaction(async (tx) => {
         const inserted = await tx
           .insert(roadmapVotes)
-          .values({ orgId, roadmapItemId: id, voterKey })
-          .onConflictDoNothing({
-            target: [roadmapVotes.roadmapItemId, roadmapVotes.voterKey],
-          })
+          .values({ orgId, roadmapItemId: id, voterKey, voterIpHash })
+          .onConflictDoNothing()
           .returning({ id: roadmapVotes.id });
 
         if (inserted.length > 0) {
@@ -135,10 +143,8 @@ export class RoadmapService {
     const votes = await this.db.transaction(async (tx) => {
       const inserted = await tx
         .insert(feedbackVotes)
-        .values({ orgId, feedbackPostId: id, voterKey })
-        .onConflictDoNothing({
-          target: [feedbackVotes.feedbackPostId, feedbackVotes.voterKey],
-        })
+        .values({ orgId, feedbackPostId: id, voterKey, voterIpHash })
+        .onConflictDoNothing()
         .returning({ id: feedbackVotes.id });
 
       if (inserted.length > 0) {

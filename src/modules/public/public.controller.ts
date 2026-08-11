@@ -225,6 +225,8 @@ export class PublicController {
   }
 
   @Get("roadmap")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("public:roadmap")
   getRoadmap(
     @Query(new ZodValidationPipe(roadmapQuerySchema)) query: RoadmapQueryInput,
   ) {
@@ -235,17 +237,24 @@ export class PublicController {
 
   @Post("roadmap/vote")
   @HttpCode(200)
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("public:roadmap-vote")
   voteRoadmap(
     @Query(new ZodValidationPipe(roadmapQuerySchema)) query: RoadmapQueryInput,
     @Body(new ZodValidationPipe(roadmapVoteSchema)) body: RoadmapVoteInput,
+    @Req() req: Request,
   ) {
-    return runInTenantTransaction(this.db, () => this.roadmap.vote(query.org, body), {
-      orgId: query.org,
-    });
+    return runInTenantTransaction(
+      this.db,
+      () => this.roadmap.vote(query.org, body, clientIp(req)),
+      { orgId: query.org },
+    );
   }
 
   @Post("roadmap/feedback")
   @HttpCode(201)
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("public:roadmap-feedback")
   submitRoadmapFeedback(
     @Query(new ZodValidationPipe(roadmapQuerySchema)) query: RoadmapQueryInput,
     @Body(new ZodValidationPipe(roadmapFeedbackSchema)) body: RoadmapFeedbackInput,

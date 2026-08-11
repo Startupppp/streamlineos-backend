@@ -883,6 +883,139 @@
       "when": 1785775600000,
       "tag": "0398_backfill_hr_admin_branch_hr_recruitment_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 126,
+      "version": "7",
+      "when": 1786413000269,
+      "tag": "0126_build_ticket_hot_path_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 127,
+      "version": "7",
+      "when": 1786413705243,
+      "tag": "0127_roadmap_items_private_by_default",
+      "breakpoints": true
+    },
+    {
+      "idx": 128,
+      "version": "7",
+      "when": 1786415676285,
+      "tag": "0399_inv_uom_conversions",
+      "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "7",
+      "when": 1786415736285,
+      "tag": "0400_inv_valuation_grain",
+      "breakpoints": true
+    },
+    {
+      "idx": 130,
+      "version": "7",
+      "when": 1786415796285,
+      "tag": "0401_inv_cogs_ledger",
+      "breakpoints": true
+    },
+    {
+      "idx": 131,
+      "version": "7",
+      "when": 1786415856285,
+      "tag": "0402_inv_standard_costs",
+      "breakpoints": true
+    },
+    {
+      "idx": 132,
+      "version": "7",
+      "when": 1786415916285,
+      "tag": "0403_inv_location_scoping",
+      "breakpoints": true
+    },
+    {
+      "idx": 133,
+      "version": "7",
+      "when": 1786415976285,
+      "tag": "0404_inv_posting_date",
+      "breakpoints": true
+    },
+    {
+      "idx": 134,
+      "version": "7",
+      "when": 1786416036285,
+      "tag": "0405_inv_reservation_idempotency",
+      "breakpoints": true
+    },
+    {
+      "idx": 135,
+      "version": "7",
+      "when": 1786416096285,
+      "tag": "0406_inv_barcodes",
+      "breakpoints": true
+    },
+    {
+      "idx": 136,
+      "version": "7",
+      "when": 1786416156285,
+      "tag": "0407_inv_stock_policy",
+      "breakpoints": true
+    },
+    {
+      "idx": 137,
+      "version": "7",
+      "when": 1786415616285,
+      "tag": "0137_add_voter_ip_hash",
+      "breakpoints": true
+    },
+    {
+      "idx": 138,
+      "version": "7",
+      "when": 1786416216285,
+      "tag": "0408_notification_category_accounting",
+      "breakpoints": true
+    },
+    {
+      "idx": 139,
+      "version": "7",
+      "when": 1786416276285,
+      "tag": "0409_inv_transfer_cost_carry",
+      "breakpoints": true
+    },
+    {
+      "idx": 140,
+      "version": "7",
+      "when": 1786416336285,
+      "tag": "0410_notification_visibility_resource_kind",
+      "breakpoints": true
+    },
+    {
+      "idx": 141,
+      "version": "7",
+      "when": 1786416396285,
+      "tag": "0411_suppression_reason_no_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 142,
+      "version": "7",
+      "when": 1786422353827,
+      "tag": "0142_tickets_fractional_rank",
+      "breakpoints": true
+    },
+    {
+      "idx": 143,
+      "version": "7",
+      "when": 1786422441612,
+      "tag": "0143_timesheets_text_to_enums",
+      "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "7",
+      "when": 1786422501612,
+      "tag": "0412_email_suppressions",
+      "breakpoints": true
     }
   ]
 }

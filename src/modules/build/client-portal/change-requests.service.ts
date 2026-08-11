@@ -33,7 +33,8 @@ export class ChangeRequestsService {
       .select()
       .from(changeRequests)
       .where(and(...conditions))
-      .orderBy(changeRequests.crNumber);
+      .orderBy(changeRequests.crNumber)
+      .limit(100);
   }
 
   async getChangeRequest(orgId: string, projectId: number, crId: number) {

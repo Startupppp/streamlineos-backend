@@ -468,11 +468,20 @@ export class CrmInboxService {
     };
   }
 
-  async snoozeTask(orgId: string, taskId: number, userId: string, input: SnoozeTaskInput): Promise<void> {
+  async snoozeTask(
+    orgId: string,
+    taskId: number,
+    userId: string,
+    input: SnoozeTaskInput,
+    scope: DataScope,
+  ): Promise<void> {
+    const scopeFilter = applyScope(scope, orgId, userId, { ownerColumn: tasks.assigneeId });
+    const where = and(eq(tasks.id, taskId), eq(tasks.orgId, orgId), scopeFilter);
+
     const [task] = await this.db
-      .select({ id: tasks.id, orgId: tasks.orgId, assigneeId: tasks.assigneeId })
+      .select({ id: tasks.id })
       .from(tasks)
-      .where(and(eq(tasks.id, taskId), eq(tasks.orgId, orgId)))
+      .where(where)
       .limit(1);
 
     if (!task) throw new NotFoundException("Task not found");
@@ -480,14 +489,22 @@ export class CrmInboxService {
     await this.db
       .update(tasks)
       .set({ snoozedUntil: new Date(input.until), updatedAt: new Date() })
-      .where(and(eq(tasks.id, taskId), eq(tasks.orgId, orgId)));
+      .where(where);
   }
 
-  async completeTask(orgId: string, taskId: number): Promise<void> {
+  async completeTask(
+    orgId: string,
+    taskId: number,
+    userId: string,
+    scope: DataScope,
+  ): Promise<void> {
+    const scopeFilter = applyScope(scope, orgId, userId, { ownerColumn: tasks.assigneeId });
+    const where = and(eq(tasks.id, taskId), eq(tasks.orgId, orgId), scopeFilter);
+
     const [task] = await this.db
-      .select({ id: tasks.id, orgId: tasks.orgId })
+      .select({ id: tasks.id })
       .from(tasks)
-      .where(and(eq(tasks.id, taskId), eq(tasks.orgId, orgId)))
+      .where(where)
       .limit(1);
 
     if (!task) throw new NotFoundException("Task not found");
@@ -495,6 +512,6 @@ export class CrmInboxService {
     await this.db
       .update(tasks)
       .set({ status: "completed", completedAt: new Date(), updatedAt: new Date() })
-      .where(and(eq(tasks.id, taskId), eq(tasks.orgId, orgId)));
+      .where(where);
   }
 }

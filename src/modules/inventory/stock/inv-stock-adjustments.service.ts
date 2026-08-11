@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
@@ -132,9 +132,24 @@ export class InvStockAdjustmentsService {
     if (!adj) throw new NotFoundException("Adjustment not found");
     if (adj.status !== "PENDING_APPROVAL") throw new BadRequestException("Only PENDING_APPROVAL adjustments can be approved");
 
-    await this.db.update(invStockAdjustments)
+    // Writing off stock is how theft is concealed, so the person who raised the
+    // adjustment may never be the person who approves it. Same maker-checker rule
+    // payroll enforces on run approval.
+    if (adj.createdBy === userId) {
+      throw new ForbiddenException(
+        "Maker-checker violation: the person who raised an adjustment cannot approve it",
+      );
+    }
+
+    const updated = await this.db.update(invStockAdjustments)
       .set({ status: "APPROVED", approvedBy: userId, approvedAt: new Date() })
-      .where(and(eq(invStockAdjustments.orgId, orgId), eq(invStockAdjustments.id, adjustmentId)));
+      .where(and(
+        eq(invStockAdjustments.orgId, orgId),
+        eq(invStockAdjustments.id, adjustmentId),
+        eq(invStockAdjustments.status, "PENDING_APPROVAL"),
+      ))
+      .returning({ id: invStockAdjustments.id });
+    if (updated.length === 0) throw new ConflictException("Adjustment is no longer pending approval");
 
     return this.getAdjustment(orgId, adjustmentId);
   }

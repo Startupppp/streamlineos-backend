@@ -1,0 +1,72 @@
+import {
+  pgTable,
+  text,
+  serial,
+  timestamp,
+  date,
+  integer,
+  index,
+  unique,
+  uniqueIndex,
+  check,
+} from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { organizations, users } from "../common/auth";
+import { projects } from "./core";
+import { tickets } from "./ticket-core";
+
+export const projectReleases = pgTable(
+  "project_releases",
+  {
+    id: serial("id").primaryKey(),
+    orgId: text("org_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
+    projectId: integer("project_id")
+      .references(() => projects.id, { onDelete: "cascade" })
+      .notNull(),
+    name: text("name").notNull(),
+    version: text("version").notNull(),
+    description: text("description"),
+    status: text("status").default("draft").notNull(),
+    releaseDate: date("release_date"),
+    createdBy: text("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    index("idx_project_releases_project").on(table.projectId),
+    index("idx_project_releases_org_status").on(table.orgId, table.status),
+    unique("uniq_project_releases_org_id").on(table.orgId, table.id),
+    check(
+      "chk_project_releases_status",
+      sql`${table.status} IN ('draft','released','archived')`,
+    ),
+  ],
+);
+
+export const releaseTickets = pgTable(
+  "release_tickets",
+  {
+    id: serial("id").primaryKey(),
+    orgId: text("org_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
+    releaseId: integer("release_id")
+      .references(() => projectReleases.id, { onDelete: "cascade" })
+      .notNull(),
+    ticketId: integer("ticket_id")
+      .references(() => tickets.id, { onDelete: "cascade" })
+      .notNull(),
+    addedAt: timestamp("added_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("uniq_release_tickets").on(table.releaseId, table.ticketId),
+    index("idx_release_tickets_release").on(table.releaseId),
+  ],
+);

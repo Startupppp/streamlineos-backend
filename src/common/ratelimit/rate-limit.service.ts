@@ -17,7 +17,13 @@ const TIERS: Record<string, Tier> = {
   "auth:magic-link-verify": { limit: 60, windowSecs: 60 },
   "auth:email-otp": { limit: 3, windowSecs: 600 },
   "auth:email-otp-verify": { limit: 10, windowSecs: 600 },
+  // Provider bounce/complaint callbacks. Generous — a real provider can burst — but
+  // bounded so an attacker who obtains the signing secret cannot flood the write path.
+  "webhook:email": { limit: 600, windowSecs: 60 },
   "public:contact": { limit: 5, windowSecs: 3600 },
+  "public:roadmap": { limit: 60, windowSecs: 60 },
+  "public:roadmap-vote": { limit: 10, windowSecs: 3600 },
+  "public:roadmap-feedback": { limit: 5, windowSecs: 3600 },
   "chat:send-message": { limit: 30, windowSecs: 60 },
   "chat:huddle": { limit: 20, windowSecs: 60 },
   "chat:huddle-signal": { limit: 240, windowSecs: 60 },

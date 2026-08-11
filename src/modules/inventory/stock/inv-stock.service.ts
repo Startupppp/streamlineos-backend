@@ -7,6 +7,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
+import { WarehouseScopeService, type WarehouseScope } from "../stock-engine/warehouse-scope.service";
 import type {
   ListStockLevelsInput, ListTransactionsInput, AvailabilityQueryInput,
 } from "./dto/inv-stock.schemas";
@@ -16,12 +17,29 @@ export class InvStockService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly warehouseScope: WarehouseScopeService,
   ) {}
 
-  async listStockLevels(orgId: string, filters: ListStockLevelsInput) {
+  /**
+   * Warehouse scope as a SQL fragment plus a cache discriminator. The
+   * discriminator is mandatory: this list is cached per org, so a per-user
+   * predicate without it would serve one operator's warehouses to the next.
+   */
+  private scopeFragment(scope: WarehouseScope, orgId: string): { sql: SQL; key: string } {
+    if (scope === null) return { sql: sql``, key: "all" };
+    if (scope.length === 0) return { sql: sql`AND FALSE`, key: "none" };
+    const ids = sql.join(scope.map((id) => sql`${id}`), sql`, `);
+    return {
+      sql: sql`AND sl.location_id IN (SELECT id FROM inv_locations WHERE org_id = ${orgId} AND warehouse_id IN (${ids}))`,
+      key: [...scope].sort((a, b) => a - b).join("."),
+    };
+  }
+
+  async listStockLevels(orgId: string, userId: string, filters: ListStockLevelsInput) {
     const { warehouseId, locationId, productId, variantId, lotId, serialId, lowStock, negative, search, page, limit } = filters;
     const offset = (page - 1) * limit;
-    const hash = `${warehouseId ?? ""}:${locationId ?? ""}:${productId ?? ""}:${variantId ?? ""}:${lotId ?? ""}:${serialId ?? ""}:${lowStock ?? ""}:${negative ?? ""}:${search ?? ""}:${limit}:${offset}`;
+    const scope = this.scopeFragment(await this.warehouseScope.resolve(orgId, userId), orgId);
+    const hash = `${scope.key}:${warehouseId ?? ""}:${locationId ?? ""}:${productId ?? ""}:${variantId ?? ""}:${lotId ?? ""}:${serialId ?? ""}:${lowStock ?? ""}:${negative ?? ""}:${search ?? ""}:${limit}:${offset}`;
 
     return this.cache.cachedVersioned(`inv:stock:levels:${orgId}`, hash, async () => {
 
@@ -48,6 +66,7 @@ export class InvStockService {
             (sl.on_hand::numeric - sl.committed::numeric - COALESCE(sl.blocked_qty, 0)::numeric - COALESCE(sl.quality_hold_qty, 0)::numeric) AS available
           FROM inv_stock_levels sl
           WHERE sl.org_id = ${orgId}
+            ${scope.sql}
             ${locationId ? sql`AND sl.location_id = ${locationId}` : sql``}
             ${variantId ? sql`AND sl.product_variant_id = ${variantId}` : sql``}
             ${lotId ? sql`AND sl.lot_id = ${lotId}` : sql``}
@@ -63,6 +82,7 @@ export class InvStockService {
         this.db.execute(sql`
           SELECT count(*)::int AS count FROM inv_stock_levels sl
           WHERE sl.org_id = ${orgId}
+            ${scope.sql}
             ${locationId ? sql`AND sl.location_id = ${locationId}` : sql``}
             ${variantId ? sql`AND sl.product_variant_id = ${variantId}` : sql``}
             ${lotId ? sql`AND sl.lot_id = ${lotId}` : sql``}
@@ -121,8 +141,9 @@ export class InvStockService {
     return { items, total: countResult[0]?.count ?? 0, page, totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit) };
   }
 
-  async getAvailability(orgId: string, filters: AvailabilityQueryInput) {
+  async getAvailability(orgId: string, userId: string, filters: AvailabilityQueryInput) {
     const { variantId, warehouseId } = filters;
+    const scope = this.scopeFragment(await this.warehouseScope.resolve(orgId, userId), orgId);
 
     // [B1-09] stockRow, incomingRow, outgoingRow are fully independent — run in parallel.
     // [B1-23] No typed generic on db.execute; fields read via String()/Number() converters below.
@@ -135,6 +156,7 @@ export class InvStockService {
           COALESCE(SUM(COALESCE(quality_hold_qty, 0)::numeric), 0)::text AS quality_hold_qty
         FROM inv_stock_levels sl
         WHERE sl.org_id = ${orgId} AND sl.product_variant_id = ${variantId}
+        ${scope.sql}
         ${warehouseId ? sql`AND sl.location_id IN (SELECT id FROM inv_locations WHERE warehouse_id = ${warehouseId})` : sql``}
       `),
       this.db.execute(sql`

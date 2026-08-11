@@ -6,8 +6,13 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
-import { projectMembers, projects, tickets, timesheets } from "../../../db/schema";
+import { and, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
+import {
+  projectMembers,
+  projects,
+  tickets,
+  timesheets,
+} from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -16,6 +21,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { applyScope } from "../../access/apply-scope";
 import { resolveTimesheetsScope } from "./timesheets-scope";
 import { formatDateOnly } from "../../../common/date";
+import { EntriesPeriodService } from "../../timesheets/core/entries-period.service";
 import type {
   BillingSummaryQuery,
   LogTimeInput,
@@ -31,18 +37,30 @@ export class TimesheetsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly access: AccessService,
+    private readonly periodService: EntriesPeriodService,
   ) {}
 
-  private async recomputeTimeSpent(ticketId: number): Promise<void> {
-    const totalHours = await this.db
-      .select({ total: sql<number>`COALESCE(SUM(${timesheets.hours}::numeric), 0)` })
+  private async recomputeTimeSpent(
+    orgId: string,
+    ticketId: number,
+  ): Promise<void> {
+    const [row] = await this.db
+      .select({
+        total: sql<number>`COALESCE(SUM(${timesheets.hours}::numeric), 0)`,
+      })
       .from(timesheets)
-      .where(eq(timesheets.ticketId, ticketId));
+      .where(
+        and(
+          eq(timesheets.ticketId, ticketId),
+          eq(timesheets.orgId, orgId),
+          isNull(timesheets.voidedAt),
+        ),
+      );
 
     await this.db
       .update(tickets)
-      .set({ timeSpent: totalHours[0]?.total?.toString() ?? "0" })
-      .where(eq(tickets.id, ticketId));
+      .set({ timeSpent: row?.total?.toString() ?? "0" })
+      .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)));
   }
 
   async listTimeEntries(user: CurrentUserContext, query: TimeEntriesListQuery) {
@@ -53,13 +71,21 @@ export class TimesheetsService {
     const scope = await resolveTimesheetsScope(this.access, user);
 
     const conditions = [eq(timesheets.orgId, user.orgId)];
-    if (query.ticketId) conditions.push(eq(timesheets.ticketId, query.ticketId));
-    conditions.push(applyScope(scope, user.orgId, user.userId, { ownerColumn: timesheets.userId }));
-    if (query.userId && scope === "all") conditions.push(eq(timesheets.userId, query.userId));
+    if (query.ticketId)
+      conditions.push(eq(timesheets.ticketId, query.ticketId));
+    conditions.push(
+      applyScope(scope, user.orgId, user.userId, {
+        ownerColumn: timesheets.userId,
+      }),
+    );
+    if (query.userId && scope === "all")
+      conditions.push(eq(timesheets.userId, query.userId));
     if (query.startDate) conditions.push(gte(timesheets.date, query.startDate));
     if (query.endDate) conditions.push(lte(timesheets.date, query.endDate));
+    if (query.projectId)
+      conditions.push(eq(timesheets.projectId, query.projectId));
 
-    const entries = await this.db.query.timesheets.findMany({
+    return this.db.query.timesheets.findMany({
       where: and(...conditions),
       orderBy: [desc(timesheets.date)],
       limit,
@@ -71,35 +97,47 @@ export class TimesheetsService {
         },
       },
     });
-
-    return query.projectId
-      ? entries.filter((e) => e.ticket?.projectId === query.projectId)
-      : entries;
   }
 
-  async updateEntry(user: CurrentUserContext, entryId: number, input: UpdateEntryInput) {
+  async updateEntry(
+    user: CurrentUserContext,
+    entryId: number,
+    input: UpdateEntryInput,
+  ) {
     const entry = await this.db.query.timesheets.findFirst({
       where: and(eq(timesheets.id, entryId), eq(timesheets.orgId, user.orgId)),
       with: { ticket: { with: { project: true } } },
     });
     if (!entry) throw new NotFoundException("Time entry not found");
     if (entry.payrollStatus === "EXPORTED") {
-      throw new ConflictException("This entry was included in a payroll export and can no longer be modified. Use a correction entry instead.");
+      throw new ConflictException(
+        "This entry was included in a payroll export and can no longer be modified. Use a correction entry instead.",
+      );
     }
     if (entry.status !== "PENDING") {
-      throw new ForbiddenException("Cannot edit a time entry that has already been reviewed");
+      throw new ForbiddenException(
+        "Cannot edit a time entry that has already been reviewed",
+      );
     }
 
-    const perms = await this.access.resolveUserPermissions(user.orgId, user.userId);
+    const perms = await this.access.resolveUserPermissions(
+      user.orgId,
+      user.userId,
+    );
     const isOwnerOrAdmin = perms.has("build:timesheets:manage");
     if (!isOwnerOrAdmin && entry.userId !== user.userId) {
       throw new ForbiddenException("You can only edit your own time entries");
     }
 
-    const updateData: { description?: string; hours?: string; updatedAt: Date } = {
+    const updateData: {
+      description?: string;
+      hours?: string;
+      updatedAt: Date;
+    } = {
       updatedAt: new Date(),
     };
-    if (input.description !== undefined) updateData.description = input.description;
+    if (input.description !== undefined)
+      updateData.description = input.description;
     if (input.hours !== undefined) updateData.hours = input.hours.toString();
 
     const [updated] = await this.db
@@ -109,7 +147,7 @@ export class TimesheetsService {
       .returning();
 
     if (input.hours !== undefined && entry.ticketId) {
-      await this.recomputeTimeSpent(entry.ticketId);
+      await this.recomputeTimeSpent(user.orgId, entry.ticketId);
     }
 
     return updated;
@@ -121,28 +159,40 @@ export class TimesheetsService {
     });
     if (!entry) throw new NotFoundException("Time entry not found");
     if (entry.payrollStatus === "EXPORTED") {
-      throw new ConflictException("This entry was included in a payroll export and can no longer be modified. Use a correction entry instead.");
+      throw new ConflictException(
+        "This entry was included in a payroll export and can no longer be modified. Use a correction entry instead.",
+      );
     }
     if (entry.status !== "PENDING") {
-      throw new ForbiddenException("Cannot delete a time entry that has already been reviewed");
+      throw new ForbiddenException(
+        "Cannot delete a time entry that has already been reviewed",
+      );
     }
 
-    const perms = await this.access.resolveUserPermissions(user.orgId, user.userId);
+    const perms = await this.access.resolveUserPermissions(
+      user.orgId,
+      user.userId,
+    );
     const isOwnerOrAdmin = perms.has("build:timesheets:manage");
     if (!isOwnerOrAdmin && entry.userId !== user.userId) {
       throw new ForbiddenException("You can only delete your own time entries");
     }
 
     const ticketId = entry.ticketId;
-    await this.db.delete(timesheets).where(and(eq(timesheets.id, entryId), eq(timesheets.orgId, user.orgId)));
+    await this.db
+      .delete(timesheets)
+      .where(and(eq(timesheets.id, entryId), eq(timesheets.orgId, user.orgId)));
 
-    if (ticketId) await this.recomputeTimeSpent(ticketId);
+    if (ticketId) await this.recomputeTimeSpent(user.orgId, ticketId);
 
     return { success: true };
   }
 
   async approveEntry(user: CurrentUserContext, entryId: number) {
-    const perms = await this.access.resolveUserPermissions(user.orgId, user.userId);
+    const perms = await this.access.resolveUserPermissions(
+      user.orgId,
+      user.userId,
+    );
     if (!perms.has("build:timesheets:manage")) {
       throw new ForbiddenException("Only admins can approve timesheets");
     }
@@ -151,12 +201,13 @@ export class TimesheetsService {
       where: and(eq(timesheets.id, entryId), eq(timesheets.orgId, user.orgId)),
     });
     if (!entry) throw new NotFoundException("Time entry not found");
-    if (entry.payrollStatus === "EXPORTED") {
-      throw new ConflictException("This entry was included in a payroll export and can no longer be modified. Use a correction entry instead.");
-    }
-    if (entry.status !== "PENDING") {
+    if (entry.payrollStatus === "EXPORTED")
+      throw new ConflictException(
+        "This entry was included in a payroll export and can no longer be modified. Use a correction entry instead.",
+      );
+
+    if (entry.status !== "PENDING")
       throw new BadRequestException("Only pending entries can be approved");
-    }
 
     await this.db
       .update(timesheets)
@@ -171,8 +222,15 @@ export class TimesheetsService {
     return { success: true };
   }
 
-  async rejectEntry(user: CurrentUserContext, entryId: number, input: RejectEntryInput) {
-    const perms = await this.access.resolveUserPermissions(user.orgId, user.userId);
+  async rejectEntry(
+    user: CurrentUserContext,
+    entryId: number,
+    input: RejectEntryInput,
+  ) {
+    const perms = await this.access.resolveUserPermissions(
+      user.orgId,
+      user.userId,
+    );
     if (!perms.has("build:timesheets:manage")) {
       throw new ForbiddenException("Only admins can reject timesheets");
     }
@@ -182,7 +240,9 @@ export class TimesheetsService {
     });
     if (!entry) throw new NotFoundException("Time entry not found");
     if (entry.payrollStatus === "EXPORTED") {
-      throw new ConflictException("This entry was included in a payroll export and can no longer be modified. Use a correction entry instead.");
+      throw new ConflictException(
+        "This entry was included in a payroll export and can no longer be modified. Use a correction entry instead.",
+      );
     }
     if (entry.status !== "PENDING") {
       throw new BadRequestException("Only pending entries can be rejected");
@@ -190,7 +250,11 @@ export class TimesheetsService {
 
     await this.db
       .update(timesheets)
-      .set({ status: "REJECTED", rejectionReason: input.reason ?? null, updatedAt: new Date() })
+      .set({
+        status: "REJECTED",
+        rejectionReason: input.reason ?? null,
+        updatedAt: new Date(),
+      })
       .where(and(eq(timesheets.id, entryId), eq(timesheets.orgId, user.orgId)));
 
     return { success: true };
@@ -199,14 +263,19 @@ export class TimesheetsService {
   async teamTimesheets(user: CurrentUserContext, query: TeamTimesheetsQuery) {
     const scope = await resolveTimesheetsScope(this.access, user);
     if (scope === "none") {
-      throw new ForbiddenException("You do not have permission to view team timesheets");
+      throw new ForbiddenException(
+        "You do not have permission to view team timesheets",
+      );
     }
 
     const conditions = [
       eq(timesheets.orgId, user.orgId),
-      applyScope(scope, user.orgId, user.userId, { ownerColumn: timesheets.userId }),
+      applyScope(scope, user.orgId, user.userId, {
+        ownerColumn: timesheets.userId,
+      }),
     ];
-    if (query.userId && scope === "all") conditions.push(eq(timesheets.userId, query.userId));
+    if (query.userId && scope === "all")
+      conditions.push(eq(timesheets.userId, query.userId));
     if (query.startDate) conditions.push(gte(timesheets.date, query.startDate));
     if (query.endDate) conditions.push(lte(timesheets.date, query.endDate));
     if (query.status) conditions.push(eq(timesheets.status, query.status));
@@ -214,9 +283,18 @@ export class TimesheetsService {
     return this.db.query.timesheets.findMany({
       where: and(...conditions),
       orderBy: [desc(timesheets.date)],
-      limit: 500,
+      limit: query.limit,
+      offset: (query.page - 1) * query.limit,
       with: {
-        user: { columns: { id: true, firstName: true, lastName: true, email: true, image: true } },
+        user: {
+          columns: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            image: true,
+          },
+        },
         ticket: {
           columns: { id: true, title: true, projectId: true },
           with: { project: { columns: { id: true, name: true, key: true } } },
@@ -226,7 +304,10 @@ export class TimesheetsService {
   }
 
   async billingSummary(user: CurrentUserContext, query: BillingSummaryQuery) {
-    const perms = await this.access.resolveUserPermissions(user.orgId, user.userId);
+    const perms = await this.access.resolveUserPermissions(
+      user.orgId,
+      user.userId,
+    );
     const isAdmin = perms.has("build:manage");
     const { orgId, userId } = user;
     const startDate = query.startDate;
@@ -237,7 +318,10 @@ export class TimesheetsService {
     return this.cache.cached(
       key,
       () => {
-        const conditions = [eq(timesheets.orgId, orgId), eq(timesheets.isBillable, true)];
+        const conditions = [
+          eq(timesheets.orgId, orgId),
+          eq(timesheets.isBillable, true),
+        ];
         if (!isAdmin) conditions.push(eq(timesheets.userId, userId));
         if (startDate) conditions.push(gte(timesheets.date, startDate));
         if (endDate) conditions.push(lte(timesheets.date, endDate));
@@ -260,7 +344,10 @@ export class TimesheetsService {
 
   listTicketTimeEntries(orgId: string, ticketId: number) {
     return this.db.query.timesheets.findMany({
-      where: and(eq(timesheets.ticketId, ticketId), eq(timesheets.orgId, orgId)),
+      where: and(
+        eq(timesheets.ticketId, ticketId),
+        eq(timesheets.orgId, orgId),
+      ),
       orderBy: [desc(timesheets.date)],
       limit: 200,
       with: {
@@ -272,7 +359,11 @@ export class TimesheetsService {
     });
   }
 
-  async logTicketTime(user: CurrentUserContext, ticketId: number, input: LogTimeInput) {
+  async logTicketTime(
+    user: CurrentUserContext,
+    ticketId: number,
+    input: LogTimeInput,
+  ) {
     const ticket = await this.db.query.tickets.findFirst({
       where: and(eq(tickets.id, ticketId), eq(tickets.orgId, user.orgId)),
       columns: { projectId: true },
@@ -280,7 +371,10 @@ export class TimesheetsService {
     });
     if (!ticket?.project) throw new NotFoundException("Ticket not found");
 
-    const perms = await this.access.resolveUserPermissions(user.orgId, user.userId);
+    const perms = await this.access.resolveUserPermissions(
+      user.orgId,
+      user.userId,
+    );
     const isOwnerOrAdmin = perms.has("build:manage");
     const isManager = ticket.project.managerId === user.userId;
 
@@ -292,25 +386,48 @@ export class TimesheetsService {
         ),
       });
       if (!membership) {
-        throw new ForbiddenException("You must be a project member to log time.");
+        throw new ForbiddenException(
+          "You must be a project member to log time.",
+        );
       }
     }
 
-    const [entry] = await this.db
-      .insert(timesheets)
-      .values({
-        orgId: user.orgId,
-        userId: user.userId,
-        ticketId,
-        date: formatDateOnly(new Date(input.date)),
-        hours: input.hours.toString(),
-        description: input.description ?? null,
-        imageUrl: input.imageUrl?.trim() || null,
-        workLink: input.workLink?.trim() || null,
-      })
-      .returning();
+    const entryDate = formatDateOnly(new Date(input.date));
+    const settings = await this.periodService.loadSettings(user.orgId);
+    const workWeekStart = settings?.workWeekStart ?? 1;
 
-    await this.recomputeTimeSpent(ticketId);
+    const entry = await this.db.transaction(async (tx) => {
+      const periodId = await this.periodService.getOrCreatePeriod(
+        user.orgId,
+        user.userId,
+        entryDate,
+        workWeekStart,
+        tx,
+      );
+
+      const [inserted] = await tx
+        .insert(timesheets)
+        .values({
+          orgId: user.orgId,
+          userId: user.userId,
+          projectId: ticket.projectId,
+          ticketId,
+          date: entryDate,
+          hours: input.hours.toString(),
+          description: input.description ?? null,
+          imageUrl: input.imageUrl?.trim() || null,
+          workLink: input.workLink?.trim() || null,
+          status: "PENDING",
+          invoicingStatus: "UNINVOICED",
+          payrollStatus: "UNPROCESSED",
+          source: "MANUAL",
+          timesheetPeriodId: periodId,
+        })
+        .returning();
+      return inserted;
+    });
+
+    await this.recomputeTimeSpent(user.orgId, ticketId);
 
     return entry;
   }

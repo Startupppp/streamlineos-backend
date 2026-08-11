@@ -9,6 +9,7 @@ import {
 } from "../../db/schema";
 import type { Db } from "../../db/drizzle.module";
 import type { AccessService } from "../access/access.service";
+import type { AuditService } from "../../common/audit/audit.service";
 import { DelegationsService } from "./delegations.service";
 
 jest.mock("../../common/tenant/run-in-tenant-transaction", () => ({
@@ -73,10 +74,12 @@ describe("DelegationsService normalized permission grants", () => {
     const access = {
       resolveUserPermissions: jest.fn().mockResolvedValue(new Map()),
     };
+    const audit = { logCritical: jest.fn().mockResolvedValue(undefined) };
     const service = new DelegationsService(
       db as unknown as Db,
       cache as unknown as CacheService,
       access as unknown as AccessService,
+      audit as unknown as AuditService,
     );
 
     const result = await service.create(actor, {
@@ -183,6 +186,7 @@ describe("DelegationsService normalized permission grants", () => {
       db as unknown as Db,
       {} as CacheService,
       {} as AccessService,
+      { logCritical: jest.fn().mockResolvedValue(undefined) } as unknown as AuditService,
     );
 
     await expect(

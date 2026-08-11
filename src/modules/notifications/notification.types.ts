@@ -1,3 +1,6 @@
+import { notificationSuppressionReasonEnum } from "../../db/schema/common/enums";
+import type { NotificationCategoryValue } from "./notifications.types";
+
 export type NotificationChannel =
   | "IN_APP"
   | "EMAIL"
@@ -12,17 +15,7 @@ export type NotificationLevel = "INFO" | "SUCCESS" | "WARNING" | "ERROR";
 
 export type QuietHoursBehavior = "respect" | "bypass_if_high" | "always_bypass";
 
-export type SuppressionReason =
-  | "DEDUPE"
-  | "MUTE"
-  | "UNSUBSCRIBE"
-  | "INVALID_RECIPIENT"
-  | "RATE_LIMIT"
-  | "QUIET_HOURS"
-  | "NO_PROVIDER"
-  | "CONSENT_MISSING"
-  | "CHANNEL_DISABLED"
-  | "COST_LIMIT";
+export type SuppressionReason = (typeof notificationSuppressionReasonEnum.enumValues)[number];
 
 export const ALL_CHANNELS: readonly NotificationChannel[] = [
   "IN_APP", "EMAIL", "PUSH", "SMS", "WHATSAPP", "WEBHOOK",
@@ -31,7 +24,7 @@ export const ALL_CHANNELS: readonly NotificationChannel[] = [
 export interface NotificationEventDefinition {
   eventKey: string;
   sourceModule: string;
-  category: string;
+  category: NotificationCategoryValue;
   displayName: string;
   description: string;
   defaultPriority: NotificationPriority;
@@ -47,6 +40,13 @@ export interface NotificationEventDefinition {
   rateLimitMax: number;
   templateKey?: string;
   audienceResolver?: string;
+  /**
+   * PIPE-003. Names the resource kind whose object-level visibility guards this
+   * event, e.g. "build.ticket". NULL/undefined means the event is self-scoped and
+   * ACTIVE org membership is the whole authorization. When set, a resolver must be
+   * registered for the kind — a missing one denies.
+   */
+  visibilityResourceKind?: string;
 }
 
 export interface DispatchEventInput {

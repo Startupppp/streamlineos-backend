@@ -20,6 +20,14 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { CrmInboxService } from "./crm-inbox.service";
 import { snoozeTaskSchema, type SnoozeTaskInput } from "./crm-inbox.dto";
 
+const SCOPES = ["all", "team", "own", "none"] as const;
+type Scope = (typeof SCOPES)[number];
+
+function readScope(req: Request): Scope {
+  const raw = (req as Request & { rbacScope?: string }).rbacScope;
+  return SCOPES.find((s) => s === raw) ?? "all";
+}
+
 @Controller("crm/inbox")
 @RequireModule("crm")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -29,15 +37,13 @@ export class CrmInboxController {
   @Get()
   @RequirePermission("crm:leads:view")
   async getInbox(@Req() req: Request, @CurrentUser() user: CurrentUserContext) {
-    const scope = (req as Request & { rbacScope?: string }).rbacScope ?? "all";
-    return this.svc.getInbox(user.orgId, user.userId, scope as "all" | "team" | "own" | "none");
+    return this.svc.getInbox(user.orgId, user.userId, readScope(req));
   }
 
   @Get("counts")
   @RequirePermission("crm:leads:view")
   async getCounts(@Req() req: Request, @CurrentUser() user: CurrentUserContext) {
-    const scope = (req as Request & { rbacScope?: string }).rbacScope ?? "all";
-    return this.svc.getCounts(user.orgId, user.userId, scope as "all" | "team" | "own" | "none");
+    return this.svc.getCounts(user.orgId, user.userId, readScope(req));
   }
 
   @Post("tasks/:taskId/snooze")
@@ -46,9 +52,10 @@ export class CrmInboxController {
   async snoozeTask(
     @Param("taskId", ParseIntPipe) taskId: number,
     @Body() body: SnoozeTaskInput,
+    @Req() req: Request,
     @CurrentUser() user: CurrentUserContext,
   ) {
-    await this.svc.snoozeTask(user.orgId, taskId, user.userId, body);
+    await this.svc.snoozeTask(user.orgId, taskId, user.userId, body, readScope(req));
     return { success: true };
   }
 
@@ -56,9 +63,10 @@ export class CrmInboxController {
   @RequirePermission("crm:tasks:update")
   async completeTask(
     @Param("taskId", ParseIntPipe) taskId: number,
+    @Req() req: Request,
     @CurrentUser() user: CurrentUserContext,
   ) {
-    await this.svc.completeTask(user.orgId, taskId);
+    await this.svc.completeTask(user.orgId, taskId, user.userId, readScope(req));
     return { success: true };
   }
 }

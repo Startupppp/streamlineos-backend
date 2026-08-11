@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, or } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import {
   organizationMembers,
@@ -234,6 +234,15 @@ export class WhiteboardSharingService {
     const board = await withPublicToken(this.db, token, (tx) =>
       tx.query.projectWhiteboards.findFirst({
         where: eq(projectWhiteboards.shareToken, token),
+        columns: {
+          name: true,
+          data: true,
+          visibility: true,
+          publicAccess: true,
+          linkExpiresAt: true,
+          allowExport: true,
+          updatedAt: true,
+        },
       }),
     );
 
@@ -281,13 +290,25 @@ export class WhiteboardSharingService {
         const [row] = await tx
           .update(projectWhiteboards)
           .set({ data, updatedAt: now })
-          .where(eq(projectWhiteboards.id, board.id))
+          .where(
+            and(
+              eq(projectWhiteboards.id, board.id),
+              eq(projectWhiteboards.shareToken, token),
+              eq(projectWhiteboards.visibility, "public"),
+              eq(projectWhiteboards.publicAccess, "editor"),
+              or(
+                isNull(projectWhiteboards.linkExpiresAt),
+                gt(projectWhiteboards.linkExpiresAt, now),
+              ),
+            ),
+          )
           .returning({ updatedAt: projectWhiteboards.updatedAt });
         return row;
       },
       { orgId: board.orgId },
     );
 
-    return { success: true, updatedAt: updated?.updatedAt ?? now };
+    if (!updated) throw new NotFoundException("Not found");
+    return { success: true, updatedAt: updated.updatedAt };
   }
 }

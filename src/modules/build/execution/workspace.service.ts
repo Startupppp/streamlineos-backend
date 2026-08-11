@@ -36,6 +36,7 @@ export class MilestonesService {
     return this.db.query.projectMilestones.findMany({
       where: and(eq(projectMilestones.projectId, projectId), eq(projectMilestones.orgId, orgId)),
       orderBy: [asc(projectMilestones.targetDate)],
+      limit: 100,
     });
   }
 
@@ -134,10 +135,12 @@ export class IntakeService {
 
     if (input.status === "accepted") {
       return this.db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(${item.projectId})`);
+
         const [maxTicket] = await tx
           .select({ max: sql<number>`COALESCE(MAX(${tickets.ticketNumber}), 0)` })
           .from(tickets)
-          .where(eq(tickets.projectId, item.projectId));
+          .where(and(eq(tickets.projectId, item.projectId), eq(tickets.orgId, orgId)));
 
         const description =
           typeof item.description === "object"
@@ -161,7 +164,7 @@ export class IntakeService {
         const [updated] = await tx
           .update(intakeItems)
           .set({ status: "accepted", linkedWorkItemId: ticket.id, updatedAt: new Date() })
-          .where(eq(intakeItems.id, requestId))
+          .where(and(eq(intakeItems.id, requestId), eq(intakeItems.orgId, orgId)))
           .returning();
 
         return { ...updated, linkedTicket: ticket };
@@ -175,7 +178,7 @@ export class IntakeService {
       const [updated] = await this.db
         .update(intakeItems)
         .set({ status: "declined", declineReason: input.declineReason, updatedAt: new Date() })
-        .where(eq(intakeItems.id, requestId))
+        .where(and(eq(intakeItems.id, requestId), eq(intakeItems.orgId, orgId)))
         .returning();
       return updated;
     }
@@ -187,7 +190,7 @@ export class IntakeService {
       const [updated] = await this.db
         .update(intakeItems)
         .set({ status: "duplicate", linkedWorkItemId: input.linkedWorkItemId, updatedAt: new Date() })
-        .where(eq(intakeItems.id, requestId))
+        .where(and(eq(intakeItems.id, requestId), eq(intakeItems.orgId, orgId)))
         .returning();
       return updated;
     }

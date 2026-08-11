@@ -111,6 +111,12 @@ export class MeetingsService {
           dateClause,
           hostMeetingIds !== undefined ? (hostMeetingIds.length > 0 ? inArray(projectMeetings.id, hostMeetingIds) : sql`false`) : undefined,
           attendeeMeetingIds !== undefined ? (attendeeMeetingIds.length > 0 ? inArray(projectMeetings.id, attendeeMeetingIds) : sql`false`) : undefined,
+          query.hasActionItems === true
+            ? sql`EXISTS (SELECT 1 FROM ${meetingActionItems} WHERE ${meetingActionItems.meetingId} = ${projectMeetings.id} AND ${meetingActionItems.orgId} = ${orgId} AND ${meetingActionItems.deletedAt} IS NULL)`
+            : undefined,
+          query.hasUnresolvedActionItems === true
+            ? sql`EXISTS (SELECT 1 FROM ${meetingActionItems} WHERE ${meetingActionItems.meetingId} = ${projectMeetings.id} AND ${meetingActionItems.orgId} = ${orgId} AND ${meetingActionItems.deletedAt} IS NULL AND ${meetingActionItems.status} NOT IN ('done', 'converted', 'cancelled'))`
+            : undefined,
         ),
       )
       .orderBy(sql`${projectMeetings.scheduledAt} DESC NULLS LAST`)
@@ -159,8 +165,6 @@ export class MeetingsService {
       unresolvedActionItemCount: unresolvedAiMap.get(m.id) ?? 0,
     }));
 
-    if (query.hasActionItems === true) return result.filter((m) => m.actionItemCount > 0);
-    if (query.hasUnresolvedActionItems === true) return result.filter((m) => m.unresolvedActionItemCount > 0);
     return result;
   }
 

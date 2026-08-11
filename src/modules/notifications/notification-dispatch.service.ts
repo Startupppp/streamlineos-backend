@@ -9,8 +9,14 @@ import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { NOTIF_CACHE } from "./notification-cache-keys";
 import { NotificationEventRegistryService } from "./notification-event-registry.service";
 import { NotificationRoutingService } from "./notification-routing.service";
-import { NotificationsService, type NotificationCategoryValue, type AnnounceInput } from "./notifications.service";
-import type { DispatchEventInput, NotificationChannel, NotificationEventDefinition } from "./notification.types";
+import { NotificationsService, type AnnounceInput } from "./notifications.service";
+import { NotificationVisibilityRegistry } from "./notification-visibility.registry";
+import type {
+  DispatchEventInput,
+  NotificationChannel,
+  NotificationEventDefinition,
+  NotificationPriority,
+} from "./notification.types";
 import { filterOrgMemberIds } from "../../common/tenant/org-membership";
 import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
@@ -50,6 +56,7 @@ export class NotificationDispatchService {
     private readonly routing: NotificationRoutingService,
     private readonly notificationsService: NotificationsService,
     private readonly cache: CacheService,
+    private readonly visibility: NotificationVisibilityRegistry,
   ) {}
 
   emit(input: DispatchEventInput): Promise<DispatchResult> {
@@ -103,6 +110,24 @@ export class NotificationDispatchService {
     for (const userId of targets) {
       const routingResult = routingResults.get(userId);
       if (!routingResult) continue;
+
+      // PIPE-003: re-check object-level visibility immediately before render, per
+      // recipient. Membership was checked at enqueue; access can be revoked between
+      // enqueue and here, and under queue lag that window widens exactly when the
+      // system is busiest. Events with no declared resource kind cost nothing.
+      if (definition.visibilityResourceKind) {
+        const visible = await this.visibility.canSee(
+          definition.visibilityResourceKind,
+          input.orgId,
+          userId,
+          input.entityId,
+        );
+        if (!visible) {
+          result.suppressed += await this.recordAccessSuppression(input, definition, userId, routingResult.priority);
+          continue;
+        }
+      }
+
       const perUser = await this.persistForUser(input, definition, userId, routingResult, emailMap.get(userId) ?? null, templateMap);
       result.notified += perUser.createdInApp ? 1 : 0;
       result.deliveriesQueued += perUser.queued;
@@ -115,6 +140,42 @@ export class NotificationDispatchService {
       announcements.map((a) => this.notificationsService.announce(a.input, a.pushToDevices)),
     );
     return result;
+  }
+
+  /**
+   * Records that a recipient was withheld for lack of access. Written as a real
+   * delivery row so the suppression is auditable and distinguishable from a mute —
+   * "we never sent it" and "we sent it and they lost access" are different answers
+   * when a customer asks. Uses the same idempotency key as a normal IN_APP delivery,
+   * so a replayed dispatch does not double-record.
+   */
+  private async recordAccessSuppression(
+    input: DispatchEventInput,
+    definition: NotificationEventDefinition,
+    userId: string,
+    priority: NotificationPriority,
+  ): Promise<number> {
+    const [row] = await this.db
+      .insert(notificationDeliveries)
+      .values({
+        orgId: input.orgId,
+        userId,
+        eventKey: input.eventKey,
+        channel: "IN_APP",
+        provider: "INTERNAL",
+        status: "SUPPRESSED",
+        priority,
+        suppressionReason: "NO_ACCESS",
+        idempotencyKey: this.buildIdempotencyKey(input, userId, "IN_APP", definition.dedupeWindowSeconds),
+        metadata: {
+          resourceKind: definition.visibilityResourceKind ?? null,
+          entityType: input.entityType ?? null,
+          entityId: input.entityId ?? null,
+        },
+      })
+      .onConflictDoNothing({ target: notificationDeliveries.idempotencyKey })
+      .returning({ id: notificationDeliveries.id });
+    return row ? 1 : 0;
   }
 
   private loadOrgTemplateMap(orgId: string): Promise<OrgTemplateMap> {
@@ -241,7 +302,7 @@ export class NotificationDispatchService {
             userId,
             type: definition.defaultType,
             priority: routingResult.priority,
-            category: definition.category as NotificationCategoryValue,
+            category: definition.category,
             sourceModule: definition.sourceModule,
             eventKey: input.eventKey,
             entityType: input.entityType,

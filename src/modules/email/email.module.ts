@@ -6,6 +6,9 @@ import { TwilioGateway } from "./dispatch/twilio.gateway";
 import { NotificationsDispatchController } from "./controllers/notifications-dispatch.controller";
 import { EmailTemplatesController } from "./controllers/email-templates.controller";
 import { HrSendEmailController } from "./controllers/hr-send-email.controller";
+import { EmailSuppressionService } from "./email-suppression.service";
+import { EmailWebhookService } from "./email-webhook.service";
+import { EmailWebhookController } from "./email-webhook.controller";
 
 @Global()
 @Module({
@@ -13,8 +16,16 @@ import { HrSendEmailController } from "./controllers/hr-send-email.controller";
     NotificationsDispatchController,
     EmailTemplatesController,
     HrSendEmailController,
+    EmailWebhookController,
   ],
-  providers: [EmailOutboxService, EmailService, EmailRoutesService, TwilioGateway],
-  exports: [EmailOutboxService, EmailService],
+  providers: [
+    EmailOutboxService,
+    EmailService,
+    EmailRoutesService,
+    TwilioGateway,
+    EmailSuppressionService,
+    EmailWebhookService,
+  ],
+  exports: [EmailOutboxService, EmailService, EmailSuppressionService],
 })
 export class EmailModule {}

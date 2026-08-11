@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, count, eq, isNull, sql } from "drizzle-orm";
 import { portfolioProjects, projectPortfolios, projectPrograms, projects } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -47,33 +47,43 @@ export class PortfoliosService {
   }
 
   async listPortfolios(orgId: string, query: ListPortfoliosQuery) {
-    return this.db
-      .select({
-        id: projectPortfolios.id,
-        orgId: projectPortfolios.orgId,
-        name: projectPortfolios.name,
-        description: projectPortfolios.description,
-        ownerId: projectPortfolios.ownerId,
-        status: projectPortfolios.status,
-        health: projectPortfolios.health,
-        strategicGoal: projectPortfolios.strategicGoal,
-        createdBy: projectPortfolios.createdBy,
-        createdAt: projectPortfolios.createdAt,
-        updatedAt: projectPortfolios.updatedAt,
-        projectCount: sql<number>`(
-          SELECT CAST(COUNT(*) AS INT) FROM ${portfolioProjects}
-          WHERE ${portfolioProjects.portfolioId} = ${projectPortfolios.id}
-        )`,
-      })
-      .from(projectPortfolios)
-      .where(
-        and(
-          eq(projectPortfolios.orgId, orgId),
-          isNull(projectPortfolios.deletedAt),
-          query.status ? eq(projectPortfolios.status, query.status) : undefined,
-        ),
-      )
-      .limit(100);
+    const { page, limit, status } = query;
+    const offset = (page - 1) * limit;
+    const conditions = and(
+      eq(projectPortfolios.orgId, orgId),
+      isNull(projectPortfolios.deletedAt),
+      status ? eq(projectPortfolios.status, status) : undefined,
+    );
+    const [rows, [totalRow]] = await Promise.all([
+      this.db
+        .select({
+          id: projectPortfolios.id,
+          orgId: projectPortfolios.orgId,
+          name: projectPortfolios.name,
+          description: projectPortfolios.description,
+          ownerId: projectPortfolios.ownerId,
+          status: projectPortfolios.status,
+          health: projectPortfolios.health,
+          strategicGoal: projectPortfolios.strategicGoal,
+          createdBy: projectPortfolios.createdBy,
+          createdAt: projectPortfolios.createdAt,
+          updatedAt: projectPortfolios.updatedAt,
+          projectCount: sql<number>`(
+            SELECT CAST(COUNT(*) AS INT) FROM ${portfolioProjects}
+            WHERE ${portfolioProjects.portfolioId} = ${projectPortfolios.id}
+          )`,
+        })
+        .from(projectPortfolios)
+        .where(conditions)
+        .limit(limit)
+        .offset(offset),
+      this.db.select({ total: count() }).from(projectPortfolios).where(conditions),
+    ]);
+    const total = Number(totalRow?.total ?? 0);
+    return {
+      data: rows,
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    };
   }
 
   async getPortfolio(orgId: string, portfolioId: number) {

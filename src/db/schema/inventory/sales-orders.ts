@@ -4,7 +4,7 @@ import { invSoStatusEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
 import { clients } from "../crm/contacts";
 import { invoices } from "../crm/invoicing";
-import { invProductVariants } from "./core";
+import { invProductVariants, invUom } from "./core";
 import { invWarehouses } from "./warehouses";
 
 export const invSalesOrders = pgTable("inv_sales_orders", {
@@ -44,6 +44,8 @@ export const invSoLines = pgTable("inv_so_lines", {
   quantity: decimal("quantity", { precision: 18, scale: 4 }).notNull(),
   quantityShipped: decimal("quantity_shipped", { precision: 18, scale: 4 }).default("0").notNull(),
   unitPrice: decimal("unit_price", { precision: 18, scale: 4 }).notNull(),
+  uomId: integer("uom_id").references(() => invUom.id, { onDelete: "set null" }),
+  quantityEntered: decimal("quantity_entered", { precision: 18, scale: 4 }),
   taxRate: decimal("tax_rate", { precision: 5, scale: 2 }).default("0").notNull(),
   amount: decimal("amount", { precision: 18, scale: 4 }).notNull(),
   costAtTime: decimal("cost_at_time", { precision: 18, scale: 4 }).default("0").notNull(),

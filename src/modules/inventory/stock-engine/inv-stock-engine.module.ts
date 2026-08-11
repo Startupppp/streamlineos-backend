@@ -4,6 +4,8 @@ import { ReservationService } from "./reservation.service";
 import { NumberSequenceService } from "./number-sequence.service";
 import { InventorySettingsService } from "./inventory-settings.service";
 import { InventoryAuditService } from "./inventory-audit.service";
+import { ValuationService } from "./valuation.service";
+import { WarehouseScopeService } from "./warehouse-scope.service";
 
 @Module({
   providers: [
@@ -12,6 +14,8 @@ import { InventoryAuditService } from "./inventory-audit.service";
     NumberSequenceService,
     InventorySettingsService,
     InventoryAuditService,
+    ValuationService,
+    WarehouseScopeService,
   ],
   exports: [
     StockEngineService,
@@ -19,6 +23,8 @@ import { InventoryAuditService } from "./inventory-audit.service";
     NumberSequenceService,
     InventorySettingsService,
     InventoryAuditService,
+    ValuationService,
+    WarehouseScopeService,
   ],
 })
 export class InvStockEngineModule {}
