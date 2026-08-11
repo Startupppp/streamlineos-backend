@@ -5,6 +5,7 @@ import { notificationDeliveries, notificationQueue, notificationProviderAccounts
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { NotificationProviderRegistry } from "./providers/notification-provider-registry.service";
+import { NotificationEventRegistryService } from "./notification-event-registry.service";
 import { isTransientDbError } from "../../common/db/transient-error";
 import { forEachOrg, withTenant, runWithTenantContext } from "../../common/tenant";
 import { filterOrgMemberIds } from "../../common/tenant/org-membership";
@@ -47,6 +48,7 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly registry: NotificationProviderRegistry,
+    private readonly events: NotificationEventRegistryService,
   ) {}
 
   onModuleInit(): void {
@@ -252,9 +254,18 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
     const { delivery, sandbox, attempt, provider } = preflight;
 
     const meta = (delivery.metadata as { title?: string; message?: string; link?: string | null } | null) ?? {};
+    // COMP-002: resolved from the catalog rather than stored on the delivery row, so
+    // it always reflects the event's current mandatory flag. An unknown key is treated
+    // as mandatory — the conservative direction, since the cost of wrongly omitting an
+    // unsubscribe header is far lower than wrongly advertising one.
+    const definition = delivery.eventKey
+      ? this.events.getBaseDefinition(delivery.eventKey)
+      : undefined;
+
     const sendResult = await provider.send({
       orgId: delivery.orgId,
       userId: delivery.userId,
+      mandatory: definition?.mandatory ?? true,
       channel: delivery.channel,
       recipientAddress: delivery.recipientAddress,
       title: meta.title ?? "Notification",

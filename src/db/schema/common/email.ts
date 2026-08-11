@@ -18,10 +18,10 @@ export const emailOutbox = pgTable(
     text: text("text"),
     status: text("status").$type<EmailOutboxStatus>().notNull().default("PENDING"),
     attempts: integer("attempts").notNull().default(0),
-    nextAttemptAt: timestamp("next_attempt_at").notNull().defaultNow(),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
     lastError: text("last_error"),
-    sentAt: timestamp("sent_at"),
-    createdAt: timestamp("created_at").notNull().defaultNow(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     index("email_outbox_status_next_idx").on(t.status, t.nextAttemptAt),

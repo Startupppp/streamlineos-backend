@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, and, gte, lte, sql, count, isNotNull, sum } from "drizzle-orm";
+import { and, count, eq, gte, isNotNull, isNull, lte, sql, sum } from "drizzle-orm";
 import { crmDeals, crmPeople, deals, leads } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -110,7 +110,7 @@ export class SalesAnalyticsService {
 
   private async computeCycleLength(orgId: string, repId?: string) {
     const conditions = [
-      eq(deals.orgId, orgId),
+      eq(deals.orgId, orgId), isNull(deals.deletedAt),
       eq(deals.stage, "WON"),
       isNotNull(deals.actualCloseDate),
       isNotNull(deals.createdAt),
@@ -187,7 +187,7 @@ export class SalesAnalyticsService {
   }
 
   private async computeLostAnalysis(orgId: string, repId?: string) {
-    const conditions = [eq(deals.orgId, orgId), eq(deals.stage, "LOST")];
+    const conditions = [eq(deals.orgId, orgId), isNull(deals.deletedAt), eq(deals.stage, "LOST")];
 
     if (repId) conditions.push(eq(deals.assignedToId, repId));
 

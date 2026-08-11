@@ -63,7 +63,7 @@ export class DashboardCrmService {
             .from(deals)
             .where(
               and(
-                eq(deals.orgId, orgId),
+                eq(deals.orgId, orgId), isNull(deals.deletedAt),
                 eq(deals.stage, "WON"),
                 gte(deals.updatedAt, monthStart),
               ),
@@ -73,7 +73,7 @@ export class DashboardCrmService {
             .from(deals)
             .where(
               and(
-                eq(deals.orgId, orgId),
+                eq(deals.orgId, orgId), isNull(deals.deletedAt),
                 ne(deals.stage, "WON"),
                 ne(deals.stage, "LOST"),
               ),

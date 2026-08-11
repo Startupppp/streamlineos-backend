@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, desc, eq, ilike, sql } from "drizzle-orm";
+import { and, count, desc, eq, ilike, isNull, sql } from "drizzle-orm";
 import { clientAccounts, crmQuoteSettings, deals, quoteLineItems, quotes, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -37,7 +37,7 @@ export class QuotesService {
       `quotes:list:${orgId}`,
       key,
       async () => {
-        const conditions = [eq(quotes.orgId, orgId)];
+        const conditions = [eq(quotes.orgId, orgId), isNull(quotes.deletedAt)];
         if (status) conditions.push(eq(quotes.status, status));
         if (dealId) conditions.push(eq(quotes.dealId, dealId));
         if (search) conditions.push(ilike(quotes.subject, `%${search}%`));
@@ -107,6 +107,9 @@ export class QuotesService {
       const existingCount = await tx
         .select({ count: count() })
         .from(quotes)
+        // Deliberately counts soft-deleted rows too: `idx_quotes_number` is a
+        // NON-partial unique index on (org_id, quote_number), so excluding
+        // deleted quotes would re-issue a number that still exists and fail.
         .where(and(eq(quotes.orgId, orgId), sql`DATE(${quotes.createdAt}) = CURRENT_DATE`));
       const seq = ((existingCount[0]?.count ?? 0) + 1).toString().padStart(3, "0");
       const quoteNumber = `QT-${dateStr}-${seq}`;
@@ -191,7 +194,7 @@ export class QuotesService {
 
   getQuote(orgId: string, quoteId: number) {
     return this.db.query.quotes.findFirst({
-      where: and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId)),
+      where: and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId), isNull(quotes.deletedAt)),
       with: {
         lineItems: { orderBy: (li, { asc }) => [asc(li.displayOrder)] },
         createdBy: { columns: { id: true, name: true, image: true } },
@@ -203,7 +206,7 @@ export class QuotesService {
 
   async update(orgId: string, userId: string, quoteId: number, input: UpdateInput) {
     const existing = await this.db.query.quotes.findFirst({
-      where: and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId)),
+      where: and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId), isNull(quotes.deletedAt)),
       columns: { id: true },
     });
     if (!existing) return null;
@@ -273,7 +276,7 @@ export class QuotesService {
       const [row] = await tx
         .update(quotes)
         .set(updateData)
-        .where(and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId)))
+        .where(and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId), isNull(quotes.deletedAt)))
         .returning();
       return row;
     });
@@ -300,12 +303,17 @@ export class QuotesService {
 
   async remove(orgId: string, userId: string, quoteId: number): Promise<{ success: true } | null> {
     const existing = await this.db.query.quotes.findFirst({
-      where: and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId)),
+      where: and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId), isNull(quotes.deletedAt)),
       columns: { quoteNumber: true },
     });
     if (!existing) return null;
 
-    await this.db.delete(quotes).where(and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId)));
+    await this.db
+      .update(quotes)
+      .set({ deletedAt: new Date() })
+      .where(
+        and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId), isNull(quotes.deletedAt)),
+      );
 
     this.audit.log({
       action: "quote.deleted",

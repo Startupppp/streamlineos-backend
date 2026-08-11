@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { deals, dealActivities, dealApprovals, chatChannels, chatChannelMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -116,7 +116,7 @@ export class DealsService {
     if (alreadyLinked) return;
 
     const dealRow = await this.db.query.deals.findFirst({
-      where: and(eq(deals.id, dealId), eq(deals.orgId, orgId)),
+      where: and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)),
       columns: { name: true, assignedToId: true },
     });
 
@@ -185,7 +185,7 @@ export class DealsService {
 
     if (input.stage !== undefined) {
       const existing = await this.db.query.deals.findFirst({
-        where: and(eq(deals.id, dealId), eq(deals.orgId, orgId)),
+        where: and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)),
         columns: { stage: true, updatedAt: true, pipelineId: true, value: true, lostReason: true, expectedCloseDate: true, notes: true, assignedToId: true },
       });
       if (!existing) return { ok: false, reason: "not_found" };
@@ -215,7 +215,7 @@ export class DealsService {
           }).returning();
           this.audit.log({ action: "deal.approval_requested", userId, orgId, targetId: String(dealId), targetType: "deal", metadata: { requestedStage: input.stage } });
           const currentDeal = await this.db.query.deals.findFirst({
-            where: and(eq(deals.id, dealId), eq(deals.orgId, orgId)),
+            where: and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)),
           });
           if (!currentDeal) return { ok: false, reason: "not_found" };
           return { ok: true as const, deal: currentDeal, stageChanged: false, previousStage: null, approvalPending: true, approvalId: approval!.id };
@@ -279,7 +279,7 @@ export class DealsService {
       const [row] = await (tx as Db)
         .update(deals)
         .set(updateData)
-        .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId)))
+        .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)))
         .returning();
       if (!row) return undefined;
 

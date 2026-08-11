@@ -1,3 +1,4 @@
+import { NotificationTemplateRenderer } from "./notification-template-renderer.service";
 import { NotificationVisibilityRegistry } from "./notification-visibility.registry";
 import type { DispatchEventInput } from "./notification.types";
 import { Test } from "@nestjs/testing";
@@ -78,6 +79,12 @@ describe("NotificationDispatchService transaction safety", () => {
         {
           provide: NotificationVisibilityRegistry,
           useValue: { canSee: jest.fn().mockResolvedValue(true) },
+        },
+        // Added when template rendering was split out of the dispatch service; these
+        // events declare no templateKey, so loadTemplates returns an empty map.
+        {
+          provide: NotificationTemplateRenderer,
+          useValue: { loadTemplates: jest.fn().mockResolvedValue(new Map()) },
         },
       ],
     }).compile();

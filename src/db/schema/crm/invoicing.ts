@@ -1,5 +1,5 @@
 import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   invoiceStatusEnum, quoteStatusEnum,
 } from "../common/enums";
@@ -190,7 +190,15 @@ export const quotes = pgTable("quotes", {
   signedAt: timestamp("signed_at"),
   signedDocumentRef: text("signed_document_ref"),
   convertedInvoiceId: integer("converted_invoice_id").references(() => invoices.id, { onDelete: "set null" }),
+  // Rate snapshot at issue time, matching `invoices` and `purchase_bills`.
+  // Without it a quote's historical value silently re-prices whenever
+  // `fin_exchange_rates` moves, so an accepted quote stops matching its invoice.
+  exchangeRate: decimal("exchange_rate", { precision: 18, scale: 8 }).default("1").notNull(),
+  deletedAt: timestamp("deleted_at"),
 }, (table) => [
+  index("idx_quotes_org_live_status")
+    .on(table.orgId, table.status)
+    .where(sql`${table.deletedAt} IS NULL`),
   index("idx_quotes_org_status").on(table.orgId, table.status),
   index("idx_quotes_deal").on(table.dealId),
   index("idx_quotes_client").on(table.clientId),

@@ -12,9 +12,10 @@ import { InvitationsService } from "./invitations.service";
 import { InvitationsReadService } from "./invitations-read.service";
 import { InvitationLifecycleService } from "./invitation-lifecycle.service";
 import { InvitationAcceptanceService } from "./invitation-acceptance.service";
+import { RealtimeModule } from "../../realtime/realtime.module";
 
 @Module({
-  imports: [BillingModule, SessionsModule, NotificationsModule],
+  imports: [BillingModule, SessionsModule, NotificationsModule, RealtimeModule],
   controllers: [OrganizationController],
   providers: [
     OrgProfileService,

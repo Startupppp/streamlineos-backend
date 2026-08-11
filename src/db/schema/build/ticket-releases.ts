@@ -33,6 +33,7 @@ export const projectReleases = pgTable(
     createdBy: text("created_by").references(() => users.id, {
       onDelete: "set null",
     }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -40,8 +41,8 @@ export const projectReleases = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
-    index("idx_project_releases_project").on(table.projectId),
-    index("idx_project_releases_org_status").on(table.orgId, table.status),
+    index("idx_project_releases_project").on(table.projectId).where(sql`deleted_at IS NULL`),
+    index("idx_project_releases_org_status").on(table.orgId, table.status).where(sql`deleted_at IS NULL`),
     unique("uniq_project_releases_org_id").on(table.orgId, table.id),
     check(
       "chk_project_releases_status",

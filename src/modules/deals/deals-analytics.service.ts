@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, inArray, notInArray, sql, sum } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, notInArray, sql, sum } from "drizzle-orm";
 import { deals, dealActivities, crmForecastSnapshots, users } from "../../db/schema";
 import type { ForecastSnapshotData } from "../../db/schema/crm/deals";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -56,11 +56,11 @@ export class DealsAnalyticsService {
       this.db
         .select({ cnt: count(), total: sum(deals.value) })
         .from(deals)
-        .where(and(eq(deals.orgId, orgId), notInArray(deals.stage, [...wonKeys, ...lostKeys]))),
+        .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), notInArray(deals.stage, [...wonKeys, ...lostKeys]))),
       this.db
         .select({ total: sum(deals.value) })
         .from(deals)
-        .where(and(eq(deals.orgId, orgId), inArray(deals.stage, wonKeys))),
+        .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), inArray(deals.stage, wonKeys))),
     ]);
     return {
       active: activeRow[0]?.cnt ?? 0,
@@ -87,7 +87,7 @@ export class DealsAnalyticsService {
           })
           .from(deals)
           .leftJoin(users, eq(deals.assignedToId, users.id))
-          .where(and(eq(deals.orgId, orgId), notInArray(deals.stage, [...wonKeys, ...lostKeys])))
+          .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), notInArray(deals.stage, [...wonKeys, ...lostKeys])))
           .orderBy(sql`${deals.updatedAt} asc`)
           .limit(100);
 
@@ -141,7 +141,7 @@ export class DealsAnalyticsService {
         createdAt: deals.createdAt,
       })
       .from(deals)
-      .where(and(eq(deals.orgId, orgId), notInArray(deals.stage, [...wonKeys, ...lostKeys])));
+      .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), notInArray(deals.stage, [...wonKeys, ...lostKeys])));
 
     const monthMap = new Map<string, ForecastMonth>();
     const stageMap = new Map<string, { count: number; totalValue: number; weightedValue: number; probSum: number }>();
@@ -205,7 +205,7 @@ export class DealsAnalyticsService {
               totalValue: sql<number>`COALESCE(SUM(${deals.value}::numeric), 0)::float`,
             })
             .from(deals)
-            .where(and(eq(deals.orgId, orgId), inArray(deals.stage, stageKeys)));
+            .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), inArray(deals.stage, stageKeys)));
 
         const [wonRows, lostRows, lostByReason] = await Promise.all([
           bucketTotals(wonKeys),
@@ -217,7 +217,7 @@ export class DealsAnalyticsService {
               totalValue: sql<number>`COALESCE(SUM(${deals.value}::numeric), 0)::float`,
             })
             .from(deals)
-            .where(and(eq(deals.orgId, orgId), inArray(deals.stage, lostKeys)))
+            .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), inArray(deals.stage, lostKeys)))
             .groupBy(sql`1`)
             .orderBy(sql`2 desc`),
         ]);
@@ -249,7 +249,7 @@ export class DealsAnalyticsService {
 
   async getDealHealth(orgId: string, dealId: number) {
     const deal = await this.db.query.deals.findFirst({
-      where: and(eq(deals.id, dealId), eq(deals.orgId, orgId)),
+      where: and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)),
       columns: { stage: true, updatedAt: true, expectedCloseDate: true, value: true, lastContactDate: true, probability: true },
       with: { activities: { columns: { createdAt: true }, orderBy: [desc(dealActivities.createdAt)], limit: 1 } },
     });

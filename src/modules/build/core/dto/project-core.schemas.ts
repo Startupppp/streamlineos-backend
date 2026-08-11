@@ -47,6 +47,7 @@ export const listProjectsSchema = z.object({
   status: z.enum(["ACTIVE", "COMPLETED", "ARCHIVED", "ALL"]).default("ALL"),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(9),
+  pmWorkspaceId: z.string().optional(),
 });
 
 export const createProjectSchema = z

@@ -128,9 +128,20 @@ describe("PortfoliosService", () => {
             }),
           };
         }
+        if (selectCount === 3) {
+          return {
+            from: jest.fn().mockReturnValue({
+              where: jest.fn().mockReturnValue({ limit: programsLimitChain }),
+            }),
+          };
+        }
         return {
           from: jest.fn().mockReturnValue({
-            where: jest.fn().mockReturnValue({ limit: programsLimitChain }),
+            where: jest.fn().mockReturnValue({
+              groupBy: jest
+                .fn()
+                .mockResolvedValue([{ projectId: 3, openCount: 2, doneCount: 1 }]),
+            }),
           }),
         };
       });

@@ -81,7 +81,7 @@ const QUERIES = [
     label: "Ticket detail: comment thread",
     text: `select c.id, c.content, c.user_id, c.created_at
            from ticket_comments c
-           where c.org_id = $1 and c.ticket_id = $4
+           where c.org_id = $1 and c.ticket_id = $4 and c.deleted_at is null
            order by c.created_at desc limit 50`,
   },
   {

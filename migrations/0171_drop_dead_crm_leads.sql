@@ -1,0 +1,1 @@
+DROP TABLE "crm_leads" CASCADE;

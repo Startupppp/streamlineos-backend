@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, lt, lte, gte, sql, desc, isNull, not, inArray } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lt, lte, not, sql } from "drizzle-orm";
 import { tasks, leads, leadEmails, deals, dealMeetings } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -224,7 +224,7 @@ export class CrmInboxService {
             .from(deals)
             .where(
               and(
-                eq(deals.orgId, orgId),
+                eq(deals.orgId, orgId), isNull(deals.deletedAt),
                 inArray(deals.stage, openStageKeys),
                 not(
                   sql`EXISTS (
@@ -446,7 +446,7 @@ export class CrmInboxService {
         ? this.db
             .select({ n: sql<number>`count(*)` })
             .from(deals)
-            .where(and(eq(deals.orgId, orgId), inArray(deals.stage, openStageKeys), not(sql`EXISTS (SELECT 1 FROM deal_activities da WHERE da.deal_id = ${deals.id} AND da.created_at >= ${fourteenDaysAgo.toISOString()})`)))
+            .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), inArray(deals.stage, openStageKeys), not(sql`EXISTS (SELECT 1 FROM deal_activities da WHERE da.deal_id = ${deals.id} AND da.created_at >= ${fourteenDaysAgo.toISOString()})`)))
             .then((r) => Number(r[0]?.n ?? 0))
         : Promise.resolve(0),
       this.db

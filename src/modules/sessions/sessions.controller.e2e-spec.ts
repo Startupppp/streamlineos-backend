@@ -18,10 +18,14 @@ describe("Sessions auth (e2e)", () => {
 
   afterAll(async () => app.close());
 
+  // Paths were `/hr/sessions/*`, which SessionsController never served
+  // (`@Controller("sessions")`), so these asserted 401 against routes that
+  // would 404. Never caught because `e2e-spec` is in the default config's
+  // testPathIgnorePatterns — these only run under `pnpm test:e2e`.
   const routes: ReadonlyArray<["get" | "delete", string]> = [
-    ["get", "/hr/sessions"],
-    ["delete", "/hr/sessions"],
-    ["delete", "/hr/sessions/some-session-id"],
+    ["get", "/sessions"],
+    ["delete", "/sessions"],
+    ["delete", "/sessions/some-session-id"],
   ];
 
   it.each(routes)("401 on %s %s without a token", async (method, path) => {

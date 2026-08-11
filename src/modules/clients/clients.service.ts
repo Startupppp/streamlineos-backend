@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, and, or, asc, desc, inArray, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, or, type SQL } from "drizzle-orm";
 import { clients, deals, dealActivities, leadActivities, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -136,7 +136,7 @@ export class ClientsService {
     const clientDeals = await this.db
       .select({ id: deals.id, name: deals.name, createdAt: deals.createdAt })
       .from(deals)
-      .where(and(eq(deals.orgId, orgId), eq(deals.clientId, clientId)));
+      .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), eq(deals.clientId, clientId)));
 
     for (const deal of clientDeals) {
       events.push({

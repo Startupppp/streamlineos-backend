@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -274,7 +274,7 @@ export class CrmAutomationRunnerService {
               .where(and(eq(leads.orgId, orgId), eq(leads.id, parseInt(payload.entityId, 10))));
           } else if (payload.entityType === "deal") {
             await this.db.update(deals).set({ assignedToId: targetUserId })
-              .where(and(eq(deals.orgId, orgId), eq(deals.id, parseInt(payload.entityId, 10))));
+              .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), eq(deals.id, parseInt(payload.entityId, 10))));
           } else {
             return { nodeId, type: actionKey, status: "skipped", message: "unsupported_entity", at };
           }
@@ -295,7 +295,7 @@ export class CrmAutomationRunnerService {
               return { nodeId, type: actionKey, status: "error", message: "field_not_allowed", at };
             }
             await this.db.update(deals).set({ [field]: value })
-              .where(and(eq(deals.orgId, orgId), eq(deals.id, parseInt(payload.entityId, 10))));
+              .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), eq(deals.id, parseInt(payload.entityId, 10))));
           } else {
             return { nodeId, type: actionKey, status: "skipped", message: "unsupported_entity", at };
           }

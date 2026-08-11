@@ -67,6 +67,7 @@ export class WhiteboardSharingService {
           eq(projectWhiteboards.id, whiteboardId),
           eq(projectWhiteboards.projectId, projectId),
           eq(projectWhiteboards.orgId, u.orgId),
+          isNull(projectWhiteboards.deletedAt),
         ),
       )
       .limit(1);
@@ -116,7 +117,7 @@ export class WhiteboardSharingService {
     const [updated] = await this.db
       .update(projectWhiteboards)
       .set(setValues)
-      .where(and(eq(projectWhiteboards.id, whiteboardId), eq(projectWhiteboards.orgId, u.orgId)))
+      .where(and(eq(projectWhiteboards.id, whiteboardId), eq(projectWhiteboards.orgId, u.orgId), isNull(projectWhiteboards.deletedAt)))
       .returning();
 
     return {
@@ -139,7 +140,7 @@ export class WhiteboardSharingService {
     const [updated] = await this.db
       .update(projectWhiteboards)
       .set({ shareToken: newToken, updatedAt: new Date() })
-      .where(and(eq(projectWhiteboards.id, whiteboardId), eq(projectWhiteboards.orgId, u.orgId)))
+      .where(and(eq(projectWhiteboards.id, whiteboardId), eq(projectWhiteboards.orgId, u.orgId), isNull(projectWhiteboards.deletedAt)))
       .returning();
 
     return {
@@ -233,7 +234,7 @@ export class WhiteboardSharingService {
   async getPublicByToken(token: string) {
     const board = await withPublicToken(this.db, token, (tx) =>
       tx.query.projectWhiteboards.findFirst({
-        where: eq(projectWhiteboards.shareToken, token),
+        where: and(eq(projectWhiteboards.shareToken, token), isNull(projectWhiteboards.deletedAt)),
         columns: {
           name: true,
           data: true,
@@ -266,7 +267,7 @@ export class WhiteboardSharingService {
   async updatePublicByToken(token: string, data: ExcalidrawSceneInput) {
     const board = await withPublicToken(this.db, token, (tx) =>
       tx.query.projectWhiteboards.findFirst({
-        where: eq(projectWhiteboards.shareToken, token),
+        where: and(eq(projectWhiteboards.shareToken, token), isNull(projectWhiteboards.deletedAt)),
         columns: { id: true, orgId: true, visibility: true, publicAccess: true, linkExpiresAt: true },
       }),
     );

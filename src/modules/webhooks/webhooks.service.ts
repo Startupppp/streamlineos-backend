@@ -1,6 +1,11 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { randomBytes } from "crypto";
+
+import {
+  encryptSecret,
+  maskSecretHint,
+} from "../../common/security/secret-encryption.util";
 
 import {
   WEBHOOK_RESPONSE_BODY_LIMIT,
@@ -50,14 +55,31 @@ export class WebhooksService {
       .values({
         orgId,
         url: input.url,
-        secret,
+        secret: encryptSecret(secret),
         description: input.description,
         events: input.events,
         createdBy: userId,
       })
       .returning();
+    if (!endpoint) throw new NotFoundException("Webhook endpoint could not be created");
 
-    return endpoint;
+    return { ...endpoint, secret, secretHint: maskSecretHint(secret) };
+  }
+
+  /**
+   * Reveal-once rotation. The plaintext is returned exactly here and never
+   * again — every other read strips `secret`, and the column holds ciphertext.
+   */
+  async rotateSecret(orgId: string, id: number) {
+    const secret = randomBytes(32).toString("hex");
+    const [updated] = await this.db
+      .update(webhookEndpoints)
+      .set({ secret: encryptSecret(secret) })
+      .where(and(eq(webhookEndpoints.id, id), eq(webhookEndpoints.orgId, orgId)))
+      .returning();
+    if (!updated) throw new NotFoundException("Webhook endpoint not found");
+
+    return { id: updated.id, secret, secretHint: maskSecretHint(secret) };
   }
 
   async getEndpoint(orgId: string, id: number) {

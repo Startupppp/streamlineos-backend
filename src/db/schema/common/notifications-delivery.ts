@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, bigint, boolean, jsonb, timestamp, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, serial, integer, bigint, boolean, jsonb, timestamp, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import {
   notificationTypeEnum,
@@ -37,8 +37,8 @@ export const notificationEvents = pgTable("notification_events", {
   audienceResolver: text("audience_resolver"),
   visibilityResourceKind: text("visibility_resource_kind"),
   enabled: boolean("enabled").default(true).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uq_notification_events_org_key").on(table.orgId, table.eventKey),
   // SCH-013: the composite above enforces nothing for the catalog, because every
@@ -51,8 +51,9 @@ export const notificationEvents = pgTable("notification_events", {
 ]);
 
 export const notificationDeliveries = pgTable("notification_deliveries", {
-  id: serial("id").primaryKey(),
-  notificationId: integer("notification_id").references(() => notifications.id, { onDelete: "cascade" }),
+  // SCH-001: was serial (int4) on one of the highest-fan-out tables in the product.
+  id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+  notificationId: bigint("notification_id", { mode: "number" }).references(() => notifications.id, { onDelete: "cascade" }),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
   eventKey: text("event_key"),
@@ -63,12 +64,12 @@ export const notificationDeliveries = pgTable("notification_deliveries", {
   priority: notificationPriorityEnum("priority").default("NORMAL").notNull(),
   attemptCount: integer("attempt_count").default(0).notNull(),
   maxAttempts: integer("max_attempts").default(5).notNull(),
-  nextAttemptAt: timestamp("next_attempt_at"),
-  sentAt: timestamp("sent_at"),
-  deliveredAt: timestamp("delivered_at"),
-  readAt: timestamp("read_at"),
-  clickedAt: timestamp("clicked_at"),
-  failedAt: timestamp("failed_at"),
+  nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+  deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+  readAt: timestamp("read_at", { withTimezone: true }),
+  clickedAt: timestamp("clicked_at", { withTimezone: true }),
+  failedAt: timestamp("failed_at", { withTimezone: true }),
   failureCode: text("failure_code"),
   failureMessage: text("failure_message"),
   suppressionReason: notificationSuppressionReasonEnum("suppression_reason"),
@@ -84,8 +85,8 @@ export const notificationDeliveries = pgTable("notification_deliveries", {
   templateVersion: integer("template_version"),
   // PIPE-012: past this the notification is dropped rather than delivered stale.
   expiresAt: timestamp("expires_at", { withTimezone: true }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_notification_deliveries_expiry")
     .on(table.orgId, table.expiresAt)
@@ -102,18 +103,19 @@ export const notificationDeliveries = pgTable("notification_deliveries", {
 ]);
 
 export const notificationQueue = pgTable("notification_queue", {
-  id: serial("id").primaryKey(),
-  deliveryId: integer("delivery_id").references(() => notificationDeliveries.id, { onDelete: "cascade" }).notNull(),
+  // SCH-001
+  id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+  deliveryId: bigint("delivery_id", { mode: "number" }).references(() => notificationDeliveries.id, { onDelete: "cascade" }).notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   channel: notificationChannelEnum("channel").notNull(),
-  runAt: timestamp("run_at").defaultNow().notNull(),
+  runAt: timestamp("run_at", { withTimezone: true }).defaultNow().notNull(),
   status: notificationQueueStatusEnum("status").default("PENDING").notNull(),
   lockedBy: text("locked_by"),
-  lockedAt: timestamp("locked_at"),
+  lockedAt: timestamp("locked_at", { withTimezone: true }),
   attemptCount: integer("attempt_count").default(0).notNull(),
   lastError: text("last_error"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_notification_queue_due").on(table.status, table.runAt),
   index("idx_notification_queue_delivery").on(table.deliveryId),
@@ -136,8 +138,8 @@ export const notificationPolicyDefaults = pgTable("notification_policy_defaults"
   canUserOverride: boolean("can_user_override").default(true).notNull(),
   resolutionOrder: integer("resolution_order").default(0).notNull(),
   createdBy: text("created_by").references(() => users.id),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uq_notification_policy_scope").on(table.orgId, table.scopeType, table.scopeId),
   index("idx_notification_policy_org_scope").on(table.orgId, table.scopeType),
@@ -157,10 +159,10 @@ export const notificationProviderAccounts = pgTable("notification_provider_accou
   dailySendLimit: integer("daily_send_limit"),
   monthlyCostLimit: integer("monthly_cost_limit"),
   healthStatus: text("health_status").default("unknown").notNull(),
-  lastTestedAt: timestamp("last_tested_at"),
+  lastTestedAt: timestamp("last_tested_at", { withTimezone: true }),
   createdBy: text("created_by").references(() => users.id).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uq_notification_provider_name").on(table.orgId, table.provider, table.displayName),
   index("idx_notification_provider_channel").on(table.orgId, table.channel, table.enabled),
@@ -175,10 +177,10 @@ export const notificationSuppressionRules = pgTable("notification_suppression_ru
   scopeKey: text("scope_key").notNull(),
   channel: notificationChannelEnum("channel"),
   reason: notificationSuppressionReasonEnum("reason").notNull(),
-  expiresAt: timestamp("expires_at"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
   createdBy: text("created_by").references(() => users.id),
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("idx_notification_suppression_lookup").on(table.orgId, table.userId, table.scopeType, table.scopeKey),
   index("idx_notification_suppression_expiry").on(table.orgId, table.expiresAt),
@@ -243,3 +245,90 @@ export const notificationOutbox = pgTable("notification_outbox", {
     .on(table.state, table.leaseExpiresAt, table.id)
     .where(sql`state in ('PENDING','IN_FLIGHT')`),
 ]);
+
+/**
+ * SCH-003. Preferences were four JSONB blobs on `notification_preferences`
+ * (`categories`, `channel_categories`, `event_preferences`, `module_preferences`) —
+ * unindexable, un-toggleable, and impossible to query ("who has payroll email on").
+ *
+ * `channel` is NOT NULL with one row per channel rather than a nullable "all" row:
+ * a NULL in a unique index enforces nothing, which is the SCH-013 defect. Absence of
+ * a rule means "fall through to the header defaults", which is what makes a
+ * conservative default expressible at all.
+ */
+export const notificationPreferenceRules = pgTable(
+  "notification_preference_rules",
+  {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+    userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    scopeType: text("scope_type").$type<"EVENT" | "MODULE" | "CATEGORY">().notNull(),
+    scopeKey: text("scope_key").notNull(),
+    channel: notificationChannelEnum("channel").notNull(),
+    mode: text("mode").$type<"ON" | "OFF" | "DIGEST">().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("uniq_notification_pref_rule").on(t.orgId, t.userId, t.scopeType, t.scopeKey, t.channel),
+    index("idx_notification_pref_rule_lookup").on(t.orgId, t.userId, t.scopeType, t.scopeKey),
+    uniqueIndex("uniq_notification_preference_rules_org_id").on(t.orgId, t.id),
+  ],
+);
+
+export const notificationConsentStateEnum = pgEnum("notification_consent_state", ["GRANTED", "WITHDRAWN"]);
+export const notificationConsentSourceEnum = pgEnum("notification_consent_source", ["USER", "ADMIN", "IMPORT", "SIGNUP", "API"]);
+export const notificationLegalBasisEnum = pgEnum("notification_legal_basis", ["CONSENT", "CONTRACT", "LEGITIMATE_INTEREST", "LEGAL_OBLIGATION"]);
+
+/**
+ * COMP-003. Current consent state per (user, channel, destination). A preference
+ * boolean is a setting; this is a record of agreement, with its source, timestamp and
+ * legal basis. SMS and WhatsApp cannot legally ship without it.
+ */
+export const notificationConsents = pgTable(
+  "notification_consents",
+  {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+    userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    channel: notificationChannelEnum("channel").notNull(),
+    destination: text("destination").notNull(),
+    state: notificationConsentStateEnum("state").notNull(),
+    source: notificationConsentSourceEnum("source").notNull(),
+    legalBasis: notificationLegalBasisEnum("legal_basis").notNull(),
+    ip: text("ip"),
+    userAgent: text("user_agent"),
+    grantedAt: timestamp("granted_at", { withTimezone: true }),
+    withdrawnAt: timestamp("withdrawn_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("uniq_notification_consents_current").on(t.orgId, t.userId, t.channel, t.destination),
+    uniqueIndex("uniq_notification_consents_org_id").on(t.orgId, t.id),
+  ],
+);
+
+/**
+ * Append-only history. §20 requires consent grants and withdrawals to be logged
+ * immutably, which a table carrying a mutable `state` cannot do on its own.
+ */
+export const notificationConsentEvents = pgTable(
+  "notification_consent_events",
+  {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+    userId: text("user_id").notNull(),
+    channel: notificationChannelEnum("channel").notNull(),
+    destination: text("destination").notNull(),
+    state: notificationConsentStateEnum("state").notNull(),
+    source: notificationConsentSourceEnum("source").notNull(),
+    legalBasis: notificationLegalBasisEnum("legal_basis").notNull(),
+    ip: text("ip"),
+    userAgent: text("user_agent"),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("idx_notification_consent_events_subject").on(t.orgId, t.userId, t.channel, t.occurredAt),
+    uniqueIndex("uniq_notification_consent_events_org_id").on(t.orgId, t.id),
+  ],
+);

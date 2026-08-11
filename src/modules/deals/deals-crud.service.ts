@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, type SQL } from "drizzle-orm";
+import { and, desc, eq, isNull, type SQL } from "drizzle-orm";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
 import { deals, organizationMembers } from "../../db/schema";
@@ -31,7 +31,7 @@ export class DealsCrudService {
       hash,
       () => {
         const conditions: SQL[] = [
-          eq(deals.orgId, orgId),
+          eq(deals.orgId, orgId), isNull(deals.deletedAt),
           applyScope(scope, orgId, userId, { ownerColumn: deals.assignedToId }),
         ];
         if (query.stage) conditions.push(eq(deals.stage, query.stage));
@@ -120,7 +120,7 @@ export class DealsCrudService {
 
   getDeal(orgId: string, dealId: number) {
     return this.db.query.deals.findFirst({
-      where: and(eq(deals.id, dealId), eq(deals.orgId, orgId)),
+      where: and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)),
       with: {
         assignedTo: { columns: { id: true, name: true, image: true } },
         lead: { columns: { id: true, name: true, email: true, phone: true } },
@@ -130,7 +130,12 @@ export class DealsCrudService {
   }
 
   async deleteDeal(orgId: string, userId: string, dealId: number) {
-    await this.db.delete(deals).where(and(eq(deals.id, dealId), eq(deals.orgId, orgId)));
+    await this.db
+      .update(deals)
+      .set({ deletedAt: new Date() })
+      .where(
+        and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)),
+      );
 
     await Promise.all([
       this.cache.invalidateNamespace(`deals:list:${orgId}`),
@@ -152,7 +157,7 @@ export class DealsCrudService {
     await this.planLimits.assertWithinLimit(orgId, "crmDeals");
 
     const existing = await this.db.query.deals.findFirst({
-      where: and(eq(deals.id, dealId), eq(deals.orgId, orgId)),
+      where: and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)),
     });
     if (!existing) throw new NotFoundException("Deal not found");
 

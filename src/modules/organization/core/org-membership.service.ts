@@ -57,6 +57,7 @@ import {
 import { getOrgAdminUserIds } from "../../../common/tenant/org-admin-recipients";
 import { EmailService } from "../../email/email.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import { AblyService } from "../../realtime/ably.service";
 
 const PG_FK_VIOLATION = "23503";
 
@@ -81,6 +82,7 @@ export function userStatusToMembershipStatus(
 @Injectable()
 export class OrgMembershipService {
   constructor(
+    private readonly ably: AblyService,
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly cache: CacheService,
@@ -521,6 +523,11 @@ export class OrgMembershipService {
 
     await this.notifyAccessLoss(orgId, memberUserId, "removed").catch(() => undefined);
 
+      // RT-006: Ably tokens are 1-hour TTL and were never revoked, so a removed or
+      // suspended member kept a live realtime connection after losing access.
+      // Revocation is post-commit and its failure is swallowed inside the service —
+      // realtime cleanup must never roll back an access revocation.
+    void this.ably.revokeUserTokens(memberUserId);
     return { success: true };
   }
 
@@ -820,6 +827,11 @@ export class OrgMembershipService {
       })
       .catch(() => undefined);
 
+      // RT-006: Ably tokens are 1-hour TTL and were never revoked, so a removed or
+      // suspended member kept a live realtime connection after losing access.
+      // Revocation is post-commit and its failure is swallowed inside the service —
+      // realtime cleanup must never roll back an access revocation.
+    void this.ably.revokeUserTokens(memberUserId);
     return { success: true };
   }
 
@@ -919,6 +931,11 @@ export class OrgMembershipService {
 
       await this.notifyMemberLeft(orgId, userId).catch(() => undefined);
 
+      // RT-006: Ably tokens are 1-hour TTL and were never revoked, so a removed or
+      // suspended member kept a live realtime connection after losing access.
+      // Revocation is post-commit and its failure is swallowed inside the service —
+      // realtime cleanup must never roll back an access revocation.
+      void this.ably.revokeUserTokens(userId);
       return { success: true, nextOrgId };
     } catch (err) {
       if (err instanceof BadRequestException) throw err;

@@ -4,7 +4,7 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, eq } from "drizzle-orm";
+import { and, count, eq, isNull } from "drizzle-orm";
 import {
   projectMembers,
   projects,
@@ -52,7 +52,7 @@ export class ProjectsTemplatesService {
 
   listTemplates(orgId: string) {
     return this.db.query.projectTemplates.findMany({
-      where: eq(projectTemplates.orgId, orgId),
+      where: and(eq(projectTemplates.orgId, orgId), isNull(projectTemplates.deletedAt)),
       with: {
         tickets: { orderBy: (t, { asc }) => [asc(t.order)], limit: 200 },
       },
@@ -105,16 +105,18 @@ export class ProjectsTemplatesService {
   }
 
   async deleteTemplate(orgId: string, templateId: number) {
-    const [deleted] = await this.db
-      .delete(projectTemplates)
+    const [stamped] = await this.db
+      .update(projectTemplates)
+      .set({ deletedAt: new Date() })
       .where(
         and(
           eq(projectTemplates.id, templateId),
           eq(projectTemplates.orgId, orgId),
+          isNull(projectTemplates.deletedAt),
         ),
       )
-      .returning();
-    if (!deleted) throw new NotFoundException("Template not found");
+      .returning({ id: projectTemplates.id });
+    if (!stamped) throw new NotFoundException("Template not found");
     return { success: true };
   }
 
@@ -128,6 +130,7 @@ export class ProjectsTemplatesService {
       where: and(
         eq(projectTemplates.id, templateId),
         eq(projectTemplates.orgId, orgId),
+        isNull(projectTemplates.deletedAt),
       ),
       with: { tickets: { orderBy: (t, { asc }) => [asc(t.order)] } },
     });

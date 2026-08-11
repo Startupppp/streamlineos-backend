@@ -34,7 +34,7 @@ export class MilestonesService {
   async listMilestones(orgId: string, projectId: number) {
     await assertProject(this.db, orgId, projectId);
     return this.db.query.projectMilestones.findMany({
-      where: and(eq(projectMilestones.projectId, projectId), eq(projectMilestones.orgId, orgId)),
+      where: and(eq(projectMilestones.projectId, projectId), eq(projectMilestones.orgId, orgId), isNull(projectMilestones.deletedAt)),
       orderBy: [asc(projectMilestones.targetDate)],
       limit: 100,
     });
@@ -61,18 +61,19 @@ export class MilestonesService {
     const [updated] = await this.db
       .update(projectMilestones)
       .set({ ...input, updatedAt: new Date() })
-      .where(and(eq(projectMilestones.id, milestoneId), eq(projectMilestones.orgId, orgId)))
+      .where(and(eq(projectMilestones.id, milestoneId), eq(projectMilestones.orgId, orgId), isNull(projectMilestones.deletedAt)))
       .returning();
     if (!updated) throw new NotFoundException("Milestone not found");
     return updated;
   }
 
   async deleteMilestone(orgId: string, milestoneId: number) {
-    const [deleted] = await this.db
-      .delete(projectMilestones)
-      .where(and(eq(projectMilestones.id, milestoneId), eq(projectMilestones.orgId, orgId)))
-      .returning();
-    if (!deleted) throw new NotFoundException("Milestone not found");
+    const [stamped] = await this.db
+      .update(projectMilestones)
+      .set({ deletedAt: new Date() })
+      .where(and(eq(projectMilestones.id, milestoneId), eq(projectMilestones.orgId, orgId), isNull(projectMilestones.deletedAt)))
+      .returning({ id: projectMilestones.id });
+    if (!stamped) throw new NotFoundException("Milestone not found");
     return { success: true };
   }
 }

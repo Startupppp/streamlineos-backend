@@ -139,7 +139,7 @@ export class ChatAssistantService {
         .from(deals)
         .where(
           and(
-            eq(deals.orgId, orgId),
+            eq(deals.orgId, orgId), isNull(deals.deletedAt),
             eq(deals.assignedToId, userId),
             sql`${deals.stage} NOT IN ('WON', 'LOST')`,
           ),

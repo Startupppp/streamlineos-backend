@@ -26,12 +26,14 @@ import type {
 } from "./dto/users.schemas";
 import { withClientInfo } from "../../common/http/parse-user-agent";
 import { syncOrgUnitPlacement } from "../../common/org/sync-org-unit-placement";
+import { SessionsService } from "../sessions/sessions.service";
 
 @Injectable()
 export class UserProfileService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly sessions: SessionsService,
   ) {}
 
   private async assertMember(orgId: string, userId: string): Promise<void> {
@@ -71,6 +73,7 @@ export class UserProfileService {
       .where(
         and(eq(userSessions.id, sessionId), eq(userSessions.userId, userId)),
       );
+    await this.sessions.publishRevocations([sessionId]);
     this.audit.log({
       action: "user.session.revoked",
       userId: actorUserId,
@@ -84,10 +87,17 @@ export class UserProfileService {
 
   async revokeAllSessions(orgId: string, userId: string, actorUserId: string) {
     await this.assertMember(orgId, userId);
+    const active = await this.db
+      .select({ id: userSessions.id })
+      .from(userSessions)
+      .where(
+        and(eq(userSessions.userId, userId), eq(userSessions.isRevoked, false)),
+      );
     await this.db
       .update(userSessions)
       .set({ isRevoked: true })
       .where(eq(userSessions.userId, userId));
+    await this.sessions.publishRevocations(active.map((session) => session.id));
     this.audit.log({
       action: "user.sessions.revoked_all",
       userId: actorUserId,

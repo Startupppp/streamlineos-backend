@@ -70,16 +70,22 @@ const CHAT = [
     defaultChannels: IA_PUSH,
     dedupeWindowSeconds: 0,
     ttlSeconds: 3600,
+      rateLimitWindowSeconds: 3600,
+    rateLimitMax: 60,
   }),
   e("chat.message.mention", "chat", "CHAT", "You were mentioned", {
     defaultPriority: "HIGH",
     defaultChannels: IA_PUSH_EMAIL,
     dedupeWindowSeconds: 0,
     ttlSeconds: 3600,
+      rateLimitWindowSeconds: 3600,
+    rateLimitMax: 60,
   }),
   e("chat.thread.reply", "chat", "CHAT", "New thread reply", {
     defaultChannels: IA_PUSH,
     ttlSeconds: 3600,
+      rateLimitWindowSeconds: 3600,
+    rateLimitMax: 60,
   }),
   e("chat.channel.invited", "chat", "CHAT", "Added to a channel", {
     defaultChannels: IA_EMAIL,
@@ -94,6 +100,8 @@ const CHAT = [
   e("chat.reply.reminder", "chat", "CHAT", "Reply reminder", {
     defaultChannels: IA,
     ttlSeconds: 3600,
+      rateLimitWindowSeconds: 86400,
+    rateLimitMax: 5,
   }),
 ];
 
@@ -102,6 +110,8 @@ const PROJECTS = [
     defaultPriority: "HIGH",
     defaultChannels: IA_PUSH_EMAIL,
     visibilityResourceKind: BUILD_TICKET,
+      rateLimitWindowSeconds: 3600,
+    rateLimitMax: 50,
   }),
   e("build.ticket.due_soon", "build", "PROJECTS", "Task due soon", {
     defaultChannels: IA_EMAIL,
@@ -117,10 +127,14 @@ const PROJECTS = [
     defaultChannels: IA_PUSH_EMAIL,
     dedupeWindowSeconds: 0,
     visibilityResourceKind: BUILD_TICKET,
+      rateLimitWindowSeconds: 3600,
+    rateLimitMax: 60,
   }),
   e("build.ticket.status_changed", "build", "PROJECTS", "Task status changed", {
     defaultPriority: "LOW",
     defaultChannels: IA,
+      rateLimitWindowSeconds: 3600,
+    rateLimitMax: 100,
   }),
   e("build.sprint.started", "build", "PROJECTS", "Sprint started", {
     defaultChannels: IA,
@@ -144,9 +158,13 @@ const CRM = [
   e("crm.lead.assigned", "crm", "CRM", "Lead assigned to you", {
     defaultPriority: "HIGH",
     defaultChannels: IA_EMAIL,
+      rateLimitWindowSeconds: 3600,
+    rateLimitMax: 50,
   }),
   e("crm.lead.created", "crm", "CRM", "New lead created", {
     defaultChannels: IA,
+      rateLimitWindowSeconds: 3600,
+    rateLimitMax: 100,
   }),
   e("crm.deal.stage_changed", "crm", "CRM", "Deal stage changed", {
     defaultChannels: IA,
@@ -154,6 +172,8 @@ const CRM = [
   e("crm.followup.due", "crm", "CRM", "Follow-up due", {
     defaultChannels: IA_EMAIL,
     ttlSeconds: 86400,
+      rateLimitWindowSeconds: 86400,
+    rateLimitMax: 50,
   }),
   e("crm.followup.overdue", "crm", "CRM", "Follow-up overdue", {
     defaultPriority: "HIGH",

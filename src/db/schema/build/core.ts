@@ -210,10 +210,11 @@ export const projectTemplates = pgTable(
     createdBy: text("created_by").references(() => users.id, {
       onDelete: "set null",
     }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
-    index("idx_project_templates_org").on(table.orgId),
+    index("idx_project_templates_org").on(table.orgId).where(sql`deleted_at IS NULL`),
     unique("uniq_project_templates_org_id").on(table.orgId, table.id),
   ],
 );

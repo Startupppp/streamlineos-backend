@@ -1,19 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import {
-  eq,
-  and,
-  desc,
-  asc,
-  sql,
-  gte,
-  lte,
-  lt,
-  count,
-  inArray,
-  isNull,
-  notInArray,
-  isNotNull,
-} from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, notInArray, sql } from "drizzle-orm";
 import { AccessService } from "../access/access.service";
 import {
   leads,
@@ -158,12 +144,12 @@ export class LeadsReportsService {
           totalRevenue: sql<number>`COALESCE(SUM(${deals.value}::numeric), 0)::float`,
         })
         .from(deals)
-        .where(and(eq(deals.orgId, orgId), inArray(deals.stage, wonStageKeys)))
+        .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), inArray(deals.stage, wonStageKeys)))
         .then((r) => r[0]),
       this.db
         .select({ value: deals.value, createdAt: deals.createdAt })
         .from(deals)
-        .where(and(eq(deals.orgId, orgId), inArray(deals.stage, wonStageKeys))),
+        .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), inArray(deals.stage, wonStageKeys))),
     ]);
 
     const totalRevenue = revenueRow?.totalRevenue ?? 0;

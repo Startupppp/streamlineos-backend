@@ -1121,6 +1121,97 @@
       "when": 1786461078224,
       "tag": "0159_pm_schema_gaps",
       "breakpoints": true
+    },
+    {
+      "idx": 160,
+      "version": "7",
+      "when": 1786466358225,
+      "tag": "0160_build_soft_delete_final",
+      "breakpoints": true
+    },
+    {
+      "idx": 161,
+      "version": "7",
+      "when": 1786466418225,
+      "tag": "0421_notification_pk_widening",
+      "breakpoints": true
+    },
+    {
+      "idx": 162,
+      "version": "7",
+      "when": 1786466478225,
+      "tag": "0422_preference_rules_and_consent",
+      "breakpoints": true
+    },
+    {
+      "idx": 163,
+      "version": "7",
+      "when": 1786466538225,
+      "tag": "0379_legal_entities_create",
+      "breakpoints": true
+    },
+    {
+      "idx": 164,
+      "version": "7",
+      "when": 1786466598225,
+      "tag": "0379_payroll_entities_legal_entity_fk",
+      "breakpoints": true
+    },
+    {
+      "idx": 165,
+      "version": "7",
+      "when": 1786466658225,
+      "tag": "0423_repair_schema_drift",
+      "breakpoints": true
+    },
+    {
+      "idx": 166,
+      "version": "7",
+      "when": 1786466718225,
+      "tag": "0379_effective_dating_convention",
+      "breakpoints": true
+    },
+    {
+      "idx": 167,
+      "version": "7",
+      "when": 1786466778225,
+      "tag": "0424_ticket_search_index_function",
+      "breakpoints": true
+    },
+    {
+      "idx": 168,
+      "version": "7",
+      "when": 1786466838225,
+      "tag": "0425_ticket_search_bounded",
+      "breakpoints": true
+    },
+    {
+      "idx": 169,
+      "version": "7",
+      "when": 1786466898225,
+      "tag": "0426_notification_timestamptz",
+      "breakpoints": true
+    },
+    {
+      "idx": 170,
+      "version": "7",
+      "when": 1786475149729,
+      "tag": "0170_crm_soft_delete_and_partial_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 171,
+      "version": "7",
+      "when": 1786476284120,
+      "tag": "0171_drop_dead_crm_leads",
+      "breakpoints": true
+    },
+    {
+      "idx": 172,
+      "version": "7",
+      "when": 1786476599932,
+      "tag": "0172_quotes_fx_rate_snapshot",
+      "breakpoints": true
     }
   ]
 }

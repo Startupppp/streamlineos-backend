@@ -38,7 +38,7 @@ export class ProjectsQueryService {
     const scope = await resolveProjectsScope(this.access, u);
     const orgId = u.orgId;
     const userId = u.userId;
-    const key = `${userId}:${scope}:${input.status}:${input.search ?? ""}:${input.page}:${input.limit}`;
+    const key = `${userId}:${scope}:${input.status}:${input.search ?? ""}:${input.page}:${input.limit}:${input.pmWorkspaceId ?? ""}`;
     return this.cache.cachedVersioned(
       `projects:list:${orgId}`,
       key,
@@ -53,10 +53,14 @@ export class ProjectsQueryService {
     scope: DataScope,
     input: ListProjectsInput,
   ) {
-    const { search, status, page, limit } = input;
+    const { search, status, page, limit, pmWorkspaceId } = input;
     const offset = (page - 1) * limit;
 
     const conditions = [eq(projects.orgId, orgId), isNull(projects.deletedAt)];
+
+    if (pmWorkspaceId) {
+      conditions.push(eq(projects.pmWorkspaceId, pmWorkspaceId));
+    }
 
     if (scope !== "all") {
       const [memberOf, teamProjectsOf] = await Promise.all([

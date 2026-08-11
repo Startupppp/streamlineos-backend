@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import {
   BadRequestException,
   ConflictException,
@@ -6,31 +6,21 @@ import {
   Injectable,
   UnprocessableEntityException,
 } from "@nestjs/common";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-import {
-  invStockLevels,
-  invStockTransactions,
-  invIdempotencyKeys,
-  invProductVariants,
-  invProducts,
-} from "../../../db/schema";
-import { OutboxWriter } from "../../../common/outbox/outbox-writer";
+import { and, eq, sql } from "drizzle-orm";
+import { invStockLevels, invStockTransactions, invIdempotencyKeys } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { InventorySettingsService } from "./inventory-settings.service";
 import { InventoryAuditService } from "./inventory-audit.service";
-import { addDec, mulDec, isPositive, isNegative, cmpDec } from "./decimal";
+import { addDec, mulDec, isPositive, isNegative } from "./decimal";
 import { ValuationService } from "./valuation.service";
 import { WarehouseScopeService } from "./warehouse-scope.service";
 import { claimIdempotencyKey, extractEngineResult } from "./idempotency";
+import { MovementCostingService } from "./movement-costing.service";
 import { PeriodsService } from "../../accounting/gl/periods.service";
-import {
-  loadCostingContext,
-  costingFor,
-  type CostingLookup,
-} from "./costing-context";
+import { loadCostingContext } from "./costing-context";
 import {
   INV_ERRORS,
   type StockEngineCommand,
@@ -56,6 +46,7 @@ export class StockEngineService {
     private readonly valuation: ValuationService,
     private readonly warehouseScope: WarehouseScopeService,
     private readonly periods: PeriodsService,
+    private readonly movementCosting: MovementCostingService,
   ) {}
 
   async executeInTx(
@@ -190,7 +181,7 @@ export class StockEngineService {
 
       let newAvgCost = level.average_cost;
       if (bucket === "ON_HAND") {
-        newAvgCost = await this.applyCosting(
+        newAvgCost = await this.movementCosting.applyCosting(
           tx,
           orgId,
           costing,
@@ -236,7 +227,7 @@ export class StockEngineService {
       after: { transactionIds: txnIds },
     });
 
-    await this.emitLowStock(tx, orgId, decreasedVariantIds, levels, cmd.sourceType, cmd.sourceId);
+    await this.movementCosting.emitLowStock(tx, orgId, decreasedVariantIds, levels, cmd.sourceType, cmd.sourceId);
 
     const engineResult: StockEngineResult = { transactionIds: txnIds, levels };
     const responsePayload: Record<string, unknown> = { ...engineResult };
@@ -483,7 +474,7 @@ export class StockEngineService {
 
           let newAvgCost = state.averageCost;
           if (bucket === "ON_HAND") {
-            newAvgCost = await this.applyCosting(
+            newAvgCost = await this.movementCosting.applyCosting(
               tx,
               orgId,
               costing,
@@ -537,7 +528,7 @@ export class StockEngineService {
           after: { transactionIds: txnIds },
         });
 
-        await this.emitLowStock(tx, orgId, decreasedVariantIds, cmdLevels, cmd.sourceType, cmd.sourceId);
+        await this.movementCosting.emitLowStock(tx, orgId, decreasedVariantIds, cmdLevels, cmd.sourceType, cmd.sourceId);
 
         const engineResult: StockEngineResult = {
           transactionIds: txnIds,

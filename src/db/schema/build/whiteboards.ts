@@ -11,7 +11,7 @@ import {
   unique,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
 
@@ -49,6 +49,7 @@ export const projectWhiteboards = pgTable(
     linkExpiresAt: timestamp("link_expires_at"),
     allowExport: boolean("allow_export").default(true).notNull(),
     createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -56,7 +57,7 @@ export const projectWhiteboards = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
-    index("idx_project_whiteboards_org_project").on(table.orgId, table.projectId),
+    index("idx_project_whiteboards_org_project").on(table.orgId, table.projectId).where(sql`deleted_at IS NULL`),
     uniqueIndex("uniq_project_whiteboards_share_token").on(table.shareToken),
     unique("uniq_project_whiteboards_org_id").on(table.orgId, table.id),
   ],

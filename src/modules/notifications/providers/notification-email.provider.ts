@@ -4,6 +4,34 @@ import type { NotificationChannel, ProviderSendInput, ProviderSendResult, Provid
 import { dispatchEmail, getEmailProvider, isTransientError } from "../../email/email.provider";
 import { getEmailTemplate, escapeHtml } from "../../email/templates/base";
 import { renderButton } from "../../email/templates/components";
+import { createUnsubscribeToken } from "../../email/unsubscribe-token";
+import { appUrl } from "../../email/app-url";
+
+/**
+ * COMP-002. RFC 8058 one-click unsubscribe headers, so a mail client can offer the
+ * control natively and a recipient never has to hunt for a link.
+ *
+ * Returned only for non-mandatory events. A payslip or a security alert must not
+ * advertise an opt-out that suppression would ignore — offering one and not honouring
+ * it is worse than offering none.
+ */
+function unsubscribeHeaders(input: ProviderSendInput): Record<string, string> | undefined {
+  if (input.mandatory) return undefined;
+  if (!input.recipientAddress) return undefined;
+  const token = createUnsubscribeToken({
+    userId: input.userId,
+    orgId: input.orgId,
+    email: input.recipientAddress,
+    scope: "ALL_NON_MANDATORY",
+    scopeKey: "",
+  });
+  if (!token) return undefined;
+  const url = `${appUrl}/notifications/unsubscribe/${token}`;
+  return {
+    "List-Unsubscribe": `<${url}>`,
+    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+  };
+}
 
 function buildHtml(input: ProviderSendInput): string {
   const title = escapeHtml(input.title);
@@ -30,7 +58,13 @@ export class NotificationEmailProvider implements NotificationChannelProvider {
       return { status: "FAILED", failureCode: "NO_PROVIDER", failureMessage: "No email provider configured", retryable: false };
     }
     try {
-      await dispatchEmail({ to: input.recipientAddress, subject: input.title, html: buildHtml(input) });
+      await dispatchEmail({
+        to: input.recipientAddress,
+        subject: input.title,
+        html: buildHtml(input),
+        organizationId: input.orgId,
+        headers: unsubscribeHeaders(input),
+      });
       return { status: "SENT", providerResponse: { provider: getEmailProvider() } };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

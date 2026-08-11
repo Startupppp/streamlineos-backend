@@ -167,7 +167,7 @@ ${truncate(activitiesText, 1500)}`;
           notes: deals.notes,
         })
         .from(deals)
-        .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId))),
+        .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt))),
       this.db
         .select({
           type: dealActivities.type,
@@ -283,7 +283,7 @@ ${truncate(activitiesText, 1500)}`;
       const [deal] = await this.db
         .select({ name: deals.name, contactPerson: deals.contactPerson, value: deals.value, stage: deals.stage })
         .from(deals)
-        .where(and(eq(deals.id, input.entityId), eq(deals.orgId, orgId)));
+        .where(and(eq(deals.id, input.entityId), eq(deals.orgId, orgId), isNull(deals.deletedAt)));
       if (!deal) throw new NotFoundException("Deal not found");
       entityName = deal.contactPerson ?? deal.name;
       contextLine = `Deal: ${deal.name}, Stage: ${deal.stage}, Value: ${deal.value}`;
@@ -429,7 +429,7 @@ Return JSON with summary, keyPoints, actionItems, objections, sentiment.`,
       this.db
         .select({ id: deals.id, name: deals.name, stage: deals.stage, value: deals.value, probability: deals.probability, assignedToId: deals.assignedToId })
         .from(deals)
-        .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId))),
+        .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt))),
       this.db
         .select({ createdAt: dealActivities.createdAt })
         .from(dealActivities)

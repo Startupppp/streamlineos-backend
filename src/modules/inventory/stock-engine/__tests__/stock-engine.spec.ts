@@ -94,6 +94,13 @@ function defaultAudit() {
   return { insert: jest.fn().mockResolvedValue(undefined) };
 }
 
+function defaultMovementCosting() {
+  return {
+    applyCosting: jest.fn(async () => null),
+    emitLowStock: jest.fn(async () => undefined),
+  };
+}
+
 function defaultPeriods() {
   return { assertPeriodOpen: jest.fn(async () => undefined) };
 }
@@ -190,7 +197,7 @@ describe("StockEngineService", () => {
     it("returns correct onHand when starting from zero and adding 10", async () => {
       const tx = buildTx();
       setupInserts(tx);
-      const service = new StockEngineService(buildDb(tx) as never, defaultSettings() as never, defaultAudit() as never, defaultCache() as never, defaultValuation() as never, defaultWarehouseScope() as never, defaultPeriods() as never);
+      const service = new StockEngineService(buildDb(tx) as never, defaultSettings() as never, defaultAudit() as never, defaultCache() as never, defaultValuation() as never, defaultWarehouseScope() as never, defaultPeriods() as never, defaultMovementCosting() as never);
 
       const result = await service.execute("org1", "u1", baseCmd);
 
@@ -202,7 +209,7 @@ describe("StockEngineService", () => {
     it("accumulates on existing balance: before=5, delta=+10 → after=15", async () => {
       const tx = buildTx({ id: 1, on_hand: "5.0000", committed: "0.0000", blocked_qty: "0.0000", quality_hold_qty: "0.0000", average_cost: null });
       setupInserts(tx, 201);
-      const service = new StockEngineService(buildDb(tx) as never, defaultSettings() as never, defaultAudit() as never, defaultCache() as never, defaultValuation() as never, defaultWarehouseScope() as never, defaultPeriods() as never);
+      const service = new StockEngineService(buildDb(tx) as never, defaultSettings() as never, defaultAudit() as never, defaultCache() as never, defaultValuation() as never, defaultWarehouseScope() as never, defaultPeriods() as never, defaultMovementCosting() as never);
 
       const result = await service.execute("org1", "u1", { ...baseCmd, idempotencyKey: "idem-2" });
 
@@ -215,7 +222,7 @@ describe("StockEngineService", () => {
       const tx = buildTx({ id: 1, on_hand: "3.0000", committed: "0.0000", blocked_qty: "0.0000", quality_hold_qty: "0.0000", average_cost: null });
       setupInserts(tx);
       const settings = defaultSettings({ allowNegativeStock: false });
-      const service = new StockEngineService(buildDb(tx) as never, settings as never, defaultAudit() as never, defaultCache() as never, defaultValuation() as never, defaultWarehouseScope() as never, defaultPeriods() as never);
+      const service = new StockEngineService(buildDb(tx) as never, settings as never, defaultAudit() as never, defaultCache() as never, defaultValuation() as never, defaultWarehouseScope() as never, defaultPeriods() as never, defaultMovementCosting() as never);
 
       const cmd: StockEngineCommand = { ...baseCmd, idempotencyKey: "neg-1", movements: [{ ...baseCmd.movements[0], transactionType: "SALE", quantityDelta: "-10.0000" }] };
 
@@ -228,7 +235,7 @@ describe("StockEngineService", () => {
         .mockResolvedValue([{ id: 1, on_hand: "3.0000", committed: "0.0000", blocked_qty: "0.0000", quality_hold_qty: "0.0000", average_cost: null }]);
       setupInserts(tx, 301);
       const settings = defaultSettings({ allowNegativeStock: true });
-      const service = new StockEngineService(buildDb(tx) as never, settings as never, defaultAudit() as never, defaultCache() as never, defaultValuation() as never, defaultWarehouseScope() as never, defaultPeriods() as never);
+      const service = new StockEngineService(buildDb(tx) as never, settings as never, defaultAudit() as never, defaultCache() as never, defaultValuation() as never, defaultWarehouseScope() as never, defaultPeriods() as never, defaultMovementCosting() as never);
 
       const cmd: StockEngineCommand = { ...baseCmd, idempotencyKey: "neg-ok", movements: [{ ...baseCmd.movements[0], transactionType: "SALE", quantityDelta: "-10.0000" }] };
 
@@ -250,7 +257,7 @@ describe("StockEngineService", () => {
         leaseExpiresAt: new Date(Date.now() + 86_400_000),
       });
 
-      const service = new StockEngineService(buildDb(tx) as never, defaultSettings() as never, defaultAudit() as never, defaultCache() as never, defaultValuation() as never, defaultWarehouseScope() as never, defaultPeriods() as never);
+      const service = new StockEngineService(buildDb(tx) as never, defaultSettings() as never, defaultAudit() as never, defaultCache() as never, defaultValuation() as never, defaultWarehouseScope() as never, defaultPeriods() as never, defaultMovementCosting() as never);
 
       await expect(service.execute("org1", "u1", baseCmd)).rejects.toThrow(ConflictException);
     });
@@ -268,7 +275,7 @@ describe("StockEngineService", () => {
         leaseExpiresAt: new Date(Date.now() + 86_400_000),
       });
 
-      const service = new StockEngineService(buildDb(tx) as never, defaultSettings() as never, defaultAudit() as never, defaultCache() as never, defaultValuation() as never, defaultWarehouseScope() as never, defaultPeriods() as never);
+      const service = new StockEngineService(buildDb(tx) as never, defaultSettings() as never, defaultAudit() as never, defaultCache() as never, defaultValuation() as never, defaultWarehouseScope() as never, defaultPeriods() as never, defaultMovementCosting() as never);
 
       const result = await service.execute("org1", "u1", baseCmd);
 
@@ -289,7 +296,7 @@ describe("StockEngineService", () => {
         leaseExpiresAt: new Date(Date.now() + 86_400_000),
       });
 
-      const service = new StockEngineService(buildDb(tx) as never, defaultSettings() as never, defaultAudit() as never, defaultCache() as never, defaultValuation() as never, defaultWarehouseScope() as never, defaultPeriods() as never);
+      const service = new StockEngineService(buildDb(tx) as never, defaultSettings() as never, defaultAudit() as never, defaultCache() as never, defaultValuation() as never, defaultWarehouseScope() as never, defaultPeriods() as never, defaultMovementCosting() as never);
 
       await expect(service.execute("org1", "u1", baseCmd)).rejects.toThrow(UnprocessableEntityException);
     });

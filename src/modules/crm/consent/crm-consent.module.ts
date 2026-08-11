@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { AutomationModule } from "../../automation/automation.module";
+import { CrmConsentController } from "./crm-consent.controller";
 import { CrmConsentService } from "./crm-consent.service";
 import { CrmOutboundEmailService } from "./crm-outbound-email.service";
 
@@ -9,6 +10,7 @@ import { CrmOutboundEmailService } from "./crm-outbound-email.service";
  */
 @Module({
   imports: [AutomationModule],
+  controllers: [CrmConsentController],
   providers: [CrmConsentService, CrmOutboundEmailService],
   exports: [CrmConsentService, CrmOutboundEmailService],
 })

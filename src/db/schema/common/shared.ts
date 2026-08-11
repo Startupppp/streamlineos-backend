@@ -1,5 +1,5 @@
 
-import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, unique, uniqueIndex, numeric, varchar } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, integer, bigint, index, unique, uniqueIndex, numeric, varchar } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import {
   notificationTypeEnum,
@@ -13,7 +13,9 @@ import {
 import { organizations, users } from "./auth";
 
 export const notifications = pgTable("notifications", {
-  id: serial("id").primaryKey(),
+  // SCH-001: was serial (int4). int4 caps at 2.1bn, reachable by a fan-out-on-write
+  // feed at the stated scale; widened while the table held 3 rows.
+  id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
   type: notificationTypeEnum("type").default("INFO").notNull(),
@@ -33,11 +35,11 @@ export const notifications = pgTable("notifications", {
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
   channel: text("channel").default("IN_APP").notNull(),
   sound: boolean("sound").default(false).notNull(),
-  archivedAt: timestamp("archived_at"),
-  snoozedUntil: timestamp("snoozed_until"),
-  deletedAt: timestamp("deleted_at"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  snoozedUntil: timestamp("snoozed_until", { withTimezone: true }),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   // SCH-007: org-led and partial, matching the actual unread predicate. The old
   // (user_id, is_read, created_at) index was not org-led (§19) and scanned archived rows.
@@ -68,8 +70,8 @@ export const notificationTemplates = pgTable("notification_templates", {
   version: integer("version").default(1).notNull(),
   isActive: boolean("is_active").default(true).notNull(),
   createdBy: text("created_by").references(() => users.id).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uq_notification_templates_key_locale_version").on(table.orgId, table.templateKey, table.locale, table.version),
   index("idx_notification_templates_org").on(table.orgId),
@@ -94,13 +96,13 @@ export const broadcasts = pgTable("broadcasts", {
     userIds?: string[];
   }>().notNull(),
   status: broadcastStatusEnum("status").default("DRAFT").notNull(),
-  scheduledAt: timestamp("scheduled_at"),
-  sentAt: timestamp("sent_at"),
+  scheduledAt: timestamp("scheduled_at", { withTimezone: true }),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
   recipientCount: integer("recipient_count").default(0).notNull(),
   deliveredCount: integer("delivered_count").default(0).notNull(),
   createdBy: text("created_by").references(() => users.id).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_broadcasts_org_status").on(table.orgId, table.status),
   index("idx_broadcasts_scheduled").on(table.scheduledAt),
@@ -124,7 +126,7 @@ export const notificationAuditLogs = pgTable("notification_audit_logs", {
   // other than a 410 from the push service.
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("idx_notif_audit_org_action").on(table.orgId, table.action),
   index("idx_notif_audit_org_created").on(table.orgId, table.createdAt),
@@ -168,7 +170,7 @@ export const pushSubscriptions = pgTable("push_subscriptions", {
   p256dh: text("p256dh").notNull(),
   auth: text("auth").notNull(),
   userAgent: text("user_agent"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("idx_push_subs_user").on(table.userId),
   unique("uniq_push_subscriptions_org_id").on(table.orgId, table.id),
@@ -234,8 +236,8 @@ export const notificationPreferences = pgTable("notification_preferences", {
   eventPreferences: jsonb("event_preferences").$type<Record<string, { channels?: Record<string, boolean>; muted?: boolean; mode?: string }>>().default({}).notNull(),
   modulePreferences: jsonb("module_preferences").$type<Record<string, { mode?: string; muted?: boolean }>>().default({}).notNull(),
   updatedBy: text("updated_by"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_notification_preferences_org_id").on(table.orgId, table.id),
   // SCH-011: was a bare UNIQUE(user_id), so a user in two orgs shared one row and

@@ -26,6 +26,9 @@ const TIERS: Record<string, Tier> = {
   "hr-form:public-view": { limit: 60, windowSecs: 60 },
   "hr-form:public-submit": { limit: 5, windowSecs: 3600 },
   "platform-visit": { limit: 120, windowSecs: 60 },
+  // COMP-002. @Public() one-click unsubscribe; generous enough for a mail client
+  // prefetching the link, bounded against enumeration.
+  "notifications:unsubscribe": { limit: 30, windowSecs: 60 },
   "public:contact": { limit: 5, windowSecs: 3600 },
   "public:roadmap": { limit: 60, windowSecs: 60 },
   "public:roadmap-vote": { limit: 10, windowSecs: 3600 },

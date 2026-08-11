@@ -131,7 +131,7 @@ export class SearchService {
                   .from(deals)
                   .where(
                     and(
-                      eq(deals.orgId, orgId),
+                      eq(deals.orgId, orgId), isNull(deals.deletedAt),
                       eq(deals.id, contacts.dealId),
                       applyScope(contactAccess, orgId, userId, {
                         ownerColumn: deals.assignedToId,
@@ -170,7 +170,7 @@ export class SearchService {
         .from(deals)
         .where(
           and(
-            eq(deals.orgId, orgId),
+            eq(deals.orgId, orgId), isNull(deals.deletedAt),
             applyScope(access.deals, orgId, userId, {
               ownerColumn: deals.assignedToId,
             }),

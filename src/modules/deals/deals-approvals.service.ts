@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { dealActivities, dealApprovalRules, dealApprovals, deals, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -62,7 +62,7 @@ export class DealsApprovalsService {
         await tx
           .update(deals)
           .set({ stage: row.requestedStage, updatedAt: new Date() })
-          .where(and(eq(deals.id, row.dealId), eq(deals.orgId, orgId)));
+          .where(and(eq(deals.id, row.dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)));
 
         await tx.insert(dealActivities).values({
           orgId,
@@ -97,7 +97,7 @@ export class DealsApprovalsService {
     const [deal] = await this.db
       .select({ id: deals.id, value: deals.value })
       .from(deals)
-      .where(and(eq(deals.id, input.dealId), eq(deals.orgId, orgId)));
+      .where(and(eq(deals.id, input.dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)));
     if (!deal) throw new NotFoundException("Deal not found");
 
     const rules = await this.db
@@ -111,7 +111,7 @@ export class DealsApprovalsService {
       await this.db
         .update(deals)
         .set({ stage: input.requestedStage, updatedAt: new Date() })
-        .where(and(eq(deals.id, input.dealId), eq(deals.orgId, orgId)));
+        .where(and(eq(deals.id, input.dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)));
       return { created: false as const, body: { approved: true as const, directUpdate: true as const } };
     }
 

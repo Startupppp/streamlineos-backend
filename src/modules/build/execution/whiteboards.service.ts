@@ -116,6 +116,7 @@ export class WhiteboardsService {
           eq(projectWhiteboards.id, whiteboardId),
           eq(projectWhiteboards.projectId, projectId),
           eq(projectWhiteboards.orgId, u.orgId),
+          isNull(projectWhiteboards.deletedAt),
         ),
       )
       .limit(1);
@@ -167,6 +168,7 @@ export class WhiteboardsService {
         and(
           eq(projectWhiteboards.orgId, u.orgId),
           eq(projectWhiteboards.projectId, projectId),
+          isNull(projectWhiteboards.deletedAt),
           visibilityFilter,
         ),
       )
@@ -212,7 +214,7 @@ export class WhiteboardsService {
           eq(projectWhiteboardShares.userId, u.userId),
         ),
       )
-      .where(and(eq(projectWhiteboards.orgId, u.orgId), visibilityFilter))
+      .where(and(eq(projectWhiteboards.orgId, u.orgId), isNull(projectWhiteboards.deletedAt), visibilityFilter))
       .orderBy(desc(projectWhiteboards.updatedAt))
       .limit(100);
 
@@ -301,12 +303,14 @@ export class WhiteboardsService {
     }
 
     await this.db
-      .delete(projectWhiteboards)
+      .update(projectWhiteboards)
+      .set({ deletedAt: new Date() })
       .where(
         and(
           eq(projectWhiteboards.id, whiteboardId),
           eq(projectWhiteboards.projectId, projectId),
           eq(projectWhiteboards.orgId, u.orgId),
+          isNull(projectWhiteboards.deletedAt),
         ),
       );
     return { success: true };

@@ -24,6 +24,7 @@ describe("OrgMembershipService privileged-role tenant join", () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
     );
 
     await (

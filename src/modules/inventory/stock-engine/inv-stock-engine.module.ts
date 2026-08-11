@@ -8,6 +8,7 @@ import { InventoryAuditService } from "./inventory-audit.service";
 import { ValuationService } from "./valuation.service";
 import { WarehouseScopeService } from "./warehouse-scope.service";
 import { CostVisibilityService } from "./cost-visibility";
+import { MovementCostingService } from "./movement-costing.service";
 
 @Module({
   imports: [AccountingGlModule],
@@ -20,6 +21,7 @@ import { CostVisibilityService } from "./cost-visibility";
     ValuationService,
     WarehouseScopeService,
     CostVisibilityService,
+    MovementCostingService,
   ],
   exports: [
     StockEngineService,
@@ -30,6 +32,7 @@ import { CostVisibilityService } from "./cost-visibility";
     ValuationService,
     WarehouseScopeService,
     CostVisibilityService,
+    MovementCostingService,
   ],
 })
 export class InvStockEngineModule {}

@@ -11,6 +11,7 @@ import { NotificationEventRegistryService } from "./notification-event-registry.
 import { NotificationRoutingService } from "./notification-routing.service";
 import { NotificationsService, type AnnounceInput } from "./notifications.service";
 import { NotificationVisibilityRegistry } from "./notification-visibility.registry";
+import { NotificationTemplateRenderer, type TemplateMap } from "./notification-template-renderer.service";
 import type {
   DispatchEventInput,
   NotificationChannel,
@@ -24,10 +25,12 @@ import { type DbOrTx } from "../../common/rbac/access-invalidate";
 
 type ProviderName = "INTERNAL" | "SMTP" | "WEB_PUSH" | "TWILIO" | "WEBHOOK";
 
-type RenderedTemplate = { subject: string | null; body: string };
-type TemplateMap = Map<NotificationChannel, RenderedTemplate>;
-type RawTemplate = { channel: NotificationChannel; subject: string | null; body: string; locale: string };
-type OrgTemplateMap = Record<string, RawTemplate[]>;
+
+/**
+ * PIPE-006. How many recipients are persisted at once. Sized against the Postgres
+ * pool rather than the recipient count — higher only queues work inside the driver.
+ */
+const FANOUT_CONCURRENCY = 10;
 
 const CHANNEL_TO_PROVIDER: Record<NotificationChannel, ProviderName> = {
   IN_APP: "INTERNAL",
@@ -58,6 +61,7 @@ export class NotificationDispatchService {
     private readonly notificationsService: NotificationsService,
     private readonly cache: CacheService,
     private readonly visibility: NotificationVisibilityRegistry,
+    private readonly templates: NotificationTemplateRenderer,
   ) {}
 
   /**
@@ -169,15 +173,22 @@ export class NotificationDispatchService {
     for (const locale of new Set([...targets].map((u) => localeByUser.get(u) ?? "en"))) {
       templatesByLocale.set(
         locale,
-        await this.loadTemplates(input.orgId, definition, input.variables ?? {}, locale),
+        await this.templates.loadTemplates(input.orgId, definition, input.variables ?? {}, locale),
       );
     }
 
     const routingResults = await this.routing.routeMany(input.orgId, targets, definition, priority);
     const announcements: Array<{ input: AnnounceInput; pushToDevices: boolean }> = [];
-    for (const userId of targets) {
+
+    // PIPE-006: this used to be a strictly sequential loop, one transaction per
+    // recipient — 50,000 recipients meant 50,000 round trips end to end, and the
+    // wall-clock was the sum of every one of them. Recipients are independent (each
+    // has its own idempotency key), so they run in bounded waves instead. Bounded,
+    // not unbounded: the pool has a finite connection count and an unbounded
+    // Promise.all over 50,000 transactions would exhaust it.
+    const perRecipient = async (userId: string): Promise<void> => {
       const routingResult = routingResults.get(userId);
-      if (!routingResult) continue;
+      if (!routingResult) return;
 
       // PIPE-003: re-check object-level visibility immediately before render, per
       // recipient. Membership was checked at enqueue; access can be revoked between
@@ -192,7 +203,7 @@ export class NotificationDispatchService {
         );
         if (!visible) {
           result.suppressed += await this.recordAccessSuppression(input, definition, userId, routingResult.priority);
-          continue;
+          return;
         }
       }
 
@@ -209,6 +220,10 @@ export class NotificationDispatchService {
       result.suppressed += perUser.suppressed;
       result.deduped += perUser.deduped ? 1 : 0;
       if (perUser.announce) announcements.push({ input: perUser.announce, pushToDevices: !perUser.pushHandledByEngine });
+    };
+
+    for (let i = 0; i < targets.length; i += FANOUT_CONCURRENCY) {
+      await Promise.all(targets.slice(i, i + FANOUT_CONCURRENCY).map(perRecipient));
     }
 
     await Promise.all(
@@ -251,115 +266,6 @@ export class NotificationDispatchService {
       .onConflictDoNothing({ target: notificationDeliveries.idempotencyKey })
       .returning({ id: notificationDeliveries.id });
     return row ? 1 : 0;
-  }
-
-  private loadOrgTemplateMap(orgId: string): Promise<OrgTemplateMap> {
-    return this.cache.cached(
-      NOTIF_CACHE.templates(orgId),
-      async () => {
-        const rows = await this.db
-          .select({
-            templateKey: notificationTemplates.templateKey,
-            channel: notificationTemplates.channel,
-            subject: notificationTemplates.subject,
-            body: notificationTemplates.body,
-            locale: notificationTemplates.locale,
-          })
-          .from(notificationTemplates)
-          .where(and(eq(notificationTemplates.orgId, orgId), eq(notificationTemplates.isActive, true)));
-        const map: OrgTemplateMap = {};
-        for (const row of rows) {
-          (map[row.templateKey] ??= []).push({
-            channel: row.channel,
-            subject: row.subject,
-            body: row.body,
-            locale: row.locale,
-          });
-        }
-        return map;
-      },
-      CACHE_TTL.MEDIUM,
-    );
-  }
-
-  private async loadTemplates(
-    orgId: string,
-    definition: NotificationEventDefinition,
-    variables: Record<string, unknown>,
-    locale: string,
-  ): Promise<TemplateMap> {
-    if (!definition.templateKey) return new Map();
-
-    const orgTemplates = await this.loadOrgTemplateMap(orgId);
-    const rows = orgTemplates[definition.templateKey];
-    if (!rows || rows.length === 0) return new Map();
-
-    const stringVars: Record<string, string> = Object.fromEntries(
-      Object.entries(variables).map(([k, v]) => [k, v == null ? "" : String(v)]),
-    );
-
-    const byChannel = new Map<NotificationChannel, RawTemplate[]>();
-    for (const row of rows) {
-      const ch = row.channel;
-      const existing = byChannel.get(ch);
-      if (!existing) {
-        byChannel.set(ch, [row]);
-      } else {
-        existing.push(row);
-      }
-    }
-
-    const map: TemplateMap = new Map();
-    for (const [channel, channelRows] of byChannel) {
-      // PIPE-014: the recipient's locale, not the actor's and not a hardcoded "en".
-      // English remains the fallback because it is the only locale templates are
-      // authored in today; `channelRows[0]` is the last resort.
-      const preferred =
-        channelRows.find((r) => r.locale === locale) ??
-        channelRows.find((r) => r.locale === "en") ??
-        channelRows[0];
-      if (!preferred) continue;
-      const subject =
-        preferred.subject != null ? this.renderPlaceholders(preferred.subject, stringVars) : null;
-      const body = this.renderPlaceholders(preferred.body, stringVars);
-      const missing = [...new Set([...(subject?.missing ?? []), ...body.missing])];
-      if (missing.length > 0) {
-        // Fall back to the catalog's static copy rather than send a template with
-        // holes in it. Logged, never silent — a blank in a customer's email is the
-        // failure mode this replaces.
-        this.logger.error(
-          `template ${definition.templateKey} (${channel}, ${locale}) references undeclared variables: ` +
-            `${missing.join(", ")} — falling back to the catalog copy for ${definition.eventKey}`,
-        );
-        continue;
-      }
-      map.set(channel, { subject: subject?.text ?? null, body: body.text });
-    }
-
-    return map;
-  }
-
-  /**
-   * REG-007. An unknown `{{var}}` used to render as an empty string, so a renamed or
-   * misspelled variable silently produced a blank in a live email and nothing said so.
-   * Missing variables are now reported to the caller, which decides whether to send a
-   * half-rendered template — see `renderTemplateOrFallback`.
-   */
-  private renderPlaceholders(
-    template: string,
-    variables: Record<string, string>,
-  ): { text: string; missing: string[] } {
-    const missing: string[] = [];
-    const text = template.replace(/\{\{([^}]+)\}\}/g, (_, raw: string) => {
-      const key = raw.trim();
-      const value = variables[key];
-      if (value === undefined) {
-        missing.push(key);
-        return "";
-      }
-      return value;
-    });
-    return { text, missing };
   }
 
   private buildIdempotencyKey(input: DispatchEventInput, userId: string, channel: NotificationChannel, dedupeWindowSeconds: number): string {

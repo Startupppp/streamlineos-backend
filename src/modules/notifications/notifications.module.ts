@@ -15,6 +15,7 @@ import { NotificationRoutingService } from "./notification-routing.service";
 import { NotificationDispatchService } from "./notification-dispatch.service";
 import { NotificationVisibilityRegistry } from "./notification-visibility.registry";
 import { NotificationOutboxRelayService } from "./notification-outbox-relay.service";
+import { NotificationTemplateRenderer } from "./notification-template-renderer.service";
 import { NotificationDeliveryWorker } from "./notification-delivery-worker.service";
 import { NotificationEmailProvider } from "./providers/notification-email.provider";
 import { NotificationWebPushProvider } from "./providers/notification-web-push.provider";
@@ -56,6 +57,7 @@ import { NotificationPolicyController } from "./notification-policy.controller";
     NotificationPolicyService,
     NotificationVisibilityRegistry,
     NotificationOutboxRelayService,
+    NotificationTemplateRenderer,
   ],
   exports: [
     NotificationsService,

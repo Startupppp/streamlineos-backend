@@ -135,6 +135,7 @@ export class ProjectsWorkQueryService {
       projectIds: filterProjectIds,
       excludeStatus,
       scope,
+      pmWorkspaceId,
     } = query;
     const offset = (page - 1) * limit;
 
@@ -181,6 +182,10 @@ export class ProjectsWorkQueryService {
       ne(projects.status, "ARCHIVED"),
       isNull(tickets.deletedAt),
     ];
+
+    if (pmWorkspaceId) {
+      conditions.push(eq(projects.pmWorkspaceId, pmWorkspaceId));
+    }
 
     if (scope === "mine") {
       const assigneeTicketIds = scopeRows.map((r) => r.ticketId);

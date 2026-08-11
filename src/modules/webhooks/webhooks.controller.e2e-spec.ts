@@ -23,6 +23,7 @@ describe("Webhooks auth (e2e)", () => {
     ["get", "/webhooks/1"],
     ["patch", "/webhooks/1"],
     ["delete", "/webhooks/1"],
+    ["post", "/webhooks/1/rotate-secret"],
   ];
 
   function callRoute(method: Method, path: string): request.Test {

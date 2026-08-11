@@ -35,7 +35,7 @@ export class ProjectsReleasesService {
           AS INT)`,
       })
       .from(projectReleases)
-      .where(and(eq(projectReleases.projectId, projectId), eq(projectReleases.orgId, orgId)))
+      .where(and(eq(projectReleases.projectId, projectId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt)))
       .orderBy(sql`${projectReleases.createdAt} DESC`)
       .limit(100);
 
@@ -63,7 +63,7 @@ export class ProjectsReleasesService {
       const result = await tx
         .update(projectReleases)
         .set(data)
-        .where(and(eq(projectReleases.id, releaseId), eq(projectReleases.orgId, orgId)))
+        .where(and(eq(projectReleases.id, releaseId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt)))
         .returning();
       const row = result[0];
       if (row && data.status === "released") {
@@ -92,16 +92,18 @@ export class ProjectsReleasesService {
   }
 
   async deleteRelease(orgId: string, releaseId: number) {
-    const [deleted] = await this.db.delete(projectReleases)
-      .where(and(eq(projectReleases.id, releaseId), eq(projectReleases.orgId, orgId)))
-      .returning();
-    if (!deleted) throw new NotFoundException("Release not found");
+    const [stamped] = await this.db
+      .update(projectReleases)
+      .set({ deletedAt: new Date() })
+      .where(and(eq(projectReleases.id, releaseId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt)))
+      .returning({ id: projectReleases.id });
+    if (!stamped) throw new NotFoundException("Release not found");
     return { success: true };
   }
 
   async addTicketToRelease(orgId: string, releaseId: number, ticketId: number) {
     const release = await this.db.query.projectReleases.findFirst({
-      where: and(eq(projectReleases.id, releaseId), eq(projectReleases.orgId, orgId)),
+      where: and(eq(projectReleases.id, releaseId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt)),
       columns: { id: true },
     });
     if (!release) throw new NotFoundException("Release not found");
@@ -118,7 +120,7 @@ export class ProjectsReleasesService {
 
   async removeTicketFromRelease(orgId: string, releaseId: number, ticketId: number) {
     const release = await this.db.query.projectReleases.findFirst({
-      where: and(eq(projectReleases.id, releaseId), eq(projectReleases.orgId, orgId)),
+      where: and(eq(projectReleases.id, releaseId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt)),
       columns: { id: true },
     });
     if (!release) throw new NotFoundException("Release not found");

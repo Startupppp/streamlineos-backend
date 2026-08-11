@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, eq, inArray } from "drizzle-orm";
+import { and, count, eq, inArray, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { crmBlueprints, crmBlueprintTransitions, crmPipelineStages, auditLogs, dealActivities, leadActivities, quotes } from "../../../db/schema";
@@ -107,7 +107,7 @@ export class CrmBlueprintsService {
         const [quoteCount] = await this.db
           .select({ n: count() })
           .from(quotes)
-          .where(and(eq(quotes.orgId, orgId), eq(quotes.dealId, dealId)));
+          .where(and(eq(quotes.orgId, orgId), isNull(quotes.deletedAt), eq(quotes.dealId, dealId)));
         if (Number(quoteCount?.n ?? 0) === 0) {
           return {
             allowed: false,

@@ -268,6 +268,45 @@ async function verify0146(tx) {
   return { ok, observations };
 }
 
+async function verify0160(tx) {
+  const observations = [];
+
+  // All four deleted_at columns must be GONE after rollback
+  const tables = [
+    'project_milestones',
+    'project_releases',
+    'project_templates',
+    'project_whiteboards',
+  ];
+  for (const table of tables) {
+    const exists = await columnExists(tx, table, 'deleted_at');
+    observations.push(`${table}.deleted_at dropped: ${!exists}`);
+  }
+
+  // Partial indexes must be replaced by non-partial ones — verify they exist
+  const restoredIndexes = [
+    ['idx_project_milestones_project', 'project_milestones'],
+    ['idx_project_milestones_org',     'project_milestones'],
+    ['idx_project_releases_project',   'project_releases'],
+    ['idx_project_releases_org_status','project_releases'],
+    ['idx_project_templates_org',      'project_templates'],
+    ['idx_project_whiteboards_org_project', 'project_whiteboards'],
+  ];
+  for (const [idxName] of restoredIndexes) {
+    const exists = await indexExists(tx, idxName);
+    observations.push(`${idxName} recreated (non-partial): ${exists}`);
+  }
+
+  const noDeletedAt = tables.every(
+    (_, i) => observations[i].endsWith(': true'),
+  );
+  const allIndexes = restoredIndexes.every(
+    (_, i) => observations[tables.length + i].endsWith(': true'),
+  );
+  const ok = noDeletedAt && allIndexes;
+  return { ok, observations };
+}
+
 // ─── runner ───────────────────────────────────────────────────────────────────
 
 const MIGRATIONS = [
@@ -294,6 +333,10 @@ const MIGRATIONS = [
   {
     name: '0146_status_model_single_table',
     verify: verify0146,
+  },
+  {
+    name: '0160_build_soft_delete_final',
+    verify: verify0160,
   },
 ];
 

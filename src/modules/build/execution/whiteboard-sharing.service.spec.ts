@@ -79,7 +79,7 @@ describe("WhiteboardSharingService", () => {
     resolveUserPermissions = jest.fn().mockResolvedValue(new Map<string, DataScope>());
     dbSelect = jest.fn();
     dbUpdate = jest.fn();
-    dbTransaction = jest.fn();
+    dbTransaction = jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(mockDb));
 
     mockDb = {
       query: {
@@ -88,6 +88,7 @@ describe("WhiteboardSharingService", () => {
       },
       select: dbSelect,
       update: dbUpdate,
+      execute: jest.fn(),
       transaction: dbTransaction,
     } as unknown as Db;
 
@@ -184,6 +185,7 @@ describe("WhiteboardSharingService", () => {
       const updatedAt = new Date("2026-06-15");
       findFirstWhiteboard.mockResolvedValueOnce({
         id: 1,
+        orgId: BASE_BOARD.orgId,
         visibility: "public" as const,
         publicAccess: "editor" as const,
         linkExpiresAt: null,

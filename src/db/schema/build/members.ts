@@ -103,11 +103,12 @@ export const projectMilestones = pgTable("project_milestones", {
   status: text("status").notNull().default("PENDING"),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   clientVisible: boolean("client_visible").notNull().default(false),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  index("idx_project_milestones_project").on(table.projectId),
-  index("idx_project_milestones_org").on(table.orgId),
+  index("idx_project_milestones_project").on(table.projectId).where(sql`deleted_at IS NULL`),
+  index("idx_project_milestones_org").on(table.orgId).where(sql`deleted_at IS NULL`),
   unique("uniq_project_milestones_org_id").on(table.orgId, table.id),
   check("chk_project_milestones_status", sql`${table.status} IN ('PENDING','ACHIEVED','MISSED')`),
 ]);

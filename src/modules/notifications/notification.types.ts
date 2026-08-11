@@ -98,6 +98,8 @@ export interface RoutingResult {
 export interface ProviderSendInput {
   orgId: string;
   userId: string;
+  /** COMP-002: mandatory mail must not advertise an unsubscribe it will not honour. */
+  mandatory?: boolean;
   channel: NotificationChannel;
   recipientAddress?: string | null;
   title: string;

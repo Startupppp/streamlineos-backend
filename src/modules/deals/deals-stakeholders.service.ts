@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { crmDealStakeholders, contacts, deals } from "../../db/schema";
@@ -25,7 +25,7 @@ export class DealsStakeholdersService {
 
   private async assertDealBelongsToOrg(orgId: string, dealId: number): Promise<void> {
     const deal = await this.db.query.deals.findFirst({
-      where: and(eq(deals.id, dealId), eq(deals.orgId, orgId)),
+      where: and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)),
       columns: { id: true },
     });
     if (!deal) throw new NotFoundException("Deal not found");

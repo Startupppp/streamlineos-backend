@@ -1,6 +1,6 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { deals, projectMembers, projects, projectStatuses } from "../../../db/schema";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -137,7 +137,7 @@ export class ProjectsProvisionService {
 
   async createFromDeal(orgId: string, userId: string, input: FromDealInput) {
     const deal = await this.db.query.deals.findFirst({
-      where: and(eq(deals.id, input.dealId), eq(deals.orgId, orgId)),
+      where: and(eq(deals.id, input.dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)),
     });
     if (!deal) throw new NotFoundException("Deal not found");
 

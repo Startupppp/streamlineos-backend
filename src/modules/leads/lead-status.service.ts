@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { eq, and, count, isNull, sql, inArray } from "drizzle-orm";
+import { and, count, eq, inArray, isNull, sql } from "drizzle-orm";
 import { AccessService } from "../access/access.service";
 import {
   leads,
@@ -95,7 +95,7 @@ export class LeadStatusService {
 
   private async ensureDealForLead(orgId: string, lead: LeadRow): Promise<void> {
     const existingDeal = await this.db.query.deals.findFirst({
-      where: and(eq(deals.leadId, lead.id), eq(deals.orgId, orgId)),
+      where: and(eq(deals.leadId, lead.id), eq(deals.orgId, orgId), isNull(deals.deletedAt)),
     });
     if (existingDeal) return;
     await this.planLimits.assertWithinLimit(orgId, "crmDeals");

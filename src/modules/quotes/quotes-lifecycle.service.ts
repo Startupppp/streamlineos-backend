@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, eq, sql } from "drizzle-orm";
+import { and, count, eq, isNull, sql } from "drizzle-orm";
 import { clientAccounts, deals, invoiceItems, invoices, quotes, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -32,7 +32,7 @@ export class QuotesLifecycleService {
 
   async send(orgId: string, userId: string, quoteId: number) {
     const existing = await this.db.query.quotes.findFirst({
-      where: and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId)),
+      where: and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId), isNull(quotes.deletedAt)),
     });
     if (!existing) return null;
     if (existing.status !== "DRAFT") return { error: "not_draft" } satisfies SendNotDraft;
@@ -46,7 +46,7 @@ export class QuotesLifecycleService {
     const [updated] = await this.db
       .update(quotes)
       .set({ status: "SENT", sentAt: new Date(), updatedAt: new Date() })
-      .where(and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId)))
+      .where(and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId), isNull(quotes.deletedAt)))
       .returning();
 
     this.audit.log({
@@ -67,7 +67,7 @@ export class QuotesLifecycleService {
 
   async approve(orgId: string, userId: string, quoteId: number) {
     const existing = await this.db.query.quotes.findFirst({
-      where: and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId)),
+      where: and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId), isNull(quotes.deletedAt)),
     });
     if (!existing) throw new NotFoundException("Quote not found");
     if (existing.approvalStatus !== "pending") {
@@ -76,7 +76,7 @@ export class QuotesLifecycleService {
     const [updated] = await this.db
       .update(quotes)
       .set({ approvalStatus: "approved", approvedById: userId, approvedAt: new Date(), updatedAt: new Date() })
-      .where(and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId)))
+      .where(and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId), isNull(quotes.deletedAt)))
       .returning();
     this.audit.log({
       action: "quote.approved",
@@ -92,7 +92,7 @@ export class QuotesLifecycleService {
 
   async reject(orgId: string, userId: string, quoteId: number, reason?: string) {
     const existing = await this.db.query.quotes.findFirst({
-      where: and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId)),
+      where: and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId), isNull(quotes.deletedAt)),
     });
     if (!existing) throw new NotFoundException("Quote not found");
     if (existing.approvalStatus !== "pending") {
@@ -108,7 +108,7 @@ export class QuotesLifecycleService {
     const [updated] = await this.db
       .update(quotes)
       .set(setValues)
-      .where(and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId)))
+      .where(and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId), isNull(quotes.deletedAt)))
       .returning();
     this.audit.log({
       action: "quote.approval_rejected",
@@ -124,7 +124,7 @@ export class QuotesLifecycleService {
 
   async convertToInvoice(orgId: string, userId: string, quoteId: number) {
     const existing = await this.db.query.quotes.findFirst({
-      where: and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId)),
+      where: and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId), isNull(quotes.deletedAt)),
       with: { lineItems: { orderBy: (li, { asc }) => [asc(li.displayOrder)] } },
     });
     if (!existing) throw new NotFoundException("Quote not found");
@@ -192,7 +192,7 @@ export class QuotesLifecycleService {
       await tx
         .update(quotes)
         .set({ convertedInvoiceId: invoice.id, updatedAt: new Date() })
-        .where(and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId)));
+        .where(and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId), isNull(quotes.deletedAt)));
 
       return invoice;
     });
@@ -211,14 +211,14 @@ export class QuotesLifecycleService {
 
   async markSigned(orgId: string, userId: string, quoteId: number, documentRef?: string) {
     const existing = await this.db.query.quotes.findFirst({
-      where: and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId)),
+      where: and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId), isNull(quotes.deletedAt)),
     });
     if (!existing) throw new NotFoundException("Quote not found");
     if (existing.signedAt !== null) return existing;
     const [updated] = await this.db
       .update(quotes)
       .set({ signedAt: new Date(), signedDocumentRef: documentRef ?? null, updatedAt: new Date() })
-      .where(and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId)))
+      .where(and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId), isNull(quotes.deletedAt)))
       .returning();
     this.audit.log({
       action: "quote.signed",
@@ -236,7 +236,7 @@ export class QuotesLifecycleService {
   }
 
   async buildExportCsv(orgId: string, userId: string, filters: ExportInput): Promise<string> {
-    const conditions = [eq(quotes.orgId, orgId)];
+    const conditions = [eq(quotes.orgId, orgId), isNull(quotes.deletedAt)];
     if (filters.status) conditions.push(eq(quotes.status, filters.status));
 
     const data = await this.db

@@ -34,6 +34,10 @@ import {
 } from "../../../common/http/api-exceptions";
 import type { TicketsListQuery } from "./dto/projects.schemas";
 
+const TRIGRAM_MIN_TERM_LENGTH = 3;
+
+const TICKET_SEARCH_ID_CAP = 1000;
+
 const TICKET_ORDERBY_COLUMNS = {
   created: tickets.createdAt,
   updated: tickets.updatedAt,
@@ -175,6 +179,18 @@ export class ProjectsTicketsReadService {
     return { hasAccess: false, role: null };
   }
 
+  private async resolveTitleMatch(term: string): Promise<SQL<unknown>> {
+    const like = sql`${tickets.title} ILIKE ${"%" + term + "%"}`;
+    if (term.length < TRIGRAM_MIN_TERM_LENGTH) return like;
+    const idRows = await this.db.execute(
+      sql`SELECT app.search_ticket_ids(${term}, ${TICKET_SEARCH_ID_CAP + 1}) AS id`,
+    );
+    if (idRows.length > TICKET_SEARCH_ID_CAP) return like;
+    const ids = idRows.map((r) => Number(r["id"]));
+    if (ids.length === 0) return sql`false`;
+    return inArray(tickets.id, ids);
+  }
+
   async listTickets(
     u: CurrentUserContext,
     projectId: number,
@@ -225,16 +241,17 @@ export class ProjectsTicketsReadService {
     if (search && search.trim()) {
       const term = search.trim();
       const isTicketRef = /^[A-Za-z]+-\d+$/.test(term) || /^#?\d+$/.test(term);
+      const titleMatch = await this.resolveTitleMatch(term);
       if (isTicketRef) {
         const numStr = term.replace(/^#/, "").replace(/^[A-Za-z]+-/, "");
         const num = parseInt(numStr, 10);
         const searchCondition = or(
-          sql`${tickets.title} ILIKE ${"%" + term + "%"}`,
+          titleMatch,
           isNaN(num) ? sql`false` : eq(tickets.ticketNumber, num),
         );
         if (searchCondition) filterConditions.push(searchCondition);
       } else {
-        filterConditions.push(sql`${tickets.title} ILIKE ${"%" + term + "%"}`);
+        filterConditions.push(titleMatch);
       }
     }
 

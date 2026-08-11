@@ -84,9 +84,37 @@ describe("AblyService capabilities", () => {
 
   it("does not let a support client publish", () => {
     const { capability } = capabilityFor(service, () =>
-      service.createSupportTokenRequest("user-1", "org-1"),
+      service.createSupportTokenRequest("user-1", "org-1", { wildcard: true }),
     );
 
     expect(capability["support:org-1:*"]).not.toContain("publish");
+  });
+
+  // RT-005. The wildcard used to be issued to anyone holding support:tickets:view,
+  // so a member who could see only their own tickets through the REST API could
+  // still subscribe to every ticket channel in the org.
+  it("grants the support wildcard only when the caller's scope is all", () => {
+    const { capability } = capabilityFor(service, () =>
+      service.createSupportTokenRequest("user-1", "org-1", { wildcard: true }),
+    );
+
+    expect(Object.keys(capability)).toEqual(["support:org-1:*"]);
+  });
+
+  it("grants one channel per visible ticket when the caller is scoped", () => {
+    const { capability } = capabilityFor(service, () =>
+      service.createSupportTokenRequest("user-1", "org-1", { wildcard: false, ticketIds: [7, 9] }),
+    );
+
+    expect(Object.keys(capability).sort()).toEqual(["support:org-1:7", "support:org-1:9"]);
+    expect(capability["support:org-1:*"]).toBeUndefined();
+  });
+
+  it("grants nothing when the caller has no support scope", () => {
+    const { capability } = capabilityFor(service, () =>
+      service.createSupportTokenRequest("user-1", "org-1", { wildcard: false, ticketIds: [] }),
+    );
+
+    expect(Object.keys(capability)).toEqual([]);
   });
 });

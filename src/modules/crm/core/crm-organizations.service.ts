@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, eq, desc, ilike, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import { crmOrganizations, contacts, deals, leads, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -329,7 +329,7 @@ export class CrmOrganizationsService {
         .from(deals)
         .where(
           and(
-            eq(deals.orgId, orgId),
+            eq(deals.orgId, orgId), isNull(deals.deletedAt),
             or(...orgNames.map((n) => ilike(deals.name, `%${n.replaceAll("%", "\\%")}%`))),
           ),
         );
@@ -388,7 +388,7 @@ export class CrmOrganizationsService {
       this.db
         .select({ id: deals.id, name: deals.name, stage: deals.stage, createdAt: deals.createdAt })
         .from(deals)
-        .where(and(eq(deals.orgId, orgId), ilike(deals.name, `%${safeName}%`)))
+        .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), ilike(deals.name, `%${safeName}%`)))
         .orderBy(sql`${deals.createdAt} desc`)
         .limit(limit),
       this.db

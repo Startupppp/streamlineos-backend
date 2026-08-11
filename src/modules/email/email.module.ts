@@ -9,6 +9,7 @@ import { HrSendEmailController } from "./controllers/hr-send-email.controller";
 import { EmailSuppressionService } from "./email-suppression.service";
 import { EmailWebhookService } from "./email-webhook.service";
 import { EmailWebhookController } from "./email-webhook.controller";
+import { UnsubscribeController } from "./unsubscribe.controller";
 
 @Global()
 @Module({
@@ -17,6 +18,7 @@ import { EmailWebhookController } from "./email-webhook.controller";
     EmailTemplatesController,
     HrSendEmailController,
     EmailWebhookController,
+    UnsubscribeController,
   ],
   providers: [
     EmailOutboxService,

@@ -17,6 +17,6 @@ export class SupportRealtimeController {
   @Get("ably-token")
   @RequirePermission("support:tickets:view")
   getAblyToken(@CurrentUser() u: CurrentUserContext) {
-    return this.realtime.createTokenRequest(u.userId, u.orgId);
+    return this.realtime.createTokenRequest(u);
   }
 }

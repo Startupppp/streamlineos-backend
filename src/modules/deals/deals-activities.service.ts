@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { deals, dealActivities } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -22,7 +22,7 @@ export class DealsActivitiesService {
     const [deal] = await this.db
       .select({ id: deals.id })
       .from(deals)
-      .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId)));
+      .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)));
     if (!deal) throw new NotFoundException("Deal not found");
 
     const [activity] = await this.db
@@ -43,7 +43,7 @@ export class DealsActivitiesService {
     await this.db
       .update(deals)
       .set({ lastContactDate: new Date(), updatedAt: new Date() })
-      .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId)));
+      .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)));
 
     return activity;
   }
@@ -52,14 +52,14 @@ export class DealsActivitiesService {
     const [existing] = await this.db
       .select({ id: deals.id })
       .from(deals)
-      .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId)))
+      .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)))
       .limit(1);
     if (!existing) throw new NotFoundException("Deal not found");
 
     const [updated] = await this.db
       .update(deals)
       .set({ customData: input.customData, updatedAt: new Date() })
-      .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId)))
+      .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)))
       .returning();
 
     return { customData: updated.customData };

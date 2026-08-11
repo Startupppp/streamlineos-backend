@@ -72,6 +72,7 @@ export class ClientPortalService {
           eq(projectMilestones.orgId, orgId),
           eq(projectMilestones.projectId, projectId),
           eq(projectMilestones.clientVisible, true),
+          isNull(projectMilestones.deletedAt),
         ))
         .limit(100),
 

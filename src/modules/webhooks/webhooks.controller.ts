@@ -61,6 +61,17 @@ export class WebhooksController {
     return this.webhooks.create(u.orgId, u.userId, body);
   }
 
+  @Post(":webhookId/rotate-secret")
+  @HttpCode(200)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("settings:webhooks:manage")
+  rotateSecret(
+    @Param("webhookId", ParseIntPipe) webhookId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.webhooks.rotateSecret(u.orgId, webhookId);
+  }
+
   @Get(":webhookId")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:webhooks:manage")

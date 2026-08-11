@@ -5,9 +5,22 @@ import { webhookEndpoints, webhookLogs } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { checkWebhookUrl } from "../../common/security/ssrf-guard";
+import {
+  decryptSecret,
+  isEncryptedSecret,
+} from "../../common/security/secret-encryption.util";
 import { WEBHOOK_RESPONSE_BODY_LIMIT } from "./dto/webhook.schemas";
 
 const WEBHOOK_TIMEOUT_MS = 10_000;
+
+/**
+ * Secrets are encrypted at rest from 2026-08-11. Rows created before that are
+ * still plaintext, so read through this rather than assuming either form —
+ * signing with the wrong value silently breaks every consumer's verification.
+ */
+function readSigningSecret(stored: string): string {
+  return isEncryptedSecret(stored) ? decryptSecret(stored) : stored;
+}
 
 interface DeliveryTarget {
   id: number;
@@ -46,7 +59,9 @@ export class WebhooksDispatchService {
     payload: Record<string, unknown>,
   ): Promise<void> {
     const body = JSON.stringify({ event: eventName, data: payload, timestamp: new Date().toISOString() });
-    const signature = createHmac("sha256", endpoint.secret).update(body).digest("hex");
+    const signature = createHmac("sha256", readSigningSecret(endpoint.secret))
+      .update(body)
+      .digest("hex");
 
     let statusCode: number | null = null;
     let responseBody: string | null;

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, desc, eq, max } from "drizzle-orm";
+import { and, count, desc, eq, isNull, max } from "drizzle-orm";
 import { dealActivities, deals, leadActivities, leads, clients } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
@@ -152,7 +152,7 @@ export class CrmScoringService {
           notes: deals.notes,
         })
         .from(deals)
-        .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId))),
+        .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt))),
       this.db
         .select({ count: count(), lastDate: max(dealActivities.createdAt) })
         .from(dealActivities)
@@ -210,7 +210,7 @@ export class CrmScoringService {
     await this.db
       .update(deals)
       .set({ probability: data.winProbability, updatedAt: new Date() })
-      .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId)));
+      .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)));
 
     return data;
   }

@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import Ably, { type capabilityOp } from "ably";
 import { logger } from "../../common/logger/logger.service";
 import type { ChatMessagePayload } from "./dto/realtime.schemas";
@@ -8,6 +8,7 @@ const MAX_CAPABILITY_CHANNELS = 500;
 
 @Injectable()
 export class AblyService {
+  private readonly logger = new Logger(AblyService.name);
   private readonly apiKey = process.env.ABLY_API_KEY?.trim();
   private restClient: Ably.Rest | null = null;
 
@@ -37,10 +38,18 @@ export class AblyService {
       [`huddle-signal:${orgId}:*:${clientId}`]: ["subscribe"],
     };
     for (const channelId of channelIds.slice(0, MAX_CAPABILITY_CHANNELS)) {
-      capability[`chat:${orgId}:${channelId}`] = ["subscribe", "publish", "history"];
+      capability[`chat:${orgId}:${channelId}`] = [
+        "subscribe",
+        "publish",
+        "history",
+      ];
       capability[`huddle:${orgId}:${channelId}`] = ["subscribe", "publish"];
     }
-    return this.rest().auth.createTokenRequest({ clientId, capability, ttl: CHAT_TOKEN_TTL_MS });
+    return this.rest().auth.createTokenRequest({
+      clientId,
+      capability,
+      ttl: CHAT_TOKEN_TTL_MS,
+    });
   }
 
   async publishChatMessage(
@@ -55,7 +64,12 @@ export class AblyService {
       .catch(() => undefined);
   }
 
-  async publishChatEvent(orgId: string, channelId: number, event: string, data: unknown): Promise<void> {
+  async publishChatEvent(
+    orgId: string,
+    channelId: number,
+    event: string,
+    data: unknown,
+  ): Promise<void> {
     if (!this.apiKey) return;
     await this.rest()
       .channels.get(this.channelName(orgId, channelId))
@@ -63,7 +77,12 @@ export class AblyService {
       .catch(() => undefined);
   }
 
-  async publishHuddleEvent(orgId: string, channelId: number, event: string, data: unknown): Promise<void> {
+  async publishHuddleEvent(
+    orgId: string,
+    channelId: number,
+    event: string,
+    data: unknown,
+  ): Promise<void> {
     if (!this.apiKey) return;
     await this.rest()
       .channels.get(`huddle:${orgId}:${channelId}`)
@@ -71,7 +90,12 @@ export class AblyService {
       .catch(() => undefined);
   }
 
-  async publishHuddleSignal(orgId: string, channelId: number, targetUserId: string, data: unknown): Promise<void> {
+  async publishHuddleSignal(
+    orgId: string,
+    channelId: number,
+    targetUserId: string,
+    data: unknown,
+  ): Promise<void> {
     if (!this.apiKey) return;
     await this.rest()
       .channels.get(`huddle-signal:${orgId}:${channelId}:${targetUserId}`)
@@ -79,20 +103,62 @@ export class AblyService {
       .catch(() => undefined);
   }
 
-  async publishToUser(orgId: string, userId: string, event: string, data: unknown): Promise<void> {
+  async publishToUser(
+    orgId: string,
+    userId: string,
+    event: string,
+    data: unknown,
+  ): Promise<void> {
     if (!this.apiKey) return;
-    await this.rest().channels.get(`notifications:${orgId}:${userId}`).publish(event, data).catch(() => undefined);
+    await this.rest()
+      .channels.get(`notifications:${orgId}:${userId}`)
+      .publish(event, data)
+      .catch(() => undefined);
   }
 
   supportChannelName(orgId: string, ticketId: number): string {
     return `support:${orgId}:${ticketId}`;
   }
 
-  createSupportTokenRequest(clientId: string, orgId: string): Promise<Ably.TokenRequest> {
-    const capability: Ably.TokenParams["capability"] = {
-      [`support:${orgId}:*`]: ["subscribe", "presence"],
-    };
-    return this.rest().auth.createTokenRequest({ clientId, capability, ttl: CHAT_TOKEN_TTL_MS });
+  createSupportTokenRequest(
+    clientId: string,
+    orgId: string,
+    grant: { wildcard: true } | { wildcard: false; ticketIds: number[] },
+  ): Promise<Ably.TokenRequest> {
+    const capability: Ably.TokenParams["capability"] = grant.wildcard
+      ? { [`support:${orgId}:*`]: ["subscribe", "presence"] }
+      : Object.fromEntries(
+          grant.ticketIds.map((id) => [
+            `support:${orgId}:${id}`,
+            ["subscribe", "presence"],
+          ]),
+        );
+    return this.rest().auth.createTokenRequest({
+      clientId,
+      capability,
+      ttl: CHAT_TOKEN_TTL_MS,
+    });
+  }
+
+  /**
+   * RT-006. Ably tokens are minted with a 1-hour TTL and were never revoked, so a
+   * deactivated, suspended or removed member kept a live realtime connection for up
+   * to an hour after losing access. Revocation is by `clientId`, which is the user id
+   * every token here is minted with.
+   *
+   * Failure is logged, never thrown: revocation runs after the membership change has
+   * already committed, and realtime cleanup must not roll back an access revocation.
+   * The 1-hour TTL remains the backstop if this call does not land.
+   */
+  async revokeUserTokens(userId: string): Promise<void> {
+    if (!this.configured) return;
+    try {
+      await this.rest().auth.revokeTokens([{ type: "clientId", value: userId }]);
+    } catch (error: unknown) {
+      this.logger.error(
+        `Failed to revoke Ably tokens for ${userId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   async publishSupportTicketEvent(

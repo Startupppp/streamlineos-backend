@@ -43,7 +43,7 @@ export class ClientVisibilityService {
           clientVisible: projectMilestones.clientVisible,
         })
         .from(projectMilestones)
-        .where(and(eq(projectMilestones.orgId, orgId), eq(projectMilestones.projectId, projectId)))
+        .where(and(eq(projectMilestones.orgId, orgId), eq(projectMilestones.projectId, projectId), isNull(projectMilestones.deletedAt)))
         .orderBy(projectMilestones.id)
         .limit(200),
     ]);
@@ -77,6 +77,7 @@ export class ClientVisibilityService {
         eq(projectMilestones.id, milestoneId),
         eq(projectMilestones.orgId, orgId),
         eq(projectMilestones.projectId, projectId),
+        isNull(projectMilestones.deletedAt),
       ),
       columns: { id: true },
     });
