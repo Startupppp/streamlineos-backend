@@ -190,7 +190,7 @@ export class LeadStatusService {
   ): Promise<void> {
     try {
       const firstProject = await this.db.query.projects.findFirst({
-        where: eq(projects.orgId, orgId),
+        where: and(eq(projects.orgId, orgId), isNull(projects.deletedAt)),
       });
       if (firstProject) {
         const ticketCountResult = await this.db

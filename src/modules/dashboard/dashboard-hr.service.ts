@@ -1,5 +1,16 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, desc, eq, gte, isNull, lt, or, sql, sum } from "drizzle-orm";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  gte,
+  isNull,
+  lt,
+  or,
+  sql,
+  sum,
+} from "drizzle-orm";
 import {
   attendance,
   calendarEvents,
@@ -49,20 +60,38 @@ export class DashboardHrService {
         CACHE_KEYS.dashboardStats(orgId),
         async () => {
           const today = getTodayString();
-          const [org, memberCountResult, projectCountResult, attendanceCountResult] =
-            await Promise.all([
-              this.db.query.organizations.findFirst({ where: eq(organizations.id, orgId) }),
-              this.db
-                .select({ count: count() })
-                .from(organizationMembers)
-                .innerJoin(users, eq(organizationMembers.userId, users.id))
-                .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true))),
-              this.db.select({ count: count() }).from(projects).where(eq(projects.orgId, orgId)),
-              this.db
-                .select({ count: count() })
-                .from(attendance)
-                .where(and(eq(attendance.orgId, orgId), eq(attendance.date, today))),
-            ]);
+          const [
+            org,
+            memberCountResult,
+            projectCountResult,
+            attendanceCountResult,
+          ] = await Promise.all([
+            this.db.query.organizations.findFirst({
+              where: eq(organizations.id, orgId),
+            }),
+            this.db
+              .select({ count: count() })
+              .from(organizationMembers)
+              .innerJoin(users, eq(organizationMembers.userId, users.id))
+              .where(
+                and(
+                  eq(organizationMembers.orgId, orgId),
+                  eq(users.isActive, true),
+                ),
+              ),
+            this.db
+              .select({ count: count() })
+              .from(projects)
+              .where(
+                and(eq(projects.orgId, orgId), isNull(projects.deletedAt)),
+              ),
+            this.db
+              .select({ count: count() })
+              .from(attendance)
+              .where(
+                and(eq(attendance.orgId, orgId), eq(attendance.date, today)),
+              ),
+          ]);
 
           return {
             orgName: org?.name || "Organization",
@@ -120,8 +149,12 @@ export class DashboardHrService {
             continue;
           }
           if (recordOpen === existingOpen) {
-            const recordCreated = record.createdAt ? new Date(record.createdAt).getTime() : 0;
-            const existingCreated = existing.createdAt ? new Date(existing.createdAt).getTime() : 0;
+            const recordCreated = record.createdAt
+              ? new Date(record.createdAt).getTime()
+              : 0;
+            const existingCreated = existing.createdAt
+              ? new Date(existing.createdAt).getTime()
+              : 0;
             if (recordCreated > existingCreated) {
               byUser.set(record.userId, record);
             }
@@ -159,7 +192,9 @@ export class DashboardHrService {
         .select({ count: sql<number>`count(*)::int` })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true))),
+        .where(
+          and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)),
+        ),
       this.db
         .select({
           userId: attendance.userId,
@@ -190,8 +225,12 @@ export class DashboardHrService {
         continue;
       }
       if (recordOpen === existingOpen) {
-        const recordCreated = record.createdAt ? new Date(record.createdAt).getTime() : 0;
-        const existingCreated = existing.createdAt ? new Date(existing.createdAt).getTime() : 0;
+        const recordCreated = record.createdAt
+          ? new Date(record.createdAt).getTime()
+          : 0;
+        const existingCreated = existing.createdAt
+          ? new Date(existing.createdAt).getTime()
+          : 0;
         if (recordCreated > existingCreated) {
           byUser.set(record.userId, record);
         }
@@ -207,7 +246,9 @@ export class DashboardHrService {
       checkOut: record.checkOut,
       status: record.status,
     }));
-    const clockedIn = latestRecords.filter((a) => a.checkIn && !a.checkOut).length;
+    const clockedIn = latestRecords.filter(
+      (a) => a.checkIn && !a.checkOut,
+    ).length;
     const total = totalMembersResult[0]?.count ?? 0;
 
     return {
@@ -221,7 +262,11 @@ export class DashboardHrService {
 
   getBirthdays(orgId: string): Promise<BirthdayEntry[]> {
     const key = `dashboard:birthdays:${orgId}:${new Date().toISOString().slice(0, 10)}`;
-    return this.cache.cached(key, () => this.buildBirthdays(orgId), CACHE_TTL.MEDIUM);
+    return this.cache.cached(
+      key,
+      () => this.buildBirthdays(orgId),
+      CACHE_TTL.MEDIUM,
+    );
   }
 
   private async buildBirthdays(orgId: string): Promise<BirthdayEntry[]> {
@@ -229,12 +274,18 @@ export class DashboardHrService {
     const windowDates = Array.from({ length: 8 }, (_, i) => {
       const d = new Date(today);
       d.setDate(today.getDate() + i);
-      return { str: d.toISOString().split("T")[0], mmdd: `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}` };
+      return {
+        str: d.toISOString().split("T")[0],
+        mmdd: `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`,
+      };
     });
     const mmddList = windowDates.map((w) => w.mmdd);
     const mmddByDate = new Map(windowDates.map((w) => [w.mmdd, w.str]));
 
-    const mmddValues = sql.join(mmddList.map((d) => sql`${d}`), sql`, `);
+    const mmddValues = sql.join(
+      mmddList.map((d) => sql`${d}`),
+      sql`, `,
+    );
 
     const [bdayMembers, annivMembers] = await Promise.all([
       this.db
@@ -246,7 +297,10 @@ export class DashboardHrService {
           mmdd: sql<string>`to_char(${users.dateOfBirth}::date, 'MM-DD')`,
         })
         .from(users)
-        .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
+        .innerJoin(
+          organizationMembers,
+          eq(organizationMembers.userId, users.id),
+        )
         .where(
           and(
             eq(organizationMembers.orgId, orgId),
@@ -266,7 +320,10 @@ export class DashboardHrService {
           mmdd: sql<string>`to_char(${users.joiningDate}::date, 'MM-DD')`,
         })
         .from(users)
-        .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
+        .innerJoin(
+          organizationMembers,
+          eq(organizationMembers.userId, users.id),
+        )
         .where(
           and(
             eq(organizationMembers.orgId, orgId),
@@ -285,16 +342,35 @@ export class DashboardHrService {
       const key = `${m.id}-birthday`;
       if (seen.has(key)) continue;
       seen.add(key);
-      result.push({ id: m.id, name: m.name, designation: m.designation, image: m.image, type: "birthday", date: mmddByDate.get(m.mmdd) ?? today.toISOString().split("T")[0] });
+      result.push({
+        id: m.id,
+        name: m.name,
+        designation: m.designation,
+        image: m.image,
+        type: "birthday",
+        date: mmddByDate.get(m.mmdd) ?? today.toISOString().split("T")[0],
+      });
     }
 
     for (const m of annivMembers) {
       const key = `${m.id}-anniversary`;
       if (seen.has(key)) continue;
       seen.add(key);
-      const dateStr = mmddByDate.get(m.mmdd) ?? today.toISOString().split("T")[0];
-      const years = m.joiningDate ? new Date(dateStr).getFullYear() - new Date(m.joiningDate).getFullYear() : 0;
-      result.push({ id: m.id, name: m.name, designation: m.designation, image: m.image, type: "anniversary", date: dateStr, yearsCompleted: years });
+      const dateStr =
+        mmddByDate.get(m.mmdd) ?? today.toISOString().split("T")[0];
+      const years = m.joiningDate
+        ? new Date(dateStr).getFullYear() -
+          new Date(m.joiningDate).getFullYear()
+        : 0;
+      result.push({
+        id: m.id,
+        name: m.name,
+        designation: m.designation,
+        image: m.image,
+        type: "anniversary",
+        date: dateStr,
+        yearsCompleted: years,
+      });
     }
 
     return result.slice(0, 20);
@@ -311,74 +387,90 @@ export class DashboardHrService {
     weekEnd.setDate(weekStart.getDate() + 6);
     weekEnd.setHours(23, 59, 59, 999);
 
-    const [myTasks, timesheetRows, leaveBalanceRows, upcomingEvents, unreadCount] =
-      await Promise.all([
-        modules.build
-          ? this.db.query.tickets.findMany({
-              where: and(
-                eq(tickets.orgId, orgId),
-                eq(tickets.assigneeId, userId),
-                isNull(tickets.deletedAt),
-                or(
-                  eq(tickets.status, "TODO"),
-                  eq(tickets.status, "IN_PROGRESS"),
-                  eq(tickets.status, "IN_REVIEW"),
-                ),
+    const [
+      myTasks,
+      timesheetRows,
+      leaveBalanceRows,
+      upcomingEvents,
+      unreadCount,
+    ] = await Promise.all([
+      modules.build
+        ? this.db.query.tickets.findMany({
+            where: and(
+              eq(tickets.orgId, orgId),
+              eq(tickets.assigneeId, userId),
+              isNull(tickets.deletedAt),
+              or(
+                eq(tickets.status, "TODO"),
+                eq(tickets.status, "IN_PROGRESS"),
+                eq(tickets.status, "IN_REVIEW"),
               ),
-              orderBy: [desc(tickets.updatedAt)],
-              limit: 10,
-              with: { project: { columns: { id: true, name: true } } },
-            })
-          : [],
-        modules.timesheets
-          ? this.db
-              .select({ hours: sum(timesheets.hours) })
-              .from(timesheets)
-              .where(
-                and(
-                  eq(timesheets.orgId, orgId),
-                  eq(timesheets.userId, userId),
-                  gte(timesheets.date, weekStart.toISOString().slice(0, 10)),
-                  lt(timesheets.date, weekEnd.toISOString().slice(0, 10)),
-                ),
-              )
-          : [],
-        modules.hr
-          ? this.db
-              .select({
-                id: leaveBalances.id,
-                balance: leaveBalances.balance,
-                total: leaveTypes.daysPerYear,
-                typeName: leaveTypes.name,
-                year: leaveBalances.year,
-              })
-              .from(leaveBalances)
-              .innerJoin(leaveTypes, eq(leaveBalances.leaveTypeId, leaveTypes.id))
-              .where(
-                and(
-                  eq(leaveBalances.orgId, orgId),
-                  eq(leaveBalances.userId, userId),
-                  eq(leaveBalances.year, now.getFullYear()),
-                ),
-              )
-          : [],
-        this.db
-          .select({
-            id: calendarEvents.id,
-            title: calendarEvents.title,
-            startDate: calendarEvents.startDate,
-            endDate: calendarEvents.endDate,
-            category: calendarEvents.category,
+            ),
+            orderBy: [desc(tickets.updatedAt)],
+            limit: 10,
+            with: { project: { columns: { id: true, name: true } } },
           })
-          .from(calendarEvents)
-          .where(and(eq(calendarEvents.orgId, orgId), gte(calendarEvents.startDate, now)))
-          .orderBy(calendarEvents.startDate)
-          .limit(3),
-        this.db
-          .select({ cnt: count() })
-          .from(notifications)
-          .where(and(eq(notifications.userId, userId), eq(notifications.orgId, orgId), eq(notifications.isRead, false))),
-      ]);
+        : [],
+      modules.timesheets
+        ? this.db
+            .select({ hours: sum(timesheets.hours) })
+            .from(timesheets)
+            .where(
+              and(
+                eq(timesheets.orgId, orgId),
+                eq(timesheets.userId, userId),
+                gte(timesheets.date, weekStart.toISOString().slice(0, 10)),
+                lt(timesheets.date, weekEnd.toISOString().slice(0, 10)),
+              ),
+            )
+        : [],
+      modules.hr
+        ? this.db
+            .select({
+              id: leaveBalances.id,
+              balance: leaveBalances.balance,
+              total: leaveTypes.daysPerYear,
+              typeName: leaveTypes.name,
+              year: leaveBalances.year,
+            })
+            .from(leaveBalances)
+            .innerJoin(leaveTypes, eq(leaveBalances.leaveTypeId, leaveTypes.id))
+            .where(
+              and(
+                eq(leaveBalances.orgId, orgId),
+                eq(leaveBalances.userId, userId),
+                eq(leaveBalances.year, now.getFullYear()),
+              ),
+            )
+        : [],
+      this.db
+        .select({
+          id: calendarEvents.id,
+          title: calendarEvents.title,
+          startDate: calendarEvents.startDate,
+          endDate: calendarEvents.endDate,
+          category: calendarEvents.category,
+        })
+        .from(calendarEvents)
+        .where(
+          and(
+            eq(calendarEvents.orgId, orgId),
+            gte(calendarEvents.startDate, now),
+          ),
+        )
+        .orderBy(calendarEvents.startDate)
+        .limit(3),
+      this.db
+        .select({ cnt: count() })
+        .from(notifications)
+        .where(
+          and(
+            eq(notifications.userId, userId),
+            eq(notifications.orgId, orgId),
+            eq(notifications.isRead, false),
+          ),
+        ),
+    ]);
 
     const hoursLogged = Number(timesheetRows[0]?.hours ?? 0);
     const weekLabel = `${weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${weekEnd.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;

@@ -55,20 +55,24 @@ function makeFlexChain(results: unknown[]) {
 describe("ModuleAccessService.getCallerPermissions", () => {
   let svc: ModuleAccessService;
   let resolveUserPermissions: jest.Mock;
+  let orgMemberFindFirst: jest.Mock;
 
   beforeEach(async () => {
     jest.resetAllMocks();
     resolveUserPermissions = jest.fn();
 
-    const activeMembership = { id: 42, status: "ACTIVE" };
+    const activeMembership = {
+      id: 42,
+      status: "ACTIVE",
+      isOwner: false,
+      role: "ORG_ADMIN",
+    };
+
+    orgMemberFindFirst = jest.fn().mockResolvedValue(activeMembership);
 
     const mockDb = {
       select: jest.fn(),
-      query: {
-        organizationMembers: {
-          findFirst: jest.fn().mockResolvedValue(activeMembership),
-        },
-      },
+      query: { organizationMembers: { findFirst: orgMemberFindFirst } },
     };
 
     const selectChainForOwner = makeFlexChain([{ userId: "u-owner" }]);
@@ -102,6 +106,25 @@ describe("ModuleAccessService.getCallerPermissions", () => {
     expect(result.permissions.every((p) => p.key.startsWith("hr:"))).toBe(true);
     expect(result.permissions.find((p) => p.key === "crm:leads:view")).toBeUndefined();
     expect(result.isOrgAdmin).toBe(true);
+  });
+
+  it("AC-04: isOrgAdmin is false for a reserved-key holder whose membership row is MEMBER", async () => {
+    orgMemberFindFirst.mockResolvedValue({
+      id: 42,
+      status: "ACTIVE",
+      isOwner: false,
+      role: "MEMBER",
+    });
+    resolveUserPermissions.mockResolvedValue(
+      new Map([
+        ["hr:employees:view", "all"],
+        ["settings:rbac:manage", "all"],
+      ]),
+    );
+
+    const result = await svc.getCallerPermissions(makeActor({ userId: "u-other" }), "hr");
+
+    expect(result.isOrgAdmin).toBe(false);
   });
 
   it("marks the caller as module owner when they own the module", async () => {
@@ -169,7 +192,14 @@ describe("ModuleAccessGroupsService.listMembers — access guard", () => {
 
     const mockDb = {
       select: jest.fn().mockReturnValue(makeFlexChain([])),
-      query: { roles: { findFirst: jest.fn() } },
+      query: {
+        roles: { findFirst: jest.fn() },
+        organizationMembers: {
+          findFirst: jest
+            .fn()
+            .mockResolvedValue({ id: 42, status: "ACTIVE", isOwner: false, role: "MEMBER" }),
+        },
+      },
     };
 
     const m = await Test.createTestingModule({
@@ -198,7 +228,14 @@ describe("ModuleAccessGroupsService.listMembers — access guard", () => {
     );
     const mockDb = {
       select: jest.fn().mockReturnValue(makeFlexChain([])),
-      query: { roles: { findFirst: jest.fn() } },
+      query: {
+        roles: { findFirst: jest.fn() },
+        organizationMembers: {
+          findFirst: jest
+            .fn()
+            .mockResolvedValue({ id: 42, status: "ACTIVE", isOwner: false, role: "MEMBER" }),
+        },
+      },
     };
     const m = await Test.createTestingModule({
       providers: [
@@ -227,7 +264,14 @@ describe("ModuleAccessGroupsService.listMemberCandidates — access guard", () =
     );
     const mockDb = {
       select: jest.fn().mockReturnValue(makeFlexChain([])),
-      query: { roles: { findFirst: jest.fn() } },
+      query: {
+        roles: { findFirst: jest.fn() },
+        organizationMembers: {
+          findFirst: jest
+            .fn()
+            .mockResolvedValue({ id: 42, status: "ACTIVE", isOwner: false, role: "MEMBER" }),
+        },
+      },
     };
     const m = await Test.createTestingModule({
       providers: [

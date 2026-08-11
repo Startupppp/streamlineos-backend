@@ -1,5 +1,4 @@
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { grantsOrgAdmin } from "../../common/rbac/grantability";
 import { isPlanGatedModule } from "../../common/rbac/module-vocabulary";
 import { moduleOf } from "./access.service";
 import type { AuthResult, DataScope } from "./access.types";
@@ -33,10 +32,6 @@ export async function authorize(
   if (ctx.isOrgOwner) return { allow: true, scope: "all" };
 
   const resolved = await access.resolveUserPermissions(ctx.orgId, ctx.userId);
-
-  if (grantsOrgAdmin(resolved)) {
-    return { allow: true, scope: "all" };
-  }
 
   const scope = resolved.get(permissionKey);
   if (!scope || scope === "none") return { allow: false, scope: "none", reason: "FORBIDDEN" };

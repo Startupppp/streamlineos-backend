@@ -14,6 +14,7 @@ import { CrmSequencesRunnerService } from "../crm/automation-studio/crm-sequence
 import { CronFinanceService } from "./cron-finance.service";
 import { CronCrmTasksService } from "./cron-crm-tasks.service";
 import { CronBuildRetentionService } from "./cron-build-retention.service";
+import { CronBuildSnapshotsService } from "./cron-build-snapshots.service";
 
 @Public()
 @Controller("cron")
@@ -24,6 +25,7 @@ export class CronBuildController {
     private readonly cronFinance: CronFinanceService,
     private readonly crmTasks: CronCrmTasksService,
     private readonly buildRetention: CronBuildRetentionService,
+    private readonly buildSnapshots: CronBuildSnapshotsService,
   ) {}
 
   @Get("projects-recurring-flush")
@@ -103,6 +105,17 @@ export class CronBuildController {
     return this.runBuildRetentionPrune(authorization);
   }
 
+  @Get("build-daily-snapshots")
+  getBuildDailySnapshots(@Headers("authorization") authorization?: string) {
+    return this.runBuildDailySnapshots(authorization);
+  }
+
+  @Post("build-daily-snapshots")
+  @HttpCode(200)
+  postBuildDailySnapshots(@Headers("authorization") authorization?: string) {
+    return this.runBuildDailySnapshots(authorization);
+  }
+
   private async runBuildRetentionPrune(authorization?: string) {
     assertCronSecret(authorization);
     try {
@@ -114,6 +127,21 @@ export class CronBuildController {
       };
     } catch (error) {
       logger.error("Build retention prune cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  private async runBuildDailySnapshots(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.buildSnapshots.snapshotAllProjects();
+      return {
+        success: true,
+        message: `Snapshotted ${result.projectsProcessed} projects across ${result.orgsVisited} orgs (${result.projectsFailed} failed, ${result.projectsSkipped} skipped)`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Build daily snapshots cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

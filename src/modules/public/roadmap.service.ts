@@ -1,6 +1,6 @@
 import { createHmac } from "crypto";
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import {
   changelogEntries,
   feedbackPosts,
@@ -27,7 +27,7 @@ export class RoadmapService {
 
     const [items, posts, changelog] = await Promise.all([
       this.db.query.roadmapItems.findMany({
-        where: and(eq(roadmapItems.orgId, orgId), eq(roadmapItems.isPublic, true)),
+        where: and(eq(roadmapItems.orgId, orgId), eq(roadmapItems.isPublic, true), isNull(roadmapItems.deletedAt)),
         columns: {
           id: true,
           title: true,
@@ -40,7 +40,7 @@ export class RoadmapService {
         orderBy: [asc(roadmapItems.sortOrder), desc(roadmapItems.votes), asc(roadmapItems.id)],
       }),
       this.db.query.feedbackPosts.findMany({
-        where: and(eq(feedbackPosts.orgId, orgId), eq(feedbackPosts.status, "open")),
+        where: and(eq(feedbackPosts.orgId, orgId), eq(feedbackPosts.status, "open"), isNull(feedbackPosts.deletedAt)),
         columns: {
           id: true,
           title: true,
@@ -98,6 +98,7 @@ export class RoadmapService {
           eq(roadmapItems.id, id),
           eq(roadmapItems.orgId, orgId),
           eq(roadmapItems.isPublic, true),
+          isNull(roadmapItems.deletedAt),
         ),
         columns: { id: true },
       });
@@ -135,6 +136,7 @@ export class RoadmapService {
         eq(feedbackPosts.id, id),
         eq(feedbackPosts.orgId, orgId),
         eq(feedbackPosts.status, "open"),
+        isNull(feedbackPosts.deletedAt),
       ),
       columns: { id: true },
     });

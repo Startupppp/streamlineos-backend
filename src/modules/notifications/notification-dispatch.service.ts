@@ -1,7 +1,7 @@
 import { Inject, Injectable, BadRequestException, Logger } from "@nestjs/common";
 import { randomUUID } from "crypto";
 import { inArray, eq, and } from "drizzle-orm";
-import { notifications, notificationDeliveries, notificationQueue, notificationTemplates, users } from "../../db/schema";
+import { notifications, notificationDeliveries, notificationQueue, notificationOutbox, notificationTemplates, userPreferences, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -20,6 +20,7 @@ import type {
 import { filterOrgMemberIds } from "../../common/tenant/org-membership";
 import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import { type DbOrTx } from "../../common/rbac/access-invalidate";
 
 type ProviderName = "INTERNAL" | "SMTP" | "WEB_PUSH" | "TWILIO" | "WEBHOOK";
 
@@ -58,6 +59,49 @@ export class NotificationDispatchService {
     private readonly cache: CacheService,
     private readonly visibility: NotificationVisibilityRegistry,
   ) {}
+
+  /**
+   * PIPE-001. Durable overload: writes the intent inside the caller's transaction, so
+   * the domain change and the notification commit together or not at all. Prefer this
+   * wherever a transaction is already open — `emit(input)` defers with an in-memory
+   * hook and loses the notification if the process dies before it drains.
+   *
+   * The relay (`NotificationOutboxRelayService`) picks the row up and runs the same
+   * `emitNow` pipeline, so routing, preferences and the PIPE-003 visibility check are
+   * unchanged. Only the trigger becomes durable.
+   */
+  async emitDurable(tx: DbOrTx, input: DispatchEventInput): Promise<void> {
+    await tx
+      .insert(notificationOutbox)
+      .values({
+        orgId: input.orgId,
+        eventKey: input.eventKey,
+        dedupeKey: this.buildOutboxDedupeKey(input),
+        actorUserId: input.actorUserId ?? null,
+        notifySelf: input.notifySelf ?? false,
+        targetUserIds: input.targetUserIds,
+        entityType: input.entityType ?? null,
+        entityId: input.entityId ?? null,
+        title: input.title ?? null,
+        message: input.message ?? null,
+        link: input.link ?? null,
+        variables: (input.variables ?? {}) as Record<string, unknown>,
+        metadata: input.metadata ?? null,
+      })
+      // Same intent from a retried request is a no-op, not a second notification.
+      .onConflictDoNothing({
+        target: [notificationOutbox.orgId, notificationOutbox.dedupeKey],
+      });
+  }
+
+  /**
+   * Stable across retries of the same logical request: same event, same recipients,
+   * same entity → same key. Deliberately excludes the timestamp.
+   */
+  private buildOutboxDedupeKey(input: DispatchEventInput): string {
+    const targets = [...input.targetUserIds].sort().join(",");
+    return `${input.eventKey}:${input.entityType ?? ""}:${input.entityId ?? ""}:${targets}`;
+  }
 
   emit(input: DispatchEventInput): Promise<DispatchResult> {
     const queued = registerAfterCommit(() =>
@@ -114,7 +158,20 @@ export class NotificationDispatchService {
       .where(inArray(users.id, targets));
     const emailMap = new Map(emailRows.map((r) => [r.id, r.email]));
 
-    const templateMap = await this.loadTemplates(input.orgId, definition, input.variables ?? {});
+    // PIPE-014: render in each recipient's own language. One template map per
+    // distinct locale in the target set — usually one, never more than a handful.
+    const localeRows = await this.db
+      .select({ userId: userPreferences.userId, language: userPreferences.language })
+      .from(userPreferences)
+      .where(inArray(userPreferences.userId, targets));
+    const localeByUser = new Map(localeRows.map((r) => [r.userId, r.language]));
+    const templatesByLocale = new Map<string, TemplateMap>();
+    for (const locale of new Set([...targets].map((u) => localeByUser.get(u) ?? "en"))) {
+      templatesByLocale.set(
+        locale,
+        await this.loadTemplates(input.orgId, definition, input.variables ?? {}, locale),
+      );
+    }
 
     const routingResults = await this.routing.routeMany(input.orgId, targets, definition, priority);
     const announcements: Array<{ input: AnnounceInput; pushToDevices: boolean }> = [];
@@ -139,7 +196,14 @@ export class NotificationDispatchService {
         }
       }
 
-      const perUser = await this.persistForUser(input, definition, userId, routingResult, emailMap.get(userId) ?? null, templateMap);
+      const perUser = await this.persistForUser(
+        input,
+        definition,
+        userId,
+        routingResult,
+        emailMap.get(userId) ?? null,
+        templatesByLocale.get(localeByUser.get(userId) ?? "en") ?? new Map(),
+      );
       result.notified += perUser.createdInApp ? 1 : 0;
       result.deliveriesQueued += perUser.queued;
       result.suppressed += perUser.suppressed;
@@ -218,7 +282,12 @@ export class NotificationDispatchService {
     );
   }
 
-  private async loadTemplates(orgId: string, definition: NotificationEventDefinition, variables: Record<string, unknown>): Promise<TemplateMap> {
+  private async loadTemplates(
+    orgId: string,
+    definition: NotificationEventDefinition,
+    variables: Record<string, unknown>,
+    locale: string,
+  ): Promise<TemplateMap> {
     if (!definition.templateKey) return new Map();
 
     const orgTemplates = await this.loadOrgTemplateMap(orgId);
@@ -242,19 +311,55 @@ export class NotificationDispatchService {
 
     const map: TemplateMap = new Map();
     for (const [channel, channelRows] of byChannel) {
-      const preferred = channelRows.find((r) => r.locale === "en") ?? channelRows[0];
+      // PIPE-014: the recipient's locale, not the actor's and not a hardcoded "en".
+      // English remains the fallback because it is the only locale templates are
+      // authored in today; `channelRows[0]` is the last resort.
+      const preferred =
+        channelRows.find((r) => r.locale === locale) ??
+        channelRows.find((r) => r.locale === "en") ??
+        channelRows[0];
       if (!preferred) continue;
-      map.set(channel, {
-        subject: preferred.subject != null ? this.renderPlaceholders(preferred.subject, stringVars) : null,
-        body: this.renderPlaceholders(preferred.body, stringVars),
-      });
+      const subject =
+        preferred.subject != null ? this.renderPlaceholders(preferred.subject, stringVars) : null;
+      const body = this.renderPlaceholders(preferred.body, stringVars);
+      const missing = [...new Set([...(subject?.missing ?? []), ...body.missing])];
+      if (missing.length > 0) {
+        // Fall back to the catalog's static copy rather than send a template with
+        // holes in it. Logged, never silent — a blank in a customer's email is the
+        // failure mode this replaces.
+        this.logger.error(
+          `template ${definition.templateKey} (${channel}, ${locale}) references undeclared variables: ` +
+            `${missing.join(", ")} — falling back to the catalog copy for ${definition.eventKey}`,
+        );
+        continue;
+      }
+      map.set(channel, { subject: subject?.text ?? null, body: body.text });
     }
 
     return map;
   }
 
-  private renderPlaceholders(template: string, variables: Record<string, string>): string {
-    return template.replace(/\{\{([^}]+)\}\}/g, (_, key: string) => variables[key.trim()] ?? "");
+  /**
+   * REG-007. An unknown `{{var}}` used to render as an empty string, so a renamed or
+   * misspelled variable silently produced a blank in a live email and nothing said so.
+   * Missing variables are now reported to the caller, which decides whether to send a
+   * half-rendered template — see `renderTemplateOrFallback`.
+   */
+  private renderPlaceholders(
+    template: string,
+    variables: Record<string, string>,
+  ): { text: string; missing: string[] } {
+    const missing: string[] = [];
+    const text = template.replace(/\{\{([^}]+)\}\}/g, (_, raw: string) => {
+      const key = raw.trim();
+      const value = variables[key];
+      if (value === undefined) {
+        missing.push(key);
+        return "";
+      }
+      return value;
+    });
+    return { text, missing };
   }
 
   private buildIdempotencyKey(input: DispatchEventInput, userId: string, channel: NotificationChannel, dedupeWindowSeconds: number): string {
@@ -359,6 +464,15 @@ export class NotificationDispatchService {
             nextAttemptAt: isSend ? (routingResult.deferredUntil ?? now) : null,
             idempotencyKey: key,
             metadata: { title: deliveryTitle, message: deliveryMessage, link: input.link ?? null },
+            // REG-008: the snapshot of what was actually sent. metadata above is the
+            // display payload; these two are the audit record, and survive a later
+            // edit to the template they came from.
+            renderedSubject: deliveryTitle,
+            renderedBody: deliveryMessage,
+            // PIPE-012: past this the worker drops rather than delivers stale.
+            expiresAt: definition.ttlSeconds
+              ? new Date(now.getTime() + definition.ttlSeconds * 1000)
+              : null,
           })
           .onConflictDoNothing({ target: notificationDeliveries.idempotencyKey })
           .returning({ id: notificationDeliveries.id });

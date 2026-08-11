@@ -5,12 +5,14 @@ import {
   timestamp,
   integer,
   jsonb,
+  date,
   index,
   unique,
   uniqueIndex,
   foreignKey,
+  check,
 } from "drizzle-orm/pg-core";
-import { sql } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import { managedProductStatusEnum } from "../common/enums";
 import { organizations, users, organizationMembers } from "../common/auth";
 import { pmWorkspaces } from "./pm-workspaces";
@@ -57,3 +59,48 @@ export const managedProducts = pgTable(
     }).onDelete("set null"),
   ],
 );
+
+export const managedProductReleases = pgTable(
+  "managed_product_releases",
+  {
+    id: serial("id").primaryKey(),
+    orgId: text("org_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
+    managedProductId: integer("managed_product_id")
+      .references(() => managedProducts.managedProductId, { onDelete: "cascade" })
+      .notNull(),
+    name: text("name").notNull(),
+    version: text("version").notNull(),
+    description: text("description"),
+    status: text("status").default("draft").notNull(),
+    releaseDate: date("release_date"),
+    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+  },
+  (table) => [
+    index("idx_managed_product_releases_product").on(table.managedProductId),
+    index("idx_managed_product_releases_org_status").on(table.orgId, table.status),
+    unique("uniq_managed_product_releases_org_id").on(table.orgId, table.id),
+    check(
+      "chk_managed_product_releases_status",
+      sql`${table.status} IN ('draft', 'released', 'archived')`,
+    ),
+  ],
+);
+
+export const managedProductsRelations = relations(managedProducts, ({ many }) => ({
+  releases: many(managedProductReleases),
+}));
+
+export const managedProductReleasesRelations = relations(managedProductReleases, ({ one }) => ({
+  product: one(managedProducts, {
+    fields: [managedProductReleases.managedProductId],
+    references: [managedProducts.managedProductId],
+  }),
+  createdBy: one(users, {
+    fields: [managedProductReleases.createdBy],
+    references: [users.id],
+  }),
+}));

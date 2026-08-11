@@ -165,7 +165,7 @@ export class GoalsService {
     const { orgId, userId } = u;
     const scope = await resolveGoalsScope(this.access, u);
 
-    const conditions: ReturnType<typeof and>[] = [eq(okrGoals.orgId, orgId)];
+    const conditions: ReturnType<typeof and>[] = [eq(okrGoals.orgId, orgId), isNull(okrGoals.deletedAt)];
 
     if (scope !== "all") {
       const ownershipFilter = or(eq(okrGoals.ownerId, userId), eq(okrGoals.createdBy, userId));
@@ -256,7 +256,7 @@ export class GoalsService {
         avgProgress: avg(okrGoals.progress),
       })
       .from(okrGoals)
-      .where(eq(okrGoals.orgId, orgId))
+      .where(and(eq(okrGoals.orgId, orgId), isNull(okrGoals.deletedAt)))
       .groupBy(okrGoals.status);
 
     const byStatus = STATUS_KEYS.reduce<Record<GoalStatus, number>>(
@@ -288,7 +288,7 @@ export class GoalsService {
 
   async getGoal(orgId: string, goalId: number): Promise<GoalDetail | null> {
     const goal = await this.db.query.okrGoals.findFirst({
-      where: and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId)),
+      where: and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId), isNull(okrGoals.deletedAt)),
       with: {
         owner: { columns: { id: true, name: true, email: true, image: true } },
         project: { columns: { id: true, name: true, key: true } },
@@ -331,7 +331,7 @@ export class GoalsService {
     const [updated] = await this.db
       .update(okrGoals)
       .set({ ...input, updatedAt: new Date() })
-      .where(and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId)))
+      .where(and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId), isNull(okrGoals.deletedAt)))
       .returning();
 
     if (!updated) return null;
@@ -340,9 +340,10 @@ export class GoalsService {
 
   async remove(orgId: string, goalId: number): Promise<{ success: true } | null> {
     const [deleted] = await this.db
-      .delete(okrGoals)
-      .where(and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId)))
-      .returning();
+      .update(okrGoals)
+      .set({ deletedAt: new Date() })
+      .where(and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId), isNull(okrGoals.deletedAt)))
+      .returning({ id: okrGoals.id });
 
     if (!deleted) return null;
     return { success: true };
@@ -354,6 +355,12 @@ export class GoalsService {
     goalId: number,
     input: CheckInInput,
   ): Promise<typeof okrGoals.$inferSelect | null> {
+    const goalExists = await this.db.query.okrGoals.findFirst({
+      where: and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId), isNull(okrGoals.deletedAt)),
+      columns: { id: true },
+    });
+    if (!goalExists) return null;
+
     const keyResult = await this.db.query.okrKeyResults.findFirst({
       where: and(
         eq(okrKeyResults.id, input.keyResultId),
@@ -392,7 +399,7 @@ export class GoalsService {
     await this.recomputeGoalProgress(goalId, orgId);
 
     const goal = await this.db.query.okrGoals.findFirst({
-      where: and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId)),
+      where: and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId), isNull(okrGoals.deletedAt)),
     });
 
     return goal ?? null;
@@ -414,7 +421,7 @@ export class GoalsService {
     input: CreateKeyResultInput,
   ): Promise<typeof okrKeyResults.$inferSelect | null> {
     const goal = await this.db.query.okrGoals.findFirst({
-      where: and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId)),
+      where: and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId), isNull(okrGoals.deletedAt)),
       columns: { id: true },
     });
     if (!goal) return null;
@@ -535,7 +542,7 @@ export class GoalsService {
 
     if (input.projectId !== undefined) {
       const project = await this.db.query.projects.findFirst({
-        where: and(eq(projects.id, input.projectId), eq(projects.orgId, orgId)),
+        where: and(eq(projects.id, input.projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
         columns: { id: true },
       });
       if (!project) return { error: "project_not_found" as const };

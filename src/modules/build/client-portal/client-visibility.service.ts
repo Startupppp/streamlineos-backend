@@ -14,7 +14,7 @@ export class ClientVisibilityService {
 
   private async assertProject(orgId: string, projectId: number) {
     const p = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
+      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
       columns: { id: true },
     });
     if (!p) throw new NotFoundException("Project not found");
@@ -106,7 +106,7 @@ export class ClientVisibilityService {
         eq(tickets.orgId, orgId),
         isNull(tickets.deletedAt),
       ))
-      .where(and(eq(ticketComments.id, commentId), eq(ticketComments.orgId, orgId)))
+      .where(and(eq(ticketComments.id, commentId), eq(ticketComments.orgId, orgId), isNull(ticketComments.deletedAt)))
       .limit(1);
     if (!row) throw new NotFoundException("Comment not found");
     await this.db

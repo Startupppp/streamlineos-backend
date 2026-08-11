@@ -87,7 +87,7 @@ export class InvitationsService {
     resent: boolean;
   }> {
     const actorUserId = actor.userId;
-    await assertMayGrantRole(this.access, orgId, actor, role);
+    await assertMayGrantRole(this.db, orgId, actor, role);
     const org = await requireActiveOrg(this.db, orgId);
 
     const existingUser = await this.db.query.users.findFirst({

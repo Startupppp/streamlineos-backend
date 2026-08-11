@@ -73,7 +73,7 @@ export class PortalClientService {
         targetEndDate: projects.endDate,
       })
       .from(projects)
-      .where(and(eq(projects.orgId, orgId), inArray(projects.id, projectIds)))
+      .where(and(eq(projects.orgId, orgId), inArray(projects.id, projectIds), isNull(projects.deletedAt)))
       .limit(100);
   }
 
@@ -90,7 +90,7 @@ export class PortalClientService {
         targetEndDate: projects.endDate,
       })
       .from(projects)
-      .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId)))
+      .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)))
       .limit(1);
 
     if (!project) throw new NotFoundException("Project not found");
@@ -185,6 +185,7 @@ export class PortalClientService {
               and(
                 eq(ticketComments.orgId, orgId),
                 eq(ticketComments.clientVisible, true),
+                isNull(ticketComments.deletedAt),
               ),
             )
             .limit(100)

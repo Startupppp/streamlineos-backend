@@ -43,7 +43,7 @@ export class ProjectsTicketLinksService {
 
   async getGitLinks(orgId: string, projectId: number, ticketId: number) {
     const project = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
+      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
       columns: { id: true },
     });
     if (!project) throw new NotFoundException("Project not found");

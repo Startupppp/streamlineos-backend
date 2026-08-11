@@ -1,5 +1,5 @@
 import { pgTable, pgEnum, text, serial, timestamp, numeric, date, integer, foreignKey, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
 import { tickets } from "./tasks";
@@ -24,10 +24,11 @@ export const okrGoals = pgTable("okr_goals", {
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
 }, (table) => [
   foreignKey({ columns: [table.parentGoalId], foreignColumns: [table.id] }).onDelete("set null"),
-  index("idx_okr_goals_org").on(table.orgId),
-  index("idx_okr_goals_org_status").on(table.orgId, table.status),
+  index("idx_okr_goals_org").on(table.orgId).where(sql`deleted_at IS NULL`),
+  index("idx_okr_goals_org_status").on(table.orgId, table.status).where(sql`deleted_at IS NULL`),
   index("idx_okr_goals_parent").on(table.parentGoalId),
   unique("uniq_okr_goals_org_id").on(table.orgId, table.id),
 ]);

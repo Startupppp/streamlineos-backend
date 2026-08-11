@@ -10,7 +10,6 @@ export const payrollTemplates: Record<string, TemplateEntry> = {
       getPayslipEmailTemplate({
         employeeName: "Priya Sharma",
         month: "June 2026",
-        netSalary: "85,000",
         orgName: "Acme Corp",
       }).html,
   },

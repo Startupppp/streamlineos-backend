@@ -178,7 +178,7 @@ export class ProjectsAnalyticsService {
     const orgProjects = await this.db
       .select({ id: projects.id })
       .from(projects)
-      .where(eq(projects.orgId, orgId));
+      .where(and(eq(projects.orgId, orgId), isNull(projects.deletedAt)));
 
     const ticketMap = new Map<number, (typeof ticketStats)[number]>();
     for (const row of ticketStats) {
@@ -237,7 +237,7 @@ export class ProjectsAnalyticsService {
       key,
       async () => {
         const activeProjects = await this.db.query.projects.findMany({
-          where: and(eq(projects.orgId, orgId), eq(projects.status, "ACTIVE")),
+          where: and(eq(projects.orgId, orgId), eq(projects.status, "ACTIVE"), isNull(projects.deletedAt)),
           columns: { id: true, name: true, key: true },
         });
 

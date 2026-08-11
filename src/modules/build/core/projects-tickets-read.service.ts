@@ -135,7 +135,7 @@ export class ProjectsTicketsReadService {
     const [perms, project] = await Promise.all([
       this.access.resolveUserPermissions(orgId, userId),
       this.db.query.projects.findFirst({
-        where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
+        where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
         columns: { managerId: true },
       }),
     ]);
@@ -407,6 +407,7 @@ export class ProjectsTicketsReadService {
           with: { user: { columns: USER_COLS } },
         },
         comments: {
+          where: isNull(ticketComments.deletedAt),
           with: { user: { columns: USER_COLS } },
           orderBy: [desc(ticketComments.createdAt)],
           limit: 50,

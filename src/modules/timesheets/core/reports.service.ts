@@ -106,7 +106,7 @@ export class ReportsService {
       ? await this.db
           .select({ id: projects.id, name: projects.name })
           .from(projects)
-          .where(inArray(projects.id, projectIds))
+          .where(and(inArray(projects.id, projectIds), isNull(projects.deletedAt)))
       : [];
     const projectNames = new Map(projRows.map((p) => [p.id, p.name]));
 

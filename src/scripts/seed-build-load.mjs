@@ -158,6 +158,13 @@ async function seedTickets(orgId, projectIds, total, users) {
       ) u2 on true`;
   });
 
+  await sql`
+    update tickets t set sprint_id = s.id
+    from (select id, project_id, row_number() over (partition by project_id order by id) rn
+          from sprints where org_id = ${orgId}) s
+    where t.org_id = ${orgId} and t.project_id = s.project_id
+      and (t.id % ${SPRINTS_PER_PROJECT}) = (s.rn % ${SPRINTS_PER_PROJECT})`;
+
   const [range] = await sql`
     select min(id)::int lo, max(id)::int hi, count(*)::int n
     from tickets where org_id = ${orgId}`;

@@ -23,3 +23,4 @@ export * from "./pm-workspace-memberships";
 export * from "./teams";
 export * from "./feedback";
 export * from "./comment-drafts";
+export * from "./sprint-events";

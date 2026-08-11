@@ -1,8 +1,9 @@
-import { pgTable, pgEnum, text, serial, timestamp, boolean, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, serial, timestamp, boolean, integer, decimal, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
 import { tickets } from "./tasks";
+import { contacts, crmOrganizations } from "../crm/contacts";
 
 export const roadmapStatusEnum = pgEnum("roadmap_status", ["planned", "in_progress", "completed", "cancelled"]);
 export const feedbackStatusEnum = pgEnum("feedback_status", ["open", "planned", "in_progress", "completed", "declined"]);
@@ -21,11 +22,16 @@ export const roadmapItems = pgTable("roadmap_items", {
   targetQuarter: text("target_quarter"),
   sortOrder: integer("sort_order").default(0).notNull(),
   votes: integer("votes").default(0).notNull(),
+  reach: integer("reach"),
+  impact: integer("impact"),
+  confidence: integer("confidence"),
+  effort: integer("effort"),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
 }, (table) => [
-  index("idx_roadmap_items_org_status").on(table.orgId, table.status),
+  index("idx_roadmap_items_org_status").on(table.orgId, table.status).where(sql`deleted_at IS NULL`),
   unique("uniq_roadmap_items_org_id").on(table.orgId, table.id),
 ]);
 
@@ -52,12 +58,18 @@ export const feedbackPosts = pgTable("feedback_posts", {
   votes: integer("votes").default(0).notNull(),
   submittedByName: text("submitted_by_name"),
   submittedByEmail: text("submitted_by_email"),
+  crmContactId: integer("crm_contact_id").references(() => contacts.id, { onDelete: "set null" }),
+  crmOrganizationId: integer("crm_organization_id").references(() => crmOrganizations.id, { onDelete: "set null" }),
+  accountValueSnapshot: decimal("account_value_snapshot", { precision: 15, scale: 2 }),
   linkedRoadmapItemId: integer("linked_roadmap_item_id").references(() => roadmapItems.id, { onDelete: "set null" }),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
 }, (table) => [
-  index("idx_feedback_posts_org_status").on(table.orgId, table.status),
+  index("idx_feedback_posts_org_status").on(table.orgId, table.status).where(sql`deleted_at IS NULL`),
+  index("idx_feedback_posts_crm_contact").on(table.orgId, table.crmContactId).where(sql`deleted_at IS NULL`),
+  index("idx_feedback_posts_crm_org").on(table.orgId, table.crmOrganizationId).where(sql`deleted_at IS NULL`),
   unique("uniq_feedback_posts_org_id").on(table.orgId, table.id),
 ]);
 
@@ -125,6 +137,14 @@ export const feedbackPostsRelations = relations(feedbackPosts, ({ one, many }) =
   linkedRoadmapItem: one(roadmapItems, {
     fields: [feedbackPosts.linkedRoadmapItemId],
     references: [roadmapItems.id],
+  }),
+  crmContact: one(contacts, {
+    fields: [feedbackPosts.crmContactId],
+    references: [contacts.id],
+  }),
+  crmOrganization: one(crmOrganizations, {
+    fields: [feedbackPosts.crmOrganizationId],
+    references: [crmOrganizations.id],
   }),
   postVotes: many(feedbackVotes),
 }));

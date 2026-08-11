@@ -56,7 +56,7 @@ export class ProjectsQueryService {
     const { search, status, page, limit } = input;
     const offset = (page - 1) * limit;
 
-    const conditions = [eq(projects.orgId, orgId)];
+    const conditions = [eq(projects.orgId, orgId), isNull(projects.deletedAt)];
 
     if (scope !== "all") {
       const [memberOf, teamProjectsOf] = await Promise.all([
@@ -278,7 +278,7 @@ export class ProjectsQueryService {
     const [perms, project] = await Promise.all([
       this.access.resolveUserPermissions(u.orgId, u.userId),
       this.db.query.projects.findFirst({
-        where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
+        where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
         with: {
           statuses: { orderBy: [asc(projectStatuses.order)] },
           members: {

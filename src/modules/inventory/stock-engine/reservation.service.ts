@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { invStockReservations, invStockLevels, invStockTransactions } from "../../../db/schema";
+import { invStockReservations, invStockLevels } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { InventorySettingsService } from "./inventory-settings.service";
@@ -87,19 +87,6 @@ export class ReservationService {
       .set({ committed: sql`committed + ${input.qty}::numeric` })
       .where(eq(invStockLevels.id, level.id));
 
-    await tx.insert(invStockTransactions).values({
-      orgId, productVariantId: input.productVariantId,
-      locationId: input.locationId ?? null,
-      lotId: input.lotId ?? null, serialId: input.serialId ?? null,
-      transactionType: "RESERVATION_CREATE",
-      quantityChange: "0",
-      quantityBefore: "0", quantityAfter: "0",
-      referenceType: input.sourceType, referenceId: input.sourceId,
-      metadata: { reservedQty: input.qty } as Record<string, unknown>,
-      reason: "reservation",
-      createdBy: userId,
-    });
-
     const [reservation] = await tx.insert(invStockReservations).values({
       orgId,
       sourceType: input.sourceType, sourceId: input.sourceId,
@@ -141,15 +128,6 @@ export class ReservationService {
         reservedQty: reservation.reserved_qty,
       });
     }
-
-    await tx.insert(invStockTransactions).values({
-      orgId, productVariantId: reservation.product_variant_id,
-      locationId: reservation.location_id,
-      transactionType: "RESERVATION_RELEASE",
-      quantityChange: "0", quantityBefore: "0", quantityAfter: "0",
-      reason: "reservation_release", createdBy: userId,
-      metadata: { reservationId } as Record<string, unknown>,
-    });
   }
 
   async releaseReservation(orgId: string, userId: string, reservationId: number): Promise<void> {
@@ -180,14 +158,6 @@ export class ReservationService {
           reservedQty: reservation.reserved_qty,
         });
       }
-
-      await tx.insert(invStockTransactions).values({
-        orgId, productVariantId: reservation.product_variant_id,
-        locationId: reservation.location_id, transactionType: "RESERVATION_CONSUME",
-        quantityChange: "0", quantityBefore: "0", quantityAfter: "0",
-        reason: "reservation_consume", createdBy: userId,
-        metadata: { reservationId } as Record<string, unknown>,
-      });
     });
   }
 
@@ -225,23 +195,6 @@ export class ReservationService {
         serialId: r.serialId ?? null,
         reservedQty: r.reservedQty,
       });
-    }
-
-    if (withLocation.length > 0) {
-      await tx.insert(invStockTransactions).values(
-        withLocation.map((r) => ({
-          orgId,
-          productVariantId: r.productVariantId,
-          locationId: r.locationId,
-          transactionType: "RESERVATION_CONSUME" as const,
-          quantityChange: "0",
-          quantityBefore: "0",
-          quantityAfter: "0",
-          reason: "reservation_consume",
-          createdBy: userId,
-          metadata: { reservationId: r.id },
-        })),
-      );
     }
   }
 

@@ -1,15 +1,27 @@
 import { Inject, Injectable, Logger, OnModuleInit, OnModuleDestroy } from "@nestjs/common";
 import { randomUUID } from "crypto";
-import { and, eq, lte, lt, or, desc, inArray } from "drizzle-orm";
+import { and, eq, lte, lt, or, desc, inArray, sql } from "drizzle-orm";
 import { notificationDeliveries, notificationQueue, notificationProviderAccounts } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { NotificationProviderRegistry } from "./providers/notification-provider-registry.service";
 import { isTransientDbError } from "../../common/db/transient-error";
 import { forEachOrg, withTenant, runWithTenantContext } from "../../common/tenant";
+import { filterOrgMemberIds } from "../../common/tenant/org-membership";
 
 const BATCH_SIZE = 50;
 const BACKOFF_MINUTES = [1, 5, 15, 60, 360];
+
+/**
+ * PIPE-010. Backoff was exact, so every delivery that failed against the same
+ * provider outage retried in the same instant — the herd re-forms on each step and
+ * hits the provider (and its rate limit) all at once. Full jitter spreads a step
+ * uniformly across its own window, which is the standard fix and costs nothing.
+ */
+function backoffMsWithJitter(minutes: number): number {
+  const windowMs = minutes * 60_000;
+  return Math.floor(windowMs / 2 + Math.random() * (windowMs / 2));
+}
 const STALE_LOCK_MS = 10 * 60 * 1000;
 
 export interface QueueRunResult {
@@ -91,35 +103,26 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
       const remaining = BATCH_SIZE - claimed.length;
       if (remaining <= 0) return;
 
-      const candidates = await tx
-        .select({ id: notificationQueue.id })
-        .from(notificationQueue)
-        .where(
-          and(
-            eq(notificationQueue.orgId, orgId),
-            or(
-              and(eq(notificationQueue.status, "PENDING"), lte(notificationQueue.runAt, now)),
-              and(eq(notificationQueue.status, "LOCKED"), lt(notificationQueue.lockedAt, staleBefore)),
-            ),
-          ),
-        )
-        .orderBy(notificationQueue.runAt)
-        .limit(remaining);
-
-      if (candidates.length === 0) return;
-
+      // SCH-016: one statement with FOR UPDATE SKIP LOCKED, replacing a SELECT-ids
+      // then UPDATE-where-in pair. The old shape was *correct* — the status re-check
+      // in the UPDATE meant only one worker won — but two workers burned a round trip
+      // fighting over the same rows, and neither could make progress past a row the
+      // other held. SKIP LOCKED lets each take a disjoint set on the first try.
       const rows = await tx
         .update(notificationQueue)
         .set({ status: "LOCKED", lockedBy: this.workerId, lockedAt: new Date() })
         .where(
-          and(
-            eq(notificationQueue.orgId, orgId),
-            inArray(notificationQueue.id, candidates.map((c) => c.id)),
-            or(
-              eq(notificationQueue.status, "PENDING"),
-              and(eq(notificationQueue.status, "LOCKED"), lt(notificationQueue.lockedAt, staleBefore)),
-            ),
-          ),
+          sql`${notificationQueue.id} in (
+            select id from ${notificationQueue}
+            where org_id = ${orgId}
+              and (
+                (status = 'PENDING' and run_at <= ${now})
+                or (status = 'LOCKED' and locked_at < ${staleBefore})
+              )
+            order by run_at
+            limit ${remaining}
+            for update skip locked
+          )`,
         )
         .returning({ id: notificationQueue.id, deliveryId: notificationQueue.deliveryId });
 
@@ -142,7 +145,7 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
               .update(notificationQueue)
               .set({
                 status: "PENDING",
-                runAt: new Date(Date.now() + BACKOFF_MINUTES[0] * 60_000),
+                runAt: new Date(Date.now() + backoffMsWithJitter(BACKOFF_MINUTES[0] ?? 1)),
                 lastError: "worker exception",
               })
               .where(eq(notificationQueue.id, job.id)),
@@ -178,6 +181,39 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
         await this.db
           .update(notificationQueue)
           .set({ status: "DONE", lastError: "delivery missing" })
+          .where(eq(notificationQueue.id, job.id));
+        return null;
+      }
+
+      // PIPE-012: a stale notification is worse than none — on recovery from a
+      // backlog it arrives as a flood of things that stopped mattering hours ago.
+      // CANCELLED, not DEAD: nothing failed, it simply expired.
+      if (delivery.expiresAt && delivery.expiresAt.getTime() <= Date.now()) {
+        await this.db
+          .update(notificationDeliveries)
+          .set({ status: "CANCELLED", failureCode: "EXPIRED", updatedAt: new Date() })
+          .where(eq(notificationDeliveries.id, delivery.id));
+        await this.db
+          .update(notificationQueue)
+          .set({ status: "DONE", lastError: "delivery expired before it was sent" })
+          .where(eq(notificationQueue.id, job.id));
+        return null;
+      }
+
+      // PIPE-015: a delivery can sit in the queue across a deactivation, a suspension
+      // or a removal — and under queue lag that window widens exactly when the system
+      // is busiest. Membership was checked at enqueue; re-check it here, immediately
+      // before handing the payload to a provider. CANCELLED, not DEAD: nothing failed,
+      // the recipient simply stopped being entitled to it.
+      const stillActive = await filterOrgMemberIds(this.db, job.orgId, [delivery.userId]);
+      if (stillActive.length === 0) {
+        await this.db
+          .update(notificationDeliveries)
+          .set({ status: "CANCELLED", failureCode: "MEMBERSHIP_INACTIVE", updatedAt: new Date() })
+          .where(eq(notificationDeliveries.id, delivery.id));
+        await this.db
+          .update(notificationQueue)
+          .set({ status: "DONE", lastError: "recipient is no longer an active member" })
           .where(eq(notificationQueue.id, job.id));
         return null;
       }
@@ -255,7 +291,7 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
       const retryable = sendResult.retryable ?? false;
       if (retryable && attempt < delivery.maxAttempts) {
         const backoff = BACKOFF_MINUTES[Math.min(attempt - 1, BACKOFF_MINUTES.length - 1)] ?? 60;
-        const nextAttemptAt = new Date(now.getTime() + backoff * 60_000);
+        const nextAttemptAt = new Date(now.getTime() + backoffMsWithJitter(backoff));
         await this.db
           .update(notificationDeliveries)
           .set({

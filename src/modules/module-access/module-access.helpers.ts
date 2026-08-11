@@ -8,7 +8,8 @@ import {
   roles,
 } from "../../db/schema";
 import type { Db } from "../../db/drizzle.module";
-import { grantsOrgAdmin, ROLE_RANK } from "../../common/rbac/grantability";
+import { ROLE_RANK } from "../../common/rbac/grantability";
+import { isStructuralOrgAdmin } from "../../common/rbac/is-structural-org-admin";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
 
@@ -95,16 +96,17 @@ export async function resolveModuleAuthorityFacts(
 /**
  * Write authority is intentionally structural. A module-scoped effective
  * `access:manage` grant does not manufacture Module Admin status. Org Admin is
- * the canonical reserved-key policy; Module Owner is the ownership row; and
- * Module Admin is an active, unexpired rank-20 assignment for this module.
+ * an active owner/ORG_ADMIN membership row — NOT the holder of a reserved
+ * permission key, which would be AC-04 (CLAUDE.md §21); Module Owner is the
+ * ownership row; and Module Admin is an active, unexpired rank-20 assignment
+ * for this module.
  */
 export async function hasModuleAccessManagementAuthority(
   db: Db,
   actor: CurrentUserContext,
   moduleKey: string,
-  resolvedPermissions: ReadonlyMap<string, DataScope>,
 ): Promise<boolean> {
-  if (actor.isOrgOwner || grantsOrgAdmin(resolvedPermissions)) return true;
+  if (await isStructuralOrgAdmin(db, actor)) return true;
 
   const authority = await resolveModuleAuthorityFacts(db, actor, moduleKey);
   return authority.isModuleOwner || authority.isModuleAdmin;
@@ -130,23 +132,16 @@ export async function assertModuleAccessPolicy(
 
   if (actor.isOrgOwner) return;
 
-  const resolved = await deps.resolveUserPermissions(actor.orgId, actor.userId);
-
   if (action === "manage") {
-    if (
-      await hasModuleAccessManagementAuthority(
-        deps.db,
-        actor,
-        moduleKey,
-        resolved,
-      )
-    )
+    if (await hasModuleAccessManagementAuthority(deps.db, actor, moduleKey))
       return;
 
     throw moduleAccessDenied(action);
   }
 
-  if (grantsOrgAdmin(resolved)) return;
+  if (await isStructuralOrgAdmin(deps.db, actor)) return;
+
+  const resolved = await deps.resolveUserPermissions(actor.orgId, actor.userId);
   const scope =
     resolved.get(`${moduleKey}:access:${action}`) ??
     resolved.get(`${moduleKey}:access:manage`);

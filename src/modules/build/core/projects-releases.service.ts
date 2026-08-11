@@ -44,7 +44,7 @@ export class ProjectsReleasesService {
 
   async createRelease(orgId: string, projectId: number, userId: string, data: CreateReleaseInput) {
     const project = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
+      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
       columns: { id: true },
     });
     if (!project) throw new NotFoundException("Project not found");

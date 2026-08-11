@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, ilike, inArray, or } from "drizzle-orm";
+import { and, eq, ilike, inArray, isNull, or } from "drizzle-orm";
 import {
   cycles,
   organizationMembers,
@@ -285,7 +285,7 @@ export class ProjectsActivityService {
       const [projectRow] = await this.db
         .select({ key: projects.key })
         .from(projects)
-        .where(and(eq(projects.id, input.projectId), eq(projects.orgId, input.orgId)))
+        .where(and(eq(projects.id, input.projectId), eq(projects.orgId, input.orgId), isNull(projects.deletedAt)))
         .limit(1);
 
       ticketKey = projectRow?.key

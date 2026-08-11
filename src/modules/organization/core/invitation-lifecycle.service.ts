@@ -77,7 +77,7 @@ export class InvitationLifecycleService {
     actor: InviteActor,
     role: string,
   ): Promise<{ success: true }> {
-    await assertMayGrantRole(this.access, orgId, actor, role);
+    await assertMayGrantRole(this.db, orgId, actor, role);
 
     const invitation = await this.db.query.invitations.findFirst({
       where: and(

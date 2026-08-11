@@ -46,7 +46,7 @@ export class ProjectsAiService {
     const [p] = await this.db
       .select({ id: projects.id, name: projects.name, status: projects.status, description: projects.description, endDate: projects.endDate })
       .from(projects)
-      .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId)));
+      .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)));
     if (!p) throw new NotFoundException("Project not found");
     return p;
   }
@@ -112,7 +112,7 @@ export class ProjectsAiService {
     const [activeSprint] = await this.db
       .select({ id: sprints.id })
       .from(sprints)
-      .where(and(eq(sprints.projectId, projectId), eq(sprints.orgId, orgId), eq(sprints.status, "ACTIVE")))
+      .where(and(eq(sprints.projectId, projectId), eq(sprints.orgId, orgId), eq(sprints.status, "ACTIVE"), isNull(sprints.deletedAt)))
       .limit(1);
 
     let sprintProgressPct: number | undefined;
@@ -155,7 +155,7 @@ export class ProjectsAiService {
 
     const [sprResults, crResults, apResults] = await Promise.all([
       this.db.select({ count: count() }).from(sprints)
-        .where(and(eq(sprints.projectId, projectId), eq(sprints.orgId, orgId), eq(sprints.status, "ACTIVE"), lt(sprints.endDate, sql`now()`))),
+        .where(and(eq(sprints.projectId, projectId), eq(sprints.orgId, orgId), eq(sprints.status, "ACTIVE"), lt(sprints.endDate, sql`now()`), isNull(sprints.deletedAt))),
       this.db.select({ count: count() }).from(changeRequests)
         .where(and(eq(changeRequests.projectId, projectId), eq(changeRequests.orgId, orgId), ne(changeRequests.status, "approved"), ne(changeRequests.status, "rejected"), ne(changeRequests.status, "completed"))),
       this.db.select({ count: count() }).from(projectApprovals)
@@ -201,7 +201,7 @@ export class ProjectsAiService {
       this.db
         .select({ title: roadmapItems.title, status: roadmapItems.status })
         .from(roadmapItems)
-        .where(and(eq(roadmapItems.projectId, projectId), eq(roadmapItems.isPublic, true)))
+        .where(and(eq(roadmapItems.projectId, projectId), eq(roadmapItems.isPublic, true), isNull(roadmapItems.deletedAt)))
         .limit(20),
     ]);
 

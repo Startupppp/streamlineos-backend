@@ -186,7 +186,7 @@ export class ProjectsTicketsCreateService {
       const [projectRow] = await this.db
         .select({ key: projects.key })
         .from(projects)
-        .where(and(eq(projects.id, projectId), eq(projects.orgId, u.orgId)))
+        .where(and(eq(projects.id, projectId), eq(projects.orgId, u.orgId), isNull(projects.deletedAt)))
         .limit(1);
 
       const ticketKey = projectRow?.key

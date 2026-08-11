@@ -30,6 +30,8 @@ const schema = z
         44,
         "BACKEND_JWT_SECRET must be at least 44 characters (256-bit base64)",
       ),
+    /** Optional HMAC key for pseudonymising public-roadmap voter IPs; falls back to BACKEND_JWT_SECRET. */
+    VOTE_IP_SALT: z.preprocess(emptyToUndefined, deploymentSecret),
     PORTAL_JWT_SECRET: z
       .string()
       .min(

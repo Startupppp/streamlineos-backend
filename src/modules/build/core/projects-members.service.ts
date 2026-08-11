@@ -40,7 +40,7 @@ async function assertProjectOwnership(
   projectId: number,
 ): Promise<void> {
   const project = await db.query.projects.findFirst({
-    where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
+    where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
     columns: { id: true },
   });
   if (!project) throw new NotFoundException("Project not found");
@@ -64,7 +64,7 @@ export class ProjectsMembersService {
     const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
     if (perms.has("build:manage")) return;
     const project = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, u.orgId)),
+      where: and(eq(projects.id, projectId), eq(projects.orgId, u.orgId), isNull(projects.deletedAt)),
       columns: { managerId: true },
     });
     if (!project) throw new NotFoundException("Project not found");
@@ -93,7 +93,7 @@ export class ProjectsMembersService {
     const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
     if (perms.has("build:manage")) return;
     const project = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, u.orgId)),
+      where: and(eq(projects.id, projectId), eq(projects.orgId, u.orgId), isNull(projects.deletedAt)),
       columns: { managerId: true },
     });
     if (!project) throw new NotFoundException("Project not found");

@@ -63,6 +63,7 @@ export const projects = pgTable(
       workflow?: string;
       features?: Record<string, boolean>;
     }>(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -70,12 +71,12 @@ export const projects = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
-    uniqueIndex("uniq_projects_org_key").on(table.orgId, table.key),
-    index("idx_projects_org_status").on(table.orgId, table.status),
+    uniqueIndex("uniq_projects_org_key").on(table.orgId, table.key).where(sql`deleted_at IS NULL`),
+    index("idx_projects_org_status").on(table.orgId, table.status).where(sql`deleted_at IS NULL`),
     index("idx_projects_manager").on(table.managerId),
     index("idx_projects_deal").on(table.dealId),
     index("idx_projects_managed_product").on(table.managedProductId),
-    index("idx_projects_name_trgm").using("gin", table.name.op("gin_trgm_ops")),
+    index("idx_projects_name_trgm").using("gin", table.name.op("gin_trgm_ops")).where(sql`deleted_at IS NULL`),
     unique("uniq_projects_org_id").on(table.orgId, table.id),
   ],
 );
@@ -95,6 +96,7 @@ export const sprints = pgTable(
     endDate: timestamp("end_date").notNull(),
     goal: text("goal"),
     status: text("status").default("PLANNED").notNull(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -102,7 +104,7 @@ export const sprints = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
-    index("idx_sprints_project_status").on(table.projectId, table.status),
+    index("idx_sprints_project_status").on(table.projectId, table.status).where(sql`deleted_at IS NULL`),
     unique("uniq_sprints_org_id").on(table.orgId, table.id),
     check(
       "chk_sprints_status",

@@ -49,8 +49,10 @@ import { CronFinanceService } from "./cron-finance.service";
 import { CronCrmTasksService } from "./cron-crm-tasks.service";
 import { CronIdempotencyService } from "./cron-idempotency.service";
 import { CronBuildRetentionService } from "./cron-build-retention.service";
+import { CronBuildSnapshotsService } from "./cron-build-snapshots.service";
 import { CronOrganizationService } from "./cron-organization.service";
 import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
+import { ProjectsModule } from "../build/core/projects.module";
 
 @Module({
   imports: [
@@ -80,6 +82,7 @@ import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
     BillingModule,
     TimesheetsCoreModule,
     OrganizationModule,
+    ProjectsModule,
   ],
   controllers: [
     CronBillingController,
@@ -108,6 +111,7 @@ import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
     CronCrmTasksService,
     CronIdempotencyService,
     CronBuildRetentionService,
+    CronBuildSnapshotsService,
     CronOrganizationService,
     CronOrgPurgeWorkerService,
   ],

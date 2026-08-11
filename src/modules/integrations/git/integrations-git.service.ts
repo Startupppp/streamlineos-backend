@@ -174,7 +174,7 @@ export class IntegrationsGitService {
       const projectRows = await this.db
         .select({ id: projects.id, key: projects.key })
         .from(projects)
-        .where(and(eq(projects.orgId, orgId), inArray(projects.key, projectKeys)));
+        .where(and(eq(projects.orgId, orgId), inArray(projects.key, projectKeys), isNull(projects.deletedAt)));
 
       const keyToProjectId = new Map(projectRows.map((p) => [p.key, p.id]));
       const projectIds = projectRows.map((p) => p.id);

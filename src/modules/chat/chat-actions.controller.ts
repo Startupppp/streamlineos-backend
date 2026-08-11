@@ -133,7 +133,7 @@ export class ChatActionsController {
     if (!msgRow) throw new ChatActionForbiddenException();
 
     const project = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, body.projectId), eq(projects.orgId, u.orgId)),
+      where: and(eq(projects.id, body.projectId), eq(projects.orgId, u.orgId), isNull(projects.deletedAt)),
       columns: { key: true },
     });
 

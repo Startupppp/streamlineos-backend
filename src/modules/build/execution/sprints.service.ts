@@ -28,7 +28,7 @@ export class SprintsService {
         status: sprints.status,
       })
       .from(sprints)
-      .where(and(eq(sprints.orgId, orgId), eq(sprints.projectId, projectId)))
+      .where(and(eq(sprints.orgId, orgId), eq(sprints.projectId, projectId), isNull(sprints.deletedAt)))
       .orderBy(desc(sprints.startDate))
       .limit(100);
 
@@ -82,7 +82,7 @@ export class SprintsService {
 
   async getSprint(orgId: string, sprintId: number) {
     const sprint = await this.db.query.sprints.findFirst({
-      where: and(eq(sprints.id, sprintId), eq(sprints.orgId, orgId)),
+      where: and(eq(sprints.id, sprintId), eq(sprints.orgId, orgId), isNull(sprints.deletedAt)),
       with: {
         tickets: {
           where: isNull(tickets.deletedAt),
@@ -101,7 +101,7 @@ export class SprintsService {
 
   async updateSprint(orgId: string, sprintId: number, input: UpdateSprintInput, actorId?: string) {
     const before = await this.db.query.sprints.findFirst({
-      where: and(eq(sprints.id, sprintId), eq(sprints.orgId, orgId)),
+      where: and(eq(sprints.id, sprintId), eq(sprints.orgId, orgId), isNull(sprints.deletedAt)),
       columns: { id: true, name: true, status: true, projectId: true },
     });
 
@@ -161,11 +161,11 @@ export class SprintsService {
 
   async deleteSprint(orgId: string, projectId: number, sprintId: number) {
     const sprint = await this.db.query.sprints.findFirst({
-      where: and(eq(sprints.id, sprintId), eq(sprints.orgId, orgId), eq(sprints.projectId, projectId)),
+      where: and(eq(sprints.id, sprintId), eq(sprints.orgId, orgId), eq(sprints.projectId, projectId), isNull(sprints.deletedAt)),
       columns: { id: true },
     });
     if (!sprint) throw new NotFoundException("Sprint not found");
-    await this.db.delete(sprints).where(and(eq(sprints.id, sprintId), eq(sprints.orgId, orgId)));
+    await this.db.update(sprints).set({ deletedAt: new Date() }).where(and(eq(sprints.id, sprintId), eq(sprints.orgId, orgId)));
     return { success: true };
   }
 }

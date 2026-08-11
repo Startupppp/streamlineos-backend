@@ -7,6 +7,7 @@ import {
   boolean,
   jsonb,
   timestamp,
+  decimal,
   index,
   uniqueIndex,
   unique,
@@ -15,6 +16,8 @@ import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
 import { tickets } from "./tasks";
+import { contacts, crmOrganizations } from "../crm/contacts";
+import { managedProducts } from "./managed-products";
 
 export interface FeedbucketAiAnalysis {
   type: "bug" | "feature" | "improvement" | "question" | "praise" | "other";
@@ -100,6 +103,7 @@ export const feedbucketWidgets = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
+    managedProductId: integer("managed_product_id").references(() => managedProducts.managedProductId, { onDelete: "set null" }),
     name: text("name").notNull(),
     publicKey: text("public_key").notNull(),
     allowedDomains: text("allowed_domains")
@@ -119,6 +123,7 @@ export const feedbucketWidgets = pgTable(
   (t) => [
     uniqueIndex("uniq_feedbucket_widgets_public_key").on(t.publicKey),
     index("idx_feedbucket_widgets_org").on(t.orgId, t.createdAt).where(sql`deleted_at IS NULL`),
+    index("idx_feedbucket_widgets_managed_product").on(t.orgId, t.managedProductId).where(sql`deleted_at IS NULL`),
     unique("uniq_feedbucket_widgets_org_id").on(t.orgId, t.id),
   ],
 );
@@ -145,6 +150,9 @@ export const feedbucketSubmissions = pgTable(
     networkLogs: jsonb("network_logs").$type<FeedbucketNetworkEntry[]>(),
     reporterName: text("reporter_name"),
     reporterEmail: text("reporter_email"),
+    crmContactId: integer("crm_contact_id").references(() => contacts.id, { onDelete: "set null" }),
+    crmOrganizationId: integer("crm_organization_id").references(() => crmOrganizations.id, { onDelete: "set null" }),
+    accountValueSnapshot: decimal("account_value_snapshot", { precision: 15, scale: 2 }),
     assigneeId: text("assignee_id").references(() => users.id, { onDelete: "set null" }),
     linkedTicketId: integer("linked_ticket_id").references(() => tickets.id, { onDelete: "set null" }),
     aiType: text("ai_type"),
@@ -160,6 +168,8 @@ export const feedbucketSubmissions = pgTable(
     index("idx_feedbucket_submissions_widget").on(t.orgId, t.widgetId, t.status, t.createdAt).where(sql`deleted_at IS NULL`),
     index("idx_feedbucket_submissions_org_status").on(t.orgId, t.status, t.createdAt).where(sql`deleted_at IS NULL`),
     index("idx_feedbucket_submissions_assignee").on(t.orgId, t.assigneeId).where(sql`deleted_at IS NULL`),
+    index("idx_feedbucket_submissions_crm_contact").on(t.orgId, t.crmContactId).where(sql`deleted_at IS NULL`),
+    index("idx_feedbucket_submissions_crm_org").on(t.orgId, t.crmOrganizationId).where(sql`deleted_at IS NULL`),
     unique("uniq_feedbucket_submissions_org_id").on(t.orgId, t.id),
   ],
 );
@@ -193,6 +203,7 @@ export const feedbucketWidgetsRelations = relations(feedbucketWidgets, ({ one, m
     references: [organizations.id],
   }),
   project: one(projects, { fields: [feedbucketWidgets.projectId], references: [projects.id] }),
+  managedProduct: one(managedProducts, { fields: [feedbucketWidgets.managedProductId], references: [managedProducts.managedProductId] }),
   creator: one(users, { fields: [feedbucketWidgets.createdBy], references: [users.id] }),
   submissions: many(feedbucketSubmissions),
 }));
@@ -207,6 +218,8 @@ export const feedbucketSubmissionsRelations = relations(feedbucketSubmissions, (
     fields: [feedbucketSubmissions.linkedTicketId],
     references: [tickets.id],
   }),
+  crmContact: one(contacts, { fields: [feedbucketSubmissions.crmContactId], references: [contacts.id] }),
+  crmOrganization: one(crmOrganizations, { fields: [feedbucketSubmissions.crmOrganizationId], references: [crmOrganizations.id] }),
   attachments: many(feedbucketAttachments),
 }));
 

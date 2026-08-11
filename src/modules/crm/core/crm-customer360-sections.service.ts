@@ -348,14 +348,14 @@ export class CrmCustomer360SectionsService {
         .select({ id: projects.id, name: projects.name, status: projects.status, startDate: projects.startDate, endDate: projects.endDate, createdAt: projects.createdAt })
         .from(projects)
         .innerJoin(deals, and(eq(deals.id, projects.dealId), sql`${deals.name} ILIKE ${"%" + safe + "%"}`))
-        .where(and(eq(projects.orgId, orgId)))
+        .where(and(eq(projects.orgId, orgId), isNull(projects.deletedAt)))
         .orderBy(desc(projects.createdAt))
         .limit(SECTION_LIMIT),
       this.db
         .select({ count: sql<number>`count(*)::int` })
         .from(projects)
         .innerJoin(deals, and(eq(deals.id, projects.dealId), sql`${deals.name} ILIKE ${"%" + safe + "%"}`))
-        .where(and(eq(projects.orgId, orgId)))
+        .where(and(eq(projects.orgId, orgId), isNull(projects.deletedAt)))
         .then((rows) => rows[0]),
     ]);
     return { items, total: Number(countRow?.count ?? 0) };
@@ -367,14 +367,14 @@ export class CrmCustomer360SectionsService {
         .select({ id: projects.id, name: projects.name, status: projects.status, startDate: projects.startDate, endDate: projects.endDate, createdAt: projects.createdAt })
         .from(projects)
         .innerJoin(deals, and(eq(deals.id, projects.dealId), eq(deals.clientId, clientId)))
-        .where(and(eq(projects.orgId, orgId)))
+        .where(and(eq(projects.orgId, orgId), isNull(projects.deletedAt)))
         .orderBy(desc(projects.createdAt))
         .limit(SECTION_LIMIT),
       this.db
         .select({ count: sql<number>`count(*)::int` })
         .from(projects)
         .innerJoin(deals, and(eq(deals.id, projects.dealId), eq(deals.clientId, clientId)))
-        .where(and(eq(projects.orgId, orgId)))
+        .where(and(eq(projects.orgId, orgId), isNull(projects.deletedAt)))
         .then((rows) => rows[0]),
     ]);
     return { items, total: Number(countRow?.count ?? 0) };

@@ -332,7 +332,7 @@ export class PeriodsService {
     const [proj] = await this.db
       .select({ managerId: projects.managerId })
       .from(projects)
-      .where(and(eq(projects.id, topId), eq(projects.orgId, orgId)))
+      .where(and(eq(projects.id, topId), eq(projects.orgId, orgId), isNull(projects.deletedAt)))
       .limit(1);
 
     return proj?.managerId ?? null;

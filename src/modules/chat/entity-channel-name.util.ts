@@ -46,7 +46,7 @@ export async function resolveEntityChannelName(
   switch (entityType) {
     case "project": {
       const row = await db.query.projects.findFirst({
-        where: and(eq(projects.id, parsedId), eq(projects.orgId, orgId)),
+        where: and(eq(projects.id, parsedId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
         columns: { name: true },
       });
       return row?.name ?? null;
@@ -67,7 +67,7 @@ export async function resolveEntityChannelName(
     }
     case "sprint": {
       const row = await db.query.sprints.findFirst({
-        where: and(eq(sprints.id, parsedId), eq(sprints.orgId, orgId)),
+        where: and(eq(sprints.id, parsedId), eq(sprints.orgId, orgId), isNull(sprints.deletedAt)),
         columns: { name: true },
       });
       return row?.name ?? null;

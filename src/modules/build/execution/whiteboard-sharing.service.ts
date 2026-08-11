@@ -29,7 +29,7 @@ import type {
 
 async function assertProject(db: Db, orgId: string, projectId: number): Promise<void> {
   const project = await db.query.projects.findFirst({
-    where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
+    where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
     columns: { id: true },
   });
   if (!project) throw new NotFoundException("Project not found");

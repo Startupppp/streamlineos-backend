@@ -32,6 +32,7 @@ import {
   resolveMembershipUserIds,
 } from "./ownership-members.helper";
 import type { DeclineTransferInput } from "./dto/ownership.schemas";
+import type { NotificationEventKey } from "../notifications/notification-events.catalog";
 
 @Injectable()
 export class OwnershipTransferResponseService {
@@ -553,7 +554,7 @@ export class OwnershipTransferResponseService {
     actorUserId: string,
     transferId: string,
     membershipId: number,
-    payload: { eventKey: string; title: string; message: string },
+    payload: { eventKey: NotificationEventKey; title: string; message: string },
   ): Promise<void> {
     const targetUserIds = await resolveMembershipUserIds(this.db, orgId, [
       membershipId,

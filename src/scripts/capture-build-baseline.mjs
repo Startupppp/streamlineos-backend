@@ -22,7 +22,7 @@ const QUERIES = [
     text: `select t.id, t.title, t.description, t.status, t.priority, t.type, t.rank,
                   t.assignee_id, t.ticket_number, t.points, t.due_date, t.created_at
            from tickets t
-           where t.org_id = $1 and t.project_id = $2
+           where t.org_id = $1 and t.project_id = $2 and t.deleted_at is null
            order by t.rank asc, t.created_at desc, t.id asc
            limit 50 offset 0`,
   },
@@ -31,20 +31,20 @@ const QUERIES = [
     label: "Same list at offset 3000 (offset pagination cost)",
     text: `select t.id, t.title, t.description, t.status, t.priority, t.rank, t.created_at
            from tickets t
-           where t.org_id = $1 and t.project_id = $2
+           where t.org_id = $1 and t.project_id = $2 and t.deleted_at is null
            order by t.rank asc, t.created_at desc, t.id asc
            limit 50 offset 3000`,
   },
   {
     id: "Q3-list-count",
     label: "The COUNT(*) fired alongside every list request",
-    text: `select count(*) from tickets t where t.org_id = $1 and t.project_id = $2`,
+    text: `select count(*) from tickets t where t.org_id = $1 and t.project_id = $2 and t.deleted_at is null`,
   },
   {
     id: "Q4-search-ilike",
     label: "Search: leading-wildcard ILIKE on title",
     text: `select t.id, t.title from tickets t
-           where t.org_id = $1 and t.project_id = $2 and t.title ILIKE '%ticket 1234%'
+           where t.org_id = $1 and t.project_id = $2 and t.deleted_at is null and t.title ILIKE '%ticket 1234%'
            order by t.rank asc limit 50`,
   },
   {
@@ -58,7 +58,7 @@ const QUERIES = [
                      from ticket_label_mappings tlm join ticket_labels l on l.id = tlm.label_id
                     where tlm.ticket_id = t.id) labels
            from tickets t
-           where t.org_id = $1 and t.project_id = $2
+           where t.org_id = $1 and t.project_id = $2 and t.deleted_at is null
            order by t.rank asc, t.created_at desc, t.id asc
            limit 50`,
   },
@@ -67,7 +67,7 @@ const QUERIES = [
     label: "My Work: assigned tickets across the whole org",
     text: `select t.id, t.title, t.status, t.priority, t.due_date, t.project_id
            from tickets t
-           where t.org_id = $1 and t.assignee_id = $3 and t.status <> 'DONE'
+           where t.org_id = $1 and t.assignee_id = $3 and t.deleted_at is null and t.status <> 'DONE'
            order by t.due_date asc nulls last limit 50`,
   },
   {
@@ -101,13 +101,17 @@ const QUERIES = [
   },
   {
     id: "Q11-portfolio-rollup",
-    label: "Portfolio dashboard: per-project open/done rollup across the org",
-    text: `select p.id, p.name,
-                  count(*) filter (where t.status <> 'DONE') open_count,
-                  count(*) filter (where t.status = 'DONE') done_count
-           from projects p left join tickets t on t.project_id = p.id and t.org_id = p.org_id
-           where p.org_id = $1
-           group by p.id, p.name order by open_count desc limit 50`,
+    label: "Portfolio dashboard: per-project open/done rollup from daily snapshots (post-fix)",
+    text: `select s.project_id::int,
+                  coalesce(sum(case when s.state_group in ('backlog','unstarted','started') then s.count else 0 end),0)::int open_count,
+                  coalesce(sum(case when s.state_group = 'completed' then s.count else 0 end),0)::int done_count
+           from project_daily_snapshots s
+           where s.org_id = $1
+             and s.snapshot_date = (
+               select max(s2.snapshot_date) from project_daily_snapshots s2 where s2.project_id = s.project_id
+             )
+           group by s.project_id
+           order by open_count desc limit 50`,
   },
   {
     id: "Q12-timesheet-billing-rollup",

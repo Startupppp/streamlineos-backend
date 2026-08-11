@@ -39,11 +39,14 @@ export const notifications = pgTable("notifications", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  index("idx_notifications_user_unread_created").on(table.userId, table.isRead, table.createdAt),
+  // SCH-007: org-led and partial, matching the actual unread predicate. The old
+  // (user_id, is_read, created_at) index was not org-led (§19) and scanned archived rows.
+  index("idx_notifications_org_user_unread")
+    .on(table.orgId, table.userId, table.isRead, table.createdAt.desc())
+    .where(sql`deleted_at is null and archived_at is null`),
   index("idx_notifications_org_created").on(table.orgId, table.createdAt),
   index("idx_notifications_user_archived").on(table.userId, table.archivedAt),
   index("idx_notifications_org_category").on(table.orgId, table.category),
-  index("idx_notifications_priority").on(table.priority),
   index("idx_notifications_dedupe").on(table.orgId, table.eventKey, table.entityType, table.entityId),
   index("idx_notifications_org_user_active")
     .on(table.orgId, table.userId, table.id)
@@ -117,6 +120,10 @@ export const notificationAuditLogs = pgTable("notification_audit_logs", {
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
   ipAddress: text("ip_address"),
   userAgent: text("user_agent"),
+  // SCH-005: staleness signal. Without it a dead subscription has no evidence
+  // other than a 410 from the push service.
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_notif_audit_org_action").on(table.orgId, table.action),

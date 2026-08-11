@@ -64,6 +64,7 @@ async function buildSvc(
   permissionsMap: Map<string, string>,
   createdRow = { id: 1, name: "Test Group", isSystem: false },
   ownerUserId: string | null = null,
+  orgMemberRole: "MEMBER" | "ORG_ADMIN" = "MEMBER",
 ) {
   const resolveUserPermissions = jest.fn().mockResolvedValue(permissionsMap);
   const txMock = buildTxMock(createdRow);
@@ -77,6 +78,11 @@ async function buildSvc(
     transaction,
     query: {
       roles: { findFirst: jest.fn().mockResolvedValue(createdRow) },
+      organizationMembers: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ isOwner: false, role: orgMemberRole }),
+      },
     },
   };
 
@@ -162,12 +168,29 @@ describe("ModuleAccessGroupsService.createGroup — rank check", () => {
   });
 
 
-  it("allows an org admin (holds settings:rbac:manage) to create a group without querying rank", async () => {
-    const { svc, mockDb } = await buildSvc([], ORG_ADMIN_PERM_MAP);
+  it("allows a STRUCTURAL org admin to create a group without querying rank", async () => {
+    const { svc, mockDb } = await buildSvc(
+      [],
+      MODULE_PERM_MAP,
+      undefined,
+      null,
+      "ORG_ADMIN",
+    );
 
     const result = await svc.createGroup(actor(), "hr", { name: "Org Admin Group" });
 
     expect(result).toBeDefined();
     expect(mockDb.select).toHaveBeenCalledTimes(1);
+  });
+
+  it("AC-04: holding settings:rbac:manage without an ORG_ADMIN membership row does NOT bypass the rank check", async () => {
+    const { svc } = await buildSvc(
+      [{ rank: ROLE_RANK.FUNCTIONAL, moduleKey: "hr" }],
+      ORG_ADMIN_PERM_MAP,
+    );
+
+    await expect(
+      svc.createGroup(actor(), "hr", { name: "Escalation Attempt" }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 });

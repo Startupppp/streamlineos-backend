@@ -108,7 +108,7 @@ export class ChatAssistantService {
       myOpenDealsResult,
       topLeads,
     ] = await Promise.all([
-      this.db.select({ count: sql<number>`count(*)` }).from(projects).where(eq(projects.orgId, orgId)),
+      this.db.select({ count: sql<number>`count(*)` }).from(projects).where(and(eq(projects.orgId, orgId), isNull(projects.deletedAt))),
       this.db.select({ count: sql<number>`count(*)` }).from(tickets).where(and(eq(tickets.orgId, orgId), isNull(tickets.deletedAt))),
       this.db.query.attendance.findFirst({
         where: and(eq(attendance.userId, userId), eq(attendance.date, today), eq(attendance.orgId, orgId)),
@@ -344,7 +344,7 @@ Tone: Professional, concise, actionable.`;
           const results = await this.db
             .select({ id: projects.id, name: projects.name, key: projects.key, status: projects.status })
             .from(projects)
-            .where(and(eq(projects.orgId, orgId), ne(projects.status, "ARCHIVED"), ilike(projects.name, `%${query}%`)))
+            .where(and(eq(projects.orgId, orgId), ne(projects.status, "ARCHIVED"), ilike(projects.name, `%${query}%`), isNull(projects.deletedAt)))
             .limit(10);
           if (results.length === 0) return { results: [], message: `No projects found matching "${query}".` };
           return { results, message: `Found ${results.length} project(s).` };

@@ -9,6 +9,7 @@ import {
   projectTemplates,
   projectTemplateTickets,
 } from "./core";
+import { sprintScopeEvents } from "./sprint-events";
 import {
   tickets,
   ticketAssignees,
@@ -200,4 +201,11 @@ export const ticketCommentReactionsRelations = relations(ticketCommentReactions,
 
 export const projectAutomationsRelations = relations(projectAutomations, ({ one }) => ({
   project: one(projects, { fields: [projectAutomations.projectId], references: [projects.id] }),
+}));
+
+export const sprintScopeEventsRelations = relations(sprintScopeEvents, ({ one }) => ({
+  org: one(organizations, { fields: [sprintScopeEvents.orgId], references: [organizations.id] }),
+  sprint: one(sprints, { fields: [sprintScopeEvents.sprintId], references: [sprints.id] }),
+  ticket: one(tickets, { fields: [sprintScopeEvents.ticketId], references: [tickets.id] }),
+  actor: one(users, { fields: [sprintScopeEvents.actorId], references: [users.id] }),
 }));

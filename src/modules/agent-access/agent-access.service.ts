@@ -1,6 +1,12 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, isNull } from "drizzle-orm";
-import { projects, ticketAttachments, ticketComments, tickets, users } from "../../db/schema";
+import {
+  projects,
+  ticketAttachments,
+  ticketComments,
+  tickets,
+  users,
+} from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 
@@ -23,7 +29,11 @@ export class AgentAccessService {
 
   async resolveTicketOrgScoped(orgId: string, ticketId: number) {
     const ticket = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)),
+      where: and(
+        eq(tickets.id, ticketId),
+        eq(tickets.orgId, orgId),
+        isNull(tickets.deletedAt),
+      ),
       columns: { id: true, projectId: true },
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
@@ -32,11 +42,24 @@ export class AgentAccessService {
 
   async getTicketDetail(orgId: string, ticketId: number) {
     const ticket = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)),
+      where: and(
+        eq(tickets.id, ticketId),
+        eq(tickets.orgId, orgId),
+        isNull(tickets.deletedAt),
+      ),
       columns: {
-        id: true, title: true, status: true, priority: true, type: true,
-        description: true, ticketNumber: true, projectId: true,
-        assigneeId: true, dueDate: true, createdAt: true, updatedAt: true,
+        id: true,
+        title: true,
+        status: true,
+        priority: true,
+        type: true,
+        description: true,
+        ticketNumber: true,
+        projectId: true,
+        assigneeId: true,
+        dueDate: true,
+        createdAt: true,
+        updatedAt: true,
       },
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
@@ -54,7 +77,13 @@ export class AgentAccessService {
         })
         .from(ticketComments)
         .leftJoin(users, eq(users.id, ticketComments.userId))
-        .where(and(eq(ticketComments.ticketId, ticketId), eq(ticketComments.orgId, orgId)))
+        .where(
+          and(
+            eq(ticketComments.ticketId, ticketId),
+            eq(ticketComments.orgId, orgId),
+            isNull(ticketComments.deletedAt),
+          ),
+        )
         .orderBy(desc(ticketComments.createdAt))
         .limit(50),
       this.db
@@ -66,7 +95,12 @@ export class AgentAccessService {
           fileSize: ticketAttachments.fileSize,
         })
         .from(ticketAttachments)
-        .where(and(eq(ticketAttachments.ticketId, ticketId), eq(ticketAttachments.orgId, orgId)))
+        .where(
+          and(
+            eq(ticketAttachments.ticketId, ticketId),
+            eq(ticketAttachments.orgId, orgId),
+          ),
+        )
         .limit(50),
     ]);
 
@@ -76,13 +110,20 @@ export class AgentAccessService {
       const projRows = await this.db
         .select({ id: projects.id, key: projects.key, name: projects.name })
         .from(projects)
-        .where(and(eq(projects.id, pid), eq(projects.orgId, orgId)))
+        .where(
+          and(
+            eq(projects.id, pid),
+            eq(projects.orgId, orgId),
+            isNull(projects.deletedAt),
+          ),
+        )
         .limit(1);
       proj = projRows[0] ?? null;
     }
 
     const shapedComments = comments.map((c) => {
-      const fallback = `${c.authorFirstName ?? ""} ${c.authorLastName ?? ""}`.trim();
+      const fallback =
+        `${c.authorFirstName ?? ""} ${c.authorLastName ?? ""}`.trim();
       return {
         id: c.id,
         body: c.body,
@@ -93,7 +134,8 @@ export class AgentAccessService {
     });
 
     const seen = new Set<string>();
-    const inlineImages: { url: string; source: "description" | "comment" }[] = [];
+    const inlineImages: { url: string; source: "description" | "comment" }[] =
+      [];
     for (const url of extractImageUrls(ticket.description)) {
       if (!seen.has(url)) {
         seen.add(url);
@@ -112,6 +154,12 @@ export class AgentAccessService {
       if (attachment.fileUrl) seen.add(attachment.fileUrl);
     }
 
-    return { ...ticket, project: proj, comments: shapedComments, attachments, inlineImages };
+    return {
+      ...ticket,
+      project: proj,
+      comments: shapedComments,
+      attachments,
+      inlineImages,
+    };
   }
 }

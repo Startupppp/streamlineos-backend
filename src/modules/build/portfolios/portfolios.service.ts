@@ -1,6 +1,14 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, eq, isNull, sql } from "drizzle-orm";
-import { portfolioProjects, projectPortfolios, projectPrograms, projects } from "../../../db/schema";
+import { and, count, eq, inArray, isNull, sql } from "drizzle-orm";
+import {
+  portfolioProjects,
+  projectDailySnapshots,
+  projectPortfolios,
+  projectPrograms,
+  projects,
+  projectStatuses,
+  tickets,
+} from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -41,9 +49,77 @@ export class PortfoliosService {
     const [row] = await this.db
       .select({ id: projects.id })
       .from(projects)
-      .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId)))
+      .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)))
       .limit(1);
     if (!row) throw new BadRequestException("Project not found in org");
+  }
+
+  // Resolves open/done ticket counts for a set of project IDs.
+  // Primary path reads the latest daily snapshot (maintained by the nightly sweep).
+  // Projects created since the last sweep have no snapshot row yet; those fall back
+  // to a live aggregate so we never silently report 0 for a real project.
+  // Cancelled tickets are excluded from open (terminal, but not done).
+  private async resolveProjectCounts(
+    orgId: string,
+    projectIds: number[],
+  ): Promise<Map<number, { openCount: number; doneCount: number }>> {
+    const snapshotRows = await this.db
+      .select({
+        projectId: projectDailySnapshots.projectId,
+        openCount: sql<number>`COALESCE(SUM(CASE WHEN ${projectDailySnapshots.stateGroup} IN ('backlog', 'unstarted', 'started') THEN ${projectDailySnapshots.count} ELSE 0 END), 0)::int`,
+        doneCount: sql<number>`COALESCE(SUM(CASE WHEN ${projectDailySnapshots.stateGroup} = 'completed' THEN ${projectDailySnapshots.count} ELSE 0 END), 0)::int`,
+      })
+      .from(projectDailySnapshots)
+      .where(
+        and(
+          eq(projectDailySnapshots.orgId, orgId),
+          inArray(projectDailySnapshots.projectId, projectIds),
+          sql`${projectDailySnapshots.snapshotDate} = (
+            SELECT MAX(s2.snapshot_date)
+            FROM project_daily_snapshots s2
+            WHERE s2.project_id = ${projectDailySnapshots.projectId}
+          )`,
+        ),
+      )
+      .groupBy(projectDailySnapshots.projectId);
+
+    const countsMap = new Map<number, { openCount: number; doneCount: number }>();
+    for (const row of snapshotRows)
+      countsMap.set(row.projectId, { openCount: row.openCount, doneCount: row.doneCount });
+
+    const unsnapshottedIds = projectIds.filter((id) => !countsMap.has(id));
+    if (unsnapshottedIds.length > 0) {
+      const liveRows = await this.db
+        .select({
+          projectId: tickets.projectId,
+          openCount: sql<number>`COALESCE(SUM(CASE WHEN ${projectStatuses.type} IN ('backlog', 'unstarted', 'started') THEN 1 ELSE 0 END), 0)::int`,
+          doneCount: sql<number>`COALESCE(SUM(CASE WHEN ${projectStatuses.type} = 'completed' THEN 1 ELSE 0 END), 0)::int`,
+        })
+        .from(tickets)
+        .innerJoin(
+          projectStatuses,
+          and(
+            eq(tickets.orgId, projectStatuses.orgId),
+            eq(tickets.projectId, projectStatuses.projectId),
+            eq(tickets.status, projectStatuses.name),
+          ),
+        )
+        .where(
+          and(
+            eq(tickets.orgId, orgId),
+            inArray(tickets.projectId, unsnapshottedIds),
+            isNull(tickets.deletedAt),
+          ),
+        )
+        .groupBy(tickets.projectId);
+
+      for (const r of liveRows) {
+        if (r.projectId !== null)
+          countsMap.set(r.projectId, { openCount: r.openCount, doneCount: r.doneCount });
+      }
+    }
+
+    return countsMap;
   }
 
   async listPortfolios(orgId: string, query: ListPortfoliosQuery) {
@@ -88,33 +164,51 @@ export class PortfoliosService {
 
   async getPortfolio(orgId: string, portfolioId: number) {
     const portfolio = await this.loadPortfolio(orgId, portfolioId);
-    const linkedProjects = await this.db
-      .select({
-        id: projects.id,
-        name: projects.name,
-        key: projects.key,
-        status: projects.status,
-      })
-      .from(portfolioProjects)
-      .innerJoin(projects, eq(projects.id, portfolioProjects.projectId))
-      .where(and(eq(portfolioProjects.portfolioId, portfolioId), eq(portfolioProjects.orgId, orgId)))
-      .limit(100);
-    const programs = await this.db
-      .select({
-        id: projectPrograms.id,
-        name: projectPrograms.name,
-        status: projectPrograms.status,
-      })
-      .from(projectPrograms)
-      .where(
-        and(
-          eq(projectPrograms.portfolioId, portfolioId),
-          eq(projectPrograms.orgId, orgId),
-          isNull(projectPrograms.deletedAt),
-        ),
-      )
-      .limit(100);
-    return { ...portfolio, projects: linkedProjects, programs };
+
+    const [linkedProjects, programs] = await Promise.all([
+      this.db
+        .select({
+          id: projects.id,
+          name: projects.name,
+          key: projects.key,
+          status: projects.status,
+        })
+        .from(portfolioProjects)
+        .innerJoin(projects, eq(projects.id, portfolioProjects.projectId))
+        .where(and(eq(portfolioProjects.portfolioId, portfolioId), eq(portfolioProjects.orgId, orgId)))
+        .limit(100),
+      this.db
+        .select({
+          id: projectPrograms.id,
+          name: projectPrograms.name,
+          status: projectPrograms.status,
+        })
+        .from(projectPrograms)
+        .where(
+          and(
+            eq(projectPrograms.portfolioId, portfolioId),
+            eq(projectPrograms.orgId, orgId),
+            isNull(projectPrograms.deletedAt),
+          ),
+        )
+        .limit(100),
+    ]);
+
+    if (linkedProjects.length === 0)
+      return { ...portfolio, projects: [], programs };
+
+    const projectIds = linkedProjects.map((p) => p.id);
+    const countsMap = await this.resolveProjectCounts(orgId, projectIds);
+
+    return {
+      ...portfolio,
+      projects: linkedProjects.map((p) => ({
+        ...p,
+        openCount: countsMap.get(p.id)?.openCount ?? 0,
+        doneCount: countsMap.get(p.id)?.doneCount ?? 0,
+      })),
+      programs,
+    };
   }
 
   async createPortfolio(orgId: string, userId: string, input: CreatePortfolioInput) {

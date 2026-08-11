@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, BadRequestException, type OnModuleInit } from "@nestjs/common";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { notificationEvents, notificationAuditLogs } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -60,16 +60,21 @@ export class NotificationEventRegistryService implements OnModuleInit {
     }
   }
 
+  /**
+   * REG-002. This used to INSERT only the keys it found missing and never update the
+   * rest, so any change to an existing catalog entry — a new default channel, a
+   * corrected `userConfigurable`, a `visibilityResourceKind` — silently never reached
+   * the database, and code and DB drifted permanently. It is now an upsert on the
+   * global rows, keyed on the partial unique added in 0415.
+   *
+   * Tenant override rows (org_id NOT NULL) are untouched: they exist precisely to
+   * differ from the catalog.
+   */
   private async seedGlobalCatalog(): Promise<void> {
-    const existing = await this.db
-      .select({ eventKey: notificationEvents.eventKey })
-      .from(notificationEvents)
-      .where(isNull(notificationEvents.orgId));
-    const known = new Set(existing.map((r) => r.eventKey));
-    const missing = NOTIFICATION_EVENT_CATALOG.filter((d) => !known.has(d.eventKey));
-    if (missing.length === 0) return;
-    await this.db.insert(notificationEvents).values(
-      missing.map((d) => ({
+    await this.db
+      .insert(notificationEvents)
+      .values(
+        NOTIFICATION_EVENT_CATALOG.map((d) => ({
         orgId: null,
         eventKey: d.eventKey,
         sourceModule: d.sourceModule,
@@ -90,9 +95,36 @@ export class NotificationEventRegistryService implements OnModuleInit {
         templateKey: d.templateKey ?? null,
         audienceResolver: d.audienceResolver ?? null,
         visibilityResourceKind: d.visibilityResourceKind ?? null,
-      })),
+        })),
+      )
+      .onConflictDoUpdate({
+        target: notificationEvents.eventKey,
+        targetWhere: isNull(notificationEvents.orgId),
+        set: {
+          sourceModule: sql`excluded.source_module`,
+          category: sql`excluded.category`,
+          displayName: sql`excluded.display_name`,
+          description: sql`excluded.description`,
+          defaultPriority: sql`excluded.default_priority`,
+          defaultType: sql`excluded.default_type`,
+          defaultChannels: sql`excluded.default_channels`,
+          allowedChannels: sql`excluded.allowed_channels`,
+          mandatory: sql`excluded.mandatory`,
+          userConfigurable: sql`excluded.user_configurable`,
+          adminConfigurable: sql`excluded.admin_configurable`,
+          quietHoursBehavior: sql`excluded.quiet_hours_behavior`,
+          dedupeWindowSeconds: sql`excluded.dedupe_window_seconds`,
+          rateLimitWindowSeconds: sql`excluded.rate_limit_window_seconds`,
+          rateLimitMax: sql`excluded.rate_limit_max`,
+          templateKey: sql`excluded.template_key`,
+          audienceResolver: sql`excluded.audience_resolver`,
+          visibilityResourceKind: sql`excluded.visibility_resource_kind`,
+          updatedAt: new Date(),
+        },
+      });
+    this.logger.log(
+      `Synced ${NOTIFICATION_EVENT_CATALOG.length} global notification events`,
     );
-    this.logger.log(`Seeded ${missing.length} global notification events`);
   }
 
   getBaseDefinition(eventKey: string): NotificationEventDefinition | undefined {

@@ -428,7 +428,7 @@ export class UsersService {
     actor: InviteActor,
     role: string,
   ): Promise<void> {
-    return assertMayGrantRole(this.access, orgId, actor, role);
+    return assertMayGrantRole(this.db, orgId, actor, role);
   }
 
   async updateUser(

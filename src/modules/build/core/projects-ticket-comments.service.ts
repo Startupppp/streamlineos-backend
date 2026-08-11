@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   projects,
   ticketCommentReactions,
@@ -61,6 +61,7 @@ export class ProjectsTicketCommentsService {
           eq(ticketComments.id, body.parentCommentId),
           eq(ticketComments.ticketId, ticketId),
           eq(ticketComments.orgId, u.orgId),
+          isNull(ticketComments.deletedAt),
         ),
         columns: { id: true, parentCommentId: true },
       });
@@ -141,6 +142,7 @@ export class ProjectsTicketCommentsService {
           eq(ticketComments.id, commentId),
           eq(ticketComments.ticketId, ticketId),
           eq(ticketComments.orgId, u.orgId),
+          isNull(ticketComments.deletedAt),
         ),
       )
       .limit(1);
@@ -178,6 +180,7 @@ export class ProjectsTicketCommentsService {
         eq(ticketComments.id, commentId),
         eq(ticketComments.ticketId, ticketId),
         eq(ticketComments.orgId, u.orgId),
+        isNull(ticketComments.deletedAt),
       ),
       columns: { id: true, userId: true },
     });
@@ -207,6 +210,7 @@ export class ProjectsTicketCommentsService {
         eq(ticketComments.id, commentId),
         eq(ticketComments.ticketId, ticketId),
         eq(ticketComments.orgId, u.orgId),
+        isNull(ticketComments.deletedAt),
       ),
       columns: { id: true, userId: true },
     });
@@ -218,7 +222,15 @@ export class ProjectsTicketCommentsService {
       throw new ForbiddenException("Only the comment author or a project manager can delete this comment");
     }
 
-    await this.db.delete(ticketComments).where(and(eq(ticketComments.id, commentId), eq(ticketComments.orgId, u.orgId)));
+    const now = new Date();
+    await this.db.transaction(async (tx) => {
+      await tx.update(ticketComments).set({ deletedAt: now }).where(
+        and(eq(ticketComments.orgId, u.orgId), sql`${ticketComments.parentCommentId} = ${commentId}`),
+      );
+      await tx.update(ticketComments).set({ deletedAt: now }).where(
+        and(eq(ticketComments.id, commentId), eq(ticketComments.orgId, u.orgId)),
+      );
+    });
 
     try {
       await this.activity.logTicketActivity(u.orgId, ticketId, u.userId, "comment_deleted");
@@ -231,7 +243,7 @@ export class ProjectsTicketCommentsService {
 
   async addReaction(commentId: number, userId: string, orgId: string, emoji: string) {
     const comment = await this.db.query.ticketComments.findFirst({
-      where: and(eq(ticketComments.id, commentId), eq(ticketComments.orgId, orgId)),
+      where: and(eq(ticketComments.id, commentId), eq(ticketComments.orgId, orgId), isNull(ticketComments.deletedAt)),
       columns: { id: true },
     });
     if (!comment) throw new NotFoundException("Comment not found");

@@ -1,5 +1,6 @@
 import { notificationSuppressionReasonEnum } from "../../db/schema/common/enums";
 import type { NotificationCategoryValue } from "./notifications.types";
+import type { NotificationEventKey } from "./notification-events.catalog";
 
 export type NotificationChannel =
   | "IN_APP"
@@ -47,10 +48,17 @@ export interface NotificationEventDefinition {
    * registered for the kind — a missing one denies.
    */
   visibilityResourceKind?: string;
+  /**
+   * PIPE-012. Seconds after which an undelivered notification is worthless and is
+   * dropped rather than sent. Absent means it never expires — correct for anything
+   * durable (a payslip, a role change) and wrong for anything time-boxed.
+   */
+  ttlSeconds?: number;
 }
 
 export interface DispatchEventInput {
-  eventKey: string;
+  /** REG-005: only keys declared in the catalog compile. */
+  eventKey: NotificationEventKey;
   orgId: string;
   actorUserId?: string | null;
   targetUserIds: string[];

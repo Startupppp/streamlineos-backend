@@ -28,7 +28,7 @@ export const ticketActivityLog = pgTable("ticket_activity_log", {
   action: ticketActivityActionEnum("action").notNull(),
   fromValue: text("from_value"),
   toValue: text("to_value"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("idx_ticket_activity_log_ticket_recent").on(table.ticketId, table.id),
   index("idx_ticket_activity_log_org_ticket").on(table.orgId, table.ticketId, table.id),

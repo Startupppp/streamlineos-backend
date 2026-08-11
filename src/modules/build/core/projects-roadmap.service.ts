@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, count, desc, eq, ilike, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, isNull, or } from "drizzle-orm";
 import { changelogEntries, feedbackPosts, roadmapItems } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -23,7 +23,7 @@ export class ProjectsRoadmapService {
     const { page, limit } = query;
     const effectiveLimit = Math.min(limit, 100);
     const offset = (page - 1) * effectiveLimit;
-    const conditions = [eq(roadmapItems.orgId, orgId)];
+    const conditions = [eq(roadmapItems.orgId, orgId), isNull(roadmapItems.deletedAt)];
     if (query.status) conditions.push(eq(roadmapItems.status, query.status));
     if (query.search) {
       const term = `%${query.search}%`;
@@ -74,7 +74,7 @@ export class ProjectsRoadmapService {
 
   async getRoadmap(orgId: string, itemId: number) {
     const item = await this.db.query.roadmapItems.findFirst({
-      where: and(eq(roadmapItems.id, itemId), eq(roadmapItems.orgId, orgId)),
+      where: and(eq(roadmapItems.id, itemId), eq(roadmapItems.orgId, orgId), isNull(roadmapItems.deletedAt)),
     });
     if (!item) throw new NotFoundException("Roadmap item not found");
     return item;
@@ -84,7 +84,7 @@ export class ProjectsRoadmapService {
     const [updated] = await this.db
       .update(roadmapItems)
       .set({ ...input, updatedAt: new Date() })
-      .where(and(eq(roadmapItems.id, itemId), eq(roadmapItems.orgId, orgId)))
+      .where(and(eq(roadmapItems.id, itemId), eq(roadmapItems.orgId, orgId), isNull(roadmapItems.deletedAt)))
       .returning();
     if (!updated) throw new NotFoundException("Roadmap item not found");
     return updated;
@@ -92,9 +92,10 @@ export class ProjectsRoadmapService {
 
   async deleteRoadmap(orgId: string, itemId: number) {
     const [deleted] = await this.db
-      .delete(roadmapItems)
-      .where(and(eq(roadmapItems.id, itemId), eq(roadmapItems.orgId, orgId)))
-      .returning();
+      .update(roadmapItems)
+      .set({ deletedAt: new Date() })
+      .where(and(eq(roadmapItems.id, itemId), eq(roadmapItems.orgId, orgId), isNull(roadmapItems.deletedAt)))
+      .returning({ id: roadmapItems.id });
     if (!deleted) throw new NotFoundException("Roadmap item not found");
     return { success: true };
   }
@@ -103,7 +104,7 @@ export class ProjectsRoadmapService {
     const { page, limit } = query;
     const effectiveLimit = Math.min(limit, 100);
     const offset = (page - 1) * effectiveLimit;
-    const conditions = [eq(feedbackPosts.orgId, orgId)];
+    const conditions = [eq(feedbackPosts.orgId, orgId), isNull(feedbackPosts.deletedAt)];
     if (query.status) conditions.push(eq(feedbackPosts.status, query.status));
     if (query.search) {
       const term = `%${query.search}%`;
@@ -152,7 +153,7 @@ export class ProjectsRoadmapService {
 
   async getFeedback(orgId: string, postId: number) {
     const post = await this.db.query.feedbackPosts.findFirst({
-      where: and(eq(feedbackPosts.id, postId), eq(feedbackPosts.orgId, orgId)),
+      where: and(eq(feedbackPosts.id, postId), eq(feedbackPosts.orgId, orgId), isNull(feedbackPosts.deletedAt)),
     });
     if (!post) throw new NotFoundException("Feedback post not found");
     return post;
@@ -162,7 +163,7 @@ export class ProjectsRoadmapService {
     const [updated] = await this.db
       .update(feedbackPosts)
       .set({ ...input, updatedAt: new Date() })
-      .where(and(eq(feedbackPosts.id, postId), eq(feedbackPosts.orgId, orgId)))
+      .where(and(eq(feedbackPosts.id, postId), eq(feedbackPosts.orgId, orgId), isNull(feedbackPosts.deletedAt)))
       .returning();
     if (!updated) throw new NotFoundException("Feedback post not found");
     return updated;
@@ -170,9 +171,10 @@ export class ProjectsRoadmapService {
 
   async deleteFeedback(orgId: string, postId: number) {
     const [deleted] = await this.db
-      .delete(feedbackPosts)
-      .where(and(eq(feedbackPosts.id, postId), eq(feedbackPosts.orgId, orgId)))
-      .returning();
+      .update(feedbackPosts)
+      .set({ deletedAt: new Date() })
+      .where(and(eq(feedbackPosts.id, postId), eq(feedbackPosts.orgId, orgId), isNull(feedbackPosts.deletedAt)))
+      .returning({ id: feedbackPosts.id });
     if (!deleted) throw new NotFoundException("Feedback post not found");
     return { success: true };
   }

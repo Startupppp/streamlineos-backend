@@ -115,6 +115,7 @@ import { BuildAutomationRunnerService } from "./build-automation-runner.service"
     ProjectsService,
     ProjectsWorkQueryService,
     ProjectsTicketSubresourcesService,
+    ProjectsReportsService,
   ],
 })
 export class ProjectsModule {}

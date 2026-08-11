@@ -481,7 +481,7 @@ export class SettingsService {
     }
 
     // Rejects OWNER outright so a second owner cannot be minted outside the transfer flow
-    await assertMayGrantRole(this.access, u.orgId, u, role);
+    await assertMayGrantRole(this.db, u.orgId, u, role);
 
     await this.db.transaction(async (tx) => {
       await tx

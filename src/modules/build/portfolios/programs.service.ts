@@ -41,7 +41,7 @@ export class ProgramsService {
     const [row] = await this.db
       .select({ id: projects.id })
       .from(projects)
-      .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId)))
+      .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)))
       .limit(1);
     if (!row) throw new BadRequestException("Project not found in org");
   }

@@ -12,6 +12,7 @@ import { assertCronSecret } from "./cron-secret";
 import { CronEmailOutboxService } from "./cron-email-outbox.service";
 import { CronNotificationDeliveryService } from "./cron-notification-delivery.service";
 import { CronNotificationRetentionService } from "./cron-notification-retention.service";
+import { NotificationOutboxRelayService } from "../notifications/notification-outbox-relay.service";
 import { CronOrganizationService } from "./cron-organization.service";
 import { OwnershipTransfersService } from "../ownership/ownership-transfers.service";
 import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
@@ -32,7 +33,34 @@ export class CronPlatformController {
     private readonly timesheetExceptionsDetector: ExceptionsDetectorService,
     private readonly idempotency: CronIdempotencyService,
     private readonly notificationRetention: CronNotificationRetentionService,
+    private readonly outboxRelay: NotificationOutboxRelayService,
   ) {}
+
+  @Get("notification-outbox-flush")
+  getNotificationOutboxFlush(@Headers("authorization") authorization?: string) {
+    return this.runNotificationOutboxFlush(authorization);
+  }
+
+  @Post("notification-outbox-flush")
+  @HttpCode(200)
+  postNotificationOutboxFlush(@Headers("authorization") authorization?: string) {
+    return this.runNotificationOutboxFlush(authorization);
+  }
+
+  private async runNotificationOutboxFlush(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.outboxRelay.flush();
+      return {
+        success: true,
+        message: `Claimed ${result.claimed}: ${result.processed} processed, ${result.retried} retrying, ${result.dead} dead`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Notification outbox flush cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
 
   @Get("notifications-retention-sweep")
   getNotificationsRetentionSweep(@Headers("authorization") authorization?: string) {

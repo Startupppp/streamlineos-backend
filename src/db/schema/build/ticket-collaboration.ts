@@ -14,6 +14,7 @@ import {
   uniqueIndex,
   varchar,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { tickets } from "./ticket-core";
 import { customFieldDefinitions } from "../custom-field-engine";
@@ -61,8 +62,9 @@ export const ticketComments = pgTable(
     content: text("content").notNull(),
     clientVisible: boolean("client_visible").notNull().default(false),
     parentCommentId: bigint("parent_comment_id", { mode: "number" }),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at")
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()
       .notNull()
       .$onUpdate(() => new Date()),
@@ -72,7 +74,7 @@ export const ticketComments = pgTable(
       columns: [table.parentCommentId],
       foreignColumns: [table.id],
     }).onDelete("cascade"),
-    index("idx_ticket_comments_ticket").on(table.ticketId),
+    index("idx_ticket_comments_ticket").on(table.ticketId).where(sql`deleted_at IS NULL`),
     unique("uniq_ticket_comments_org_id").on(table.orgId, table.id),
   ],
 );

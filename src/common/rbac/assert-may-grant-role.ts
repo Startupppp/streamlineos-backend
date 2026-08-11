@@ -1,23 +1,23 @@
-import type { DataScope } from "../../modules/access/access.types";
+import type { Db } from "../../db/drizzle.types";
 import { assertInvitableRole } from "./assert-invitable-role";
-import { ORG_ADMIN_PERMISSION_KEY } from "./grantability";
+import { isStructuralOrgAdmin } from "./is-structural-org-admin";
 
-/** Structural shape of AccessService, so this shared helper needs no runtime module import. */
-export interface PermissionResolver {
-  resolveUserPermissions(orgId: string, userId: string): Promise<Map<string, DataScope>>;
-}
-
-/** Resolves the actor's org-admin standing, then guards the structural role being granted. */
+/**
+ * Resolves the actor's org-admin standing STRUCTURALLY, then guards the
+ * structural role being granted. Deriving admin standing from holding
+ * `settings:manage` would let any custom role carrying that key promote others
+ * to ORG_ADMIN — AC-04 (CLAUDE.md §21).
+ */
 export async function assertMayGrantRole(
-  access: PermissionResolver,
+  db: Db,
   orgId: string,
   actor: { userId: string; isOrgOwner: boolean },
   role: string,
 ): Promise<void> {
-  let isOrgAdmin = false;
-  if (!actor.isOrgOwner) {
-    const resolved = await access.resolveUserPermissions(orgId, actor.userId);
-    isOrgAdmin = (resolved.get(ORG_ADMIN_PERMISSION_KEY) ?? "none") !== "none";
-  }
+  const isOrgAdmin = await isStructuralOrgAdmin(db, {
+    orgId,
+    userId: actor.userId,
+    isOrgOwner: actor.isOrgOwner,
+  });
   assertInvitableRole({ isOrgOwner: actor.isOrgOwner, isOrgAdmin }, role);
 }

@@ -45,7 +45,7 @@ export class TicketAiService {
     const [project] = await this.db
       .select({ id: projects.id, name: projects.name })
       .from(projects)
-      .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId)))
+      .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)))
       .limit(1);
     if (!project) throw new NotFoundException("Project not found");
     return project;
@@ -76,7 +76,7 @@ export class TicketAiService {
     const comments = await this.db
       .select({ content: ticketComments.content })
       .from(ticketComments)
-      .where(and(eq(ticketComments.ticketId, ticketId), eq(ticketComments.orgId, orgId)))
+      .where(and(eq(ticketComments.ticketId, ticketId), eq(ticketComments.orgId, orgId), isNull(ticketComments.deletedAt)))
       .limit(10);
 
     const commentBlock = comments.length > 0
@@ -114,7 +114,7 @@ Provide a summary, key points, and any blockers visible in the discussion.`;
     const comments = await this.db
       .select({ content: ticketComments.content, createdAt: ticketComments.createdAt })
       .from(ticketComments)
-      .where(and(eq(ticketComments.ticketId, ticketId), eq(ticketComments.orgId, orgId)))
+      .where(and(eq(ticketComments.ticketId, ticketId), eq(ticketComments.orgId, orgId), isNull(ticketComments.deletedAt)))
       .orderBy(asc(ticketComments.createdAt))
       .limit(50);
 
@@ -558,7 +558,7 @@ Suggest priority, points, and matching labels with a short rationale.`;
     const comments = await this.db
       .select({ content: ticketComments.content, createdAt: ticketComments.createdAt })
       .from(ticketComments)
-      .where(and(eq(ticketComments.ticketId, ticketId), eq(ticketComments.orgId, orgId)))
+      .where(and(eq(ticketComments.ticketId, ticketId), eq(ticketComments.orgId, orgId), isNull(ticketComments.deletedAt)))
       .limit(10);
 
     const commentBlock =

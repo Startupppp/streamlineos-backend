@@ -21,7 +21,7 @@ export class DashboardProjectService {
   ): Promise<number[]> {
     if (isAll) {
       const allProjects = await this.db.query.projects.findMany({
-        where: eq(projects.orgId, orgId),
+        where: and(eq(projects.orgId, orgId), isNull(projects.deletedAt)),
         columns: { id: true },
       });
       return allProjects.map((p) => p.id);
@@ -38,7 +38,7 @@ export class DashboardProjectService {
 
     if (scope === "all") {
       return this.db.query.projects.findMany({
-        where: eq(projects.orgId, orgId),
+        where: and(eq(projects.orgId, orgId), isNull(projects.deletedAt)),
         orderBy: [desc(projects.id)],
         limit: 5,
         with: {
@@ -59,6 +59,7 @@ export class DashboardProjectService {
     return this.db.query.projects.findMany({
       where: and(
         eq(projects.orgId, orgId),
+        isNull(projects.deletedAt),
         or(
           eq(projects.managerId, u.userId),
           projectIds.length > 0 ? inArray(projects.id, projectIds) : undefined,
@@ -117,6 +118,7 @@ export class DashboardProjectService {
         eq(sprints.orgId, orgId),
         eq(sprints.status, "ACTIVE"),
         inArray(sprints.projectId, projectIds),
+        isNull(sprints.deletedAt),
       ),
       with: {
         project: { columns: { id: true, name: true } },

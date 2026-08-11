@@ -365,7 +365,11 @@ export class TimesheetsService {
     input: LogTimeInput,
   ) {
     const ticket = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, user.orgId)),
+      where: and(
+        eq(tickets.id, ticketId),
+        eq(tickets.orgId, user.orgId),
+        isNull(tickets.deletedAt),
+      ),
       columns: { projectId: true },
       with: { project: { columns: { managerId: true, id: true } } },
     });
