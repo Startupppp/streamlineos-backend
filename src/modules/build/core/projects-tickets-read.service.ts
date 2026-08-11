@@ -39,7 +39,7 @@ const TICKET_ORDERBY_COLUMNS = {
   updated: tickets.updatedAt,
   priority: tickets.priority,
   dueDate: tickets.dueDate,
-  order: tickets.order,
+  rank: tickets.rank,
 } as const;
 
 const USER_COLS = {
@@ -68,7 +68,7 @@ const TICKET_LIST_COLUMNS = {
   points: true,
   storyPoints: true,
   link: true,
-  order: true,
+  rank: true,
   parentTicketId: true,
   originalEstimate: true,
   timeSpent: true,
@@ -305,29 +305,29 @@ export class ProjectsTicketsReadService {
     const dir = orderDir ?? defaultDir;
 
     const sortExpr: SQL<unknown>[] =
-      orderBy === "order"
-        ? [asc(tickets.order), desc(tickets.createdAt)]
+      orderBy === "rank"
+        ? [asc(tickets.rank), desc(tickets.createdAt), asc(tickets.id)]
         : dir === "asc"
           ? [asc(col), desc(tickets.createdAt)]
           : [desc(col), desc(tickets.createdAt)];
 
-    if (scope !== "all" && orderBy === "order") {
+    if (scope !== "all" && orderBy === "rank") {
       const filterWhere =
         filterConditions.length > 0 ? and(...filterConditions) : undefined;
       const branchLimit = offset + limit;
 
       const idQuery = sql`
         SELECT id FROM (
-          (SELECT ${tickets.id}, ${tickets.order}, ${tickets.createdAt}
+          (SELECT ${tickets.id}, ${tickets.rank}, ${tickets.createdAt}
            FROM ${tickets}
            WHERE ${tickets.orgId} = ${u.orgId}
              AND ${tickets.projectId} = ${projectId}
              AND (${tickets.assigneeId} = ${u.userId} OR ${tickets.reporterId} = ${u.userId})
              ${filterWhere ? sql`AND ${filterWhere}` : sql``}
-           ORDER BY ${tickets.order} ASC, ${tickets.createdAt} DESC
+           ORDER BY ${tickets.rank} ASC, ${tickets.createdAt} DESC, ${tickets.id} ASC
            LIMIT ${branchLimit})
           UNION
-          (SELECT ${tickets.id}, ${tickets.order}, ${tickets.createdAt}
+          (SELECT ${tickets.id}, ${tickets.rank}, ${tickets.createdAt}
            FROM ${tickets}
            INNER JOIN ${ticketAssignees}
              ON ${ticketAssignees.ticketId} = ${tickets.id}
@@ -336,10 +336,10 @@ export class ProjectsTicketsReadService {
            WHERE ${tickets.orgId} = ${u.orgId}
              AND ${tickets.projectId} = ${projectId}
              ${filterWhere ? sql`AND ${filterWhere}` : sql``}
-           ORDER BY ${tickets.order} ASC, ${tickets.createdAt} DESC
+           ORDER BY ${tickets.rank} ASC, ${tickets.createdAt} DESC, ${tickets.id} ASC
            LIMIT ${branchLimit})
         ) u
-        ORDER BY u."order" ASC, u.created_at DESC
+        ORDER BY u.rank ASC, u.created_at DESC, u.id ASC
         LIMIT ${limit} OFFSET ${offset}
       `;
 

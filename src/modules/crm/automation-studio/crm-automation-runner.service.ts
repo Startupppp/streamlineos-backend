@@ -14,7 +14,7 @@ import {
 import type { CrmAutomationCondition, AutomationGraphNode } from "../../../db/schema/crm/automation-rules";
 import { logger } from "../../../common/logger/logger.service";
 import { NotificationsService } from "../../notifications/notifications.service";
-import { AutomationEmailService } from "../../automation/automation-email.service";
+import { CrmOutboundEmailService } from "../consent/crm-outbound-email.service";
 import type { StudioEventPayload, RunStepLog } from "./types";
 import { evaluateConditions, type StudioCondition } from "./crm-automation-condition-evaluator";
 
@@ -26,7 +26,7 @@ export class CrmAutomationRunnerService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly notifications: NotificationsService,
-    private readonly email: AutomationEmailService,
+    private readonly email: CrmOutboundEmailService,
   ) {}
 
   async executeRule(
@@ -215,7 +215,7 @@ export class CrmAutomationRunnerService {
           return { nodeId, type: actionKey, status: "ok", at };
         }
         case "send_email": {
-          await this.email.send({
+          await this.email.send(orgId, {
             to: String(config["to"] ?? ""),
             subject: String(config["subject"] ?? ""),
             html: String(config["body"] ?? ""),

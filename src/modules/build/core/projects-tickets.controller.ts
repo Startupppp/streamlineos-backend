@@ -24,7 +24,7 @@ import {
   bulkUpdateSchema,
   createTicketSchema,
   importTicketsSchema,
-  reorderSchema,
+  rankTicketSchema,
   searchTicketsQuerySchema,
   ticketActivityQuerySchema,
   ticketsListQuerySchema,
@@ -33,7 +33,7 @@ import {
   type BulkUpdateInput,
   type CreateTicketInput,
   type ImportTicketsInput,
-  type ReorderInput,
+  type RankTicketInput,
   type SearchTicketsQuery,
   type TicketActivityQuery,
   type TicketsListQuery,
@@ -129,14 +129,15 @@ export class ProjectsTicketsController {
     return this.tickets.bulkUpdate(u, projectId, body);
   }
 
-  @Patch(":projectId/tickets/reorder")
+  @Patch(":projectId/tickets/:ticketId/rank")
   @RequirePermission("build:tickets:update")
-  reorder(
+  rankTicket(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(reorderSchema)) body: ReorderInput,
+    @Param("ticketId", ParseIntPipe) ticketId: number,
+    @Body(new ZodValidationPipe(rankTicketSchema)) body: RankTicketInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.reorder(u, projectId, body);
+    return this.tickets.rankTicket(u, projectId, ticketId, body);
   }
 
   @Get(":projectId/tickets/:ticketId/activity")

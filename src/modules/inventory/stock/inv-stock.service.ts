@@ -101,10 +101,15 @@ export class InvStockService {
     }, CACHE_TTL.SHORT);
   }
 
-  async listTransactions(orgId: string, filters: ListTransactionsInput) {
+  async listTransactions(orgId: string, userId: string, filters: ListTransactionsInput) {
     const { productVariantId, warehouseId, locationId, transactionType, direction, search, fromDate, toDate, page, limit } = filters;
     const offset = (page - 1) * limit;
     const conditions: SQL[] = [eq(invStockTransactions.orgId, orgId)];
+    const scoped = this.warehouseScope.locationPredicate(
+      await this.warehouseScope.resolve(orgId, userId),
+      sql`${invStockTransactions.locationId}`,
+    );
+    conditions.push(scoped);
     if (productVariantId) conditions.push(eq(invStockTransactions.productVariantId, productVariantId));
     if (locationId) conditions.push(eq(invStockTransactions.locationId, locationId));
     if (transactionType) conditions.push(eq(invStockTransactions.transactionType, transactionType));

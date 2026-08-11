@@ -39,9 +39,6 @@ import {
   type SequenceListInput,
   type UpdateInput,
 } from "./dto/task.schemas";
-import { RequireModule } from "../../common/rbac/require-module.decorator";
-
-@RequireModule("build")
 @Controller("tasks")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class TasksController {
@@ -53,7 +50,7 @@ export class TasksController {
     @Query(new ZodValidationPipe(listSchema)) filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tasks.list(u.orgId, u.userId, filters);
+    return this.tasks.list(u, filters);
   }
 
   @Post()

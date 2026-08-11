@@ -18,21 +18,21 @@ const sql = postgres(url, { max: 1, prepare: false, ssl: "require", onnotice: ()
 const QUERIES = [
   {
     id: "Q1-board-page1",
-    label: "Board / list, page 1, sorted by manual order (the benchmark)",
-    text: `select t.id, t.title, t.description, t.status, t.priority, t.type, t."order",
+    label: "Board / list, page 1, sorted by fractional rank (the benchmark)",
+    text: `select t.id, t.title, t.description, t.status, t.priority, t.type, t.rank,
                   t.assignee_id, t.ticket_number, t.points, t.due_date, t.created_at
            from tickets t
            where t.org_id = $1 and t.project_id = $2
-           order by t."order" asc, t.created_at desc
+           order by t.rank asc, t.created_at desc, t.id asc
            limit 50 offset 0`,
   },
   {
     id: "Q2-board-deep-page",
     label: "Same list at offset 3000 (offset pagination cost)",
-    text: `select t.id, t.title, t.description, t.status, t.priority, t."order", t.created_at
+    text: `select t.id, t.title, t.description, t.status, t.priority, t.rank, t.created_at
            from tickets t
            where t.org_id = $1 and t.project_id = $2
-           order by t."order" asc, t.created_at desc
+           order by t.rank asc, t.created_at desc, t.id asc
            limit 50 offset 3000`,
   },
   {
@@ -45,12 +45,12 @@ const QUERIES = [
     label: "Search: leading-wildcard ILIKE on title",
     text: `select t.id, t.title from tickets t
            where t.org_id = $1 and t.project_id = $2 and t.title ILIKE '%ticket 1234%'
-           order by t."order" asc limit 50`,
+           order by t.rank asc limit 50`,
   },
   {
     id: "Q5-board-with-relations",
     label: "Board page 1 hydrated with assignees + labels (the relational `with` shape)",
-    text: `select t.id, t.title, t.status, t."order",
+    text: `select t.id, t.title, t.status, t.rank,
                   (select json_agg(json_build_object('id', u.id, 'name', u.name))
                      from ticket_assignees ta join users u on u.id = ta.user_id
                     where ta.ticket_id = t.id) assignees,
@@ -59,7 +59,7 @@ const QUERIES = [
                     where tlm.ticket_id = t.id) labels
            from tickets t
            where t.org_id = $1 and t.project_id = $2
-           order by t."order" asc, t.created_at desc
+           order by t.rank asc, t.created_at desc, t.id asc
            limit 50`,
   },
   {

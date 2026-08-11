@@ -54,6 +54,12 @@ export class WarehouseScopeService {
     )`;
   }
 
+  /** Warehouse ids as a SQL list, for callers embedding their own subquery. */
+  warehouseIdList(scope: WarehouseScope): SQL | null {
+    if (scope === null || scope.length === 0) return null;
+    return sql.join(scope.map((id) => sql`${id}`), sql`, `);
+  }
+
   /** Predicate over a warehouse column. */
   warehousePredicate(scope: WarehouseScope, warehouseColumn: SQL): SQL {
     if (scope === null) return sql`TRUE`;

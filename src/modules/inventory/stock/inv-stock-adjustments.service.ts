@@ -13,6 +13,7 @@ import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
+import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import type { ListAdjustmentsInput, CreateAdjustmentInput } from "./dto/inv-stock.schemas";
 
@@ -26,6 +27,7 @@ export class InvStockAdjustmentsService {
     private readonly engine: StockEngineService,
     private readonly numSeq: NumberSequenceService,
     private readonly settings: InventorySettingsService,
+    private readonly warehouseScope: WarehouseScopeService,
   ) {}
 
   async listAdjustments(orgId: string, filters: ListAdjustmentsInput, scope: DataScope = "all", userId?: string) {
@@ -37,6 +39,18 @@ export class InvStockAdjustmentsService {
     if (status) conditions.push(eq(invStockAdjustments.status, status));
     if (scope !== "all" && userId) {
       conditions.push(applyScope(scope, orgId, userId, { ownerColumn: invStockAdjustments.createdBy }));
+    }
+    if (userId) {
+      // Locations live on the lines, not the header, so scope via EXISTS.
+      const warehouses = await this.warehouseScope.resolve(orgId, userId);
+      if (warehouses !== null) {
+        const ids = this.warehouseScope.warehouseIdList(warehouses);
+        conditions.push(ids === null ? sql`FALSE` : sql`EXISTS (
+          SELECT 1 FROM inv_stock_adjustment_lines l
+          JOIN inv_locations loc ON loc.id = l.location_id
+          WHERE l.adjustment_id = ${invStockAdjustments.id} AND loc.warehouse_id IN (${ids})
+        )`);
+      }
     }
     const where = and(...conditions);
 

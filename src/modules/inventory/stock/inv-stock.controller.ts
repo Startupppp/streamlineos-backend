@@ -43,7 +43,7 @@ export class InvStockController {
     @Query(new ZodValidationPipe(listTransactionsSchema)) filters: ListTransactionsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.stock.listTransactions(u.orgId, filters);
+    return this.stock.listTransactions(u.orgId, u.userId, filters);
   }
 
   @Get("availability")

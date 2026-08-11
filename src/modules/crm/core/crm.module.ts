@@ -25,13 +25,14 @@ import { CrmSupportDashboardService } from "./crm-support-dashboard.service";
 import { CrmAutomationsService } from "./crm-automations.service";
 import { CrmProductsService } from "./crm-products.service";
 import { CrmOrgMergeService } from "./crm-org-merge.service";
+import { CrmConsentModule } from "../consent/crm-consent.module";
 import { CrmCustomer360Service } from "./crm-customer360.service";
 import { CrmCustomer360SectionsService } from "./crm-customer360-sections.service";
 import { TerritoryMatchService } from "./territory-match.service";
 import { SlaResolverService } from "./sla-resolver.service";
 
 @Module({
-  imports: [forwardRef(() => CrmAutomationStudioModule), BillingModule],
+  imports: [forwardRef(() => CrmAutomationStudioModule), BillingModule, CrmConsentModule],
   controllers: [
     CrmCampaignsController,
     CrmOrganizationsController,

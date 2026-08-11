@@ -4,7 +4,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { crmSequenceEnrollments, crmSequenceSteps, crmSequences, tasks, leads } from "../../../db/schema";
 import { logger } from "../../../common/logger/logger.service";
-import { AutomationEmailService } from "../../automation/automation-email.service";
+import { CrmOutboundEmailService } from "../consent/crm-outbound-email.service";
 
 interface FlushResult {
   processed: number;
@@ -16,7 +16,7 @@ interface FlushResult {
 export class CrmSequencesRunnerService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly email: AutomationEmailService,
+    private readonly email: CrmOutboundEmailService,
   ) {}
 
   private async evaluateStopOn(
@@ -160,7 +160,7 @@ export class CrmSequencesRunnerService {
     const cfg = step.config ?? {};
     switch (step.stepType) {
       case "email": {
-        await this.email.send({
+        await this.email.send(orgId, {
           to: String(cfg["to"] ?? ""),
           subject: String(cfg["subject"] ?? ""),
           html: String(cfg["body"] ?? ""),

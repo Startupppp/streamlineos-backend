@@ -10,6 +10,7 @@ import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { ReservationService } from "../stock-engine/reservation.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
+import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import type { ListTransfersInput, CreateTransferInput, CompleteTransferInput } from "./dto/inv-stock.schemas";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -22,6 +23,7 @@ export class InvStockTransfersService {
     private readonly engine: StockEngineService,
     private readonly reservationService: ReservationService,
     private readonly numSeq: NumberSequenceService,
+    private readonly warehouseScope: WarehouseScopeService,
   ) {}
 
   async listTransfers(orgId: string, filters: ListTransfersInput, scope: DataScope = "all", userId?: string) {
@@ -60,6 +62,13 @@ export class InvStockTransfersService {
     }
     if (scope !== "all" && userId) {
       conditions.push(applyScope(scope, orgId, userId, { ownerColumn: invStockTransfers.createdBy }));
+    }
+    if (userId) {
+      // A transfer is in scope only if BOTH ends are — seeing one leg would
+      // expose the counterpart warehouse's stock movement.
+      const warehouseScope = await this.warehouseScope.resolve(orgId, userId);
+      conditions.push(this.warehouseScope.locationPredicate(warehouseScope, sql`${invStockTransfers.fromLocationId}`));
+      conditions.push(this.warehouseScope.locationPredicate(warehouseScope, sql`${invStockTransfers.toLocationId}`));
     }
     const where = and(...conditions);
 

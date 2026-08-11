@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { and, eq, inArray, isNull, or, gt } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, or, gt } from "drizzle-orm";
 import { emailSuppressions } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -81,12 +81,19 @@ export class EmailSuppressionService {
         source: input.source,
         evidence: input.evidence ?? null,
       })
-      .onConflictDoNothing({
-        target: orgId
-          ? [emailSuppressions.orgId, emailSuppressions.email, emailSuppressions.channel]
-          : [emailSuppressions.email, emailSuppressions.channel],
-        targetWhere: orgId ? undefined : isNull(emailSuppressions.orgId),
-      });
+      // `where` is the index predicate on the conflict target, so this resolves to
+      // the matching partial unique — the global one or the per-org one.
+      .onConflictDoNothing(
+        orgId
+          ? {
+              target: [emailSuppressions.orgId, emailSuppressions.email, emailSuppressions.channel],
+              where: isNotNull(emailSuppressions.orgId),
+            }
+          : {
+              target: [emailSuppressions.email, emailSuppressions.channel],
+              where: isNull(emailSuppressions.orgId),
+            },
+      );
 
     this.logger.log(
       `EMAIL_SUPPRESSED reason=${input.reason} source=${input.source} scope=${orgId ?? "platform"}`,

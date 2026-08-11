@@ -68,8 +68,8 @@ export const ticketsListQuerySchema = z.object({
   dueDateFrom: z.string().optional(),
   dueDateTo: z.string().optional(),
   orderBy: z
-    .enum(["created", "updated", "priority", "dueDate", "order"])
-    .default("order"),
+    .enum(["created", "updated", "priority", "dueDate", "rank"])
+    .default("rank"),
   orderDir: z.enum(["asc", "desc"]).optional(),
 });
 
@@ -112,8 +112,8 @@ export const allWorkQuerySchema = z.object({
   dueDateFrom: z.string().optional(),
   dueDateTo: z.string().optional(),
   orderBy: z
-    .enum(["created", "updated", "priority", "dueDate", "order"])
-    .default("order"),
+    .enum(["created", "updated", "priority", "dueDate", "rank"])
+    .default("rank"),
   orderDir: z.enum(["asc", "desc"]).optional(),
   projectIds: csvToIntArray,
   excludeStatus: csvToStringArray,
@@ -225,14 +225,10 @@ export const bulkUpdateSchema = z
     { message: "At least one field to update is required" },
   );
 
-export const reorderSchema = z.object({
-  items: z.array(
-    z.object({
-      id: z.number(),
-      status: z.string(),
-      order: z.number(),
-    }),
-  ),
+export const rankTicketSchema = z.object({
+  beforeTicketId: z.number().int().positive().nullable().optional(),
+  afterTicketId: z.number().int().positive().nullable().optional(),
+  status: z.string().optional(),
 });
 
 export const commentSchema = z.object({
@@ -306,7 +302,7 @@ export type AllWorkQuery = z.infer<typeof allWorkQuerySchema>;
 export type CreateTicketInput = z.infer<typeof createTicketSchema>;
 export type UpdateTicketInput = z.infer<typeof updateTicketSchema>;
 export type BulkUpdateInput = z.infer<typeof bulkUpdateSchema>;
-export type ReorderInput = z.infer<typeof reorderSchema>;
+export type RankTicketInput = z.infer<typeof rankTicketSchema>;
 export type CommentInput = z.infer<typeof commentSchema>;
 export type AddRelationInput = z.infer<typeof addRelationSchema>;
 export type AddWatcherInput = z.infer<typeof addWatcherSchema>;

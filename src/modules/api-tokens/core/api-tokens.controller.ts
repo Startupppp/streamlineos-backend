@@ -37,7 +37,8 @@ export class ApiTokensController {
   @RequirePermission("crm:settings:manage")
   listTokens(
     @CurrentUser() u: CurrentUserContext,
-    @Query(new ZodValidationPipe(listApiTokensSchema)) query: ListApiTokensQuery,
+    @Query(new ZodValidationPipe(listApiTokensSchema))
+    query: ListApiTokensQuery,
   ) {
     return this.apiTokensService.listTokens(u.orgId, query);
   }
@@ -47,7 +48,8 @@ export class ApiTokensController {
   @RequirePermission("crm:settings:manage")
   createToken(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(createApiTokenSchema)) body: CreateApiTokenInput,
+    @Body(new ZodValidationPipe(createApiTokenSchema))
+    body: CreateApiTokenInput,
   ) {
     return this.apiTokensService.createToken(u.orgId, u.userId, body);
   }
@@ -56,8 +58,10 @@ export class ApiTokensController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:settings:manage")
-  revokeToken(@CurrentUser() u: CurrentUserContext, @Param("tokenId") tokenId: string) {
+  revokeToken(
+    @CurrentUser() u: CurrentUserContext,
+    @Param("tokenId") tokenId: string,
+  ) {
     return this.apiTokensService.revokeToken(u.orgId, tokenId);
   }
-
 }

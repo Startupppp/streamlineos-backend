@@ -32,7 +32,7 @@ import type {
   BulkUpdateInput,
   CreateTicketInput,
   ImportTicketsInput,
-  ReorderInput,
+  RankTicketInput,
   TicketsListQuery,
   UpdateTicketInput,
 } from "./dto/projects.schemas";
@@ -190,8 +190,8 @@ export class ProjectsTicketsService {
     return this.query.bulkUpdate(u, projectId, body);
   }
 
-  async reorder(u: CurrentUserContext, projectId: number, body: ReorderInput) {
-    return this.query.reorder(u.orgId, projectId, body, {
+  async rankTicket(u: CurrentUserContext, projectId: number, ticketId: number, body: RankTicketInput) {
+    return this.query.rankTicket(u.orgId, projectId, ticketId, body, {
       userId: u.userId,
       isOrgOwner: u.isOrgOwner,
     });
