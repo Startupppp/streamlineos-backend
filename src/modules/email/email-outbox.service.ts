@@ -10,9 +10,28 @@ import {
   sendEmailOnceDirect,
 } from "./email.provider";
 import { EmailSuppressionService, canonicalEmail } from "./email-suppression.service";
+import { getTenantContext } from "../../common/tenant/tenant-context";
 
 const MAX_ATTEMPTS = 8;
 const BATCH_SIZE = 20;
+
+/**
+ * SCH-014. Callers almost never passed `organizationId`, so every one of the 34 rows in
+ * the table was NULL — and the old RLS policy treated a NULL organization as visible to
+ * every tenant. Rather than edit 75 call sites (and rely on the 76th remembering), the
+ * organization is taken from the ambient tenant context, which every authenticated
+ * request already establishes. An explicit argument still wins.
+ *
+ * What is left NULL after this is genuinely tenant-less: verification and password-reset
+ * mail, sent before the user belongs to anywhere. Those are marked PLATFORM.
+ */
+function resolveScope(explicitOrgId: string | null | undefined): {
+  organizationId: string | null;
+  scope: "PLATFORM" | "TENANT";
+} {
+  const orgId = explicitOrgId ?? getTenantContext()?.orgId ?? null;
+  return orgId ? { organizationId: orgId, scope: "TENANT" } : { organizationId: null, scope: "PLATFORM" };
+}
 
 @Injectable()
 export class EmailOutboxService {
@@ -31,7 +50,7 @@ export class EmailOutboxService {
    */
   private async applySuppression(options: EmailOptions): Promise<EmailOptions | null> {
     const recipients = Array.isArray(options.to) ? options.to : [options.to];
-    const orgId = options.organizationId ?? null;
+    const { organizationId: orgId, scope } = resolveScope(options.organizationId);
     const suppressed = await this.suppression.findSuppressed(recipients, orgId);
     if (suppressed.size === 0) return options;
 
@@ -39,6 +58,7 @@ export class EmailOutboxService {
 
     await this.db.insert(emailOutbox).values({
       organizationId: orgId,
+      scope,
       toEmail: [...suppressed].join(","),
       subject: options.subject,
       // The body is deliberately not stored for a withheld send: there is no
@@ -70,11 +90,13 @@ export class EmailOutboxService {
 
     const toEmail = Array.isArray(options.to) ? options.to.join(",") : options.to;
     const now = new Date();
+    const { organizationId, scope } = resolveScope(options.organizationId);
 
     const inserted = await this.db
       .insert(emailOutbox)
       .values({
-        organizationId: options.organizationId ?? null,
+        organizationId,
+        scope,
         toEmail,
         subject: options.subject,
         html: options.html,

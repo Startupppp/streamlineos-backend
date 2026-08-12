@@ -379,3 +379,4 @@ export const organizationStatusEnum = pgEnum("organization_status", ["ACTIVE", "
 export const invitationStatusEnum = pgEnum("invitation_status", ["PENDING", "ACCEPTED", "DECLINED", "EXPIRED", "REVOKED"]);
 export const broadcastAudienceTypeEnum = pgEnum("broadcast_audience_type", ["all", "roles", "departments", "users"]);
 export const templateApprovalStatusEnum = pgEnum("template_approval_status", ["NOT_REQUIRED", "PENDING", "APPROVED", "REJECTED"]);
+export const emailOutboxScopeEnum = pgEnum("email_outbox_scope", ["PLATFORM", "TENANT"]);

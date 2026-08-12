@@ -20,6 +20,7 @@ import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
 import { CronIdempotencyService } from "./cron-idempotency.service";
 import { ChatReplyRemindersService } from "../chat/chat-reply-reminders.service";
 import { ExceptionsDetectorService } from "../timesheets/core/exceptions-detector.service";
+import { BuildDueSweepService } from "../build/core/build-due-sweep.service";
 
 @Public()
 @Controller("cron")
@@ -36,7 +37,34 @@ export class CronPlatformController {
     private readonly notificationRetention: CronNotificationRetentionService,
     private readonly outboxRelay: NotificationOutboxRelayService,
     private readonly digest: NotificationDigestService,
+    private readonly buildDueSweep: BuildDueSweepService,
   ) {}
+
+  @Get("build-due-sweep")
+  getBuildDueSweep(@Headers("authorization") authorization?: string) {
+    return this.runBuildDueSweep(authorization);
+  }
+
+  @Post("build-due-sweep")
+  @HttpCode(200)
+  postBuildDueSweep(@Headers("authorization") authorization?: string) {
+    return this.runBuildDueSweep(authorization);
+  }
+
+  private async runBuildDueSweep(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.buildDueSweep.sweep();
+      return {
+        success: true,
+        message: `Build due sweep: ${result.dueSoon} due-soon, ${result.overdue} overdue`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Build due sweep cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
 
   @Get("notification-digest-flush")
   getNotificationDigestFlush(@Headers("authorization") authorization?: string) {

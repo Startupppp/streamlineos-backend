@@ -19,7 +19,11 @@ import type { Db } from "../../db/drizzle.module";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import type { AccessService } from "../access/access.service";
+// NOT `import type`: TypeScript erases a type-only import, so emitDecoratorMetadata
+// records `undefined` for this constructor parameter and Nest cannot resolve it — the
+// application fails to boot with "argument at index [1]". madge already counts type-only
+// imports as edges, so importing the value here introduces no new cycle.
+import { AccessService } from "../access/access.service";
 import { assertMayAssignRole } from "./assert-role-assignment";
 import type {
   AddGroupMemberInput,

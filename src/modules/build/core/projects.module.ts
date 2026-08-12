@@ -25,6 +25,7 @@ import { ProjectsWriteService } from "./projects-write.service";
 import { ProjectsProvisionService } from "./projects-provision.service";
 import { ProjectsEmailService } from "./projects-email.service";
 import { ProjectsMembersService } from "./projects-members.service";
+import { BuildDueSweepService } from "./build-due-sweep.service";
 import { BuildNotificationVisibility } from "./build-notification-visibility";
 import { ProjectsTicketsService } from "./projects-tickets.service";
 import { ProjectsTicketsCreateService } from "./projects-tickets-create.service";
@@ -73,6 +74,7 @@ import { BuildAutomationRunnerService } from "./build-automation-runner.service"
     ProjectsController,
   ],
   providers: [
+    BuildDueSweepService,
     BuildNotificationVisibility,
     ProjectsService,
     ProjectsQueryService,
@@ -110,6 +112,7 @@ import { BuildAutomationRunnerService } from "./build-automation-runner.service"
     BuildAutomationRunnerService,
   ],
   exports: [
+    BuildDueSweepService,
     ProjectsTicketsService,
     ProjectsWebhooksDispatchService,
     ProjectsService,

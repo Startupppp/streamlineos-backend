@@ -1,4 +1,5 @@
 import { bigint, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { emailOutboxScopeEnum } from "./enums";
 import { sql } from "drizzle-orm";
 import { organizations } from "./auth";
 import { notificationChannelEnum } from "./enums";
@@ -12,6 +13,14 @@ export const emailOutbox = pgTable(
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
     organizationId: text("organization_id"),
+    /**
+     * SCH-014. NULL organization is legal — verification and password-reset mail is
+     * sent before the user belongs to any tenant — so nullability alone could not say
+     * whether a row was platform mail or a tenant email that lost its tenant. This
+     * column makes that distinction enforceable: a CHECK requires TENANT rows to carry
+     * an organization, and the RLS policy no longer treats NULL as visible-to-everyone.
+     */
+    scope: emailOutboxScopeEnum("scope").notNull().default("PLATFORM"),
     toEmail: text("to_email").notNull(),
     subject: text("subject").notNull(),
     html: text("html").notNull(),
@@ -31,6 +40,7 @@ export const emailOutbox = pgTable(
     // empty body, so this stays small and only covers rows still holding content.
     index("idx_email_outbox_body_retention").on(t.createdAt).where(sql`${t.html} <> ''`),
     index("idx_email_outbox_created_at").on(t.createdAt),
+    index("idx_email_outbox_scope_due").on(t.scope, t.status, t.nextAttemptAt),
   ],
 );
 
