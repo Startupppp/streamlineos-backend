@@ -1,16 +1,4 @@
-import {
-  pgTable,
-  pgEnum,
-  text,
-  serial,
-  timestamp,
-  jsonb,
-  integer,
-  boolean,
-  index,
-  unique,
-  uniqueIndex,
-} from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, timestamp, jsonb, integer, boolean, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
@@ -34,7 +22,7 @@ export const whiteboardShareRoleEnum = pgEnum("whiteboard_share_role", ["viewer"
 export const projectWhiteboards = pgTable(
   "project_whiteboards",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -66,7 +54,7 @@ export const projectWhiteboards = pgTable(
 export const projectWhiteboardShares = pgTable(
   "project_whiteboard_shares",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),

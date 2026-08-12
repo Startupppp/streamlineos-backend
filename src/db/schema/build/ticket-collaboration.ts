@@ -1,19 +1,4 @@
-import {
-  pgTable,
-  text,
-  serial,
-  bigserial,
-  bigint,
-  timestamp,
-  boolean,
-  date,
-  integer,
-  foreignKey,
-  index,
-  unique,
-  uniqueIndex,
-  varchar,
-} from "drizzle-orm/pg-core";
+import { pgTable, text, bigserial, bigint, timestamp, boolean, date, integer, foreignKey, index, unique, uniqueIndex, varchar } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { tickets } from "./ticket-core";
@@ -82,7 +67,7 @@ export const ticketComments = pgTable(
 export const ticketAttachments = pgTable(
   "ticket_attachments",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -108,7 +93,7 @@ export const ticketAttachments = pgTable(
 export const ticketLabels = pgTable(
   "ticket_labels",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -169,7 +154,7 @@ export const ticketWatchers = pgTable(
 export const ticketChecklists = pgTable(
   "ticket_checklists",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -192,7 +177,7 @@ export const ticketChecklists = pgTable(
 export const ticketChecklistItems = pgTable(
   "ticket_checklist_items",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -216,7 +201,7 @@ export const ticketChecklistItems = pgTable(
 export const ticketCustomFieldValues = pgTable(
   "ticket_custom_field_values",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -246,7 +231,7 @@ export const ticketCustomFieldValues = pgTable(
 export const ticketCommentReactions = pgTable(
   "ticket_comment_reactions",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     commentId: bigint("comment_id", { mode: "number" })
       .notNull()
       .references(() => ticketComments.id, { onDelete: "cascade" }),
@@ -275,7 +260,7 @@ export const ticketCommentReactions = pgTable(
 export const ticketRelatedLinks = pgTable(
   "ticket_related_links",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),

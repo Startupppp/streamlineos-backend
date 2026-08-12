@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, serial, integer, timestamp, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, integer, timestamp, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
@@ -17,7 +17,7 @@ export const portfolioHealthEnum = pgEnum("project_portfolio_health", [
 ]);
 
 export const projectPortfolios = pgTable("project_portfolios", {
-  id: serial("id").primaryKey(),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),
   description: text("description"),
@@ -35,7 +35,7 @@ export const projectPortfolios = pgTable("project_portfolios", {
 ]);
 
 export const projectPrograms = pgTable("project_programs", {
-  id: serial("id").primaryKey(),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   portfolioId: integer("portfolio_id").references(() => projectPortfolios.id, { onDelete: "set null" }),
   name: text("name").notNull(),
@@ -54,7 +54,7 @@ export const projectPrograms = pgTable("project_programs", {
 ]);
 
 export const portfolioProjects = pgTable("portfolio_projects", {
-  id: serial("id").primaryKey(),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   portfolioId: integer("portfolio_id").references(() => projectPortfolios.id, { onDelete: "cascade" }).notNull(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
@@ -66,7 +66,7 @@ export const portfolioProjects = pgTable("portfolio_projects", {
 ]);
 
 export const programProjects = pgTable("program_projects", {
-  id: serial("id").primaryKey(),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   programId: integer("program_id").references(() => projectPrograms.id, { onDelete: "cascade" }).notNull(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),

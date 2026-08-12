@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, serial, timestamp, integer, boolean, date, jsonb, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, timestamp, integer, boolean, date, jsonb, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects, sprints } from "./core";
@@ -9,7 +9,7 @@ export const projectMeetingStatusEnum = pgEnum("project_meeting_status", ["sched
 export const actionItemStatusEnum = pgEnum("action_item_status", ["open", "in_progress", "done", "converted", "cancelled"]);
 
 export const projectMeetings = pgTable("project_meetings", {
-  id: serial("id").primaryKey(),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
   meetingNumber: integer("meeting_number").notNull(),
@@ -36,7 +36,7 @@ export const projectMeetings = pgTable("project_meetings", {
 ]);
 
 export const meetingAttendees = pgTable("meeting_attendees", {
-  id: serial("id").primaryKey(),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   meetingId: integer("meeting_id").references(() => projectMeetings.id, { onDelete: "cascade" }).notNull(),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
@@ -49,7 +49,7 @@ export const meetingAttendees = pgTable("meeting_attendees", {
 ]);
 
 export const meetingActionItems = pgTable("meeting_action_items", {
-  id: serial("id").primaryKey(),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   meetingId: integer("meeting_id").references(() => projectMeetings.id, { onDelete: "cascade" }).notNull(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
@@ -71,7 +71,7 @@ export const meetingActionItems = pgTable("meeting_action_items", {
 ]);
 
 export const meetingStandupEntries = pgTable("meeting_standup_entries", {
-  id: serial("id").primaryKey(),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   meetingId: integer("meeting_id").references(() => projectMeetings.id, { onDelete: "cascade" }).notNull(),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),

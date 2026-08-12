@@ -1,17 +1,4 @@
-import {
-  pgTable,
-  pgEnum,
-  text,
-  serial,
-  integer,
-  boolean,
-  jsonb,
-  timestamp,
-  decimal,
-  index,
-  uniqueIndex,
-  unique,
-} from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, integer, boolean, jsonb, timestamp, decimal, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
@@ -98,12 +85,12 @@ export const feedbucketSubmissionPriorityEnum = pgEnum("feedbucket_submission_pr
 export const feedbucketWidgets = pgTable(
   "feedbucket_widgets",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
-    managedProductId: integer("managed_product_id").references(() => managedProducts.managedProductId, { onDelete: "set null" }),
+    managedProductId: integer("managed_product_id").references(() => managedProducts.id, { onDelete: "set null" }),
     name: text("name").notNull(),
     publicKey: text("public_key").notNull(),
     allowedDomains: text("allowed_domains")
@@ -131,7 +118,7 @@ export const feedbucketWidgets = pgTable(
 export const feedbucketSubmissions = pgTable(
   "feedbucket_submissions",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -177,7 +164,7 @@ export const feedbucketSubmissions = pgTable(
 export const feedbucketAttachments = pgTable(
   "feedbucket_attachments",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -203,7 +190,7 @@ export const feedbucketWidgetsRelations = relations(feedbucketWidgets, ({ one, m
     references: [organizations.id],
   }),
   project: one(projects, { fields: [feedbucketWidgets.projectId], references: [projects.id] }),
-  managedProduct: one(managedProducts, { fields: [feedbucketWidgets.managedProductId], references: [managedProducts.managedProductId] }),
+  managedProduct: one(managedProducts, { fields: [feedbucketWidgets.managedProductId], references: [managedProducts.id] }),
   creator: one(users, { fields: [feedbucketWidgets.createdBy], references: [users.id] }),
   submissions: many(feedbucketSubmissions),
 }));

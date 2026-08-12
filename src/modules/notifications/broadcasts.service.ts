@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { eq, and, desc, lt, inArray } from "drizzle-orm";
-import { broadcasts, notifications, organizationMembers, roleAssignments, users } from "../../db/schema";
+import { broadcastAudienceTargets, broadcasts, notifications, organizationMembers, roleAssignments, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -75,22 +75,28 @@ export class BroadcastsService {
   }
 
   async create(orgId: string, userId: string, dto: CreateBroadcastInput) {
-    const [created] = await this.db
-      .insert(broadcasts)
-      .values({
-        orgId,
-        title: dto.title,
-        message: dto.message,
-        type: dto.type,
-        priority: dto.priority,
-        category: dto.category,
-        channels: dto.channels,
-        audience: dto.audience,
-        status: "DRAFT",
-        scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : undefined,
-        createdBy: userId,
-      })
-      .returning();
+    const created = await this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(broadcasts)
+        .values({
+          orgId,
+          title: dto.title,
+          message: dto.message,
+          type: dto.type,
+          priority: dto.priority,
+          category: dto.category,
+          channels: dto.channels,
+          audience: dto.audience,
+          audienceType: dto.audience.type,
+          status: "DRAFT",
+          scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : undefined,
+          createdBy: userId,
+        })
+        .returning();
+      if (!row) throw new BadRequestException("Broadcast could not be created");
+      await this.replaceAudienceTargets(tx, orgId, row.id, dto.audience);
+      return row;
+    });
     await this.invalidateCache(orgId);
     return created;
   }
@@ -100,20 +106,24 @@ export class BroadcastsService {
     if (existing.status !== "DRAFT") {
       throw new BadRequestException("Only DRAFT broadcasts can be updated");
     }
-    const [updated] = await this.db
-      .update(broadcasts)
-      .set({
-        ...(dto.title !== undefined && { title: dto.title }),
-        ...(dto.message !== undefined && { message: dto.message }),
-        ...(dto.type !== undefined && { type: dto.type }),
-        ...(dto.priority !== undefined && { priority: dto.priority }),
-        ...(dto.category !== undefined && { category: dto.category }),
-        ...(dto.channels !== undefined && { channels: dto.channels }),
-        ...(dto.audience !== undefined && { audience: dto.audience }),
-        ...(dto.scheduledAt !== undefined && { scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : null }),
-      })
-      .where(and(eq(broadcasts.id, id), eq(broadcasts.orgId, orgId)))
-      .returning();
+    const updated = await this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(broadcasts)
+        .set({
+          ...(dto.title !== undefined && { title: dto.title }),
+          ...(dto.message !== undefined && { message: dto.message }),
+          ...(dto.type !== undefined && { type: dto.type }),
+          ...(dto.priority !== undefined && { priority: dto.priority }),
+          ...(dto.category !== undefined && { category: dto.category }),
+          ...(dto.channels !== undefined && { channels: dto.channels }),
+          ...(dto.audience !== undefined && { audience: dto.audience, audienceType: dto.audience.type }),
+          ...(dto.scheduledAt !== undefined && { scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : null }),
+        })
+        .where(and(eq(broadcasts.id, id), eq(broadcasts.orgId, orgId)))
+        .returning();
+      if (dto.audience !== undefined) await this.replaceAudienceTargets(tx, orgId, id, dto.audience);
+      return row;
+    });
     await this.invalidateCache(orgId);
 
     this.audit.log({
@@ -153,7 +163,7 @@ export class BroadcastsService {
       return updated;
     }
 
-    const recipientUserIds = await this.resolveRecipients(orgId, broadcast.audience);
+    const recipientUserIds = await this.resolveRecipients(orgId, broadcast.id, broadcast.audienceType);
 
     const now = new Date();
     const sent = await this.db.transaction(async (tx) => {
@@ -241,14 +251,36 @@ export class BroadcastsService {
     return { success: true };
   }
 
+  /**
+   * SCH-017. Reads the audience from `broadcast_audience_targets` rather than the
+   * `broadcasts.audience` JSONB. The ids there had no foreign keys, so a deleted role
+   * or department left a dangling id that silently resolved to nobody; the junction
+   * carries real referential integrity and an index that supports the reverse lookup
+   * ("which broadcasts target this department?"), which containment queries could not.
+   */
   private async resolveRecipients(
     orgId: string,
-    audience: { type: string; roleIds?: string[]; departmentIds?: string[]; userIds?: string[] },
+    broadcastId: number,
+    audienceType: "all" | "roles" | "departments" | "users",
   ): Promise<string[]> {
     const dedupe = (ids: string[]): string[] => [...new Set(ids.filter(Boolean))];
 
-    if (audience.type === "users") {
-      const ids = dedupe(audience.userIds ?? []);
+    const targetIds = async (kind: "ROLE" | "DEPARTMENT" | "USER"): Promise<string[]> => {
+      const rows = await this.db
+        .select({ targetId: broadcastAudienceTargets.targetId })
+        .from(broadcastAudienceTargets)
+        .where(
+          and(
+            eq(broadcastAudienceTargets.orgId, orgId),
+            eq(broadcastAudienceTargets.broadcastId, broadcastId),
+            eq(broadcastAudienceTargets.kind, kind),
+          ),
+        );
+      return dedupe(rows.map((r) => r.targetId));
+    };
+
+    if (audienceType === "users") {
+      const ids = await targetIds("USER");
       if (ids.length === 0) return [];
       const rows = await this.db
         .select({ userId: organizationMembers.userId })
@@ -257,8 +289,8 @@ export class BroadcastsService {
       return dedupe(rows.map((r) => r.userId));
     }
 
-    if (audience.type === "roles") {
-      const roleIds = (audience.roleIds ?? []).map(Number).filter((n) => Number.isInteger(n));
+    if (audienceType === "roles") {
+      const roleIds = (await targetIds("ROLE")).map(Number).filter((n) => Number.isInteger(n));
       if (roleIds.length === 0) return [];
       const rows = await this.db
         .select({ userId: organizationMembers.userId })
@@ -274,8 +306,8 @@ export class BroadcastsService {
       return dedupe(rows.map((r) => r.userId));
     }
 
-    if (audience.type === "departments") {
-      const deptIds = dedupe(audience.departmentIds ?? []);
+    if (audienceType === "departments") {
+      const deptIds = await targetIds("DEPARTMENT");
       if (deptIds.length === 0) return [];
       const rows = await this.db
         .select({ userId: organizationMembers.userId })
@@ -290,6 +322,42 @@ export class BroadcastsService {
       .from(organizationMembers)
       .where(eq(organizationMembers.orgId, orgId));
     return dedupe(memberships.map((m) => m.userId));
+  }
+
+  /**
+   * Replaces a broadcast's targets wholesale. Delete-then-insert rather than a diff:
+   * the sets are small, and it is the only shape that cannot leave a stale target
+   * behind when an audience is narrowed.
+   */
+  private async replaceAudienceTargets(
+    tx: Db,
+    orgId: string,
+    broadcastId: number,
+    audience: { type: string; roleIds?: string[]; departmentIds?: string[]; userIds?: string[] },
+  ): Promise<void> {
+    await tx
+      .delete(broadcastAudienceTargets)
+      .where(
+        and(
+          eq(broadcastAudienceTargets.orgId, orgId),
+          eq(broadcastAudienceTargets.broadcastId, broadcastId),
+        ),
+      );
+
+    const rows: Array<{
+      orgId: string;
+      broadcastId: number;
+      kind: "ROLE" | "DEPARTMENT" | "USER";
+      targetId: string;
+    }> = [];
+    const add = (kind: "ROLE" | "DEPARTMENT" | "USER", ids: string[] | undefined) => {
+      for (const targetId of new Set(ids ?? []))
+        if (targetId) rows.push({ orgId, broadcastId, kind, targetId });
+    };
+    add("ROLE", audience.roleIds);
+    add("DEPARTMENT", audience.departmentIds);
+    add("USER", audience.userIds);
+    if (rows.length > 0) await tx.insert(broadcastAudienceTargets).values(rows);
   }
 
   private async invalidateCache(orgId: string) {

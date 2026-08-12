@@ -306,11 +306,11 @@ export class ProjectsWriteService {
 
     if (input.managedProductId !== null) {
       const [product] = await this.db
-        .select({ managedProductId: managedProducts.managedProductId })
+        .select({ managedProductId: managedProducts.id })
         .from(managedProducts)
         .where(
           and(
-            eq(managedProducts.managedProductId, input.managedProductId),
+            eq(managedProducts.id, input.managedProductId),
             eq(managedProducts.orgId, orgId),
             isNull(managedProducts.deletedAt),
           ),

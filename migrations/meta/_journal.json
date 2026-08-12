@@ -1212,6 +1212,41 @@
       "when": 1786476599932,
       "tag": "0172_quotes_fx_rate_snapshot",
       "breakpoints": true
+    },
+    {
+      "idx": 173,
+      "version": "7",
+      "when": 1786476659932,
+      "tag": "0426_build_identity_pks",
+      "breakpoints": true
+    },
+    {
+      "idx": 174,
+      "version": "7",
+      "when": 1786476719932,
+      "tag": "0427_managed_products_pk_rename",
+      "breakpoints": true
+    },
+    {
+      "idx": 175,
+      "version": "7",
+      "when": 1786476779932,
+      "tag": "0428_feedback_dedup_merge",
+      "breakpoints": true
+    },
+    {
+      "idx": 176,
+      "version": "7",
+      "when": 1786476839932,
+      "tag": "0429_digest_queue_broadcast_audience",
+      "breakpoints": true
+    },
+    {
+      "idx": 177,
+      "version": "7",
+      "when": 1786476840932,
+      "tag": "0430_broadcast_audience_cutover",
+      "breakpoints": true
     }
   ]
 }

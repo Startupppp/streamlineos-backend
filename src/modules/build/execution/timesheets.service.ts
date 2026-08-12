@@ -201,6 +201,13 @@ export class TimesheetsService {
       where: and(eq(timesheets.id, entryId), eq(timesheets.orgId, user.orgId)),
     });
     if (!entry) throw new NotFoundException("Time entry not found");
+
+    const decision = canActOnPeriod(
+      { userId: user.userId, isOrgOwner: !!user.isOrgOwner },
+      { userId: entry.userId, currentApproverId: null },
+    );
+    if (!decision.allowed) throw new ForbiddenException(decision.reason);
+
     if (entry.payrollStatus === "EXPORTED")
       throw new ConflictException(
         "This entry was included in a payroll export and can no longer be modified. Use a correction entry instead.",
@@ -239,6 +246,12 @@ export class TimesheetsService {
       where: and(eq(timesheets.id, entryId), eq(timesheets.orgId, user.orgId)),
     });
     if (!entry) throw new NotFoundException("Time entry not found");
+
+    const decision = canActOnPeriod(
+      { userId: user.userId, isOrgOwner: !!user.isOrgOwner },
+      { userId: entry.userId, currentApproverId: null },
+    );
+    if (!decision.allowed) throw new ForbiddenException(decision.reason);
     if (entry.payrollStatus === "EXPORTED") {
       throw new ConflictException(
         "This entry was included in a payroll export and can no longer be modified. Use a correction entry instead.",
@@ -436,3 +449,4 @@ export class TimesheetsService {
     return entry;
   }
 }
+import { canActOnPeriod } from "../../timesheets/core/lib/approval-guard";

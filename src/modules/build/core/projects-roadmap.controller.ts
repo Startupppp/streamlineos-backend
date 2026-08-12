@@ -26,6 +26,7 @@ import {
   feedbackListQuerySchema,
   roadmapListQuerySchema,
   updateChangelogSchema,
+  mergeFeedbackSchema,
   updateFeedbackSchema,
   updateRoadmapSchema,
   type ChangelogListQuery,
@@ -35,6 +36,7 @@ import {
   type FeedbackListQuery,
   type RoadmapListQuery,
   type UpdateChangelogInput,
+  type MergeFeedbackInput,
   type UpdateFeedbackInput,
   type UpdateRoadmapInput,
 } from "./dto/projects.schemas";
@@ -112,6 +114,16 @@ export class ProjectsRoadmapController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.roadmap.updateFeedback(u.orgId, postId, body);
+  }
+
+  @Post("feedback/:postId/merge")
+  @RequirePermission("build:roadmap:manage")
+  mergeFeedback(
+    @Param("postId", ParseIntPipe) postId: number,
+    @Body(new ZodValidationPipe(mergeFeedbackSchema)) body: MergeFeedbackInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.roadmap.mergeFeedback(u.orgId, postId, body);
   }
 
   @Delete("feedback/:postId")

@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, serial, timestamp, numeric, date, integer, foreignKey, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, timestamp, numeric, date, integer, foreignKey, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
@@ -9,7 +9,7 @@ export const goalStatusEnum = pgEnum("okr_goal_status", ["not_started", "on_trac
 export const keyResultMetricEnum = pgEnum("okr_kr_metric", ["number", "percentage", "currency", "boolean"]);
 
 export const okrGoals = pgTable("okr_goals", {
-  id: serial("id").primaryKey(),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   title: text("title").notNull(),
   description: text("description"),
@@ -34,7 +34,7 @@ export const okrGoals = pgTable("okr_goals", {
 ]);
 
 export const okrKeyResults = pgTable("okr_key_results", {
-  id: serial("id").primaryKey(),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   goalId: integer("goal_id").references(() => okrGoals.id, { onDelete: "cascade" }).notNull(),
   title: text("title").notNull(),
@@ -52,7 +52,7 @@ export const okrKeyResults = pgTable("okr_key_results", {
 ]);
 
 export const okrUpdates = pgTable("okr_updates", {
-  id: serial("id").primaryKey(),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   goalId: integer("goal_id").references(() => okrGoals.id, { onDelete: "cascade" }).notNull(),
   keyResultId: integer("key_result_id").references(() => okrKeyResults.id, { onDelete: "set null" }),
@@ -67,7 +67,7 @@ export const okrUpdates = pgTable("okr_updates", {
 ]);
 
 export const okrLinks = pgTable("okr_links", {
-  id: serial("id").primaryKey(),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   goalId: integer("goal_id").references(() => okrGoals.id, { onDelete: "cascade" }).notNull(),
   ticketId: integer("ticket_id").references(() => tickets.id, { onDelete: "cascade" }),

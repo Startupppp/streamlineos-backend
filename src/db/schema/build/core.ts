@@ -1,18 +1,4 @@
-import {
-  pgTable,
-  bigint,
-  text,
-  serial,
-  timestamp,
-  jsonb,
-  decimal,
-  date,
-  integer,
-  index,
-  unique,
-  uniqueIndex,
-  check,
-} from "drizzle-orm/pg-core";
+import { pgTable, bigint, text, timestamp, jsonb, decimal, date, integer, index, unique, uniqueIndex, check } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import {
   projectStatusEnum,
@@ -28,7 +14,7 @@ import { pmWorkspaces } from "./pm-workspaces";
 export const projects = pgTable(
   "projects",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -45,7 +31,7 @@ export const projects = pgTable(
       onDelete: "set null",
     }),
     managedProductId: integer("managed_product_id").references(
-      () => managedProducts.managedProductId,
+      () => managedProducts.id,
       { onDelete: "set null" },
     ),
     pmWorkspaceId: text("pm_workspace_id").references(() => pmWorkspaces.pmWorkspaceId, { onDelete: "set null" }),
@@ -84,7 +70,7 @@ export const projects = pgTable(
 export const sprints = pgTable(
   "sprints",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -116,7 +102,7 @@ export const sprints = pgTable(
 export const projectStatuses = pgTable(
   "project_statuses",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
     name: text("name").notNull(),
@@ -137,7 +123,7 @@ export const projectStatuses = pgTable(
 export const cycles = pgTable(
   "cycles",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     projectId: integer("project_id")
       .references(() => projects.id, { onDelete: "cascade" })
       .notNull(),
@@ -168,7 +154,7 @@ export const cycles = pgTable(
 export const modules = pgTable(
   "modules",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     projectId: integer("project_id")
       .references(() => projects.id, { onDelete: "cascade" })
       .notNull(),
@@ -200,7 +186,7 @@ export const modules = pgTable(
 export const projectTemplates = pgTable(
   "project_templates",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -222,7 +208,7 @@ export const projectTemplates = pgTable(
 export const projectTemplateTickets = pgTable(
   "project_template_tickets",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),

@@ -9,6 +9,8 @@ import {
   notificationChannelEnum,
   subscriptionStatusEnum,
   subscriptionPlanEnum,
+  broadcastAudienceTypeEnum,
+  templateApprovalStatusEnum,
 } from "./enums";
 import { organizations, users } from "./auth";
 
@@ -69,6 +71,13 @@ export const notificationTemplates = pgTable("notification_templates", {
   variables: jsonb("variables").$type<string[]>().default([]).notNull(),
   version: integer("version").default(1).notNull(),
   isActive: boolean("is_active").default(true).notNull(),
+  // COMP-005: WhatsApp (and any other channel requiring pre-registered content) cannot
+  // send a template the provider has not approved. Modelling the state here means the
+  // send is refused before the provider call rather than rejected per message.
+  approvalStatus: templateApprovalStatusEnum("approval_status").default("NOT_REQUIRED").notNull(),
+  providerTemplateName: text("provider_template_name"),
+  approvalCheckedAt: timestamp("approval_checked_at", { withTimezone: true }),
+  approvalRejectionReason: text("approval_rejection_reason"),
   createdBy: text("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull().$onUpdate(() => new Date()),
@@ -89,12 +98,16 @@ export const broadcasts = pgTable("broadcasts", {
   priority: notificationPriorityEnum("priority").default("NORMAL").notNull(),
   category: notificationCategoryEnum("category").default("SYSTEM").notNull(),
   channels: jsonb("channels").$type<string[]>().default(["IN_APP"]).notNull(),
+  // SCH-017: the ids now live in broadcast_audience_targets and the discriminator in
+  // audienceType. This column is still written during expand-contract; it is no longer
+  // read to resolve recipients.
   audience: jsonb("audience").$type<{
     type: "all" | "roles" | "departments" | "users";
     roleIds?: string[];
     departmentIds?: string[];
     userIds?: string[];
   }>().notNull(),
+  audienceType: broadcastAudienceTypeEnum("audience_type").default("all").notNull(),
   status: broadcastStatusEnum("status").default("DRAFT").notNull(),
   scheduledAt: timestamp("scheduled_at", { withTimezone: true }),
   sentAt: timestamp("sent_at", { withTimezone: true }),

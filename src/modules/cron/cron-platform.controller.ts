@@ -13,6 +13,7 @@ import { CronEmailOutboxService } from "./cron-email-outbox.service";
 import { CronNotificationDeliveryService } from "./cron-notification-delivery.service";
 import { CronNotificationRetentionService } from "./cron-notification-retention.service";
 import { NotificationOutboxRelayService } from "../notifications/notification-outbox-relay.service";
+import { NotificationDigestService } from "../notifications/notification-digest.service";
 import { CronOrganizationService } from "./cron-organization.service";
 import { OwnershipTransfersService } from "../ownership/ownership-transfers.service";
 import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
@@ -34,7 +35,34 @@ export class CronPlatformController {
     private readonly idempotency: CronIdempotencyService,
     private readonly notificationRetention: CronNotificationRetentionService,
     private readonly outboxRelay: NotificationOutboxRelayService,
+    private readonly digest: NotificationDigestService,
   ) {}
+
+  @Get("notification-digest-flush")
+  getNotificationDigestFlush(@Headers("authorization") authorization?: string) {
+    return this.runNotificationDigestFlush(authorization);
+  }
+
+  @Post("notification-digest-flush")
+  @HttpCode(200)
+  postNotificationDigestFlush(@Headers("authorization") authorization?: string) {
+    return this.runNotificationDigestFlush(authorization);
+  }
+
+  private async runNotificationDigestFlush(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.digest.flushDue();
+      return {
+        success: true,
+        message: `Flushed ${result.windows} digest window(s): ${result.itemsFlushed} item(s), ${result.notificationsCreated} notification(s)`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Notification digest flush cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
 
   @Get("notification-outbox-flush")
   getNotificationOutboxFlush(@Headers("authorization") authorization?: string) {

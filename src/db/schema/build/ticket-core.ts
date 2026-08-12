@@ -1,19 +1,4 @@
-import {
-  pgTable,
-  text,
-  serial,
-  timestamp,
-  boolean,
-  decimal,
-  date,
-  integer,
-  numeric,
-  foreignKey,
-  index,
-  unique,
-  uniqueIndex,
-  jsonb,
-} from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, decimal, date, integer, numeric, foreignKey, index, unique, uniqueIndex, jsonb } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import {
   ticketTypeEnum,
@@ -27,7 +12,7 @@ import { clients } from "../crm/contacts";
 export const tickets = pgTable(
   "tickets",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -138,7 +123,7 @@ export const tickets = pgTable(
 export const workItemRelations = pgTable(
   "work_item_relations",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),

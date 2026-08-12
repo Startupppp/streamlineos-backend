@@ -1,7 +1,7 @@
 import { Inject, Injectable, BadRequestException, Logger } from "@nestjs/common";
 import { randomUUID } from "crypto";
 import { inArray, eq, and } from "drizzle-orm";
-import { notifications, notificationDeliveries, notificationQueue, notificationOutbox, notificationTemplates, userPreferences, users } from "../../db/schema";
+import { notifications, notificationDeliveries, notificationQueue, notificationOutbox, notificationPreferences, notificationTemplates, userPreferences, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -12,6 +12,7 @@ import { NotificationRoutingService } from "./notification-routing.service";
 import { NotificationsService, type AnnounceInput } from "./notifications.service";
 import { NotificationVisibilityRegistry } from "./notification-visibility.registry";
 import { NotificationTemplateRenderer, type TemplateMap } from "./notification-template-renderer.service";
+import { NotificationDigestService } from "./notification-digest.service";
 import type {
   DispatchEventInput,
   NotificationChannel,
@@ -62,6 +63,7 @@ export class NotificationDispatchService {
     private readonly cache: CacheService,
     private readonly visibility: NotificationVisibilityRegistry,
     private readonly templates: NotificationTemplateRenderer,
+    private readonly digest: NotificationDigestService,
   ) {}
 
   /**
@@ -169,6 +171,11 @@ export class NotificationDispatchService {
       .from(userPreferences)
       .where(inArray(userPreferences.userId, targets));
     const localeByUser = new Map(localeRows.map((r) => [r.userId, r.language]));
+    const digestRows = await this.db
+      .select({ userId: notificationPreferences.userId, digestMode: notificationPreferences.digestMode })
+      .from(notificationPreferences)
+      .where(and(eq(notificationPreferences.orgId, input.orgId), inArray(notificationPreferences.userId, targets)));
+    const digestModeByUser = new Map(digestRows.map((r) => [r.userId, r.digestMode]));
     const templatesByLocale = new Map<string, TemplateMap>();
     for (const locale of new Set([...targets].map((u) => localeByUser.get(u) ?? "en"))) {
       templatesByLocale.set(
@@ -205,6 +212,27 @@ export class NotificationDispatchService {
           result.suppressed += await this.recordAccessSuppression(input, definition, userId, routingResult.priority);
           return;
         }
+      }
+
+      // PIPE-008: a channel the user set to DIGEST is accumulated rather than sent.
+      // Mandatory events bypass it — a security alert held for a daily digest is not a
+      // digest, it is a missed alert.
+      const digestWindowMs = definition.mandatory
+        ? null
+        : NotificationDigestService.windowMsFor(digestModeByUser.get(userId));
+      if (digestWindowMs !== null) {
+        await this.digest.enqueue({
+          orgId: input.orgId,
+          userId,
+          channel: "EMAIL",
+          eventKey: input.eventKey,
+          entityType: input.entityType ?? null,
+          entityId: input.entityId ?? null,
+          title: input.title ?? definition.displayName,
+          message: input.message ?? definition.description,
+          link: input.link ?? null,
+          windowMs: digestWindowMs,
+        });
       }
 
       const perUser = await this.persistForUser(

@@ -1,7 +1,7 @@
 import type {
   NotificationChannel,
   NotificationEventDefinition,
-} from "./notification.types";
+} from "./notification-event-definition.types";
 import type { NotificationCategoryValue } from "./notifications.types";
 
 type EventOverrides = Partial<

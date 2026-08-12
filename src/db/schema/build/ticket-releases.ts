@@ -1,15 +1,4 @@
-import {
-  pgTable,
-  text,
-  serial,
-  timestamp,
-  date,
-  integer,
-  index,
-  unique,
-  uniqueIndex,
-  check,
-} from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, date, integer, index, unique, uniqueIndex, check } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
@@ -18,7 +7,7 @@ import { tickets } from "./ticket-core";
 export const projectReleases = pgTable(
   "project_releases",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -54,7 +43,7 @@ export const projectReleases = pgTable(
 export const releaseTickets = pgTable(
   "release_tickets",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),

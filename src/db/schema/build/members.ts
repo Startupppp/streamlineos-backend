@@ -1,4 +1,4 @@
-import { pgTable, text, serial, bigint, timestamp, boolean, jsonb, decimal, date, integer, foreignKey, index, unique, uniqueIndex, check } from "drizzle-orm/pg-core";
+import { pgTable, text, bigint, timestamp, boolean, jsonb, decimal, date, integer, foreignKey, index, unique, uniqueIndex, check } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import {
   intakeStatusEnum,
@@ -10,7 +10,7 @@ import { projects } from "./core";
 import { tickets } from "./tasks";
 
 export const projectMembers = pgTable("project_members", {
-  id: serial("id").primaryKey(),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
@@ -27,7 +27,7 @@ export const projectMembers = pgTable("project_members", {
 ]);
 
 export const projectViews = pgTable("project_views", {
-  id: serial("id").primaryKey(),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   createdBy: text("created_by").references(() => users.id).notNull(),
@@ -50,7 +50,7 @@ export const projectViews = pgTable("project_views", {
 ]);
 
 export const intakeItems = pgTable("intake_items", {
-  id: serial("id").primaryKey(),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   title: text("title").notNull(),
@@ -72,7 +72,7 @@ export const intakeItems = pgTable("intake_items", {
 ]);
 
 export const pages = pgTable("pages", {
-  id: serial("id").primaryKey(),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   title: text("title").notNull(),
@@ -94,7 +94,7 @@ export const pages = pgTable("pages", {
 ]);
 
 export const projectMilestones = pgTable("project_milestones", {
-  id: serial("id").primaryKey(),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),

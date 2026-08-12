@@ -16,6 +16,9 @@ import { NotificationDispatchService } from "./notification-dispatch.service";
 import { NotificationVisibilityRegistry } from "./notification-visibility.registry";
 import { NotificationOutboxRelayService } from "./notification-outbox-relay.service";
 import { NotificationTemplateRenderer } from "./notification-template-renderer.service";
+import { NotificationPreferenceRulesService } from "./notification-preference-rules.service";
+import { NotificationDigestService } from "./notification-digest.service";
+import { NotificationWhatsAppProvider } from "./providers/notification-whatsapp.provider";
 import { NotificationDeliveryWorker } from "./notification-delivery-worker.service";
 import { NotificationEmailProvider } from "./providers/notification-email.provider";
 import { NotificationWebPushProvider } from "./providers/notification-web-push.provider";
@@ -58,6 +61,9 @@ import { NotificationPolicyController } from "./notification-policy.controller";
     NotificationVisibilityRegistry,
     NotificationOutboxRelayService,
     NotificationTemplateRenderer,
+    NotificationPreferenceRulesService,
+    NotificationDigestService,
+    NotificationWhatsAppProvider,
   ],
   exports: [
     NotificationsService,
@@ -67,6 +73,7 @@ import { NotificationPolicyController } from "./notification-policy.controller";
     NotificationDeliveryWorker,
     NotificationVisibilityRegistry,
     NotificationOutboxRelayService,
+    NotificationDigestService,
   ],
 })
 export class NotificationsModule {}

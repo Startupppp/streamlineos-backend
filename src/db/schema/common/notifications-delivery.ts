@@ -332,3 +332,85 @@ export const notificationConsentEvents = pgTable(
     uniqueIndex("uniq_notification_consent_events_org_id").on(t.orgId, t.id),
   ],
 );
+
+export const broadcastAudienceKindEnum = pgEnum("broadcast_audience_kind", ["ROLE", "DEPARTMENT", "USER"]);
+
+
+/**
+ * PIPE-008 / PIPE-004. Holds notifications between the event and the send, which is
+ * what both digest mode and real coalescing were missing.
+ *
+ * `coalesce_key` is the aggregation key: repeat events on the same entity collapse
+ * onto one row with `occurrence_count`, instead of the first winning and the rest
+ * being silently dropped by first-write-wins dedupe.
+ */
+export const notificationDigestItems = pgTable(
+  "notification_digest_items",
+  {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+    userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    channel: notificationChannelEnum("channel").notNull(),
+    eventKey: text("event_key").notNull(),
+    entityType: text("entity_type"),
+    entityId: text("entity_id"),
+    title: text("title").notNull(),
+    message: text("message").notNull(),
+    link: text("link"),
+    coalesceKey: text("coalesce_key").notNull(),
+    occurrenceCount: integer("occurrence_count").default(1).notNull(),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).defaultNow().notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).defaultNow().notNull(),
+    deliverAfter: timestamp("deliver_after", { withTimezone: true }).notNull(),
+    flushedAt: timestamp("flushed_at", { withTimezone: true }),
+  },
+  (t) => [
+    // Partial: a flushed row must not block the next window opening its own.
+    uniqueIndex("uniq_notification_digest_open")
+      .on(t.orgId, t.userId, t.channel, t.coalesceKey)
+      .where(sql`flushed_at is null`),
+    index("idx_notification_digest_due").on(t.orgId, t.deliverAfter).where(sql`flushed_at is null`),
+    uniqueIndex("uniq_notification_digest_items_org_id").on(t.orgId, t.id),
+  ],
+);
+
+/** One row per flushed window, so a retried flush cannot send the same digest twice. */
+export const notificationDigestRuns = pgTable(
+  "notification_digest_runs",
+  {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+    userId: text("user_id").notNull(),
+    channel: notificationChannelEnum("channel").notNull(),
+    windowEnd: timestamp("window_end", { withTimezone: true }).notNull(),
+    itemCount: integer("item_count").notNull(),
+    deliveryId: bigint("delivery_id", { mode: "number" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("uniq_notification_digest_run_window").on(t.orgId, t.userId, t.channel, t.windowEnd),
+    uniqueIndex("uniq_notification_digest_runs_org_id").on(t.orgId, t.id),
+  ],
+);
+
+/**
+ * SCH-017. Replaces role/department/user ids buried in `broadcasts.audience` JSONB,
+ * which had no referential integrity and needed a GIN containment query to answer
+ * "every broadcast targeting department X".
+ */
+export const broadcastAudienceTargets = pgTable(
+  "broadcast_audience_targets",
+  {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+    broadcastId: integer("broadcast_id").notNull(),
+    kind: broadcastAudienceKindEnum("kind").notNull(),
+    targetId: text("target_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("uniq_broadcast_audience_target").on(t.broadcastId, t.kind, t.targetId),
+    index("idx_broadcast_audience_lookup").on(t.orgId, t.kind, t.targetId),
+    uniqueIndex("uniq_broadcast_audience_targets_org_id").on(t.orgId, t.id),
+  ],
+);

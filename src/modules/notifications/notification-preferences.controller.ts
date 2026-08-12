@@ -1,9 +1,11 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Put, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { NotificationPreferencesService } from "./notification-preferences.service";
+import { NotificationPreferenceRulesService } from "./notification-preference-rules.service";
+import { preferenceRuleSchema, type PreferenceRuleBody } from "./dto/preference-rule.schemas";
 import {
   updatePreferenceSchema,
   eventPreferenceSchema,
@@ -16,7 +18,10 @@ import {
 @Controller("notification-preferences")
 @UseGuards(JwtAuthGuard)
 export class NotificationPreferencesController {
-  constructor(private readonly preferences: NotificationPreferencesService) {}
+  constructor(
+    private readonly preferences: NotificationPreferencesService,
+    private readonly rules: NotificationPreferenceRulesService,
+  ) {}
 
   @Get()
   get(@CurrentUser() u: CurrentUserContext) {
@@ -29,6 +34,21 @@ export class NotificationPreferencesController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.preferences.update(u.orgId, u.userId, body);
+  }
+
+  /** SCH-003. The normalised rules behind the preference centre. */
+  @Get("rules")
+  listRules(@CurrentUser() u: CurrentUserContext) {
+    return this.rules.list(u.orgId, u.userId);
+  }
+
+  @Put("rules")
+  @HttpCode(200)
+  setRule(
+    @Body(new ZodValidationPipe(preferenceRuleSchema)) body: PreferenceRuleBody,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.rules.set(u.orgId, u.userId, body);
   }
 
   @Get("events")

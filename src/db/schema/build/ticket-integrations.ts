@@ -1,17 +1,4 @@
-import {
-  pgTable,
-  text,
-  serial,
-  bigserial,
-  timestamp,
-  boolean,
-  integer,
-  index,
-  unique,
-  jsonb,
-  varchar,
-  check,
-} from "drizzle-orm/pg-core";
+import { pgTable, text, bigserial, timestamp, boolean, integer, index, unique, jsonb, varchar, check } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
@@ -19,7 +6,7 @@ import { projects } from "./core";
 export const projectWebhooks = pgTable(
   "project_webhooks",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
@@ -79,7 +66,7 @@ export const webhookDeliveries = pgTable(
 export const projectAutomations = pgTable(
   "project_automations",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),

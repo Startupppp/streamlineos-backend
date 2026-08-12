@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, serial, integer, boolean, timestamp, jsonb, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, integer, boolean, timestamp, jsonb, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
@@ -22,7 +22,7 @@ export const formSubmissionStatusEnum = pgEnum("form_submission_status", [
 ]);
 
 export const projectForms = pgTable("project_forms", {
-  id: serial("id").primaryKey(),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
   formNumber: integer("form_number").notNull(),
@@ -52,7 +52,7 @@ export const projectForms = pgTable("project_forms", {
 ]);
 
 export const formSubmissions = pgTable("form_submissions", {
-  id: serial("id").primaryKey(),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   formId: integer("form_id").references(() => projectForms.id, { onDelete: "cascade" }).notNull(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),

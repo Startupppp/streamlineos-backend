@@ -1,17 +1,4 @@
-import {
-  pgTable,
-  serial,
-  text,
-  timestamp,
-  integer,
-  jsonb,
-  date,
-  index,
-  unique,
-  uniqueIndex,
-  foreignKey,
-  check,
-} from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, integer, jsonb, date, index, unique, uniqueIndex, foreignKey, check } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { managedProductStatusEnum } from "../common/enums";
 import { organizations, users, organizationMembers } from "../common/auth";
@@ -20,7 +7,7 @@ import { pmWorkspaces } from "./pm-workspaces";
 export const managedProducts = pgTable(
   "managed_products",
   {
-    managedProductId: serial("managed_product_id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -52,7 +39,7 @@ export const managedProducts = pgTable(
   (table) => [
     uniqueIndex("uniq_managed_products_org_key").on(table.orgId, table.key),
     index("idx_managed_products_org_status").on(table.orgId, table.status).where(sql`deleted_at IS NULL`),
-    unique("uniq_managed_products_org_pk").on(table.orgId, table.managedProductId),
+    unique("uniq_managed_products_org_pk").on(table.orgId, table.id),
     foreignKey({
       columns: [table.orgId, table.ownerMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
@@ -63,12 +50,12 @@ export const managedProducts = pgTable(
 export const managedProductReleases = pgTable(
   "managed_product_releases",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     managedProductId: integer("managed_product_id")
-      .references(() => managedProducts.managedProductId, { onDelete: "cascade" })
+      .references(() => managedProducts.id, { onDelete: "cascade" })
       .notNull(),
     name: text("name").notNull(),
     version: text("version").notNull(),
@@ -97,7 +84,7 @@ export const managedProductsRelations = relations(managedProducts, ({ many }) =>
 export const managedProductReleasesRelations = relations(managedProductReleases, ({ one }) => ({
   product: one(managedProducts, {
     fields: [managedProductReleases.managedProductId],
-    references: [managedProducts.managedProductId],
+    references: [managedProducts.id],
   }),
   createdBy: one(users, {
     fields: [managedProductReleases.createdBy],

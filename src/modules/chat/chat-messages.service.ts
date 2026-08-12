@@ -227,7 +227,6 @@ export class ChatMessagesService {
     if (channelData?.type === "DIRECT") {
       await this.notifications.publishNewMessageNotification(orgId, channelId, {
         id: message.id,
-        content: message.content,
         senderId: message.senderId,
         senderName,
       }, channelData.type);
@@ -246,7 +245,7 @@ export class ChatMessagesService {
           const memberIds = channelMembers.map(m => m.userId).filter(id => id !== userId);
           if (memberIds.length > 0) {
             await this.notifications.publishMentionNotification(orgId, channelId, {
-              id: message.id, content: body.content!, senderId: userId, senderName: senderName ?? "Someone",
+              id: message.id, senderId: userId, senderName: senderName ?? "Someone",
             }, memberIds);
           }
         }
@@ -261,7 +260,6 @@ export class ChatMessagesService {
         if (individualMentionIds.length > 0) {
           await this.notifications.publishMentionNotification(orgId, channelId, {
             id: message.id,
-            content: body.content!,
             senderId: userId,
             senderName: senderName ?? "Someone",
           }, individualMentionIds);

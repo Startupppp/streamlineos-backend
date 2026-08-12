@@ -1,4 +1,4 @@
-import { NotFoundException } from "@nestjs/common";
+import { Logger, NotFoundException } from "@nestjs/common";
 import {
   and,
   asc,
@@ -12,6 +12,10 @@ import {
   projectMembers,
   tickets,
 } from "../../../db/schema";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
+import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+
+const rankLogger = new Logger("TicketRank");
 import type { Db } from "../../../db/drizzle.types";
 import type { CacheService } from "../../../common/cache/cache.service";
 import type { RankTicketInput } from "./dto/projects.schemas";
@@ -192,7 +196,15 @@ export async function rankTicket(
 
   const scale = decimalScale(newRank);
   if (scale > REBALANCE_SCALE_THRESHOLD)
-    void rebalanceProjectRanks(db, orgId, projectId).catch(() => undefined);
+    registerAfterCommit(() =>
+      runInNewTenantTransaction(db, orgId, (tx) =>
+        rebalanceProjectRanks(tx, orgId, projectId),
+      ).catch((error: unknown) => {
+        rankLogger.error(
+          `rank rebalance failed for project ${projectId} in org ${orgId}: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+        );
+      }),
+    );
 
   return { id: updated.id, rank: updated.rank, status: updated.status };
 }

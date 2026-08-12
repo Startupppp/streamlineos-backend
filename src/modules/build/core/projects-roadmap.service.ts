@@ -1,6 +1,6 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, count, desc, eq, ilike, isNull, or } from "drizzle-orm";
-import { changelogEntries, feedbackPosts, roadmapItems } from "../../../db/schema";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, asc, count, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import { changelogEntries, feedbackPosts, feedbackVotes, roadmapItems } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type {
@@ -9,6 +9,7 @@ import type {
   CreateFeedbackInput,
   CreateRoadmapInput,
   FeedbackListQuery,
+  MergeFeedbackInput,
   RoadmapListQuery,
   UpdateChangelogInput,
   UpdateFeedbackInput,
@@ -105,6 +106,7 @@ export class ProjectsRoadmapService {
     const effectiveLimit = Math.min(limit, 100);
     const offset = (page - 1) * effectiveLimit;
     const conditions = [eq(feedbackPosts.orgId, orgId), isNull(feedbackPosts.deletedAt)];
+    if (!query.includeMerged) conditions.push(isNull(feedbackPosts.duplicateOfId));
     if (query.status) conditions.push(eq(feedbackPosts.status, query.status));
     if (query.search) {
       const term = `%${query.search}%`;
@@ -167,6 +169,83 @@ export class ProjectsRoadmapService {
       .returning();
     if (!updated) throw new NotFoundException("Feedback post not found");
     return updated;
+  }
+
+  async mergeFeedback(orgId: string, postId: number, input: MergeFeedbackInput) {
+    const targetId = input.targetPostId;
+    if (targetId === postId)
+      throw new BadRequestException("A feedback post cannot be merged into itself");
+
+    return this.db.transaction(async (tx) => {
+      const [source, target] = await Promise.all([
+        tx.query.feedbackPosts.findFirst({
+          where: and(
+            eq(feedbackPosts.id, postId),
+            eq(feedbackPosts.orgId, orgId),
+            isNull(feedbackPosts.deletedAt),
+          ),
+        }),
+        tx.query.feedbackPosts.findFirst({
+          where: and(
+            eq(feedbackPosts.id, targetId),
+            eq(feedbackPosts.orgId, orgId),
+            isNull(feedbackPosts.deletedAt),
+          ),
+        }),
+      ]);
+      if (!source || !target) throw new NotFoundException("Feedback post not found");
+      if (source.duplicateOfId !== null)
+        throw new BadRequestException("This post has already been merged");
+      if (target.duplicateOfId !== null)
+        throw new BadRequestException(
+          "The selected post is itself a duplicate — merge into the original instead",
+        );
+
+      await tx.execute(sql`
+        UPDATE feedback_votes v
+        SET feedback_post_id = ${targetId}
+        WHERE v.feedback_post_id = ${postId}
+          AND v.org_id = ${orgId}
+          AND NOT EXISTS (
+            SELECT 1 FROM feedback_votes k
+            WHERE k.feedback_post_id = ${targetId} AND k.voter_key = v.voter_key
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM feedback_votes h
+            WHERE h.feedback_post_id = ${targetId}
+              AND h.voter_ip_hash IS NOT NULL
+              AND h.voter_ip_hash = v.voter_ip_hash
+          )
+      `);
+
+      await tx
+        .delete(feedbackVotes)
+        .where(and(eq(feedbackVotes.feedbackPostId, postId), eq(feedbackVotes.orgId, orgId)));
+
+      await tx
+        .update(feedbackPosts)
+        .set({ duplicateOfId: targetId })
+        .where(and(eq(feedbackPosts.duplicateOfId, postId), eq(feedbackPosts.orgId, orgId)));
+
+      const now = new Date();
+      await tx
+        .update(feedbackPosts)
+        .set({ duplicateOfId: targetId, mergedAt: now, updatedAt: now })
+        .where(and(eq(feedbackPosts.id, postId), eq(feedbackPosts.orgId, orgId)));
+
+      await tx.execute(sql`
+        UPDATE feedback_posts p
+        SET votes = (SELECT count(*) FROM feedback_votes v WHERE v.feedback_post_id = p.id)
+        WHERE p.org_id = ${orgId} AND p.id IN (${postId}, ${targetId})
+      `);
+
+      const [canonical] = await tx
+        .select()
+        .from(feedbackPosts)
+        .where(and(eq(feedbackPosts.id, targetId), eq(feedbackPosts.orgId, orgId)))
+        .limit(1);
+      return canonical;
+    });
   }
 
   async deleteFeedback(orgId: string, postId: number) {

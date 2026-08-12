@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, serial, timestamp, boolean, integer, decimal, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, timestamp, boolean, integer, decimal, index, unique, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
@@ -10,7 +10,7 @@ export const feedbackStatusEnum = pgEnum("feedback_status", ["open", "planned", 
 export const changelogTypeEnum = pgEnum("changelog_type", ["feature", "improvement", "fix"]);
 
 export const roadmapItems = pgTable("roadmap_items", {
-  id: serial("id").primaryKey(),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   title: text("title").notNull(),
   description: text("description"),
@@ -36,7 +36,7 @@ export const roadmapItems = pgTable("roadmap_items", {
 ]);
 
 export const roadmapVotes = pgTable("roadmap_votes", {
-  id: serial("id").primaryKey(),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   roadmapItemId: integer("roadmap_item_id").references(() => roadmapItems.id, { onDelete: "cascade" }).notNull(),
   voterKey: text("voter_key").notNull(),
@@ -49,7 +49,7 @@ export const roadmapVotes = pgTable("roadmap_votes", {
 ]);
 
 export const feedbackPosts = pgTable("feedback_posts", {
-  id: serial("id").primaryKey(),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   title: text("title").notNull(),
   description: text("description"),
@@ -62,6 +62,8 @@ export const feedbackPosts = pgTable("feedback_posts", {
   crmOrganizationId: integer("crm_organization_id").references(() => crmOrganizations.id, { onDelete: "set null" }),
   accountValueSnapshot: decimal("account_value_snapshot", { precision: 15, scale: 2 }),
   linkedRoadmapItemId: integer("linked_roadmap_item_id").references(() => roadmapItems.id, { onDelete: "set null" }),
+  duplicateOfId: integer("duplicate_of_id").references((): AnyPgColumn => feedbackPosts.id, { onDelete: "set null" }),
+  mergedAt: timestamp("merged_at", { withTimezone: true }),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
@@ -70,11 +72,12 @@ export const feedbackPosts = pgTable("feedback_posts", {
   index("idx_feedback_posts_org_status").on(table.orgId, table.status).where(sql`deleted_at IS NULL`),
   index("idx_feedback_posts_crm_contact").on(table.orgId, table.crmContactId).where(sql`deleted_at IS NULL`),
   index("idx_feedback_posts_crm_org").on(table.orgId, table.crmOrganizationId).where(sql`deleted_at IS NULL`),
+  index("idx_feedback_posts_duplicate_of").on(table.orgId, table.duplicateOfId).where(sql`duplicate_of_id IS NOT NULL`),
   unique("uniq_feedback_posts_org_id").on(table.orgId, table.id),
 ]);
 
 export const feedbackVotes = pgTable("feedback_votes", {
-  id: serial("id").primaryKey(),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   feedbackPostId: integer("feedback_post_id").references(() => feedbackPosts.id, { onDelete: "cascade" }).notNull(),
   voterKey: text("voter_key").notNull(),
@@ -87,7 +90,7 @@ export const feedbackVotes = pgTable("feedback_votes", {
 ]);
 
 export const changelogEntries = pgTable("changelog_entries", {
-  id: serial("id").primaryKey(),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   title: text("title").notNull(),
   content: text("content").default("").notNull(),

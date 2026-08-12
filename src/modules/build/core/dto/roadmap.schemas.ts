@@ -42,8 +42,13 @@ export const feedbackListQuerySchema = z.object({
     .enum(["open", "planned", "in_progress", "completed", "declined"])
     .optional(),
   search: z.string().trim().min(1).optional(),
+  includeMerged: z.coerce.boolean().default(false),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+
+export const mergeFeedbackSchema = z.object({
+  targetPostId: z.number().int().positive(),
 });
 
 export const createFeedbackSchema = z.object({
@@ -101,3 +106,4 @@ export type UpdateFeedbackInput = z.infer<typeof updateFeedbackSchema>;
 export type ChangelogListQuery = z.infer<typeof changelogListQuerySchema>;
 export type CreateChangelogInput = z.infer<typeof createChangelogSchema>;
 export type UpdateChangelogInput = z.infer<typeof updateChangelogSchema>;
+export type MergeFeedbackInput = z.infer<typeof mergeFeedbackSchema>;

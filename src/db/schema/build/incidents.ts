@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, serial, timestamp, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, timestamp, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
@@ -8,7 +8,7 @@ export const incidentSeverityEnum = pgEnum("incident_severity", ["critical", "hi
 export const incidentStatusEnum = pgEnum("incident_status", ["detected", "investigating", "mitigating", "resolved", "postmortem", "closed"]);
 
 export const projectIncidents = pgTable("project_incidents", {
-  id: serial("id").primaryKey(),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
   incidentNumber: integer("incident_number").notNull(),
@@ -38,7 +38,7 @@ export const projectIncidents = pgTable("project_incidents", {
 ]);
 
 export const incidentUpdates = pgTable("incident_updates", {
-  id: serial("id").primaryKey(),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   incidentId: integer("incident_id").references(() => projectIncidents.id, { onDelete: "cascade" }).notNull(),
   message: text("message").notNull(),
