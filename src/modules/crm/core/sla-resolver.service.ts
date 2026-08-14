@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { crmSla } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import type { SlaConditions } from "../../../db/schema/crm/analytics";
+import type { SlaConditions } from "../../../db/schema/crm/sla";
 
 interface ResolveInput {
   source?: string;

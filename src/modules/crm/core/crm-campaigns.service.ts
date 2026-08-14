@@ -35,6 +35,7 @@ export class CrmCampaignsService {
       budgetAllocated: input.budgetAllocated?.toString(),
       description: input.description,
       targetAudience: input.targetAudience,
+      ownerId: input.ownerId ?? null,
     }).returning();
     return campaign;
   }
@@ -46,11 +47,14 @@ export class CrmCampaignsService {
         ...(input.channel !== undefined && { channel: input.channel }),
         ...(input.startDate !== undefined && { startDate: input.startDate }),
         ...(input.endDate !== undefined && { endDate: input.endDate }),
-        ...(input.budgetAllocated !== undefined && { budgetAllocated: input.budgetAllocated.toString() }),
+        ...(input.budgetAllocated !== undefined && {
+          budgetAllocated: input.budgetAllocated === null ? null : input.budgetAllocated.toString(),
+        }),
         ...(input.utmCampaignKey !== undefined && { utmCampaignKey: input.utmCampaignKey }),
         ...(input.status !== undefined && { status: input.status as never }),
         ...(input.description !== undefined && { description: input.description }),
         ...(input.targetAudience !== undefined && { targetAudience: input.targetAudience }),
+        ...(input.ownerId !== undefined && { ownerId: input.ownerId }),
       })
       .where(and(eq(crmCampaigns.id, campaignId), eq(crmCampaigns.orgId, orgId)))
       .returning();

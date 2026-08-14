@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, decimal, integer, boolean, jsonb, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, decimal, integer, boolean, jsonb, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
   invReservationStrategyEnum, invCostingMethodEnum, invExpiryPolicyEnum,
@@ -189,6 +189,28 @@ export const invImportJobsRelations = relations(invImportJobs, ({ one }) => ({
 export const invExportJobsRelations = relations(invExportJobs, ({ one }) => ({
   organization: one(organizations, { fields: [invExportJobs.orgId], references: [organizations.id] }),
   creator: one(users, { fields: [invExportJobs.createdBy], references: [users.id] }),
+}));
+
+export const invWebhookEventSubscriptions = pgTable("inv_webhook_event_subscriptions", {
+  id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  webhookId: integer("webhook_id").notNull(),
+  eventType: text("event_type").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uniq_inv_webhook_event_subs_key").on(table.orgId, table.webhookId, table.eventType),
+  unique("uniq_inv_webhook_event_subs_org_id").on(table.orgId, table.id),
+  index("idx_inv_webhook_event_subs_dispatch").on(table.orgId, table.eventType),
+  foreignKey({
+    columns: [table.orgId, table.webhookId],
+    foreignColumns: [invWebhooks.orgId, invWebhooks.id],
+    name: "fk_inv_webhook_event_subs_org_webhook",
+  }).onDelete("cascade"),
+]);
+
+export const invWebhookEventSubscriptionsRelations = relations(invWebhookEventSubscriptions, ({ one }) => ({
+  organization: one(organizations, { fields: [invWebhookEventSubscriptions.orgId], references: [organizations.id] }),
+  webhook: one(invWebhooks, { fields: [invWebhookEventSubscriptions.webhookId], references: [invWebhooks.id] }),
 }));
 
 export const invWebhooksRelations = relations(invWebhooks, ({ one, many }) => ({

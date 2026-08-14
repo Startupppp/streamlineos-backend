@@ -18,15 +18,26 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import type { ValuationReportInput, SlowMovingQueryInput, ExpiryReportInput, ReorderQueryInput } from "./dto/inv-reports.schemas";
+import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 
 @Injectable()
 export class InvReportsExtendedService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly warehouseScope: WarehouseScopeService,
   ) {}
 
-  async getDashboardExtras(orgId: string) {
+  private async stockScope(orgId: string, userId: string) {
+    const scope = await this.warehouseScope.resolve(orgId, userId);
+    return {
+      sql: this.warehouseScope.locationPredicate(scope, sql`${invStockLevels.locationId}`),
+      key: scope === null ? "all" : ([...scope].sort((a, b) => a - b).join(".") || "none"),
+    };
+  }
+
+  async getDashboardExtras(orgId: string, userId: string) {
+    const scope = await this.stockScope(orgId, userId);
     const thirtyDaysOut = new Date();
     thirtyDaysOut.setDate(thirtyDaysOut.getDate() + 30);
     const thirtyDaysCutoff = thirtyDaysOut.toISOString().slice(0, 10);
@@ -35,7 +46,7 @@ export class InvReportsExtendedService {
       this.db
         .select({ total: sql<string>`COALESCE(SUM(${invStockLevels.onHand}::numeric * NULLIF(${invStockLevels.averageCost}::numeric, 0)), 0)::text` })
         .from(invStockLevels)
-        .where(eq(invStockLevels.orgId, orgId))
+        .where(and(eq(invStockLevels.orgId, orgId), scope.sql))
         .then((r) => parseFloat(r[0]?.total ?? "0")),
 
       this.db
@@ -53,7 +64,7 @@ export class InvReportsExtendedService {
       this.db
         .select({ total: sql<string>`COALESCE(SUM(${invStockLevels.qualityHoldQty}::numeric), 0)::text` })
         .from(invStockLevels)
-        .where(eq(invStockLevels.orgId, orgId))
+        .where(and(eq(invStockLevels.orgId, orgId), scope.sql))
         .then((r) => parseFloat(r[0]?.total ?? "0")),
 
       this.db
@@ -112,15 +123,16 @@ export class InvReportsExtendedService {
     };
   }
 
-  async getValuationReport(orgId: string, filters: ValuationReportInput) {
+  async getValuationReport(orgId: string, userId: string, filters: ValuationReportInput) {
     const { warehouseId, categoryId, page, limit } = filters;
     const offset = (page - 1) * limit;
-    const cacheKey = CACHE_KEYS.invValuationReport(orgId, `${warehouseId ?? "all"}-${categoryId ?? "all"}-${page}-${limit}`);
+    const scope = await this.stockScope(orgId, userId);
+    const cacheKey = CACHE_KEYS.invValuationReport(orgId, `${scope.key}-${warehouseId ?? "all"}-${categoryId ?? "all"}-${page}-${limit}`);
 
     return this.cache.cached(
       cacheKey,
       async () => {
-        const conditions = [eq(invStockLevels.orgId, orgId)];
+        const conditions = [eq(invStockLevels.orgId, orgId), scope.sql];
         if (warehouseId != null) {
           conditions.push(
             inArray(
@@ -194,10 +206,11 @@ export class InvReportsExtendedService {
     );
   }
 
-  async getSlowMovingReport(orgId: string, filters: SlowMovingQueryInput) {
+  async getSlowMovingReport(orgId: string, userId: string, filters: SlowMovingQueryInput) {
     const { days, page, limit } = filters;
     const offset = (page - 1) * limit;
-    const cacheKey = CACHE_KEYS.invSlowMovingReport(orgId, `${days}-${page}-${limit}`);
+    const scope = await this.stockScope(orgId, userId);
+    const cacheKey = CACHE_KEYS.invSlowMovingReport(orgId, `${scope.key}-${days}-${page}-${limit}`);
 
     return this.cache.cached(
       cacheKey,
@@ -207,6 +220,8 @@ export class InvReportsExtendedService {
 
         const slowMovingWhere = and(
           eq(invStockLevels.orgId, orgId),
+      scope.sql,
+          scope.sql,
           sql`${invStockLevels.onHand}::numeric > 0`,
           sql`NOT EXISTS (
             SELECT 1 FROM inv_stock_transactions t
@@ -271,10 +286,11 @@ export class InvReportsExtendedService {
     );
   }
 
-  async getExpiryReport(orgId: string, filters: ExpiryReportInput) {
+  async getExpiryReport(orgId: string, userId: string, filters: ExpiryReportInput) {
     const { withinDays, warehouseId, status, page, limit } = filters;
     const offset = (page - 1) * limit;
-    const cacheKey = CACHE_KEYS.invExpiryReport(orgId, `${withinDays}-${warehouseId ?? "all"}-${status ?? "all"}-${page}`);
+    const scope = await this.stockScope(orgId, userId);
+    const cacheKey = CACHE_KEYS.invExpiryReport(orgId, `${scope.key}-${withinDays}-${warehouseId ?? "all"}-${status ?? "all"}-${page}`);
 
     return this.cache.cached(
       cacheKey,

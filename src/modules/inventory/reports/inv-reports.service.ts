@@ -14,18 +14,23 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { InvReportsExtendedService } from "./inv-reports-extended.service";
+import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 
 @Injectable()
 export class InvReportsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly warehouseScope: WarehouseScopeService,
     private readonly extended: InvReportsExtendedService,
   ) {}
 
-  async getDashboard(orgId: string) {
+  async getDashboard(orgId: string, userId: string) {
+    const scope = await this.warehouseScope.resolve(orgId, userId);
+    const scopeKey = scope === null ? "all" : ([...scope].sort((a, b) => a - b).join(".") || "none");
+    const stockScope = this.warehouseScope.locationPredicate(scope, sql`${invStockLevels.locationId}`);
     return this.cache.cached(
-      CACHE_KEYS.invDashboard(orgId),
+      `${CACHE_KEYS.invDashboard(orgId)}:${scopeKey}`,
       async () => {
         const [stockSummary, lowStockRows, draftPoRows, openSoRows] = await Promise.all([
           this.db
@@ -36,7 +41,7 @@ export class InvReportsService {
               totalOnOrder: sql<number>`COALESCE(sum(${invStockLevels.onOrder}::numeric), 0)::float`,
             })
             .from(invStockLevels)
-            .where(eq(invStockLevels.orgId, orgId)),
+            .where(and(eq(invStockLevels.orgId, orgId), stockScope)),
 
           this.db
             .select({ count: sql<number>`count(*)::int` })
@@ -46,6 +51,7 @@ export class InvReportsService {
             .where(
               and(
                 eq(invStockLevels.orgId, orgId),
+                stockScope,
                 sql`${invStockLevels.onHand}::numeric <= ${invProducts.reorderPoint}::numeric`,
               ),
             ),
@@ -72,7 +78,7 @@ export class InvReportsService {
           },
         });
 
-        const extras = await this.extended.getDashboardExtras(orgId);
+        const extras = await this.extended.getDashboardExtras(orgId, userId);
 
         return {
           stockSummary: stockSummary[0],
@@ -87,17 +93,20 @@ export class InvReportsService {
     );
   }
 
-  async getStockSummary(orgId: string, filters: StockSummaryQueryInput) {
+  async getStockSummary(orgId: string, userId: string, filters: StockSummaryQueryInput) {
     const { page, limit } = filters;
     const offset = (page - 1) * limit;
-    const cacheKey = CACHE_KEYS.invStockSummaryReport(orgId, `${page}:${limit}`);
+    const scope = await this.warehouseScope.resolve(orgId, userId);
+    const scopeKey = scope === null ? "all" : ([...scope].sort((a, b) => a - b).join(".") || "none");
+    const stockScope = this.warehouseScope.locationPredicate(scope, sql`${invStockLevels.locationId}`);
+    const cacheKey = CACHE_KEYS.invStockSummaryReport(orgId, `${scopeKey}:${page}:${limit}`);
 
     return this.cache.cached(
       cacheKey,
       async () => {
         const [items, countResult] = await Promise.all([
           this.db.query.invStockLevels.findMany({
-            where: eq(invStockLevels.orgId, orgId),
+            where: and(eq(invStockLevels.orgId, orgId), stockScope),
             columns: {
               id: true,
               orgId: true,
@@ -128,7 +137,7 @@ export class InvReportsService {
           this.db
             .select({ count: sql<number>`count(*)::int` })
             .from(invStockLevels)
-            .where(eq(invStockLevels.orgId, orgId)),
+            .where(and(eq(invStockLevels.orgId, orgId), stockScope)),
         ]);
 
         const total = countResult[0]?.count ?? 0;
@@ -147,10 +156,16 @@ export class InvReportsService {
     );
   }
 
-  async getMovementsReport(orgId: string, query: MovementsQueryInput) {
+  async getMovementsReport(orgId: string, userId: string, query: MovementsQueryInput) {
     const { fromDate, toDate, page, limit } = query;
     const offset = (page - 1) * limit;
     const conditions = [eq(invStockTransactions.orgId, orgId)];
+    conditions.push(
+      this.warehouseScope.locationPredicate(
+        await this.warehouseScope.resolve(orgId, userId),
+        sql`${invStockTransactions.locationId}`,
+      ),
+    );
     if (fromDate) {
       conditions.push(gte(invStockTransactions.createdAt, new Date(fromDate)));
     }

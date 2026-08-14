@@ -6,28 +6,42 @@ export const campaignListSchema = z.object({
   status: z.string().optional(),
 });
 
-export const campaignCreateSchema = z.object({
-  name: z.string().min(1, "Name required").max(200),
-  channel: z.string().optional(),
-  startDate: z.string().optional(),
-  endDate: z.string().optional(),
-  utmCampaignKey: z.string().optional(),
-  budgetAllocated: z.number().positive().optional(),
-  description: z.string().optional(),
-  targetAudience: z.string().optional(),
-});
+/**
+ * Every optional field is `.nullish()`, not `.optional()`. The columns are
+ * nullable and the campaign sheet sends `values.x || null` for each, but
+ * `.optional()` accepts only `undefined` — so a blank channel or date made the
+ * whole request 400. `budgetAllocated` is coerced because it arrives as the raw
+ * string from a text input; `.nullish()` short-circuits before coercion, so
+ * `null` stays null instead of becoming 0 and failing `.positive()`.
+ */
+export const campaignCreateSchema = z
+  .object({
+    name: z.string().min(1, "Name required").max(200),
+    channel: z.string().nullish(),
+    startDate: z.string().nullish(),
+    endDate: z.string().nullish(),
+    utmCampaignKey: z.string().nullish(),
+    budgetAllocated: z.coerce.number().positive().nullish(),
+    description: z.string().nullish(),
+    targetAudience: z.string().nullish(),
+    ownerId: z.string().nullish(),
+  })
+  .strict();
 
-export const campaignUpdateSchema = z.object({
-  name: z.string().min(1).max(200).optional(),
-  channel: z.string().optional(),
-  startDate: z.string().optional(),
-  endDate: z.string().optional(),
-  utmCampaignKey: z.string().optional(),
-  budgetAllocated: z.number().positive().optional(),
-  status: z.enum(["active", "paused", "completed", "draft"]).optional(),
-  description: z.string().optional(),
-  targetAudience: z.string().optional(),
-});
+export const campaignUpdateSchema = z
+  .object({
+    name: z.string().min(1).max(200).optional(),
+    channel: z.string().nullish(),
+    startDate: z.string().nullish(),
+    endDate: z.string().nullish(),
+    utmCampaignKey: z.string().nullish(),
+    budgetAllocated: z.coerce.number().positive().nullish(),
+    status: z.enum(["active", "paused", "completed", "draft"]).optional(),
+    description: z.string().nullish(),
+    targetAudience: z.string().nullish(),
+    ownerId: z.string().nullish(),
+  })
+  .strict();
 
 export type CampaignListQuery = z.infer<typeof campaignListSchema>;
 export type CampaignCreateInput = z.infer<typeof campaignCreateSchema>;

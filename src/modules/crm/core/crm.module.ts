@@ -30,9 +30,11 @@ import { CrmCustomer360Service } from "./crm-customer360.service";
 import { CrmCustomer360SectionsService } from "./crm-customer360-sections.service";
 import { TerritoryMatchService } from "./territory-match.service";
 import { SlaResolverService } from "./sla-resolver.service";
+import { NotificationsModule } from "../../notifications/notifications.module";
+import { CrmFollowupSweepService } from "./crm-followup-sweep.service";
 
 @Module({
-  imports: [forwardRef(() => CrmAutomationStudioModule), BillingModule, CrmConsentModule],
+  imports: [forwardRef(() => CrmAutomationStudioModule), BillingModule, CrmConsentModule, NotificationsModule],
   controllers: [
     CrmCampaignsController,
     CrmOrganizationsController,
@@ -47,6 +49,7 @@ import { SlaResolverService } from "./sla-resolver.service";
     CrmCustomer360Controller,
   ],
   providers: [
+    CrmFollowupSweepService,
     CrmCampaignsService,
     CrmAttributionReportService,
     CrmOrganizationsService,
@@ -65,6 +68,6 @@ import { SlaResolverService } from "./sla-resolver.service";
     TerritoryMatchService,
     SlaResolverService,
   ],
-  exports: [CrmAttributionReportService, TerritoryMatchService],
+  exports: [CrmAttributionReportService, TerritoryMatchService, CrmFollowupSweepService],
 })
 export class CrmModule {}

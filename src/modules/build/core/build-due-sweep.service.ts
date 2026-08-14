@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { and, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
-import { tickets } from "../../../db/schema";
+import { sprints, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { forEachOrg } from "../../../common/tenant";
@@ -9,6 +9,7 @@ import { NotificationDispatchService } from "../../notifications/notification-di
 export interface BuildDueSweepResult {
   dueSoon: number;
   overdue: number;
+  sprintsEnding: number;
 }
 
 /**
@@ -35,7 +36,7 @@ export class BuildDueSweepService {
   ) {}
 
   async sweep(): Promise<BuildDueSweepResult> {
-    const result: BuildDueSweepResult = { dueSoon: 0, overdue: 0 };
+    const result: BuildDueSweepResult = { dueSoon: 0, overdue: 0, sprintsEnding: 0 };
 
     await forEachOrg(this.db, "build-due-sweep", async (tx, orgId) => {
       // Boundary, not range. Matching every ticket currently inside the window would
@@ -100,6 +101,50 @@ export class BuildDueSweepService {
         result.dueSoon += 1;
       }
 
+      // build.sprint.ending. Recipients are the people actually holding open work in the
+      // sprint — derived from the tickets themselves rather than from project membership,
+      // so nobody is told a sprint is closing on work they do not own.
+      const ending = await tx
+        .select({ id: sprints.id, name: sprints.name })
+        .from(sprints)
+        .where(
+          and(
+            eq(sprints.orgId, orgId),
+            isNull(sprints.deletedAt),
+            eq(sprints.status, "ACTIVE"),
+            sql`${sprints.endDate}::date = current_date + 1`,
+          ),
+        )
+        .limit(100);
+
+      for (const sprint of ending) {
+        const owners = await tx
+          .selectDistinct({ assigneeId: tickets.assigneeId })
+          .from(tickets)
+          .where(
+            and(
+              eq(tickets.orgId, orgId),
+              eq(tickets.sprintId, sprint.id),
+              isNull(tickets.deletedAt),
+              isNotNull(tickets.assigneeId),
+              ne(tickets.status, "DONE"),
+            ),
+          );
+        const targets = owners.map((o) => o.assigneeId).filter((id): id is string => Boolean(id));
+        if (targets.length === 0) continue;
+        await this.dispatch.emit({
+          eventKey: "build.sprint.ending",
+          orgId,
+          targetUserIds: targets,
+          entityType: "sprint",
+          entityId: String(sprint.id),
+          title: `Sprint ending tomorrow: ${sprint.name}`,
+          message: "You still have open tickets in this sprint.",
+          link: `/build/sprints/${sprint.id}`,
+        });
+        result.sprintsEnding += 1;
+      }
+
       for (const ticket of overdue) {
         if (!ticket.assigneeId) continue;
         await this.dispatch.emit({
@@ -116,9 +161,9 @@ export class BuildDueSweepService {
       }
     });
 
-    if (result.dueSoon > 0 || result.overdue > 0) {
+    if (result.dueSoon > 0 || result.overdue > 0 || result.sprintsEnding > 0) {
       this.logger.log(
-        `BUILD_DUE_SWEEP: ${result.dueSoon} due-soon, ${result.overdue} overdue notification(s)`,
+        `BUILD_DUE_SWEEP: ${result.dueSoon} due-soon, ${result.overdue} overdue, ${result.sprintsEnding} sprint-ending notification(s)`,
       );
     }
     return result;

@@ -19,6 +19,8 @@ import { NotificationTemplateRenderer } from "./notification-template-renderer.s
 import { NotificationPreferenceRulesService } from "./notification-preference-rules.service";
 import { NotificationDigestService } from "./notification-digest.service";
 import { NotificationWhatsAppProvider } from "./providers/notification-whatsapp.provider";
+import { NotificationSmsProvider } from "./providers/notification-sms.provider";
+import { NotificationTimeSweepsService } from "./time-sweeps/notification-time-sweeps.service";
 import { NotificationDeliveryWorker } from "./notification-delivery-worker.service";
 import { NotificationEmailProvider } from "./providers/notification-email.provider";
 import { NotificationWebPushProvider } from "./providers/notification-web-push.provider";
@@ -64,6 +66,8 @@ import { NotificationPolicyController } from "./notification-policy.controller";
     NotificationPreferenceRulesService,
     NotificationDigestService,
     NotificationWhatsAppProvider,
+    NotificationSmsProvider,
+    NotificationTimeSweepsService,
   ],
   exports: [
     NotificationsService,
@@ -74,6 +78,7 @@ import { NotificationPolicyController } from "./notification-policy.controller";
     NotificationVisibilityRegistry,
     NotificationOutboxRelayService,
     NotificationDigestService,
+    NotificationTimeSweepsService,
   ],
 })
 export class NotificationsModule {}

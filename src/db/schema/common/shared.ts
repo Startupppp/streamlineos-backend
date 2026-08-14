@@ -240,7 +240,6 @@ export const notificationPreferences = pgTable("notification_preferences", {
   // which is NOT NULL and defaults Asia/Kolkata; this defaulted UTC, so an IST
   // user's window was applied 5.5h out. Retained for the expand-contract window;
   // dropped once nothing reads it.
-  quietHoursTimezone: text("quiet_hours_timezone").default("UTC"),
   digestMode: text("digest_mode").$type<"disabled" | "hourly" | "daily" | "weekly">().default("disabled").notNull(),
   quietHoursWeekends: boolean("quiet_hours_weekends").default(true).notNull(),
   allowCriticalOverride: boolean("allow_critical_override").default(true).notNull(),

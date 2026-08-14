@@ -6,6 +6,7 @@ export * from "./consent";
 export * from "./deals";
 export * from "./invoicing";
 export * from "./analytics";
+export * from "./sla";
 export * from "./customer-success";
 export * from "./nps";
 export * from "./playbook";

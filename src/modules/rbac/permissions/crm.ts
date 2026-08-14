@@ -90,12 +90,6 @@ export const CRM_PERMISSIONS: Permission[] = [
     description: "Approve incentives",
   },
   {
-    name: "crm:incentives:config",
-    resource: "crm:incentives",
-    action: "config",
-    description: "Configure incentive rates",
-  },
-  {
     name: "crm:deals:read",
     resource: "crm:deals",
     action: "read",

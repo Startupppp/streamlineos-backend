@@ -37,7 +37,7 @@ export class InvReportsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:reports:read")
   getDashboard(@CurrentUser() u: CurrentUserContext) {
-    return this.reports.getDashboard(u.orgId);
+    return this.reports.getDashboard(u.orgId, u.userId);
   }
 
   @Get("stock-summary")
@@ -47,7 +47,7 @@ export class InvReportsController {
     @Query(new ZodValidationPipe(stockSummaryQuerySchema)) query: StockSummaryQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reports.getStockSummary(u.orgId, query);
+    return this.reports.getStockSummary(u.orgId, u.userId, query);
   }
 
   @Get("reorder")
@@ -67,7 +67,7 @@ export class InvReportsController {
     @Query(new ZodValidationPipe(movementsQuerySchema)) query: MovementsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reports.getMovementsReport(u.orgId, query);
+    return this.reports.getMovementsReport(u.orgId, u.userId, query);
   }
 
   @Get("valuation")
@@ -77,7 +77,7 @@ export class InvReportsController {
     @Query(new ZodValidationPipe(valuationReportSchema)) query: ValuationReportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.extended.getValuationReport(u.orgId, query);
+    return this.extended.getValuationReport(u.orgId, u.userId, query);
   }
 
   @Get("slow-moving")
@@ -87,7 +87,7 @@ export class InvReportsController {
     @Query(new ZodValidationPipe(slowMovingQuerySchema)) query: SlowMovingQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.extended.getSlowMovingReport(u.orgId, query);
+    return this.extended.getSlowMovingReport(u.orgId, u.userId, query);
   }
 
   @Get("expiry")
@@ -97,6 +97,6 @@ export class InvReportsController {
     @Query(new ZodValidationPipe(expiryReportSchema)) query: ExpiryReportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.extended.getExpiryReport(u.orgId, query);
+    return this.extended.getExpiryReport(u.orgId, u.userId, query);
   }
 }

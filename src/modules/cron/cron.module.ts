@@ -53,6 +53,7 @@ import { CronBuildSnapshotsService } from "./cron-build-snapshots.service";
 import { CronOrganizationService } from "./cron-organization.service";
 import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
 import { ProjectsModule } from "../build/core/projects.module";
+import { CrmModule } from "../crm/core/crm.module";
 
 @Module({
   imports: [
@@ -83,6 +84,7 @@ import { ProjectsModule } from "../build/core/projects.module";
     TimesheetsCoreModule,
     OrganizationModule,
     ProjectsModule,
+    CrmModule,
   ],
   controllers: [
     CronBillingController,

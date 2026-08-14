@@ -9,6 +9,7 @@ import { NotificationEventRegistryService } from "./notification-event-registry.
 import { isTransientDbError } from "../../common/db/transient-error";
 import { forEachOrg, withTenant, runWithTenantContext } from "../../common/tenant";
 import { filterOrgMemberIds } from "../../common/tenant/org-membership";
+import { NotificationCircuitBreaker } from "./notification-circuit-breaker";
 
 const BATCH_SIZE = 50;
 const BACKOFF_MINUTES = [1, 5, 15, 60, 360];
@@ -44,6 +45,7 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
   private drainTimer: NodeJS.Timeout | null = null;
   private draining = false;
   private transientStreak = 0;
+  private readonly breaker = new NotificationCircuitBreaker();
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
@@ -262,6 +264,26 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
       ? this.events.getBaseDefinition(delivery.eventKey)
       : undefined;
 
+    // PIPE-010: if this provider has been failing consecutively, requeue without
+    // calling it. Skipped, not failed — the attempt counter is untouched, so a provider
+    // outage cannot push deliveries to DEAD while the breaker is holding them back.
+    const breaker = this.breaker.check(delivery.orgId, delivery.channel, now.getTime());
+    if (breaker.open) {
+      await this.inTenant(job.orgId, () =>
+        this.db
+          .update(notificationQueue)
+          .set({
+            status: "PENDING",
+            runAt: new Date(now.getTime() + breaker.retryAfterMs),
+            lockedBy: null,
+            lockedAt: null,
+            lastError: `circuit open for ${delivery.channel}`,
+          })
+          .where(eq(notificationQueue.id, job.id)),
+      );
+      return;
+    }
+
     const sendResult = await provider.send({
       orgId: delivery.orgId,
       userId: delivery.userId,
@@ -274,6 +296,14 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
       priority: delivery.priority,
       sandbox,
     });
+
+    if (sendResult.status === "SENT") this.breaker.recordSuccess(delivery.orgId, delivery.channel);
+    else if (this.breaker.recordFailure(delivery.orgId, delivery.channel, now.getTime())) {
+      this.logger.warn(
+        `Circuit opened for ${delivery.channel} in org ${delivery.orgId} after repeated provider failures; ` +
+          "deliveries will be requeued without contacting the provider until it closes",
+      );
+    }
 
     await this.inTenant(job.orgId, async () => {
       if (sendResult.status === "SENT") {

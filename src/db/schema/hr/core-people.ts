@@ -97,6 +97,7 @@ export const hrPeople = pgTable("hr_people", {
   unique("uniq_hr_people_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_hr_people_org_work_email").on(table.orgId, table.workEmail),
   index("idx_hr_people_org").on(table.orgId),
+  index("idx_hr_people_org_live").on(table.orgId).where(sql`${table.deletedAt} IS NULL`),
   index("idx_hr_people_user").on(table.userId),
 ]);
 
@@ -131,6 +132,9 @@ export const hrEmployments = pgTable("hr_employments", {
   index("idx_hr_employments_org").on(table.orgId),
   index("idx_hr_employments_person").on(table.personId),
   index("idx_hr_employments_org_status").on(table.orgId, table.lifecycleStatus),
+  index("idx_hr_employments_org_live_status")
+    .on(table.orgId, table.lifecycleStatus)
+    .where(sql`${table.deletedAt} IS NULL`),
   index("idx_hr_employments_dept").on(table.departmentId),
 ]);
 

@@ -1,0 +1,3 @@
+CREATE INDEX "idx_hr_employments_org_live_status" ON "hr_employments" USING btree ("org_id","lifecycle_status") WHERE "hr_employments"."deleted_at" IS NULL;--> statement-breakpoint
+CREATE INDEX "idx_hr_people_org_live" ON "hr_people" USING btree ("org_id") WHERE "hr_people"."deleted_at" IS NULL;--> statement-breakpoint
+CREATE INDEX "idx_kb_spaces_org_live" ON "kb_spaces" USING btree ("org_id") WHERE "kb_spaces"."deleted_at" IS NULL;

@@ -14,11 +14,11 @@ export const createSequenceSchema = z.object({
 
 export const updateSequenceSchema = z.object({
   name: z.string().min(1).max(200).optional(),
-  description: z.string().max(1000).optional(),
+  description: z.string().max(1000).nullish(),
   entityType: z.enum(["lead", "deal"]).optional(),
   isActive: z.boolean().optional(),
   stopOn: z.record(z.string(), z.unknown()).nullable().optional(),
-});
+}).strict();
 
 export const createSequenceStepSchema = z.object({
   sortOrder: z.number().int().min(0),

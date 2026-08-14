@@ -32,7 +32,7 @@ export const assignmentRuleCreateSchema = z.object({
   isActive: z.boolean().default(true),
   config: configSchema,
   assignmentTypeText: extendedAssignmentTypeEnum.optional(),
-});
+}).strict();
 
 export const assignmentRuleUpdateSchema = z.object({
   name: z.string().min(1).optional(),
@@ -48,11 +48,11 @@ export const assignmentRuleUpdateSchema = z.object({
     fallbackUserId: z.string().optional(),
   }).optional(),
   assignmentTypeText: extendedAssignmentTypeEnum.optional(),
-});
+}).strict();
 
 export const assignmentReorderSchema = z.object({
   ruleIds: z.array(z.number().int().positive()),
-});
+}).strict();
 
 export const scoringRuleCreateSchema = z.object({
   field: z.string().min(1),

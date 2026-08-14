@@ -31,7 +31,8 @@ import {
   crmOrganizations,
 } from "./contacts";
 import { crmPipelines } from "./metadata";
-import { crmPeople, crmSla } from "./analytics";
+import { crmPeople } from "./analytics";
+import { crmSla } from "./sla";
 
 export const deals = pgTable(
   "deals",

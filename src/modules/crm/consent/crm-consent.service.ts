@@ -125,6 +125,12 @@ export class CrmConsentService {
     if (emails.length === 0) return new Set();
     const normalised = [...new Set(emails.map((email) => email.trim().toLowerCase()))];
 
+    // Deliberately does NOT filter `isNull(contacts.deletedAt)`. An opt-out must
+    // outlive the record it was captured on: if the contact is deleted and the
+    // same address is later re-added, suppression still applies. Adding that
+    // filter here would silently resume emailing people who opted out — the one
+    // direction this query must never fail in. `countMissingConsent` filters
+    // deleted contacts because it is a coverage metric, not a safety gate.
     const rows = await this.db
       .select({ email: contacts.email })
       .from(crmContactChannelConsent)

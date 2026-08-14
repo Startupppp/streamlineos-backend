@@ -2,7 +2,7 @@ import { Injectable, Inject, BadRequestException, NotFoundException } from "@nes
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
-import { invWebhooks, invWebhookEvents } from "../../../db/schema";
+import { invWebhookEventSubscriptions, invWebhooks, invWebhookEvents } from "../../../db/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { createHmac, randomBytes } from "crypto";
 import { lookup } from "dns/promises";
@@ -177,14 +177,46 @@ export class WebhooksService {
     return rows.map(({ secret: _, ...safe }) => safe);
   }
 
+  /**
+   * Keeps inv_webhook_event_subscriptions in step with the retained jsonb
+   * column. Replace-in-place inside the caller's transaction, so the row and its
+   * subscriptions can never disagree.
+   */
+  private async syncSubscriptions(
+    tx: Parameters<Parameters<Db["transaction"]>[0]>[0],
+    orgId: string,
+    webhookId: number,
+    events: readonly string[],
+  ): Promise<void> {
+    await tx
+      .delete(invWebhookEventSubscriptions)
+      .where(
+        and(
+          eq(invWebhookEventSubscriptions.orgId, orgId),
+          eq(invWebhookEventSubscriptions.webhookId, webhookId),
+        ),
+      );
+    const unique = Array.from(new Set(events));
+    if (unique.length === 0) return;
+    await tx
+      .insert(invWebhookEventSubscriptions)
+      .values(unique.map((eventType) => ({ orgId, webhookId, eventType })))
+      .onConflictDoNothing();
+  }
+
   async create(orgId: string, userId: string, input: CreateWebhookInput): Promise<WebhookRow> {
     await assertSafeWebhookUrl(input.url, this.isProd);
 
     const secret = randomBytes(32).toString("hex");
-    const [created] = await this.db
-      .insert(invWebhooks)
-      .values({ orgId, url: input.url, events: input.events, secret, isActive: input.isActive })
-      .returning();
+    const created = await this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(invWebhooks)
+        .values({ orgId, url: input.url, events: input.events, secret, isActive: input.isActive })
+        .returning();
+      if (!row) return undefined;
+      await this.syncSubscriptions(tx, orgId, row.id, input.events);
+      return row;
+    });
 
     if (!created) throw new BadRequestException("Failed to create webhook");
 
@@ -217,15 +249,21 @@ export class WebhooksService {
       await assertSafeWebhookUrl(input.url, this.isProd);
     }
 
-    const [updated] = await this.db
-      .update(invWebhooks)
-      .set({
-        ...(input.url !== undefined && { url: input.url }),
-        ...(input.events !== undefined && { events: input.events }),
-        ...(input.isActive !== undefined && { isActive: input.isActive }),
-      })
-      .where(and(eq(invWebhooks.id, webhookId), eq(invWebhooks.orgId, orgId)))
-      .returning();
+    const updated = await this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(invWebhooks)
+        .set({
+          ...(input.url !== undefined && { url: input.url }),
+          ...(input.events !== undefined && { events: input.events }),
+          ...(input.isActive !== undefined && { isActive: input.isActive }),
+        })
+        .where(and(eq(invWebhooks.id, webhookId), eq(invWebhooks.orgId, orgId)))
+        .returning();
+      if (!row) return undefined;
+      if (input.events !== undefined)
+        await this.syncSubscriptions(tx, orgId, webhookId, input.events);
+      return row;
+    });
 
     if (!updated) throw new NotFoundException("Webhook not found");
 

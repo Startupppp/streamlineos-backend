@@ -1254,6 +1254,41 @@
       "when": 1786476841932,
       "tag": "0431_email_outbox_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 179,
+      "version": "7",
+      "when": 1786511219481,
+      "tag": "0179_curved_falcon",
+      "breakpoints": true
+    },
+    {
+      "idx": 180,
+      "version": "7",
+      "when": 1786600571270,
+      "tag": "0180_hr_kb_partial_live_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 181,
+      "version": "7",
+      "when": 1786600631270,
+      "tag": "0420_inv_webhook_event_subscriptions",
+      "breakpoints": true
+    },
+    {
+      "idx": 182,
+      "version": "7",
+      "when": 1786600632270,
+      "tag": "0432_drop_quiet_hours_timezone",
+      "breakpoints": true
+    },
+    {
+      "idx": 183,
+      "version": "7",
+      "when": 1786601995007,
+      "tag": "0183_abandoned_captain_stacy",
+      "breakpoints": true
     }
   ]
 }

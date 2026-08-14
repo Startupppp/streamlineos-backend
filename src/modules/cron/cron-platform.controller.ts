@@ -21,6 +21,8 @@ import { CronIdempotencyService } from "./cron-idempotency.service";
 import { ChatReplyRemindersService } from "../chat/chat-reply-reminders.service";
 import { ExceptionsDetectorService } from "../timesheets/core/exceptions-detector.service";
 import { BuildDueSweepService } from "../build/core/build-due-sweep.service";
+import { CrmFollowupSweepService } from "../crm/core/crm-followup-sweep.service";
+import { NotificationTimeSweepsService } from "../notifications/time-sweeps/notification-time-sweeps.service";
 
 @Public()
 @Controller("cron")
@@ -38,7 +40,47 @@ export class CronPlatformController {
     private readonly outboxRelay: NotificationOutboxRelayService,
     private readonly digest: NotificationDigestService,
     private readonly buildDueSweep: BuildDueSweepService,
+    private readonly crmFollowupSweep: CrmFollowupSweepService,
+    private readonly timeSweeps: NotificationTimeSweepsService,
   ) {}
+
+  @Get("notification-time-sweeps")
+  getNotificationTimeSweeps(@Headers("authorization") authorization?: string) {
+    return this.runNotificationTimeSweeps(authorization);
+  }
+
+  @Post("notification-time-sweeps")
+  @HttpCode(200)
+  postNotificationTimeSweeps(@Headers("authorization") authorization?: string) {
+    return this.runNotificationTimeSweeps(authorization);
+  }
+
+  /**
+   * REG-003. Every event behind this endpoint is time-derived — no user action can fire
+   * it — so without a scheduler pointed here they simply never happen. Must run at least
+   * hourly: the SLA-breach window is one hour wide.
+   */
+  private async runNotificationTimeSweeps(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const [crm, general] = await Promise.all([
+        this.crmFollowupSweep.sweep(),
+        this.timeSweeps.sweep(),
+      ]);
+      return {
+        success: true,
+        message:
+          `Follow-ups ${crm.due} due / ${crm.overdue} overdue; ` +
+          `${general.slaBreached} SLA, ${general.invoicesDueSoon} invoice, ` +
+          `${general.envelopesExpiring} envelope, ${general.eventsStartingSoon} calendar`,
+        ...crm,
+        ...general,
+      };
+    } catch (error) {
+      logger.error("Notification time sweeps cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
 
   @Get("build-due-sweep")
   getBuildDueSweep(@Headers("authorization") authorization?: string) {
