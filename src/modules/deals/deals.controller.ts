@@ -26,12 +26,16 @@ import { DealsService } from "./deals.service";
 import { resolveDealsReadScope } from "./deals-scope";
 import {
   bulkImportDealsSchema,
+  dealBulkUpdateSchema,
+  dealBulkDeleteSchema,
   createDealSchema,
   listDealsSchema,
   logActivitySchema,
   patchCustomDataSchema,
   updateDealSchema,
   type BulkImportDealsInput,
+  type DealBulkUpdateInput,
+  type DealBulkDeleteInput,
   type CreateDealInput,
   type ListDealsInput,
   type LogActivityInput,
@@ -70,6 +74,26 @@ export class DealsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.deals.createDeal(u.orgId, u.userId, body);
+  }
+
+  @Patch("bulk")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("crm:deals:update")
+  bulkUpdate(
+    @Body(new ZodValidationPipe(dealBulkUpdateSchema)) body: DealBulkUpdateInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.deals.bulkUpdate(u.orgId, u.userId, body);
+  }
+
+  @Delete("bulk")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("crm:deals:delete")
+  bulkDelete(
+    @Body(new ZodValidationPipe(dealBulkDeleteSchema)) body: DealBulkDeleteInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.deals.bulkDelete(u.orgId, u.userId, body);
   }
 
   @Post("bulk-import")

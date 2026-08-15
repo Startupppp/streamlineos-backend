@@ -63,11 +63,11 @@ export class AiJobsService {
       UPDATE ai_jobs
       SET status = 'RUNNING',
           locked_by = ${workerId},
-          locked_at = ${now},
-          updated_at = ${now}
+          locked_at = ${now.toISOString()}::timestamptz,
+          updated_at = ${now.toISOString()}::timestamptz
       WHERE id IN (
         SELECT id FROM ai_jobs
-        WHERE status = 'QUEUED' AND run_at <= ${now}
+        WHERE status = 'QUEUED' AND run_at <= ${now.toISOString()}::timestamptz
         ORDER BY priority DESC, run_at ASC
         LIMIT ${limit}
         FOR UPDATE SKIP LOCKED

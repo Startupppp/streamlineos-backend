@@ -264,6 +264,12 @@ export class UsersController {
   }
 
   @RequirePermission("settings:organization:manage")
+  @Get(":userId/data-export")
+  exportUserData(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
+    return this.userProfile.exportUserData(u.orgId, userId);
+  }
+
+  @RequirePermission("settings:organization:manage")
   @Get(":userId/activity")
   getActivity(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
     return this.userProfile.getUserActivity(u.orgId, userId);

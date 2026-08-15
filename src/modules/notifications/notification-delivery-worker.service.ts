@@ -112,6 +112,12 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
       // in the UPDATE meant only one worker won — but two workers burned a round trip
       // fighting over the same rows, and neither could make progress past a row the
       // other held. SKIP LOCKED lets each take a disjoint set on the first try.
+      //
+      // The timestamps are passed as ISO strings with an explicit cast. A JS Date bound
+      // into a drizzle sql template reaches postgres.js where a string is expected and
+      // the statement dies with ERR_INVALID_ARG_TYPE — which failed this claim for EVERY
+      // organization, invisibly: forEachOrg logs and continues, and drizzle's message is
+      // only "Failed query", with the real reason on the error's cause.
       const rows = await tx
         .update(notificationQueue)
         .set({ status: "LOCKED", lockedBy: this.workerId, lockedAt: new Date() })
@@ -120,8 +126,8 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
             select id from ${notificationQueue}
             where org_id = ${orgId}
               and (
-                (status = 'PENDING' and run_at <= ${now})
-                or (status = 'LOCKED' and locked_at < ${staleBefore})
+                (status = 'PENDING' and run_at <= ${now.toISOString()}::timestamptz)
+                or (status = 'LOCKED' and locked_at < ${staleBefore.toISOString()}::timestamptz)
               )
             order by run_at
             limit ${remaining}

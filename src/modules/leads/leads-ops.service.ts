@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { eq, and, or, inArray, isNull, lte, gte, type SQL } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, lte, or, type SQL } from "drizzle-orm";
 import { AccessService } from "../access/access.service";
 import {
   leads,
@@ -126,12 +126,26 @@ export class LeadsOpsService {
     return { updated: leadIds.length };
   }
 
+  /**
+   * Soft delete, batched into a single UPDATE. The count comes from
+   * `.returning()`, not `input.leadIds.length` — the old version reported the
+   * requested count, so passing ids from another tenant (or already-deleted
+   * ones) reported success for rows it never touched.
+   */
   async bulkDelete(orgId: string, input: BulkDeleteInput) {
-    await this.db
-      .delete(leads)
-      .where(and(eq(leads.orgId, orgId), inArray(leads.id, input.leadIds)));
+    const deleted = await this.db
+      .update(leads)
+      .set({ deletedAt: new Date() })
+      .where(
+        and(
+          eq(leads.orgId, orgId),
+          inArray(leads.id, input.leadIds),
+          isNull(leads.deletedAt),
+        ),
+      )
+      .returning({ id: leads.id });
 
-    return { deleted: input.leadIds.length };
+    return { deleted: deleted.length, requested: input.leadIds.length };
   }
 
   async mergeLeads(

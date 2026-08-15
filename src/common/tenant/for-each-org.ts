@@ -47,9 +47,19 @@ export async function forEachOrg(
       succeeded += 1;
     } catch (err) {
       failed += 1;
+      // Drizzle's message is only "Failed query: <sql> params: <...>" — the reason the
+      // statement failed lives on `cause`. Logging the message alone made a sweep that
+      // failed for every organization indistinguishable from a connection drop, and cost
+      // a wrong diagnosis; the sweep still returns 200, so this log is the only signal.
+      const cause = err instanceof Error ? err.cause : undefined;
       logger.error(`[${sweep}] organization sweep failed`, {
         orgId: org.id,
         error: err instanceof Error ? err.message : String(err),
+        cause: cause instanceof Error ? `${cause.name}: ${cause.message}` : cause,
+        code:
+          cause && typeof cause === "object" && "code" in cause
+            ? String((cause as { code: unknown }).code)
+            : undefined,
       });
     }
   }

@@ -453,8 +453,10 @@ export class LeadsService {
   }
 
   async remove(orgId: string, userId: string, id: number) {
-    await this.db.delete(leads)
-      .where(and(eq(leads.id, id), eq(leads.orgId, orgId)));
+    await this.db
+      .update(leads)
+      .set({ deletedAt: new Date() })
+      .where(and(eq(leads.id, id), eq(leads.orgId, orgId), isNull(leads.deletedAt)));
     this.audit.log({
       action: "lead.deleted",
       userId,

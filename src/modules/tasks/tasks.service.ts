@@ -11,6 +11,7 @@ import {
   sql,
 } from "drizzle-orm";
 import { tasks, taskSequences, taskSequenceSteps, crmActivities, users } from "../../db/schema";
+import { crmActivityTypeEnum } from "../../db/schema/common/enums";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { TaskNotificationsService } from "./task-notifications.service";
@@ -27,14 +28,13 @@ import type {
   SequenceApplyInput,
 } from "./dto/task.schemas";
 
-type CrmActivityType =
-  | "deal_won"
-  | "meeting"
-  | "proposal"
-  | "call"
-  | "email"
-  | "ticket"
-  | "escalation";
+/**
+ * Derived from the pgEnum, not hand-listed (§7: never maintain a parallel
+ * union). The hand-written copy had already drifted — it omitted the value this
+ * file needs, and a stale literal union fails silently at the call site rather
+ * than at the schema.
+ */
+type CrmActivityType = (typeof crmActivityTypeEnum.enumValues)[number];
 
 type TaskBucket = "OVERDUE" | "TODAY" | "THIS_WEEK" | "UPCOMING" | "NO_DATE";
 
@@ -231,7 +231,11 @@ export class TasksService {
         EMAIL: "email",
         MEETING: "meeting",
       };
-      const activityType: CrmActivityType = typeToActivity[existing.type] ?? "deal_won";
+      // Anything that is not a call/email/meeting is a plain task completion.
+      // The old fallback was "deal_won", which fabricated a won-deal activity in
+      // the sales feed (`crm-sales-dashboard.service.ts` filters category
+      // "sales") every time someone ticked off an ordinary TODO.
+      const activityType: CrmActivityType = typeToActivity[existing.type] ?? "task_completed";
 
       await tx.insert(crmActivities).values({
         orgId,

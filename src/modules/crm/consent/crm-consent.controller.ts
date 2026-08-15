@@ -15,6 +15,10 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { CrmConsentService } from "./crm-consent.service";
+import { Public } from "../../../common/auth/public.decorator";
+import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
+import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
+import { verifyUnsubscribeToken } from "./unsubscribe-token.util";
 import {
   contactParamSchema,
   missingConsentQuerySchema,
@@ -22,6 +26,8 @@ import {
   type ContactParam,
   type MissingConsentQuery,
   type RecordConsentInput,
+  unsubscribeSchema,
+  type UnsubscribeInput,
 } from "./dto/consent.schemas";
 
 @Controller("crm/consent")
@@ -67,5 +73,41 @@ export class CrmConsentController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return { channel: query.channel, count: await this.consent.countMissingConsent(u.orgId, query.channel) };
+  }
+}
+
+/**
+ * Separate controller because it is unauthenticated: keeping it out of the
+ * guarded class means a future route added to `CrmConsentController` cannot
+ * accidentally inherit `@Public()`.
+ */
+@Controller("crm/consent")
+export class CrmPublicConsentController {
+  constructor(private readonly consent: CrmConsentService) {}
+
+  @Post("unsubscribe")
+  @Public()
+  @HttpCode(200)
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("crm:public-unsubscribe")
+  async unsubscribe(
+    @Body(new ZodValidationPipe(unsubscribeSchema)) body: UnsubscribeInput,
+  ) {
+    const payload = verifyUnsubscribeToken(body.token);
+
+    // Always the same response, valid token or not. Distinguishing them would
+    // turn this endpoint into an oracle for whether a contact exists.
+    if (payload) {
+      await this.consent.record(payload.orgId, {
+        contactId: payload.contactId,
+        channel: payload.channel,
+        status: "OPTED_OUT",
+        source: "UNSUBSCRIBE_LINK",
+        legalBasis: "CONSENT",
+        recordedByUserId: null,
+      });
+    }
+
+    return { success: true };
   }
 }

@@ -60,7 +60,7 @@ export const crmCampaignStatusEnum = pgEnum("crm_campaign_status", ["active", "p
 export const crmLeadStatusEnum = pgEnum("crm_lead_status", ["visitor", "lead", "mql", "sql", "opportunity"]);
 export const crmSupportTicketStatusEnum = pgEnum("crm_support_ticket_status", ["new", "in_progress", "resolved", "closed"]);
 export const crmSupportTicketPriorityEnum = pgEnum("crm_support_ticket_priority", ["critical", "high", "medium", "low"]);
-export const crmActivityTypeEnum = pgEnum("crm_activity_type", ["deal_won", "meeting", "proposal", "call", "email", "ticket", "escalation"]);
+export const crmActivityTypeEnum = pgEnum("crm_activity_type", ["deal_won", "meeting", "proposal", "call", "email", "ticket", "escalation", "task_completed"]);
 
 export const crmConsentChannelEnum = pgEnum("crm_consent_channel", ["EMAIL", "SMS", "WHATSAPP", "PHONE", "POST"]);
 export const crmConsentStatusEnum = pgEnum("crm_consent_status", ["OPTED_IN", "OPTED_OUT", "UNKNOWN"]);

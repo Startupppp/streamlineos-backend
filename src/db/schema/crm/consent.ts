@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, integer, index, uniqueIndex, uuid, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, integer, index, serial, uniqueIndex, uuid, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import {
@@ -66,3 +66,34 @@ export const crmContactConsentEventsRelations = relations(crmContactConsentEvent
   contact: one(contacts, { fields: [crmContactConsentEvents.contactId], references: [contacts.id] }),
   organization: one(organizations, { fields: [crmContactConsentEvents.orgId], references: [organizations.id] }),
 }));
+
+/**
+ * Survives erasure. When a contact is hard-deleted under a DPDP/GDPR erasure
+ * request, its consent rows go with it — but the *opt-out itself* must outlive
+ * the record, or re-importing the same address silently resumes emailing
+ * someone who withdrew consent. Only a salted hash of the address is kept, so
+ * this retains no readable PII while still answering "is this address
+ * suppressed?".
+ */
+export const crmSuppressionHashes = pgTable(
+  "crm_suppression_hashes",
+  {
+    id: serial("id").primaryKey(),
+    orgId: text("org_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
+    channel: crmConsentChannelEnum("channel").notNull(),
+    /** SHA-256 of the normalised address. Never the address itself. */
+    addressHash: text("address_hash").notNull(),
+    reason: text("reason").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("uniq_crm_suppression_org_channel_hash").on(
+      table.orgId,
+      table.channel,
+      table.addressHash,
+    ),
+    index("idx_crm_suppression_org_channel").on(table.orgId, table.channel),
+  ],
+);

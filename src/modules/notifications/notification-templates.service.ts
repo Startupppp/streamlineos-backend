@@ -13,7 +13,7 @@ import type {
   PreviewTemplateInput,
   TestSendTemplateInput,
   ListTemplatesInput,
-  type SetTemplateApprovalInput,
+  SetTemplateApprovalInput,
 } from "./dto/template.schemas";
 
 @Injectable()

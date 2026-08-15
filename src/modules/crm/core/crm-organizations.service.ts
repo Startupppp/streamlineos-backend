@@ -13,6 +13,7 @@ import type {
 
 const HIERARCHY_MAX_DEPTH = 100;
 const ORG_CONTACTS_LIMIT = 100;
+const DUPLICATE_CANDIDATE_LIMIT = 5;
 
 export interface OrgHierarchyNode {
   id: number;
@@ -112,7 +113,50 @@ export class CrmOrganizationsService {
     return { organizations, totalCount, page: filters.page, totalPages };
   }
 
+  /**
+   * Same criteria the duplicate REPORT uses (`getDuplicateOrgs`): exact domain
+   * match, or case-insensitive name match. Surfaced as a WARNING, never a block
+   * — two genuinely distinct customers can share a name, and refusing the write
+   * would be the irreversible choice. Callers decide what to do with it.
+   */
+  async findPotentialDuplicates(
+    orgId: string,
+    input: { name?: string; domain?: string | null },
+  ): Promise<{ id: number; name: string; domain: string | null; matchReason: "domain" | "name" }[]> {
+    const predicates = [];
+    if (input.domain) predicates.push(eq(crmOrganizations.domain, input.domain));
+    if (input.name) predicates.push(ilike(crmOrganizations.name, input.name));
+    if (predicates.length === 0) return [];
+
+    const rows = await this.db
+      .select({
+        id: crmOrganizations.id,
+        name: crmOrganizations.name,
+        domain: crmOrganizations.domain,
+      })
+      .from(crmOrganizations)
+      .where(
+        and(
+          eq(crmOrganizations.orgId, orgId),
+          isNull(crmOrganizations.deletedAt),
+          or(...predicates),
+        ),
+      )
+      .limit(DUPLICATE_CANDIDATE_LIMIT);
+
+    return rows.map((row) => ({
+      ...row,
+      matchReason:
+        input.domain && row.domain === input.domain ? ("domain" as const) : ("name" as const),
+    }));
+  }
+
   async create(orgId: string, input: OrganizationCreateInput) {
+    const possibleDuplicates = await this.findPotentialDuplicates(orgId, {
+      name: input.name,
+      domain: input.domain ?? null,
+    });
+
     const [org] = await this.db
       .insert(crmOrganizations)
       .values({
@@ -137,7 +181,7 @@ export class CrmOrganizationsService {
         createdAt: crmOrganizations.createdAt,
       });
     await this.invalidateOrgCaches(orgId);
-    return org;
+    return { ...org, possibleDuplicates };
   }
 
   async getWithContacts(orgId: string, id: number) {

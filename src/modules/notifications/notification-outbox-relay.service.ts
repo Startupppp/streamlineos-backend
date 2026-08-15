@@ -62,7 +62,7 @@ export class NotificationOutboxRelayService {
             where org_id = ${orgId}
               and (
                 state = 'PENDING'
-                or (state = 'IN_FLIGHT' and lease_expires_at < ${now})
+                or (state = 'IN_FLIGHT' and lease_expires_at < ${now.toISOString()}::timestamptz)
               )
             order by id
             limit ${remaining}

@@ -22,6 +22,8 @@ import type { DataScope } from "../access/access.types";
 import type {
   BulkImportDealsInput,
   CreateDealInput,
+  DealBulkDeleteInput,
+  DealBulkUpdateInput,
   ListDealsInput,
   LogActivityInput,
   PatchCustomDataInput,
@@ -67,6 +69,14 @@ export class DealsService {
 
   deleteDeal(orgId: string, userId: string, dealId: number) {
     return this.crud.deleteDeal(orgId, userId, dealId);
+  }
+
+  bulkUpdate(orgId: string, userId: string, input: DealBulkUpdateInput) {
+    return this.crud.bulkUpdate(orgId, userId, input);
+  }
+
+  bulkDelete(orgId: string, userId: string, input: DealBulkDeleteInput) {
+    return this.crud.bulkDelete(orgId, userId, input);
   }
 
   cloneDeal(orgId: string, dealId: number) {

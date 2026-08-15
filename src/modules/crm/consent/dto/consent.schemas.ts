@@ -32,3 +32,9 @@ export const missingConsentQuerySchema = z
 export type ContactParam = z.infer<typeof contactParamSchema>;
 export type RecordConsentInput = z.infer<typeof recordConsentSchema>;
 export type MissingConsentQuery = z.infer<typeof missingConsentQuerySchema>;
+
+export const unsubscribeSchema = z
+  .object({ token: z.string().min(16).max(2048) })
+  .strict();
+
+export type UnsubscribeInput = z.infer<typeof unsubscribeSchema>;

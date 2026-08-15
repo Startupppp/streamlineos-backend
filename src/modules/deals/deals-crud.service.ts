@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, isNull, type SQL } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, type SQL } from "drizzle-orm";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
 import { deals, organizationMembers } from "../../db/schema";
@@ -11,7 +11,12 @@ import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { CrmValidationService } from "../crm/metadata/crm-validation.service";
 import { CrmAutomationBusService } from "../crm/automation-studio/crm-automation-bus.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
-import type { CreateDealInput, ListDealsInput } from "./dto/deals.schemas";
+import type {
+  CreateDealInput,
+  DealBulkDeleteInput,
+  DealBulkUpdateInput,
+  ListDealsInput,
+} from "./dto/deals.schemas";
 
 @Injectable()
 export class DealsCrudService {
@@ -151,6 +156,84 @@ export class DealsCrudService {
     });
 
     return { deleted: true };
+  }
+
+  /**
+   * One batched UPDATE rather than N single writes: the whole selection either
+   * moves or it does not, and the row count comes from `.returning()` so a
+   * caller passing another tenant's ids is told 0, not "success".
+   */
+  async bulkUpdate(orgId: string, userId: string, input: DealBulkUpdateInput) {
+    const setData: Partial<typeof deals.$inferInsert> = { updatedAt: new Date() };
+    if (input.update.stage !== undefined) setData.stage = input.update.stage;
+
+    if (input.update.assignedToId !== undefined) {
+      const member = await this.db.query.organizationMembers.findFirst({
+        where: and(
+          eq(organizationMembers.userId, input.update.assignedToId),
+          eq(organizationMembers.orgId, orgId),
+        ),
+        columns: { userId: true },
+      });
+      if (!member) throw new BadRequestException("Assignee is not a member of this organization");
+      setData.assignedToId = input.update.assignedToId;
+    }
+
+    const updated = await this.db
+      .update(deals)
+      .set(setData)
+      .where(
+        and(
+          eq(deals.orgId, orgId),
+          inArray(deals.id, input.dealIds),
+          isNull(deals.deletedAt),
+        ),
+      )
+      .returning({ id: deals.id });
+
+    await this.invalidateDealCaches(orgId);
+    this.audit.log({
+      action: "deal.bulk_updated",
+      userId,
+      orgId,
+      targetType: "deal",
+      metadata: { requested: input.dealIds.length, updated: updated.length, update: input.update },
+    });
+
+    return { updated: updated.length, requested: input.dealIds.length };
+  }
+
+  async bulkDelete(orgId: string, userId: string, input: DealBulkDeleteInput) {
+    const deleted = await this.db
+      .update(deals)
+      .set({ deletedAt: new Date() })
+      .where(
+        and(
+          eq(deals.orgId, orgId),
+          inArray(deals.id, input.dealIds),
+          isNull(deals.deletedAt),
+        ),
+      )
+      .returning({ id: deals.id });
+
+    await this.invalidateDealCaches(orgId);
+    this.audit.log({
+      action: "deal.bulk_deleted",
+      userId,
+      orgId,
+      targetType: "deal",
+      metadata: { requested: input.dealIds.length, deleted: deleted.length },
+    });
+
+    return { deleted: deleted.length, requested: input.dealIds.length };
+  }
+
+  private async invalidateDealCaches(orgId: string): Promise<void> {
+    await Promise.all([
+      this.cache.invalidateNamespace(`deals:list:${orgId}`),
+      this.cache.invalidate(CACHE_KEYS.dealsForecast(orgId)),
+      this.cache.invalidate(CACHE_KEYS.salesDashboard(orgId)),
+    ]);
   }
 
   async cloneDeal(orgId: string, dealId: number) {

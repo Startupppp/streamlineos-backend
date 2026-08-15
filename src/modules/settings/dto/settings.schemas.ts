@@ -13,12 +13,17 @@ export const customFieldsListSchema = z.object({
 
 export const createCustomFieldSchema = z.object({
   entityType: z.enum(["lead", "deal", "contact"]),
-  name: z.string().min(1).regex(/^[a-z][a-z0-9_]*$/, {
-    message:
-      "Name must be snake_case (lowercase letters, digits, underscores only, starting with a letter)",
-  }),
+  name: z
+    .string()
+    .min(1)
+    .regex(/^[a-z][a-z0-9_]*$/, {
+      message:
+        "Name must be snake_case (lowercase letters, digits, underscores only, starting with a letter)",
+    }),
   label: z.string().min(1),
-  fieldType: z.enum(["text", "number", "date", "boolean", "select"]).default("text"),
+  fieldType: z
+    .enum(["text", "number", "date", "boolean", "select"])
+    .default("text"),
   options: z
     .array(z.object({ value: z.string().min(1), label: z.string().min(1) }))
     .optional(),
@@ -218,9 +223,43 @@ export type CustomFieldsListInput = z.infer<typeof customFieldsListSchema>;
 export type CreateCustomFieldInput = z.infer<typeof createCustomFieldSchema>;
 export type UpdateCustomFieldInput = z.infer<typeof updateCustomFieldSchema>;
 export type FeatureFlagInput = z.infer<typeof featureFlagSchema>;
-export type CreateGitConnectionInput = z.infer<typeof createGitConnectionSchema>;
-export type UpdateGitConnectionInput = z.infer<typeof updateGitConnectionSchema>;
+export type CreateGitConnectionInput = z.infer<
+  typeof createGitConnectionSchema
+>;
+export type UpdateGitConnectionInput = z.infer<
+  typeof updateGitConnectionSchema
+>;
 export type CreateAutomationInput = z.infer<typeof createAutomationSchema>;
 export type UpdateAutomationInput = z.infer<typeof updateAutomationSchema>;
 export type UpdateUserRoleInput = z.infer<typeof updateUserRoleSchema>;
-export type ListAutomationsQueryInput = z.infer<typeof listAutomationsQuerySchema>;
+export type ListAutomationsQueryInput = z.infer<
+  typeof listAutomationsQuerySchema
+>;
+
+/** Section keys map to audit `action` prefixes, e.g. `org` -> `org.%`. */
+export const SETTINGS_PROVENANCE_SECTIONS = [
+  "org",
+  "settings",
+  "role",
+  "webhook",
+  "billing",
+  "user",
+] as const;
+
+export const settingsProvenanceQuerySchema = z
+  .object({
+    sections: z
+      .union([
+        z.enum(SETTINGS_PROVENANCE_SECTIONS),
+        z.array(z.enum(SETTINGS_PROVENANCE_SECTIONS)),
+      ])
+      .transform((v) => (Array.isArray(v) ? v : [v]))
+      .refine((v) => v.length > 0, {
+        message: "At least one section is required",
+      }),
+  })
+  .strict();
+
+export type SettingsProvenanceQuery = z.infer<
+  typeof settingsProvenanceQuerySchema
+>;

@@ -1,14 +1,21 @@
 import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { createHash } from "node:crypto";
 import {
   contacts,
   crmContactChannelConsent,
   crmContactConsentEvents,
+  crmSuppressionHashes,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { AuditService } from "../../../common/audit/audit.service";
+
+/** Salted-free SHA-256 of the normalised address — never store the address. */
+function hashAddress(normalisedAddress: string): string {
+  return createHash("sha256").update(normalisedAddress).digest("hex");
+}
 
 export type ConsentChannel = "EMAIL" | "SMS" | "WHATSAPP" | "PHONE" | "POST";
 export type ConsentStatus = "OPTED_IN" | "OPTED_OUT" | "UNKNOWN";
@@ -150,9 +157,51 @@ export class CrmConsentService {
         ),
       );
 
-    return new Set(
-      rows.flatMap((row) => (row.email ? [row.email.trim().toLowerCase()] : [])),
+    const fromConsent = rows.flatMap((row) =>
+      row.email ? [row.email.trim().toLowerCase()] : [],
     );
+
+    // Union with erasure-surviving suppression: a contact deleted under a DPDP
+    // request takes its consent rows with it, but the opt-out must persist or
+    // re-importing the address resumes emailing someone who withdrew consent.
+    const hashes = normalised.map((email) => hashAddress(email));
+    const suppressedHashes = await this.db
+      .select({ addressHash: crmSuppressionHashes.addressHash })
+      .from(crmSuppressionHashes)
+      .where(
+        and(
+          eq(crmSuppressionHashes.orgId, orgId),
+          eq(crmSuppressionHashes.channel, "EMAIL"),
+          inArray(crmSuppressionHashes.addressHash, hashes),
+        ),
+      );
+
+    const suppressedHashSet = new Set(suppressedHashes.map((row) => row.addressHash));
+    const fromHashes = normalised.filter((email) =>
+      suppressedHashSet.has(hashAddress(email)),
+    );
+
+    return new Set([...fromConsent, ...fromHashes]);
+  }
+
+  /**
+   * Records the opt-out in a form that survives erasure of the contact itself.
+   * Call this BEFORE hard-deleting a contact under a DPDP/GDPR request —
+   * afterwards the consent rows are gone and the address is unrecoverable.
+   */
+  async retainSuppressionOnErasure(
+    orgId: string,
+    address: string,
+    channel: ConsentChannel,
+    reason: string,
+  ): Promise<void> {
+    const normalised = address.trim().toLowerCase();
+    if (!normalised) return;
+
+    await this.db
+      .insert(crmSuppressionHashes)
+      .values({ orgId, channel, addressHash: hashAddress(normalised), reason })
+      .onConflictDoNothing();
   }
 
   async record(

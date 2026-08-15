@@ -71,6 +71,7 @@ const TIERS: Record<string, Tier> = {
   "module-access:group-mutate": { limit: 30, windowSecs: 60 },
   "ownership:transfer": { limit: 5, windowSecs: 3600 },
   "ownership:force-set": { limit: 10, windowSecs: 3600 },
+  "crm:public-unsubscribe": { limit: 20, windowSecs: 3600 },
 };
 
 const DEV_LIMIT_MULTIPLIER = process.env.NODE_ENV === "production" ? 1 : 10;
