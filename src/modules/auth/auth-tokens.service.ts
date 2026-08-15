@@ -44,6 +44,31 @@ function generateToken(): string {
   return randomBytes(32).toString("hex");
 }
 
+function serializeEmailError(error: unknown): Record<string, unknown> {
+  if (!error || typeof error !== "object") {
+    return { message: String(error) };
+  }
+  const err = error as {
+    name?: unknown;
+    message?: unknown;
+    permanent?: unknown;
+    cause?: unknown;
+  };
+  const cause =
+    err.cause && typeof err.cause === "object"
+      ? (err.cause as { message?: unknown; statusCode?: unknown; name?: unknown })
+      : null;
+  return {
+    name: typeof err.name === "string" ? err.name : undefined,
+    message: typeof err.message === "string" ? err.message : String(error),
+    permanent: typeof err.permanent === "boolean" ? err.permanent : undefined,
+    causeMessage: typeof cause?.message === "string" ? cause.message : undefined,
+    causeStatus:
+      typeof cause?.statusCode === "number" ? cause.statusCode : undefined,
+    causeName: typeof cause?.name === "string" ? cause.name : undefined,
+  };
+}
+
 @Injectable()
 export class AuthTokensService {
   constructor(
@@ -309,14 +334,21 @@ export class AuthTokensService {
         ),
     ]);
 
-    void this.email
-      .sendMagicLinkEmail(user.email, token)
-      .catch((error: unknown) => {
-        logger.error("Magic link email send failed", {
-          userId: user.id,
-          error,
-        });
+    try {
+      await this.email.sendMagicLinkEmail(user.email, token);
+    } catch (error: unknown) {
+      await this.db
+        .update(magicLinkTokens)
+        .set({ usedAt: new Date() })
+        .where(and(eq(magicLinkTokens.tokenHash, tokenHash), isNull(magicLinkTokens.usedAt)));
+      logger.error("Magic link email send failed", {
+        userId: user.id,
+        error: serializeEmailError(error),
       });
+      throw new ServiceUnavailableException(
+        "Could not send the sign-in link. Please try again in a moment.",
+      );
+    }
   }
 
   async requestEmailOtp(email: string): Promise<void> {
@@ -343,17 +375,32 @@ export class AuthTokensService {
         ),
     ]);
 
-    await this.db.insert(emailOtpCodes).values({
-      userId: user.id,
-      codeHash,
-      expiresAt,
-    });
+    const [inserted] = await this.db
+      .insert(emailOtpCodes)
+      .values({
+        userId: user.id,
+        codeHash,
+        expiresAt,
+      })
+      .returning({ id: emailOtpCodes.id });
 
-    void this.email
-      .sendEmailOtpEmail(user.email, rawCode)
-      .catch((error: unknown) => {
-        logger.error("Email OTP send failed", { userId: user.id, error });
+    try {
+      await this.email.sendEmailOtpEmail(user.email, rawCode);
+    } catch (error: unknown) {
+      if (inserted) {
+        await this.db
+          .update(emailOtpCodes)
+          .set({ usedAt: new Date() })
+          .where(eq(emailOtpCodes.id, inserted.id));
+      }
+      logger.error("Email OTP send failed", {
+        userId: user.id,
+        error: serializeEmailError(error),
       });
+      throw new ServiceUnavailableException(
+        "Could not send the sign-in code. Please try again in a moment.",
+      );
+    }
   }
 
   async verifyEmailOtp(
@@ -361,6 +408,7 @@ export class AuthTokensService {
     code: string,
   ): Promise<{ autoLoginToken: string }> {
     const normalizedEmail = email.toLowerCase().trim();
+    const normalizedCode = code.trim();
 
     const user = await this.db.query.users.findFirst({
       where: sql`lower(${users.email}) = ${normalizedEmail}`,
@@ -374,7 +422,9 @@ export class AuthTokensService {
       where: and(
         eq(emailOtpCodes.userId, user.id),
         isNull(emailOtpCodes.usedAt),
-        gt(emailOtpCodes.expiresAt, new Date()),
+        // Compare against DB clock so timestamp-without-tz columns stay correct
+        // regardless of the Node process timezone.
+        gt(emailOtpCodes.expiresAt, sql`now()`),
       ),
       orderBy: [desc(emailOtpCodes.createdAt)],
     });
@@ -390,7 +440,7 @@ export class AuthTokensService {
     if (!bumped || bumped.attempts > 5)
       throw new UnauthorizedException("Invalid or expired code");
 
-    const submittedHash = Buffer.from(hashToken(code), "hex");
+    const submittedHash = Buffer.from(hashToken(normalizedCode), "hex");
     const expectedHash = Buffer.from(row.codeHash, "hex");
     const codeMatches =
       submittedHash.length === expectedHash.length &&
