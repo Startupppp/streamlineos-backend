@@ -127,7 +127,7 @@ export class EmployeeOnboardingService {
     }
 
     const role = body.role || ORG_MEMBER_ROLES.MEMBER;
-    await assertMayGrantRole(this.db, actor.orgId, actor, role);
+    await assertMayGrantRole(this.access, actor.orgId, actor, role);
 
     if (existingUser) {
       const linkedUser = await runInTenantTransaction(this.db, async (tx) => {

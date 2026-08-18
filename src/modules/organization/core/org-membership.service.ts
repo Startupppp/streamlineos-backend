@@ -752,7 +752,7 @@ export class OrgMembershipService {
   ) {
     const actorUserId = actor.userId;
 
-    await assertMayGrantRole(this.db, orgId, actor, role);
+    await assertMayGrantRole(this.access, orgId, actor, role);
 
     await runInTenantTransaction(
       this.db,

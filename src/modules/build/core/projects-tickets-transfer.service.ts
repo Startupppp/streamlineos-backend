@@ -17,7 +17,7 @@ import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { ImportTicketsInput, UpdateTicketInput } from "./dto/projects.schemas";
 import { resolveAssigneeId } from "./tickets-helpers";
-import { allocateTicketNumbers } from "../lib/allocate-ticket-number";
+import { allocateTicketNumbers } from "./lib/allocate-ticket-number";
 
 @Injectable()
 export class ProjectsTicketsTransferService {
@@ -132,7 +132,6 @@ export class ProjectsTicketsTransferService {
     let createdCount = 0;
 
     await this.db.transaction(async (tx) => {
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
 
       let nextNum = await allocateTicketNumbers(tx, u.orgId, projectId, toCreate.length);
 

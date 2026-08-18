@@ -6,15 +6,17 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, like, sql } from "drizzle-orm";
 import {
   apiKeys,
+  auditLogs,
   automationRules,
   automationRuns,
   customFieldDefinitions,
   gitConnections,
   organizations,
   organizationMembers,
+  users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -58,6 +60,60 @@ export class SettingsService {
 
   getPermissions() {
     return PERMISSIONS;
+  }
+
+  async getSectionProvenance(
+    orgId: string,
+    sections: readonly string[],
+  ): Promise<
+    Record<
+      string,
+      {
+        actorId: string;
+        actorName: string | null;
+        action: string;
+        at: string;
+      } | null
+    >
+  > {
+    const rows = await Promise.all(
+      sections.map((section) =>
+        this.db
+          .select({
+            action: auditLogs.action,
+            actorId: auditLogs.userId,
+            actorName: users.name,
+            createdAt: auditLogs.createdAt,
+          })
+          .from(auditLogs)
+          .leftJoin(users, eq(users.id, auditLogs.userId))
+          .where(
+            and(
+              eq(auditLogs.orgId, orgId),
+              like(auditLogs.action, `${section}.%`),
+            ),
+          )
+          .orderBy(desc(auditLogs.createdAt))
+          .limit(1),
+      ),
+    );
+
+    return Object.fromEntries(
+      sections.map((section, index) => {
+        const row = rows[index]?.[0];
+        return [
+          section,
+          row
+            ? {
+                actorId: row.actorId,
+                actorName: row.actorName,
+                action: row.action,
+                at: row.createdAt.toISOString(),
+              }
+            : null,
+        ];
+      }),
+    );
   }
 
   getAiUsage(u: CurrentUserContext) {

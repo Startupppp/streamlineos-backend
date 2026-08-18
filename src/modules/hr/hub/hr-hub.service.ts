@@ -58,14 +58,16 @@ export class HrHubService {
   ) {}
 
   async getSnapshot(user: CurrentUserContext, today: string): Promise<HrHubSnapshot> {
-    const [permissions, payrollEnabled] = await Promise.all([
+    const [permissions, payrollEnabled, canManageOrganizationMembership] = await Promise.all([
       this.access.resolveUserPermissions(user.orgId, user.userId),
       this.access.isModuleEnabled(user.orgId, "payroll"),
+      this.access.canManageOrganizationMembership(user.orgId, user.userId),
     ]);
     const capabilities = buildHrHubCapabilities(
       user,
       permissions,
       payrollEnabled,
+      canManageOrganizationMembership,
     );
     const [year, month] = today.split("-").map(Number) as [number, number, number];
     const isExitAdmin = await resolveExitAdmin(this.access, user, permissions);

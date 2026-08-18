@@ -1,5 +1,4 @@
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { grantsOrgAdmin } from "../../../common/rbac/grantability";
 import { isPersonalTokenPermissionDelegable } from "../../../common/rbac/personal-token-policy";
 import type { DataScope } from "../../access/access.types";
 
@@ -35,6 +34,7 @@ function permissionAllowed(
   permissionKey: string,
   user: CurrentUserContext,
   permissions: ReadonlyMap<string, DataScope>,
+  canManageOrganizationMembership: boolean,
 ): boolean {
   if (
     user.tokenScopes &&
@@ -43,7 +43,7 @@ function permissionAllowed(
   ) {
     return false;
   }
-  if (user.isOrgOwner || grantsOrgAdmin(permissions)) return true;
+  if (user.isOrgOwner || canManageOrganizationMembership) return true;
   const scope = permissions.get(permissionKey);
   return scope !== undefined && scope !== "none";
 }
@@ -52,9 +52,15 @@ export function buildHrHubCapabilities(
   user: CurrentUserContext,
   permissions: ReadonlyMap<string, DataScope>,
   payrollEnabled: boolean,
+  canManageOrganizationMembership = false,
 ): HrHubCapabilities {
   const can = (permissionKey: string): boolean =>
-    permissionAllowed(permissionKey, user, permissions);
+    permissionAllowed(
+      permissionKey,
+      user,
+      permissions,
+      canManageOrganizationMembership,
+    );
 
   return {
     canAnalytics: can("hr:analytics:read"),
