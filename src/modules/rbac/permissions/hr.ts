@@ -125,12 +125,14 @@ export const HR_PERMISSIONS: Permission[] = [
     resource: "hr:documents",
     action: "view",
     description: "View documents",
+    scopable: true,
   },
   {
     name: "hr:documents:manage",
     resource: "hr:documents",
     action: "manage",
     description: "Manage documents",
+    scopable: true,
   },
   {
     name: "hr:performance:view",
@@ -797,3 +799,4 @@ export const HR_PERMISSIONS: Permission[] = [
       "Export HR entity data (employees, attendance, assets, leave balances, documents)",
   },
 ];
+

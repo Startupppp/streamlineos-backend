@@ -22,12 +22,8 @@ import type {
   ApplyTemplateInput,
   CreateTemplateInput,
 } from "./dto/projects.schemas";
+import { DEFAULT_PROJECT_STATUSES } from "./lib/default-statuses";
 
-const APPLY_DEFAULT_STATUSES = [
-  { name: "To Do", color: "#94a3b8", order: 0 },
-  { name: "In Progress", color: "#3b82f6", order: 1 },
-  { name: "Done", color: "#22c55e", order: 2 },
-];
 
 function normalizeTicketType(
   raw: string | null | undefined,
@@ -168,7 +164,7 @@ export class ProjectsTemplatesService {
       .values({ orgId, projectId: project.id, userId, role: "OWNER" });
 
     await this.db.insert(projectStatuses).values(
-      APPLY_DEFAULT_STATUSES.map((s) => ({
+      DEFAULT_PROJECT_STATUSES.map((s) => ({
         ...s,
         orgId,
         projectId: project.id,

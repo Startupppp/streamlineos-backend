@@ -395,6 +395,18 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     return { exists, active, isOwnerOrAdmin };
   }
 
+  async canManageOrganizationMembership(
+    orgId: string,
+    userId: string,
+  ): Promise<boolean> {
+    return runInTenantTransaction(
+      this.db,
+      async () =>
+        (await this.getMembershipAccessState(orgId, userId)).isOwnerOrAdmin,
+      { orgId },
+    );
+  }
+
   async getUserDeniedModules(
     orgId: string,
     userId: string,
@@ -582,6 +594,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
         scopes,
         modules: await this.resolveModuleFlags(orgId, EMPTY_DENIED_MODULES),
         isOrgOwner: ctx.isOrgOwner,
+        canManageOrganizationMembership: true,
         mfa,
         version,
       };
@@ -601,7 +614,10 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       permissions.push(key);
     }
 
-    const denied = await this.getUserDeniedModules(orgId, userId);
+    const [denied, canManageOrganizationMembership] = await Promise.all([
+      this.getUserDeniedModules(orgId, userId),
+      this.canManageOrganizationMembership(orgId, userId),
+    ]);
     const modules = await this.resolveModuleFlags(orgId, denied);
 
     return {
@@ -609,6 +625,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       scopes,
       modules,
       isOrgOwner: ctx.isOrgOwner,
+      canManageOrganizationMembership,
       mfa,
       version,
     };
@@ -751,7 +768,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       if (!this.warnedUnknownKeys.has(key)) {
         this.warnedUnknownKeys.add(key);
         logger.warn(
-          "access: unknown permission key in grant — absent from catalog, omitted from resolved permissions",
+          "access: unknown permission key in grant â€” absent from catalog, omitted from resolved permissions",
           {
             orgId,
             key,
@@ -1183,3 +1200,4 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     };
   }
 }
+

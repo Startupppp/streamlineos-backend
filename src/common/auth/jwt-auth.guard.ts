@@ -1,11 +1,4 @@
-import {
-  CanActivate,
-  ExecutionContext,
-  ForbiddenException,
-  Inject,
-  Injectable,
-  UnauthorizedException,
-} from "@nestjs/common";
+import { CanActivate, ExecutionContext, ForbiddenException, Inject, Injectable, UnauthorizedException, Logger } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
 import { jwtVerify, decodeJwt } from "jose";
@@ -62,6 +55,7 @@ function extractClaims(payload: JWTPayload): BackendClaims | null {
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
+  private readonly logger = new Logger(JwtAuthGuard.name);
   private readonly orgCtxCache = new Map<string, OrgContextEntry>();
   private readonly revocationCache = new Map<string, number>();
   private readonly jwtSecretKey: Uint8Array | null;
@@ -122,21 +116,42 @@ export class JwtAuthGuard implements CanActivate {
       if (this.redis && !claims.sessionId.startsWith("pat:")) {
         const cachedOk = this.revocationCache.get(claims.sessionId);
         if (!(cachedOk && cachedOk > Date.now())) {
-          const revoked = await this.redis.get<boolean>(
-            `revoked:session:${claims.sessionId}`,
-          );
+          // This lookup is a revocation TOMBSTONE: absence already means "not revoked".
+          // An unguarded await here turns any Redis fault — quota exhausted, rate limit,
+          // network blip, cold start — into a 500 on every authenticated request to every
+          // module, which is how an expired Upstash plan took the whole product down.
+          // A cache being unavailable must not take authentication with it, so a failed
+          // READ degrades to "not revoked" and is logged loudly. A successful read that
+          // returns a tombstone still rejects, and revocation is re-asserted the moment
+          // Redis recovers. Failing closed here locks every user out of a working system.
+          let revoked: boolean | null = null;
+          let lookupFailed = false;
+          try {
+            revoked = await this.redis.get<boolean>(
+              `revoked:session:${claims.sessionId}`,
+            );
+          } catch (err) {
+            lookupFailed = true;
+            this.logger.error(
+              `session revocation lookup failed, treating session as live: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
           if (revoked) {
             this.revocationCache.delete(claims.sessionId);
             throw new UnauthorizedException("Session has been revoked");
           }
-          this.revocationCache.set(
-            claims.sessionId,
-            Date.now() + REVOCATION_CACHE_TTL_MS,
-          );
-          if (this.revocationCache.size > 10000) {
-            const now = Date.now();
-            for (const [key, exp] of this.revocationCache) {
-              if (exp <= now) this.revocationCache.delete(key);
+          // Only memoise a genuine answer, so a degraded read is retried on the next request
+          // rather than cached as "fine" for the TTL.
+          if (!lookupFailed) {
+            this.revocationCache.set(
+              claims.sessionId,
+              Date.now() + REVOCATION_CACHE_TTL_MS,
+            );
+            if (this.revocationCache.size > 10000) {
+              const now = Date.now();
+              for (const [key, exp] of this.revocationCache) {
+                if (exp <= now) this.revocationCache.delete(key);
+              }
             }
           }
         }

@@ -428,7 +428,7 @@ export class UsersService {
     actor: InviteActor,
     role: string,
   ): Promise<void> {
-    return assertMayGrantRole(this.db, orgId, actor, role);
+    return assertMayGrantRole(this.access, orgId, actor, role);
   }
 
   async updateUser(
@@ -439,6 +439,8 @@ export class UsersService {
   ) {
     const actorUserId = actor.userId;
     await this.getUser(orgId, userId);
+    if (data.role !== undefined)
+      await this.assertMayGrantRole(orgId, actor, data.role);
 
     if (data.reportingTo) {
       const manager = await this.db.query.organizationMembers.findFirst({
@@ -523,7 +525,6 @@ export class UsersService {
 
     if (data.role !== undefined) {
       const nextRole = data.role;
-      await this.assertMayGrantRole(orgId, actor, nextRole);
       await runInTenantTransaction(
         this.db,
         async (tx) => {
@@ -628,3 +629,4 @@ export class UsersService {
     return { success: true };
   }
 }
+

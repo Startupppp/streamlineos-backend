@@ -5,20 +5,18 @@ import {
   eq,
   exists,
   gte,
-  isNotNull,
-  isNull,
-  inArray,
   lte,
+  isNotNull,
+  inArray,
   or,
 } from "drizzle-orm";
-import { formatInTimeZone, toZonedTime } from "date-fns-tz";
+import { formatInTimeZone } from "date-fns-tz";
 import {
   calendarEvents,
   eventAttendees,
   leaveRequests,
   interviews,
   tasks,
-  orgHolidays,
   organizations,
   users,
   tickets,
@@ -33,6 +31,7 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { listCompatibleHolidays } from "../../db/compat/organization-holidays";
 import type { CalendarEventItem, LinkedTicket } from "./calendar.types";
 import { dateOnly } from "./calendar.types";
 import { AttendancePolicyService } from "../hr/time/attendance-policy.service";
@@ -169,20 +168,7 @@ export class CalendarEventsAggregateService {
             ),
           ),
 
-        this.db
-          .select({
-            id: orgHolidays.id,
-            name: orgHolidays.name,
-            date: orgHolidays.date,
-          })
-          .from(orgHolidays)
-          .where(
-            and(
-              eq(orgHolidays.orgId, orgId),
-              gte(orgHolidays.date, dateOnly(start)),
-              lte(orgHolidays.date, dateOnly(end)),
-            ),
-          ),
+        listCompatibleHolidays(this.db, orgId, dateOnly(start), dateOnly(end)),
 
         this.db
           .select({
@@ -201,7 +187,6 @@ export class CalendarEventsAggregateService {
             and(
               eq(tickets.orgId, orgId),
               eq(projectMembers.userId, userId),
-              isNull(tickets.deletedAt),
               isNotNull(tickets.dueDate),
               gte(tickets.dueDate, dateOnly(start)),
               lte(tickets.dueDate, dateOnly(end)),
@@ -640,3 +625,4 @@ export class CalendarEventsAggregateService {
     return result;
   }
 }
+

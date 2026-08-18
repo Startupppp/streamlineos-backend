@@ -53,9 +53,10 @@ import { ProjectsTicketChecklistsService } from "./projects-ticket-checklists.se
 import { ProjectsTicketLinksService } from "./projects-ticket-links.service";
 import { ProjectsTicketRelationsService } from "./projects-ticket-relations.service";
 import { BuildAutomationRunnerService } from "./build-automation-runner.service";
+import { PmWorkspacesModule } from "../pm-workspaces/pm-workspaces.module";
 
 @Module({
-  imports: [BillingModule, NotificationsModule, UsersModule],
+  imports: [BillingModule, NotificationsModule, UsersModule, PmWorkspacesModule],
   controllers: [
     ProjectsRoadmapController,
     ProjectsTemplatesController,

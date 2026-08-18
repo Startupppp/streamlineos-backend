@@ -42,7 +42,10 @@ import {
 import type { BulkUpdateUsersInput, ImportUsersRow } from "./dto/users.schemas";
 import { UsersService } from "./users.service";
 import { syncStructuralRoleAssignment } from "../../common/rbac/sync-structural-role";
-import { assertMayGrantRole } from "../../common/rbac/assert-may-grant-role";
+import {
+  assertMayGrantRole,
+  assertMayManageOrganizationMembership,
+} from "../../common/rbac/assert-may-grant-role";
 import { assertNoOwnerAmongTargets } from "../../common/rbac/assert-target-not-owner";
 import { membershipStatusToUserStatus } from "../organization/core/org-membership.service";
 import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
@@ -272,7 +275,7 @@ export class UserOpsService {
     actor: InviteActor,
     role: string,
   ): Promise<void> {
-    return assertMayGrantRole(this.db, orgId, actor, role);
+    return assertMayGrantRole(this.access, orgId, actor, role);
   }
 
   async bulkUpdateUsers(
@@ -470,6 +473,8 @@ export class UserOpsService {
   }
 
   async importUsers(orgId: string, rows: ImportUsersRow[], actor: InviteActor) {
+    await assertMayManageOrganizationMembership(this.access, orgId, actor);
+
     const actorUserId = actor.userId;
     const results: Array<{
       email: string;
@@ -513,3 +518,4 @@ export class UserOpsService {
     return { results, succeeded, failed, total: rows.length };
   }
 }
+
