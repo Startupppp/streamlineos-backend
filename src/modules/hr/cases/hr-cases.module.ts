@@ -24,5 +24,6 @@ import { ServiceDeliveryInboxService } from "./service-delivery-inbox.service";
     HrSafetyService,
     ServiceDeliveryInboxService,
   ],
+  exports: [ServiceDeliveryInboxService],
 })
 export class HrCasesModule {}

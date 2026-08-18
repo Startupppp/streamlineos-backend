@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull, lte } from "drizzle-orm";
 import {
   hrEmployments,
   hrPeople,
@@ -8,7 +8,12 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
+import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { HrAuditService } from "./hr-audit.service";
+
+const BACKFILL_FETCH_SIZE = 100;
+const BACKFILL_CONCURRENCY = 4;
+const BACKFILL_ERROR_MESSAGE = "Member synchronization failed";
 
 export type EnsurePersonEmploymentInput = {
   userId: string;
@@ -43,6 +48,52 @@ export type EnsurePersonEmploymentResult = {
   createdEmployment: boolean;
 };
 
+type PrefetchedActiveMember = {
+  membershipId: number;
+  userId: string;
+  firstName: string | null;
+  lastName: string | null;
+  name: string | null;
+  email: string;
+  employeeId: string | null;
+  designation: string | null;
+  phone: string | null;
+  joiningDate: string | null;
+};
+
+type BackfillResult = {
+  scanned: number;
+  createdPeople: number;
+  createdEmployments: number;
+  skipped: number;
+  errors: Array<{ userId: string; message: string }>;
+};
+
+function toEnsureInput(
+  user: Omit<PrefetchedActiveMember, "membershipId">,
+  lifecycleStatus: EnsurePersonEmploymentInput["lifecycleStatus"],
+): EnsurePersonEmploymentInput {
+  const firstName = user.firstName?.trim() || user.name?.split(" ")[0] || "Employee";
+  const lastName =
+    user.lastName?.trim() ||
+    user.name?.split(" ").slice(1).join(" ") ||
+    "User";
+  const employeeNumber =
+    user.employeeId?.trim() || `EMP-${user.userId.slice(0, 8).toUpperCase()}`;
+
+  return {
+    userId: user.userId,
+    firstName,
+    lastName,
+    workEmail: user.email,
+    employeeNumber,
+    joiningDate: user.joiningDate ?? null,
+    designation: user.designation ?? null,
+    phone: user.phone ?? null,
+    lifecycleStatus,
+  };
+}
+
 @Injectable()
 export class PersonEmploymentSyncService {
   constructor(
@@ -54,10 +105,12 @@ export class PersonEmploymentSyncService {
     orgId: string,
     actorId: string,
     input: EnsurePersonEmploymentInput,
+    tx?: Db,
   ): Promise<EnsurePersonEmploymentResult> {
+    const db = tx ?? this.db;
     const email = input.workEmail.toLowerCase().trim();
 
-    const existingPersonByUser = await this.db.query.hrPeople.findFirst({
+    const existingPersonByUser = await db.query.hrPeople.findFirst({
       where: and(
         eq(hrPeople.orgId, orgId),
         eq(hrPeople.userId, input.userId),
@@ -71,7 +124,7 @@ export class PersonEmploymentSyncService {
     if (existingPersonByUser) {
       personId = existingPersonByUser.id;
     } else {
-      const existingByEmail = await this.db.query.hrPeople.findFirst({
+      const existingByEmail = await db.query.hrPeople.findFirst({
         where: and(
           eq(hrPeople.orgId, orgId),
           eq(hrPeople.workEmail, email),
@@ -80,7 +133,7 @@ export class PersonEmploymentSyncService {
       });
 
       if (existingByEmail) {
-        await this.db
+        await db
           .update(hrPeople)
           .set({
             userId: input.userId,
@@ -91,7 +144,7 @@ export class PersonEmploymentSyncService {
           .where(and(eq(hrPeople.id, existingByEmail.id), eq(hrPeople.orgId, orgId)));
         personId = existingByEmail.id;
       } else {
-        const [created] = await this.db
+        const [created] = await db
           .insert(hrPeople)
           .values({
             orgId,
@@ -105,18 +158,21 @@ export class PersonEmploymentSyncService {
         if (!created) throw new Error("Failed to create person record");
         personId = created.id;
         createdPerson = true;
-        await this.audit.log({
-          orgId,
-          actorId,
-          entityType: "hr_people",
-          entityId: String(personId),
-          action: "synced_from_user",
-          after: { userId: input.userId, workEmail: email },
-        });
+        await this.audit.log(
+          {
+            orgId,
+            actorId,
+            entityType: "hr_people",
+            entityId: String(personId),
+            action: "synced_from_user",
+            after: { userId: input.userId, workEmail: email },
+          },
+          tx,
+        );
       }
     }
 
-    const existingEmployment = await this.db.query.hrEmployments.findFirst({
+    const existingEmployment = await db.query.hrEmployments.findFirst({
       where: and(
         eq(hrEmployments.orgId, orgId),
         eq(hrEmployments.personId, personId),
@@ -134,7 +190,7 @@ export class PersonEmploymentSyncService {
       };
     }
 
-    const byNumber = await this.db.query.hrEmployments.findFirst({
+    const byNumber = await db.query.hrEmployments.findFirst({
       where: and(
         eq(hrEmployments.orgId, orgId),
         eq(hrEmployments.employeeNumber, input.employeeNumber),
@@ -145,7 +201,7 @@ export class PersonEmploymentSyncService {
     if (byNumber) {
       if (byNumber.personId !== personId) {
         const suffix = input.userId.slice(0, 6).toUpperCase();
-        const [created] = await this.db
+        const [created] = await db
           .insert(hrEmployments)
           .values({
             orgId,
@@ -159,14 +215,17 @@ export class PersonEmploymentSyncService {
           })
           .returning({ id: hrEmployments.id });
         if (!created) throw new Error("Failed to create employment record");
-        await this.audit.log({
-          orgId,
-          actorId,
-          entityType: "hr_employments",
-          entityId: String(created.id),
-          action: "synced_from_user",
-          after: { personId, employeeNumber: `${input.employeeNumber}-${suffix}` },
-        });
+        await this.audit.log(
+          {
+            orgId,
+            actorId,
+            entityType: "hr_employments",
+            entityId: String(created.id),
+            action: "synced_from_user",
+            after: { personId, employeeNumber: `${input.employeeNumber}-${suffix}` },
+          },
+          tx,
+        );
         return {
           personId,
           employmentId: created.id,
@@ -182,7 +241,7 @@ export class PersonEmploymentSyncService {
       };
     }
 
-    const [employment] = await this.db
+    const [employment] = await db
       .insert(hrEmployments)
       .values({
         orgId,
@@ -198,14 +257,17 @@ export class PersonEmploymentSyncService {
 
     if (!employment) throw new Error("Failed to create employment record");
 
-    await this.audit.log({
-      orgId,
-      actorId,
-      entityType: "hr_employments",
-      entityId: String(employment.id),
-      action: "synced_from_user",
-      after: { personId, employeeNumber: input.employeeNumber },
-    });
+    await this.audit.log(
+      {
+        orgId,
+        actorId,
+        entityType: "hr_employments",
+        entityId: String(employment.id),
+        action: "synced_from_user",
+        after: { personId, employeeNumber: input.employeeNumber },
+      },
+      tx,
+    );
 
     return {
       personId,
@@ -219,8 +281,21 @@ export class PersonEmploymentSyncService {
     orgId: string,
     actorId: string,
     userId: string,
+    tx?: Db,
+    lifecycleStatus: EnsurePersonEmploymentInput["lifecycleStatus"] = "ACTIVE",
   ): Promise<EnsurePersonEmploymentResult | null> {
-    const user = await this.db.query.users.findFirst({
+    const db = tx ?? this.db;
+    const membership = await db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, userId),
+        eq(organizationMembers.status, "ACTIVE"),
+      ),
+      columns: { userId: true },
+    });
+    if (!membership) return null;
+
+    const user = await db.query.users.findFirst({
       where: eq(users.id, userId),
       columns: {
         id: true,
@@ -236,85 +311,163 @@ export class PersonEmploymentSyncService {
     });
     if (!user?.email) return null;
 
-    const firstName = user.firstName?.trim() || user.name?.split(" ")[0] || "Employee";
-    const lastName =
-      user.lastName?.trim() ||
-      user.name?.split(" ").slice(1).join(" ") ||
-      "User";
-    const employeeNumber = user.employeeId?.trim() || `EMP-${userId.slice(0, 8).toUpperCase()}`;
-
-    return this.ensureFromUser(orgId, actorId, {
-      userId: user.id,
-      firstName,
-      lastName,
-      workEmail: user.email,
-      employeeNumber,
-      joiningDate: user.joiningDate ?? null,
-      designation: user.designation ?? null,
-      phone: user.phone ?? null,
-      lifecycleStatus: "ACTIVE",
-    });
+    return this.ensureFromUser(
+      orgId,
+      actorId,
+      toEnsureInput(
+        {
+          userId: user.id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          name: user.name,
+          email: user.email,
+          employeeId: user.employeeId,
+          designation: user.designation,
+          phone: user.phone,
+          joiningDate: user.joiningDate,
+        },
+        lifecycleStatus,
+      ),
+      tx,
+    );
   }
 
   async backfillOrg(
     orgId: string,
     actorId: string,
-  ): Promise<{
-    scanned: number;
-    createdPeople: number;
-    createdEmployments: number;
-    skipped: number;
-    errors: Array<{ userId: string; message: string }>;
-  }> {
-    const members = await this.db
-      .select({ userId: organizationMembers.userId })
-      .from(organizationMembers)
-      .where(eq(organizationMembers.orgId, orgId));
+  ): Promise<BackfillResult> {
+    const result: BackfillResult = {
+      scanned: 0,
+      createdPeople: 0,
+      createdEmployments: 0,
+      skipped: 0,
+      errors: [],
+    };
+    const highWatermark = await this.getBackfillHighWatermark(orgId);
 
-    let createdPeople = 0;
-    let createdEmployments = 0;
-    let skipped = 0;
-    const errors: Array<{ userId: string; message: string }> = [];
+    if (highWatermark !== null) {
+      let afterMembershipId = 0;
+      while (afterMembershipId < highWatermark) {
+        const members = await this.loadActiveMemberBatch(
+          orgId,
+          afterMembershipId,
+          highWatermark,
+        );
+        if (members.length === 0) break;
 
-    for (const member of members) {
-      try {
-        const result = await this.ensureFromUserId(orgId, actorId, member.userId);
-        if (!result) {
-          skipped += 1;
-          continue;
-        }
-        if (result.createdPerson) createdPeople += 1;
-        if (result.createdEmployment) createdEmployments += 1;
-        if (!result.createdPerson && !result.createdEmployment) skipped += 1;
-      } catch (err) {
-        errors.push({
-          userId: member.userId,
-          message: err instanceof Error ? err.message : "Unknown error",
-        });
+        result.scanned += members.length;
+        await this.processMemberBatch(orgId, actorId, members, result);
+
+        const lastMember = members.at(-1);
+        if (!lastMember) break;
+        afterMembershipId = lastMember.membershipId;
+        if (members.length < BACKFILL_FETCH_SIZE) break;
       }
     }
 
-    await this.audit.log({
-      orgId,
-      actorId,
-      entityType: "hr_people",
-      entityId: orgId,
-      action: "backfill_from_members",
-      after: {
-        scanned: members.length,
-        createdPeople,
-        createdEmployments,
-        skipped,
-        errorCount: errors.length,
-      },
-    });
+    await runInNewTenantTransaction(this.db, orgId, () =>
+      this.audit.log({
+        orgId,
+        actorId,
+        entityType: "hr_people",
+        entityId: orgId,
+        action: "backfill_from_members",
+        after: {
+          scanned: result.scanned,
+          createdPeople: result.createdPeople,
+          createdEmployments: result.createdEmployments,
+          skipped: result.skipped,
+          errorCount: result.errors.length,
+        },
+      }),
+    );
 
-    return {
-      scanned: members.length,
-      createdPeople,
-      createdEmployments,
-      skipped,
-      errors,
-    };
+    return result;
+  }
+
+  private async getBackfillHighWatermark(orgId: string): Promise<number | null> {
+    return runInNewTenantTransaction(this.db, orgId, async (tx) => {
+      const [row] = await tx
+        .select({ membershipId: organizationMembers.id })
+        .from(organizationMembers)
+        .where(
+          and(
+            eq(organizationMembers.orgId, orgId),
+            eq(organizationMembers.status, "ACTIVE"),
+          ),
+        )
+        .orderBy(desc(organizationMembers.id))
+        .limit(1);
+      return row?.membershipId ?? null;
+    });
+  }
+
+  private loadActiveMemberBatch(
+    orgId: string,
+    afterMembershipId: number,
+    highWatermark: number,
+  ): Promise<PrefetchedActiveMember[]> {
+    return runInNewTenantTransaction(this.db, orgId, (tx) =>
+      tx
+        .select({
+          membershipId: organizationMembers.id,
+          userId: users.id,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          name: users.name,
+          email: users.email,
+          employeeId: users.employeeId,
+          designation: users.designation,
+          phone: users.phone,
+          joiningDate: users.joiningDate,
+        })
+        .from(organizationMembers)
+        .innerJoin(users, eq(users.id, organizationMembers.userId))
+        .where(
+          and(
+            eq(organizationMembers.orgId, orgId),
+            eq(organizationMembers.status, "ACTIVE"),
+            gt(organizationMembers.id, afterMembershipId),
+            lte(organizationMembers.id, highWatermark),
+          ),
+        )
+        .orderBy(asc(organizationMembers.id))
+        .limit(BACKFILL_FETCH_SIZE),
+    );
+  }
+
+  private async processMemberBatch(
+    orgId: string,
+    actorId: string,
+    members: PrefetchedActiveMember[],
+    result: BackfillResult,
+  ): Promise<void> {
+    for (let start = 0; start < members.length; start += BACKFILL_CONCURRENCY) {
+      const window = members.slice(start, start + BACKFILL_CONCURRENCY);
+      const settled = await Promise.allSettled(
+        window.map((member) =>
+          runInNewTenantTransaction(this.db, orgId, () =>
+            this.ensureFromUser(orgId, actorId, toEnsureInput(member, "ACTIVE")),
+          ),
+        ),
+      );
+
+      for (let index = 0; index < settled.length; index += 1) {
+        const outcome = settled[index];
+        const member = window[index];
+        if (!outcome || !member) continue;
+        if (outcome.status === "rejected") {
+          result.errors.push({
+            userId: member.userId,
+            message: BACKFILL_ERROR_MESSAGE,
+          });
+          continue;
+        }
+        if (outcome.value.createdPerson) result.createdPeople += 1;
+        if (outcome.value.createdEmployment) result.createdEmployments += 1;
+        if (!outcome.value.createdPerson && !outcome.value.createdEmployment)
+          result.skipped += 1;
+      }
+    }
   }
 }

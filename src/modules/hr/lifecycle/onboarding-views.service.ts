@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
-import { SQL, aliasedTable, and, count, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { SQL, aliasedTable, and, count, desc, eq, ilike, ne, or, sql } from "drizzle-orm";
 import {
   documentAuditLogs,
   documentTypes,
@@ -9,6 +9,7 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { AutomationService } from "../../automation/automation.service";
 import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
@@ -33,7 +34,6 @@ export class OnboardingViewsService {
       eq(users.isActive, true),
       applyScope(scope, orgId, actorUserId, { ownerColumn: users.id }),
     ];
-    if (query.status) conditions.push(eq(users.onboardingDocStatus, query.status));
     if (query.search) {
       const searchClause = or(
         ilike(users.name, `%${query.search}%`),
@@ -53,19 +53,62 @@ export class OnboardingViewsService {
       .orderBy(onboardingDocuments.userId, onboardingDocuments.documentTypeId, desc(onboardingDocuments.id))
       .as("latest_docs");
 
+    const documentStats = this.db
+      .select({
+        userId: latestDocs.userId,
+        totalSubmitted: sql<number>`count(${latestDocs.status}) filter (where ${latestDocs.status} in ('SUBMITTED', 'RE_UPLOAD_REQUESTED', 'APPROVED', 'REJECTED'))::int`.as(
+          "total_submitted",
+        ),
+        totalApproved: sql<number>`count(${latestDocs.status}) filter (where ${latestDocs.status} = 'APPROVED')::int`.as(
+          "total_approved",
+        ),
+        totalRejected: sql<number>`count(${latestDocs.status}) filter (where ${latestDocs.status} = 'REJECTED')::int`.as(
+          "total_rejected",
+        ),
+        mandatoryApproved: sql<number>`count(${latestDocs.status}) filter (where ${documentTypes.isMandatory} = true and ${latestDocs.status} = 'APPROVED')::int`.as(
+          "mandatory_approved",
+        ),
+        mandatoryInProgress: sql<number>`count(${latestDocs.status}) filter (where ${documentTypes.isMandatory} = true and ${latestDocs.status} in ('SUBMITTED', 'RE_UPLOAD_REQUESTED'))::int`.as(
+          "mandatory_in_progress",
+        ),
+      })
+      .from(latestDocs)
+      .innerJoin(
+        documentTypes,
+        and(
+          eq(documentTypes.id, latestDocs.documentTypeId),
+          eq(documentTypes.orgId, orgId),
+          eq(documentTypes.isActive, true),
+        ),
+      )
+      .groupBy(latestDocs.userId)
+      .as("document_stats");
+
+    const mandatoryTotals = this.db
+      .select({ total: count().as("total") })
+      .from(documentTypes)
+      .where(
+        and(
+          eq(documentTypes.orgId, orgId),
+          eq(documentTypes.isActive, true),
+          eq(documentTypes.isMandatory, true),
+        ),
+      )
+      .as("mandatory_totals");
+
+    const derivedStatus = sql<"PENDING" | "IN_PROGRESS" | "APPROVED">`case
+      when ${mandatoryTotals.total} = 0
+        or coalesce(${documentStats.mandatoryApproved}, 0) = ${mandatoryTotals.total}
+        then 'APPROVED'
+      when coalesce(${documentStats.mandatoryInProgress}, 0) > 0
+        then 'IN_PROGRESS'
+      else 'PENDING'
+    end`;
+    if (query.status) conditions.push(sql`${derivedStatus} = ${query.status}`);
+
     const offset = (query.page - 1) * query.limit;
 
-    const [[mandatoryCountRow], rows, [countRow]] = await Promise.all([
-      this.db
-        .select({ total: count() })
-        .from(documentTypes)
-        .where(
-          and(
-            eq(documentTypes.orgId, orgId),
-            eq(documentTypes.isActive, true),
-            eq(documentTypes.isMandatory, true),
-          ),
-        ),
+    const [rows, [countRow]] = await Promise.all([
       this.db
         .select({
           userId: users.id,
@@ -73,19 +116,20 @@ export class OnboardingViewsService {
           userImage: users.image,
           designation: users.designation,
           employeeId: users.employeeId,
-          onboardingDocStatus: users.onboardingDocStatus,
-          totalSubmitted: sql<number>`count(${latestDocs.status}) filter (where ${latestDocs.status} in ('SUBMITTED', 'RE_UPLOAD_REQUESTED', 'APPROVED', 'REJECTED'))::int`,
-          totalApproved: sql<number>`count(${latestDocs.status}) filter (where ${latestDocs.status} = 'APPROVED')::int`,
-          totalRejected: sql<number>`count(${latestDocs.status}) filter (where ${latestDocs.status} = 'REJECTED')::int`,
+          onboardingDocStatus: derivedStatus,
+          totalRequired: mandatoryTotals.total,
+          totalSubmitted: sql<number>`coalesce(${documentStats.totalSubmitted}, 0)::int`,
+          totalApproved: sql<number>`coalesce(${documentStats.totalApproved}, 0)::int`,
+          totalRejected: sql<number>`coalesce(${documentStats.totalRejected}, 0)::int`,
         })
         .from(users)
         .innerJoin(
           organizationMembers,
           and(eq(organizationMembers.userId, users.id), eq(organizationMembers.orgId, orgId)),
         )
-        .leftJoin(latestDocs, eq(latestDocs.userId, users.id))
+        .leftJoin(documentStats, eq(documentStats.userId, users.id))
+        .innerJoin(mandatoryTotals, sql`true`)
         .where(and(...conditions))
-        .groupBy(users.id, users.name, users.image, users.designation, users.employeeId, users.onboardingDocStatus)
         .orderBy(users.name)
         .limit(query.limit)
         .offset(offset),
@@ -96,14 +140,15 @@ export class OnboardingViewsService {
           organizationMembers,
           and(eq(organizationMembers.userId, users.id), eq(organizationMembers.orgId, orgId)),
         )
+        .leftJoin(documentStats, eq(documentStats.userId, users.id))
+        .innerJoin(mandatoryTotals, sql`true`)
         .where(and(...conditions)),
     ]);
 
-    const totalRequired = mandatoryCountRow?.total ?? 0;
     const total = countRow?.total ?? 0;
 
     return {
-      data: rows.map((row) => ({ ...row, totalRequired })),
+      data: rows,
       pagination: {
         page: query.page,
         limit: query.limit,
@@ -120,16 +165,10 @@ export class OnboardingViewsService {
     query: ListOnboardingDocsQueryInput,
     scope: DataScope,
   ) {
-    if (isAdmin && query.userId && query.userId !== actorUserId && scope !== "all") {
-      throw new ForbiddenException("Not authorized to filter onboarding documents for another employee");
-    }
-
     const conditions: SQL[] = [eq(onboardingDocuments.orgId, orgId)];
     if (isAdmin) {
       conditions.push(applyScope(scope, orgId, actorUserId, { ownerColumn: onboardingDocuments.userId }));
-      if (query.userId && scope === "all") {
-        conditions.push(eq(onboardingDocuments.userId, query.userId));
-      }
+      if (query.userId) conditions.push(eq(onboardingDocuments.userId, query.userId));
     } else {
       conditions.push(eq(onboardingDocuments.userId, actorUserId));
     }
@@ -148,7 +187,7 @@ export class OnboardingViewsService {
           documentTypeId: onboardingDocuments.documentTypeId,
           documentTypeName: documentTypes.name,
           isMandatory: documentTypes.isMandatory,
-          fileUrl: onboardingDocuments.fileUrl,
+          hasFile: sql<boolean>`${onboardingDocuments.fileUrl} <> ''`,
           fileName: onboardingDocuments.fileName,
           fileSize: onboardingDocuments.fileSize,
           mimeType: onboardingDocuments.mimeType,
@@ -188,6 +227,34 @@ export class OnboardingViewsService {
     };
   }
 
+  async getFileReference(
+    orgId: string,
+    actorUserId: string,
+    docId: number,
+    scope: DataScope,
+  ): Promise<{ id: number; fileUrl: string; fileName: string }> {
+    const [document] = await this.db
+      .select({
+        id: onboardingDocuments.id,
+        fileUrl: onboardingDocuments.fileUrl,
+        fileName: onboardingDocuments.fileName,
+      })
+      .from(onboardingDocuments)
+      .where(
+        and(
+          eq(onboardingDocuments.id, docId),
+          eq(onboardingDocuments.orgId, orgId),
+          applyScope(scope, orgId, actorUserId, {
+            ownerColumn: onboardingDocuments.userId,
+          }),
+        ),
+      )
+      .limit(1);
+
+    if (!document) throw new NotFoundException("Document not found.");
+    return document;
+  }
+
   async create(
     orgId: string,
     actorUserId: string,
@@ -200,220 +267,178 @@ export class OnboardingViewsService {
       if (!isAdmin) {
         throw new ForbiddenException("Only HR admins can upload documents on behalf of employees.");
       }
-      if (scope !== "all") {
-        throw new ForbiddenException("Not authorized to upload onboarding documents for another employee");
-      }
       targetUserId = body.targetUserId;
     }
 
-    const [docType] = await this.db
-      .select({ id: documentTypes.id, name: documentTypes.name })
-      .from(documentTypes)
-      .where(
-        and(
-          eq(documentTypes.id, body.documentTypeId),
-          eq(documentTypes.orgId, orgId),
-          eq(documentTypes.isActive, true),
-        ),
-      )
-      .limit(1);
+    const result = await this.db.transaction(async (tx) => {
+      const [targetMember] = await tx
+        .select({ userId: organizationMembers.userId })
+        .from(organizationMembers)
+        .where(
+          and(
+            eq(organizationMembers.orgId, orgId),
+            eq(organizationMembers.userId, targetUserId),
+            ne(organizationMembers.status, "INVITED"),
+            applyScope(scope, orgId, actorUserId, {
+              ownerColumn: organizationMembers.userId,
+            }),
+          ),
+        )
+        .limit(1);
+      if (!targetMember) throw new NotFoundException("Employee not found.");
 
-    if (!docType) throw new NotFoundException("Document type not found or inactive.");
+      const [docType] = await tx
+        .select({ id: documentTypes.id, name: documentTypes.name })
+        .from(documentTypes)
+        .where(
+          and(
+            eq(documentTypes.id, body.documentTypeId),
+            eq(documentTypes.orgId, orgId),
+            eq(documentTypes.isActive, true),
+          ),
+        )
+        .limit(1);
+      if (!docType) {
+        throw new NotFoundException("Document type not found or inactive.");
+      }
 
-    const existing = await this.db
-      .select({ id: onboardingDocuments.id, version: onboardingDocuments.version })
-      .from(onboardingDocuments)
-      .where(
-        and(
-          eq(onboardingDocuments.orgId, orgId),
-          eq(onboardingDocuments.userId, targetUserId),
-          eq(onboardingDocuments.documentTypeId, body.documentTypeId),
-        ),
-      )
-      .orderBy(desc(onboardingDocuments.version))
-      .limit(1);
-
-    const isReUpload = existing.length > 0;
-    const nextVersion = isReUpload ? existing[0].version + 1 : 1;
-    const auditAction = isReUpload ? ("RE_UPLOADED" as const) : ("UPLOADED" as const);
-
-    const [record] = await this.db
-      .insert(onboardingDocuments)
-      .values({
-        orgId,
-        userId: targetUserId,
-        documentTypeId: body.documentTypeId,
-        fileUrl: body.fileUrl,
-        fileName: body.fileName,
-        fileSize: body.fileSize,
-        mimeType: body.mimeType,
-        version: nextVersion,
-        status: "SUBMITTED",
-      })
-      .returning();
-
-    if (!record) throw new InternalServerErrorException("Failed to create onboarding document.");
-
-    const metadata: Record<string, unknown> = {
-      fileName: body.fileName,
-      version: nextVersion,
-      ...(targetUserId !== actorUserId ? { uploadedOnBehalfOf: targetUserId } : {}),
-    };
-
-    await this.db.insert(documentAuditLogs).values({
-      orgId,
-      onboardingDocumentId: record.id,
-      action: auditAction,
-      performedBy: actorUserId,
-      metadata,
-    });
-
-    await this.recalcOnboardingStatus(orgId, targetUserId);
-
-    void this.dispatchDocumentSubmittedEvent(orgId, record.id, targetUserId, docType.name);
-
-    return record;
-  }
-
-  async getDetail(orgId: string, userId: string, isAdmin: boolean, docId: number) {
-    const whereConditions = isAdmin
-      ? and(eq(onboardingDocuments.id, docId), eq(onboardingDocuments.orgId, orgId))
-      : and(
-          eq(onboardingDocuments.id, docId),
-          eq(onboardingDocuments.orgId, orgId),
-          eq(onboardingDocuments.userId, userId),
-        );
-
-    const rows = await this.db
-      .select({
-        id: onboardingDocuments.id,
-        orgId: onboardingDocuments.orgId,
-        userId: onboardingDocuments.userId,
-        documentTypeId: onboardingDocuments.documentTypeId,
-        documentTypeName: documentTypes.name,
-        isMandatory: documentTypes.isMandatory,
-        fileUrl: onboardingDocuments.fileUrl,
-        fileName: onboardingDocuments.fileName,
-        fileSize: onboardingDocuments.fileSize,
-        mimeType: onboardingDocuments.mimeType,
-        version: onboardingDocuments.version,
-        status: onboardingDocuments.status,
-        reviewedBy: onboardingDocuments.reviewedBy,
-        reviewedAt: onboardingDocuments.reviewedAt,
-        remarks: onboardingDocuments.remarks,
-        createdAt: onboardingDocuments.createdAt,
-        updatedAt: onboardingDocuments.updatedAt,
-        reviewerName: reviewerUsers.name,
-      })
-      .from(onboardingDocuments)
-      .innerJoin(documentTypes, eq(onboardingDocuments.documentTypeId, documentTypes.id))
-      .leftJoin(reviewerUsers, eq(onboardingDocuments.reviewedBy, reviewerUsers.id))
-      .where(whereConditions)
-      .limit(1);
-
-    if (rows.length === 0) throw new NotFoundException("Document not found.");
-
-    const doc = rows[0];
-
-    const auditRows = await this.db
-      .select({
-        id: documentAuditLogs.id,
-        action: documentAuditLogs.action,
-        performedBy: documentAuditLogs.performedBy,
-        performedByName: users.name,
-        remarks: documentAuditLogs.remarks,
-        metadata: documentAuditLogs.metadata,
-        createdAt: documentAuditLogs.createdAt,
-      })
-      .from(documentAuditLogs)
-      .innerJoin(users, eq(documentAuditLogs.performedBy, users.id))
-      .where(eq(documentAuditLogs.onboardingDocumentId, docId))
-      .orderBy(desc(documentAuditLogs.createdAt));
-
-    return { ...doc, auditLogs: auditRows };
-  }
-
-  async review(orgId: string, userId: string, docId: number, body: ReviewOnboardingDocInput) {
-    const [existing] = await this.db
-      .select({ id: onboardingDocuments.id, userId: onboardingDocuments.userId, status: onboardingDocuments.status })
-      .from(onboardingDocuments)
-      .where(and(eq(onboardingDocuments.id, docId), eq(onboardingDocuments.orgId, orgId)))
-      .limit(1);
-
-    if (!existing) throw new NotFoundException("Document not found.");
-
-    const [updated] = await this.db
-      .update(onboardingDocuments)
-      .set({
-        status: body.status,
-        reviewedBy: userId,
-        reviewedAt: new Date(),
-        remarks: body.remarks,
-      })
-      .where(and(eq(onboardingDocuments.id, docId), eq(onboardingDocuments.orgId, orgId)))
-      .returning();
-
-    await this.db.insert(documentAuditLogs).values({
-      orgId,
-      onboardingDocumentId: docId,
-      action: body.status,
-      performedBy: userId,
-      remarks: body.remarks,
-      metadata: { previousStatus: existing.status },
-    });
-
-    await this.recalcOnboardingStatus(orgId, existing.userId);
-
-    return updated;
-  }
-
-  private async recalcOnboardingStatus(orgId: string, targetUserId: string): Promise<void> {
-    const mandatoryTypes = await this.db
-      .select({ id: documentTypes.id })
-      .from(documentTypes)
-      .where(
-        and(
-          eq(documentTypes.orgId, orgId),
-          eq(documentTypes.isActive, true),
-          eq(documentTypes.isMandatory, true),
-        ),
+      const versionAllocationKey = `${orgId}:${targetUserId}:${body.documentTypeId}`;
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${versionAllocationKey}, 0))`,
       );
 
-    if (mandatoryTypes.length === 0) {
-      await this.db
-        .update(users)
-        .set({ onboardingDocStatus: "APPROVED" })
-        .where(eq(users.id, targetUserId));
-      return;
-    }
+      const existing = await tx
+        .select({ id: onboardingDocuments.id })
+        .from(onboardingDocuments)
+        .where(
+          and(
+            eq(onboardingDocuments.orgId, orgId),
+            eq(onboardingDocuments.userId, targetUserId),
+            eq(onboardingDocuments.documentTypeId, body.documentTypeId),
+          ),
+        )
+        .limit(1);
 
-    const mandatoryTypeIds = mandatoryTypes.map((t) => t.id);
-
-    const userDocs = await this.db
-      .select({ documentTypeId: onboardingDocuments.documentTypeId, status: onboardingDocuments.status })
-      .from(onboardingDocuments)
-      .where(and(eq(onboardingDocuments.orgId, orgId), eq(onboardingDocuments.userId, targetUserId)))
-      .orderBy(desc(onboardingDocuments.id));
-
-    const latestByType = new Map<number, string>();
-    for (const doc of userDocs) {
-      if (!latestByType.has(doc.documentTypeId)) {
-        latestByType.set(doc.documentTypeId, doc.status);
+      const auditAction =
+        existing.length > 0 ? ("RE_UPLOADED" as const) : ("UPLOADED" as const);
+      const [record] = await tx
+        .insert(onboardingDocuments)
+        .values({
+          orgId,
+          userId: targetUserId,
+          documentTypeId: body.documentTypeId,
+          fileUrl: body.fileUrl,
+          fileName: body.fileName,
+          fileSize: body.fileSize,
+          mimeType: body.mimeType,
+          version: sql<number>`(
+            SELECT COALESCE(MAX(existing_document.version), 0) + 1
+            FROM onboarding_documents AS existing_document
+            WHERE existing_document.org_id = ${orgId}
+              AND existing_document.user_id = ${targetUserId}
+              AND existing_document.document_type_id = ${body.documentTypeId}
+          )`,
+          status: "SUBMITTED",
+        })
+        .returning();
+      if (!record) {
+        throw new InternalServerErrorException(
+          "Failed to create onboarding document.",
+        );
       }
-    }
 
-    const allApproved = mandatoryTypeIds.every((id) => latestByType.get(id) === "APPROVED");
-    const anyInProgress = mandatoryTypeIds.some((id) => {
-      const s = latestByType.get(id);
-      return s === "SUBMITTED" || s === "RE_UPLOAD_REQUESTED";
+      await tx.insert(documentAuditLogs).values({
+        orgId,
+        onboardingDocumentId: record.id,
+        action: auditAction,
+        performedBy: actorUserId,
+        metadata: {
+          fileName: body.fileName,
+          version: record.version,
+          ...(targetUserId !== actorUserId
+            ? { uploadedOnBehalfOf: targetUserId }
+            : {}),
+        },
+      });
+
+      return { record, documentTypeName: docType.name };
     });
 
-    const newStatus = allApproved ? ("APPROVED" as const) : anyInProgress ? ("IN_PROGRESS" as const) : ("PENDING" as const);
+    const dispatch = () =>
+      this.dispatchDocumentSubmittedEvent(
+        orgId,
+        result.record.id,
+        targetUserId,
+        result.documentTypeName,
+      );
+    if (!registerAfterCommit(dispatch)) void dispatch();
 
-    await this.db
-      .update(users)
-      .set({ onboardingDocStatus: newStatus })
-      .where(eq(users.id, targetUserId));
+    return result.record;
+  }
+
+  async review(
+    orgId: string,
+    actorUserId: string,
+    docId: number,
+    body: ReviewOnboardingDocInput,
+    scope: DataScope,
+  ) {
+    return this.db.transaction(async (tx) => {
+      const [existing] = await tx
+        .select({
+          id: onboardingDocuments.id,
+          userId: onboardingDocuments.userId,
+          status: onboardingDocuments.status,
+        })
+        .from(onboardingDocuments)
+        .innerJoin(
+          organizationMembers,
+          and(
+            eq(organizationMembers.orgId, orgId),
+            eq(organizationMembers.userId, onboardingDocuments.userId),
+            ne(organizationMembers.status, "INVITED"),
+          ),
+        )
+        .where(
+          and(
+            eq(onboardingDocuments.id, docId),
+            eq(onboardingDocuments.orgId, orgId),
+            applyScope(scope, orgId, actorUserId, {
+              ownerColumn: onboardingDocuments.userId,
+            }),
+          ),
+        )
+        .limit(1);
+      if (!existing) throw new NotFoundException("Document not found.");
+
+      const [updated] = await tx
+        .update(onboardingDocuments)
+        .set({
+          status: body.status,
+          reviewedBy: actorUserId,
+          reviewedAt: new Date(),
+          remarks: body.remarks,
+        })
+        .where(
+          and(
+            eq(onboardingDocuments.id, docId),
+            eq(onboardingDocuments.orgId, orgId),
+            eq(onboardingDocuments.userId, existing.userId),
+          ),
+        )
+        .returning();
+
+      await tx.insert(documentAuditLogs).values({
+        orgId,
+        onboardingDocumentId: docId,
+        action: body.status,
+        performedBy: actorUserId,
+        remarks: body.remarks,
+        metadata: { previousStatus: existing.status },
+      });
+
+      return updated;
+    });
   }
 
   private dispatchDocumentSubmittedEvent(

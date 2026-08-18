@@ -6,17 +6,15 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, like, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import {
   apiKeys,
-  auditLogs,
   automationRules,
   automationRuns,
   customFieldDefinitions,
   gitConnections,
-  organizationMembers,
   organizations,
-  users,
+  organizationMembers,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -57,58 +55,6 @@ export class SettingsService {
     private readonly access: AccessService,
     private readonly cache: CacheService,
   ) {}
-
-  /**
-   * "Last changed by X, <when>" for each settings section.
-   *
-   * Reads the existing audit log rather than adding `updatedBy`/`updatedAt`
-   * columns to every settings table: the audit log already records actor,
-   * action and timestamp, and denormalising provenance onto ~9 tables would
-   * create a second source of truth that drifts the moment one writer forgets
-   * to set it. One indexed query per section, capped to the latest row.
-   */
-  async getSectionProvenance(
-    orgId: string,
-    sections: readonly string[],
-  ): Promise<Record<string, { actorId: string; actorName: string | null; action: string; at: string } | null>> {
-    const result: Record<string, { actorId: string; actorName: string | null; action: string; at: string } | null> = {};
-
-    const rows = await Promise.all(
-      sections.map((section) =>
-        this.db
-          .select({
-            action: auditLogs.action,
-            userId: auditLogs.userId,
-            actorName: users.name,
-            createdAt: auditLogs.createdAt,
-          })
-          .from(auditLogs)
-          .leftJoin(users, eq(users.id, auditLogs.userId))
-          .where(
-            and(
-              eq(auditLogs.orgId, orgId),
-              like(auditLogs.action, `${section}.%`),
-            ),
-          )
-          .orderBy(desc(auditLogs.createdAt))
-          .limit(1),
-      ),
-    );
-
-    sections.forEach((section, index) => {
-      const row = rows[index]?.[0];
-      result[section] = row
-        ? {
-            actorId: row.userId,
-            actorName: row.actorName,
-            action: row.action,
-            at: row.createdAt.toISOString(),
-          }
-        : null;
-    });
-
-    return result;
-  }
 
   getPermissions() {
     return PERMISSIONS;
@@ -515,10 +461,6 @@ export class SettingsService {
   }
 
   async updateUserRole(u: CurrentUserContext, targetUserId: string, role: string) {
-    if (!u.isOrgOwner) {
-      throw new ForbiddenException("Only the organization owner can change member roles");
-    }
-
     const member = await this.db.query.organizationMembers.findFirst({
       where: and(
         eq(organizationMembers.userId, targetUserId),
@@ -534,8 +476,7 @@ export class SettingsService {
       );
     }
 
-    // Rejects OWNER outright so a second owner cannot be minted outside the transfer flow
-    await assertMayGrantRole(this.db, u.orgId, u, role);
+    await assertMayGrantRole(this.access, u.orgId, u, role);
 
     await this.db.transaction(async (tx) => {
       await tx

@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, ilike, isNull, or } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { orgUnits } from "../../../db/schema/common/organization";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -17,7 +17,12 @@ import type {
   ListQueryInput,
   UpdateCostCenterInput,
 } from "./dto/org-hierarchy.schemas";
-import { getOrgUnitStatusFilter } from "./org-hierarchy-list-filters";
+import {
+  getOrgUnitCursorFilter,
+  getOrgUnitStatusFilter,
+  orgUnitNormalizedName,
+  toOrgUnitCursorPage,
+} from "./org-hierarchy-list-filters";
 
 const ORG_COST_CENTER_COLUMNS = {
   id: orgUnits.id,
@@ -67,9 +72,9 @@ export class OrgHierarchyCostCentersService {
   ) {}
 
   async listCostCenters(orgId: string, query: ListQueryInput) {
-    const { page, limit, search, status } = query;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, search, status } = query;
     const statusFilter = getOrgUnitStatusFilter(status);
+    const cursorFilter = getOrgUnitCursorFilter(cursor);
     const filters = and(
       eq(orgUnits.orgId, orgId),
       eq(orgUnits.kind, "COST_CENTER"),
@@ -83,21 +88,15 @@ export class OrgHierarchyCostCentersService {
           ]
         : []),
       ...(statusFilter ? [statusFilter] : []),
+      ...(cursorFilter ? [cursorFilter] : []),
     );
-    const [rows, [{ count }]] = await Promise.all([
-      this.db
-        .select(ORG_COST_CENTER_COLUMNS)
-        .from(orgUnits)
-        .where(filters)
-        .orderBy(asc(orgUnits.name), asc(orgUnits.id))
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(orgUnits)
-        .where(filters),
-    ]);
-    return { data: rows.map(toOrgCostCenter), total: count, page, limit };
+    const rows = await this.db
+      .select(ORG_COST_CENTER_COLUMNS)
+      .from(orgUnits)
+      .where(filters)
+      .orderBy(asc(orgUnitNormalizedName), asc(orgUnits.id))
+      .limit(limit + 1);
+    return toOrgUnitCursorPage(rows, limit, toOrgCostCenter);
   }
 
   async getCostCenter(orgId: string, id: string) {
@@ -141,7 +140,7 @@ export class OrgHierarchyCostCentersService {
     if (!row) throw new Error("Failed to create cost center");
 
     await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "COST_CENTER"));
-    await this.audit.log({ action: "org.costCenter.created", userId, orgId, targetId: row.id, targetType: "org_unit" });
+    await this.audit.logCritical({ action: "org.costCenter.created", userId, orgId, targetId: row.id, targetType: "org_unit" });
 
     return toOrgCostCenter(row);
   }
@@ -170,7 +169,7 @@ export class OrgHierarchyCostCentersService {
     if (!row) throw new NotFoundException("Cost center not found");
 
     await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "COST_CENTER"));
-    await this.audit.log({ action: "org.costCenter.updated", userId, orgId, targetId: id, targetType: "org_unit" });
+    await this.audit.logCritical({ action: "org.costCenter.updated", userId, orgId, targetId: id, targetType: "org_unit" });
 
     return toOrgCostCenter(row);
   }
@@ -191,6 +190,6 @@ export class OrgHierarchyCostCentersService {
       );
 
     await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "COST_CENTER"));
-    await this.audit.log({ action: "org.costCenter.deleted", userId, orgId, targetId: id, targetType: "org_unit" });
+    await this.audit.logCritical({ action: "org.costCenter.deleted", userId, orgId, targetId: id, targetType: "org_unit" });
   }
 }

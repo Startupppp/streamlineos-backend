@@ -6,6 +6,8 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { addYears, differenceInDays, formatDateOnly, formatMonthDay, startOfDay } from "../../../common/date";
+import { applyScope } from "../../access/apply-scope";
+import type { DataScope } from "../../access/access.types";
 
 export interface FeedItem {
   userId: string;
@@ -32,12 +34,24 @@ export class CelebrationsService {
     private readonly cache: CacheService,
   ) {}
 
-  getAnniversaryFeed(orgId: string): Promise<FeedItem[]> {
+  getAnniversaryFeed(
+    orgId: string,
+    actorUserId: string,
+    scope: DataScope,
+  ): Promise<FeedItem[]> {
     const today = new Date().toISOString().slice(0, 10);
-    return this.cache.cached(`hr:anniversary-feed:${orgId}:${today}`, () => this.buildAnniversaryFeed(orgId), CACHE_TTL.MEDIUM);
+    return this.cache.cached(
+      `hr:anniversary-feed:${orgId}:${actorUserId}:${scope}:${today}`,
+      () => this.buildAnniversaryFeed(orgId, actorUserId, scope),
+      CACHE_TTL.MEDIUM,
+    );
   }
 
-  private async buildAnniversaryFeed(orgId: string): Promise<FeedItem[]> {
+  private async buildAnniversaryFeed(
+    orgId: string,
+    actorUserId: string,
+    scope: DataScope,
+  ): Promise<FeedItem[]> {
     const members = await this.db
       .select({
         userId: organizationMembers.userId,
@@ -48,7 +62,14 @@ export class CelebrationsService {
       })
       .from(organizationMembers)
       .leftJoin(users, eq(users.id, organizationMembers.userId))
-      .where(eq(organizationMembers.orgId, orgId))
+      .where(
+        and(
+          eq(organizationMembers.orgId, orgId),
+          applyScope(scope, orgId, actorUserId, {
+            ownerColumn: organizationMembers.userId,
+          }),
+        ),
+      )
       .limit(1000);
 
     const today = startOfDay(new Date());
@@ -97,16 +118,27 @@ export class CelebrationsService {
       }
     }
 
-    items.sort((a, b) => a.daysAway - b.daysAway);
+    items.sort(
+      (leftCelebration, rightCelebration) =>
+        leftCelebration.daysAway - rightCelebration.daysAway,
+    );
     return items;
   }
 
-  getCelebrations(orgId: string) {
+  getCelebrations(orgId: string, actorUserId: string, scope: DataScope) {
     const today = new Date().toISOString().slice(0, 10);
-    return this.cache.cached(`hr:celebrations:${orgId}:${today}`, () => this.buildCelebrations(orgId), CACHE_TTL.MEDIUM);
+    return this.cache.cached(
+      `hr:celebrations:${orgId}:${actorUserId}:${scope}:${today}`,
+      () => this.buildCelebrations(orgId, actorUserId, scope),
+      CACHE_TTL.MEDIUM,
+    );
   }
 
-  private async buildCelebrations(orgId: string) {
+  private async buildCelebrations(
+    orgId: string,
+    actorUserId: string,
+    scope: DataScope,
+  ) {
     const now = new Date();
     const month = now.getMonth() + 1;
     const day = now.getDate();
@@ -123,7 +155,15 @@ export class CelebrationsService {
       })
       .from(organizationMembers)
       .innerJoin(users, eq(organizationMembers.userId, users.id))
-      .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)))
+      .where(
+        and(
+          eq(organizationMembers.orgId, orgId),
+          eq(users.isActive, true),
+          applyScope(scope, orgId, actorUserId, {
+            ownerColumn: organizationMembers.userId,
+          }),
+        ),
+      )
       .limit(1000);
 
     const birthdays: typeof members = [];
@@ -161,22 +201,36 @@ export class CelebrationsService {
     };
   }
 
-  async getAvailability(orgId: string, userIds: string | undefined): Promise<AvailabilityEntry[]> {
+  async getAvailability(
+    orgId: string,
+    actorUserId: string,
+    userIds: string | undefined,
+    scope: DataScope,
+  ): Promise<AvailabilityEntry[]> {
     const today = formatDateOnly(new Date());
 
-    let userIdList: string[];
-    if (userIds) {
-      userIdList = userIds
-        .split(",")
-        .map((id) => id.trim())
-        .filter(Boolean);
-    } else {
-      const members = await this.db
-        .select({ userId: organizationMembers.userId })
-        .from(organizationMembers)
-        .where(eq(organizationMembers.orgId, orgId));
-      userIdList = members.map((m) => m.userId);
+    const requestedUserIds = userIds
+      ?.split(",")
+      .map((requestedUserId) => requestedUserId.trim())
+      .filter(Boolean);
+    const memberConditions = [
+      eq(organizationMembers.orgId, orgId),
+      applyScope(scope, orgId, actorUserId, {
+        ownerColumn: organizationMembers.userId,
+      }),
+    ];
+    if (requestedUserIds?.length) {
+      memberConditions.push(
+        inArray(organizationMembers.userId, requestedUserIds.slice(0, 100)),
+      );
     }
+
+    const members = await this.db
+      .select({ userId: organizationMembers.userId })
+      .from(organizationMembers)
+      .where(and(...memberConditions))
+      .limit(100);
+    const userIdList = members.map((member) => member.userId);
 
     if (userIdList.length === 0) return [];
 

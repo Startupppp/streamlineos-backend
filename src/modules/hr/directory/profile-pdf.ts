@@ -12,7 +12,6 @@ export interface ProfileEmployee {
   employeeId: string | null;
   joiningDate: string | Date | null;
   reportingTo: string | null;
-  monthlySalary: string | number | null;
   isActive: boolean;
   bio: string | null;
   linkedinUrl: string | null;
@@ -140,10 +139,6 @@ export async function buildEmployeeProfilePdf(
   const joinDate = employee.joiningDate
     ? formatDayMonthYear(new Date(employee.joiningDate))
     : "-";
-  const salary = employee.monthlySalary
-    ? `Rs ${pdfSafe(String(employee.monthlySalary), "")}`
-    : "-";
-
   const ensureSpace = (needed: number) => {
     if (y < MARGIN + needed) {
       page = doc.addPage([PAGE_W, PAGE_H]);
@@ -184,7 +179,6 @@ export async function buildEmployeeProfilePdf(
       { label: "Designation", value: employee.designation ?? "-" },
       { label: "Joining Date", value: joinDate },
       { label: "Status", value: employee.isActive ? "Active" : "Inactive" },
-      { label: "Monthly Salary", value: salary },
       { label: "Reports To", value: employee.reportingTo ?? "-" },
     ],
     y,

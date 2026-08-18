@@ -8,8 +8,10 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UseGuards,
 } from "@nestjs/common";
+import type { Request } from "express";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -59,14 +61,26 @@ export class OrgHierarchyController {
 
   @RequirePermission("settings:view")
   @Get("overview")
-  getHierarchy(@CurrentUser() u: CurrentUserContext) {
-    return this.service.getHierarchy(u.orgId);
+  getHierarchy(
+    @CurrentUser() currentUser: CurrentUserContext,
+    @Req() request: Request,
+  ) {
+    return this.service.getHierarchy(currentUser.orgId, {
+      actorUserId: currentUser.userId,
+      scope: request.rbacScope ?? "none",
+    });
   }
 
   @RequirePermission("settings:view")
   @Get("tree")
-  getTree(@CurrentUser() u: CurrentUserContext) {
-    return this.service.getTree(u.orgId);
+  getTree(
+    @CurrentUser() currentUser: CurrentUserContext,
+    @Req() request: Request,
+  ) {
+    return this.service.getTree(currentUser.orgId, {
+      actorUserId: currentUser.userId,
+      scope: request.rbacScope ?? "none",
+    });
   }
 
   @RequirePermission("settings:view")

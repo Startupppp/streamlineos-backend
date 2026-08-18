@@ -13,7 +13,7 @@ import {
   getTicketAssignmentEmailTemplate,
   getTicketReviewRequestEmailTemplate,
   getTicketChangesRequestedEmailTemplate,
-  getWeeklyAttendanceReportTemplate,
+  getAttendanceReportTemplate,
   getMonthlyExpenseReportTemplate,
   getTaskAssignedEmailTemplate,
   getDealStageChangeEmailTemplate,
@@ -112,18 +112,24 @@ export class EmailService extends EmailSendersBase {
     });
   }
 
-  async sendWeeklyAttendanceReportEmail(
-    weekRange: string,
+  async queueAttendanceReportEmail(
+    dateRange: string,
     orgName: string,
     rows: { department: string; name: string; totalHours: string; autoCheckoutDays: number; overtimeDays: number; daysPresent: number }[],
     recipientEmails: string[],
-  ): Promise<void> {
-    if (recipientEmails.length === 0) return;
-    const subject = `Attendance report — week of ${weekRange}`;
-    const html = getWeeklyAttendanceReportTemplate(weekRange, orgName, rows);
-    for (const email of recipientEmails) {
-      await this.sendEmail({ to: email, subject, html });
-    }
+    organizationId: string,
+  ): Promise<number> {
+    if (recipientEmails.length === 0) return 0;
+    const subject = `Attendance report — ${dateRange}`;
+    const html = getAttendanceReportTemplate(dateRange, orgName, rows);
+    return this.outbox.enqueueForDelivery(
+      recipientEmails.map((email) => ({
+        to: email,
+        subject,
+        html,
+        organizationId,
+      })),
+    );
   }
 
   async sendMonthlyExpenseReportEmail(

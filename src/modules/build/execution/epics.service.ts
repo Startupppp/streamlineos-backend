@@ -4,6 +4,7 @@ import { tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CreateEpicInput, UpdateEpicInput } from "./dto/iterations.schemas";
+import { allocateTicketNumbers } from "../core/lib/allocate-ticket-number";
 
 @Injectable()
 export class EpicsService {
@@ -46,12 +47,7 @@ export class EpicsService {
     const [epic] = await this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
 
-      const maxResult = await tx
-        .select({ maxTicketNumber: sql<number>`COALESCE(MAX(${tickets.ticketNumber}), 0)` })
-        .from(tickets)
-        .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)));
-
-      const nextNumber = (maxResult[0]?.maxTicketNumber || 0) + 1;
+      const nextNumber = await allocateTicketNumbers(tx, orgId, projectId);
 
       return tx
         .insert(tickets)

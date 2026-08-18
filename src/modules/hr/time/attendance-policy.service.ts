@@ -48,7 +48,30 @@ export class AttendancePolicyService {
 
   async getAttendanceRules(orgId: string, employeeId: string, date: string): Promise<AttendancePolicyRules> {
     const result = await this.policyEval.evaluatePolicy(orgId, employeeId, "attendance", date);
-    const rules = result?.rules ?? {};
+    return this.toAttendanceRules(result?.rules);
+  }
+
+  async getAttendanceRulesForEmployees(
+    orgId: string,
+    employeeIds: readonly string[],
+    date: string,
+  ): Promise<Map<string, AttendancePolicyRules>> {
+    const results = await this.policyEval.evaluatePolicies(
+      orgId,
+      employeeIds,
+      "attendance",
+      date,
+    );
+    return new Map(
+      [...results].map(([employeeId, result]) => [
+        employeeId,
+        this.toAttendanceRules(result?.rules),
+      ]),
+    );
+  }
+
+  private toAttendanceRules(rulesInput: Record<string, unknown> | undefined): AttendancePolicyRules {
+    const rules = rulesInput ?? {};
     return {
       graceMinutes: typeof rules["graceMinutes"] === "number" ? rules["graceMinutes"] : DEFAULT_GRACE_MINUTES,
       autoCheckoutTime: typeof rules["autoCheckoutTime"] === "string" ? rules["autoCheckoutTime"] : DEFAULT_AUTO_CHECKOUT_TIME,
@@ -62,7 +85,30 @@ export class AttendancePolicyService {
 
   async getOvertimeRules(orgId: string, employeeId: string, date: string): Promise<OvertimePolicyRules> {
     const result = await this.policyEval.evaluatePolicy(orgId, employeeId, "overtime", date);
-    const rules = result?.rules ?? {};
+    return this.toOvertimeRules(result?.rules);
+  }
+
+  async getOvertimeRulesForEmployees(
+    orgId: string,
+    employeeIds: readonly string[],
+    date: string,
+  ): Promise<Map<string, OvertimePolicyRules>> {
+    const results = await this.policyEval.evaluatePolicies(
+      orgId,
+      employeeIds,
+      "overtime",
+      date,
+    );
+    return new Map(
+      [...results].map(([employeeId, result]) => [
+        employeeId,
+        this.toOvertimeRules(result?.rules),
+      ]),
+    );
+  }
+
+  private toOvertimeRules(rulesInput: Record<string, unknown> | undefined): OvertimePolicyRules {
+    const rules = rulesInput ?? {};
     return {
       dailyThresholdMinutes: typeof rules["dailyThresholdMinutes"] === "number" ? rules["dailyThresholdMinutes"] : DEFAULT_OVERTIME_THRESHOLD_MINUTES,
     };

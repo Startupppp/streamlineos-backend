@@ -19,6 +19,7 @@
     "db:bootstrap-role": "node src/scripts/db-bootstrap-app-role.mjs",
     "db:setup": "node src/scripts/db-setup.mjs",
     "db:verify-rls": "node src/scripts/db-verify-rls.mjs",
+    "hrms:schema-bundle": "node --env-file-if-exists=.env -r ts-node/register src/scripts/hrms-schema-bundle/hrms-schema-bundle.ts",
     "seed:marketplace-apps": "node --env-file=.env -r ts-node/register src/db/seeds/marketplace-apps.seed.ts",
     "purge:user": "node src/scripts/purge-user.mjs",
     "e2e:smoke": "node src/scripts/e2e-smoke.mjs",

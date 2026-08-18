@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull, lte, gte, or } from "drizzle-orm";
+import { and, eq, inArray, isNull, lte, gte, or } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -81,8 +81,38 @@ export class HrPolicyEvaluationService {
       eventDate,
     );
 
-    if (candidates.length === 0) return null;
+    return this.evaluateCandidates(candidates, attrs);
+  }
 
+  async evaluatePolicies(
+    orgId: string,
+    employeeIds: readonly string[],
+    policyType: PolicyType,
+    eventDate: string,
+  ): Promise<Map<string, PolicyEvaluationResult | null>> {
+    const uniqueEmployeeIds = [...new Set(employeeIds)];
+    if (uniqueEmployeeIds.length === 0) return new Map();
+
+    const [attributes, candidates] = await Promise.all([
+      this.resolveEmployeeAttributesBatch(orgId, uniqueEmployeeIds),
+      this.collectCandidatePolicies(orgId, policyType, eventDate),
+    ]);
+
+    return new Map(
+      uniqueEmployeeIds.map((employeeId) => [
+        employeeId,
+        attributes.has(employeeId)
+          ? this.evaluateCandidates(candidates, attributes.get(employeeId)!)
+          : null,
+      ]),
+    );
+  }
+
+  private evaluateCandidates(
+    candidates: Awaited<ReturnType<typeof this.collectCandidatePolicies>>,
+    attrs: EmployeeAttributes,
+  ): PolicyEvaluationResult | null {
+    if (candidates.length === 0) return null;
     const scored = candidates
       .map((policy) => this.scorePolicy(policy, attrs))
       .filter((s) => s !== null) as Array<{
@@ -116,6 +146,98 @@ export class HrPolicyEvaluationService {
       rules: winner.policy.rules,
       trace: winner.trace,
     };
+  }
+
+  private async resolveEmployeeAttributesBatch(
+    orgId: string,
+    employeeIds: readonly string[],
+  ): Promise<Map<string, EmployeeAttributes>> {
+    const [members, unitRows, roleRows] = await Promise.all([
+      this.db
+        .select({
+          userId: organizationMembers.userId,
+          designation: users.designation,
+          locationId: users.branchId,
+        })
+        .from(organizationMembers)
+        .innerJoin(users, eq(users.id, organizationMembers.userId))
+        .where(
+          and(
+            eq(organizationMembers.orgId, orgId),
+            inArray(organizationMembers.userId, employeeIds),
+          ),
+        ),
+      this.db
+        .select({
+          userId: orgUnitMembers.userId,
+          orgUnitId: orgUnitMembers.orgUnitId,
+          kind: orgUnits.kind,
+        })
+        .from(orgUnitMembers)
+        .innerJoin(
+          orgUnits,
+          and(
+            eq(orgUnits.id, orgUnitMembers.orgUnitId),
+            eq(orgUnits.orgId, orgId),
+          ),
+        )
+        .where(
+          and(
+            eq(orgUnitMembers.orgId, orgId),
+            inArray(orgUnitMembers.userId, employeeIds),
+            inArray(orgUnits.kind, ["DEPARTMENT", "TEAM"]),
+          ),
+        ),
+      this.db
+        .select({ userId: organizationMembers.userId, slug: roles.slug })
+        .from(roleAssignments)
+        .innerJoin(
+          organizationMembers,
+          and(
+            eq(organizationMembers.id, roleAssignments.organizationMembershipId),
+            eq(organizationMembers.orgId, orgId),
+          ),
+        )
+        .innerJoin(
+          roles,
+          and(eq(roles.id, roleAssignments.roleId), eq(roles.orgId, orgId)),
+        )
+        .where(
+          and(
+            eq(roleAssignments.orgId, orgId),
+            inArray(organizationMembers.userId, employeeIds),
+          ),
+        ),
+    ]);
+
+    const attributes = new Map<string, EmployeeAttributes>();
+    for (const member of members) {
+      attributes.set(member.userId, {
+        userId: member.userId,
+        departmentId: null,
+        teamIds: [],
+        roleSlugs: [],
+        designation: member.designation,
+        employmentType: null,
+        locationId: member.locationId,
+        countryCode: null,
+        stateCode: null,
+        jobLevel: null,
+      });
+    }
+    for (const unit of unitRows) {
+      const attrs = attributes.get(unit.userId);
+      if (!attrs) continue;
+      if (unit.kind === "DEPARTMENT" && attrs.departmentId === null) {
+        attrs.departmentId = unit.orgUnitId;
+      } else if (unit.kind === "TEAM") {
+        attrs.teamIds.push(unit.orgUnitId);
+      }
+    }
+    for (const role of roleRows) {
+      attributes.get(role.userId)?.roleSlugs.push(role.slug);
+    }
+    return attributes;
   }
 
   private async resolveEmployeeAttributes(

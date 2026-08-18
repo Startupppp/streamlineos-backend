@@ -1,6 +1,7 @@
 export {
   getTenantContext,
   registerAfterCommit,
+  runOutsideTenantContext,
   runWithTenantContext,
   TenantContextService,
 } from "./tenant-context";

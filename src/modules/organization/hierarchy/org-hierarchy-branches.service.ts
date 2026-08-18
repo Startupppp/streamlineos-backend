@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, asc, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
 import { orgUnits, type OrgUnitMetadata } from "../../../db/schema/common/organization";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -18,7 +19,12 @@ import type {
   UpdateOrgBranchInput,
   ListQueryInput,
 } from "./dto/org-hierarchy.schemas";
-import { getOrgUnitStatusFilter } from "./org-hierarchy-list-filters";
+import {
+  getOrgUnitCursorFilter,
+  getOrgUnitStatusFilter,
+  orgUnitNormalizedName,
+  toOrgUnitCursorPage,
+} from "./org-hierarchy-list-filters";
 
 const ORG_BRANCH_COLUMNS = {
   id: orgUnits.id,
@@ -32,6 +38,12 @@ const ORG_BRANCH_COLUMNS = {
   createdAt: orgUnits.createdAt,
   updatedAt: orgUnits.updatedAt,
   deletedAt: orgUnits.deletedAt,
+};
+
+const branchBusinessUnits = alias(orgUnits, "branch_business_units");
+const ORG_BRANCH_LIST_COLUMNS = {
+  ...ORG_BRANCH_COLUMNS,
+  businessUnitName: branchBusinessUnits.name,
 };
 
 type OrgBranchRow = Pick<
@@ -71,6 +83,15 @@ export function toOrgBranch(row: OrgBranchRow) {
   };
 }
 
+function toOrgBranchList(
+  row: OrgBranchRow & { businessUnitName: string | null },
+) {
+  return {
+    ...toOrgBranch(row),
+    businessUnitName: row.businessUnitName,
+  };
+}
+
 @Injectable()
 export class OrgHierarchyBranchesService {
   constructor(
@@ -80,9 +101,9 @@ export class OrgHierarchyBranchesService {
   ) {}
 
   async listOrgBranches(orgId: string, query: ListQueryInput) {
-    const { page, limit, search, status } = query;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, search, status } = query;
     const statusFilter = getOrgUnitStatusFilter(status);
+    const cursorFilter = getOrgUnitCursorFilter(cursor);
     const filters = and(
       eq(orgUnits.orgId, orgId),
       eq(orgUnits.kind, "BRANCH"),
@@ -97,18 +118,23 @@ export class OrgHierarchyBranchesService {
           ]
         : []),
       ...(statusFilter ? [statusFilter] : []),
+      ...(cursorFilter ? [cursorFilter] : []),
     );
-    const [rows, [{ count }]] = await Promise.all([
-      this.db
-        .select(ORG_BRANCH_COLUMNS)
-        .from(orgUnits)
-        .where(filters)
-        .orderBy(asc(orgUnits.name), asc(orgUnits.id))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ count: sql<number>`count(*)::int` }).from(orgUnits).where(filters),
-    ]);
-    return { data: rows.map(toOrgBranch), total: count, page, limit };
+    const rows = await this.db
+      .select(ORG_BRANCH_LIST_COLUMNS)
+      .from(orgUnits)
+      .leftJoin(
+        branchBusinessUnits,
+        and(
+          eq(branchBusinessUnits.id, orgUnits.parentId),
+          eq(branchBusinessUnits.orgId, orgUnits.orgId),
+          eq(branchBusinessUnits.kind, "BUSINESS_UNIT"),
+        ),
+      )
+      .where(filters)
+      .orderBy(asc(orgUnitNormalizedName), asc(orgUnits.id))
+      .limit(limit + 1);
+    return toOrgUnitCursorPage(rows, limit, toOrgBranchList);
   }
 
   private async getOrgBranchRow(
@@ -174,7 +200,7 @@ export class OrgHierarchyBranchesService {
 
     await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "BRANCH"));
     await this.cache.invalidate(CACHE_KEYS.branchesList(orgId));
-    await this.audit.log({ action: "org.branch.created", userId, orgId, targetId: row.id, targetType: "org_unit" });
+    await this.audit.logCritical({ action: "org.branch.created", userId, orgId, targetId: row.id, targetType: "org_unit" });
 
     return toOrgBranch(row);
   }
@@ -225,7 +251,7 @@ export class OrgHierarchyBranchesService {
 
     await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "BRANCH"));
     await this.cache.invalidate(CACHE_KEYS.branchesList(orgId));
-    await this.audit.log({ action: "org.branch.updated", userId, orgId, targetId: id, targetType: "org_unit" });
+    await this.audit.logCritical({ action: "org.branch.updated", userId, orgId, targetId: id, targetType: "org_unit" });
 
     return toOrgBranch(row);
   }
@@ -241,7 +267,7 @@ export class OrgHierarchyBranchesService {
 
     await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "BRANCH"));
     await this.cache.invalidate(CACHE_KEYS.branchesList(orgId));
-    await this.audit.log({ action: "org.branch.deleted", userId, orgId, targetId: id, targetType: "org_unit" });
+    await this.audit.logCritical({ action: "org.branch.deleted", userId, orgId, targetId: id, targetType: "org_unit" });
   }
 
   async moveBranch(orgId: string, branchId: string, newBusinessUnitId: string | null) {

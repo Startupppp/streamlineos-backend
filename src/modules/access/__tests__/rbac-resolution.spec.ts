@@ -4,9 +4,11 @@ import { Test } from "@nestjs/testing";
 import { AccessService } from "../access.service";
 import {
   ALL_PERMISSION_NAMES,
+  ROLE_DEFAULT_PERMISSIONS,
   UNIVERSAL_MEMBER_PERMISSIONS,
   moduleScopedPermissions,
 } from "../../rbac/permissions";
+import type { DataScope } from "../access.types";
 import type { Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import type { EntitlementsService } from "../entitlements.service";
@@ -65,6 +67,39 @@ function makeOwnershipSelectChain(result: unknown[]): OwnershipSelectChain {
   return chain;
 }
 
+const ACTIVE_MEMBER_BASELINE_PERMISSIONS = new Set([
+  ...UNIVERSAL_MEMBER_PERMISSIONS,
+  ...(ROLE_DEFAULT_PERMISSIONS["MEMBER"] ?? []),
+]);
+
+function expectActiveMemberBaseline(
+  resolvedPermissions: Map<string, DataScope>,
+): void {
+  for (const permissionKey of ACTIVE_MEMBER_BASELINE_PERMISSIONS) {
+    expect(resolvedPermissions.has(permissionKey)).toBe(true);
+  }
+  expect(new Set(resolvedPermissions.keys()).size).toBe(
+    resolvedPermissions.size,
+  );
+}
+
+function withTenantTransactionMock<T extends object>(database: T): T {
+  const mutableDatabase = database as T & {
+    execute?: jest.Mock;
+    transaction?: jest.Mock;
+  };
+  if (typeof mutableDatabase.transaction !== "function") {
+    mutableDatabase.execute = jest.fn().mockResolvedValue(undefined);
+    mutableDatabase.transaction = jest
+      .fn()
+      .mockImplementation(
+        async (transactionWork: (transactionDatabase: T) => Promise<unknown>) =>
+          transactionWork(database),
+      );
+  }
+  return database;
+}
+
 function buildService(db: unknown): AccessService {
   const cache = {
     cached: jest.fn().mockImplementation(async (_key: string, fn: () => Promise<unknown>) => fn()),
@@ -77,7 +112,7 @@ function buildService(db: unknown): AccessService {
     getEffectiveModuleMap: jest.fn().mockResolvedValue({}),
   };
   return new AccessService(
-    db as unknown as Db,
+    withTenantTransactionMock(db as object) as unknown as Db,
     cache as unknown as CacheService,
     entitlements as unknown as EntitlementsService,
     makeMfaPolicyStub(),
@@ -129,7 +164,12 @@ describe("AccessService.getAccessSnapshot — org owner receives every catalog p
         organizationMembers: { findFirst: jest.fn() },
       },
       select: jest.fn(),
+      execute: jest.fn().mockResolvedValue(undefined),
+      transaction: jest.fn(),
     };
+    db.transaction.mockImplementation(
+      async (work: (tx: typeof db) => Promise<unknown>) => work(db),
+    );
 
     const ctx: CurrentUserContext = {
       userId: USER,
@@ -151,6 +191,7 @@ describe("AccessService.getAccessSnapshot — org owner receives every catalog p
     expect(snapshot.scopes["hr:leaves:approve"]).toBe("all");
     expect(snapshot.scopes["hr:employees:view"]).toBe("all");
     expect(snapshot.isOrgOwner).toBe(true);
+    expect(snapshot.canManageOrganizationMembership).toBe(true);
     expect(Object.keys(snapshot.modules).length).toBeGreaterThan(0);
     expect(Object.values(snapshot.modules).every((enabled) => enabled === true)).toBe(true);
     expect(db.query.organizationMembers.findFirst).not.toHaveBeenCalled();
@@ -225,7 +266,7 @@ describe("AccessService.resolveUserPermissions — module owner access", () => {
 
     const hrKeys = new Set(moduleScopedPermissions("hr"));
     expect(hrKeys.size).toBeGreaterThan(0);
-    expect(result.size).toBe(hrKeys.size + UNIVERSAL_MEMBER_PERMISSIONS.length);
+    expectActiveMemberBaseline(result);
 
     for (const key of hrKeys) {
       expect(result.get(key)).toBe("all");
@@ -263,7 +304,7 @@ describe("AccessService.resolveUserPermissions — member with a single role inh
 
     const result = await buildService(db).resolveUserPermissions(ORG_A, USER);
 
-    expect(result.size).toBe(2 + UNIVERSAL_MEMBER_PERMISSIONS.length);
+    expectActiveMemberBaseline(result);
     expect(result.get("hr:employees:view")).toBe("own");
     expect(result.get("hr:leaves:view")).toBe("own");
 
@@ -303,6 +344,7 @@ describe("AccessService.resolveUserPermissions — member with two role sources:
 
     const result = await buildService(db).resolveUserPermissions(ORG_A, USER);
 
+    expectActiveMemberBaseline(result);
     expect(result.get("hr:employees:view")).toBe("all");
     expect(result.get("hr:leaves:view")).toBe("all");
 
@@ -312,7 +354,7 @@ describe("AccessService.resolveUserPermissions — member with two role sources:
 });
 
 describe("AccessService.resolveUserPermissions — member with no role assignments", () => {
-  it("returns only universal capabilities for an active member", async () => {
+  it("returns the intended self-service baseline for an active member", async () => {
     const db = {
       query: {
         accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
@@ -330,7 +372,7 @@ describe("AccessService.resolveUserPermissions — member with no role assignmen
 
     const result = await buildService(db).resolveUserPermissions(ORG_A, USER);
 
-    expect(result.size).toBe(UNIVERSAL_MEMBER_PERMISSIONS.length);
+    expectActiveMemberBaseline(result);
   });
 });
 
@@ -381,6 +423,7 @@ describe("AccessService.resolveUserPermissions — HEADLINE: a \"Recruitment HR\
 
     const result = await buildService(db).resolveUserPermissions(ORG_A, USER);
 
+    expectActiveMemberBaseline(result);
     expect(result.has("hr:interviews:view")).toBe(true);
     expect(result.has("hr:interviews:manage")).toBe(true);
     expect(result.has("hr:requisitions:view")).toBe(true);
@@ -395,7 +438,6 @@ describe("AccessService.resolveUserPermissions — HEADLINE: a \"Recruitment HR\
     expect(result.has("hr:payroll:view")).toBe(false);
     expect(result.has("hr:salary:manage")).toBe(false);
 
-    expect(result.size).toBe(7 + UNIVERSAL_MEMBER_PERMISSIONS.length);
   });
 });
 

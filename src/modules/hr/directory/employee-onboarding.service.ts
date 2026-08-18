@@ -27,7 +27,7 @@ import { PersonEmploymentSyncService } from "../core/person-employment-sync.serv
 import { encrypt, encryptBankDetails, type BankDetails } from "../onboarding/core/crypto.helpers";
 import { formatDateOnly } from "../../../common/date";
 import { seedEmployeeSalaryProfile } from "./salary-profile-seed.helper";
-import type { OnboardEmployeeInput, UpdateEmployeeInput } from "./dto/hr-directory.schemas";
+import type { OnboardEmployeeInput } from "./dto/hr-directory.schemas";
 import { ORG_MEMBER_ROLES } from "../../../common/rbac/org-roles";
 import { syncStructuralRoleAssignment } from "../../../common/rbac/sync-structural-role";
 import { assertMayGrantRole } from "../../../common/rbac/assert-may-grant-role";
@@ -38,7 +38,7 @@ import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 
-type BankDetailsInput = NonNullable<UpdateEmployeeInput["bankDetails"]> & {
+type BankDetailsInput = NonNullable<OnboardEmployeeInput["bankDetails"]> & {
   pfUanNumber?: string;
   esiIpNumber?: string;
 };
@@ -191,7 +191,7 @@ export class EmployeeOnboardingService {
         })
         .catch(() => undefined);
 
-      this.audit.log({
+      await this.audit.logCritical({
         action: "hr.employee_onboarded",
         userId: actor.userId,
         orgId: actor.orgId,
@@ -301,7 +301,7 @@ export class EmployeeOnboardingService {
       joiningDate: body.joiningDate ?? null,
     });
 
-    this.audit.log({
+    await this.audit.logCritical({
       action: "hr.employee_onboarded",
       userId: actor.userId,
       orgId: actor.orgId,

@@ -1,13 +1,21 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { and, count, desc, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
+  biometricDevices,
+  biometricLogs,
   hrTimeDevices,
   hrDeviceSyncLogs,
   hrDeviceEmployeeMappings,
-} from "../../../db/schema/hr/enterprise-comp";
+} from "../../../db/schema";
 import { HrAuditService } from "../core/hr-audit.service";
+import { legacyBiometricDeviceId } from "../device-compat/legacy-biometric-device-link";
 import type {
   CreateTimeDeviceInput,
   UpdateTimeDeviceInput,
@@ -58,6 +66,10 @@ export class DevicesService {
   async deleteDevice(orgId: string, deviceId: number, actorId: string) {
     const [existing] = await this.db.select().from(hrTimeDevices).where(and(eq(hrTimeDevices.id, deviceId), eq(hrTimeDevices.orgId, orgId))).limit(1);
     if (!existing) throw new NotFoundException("Device not found");
+    if (legacyBiometricDeviceId(existing.serialNumber) !== null)
+      throw new ConflictException(
+        "Linked biometric devices must be retired instead of deleted.",
+      );
     await this.db.delete(hrTimeDevices).where(and(eq(hrTimeDevices.id, deviceId), eq(hrTimeDevices.orgId, orgId)));
     await this.audit.log({ orgId, actorId, entityType: "hr_time_devices", entityId: String(deviceId), action: "deleted", before: existing });
   }
@@ -105,16 +117,49 @@ export class DevicesService {
   }
 
   async detectDuplicatePunches(orgId: string, deviceId: number) {
-    const rows = await this.db.execute(
-      sql`SELECT biometric_user_id, user_id, date_trunc('minute', punch_time) AS punch_window, count(*) AS cnt
-          FROM biometric_logs
-          WHERE org_id = ${orgId} AND device_id = ${deviceId}
-          GROUP BY biometric_user_id, user_id, punch_window
-          HAVING count(*) > 1
-          ORDER BY punch_window DESC
-          LIMIT 100`,
-    );
-    return rows;
+    const [device] = await this.db
+      .select({ serialNumber: hrTimeDevices.serialNumber })
+      .from(hrTimeDevices)
+      .where(and(eq(hrTimeDevices.id, deviceId), eq(hrTimeDevices.orgId, orgId)))
+      .limit(1);
+    if (!device) throw new NotFoundException("Device not found");
+
+    const legacyDeviceId = legacyBiometricDeviceId(device.serialNumber);
+    if (legacyDeviceId === null)
+      throw new ConflictException(
+        "Punch history is unavailable until this device is linked to its biometric source.",
+      );
+
+    const punchWindow = sql<string>`date_trunc('minute', ${biometricLogs.punchTime})`;
+    return this.db
+      .select({
+        biometricUserId: biometricLogs.biometricUserId,
+        userId: biometricLogs.userId,
+        punchWindow,
+        count: count(),
+      })
+      .from(biometricLogs)
+      .innerJoin(
+        biometricDevices,
+        and(
+          eq(biometricDevices.id, biometricLogs.deviceId),
+          eq(biometricDevices.orgId, orgId),
+        ),
+      )
+      .where(
+        and(
+          eq(biometricLogs.orgId, orgId),
+          eq(biometricLogs.deviceId, legacyDeviceId),
+        ),
+      )
+      .groupBy(
+        biometricLogs.biometricUserId,
+        biometricLogs.userId,
+        punchWindow,
+      )
+      .having(sql`count(*) > 1`)
+      .orderBy(desc(punchWindow))
+      .limit(100);
   }
 
   async createMapping(orgId: string, actorId: string, input: CreateDeviceMappingInput) {

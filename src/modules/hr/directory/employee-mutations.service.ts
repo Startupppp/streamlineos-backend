@@ -18,32 +18,16 @@ import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { HrAutomationEngineService } from "../automations/hr-automation-engine.service";
-import { encrypt, encryptBankDetails, type BankDetails } from "../onboarding/core/crypto.helpers";
 import { differenceInDays } from "../../../common/date";
-import { userCan } from "./ability.helpers";
 import type { UpdateEmployeeInput } from "./dto/hr-directory.schemas";
 import { hrEmployments, hrPeople } from "../../../db/schema/hr/core-people";
 import { assertUsersInOrg } from "../../../common/tenant/org-membership";
 import { syncOrgUnitPlacement } from "../../../common/org/sync-org-unit-placement";
 import { syncCanonicalEmploymentFields } from "../../../common/hr/sync-canonical-employment-fields";
-import { syncCanonicalSensitiveFields } from "../../../common/hr/sync-canonical-sensitive-fields";
-
-type BankDetailsInput = NonNullable<UpdateEmployeeInput["bankDetails"]> & {
-  pfUanNumber?: string;
-  esiIpNumber?: string;
-};
-
-function toBankDetails(input: BankDetailsInput): BankDetails {
-  return {
-    accountNumber: input.accountNumber ?? "",
-    bankName: input.bankName ?? "",
-    branch: input.branch ?? "",
-    ifsc: input.ifsc ?? "",
-    accountHolder: input.accountHolder ?? "",
-    ...(input.pfUanNumber !== undefined ? { pfUanNumber: input.pfUanNumber } : {}),
-    ...(input.esiIpNumber !== undefined ? { esiIpNumber: input.esiIpNumber } : {}),
-  };
-}
+import { applyScope } from "../../access/apply-scope";
+import { AccessService } from "../../access/access.service";
+import type { DataScope } from "../../access/access.types";
+import { resolveEmployeesManageScope } from "./employees-scope";
 
 @Injectable()
 export class EmployeeMutationsService {
@@ -52,11 +36,23 @@ export class EmployeeMutationsService {
     private readonly cache: CacheService,
     private readonly audit: AuditService,
     private readonly hrAutomation: HrAutomationEngineService,
+    private readonly access: AccessService,
   ) {}
 
-  async getEmployeeDetail(orgId: string, userId: string) {
+  async getEmployeeDetail(
+    orgId: string,
+    actorUserId: string,
+    targetUserId: string,
+    scope: DataScope,
+  ) {
     const member = await this.db.query.organizationMembers.findFirst({
-      where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)),
+      where: and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, targetUserId),
+        applyScope(scope, orgId, actorUserId, {
+          ownerColumn: organizationMembers.userId,
+        }),
+      ),
       columns: { userId: true, role: true },
       with: {
         user: {
@@ -73,7 +69,6 @@ export class EmployeeMutationsService {
             isActive: true,
             joiningDate: true,
             reportingTo: true,
-            monthlySalary: true,
             bio: true,
             linkedinUrl: true,
             twitterUrl: true,
@@ -91,7 +86,12 @@ export class EmployeeMutationsService {
     const skillRows = await this.db
       .select({ name: employeeSkills.skillName, level: employeeSkills.level })
       .from(employeeSkills)
-      .where(and(eq(employeeSkills.orgId, orgId), eq(employeeSkills.userId, userId)));
+      .where(
+        and(
+          eq(employeeSkills.orgId, orgId),
+          eq(employeeSkills.userId, targetUserId),
+        ),
+      );
 
     const [employment] = await this.db
       .select({
@@ -119,7 +119,7 @@ export class EmployeeMutationsService {
       .where(
         and(
           eq(hrPeople.orgId, orgId),
-          eq(hrPeople.userId, userId),
+          eq(hrPeople.userId, targetUserId),
           isNull(hrPeople.deletedAt),
         ),
       )
@@ -139,7 +139,6 @@ export class EmployeeMutationsService {
       isActive: u.isActive,
       joiningDate: employment?.joiningDate ?? u.joiningDate,
       reportingTo: u.reportingTo,
-      monthlySalary: u.monthlySalary,
       bio: u.bio ?? null,
       linkedinUrl: u.linkedinUrl ?? null,
       twitterUrl: u.twitterUrl ?? null,
@@ -165,15 +164,32 @@ export class EmployeeMutationsService {
   }
 
   async updateEmployee(actor: CurrentUserContext, targetUserId: string, body: UpdateEmployeeInput) {
-    const targetMember = await this.db.query.organizationMembers.findFirst({
-      where: and(eq(organizationMembers.userId, targetUserId), eq(organizationMembers.orgId, actor.orgId)),
-    });
-    if (!targetMember) throw new ForbiddenException("User not found in your organization.");
-
     const isSelf = actor.userId === targetUserId;
-    const isOwnerOrAdmin = userCan(actor, "manage", "hr:employees");
-    if (!isSelf && !isOwnerOrAdmin) {
-      throw new ForbiddenException("You can only update your own profile.");
+    const manageScope = await resolveEmployeesManageScope(this.access, actor);
+    if (!isSelf && manageScope === "none") {
+      throw new ForbiddenException("You do not have permission to update this employee.");
+    }
+
+    const effectiveScope: DataScope = isSelf && manageScope === "none" ? "own" : manageScope;
+    const targetMember = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.userId, targetUserId),
+        eq(organizationMembers.orgId, actor.orgId),
+        applyScope(effectiveScope, actor.orgId, actor.userId, {
+          ownerColumn: organizationMembers.userId,
+        }),
+      ),
+    });
+    if (!targetMember) {
+      throw new ForbiddenException("You do not have permission to update this employee.");
+    }
+
+    const currentUser = await this.db.query.users.findFirst({
+      where: eq(users.id, targetUserId),
+      columns: { firstName: true, lastName: true, name: true, joiningDate: true },
+    });
+    if (!currentUser) {
+      throw new BadRequestException("Employee record is unavailable.");
     }
 
     if (body.isActive === false) {
@@ -187,40 +203,43 @@ export class EmployeeMutationsService {
         throw new BadRequestException("An employee cannot report to themselves.");
       }
       await assertUsersInOrg(this.db, actor.orgId, [body.reportingTo]);
-      let cursor: string | null = body.reportingTo;
-      const visited = new Set<string>([targetUserId]);
-      while (cursor) {
-        if (visited.has(cursor)) {
-          throw new BadRequestException("This reporting structure would create a circular management chain.");
-        }
-        visited.add(cursor);
-        const mgr: { reportingTo: string | null } | undefined = await this.db.query.users.findFirst({
-          where: eq(users.id, cursor),
-          columns: { reportingTo: true },
-        });
-        cursor = mgr?.reportingTo ?? null;
+      const [cycle] = await this.db.execute<{ creates_cycle: boolean }>(sql`
+        WITH RECURSIVE manager_chain AS (
+          SELECT u.id, u.reporting_to, ARRAY[u.id]::text[] AS path
+          FROM users u
+          INNER JOIN organization_members om
+            ON om.user_id = u.id AND om.org_id = ${actor.orgId}
+          WHERE u.id = ${body.reportingTo}
+          UNION ALL
+          SELECT manager.id, manager.reporting_to, chain.path || manager.id
+          FROM users manager
+          INNER JOIN organization_members om
+            ON om.user_id = manager.id AND om.org_id = ${actor.orgId}
+          INNER JOIN manager_chain chain ON manager.id = chain.reporting_to
+          WHERE NOT manager.id = ANY(chain.path)
+            AND cardinality(chain.path) < 1000
+        )
+        SELECT EXISTS (
+          SELECT 1 FROM manager_chain WHERE id = ${targetUserId}
+        ) AS creates_cycle
+      `);
+      if (cycle?.creates_cycle) {
+        throw new BadRequestException(
+          "This reporting structure would create a circular management chain.",
+        );
       }
     }
 
     const updateData: Partial<typeof users.$inferInsert> = {};
     if (body.name !== undefined) updateData.name = body.name;
     if (body.firstName !== undefined || body.lastName !== undefined) {
-      const existing = await this.db.query.users.findFirst({
-        where: eq(users.id, targetUserId),
-        columns: { firstName: true, lastName: true, name: true },
-      });
-      const first = body.firstName ?? existing?.firstName ?? "";
-      const last = body.lastName ?? existing?.lastName ?? "";
+      const first = body.firstName ?? currentUser.firstName ?? "";
+      const last = body.lastName ?? currentUser.lastName ?? "";
       updateData.firstName = first;
       updateData.lastName = last;
       if (!body.name) updateData.name = `${first} ${last}`.trim();
     }
     if (body.gender !== undefined) updateData.gender = body.gender;
-    if (body.taxId !== undefined) updateData.taxId = body.taxId ? encrypt(body.taxId) : "";
-    if (body.monthlySalary !== undefined && isOwnerOrAdmin) updateData.monthlySalary = String(body.monthlySalary);
-    if (body.bankDetails !== undefined) {
-      updateData.bankDetails = body.bankDetails ? encryptBankDetails(toBankDetails(body.bankDetails)) : null;
-    }
     if (body.designation !== undefined) updateData.designation = body.designation;
     if (body.departmentId !== undefined) updateData.orgDepartmentId = body.departmentId;
     if (body.phone !== undefined) updateData.phone = body.phone;
@@ -235,7 +254,7 @@ export class EmployeeMutationsService {
     if (body.reportingTo !== undefined) updateData.reportingTo = body.reportingTo;
 
     let canonicalJoiningDateSynced: boolean | null = null;
-    let canonicalSensitiveSynced: boolean | null = null;
+    const oldJoiningDate = currentUser.joiningDate;
     await this.db.transaction(async (tx) => {
       if (Object.keys(updateData).length > 0) {
         await tx.update(users).set(updateData).where(eq(users.id, targetUserId));
@@ -247,17 +266,6 @@ export class EmployeeMutationsService {
           actor.orgId,
           targetUserId,
           { joiningDate: body.joiningDate },
-        );
-      }
-      if (body.taxId !== undefined || (body.monthlySalary !== undefined && isOwnerOrAdmin)) {
-        canonicalSensitiveSynced = await syncCanonicalSensitiveFields(
-          tx,
-          actor.orgId,
-          targetUserId,
-          {
-            taxId: body.taxId,
-            monthlySalary: isOwnerOrAdmin ? body.monthlySalary : undefined,
-          },
         );
       }
 
@@ -289,12 +297,8 @@ export class EmployeeMutationsService {
         }
       }
 
-      if (body.joiningDate && isOwnerOrAdmin) {
-        const currentUser = await tx.query.users.findFirst({
-          where: eq(users.id, targetUserId),
-          columns: { joiningDate: true },
-        });
-        const oldDate = currentUser?.joiningDate ? new Date(currentUser.joiningDate) : null;
+      if (body.joiningDate && manageScope !== "none") {
+        const oldDate = oldJoiningDate ? new Date(oldJoiningDate) : null;
         const newDate = new Date(body.joiningDate);
         if (oldDate && oldDate.getTime() !== newDate.getTime()) {
           const dayDiff = differenceInDays(newDate, oldDate);
@@ -312,7 +316,7 @@ export class EmployeeMutationsService {
       }
     });
 
-    this.audit.log({
+    await this.audit.logCritical({
       action: "hr.employee_updated",
       userId: actor.userId,
       orgId: actor.orgId,
@@ -321,7 +325,6 @@ export class EmployeeMutationsService {
       metadata: {
         changedFields: Object.keys(updateData),
         ...(canonicalJoiningDateSynced !== null && { canonicalJoiningDateSynced }),
-        ...(canonicalSensitiveSynced !== null && { canonicalSensitiveSynced }),
       },
     });
 

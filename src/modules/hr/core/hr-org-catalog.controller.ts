@@ -65,73 +65,14 @@ const createCatalogSchema = z.object({
 
 const updateCatalogSchema = createCatalogSchema.partial();
 
-const createLocationSchema = createCatalogSchema.extend({
-  type: z.string().optional(),
-  address: z
-    .object({
-      line1: z.string().optional(),
-      line2: z.string().optional(),
-      city: z.string().optional(),
-      state: z.string().optional(),
-      country: z.string().optional(),
-      postalCode: z.string().optional(),
-      timezone: z.string().optional(),
-    })
-    .optional(),
-});
-
-const updateLocationSchema = createLocationSchema.partial();
-
 type CreateCatalogInput = z.infer<typeof createCatalogSchema>;
 type UpdateCatalogInput = z.infer<typeof updateCatalogSchema>;
-type CreateLocationInput = z.infer<typeof createLocationSchema>;
-type UpdateLocationInput = z.infer<typeof updateLocationSchema>;
 
 @RequireModule("hr")
 @Controller("hr/org")
 @UseGuards(JwtAuthGuard)
 export class HrOrgCatalogController {
   constructor(private readonly catalog: HrOrgCatalogService) {}
-
-  @Get("locations")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("hr:employees:view")
-  listLocations(@CurrentUser() u: CurrentUserContext) {
-    return this.catalog.listLocations(u.orgId);
-  }
-
-  @Post("locations")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("hr:employees:manage")
-  @HttpCode(201)
-  createLocation(
-    @Body(new ZodValidationPipe(createLocationSchema)) body: CreateLocationInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.catalog.createLocation(u.orgId, body);
-  }
-
-  @Patch("locations/:locationId")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("hr:employees:manage")
-  updateLocation(
-    @Param("locationId") locationId: string,
-    @Body(new ZodValidationPipe(updateLocationSchema)) body: UpdateLocationInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.catalog.updateLocation(u.orgId, locationId, body);
-  }
-
-  @Delete("locations/:locationId")
-  @HttpCode(204)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("hr:employees:manage")
-  deleteLocation(
-    @Param("locationId") locationId: string,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.catalog.deleteLocation(u.orgId, locationId);
-  }
 
   @Get("roles")
   @UseGuards(PermissionGuard)
@@ -211,46 +152,6 @@ export class HrOrgCatalogController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.catalog.deleteJobLevel(u.orgId, levelId);
-  }
-
-  @Get("teams")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("hr:employees:view")
-  listTeams(@CurrentUser() u: CurrentUserContext) {
-    return this.catalog.listTeams(u.orgId);
-  }
-
-  @Post("teams")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("hr:employees:manage")
-  @HttpCode(201)
-  createTeam(
-    @Body(new ZodValidationPipe(createCatalogSchema)) body: CreateCatalogInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.catalog.createTeam(u.orgId, body);
-  }
-
-  @Patch("teams/:teamId")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("hr:employees:manage")
-  updateTeam(
-    @Param("teamId") teamId: string,
-    @Body(new ZodValidationPipe(updateCatalogSchema)) body: UpdateCatalogInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.catalog.updateTeam(u.orgId, teamId, body);
-  }
-
-  @Delete("teams/:teamId")
-  @HttpCode(204)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("hr:employees:manage")
-  deleteTeam(
-    @Param("teamId") teamId: string,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.catalog.deleteTeam(u.orgId, teamId);
   }
 
   @Get("headcount")

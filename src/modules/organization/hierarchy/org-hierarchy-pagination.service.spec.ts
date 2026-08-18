@@ -8,15 +8,18 @@ import { OrgHierarchyCostCentersService } from "./org-hierarchy-cost-centers.ser
 import { OrgHierarchyDepartmentsService } from "./org-hierarchy-departments.service";
 import { OrgHierarchyLocationsService } from "./org-hierarchy-locations.service";
 import { OrgHierarchyTeamsService } from "./org-hierarchy-teams.service";
+import { encodeOrgUnitCursor } from "./org-hierarchy-list-filters";
 
 const ORG_ID = "org-1";
 const UNIT_ID = "00000000-0000-0000-0000-000000000001";
 
 type PageResult = {
   data: unknown[];
-  total: number;
-  page: number;
-  limit: number;
+  pageInfo: {
+    limit: number;
+    hasMore: boolean;
+    nextCursor: string | null;
+  };
 };
 
 type ListFunction = (
@@ -48,11 +51,14 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   ];
 }
 
-function makePaginatedDb() {
+function makeCursorDb(rows?: Array<Record<string, unknown>>) {
   const row = {
     id: UNIT_ID,
     orgId: ORG_ID,
     parentId: null,
+    businessUnitName: null,
+    branchName: null,
+    departmentName: null,
     headUserId: null,
     name: "North",
     code: "NORTH",
@@ -63,29 +69,19 @@ function makePaginatedDb() {
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
     deletedAt: null,
   };
-  const offset = jest.fn().mockResolvedValue([row]);
-  const limit = jest.fn().mockReturnValue({ offset });
+  const limit = jest.fn().mockResolvedValue(rows ?? [row]);
   const orderBy = jest.fn().mockReturnValue({ limit });
   const rowWhere = jest.fn().mockReturnValue({ orderBy });
-  const countWhere = jest.fn().mockResolvedValue([{ count: 37 }]);
-  const rowFrom = jest.fn().mockReturnValue({ where: rowWhere });
-  const countFrom = jest.fn().mockReturnValue({ where: countWhere });
-  const select = jest
-    .fn()
-    .mockImplementation((selection: Record<string, unknown>) => ({
-      from: Object.prototype.hasOwnProperty.call(selection, "count")
-        ? countFrom
-        : rowFrom,
-    }));
+  const leftJoin = jest.fn().mockReturnValue({ where: rowWhere });
+  const rowFrom = jest.fn().mockReturnValue({ where: rowWhere, leftJoin });
+  const select = jest.fn().mockReturnValue({ from: rowFrom });
 
   return {
     db: { select } as unknown as Db,
     select,
     rowWhere,
-    countWhere,
     orderBy,
     limit,
-    offset,
   };
 }
 
@@ -147,29 +143,30 @@ const listCases: Array<{
   },
 ];
 
-describe("hierarchy list pagination", () => {
+describe("hierarchy cursor lists", () => {
   it.each(listCases)(
-    "$label applies server filters and deterministic offset pagination",
+    "$label applies server filters and bounded deterministic cursor pagination",
     async ({ kind, createList }) => {
       const {
         db,
         select,
         rowWhere,
-        countWhere,
         orderBy,
         limit,
-        offset,
-      } = makePaginatedDb();
+      } = makeCursorDb();
       const list = createList(db);
 
       const result = await list(ORG_ID, {
-        page: 3,
         limit: 10,
         search: "north",
         status: "ACTIVE",
       });
 
-      expect(result).toMatchObject({ total: 37, page: 3, limit: 10 });
+      expect(result.pageInfo).toEqual({
+        limit: 10,
+        hasMore: false,
+        nextCursor: null,
+      });
       expect(result.data).toEqual([
         expect.objectContaining({
           id: UNIT_ID,
@@ -178,12 +175,10 @@ describe("hierarchy list pagination", () => {
           status: "ACTIVE",
         }),
       ]);
-      expect(select).toHaveBeenCalledTimes(2);
+      expect(select).toHaveBeenCalledTimes(1);
       expect(orderBy).toHaveBeenCalledTimes(1);
       expect(orderBy.mock.calls[0]).toHaveLength(2);
-      expect(limit).toHaveBeenCalledWith(10);
-      expect(offset).toHaveBeenCalledWith(20);
-      expect(countWhere).toHaveBeenCalledWith(rowWhere.mock.calls[0]?.[0]);
+      expect(limit).toHaveBeenCalledWith(11);
 
       expect(sqlValues(rowWhere.mock.calls[0]?.[0])).toEqual(
         expect.arrayContaining([ORG_ID, kind, "%north%", "ACTIVE"]),
@@ -192,11 +187,10 @@ describe("hierarchy list pagination", () => {
   );
 
   it("treats CURRENT as the non-archived lifecycle view", async () => {
-    const { db, rowWhere } = makePaginatedDb();
+    const { db, rowWhere } = makeCursorDb();
     const service = new OrgHierarchyBusinessUnitsService(db, cache, audit);
 
     await service.listBusinessUnits(ORG_ID, {
-      page: 1,
       limit: 20,
       status: "CURRENT",
     });
@@ -204,5 +198,39 @@ describe("hierarchy list pagination", () => {
     const values = sqlValues(rowWhere.mock.calls[0]?.[0]);
     expect(values).toContain("ARCHIVED");
     expect(values).not.toContain("CURRENT");
+  });
+
+  it("applies an opaque cursor and emits the next cursor only when another row exists", async () => {
+    const rows = Array.from({ length: 3 }, (_, index) => ({
+      id: `00000000-0000-0000-0000-00000000000${index + 1}`,
+      orgId: ORG_ID,
+      parentId: null,
+      name: `Unit ${index + 1}`,
+      code: `UNIT_${index + 1}`,
+      description: null,
+      status: "ACTIVE" as const,
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+      deletedAt: null,
+    }));
+    const { db, rowWhere } = makeCursorDb(rows);
+    const service = new OrgHierarchyBusinessUnitsService(db, cache, audit);
+    const cursor = encodeOrgUnitCursor({ name: "Before", id: UNIT_ID });
+
+    const result = await service.listBusinessUnits(ORG_ID, {
+      cursor,
+      limit: 2,
+      status: "ACTIVE",
+    });
+
+    expect(result.data).toHaveLength(2);
+    expect(result.pageInfo).toEqual({
+      limit: 2,
+      hasMore: true,
+      nextCursor: encodeOrgUnitCursor(rows[1] as { name: string; id: string }),
+    });
+    expect(sqlValues(rowWhere.mock.calls[0]?.[0])).toEqual(
+      expect.arrayContaining(["before", UNIT_ID]),
+    );
   });
 });

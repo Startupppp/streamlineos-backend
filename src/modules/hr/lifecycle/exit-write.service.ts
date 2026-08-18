@@ -22,17 +22,16 @@ import { HrAutomationEngineService } from "../automations/hr-automation-engine.s
 import { ResignationJobsService } from "./resignation-jobs.service";
 import { ExitChecklistService } from "./exit-checklist.service";
 import { HrPolicyEvaluationService } from "../policies/hr-policy-evaluation.service";
-import { AssetsRecoveryService } from "../directory/assets-recovery.service";
-import { HrAuditService } from "../core/hr-audit.service";
-import { IdentityService } from "../enterprise-ops/identity/identity.service";
 import { AccessService } from "../../access/access.service";
 import { formatDdMmmYyyy } from "../../../common/date";
+import { ExitCompletionGuardService } from "./exit-completion-guard.service";
 import type {
   ResignationCreateInput,
   ResignationUpdateInput,
   ResignationFinalReviewInput,
   ResignationHrReviewInput,
 } from "./dto/hr-lifecycle.schemas";
+import { transitionResignation } from "./lifecycle-transition";
 
 export interface ExitActor {
   userId: string;
@@ -51,9 +50,7 @@ export class ExitWriteService {
     private readonly resignationJobs: ResignationJobsService,
     private readonly exitChecklist: ExitChecklistService,
     private readonly policyEval: HrPolicyEvaluationService,
-    private readonly assetsRecovery: AssetsRecoveryService,
-    private readonly hrAudit: HrAuditService,
-    private readonly identity: IdentityService,
+    private readonly completionGuard: ExitCompletionGuardService,
     private readonly access: AccessService,
   ) {}
 
@@ -113,16 +110,18 @@ export class ExitWriteService {
       if (existing.status !== "PENDING_HR" && existing.status !== "SUBMITTED") {
         throw new BadRequestException("Resignation is not pending HR review.");
       }
-      await this.db
-        .update(resignations)
-        .set({
+      await transitionResignation(this.db, {
+        organizationId: orgId,
+        resignationId,
+        currentStatus: existing.status,
+        currentVersion: existing.rowVersion,
+        changes: {
           status: "HR_APPROVED",
           hrReviewedBy: actor.userId,
           hrReviewedAt: new Date(),
           hrRemarks: input.remarks || null,
-          updatedAt: new Date(),
-        })
-        .where(eq(resignations.id, resignationId));
+        },
+      });
       this.resignationJobs.notifyHrApproved(orgId, existing.userId);
       return { success: true };
     }
@@ -133,18 +132,20 @@ export class ExitWriteService {
         throw new BadRequestException("Resignation must be HR-approved first.");
       }
       await this.db.transaction(async (tx) => {
-        await tx
-          .update(resignations)
-          .set({
+        await transitionResignation(tx, {
+          organizationId: orgId,
+          resignationId,
+          currentStatus: existing.status,
+          currentVersion: existing.rowVersion,
+          changes: {
             status: "FINAL_APPROVED",
             finalReviewedBy: actor.userId,
             finalReviewedAt: new Date(),
             finalRemarks: input.remarks || null,
             approvedBy: actor.userId,
             approvedAt: new Date(),
-            updatedAt: new Date(),
-          })
-          .where(eq(resignations.id, resignationId));
+          },
+        });
 
         await tx
           .insert(fnfSettlements)
@@ -170,10 +171,13 @@ export class ExitWriteService {
       const reviewFields = actor.isApprover
         ? { hrReviewedBy: actor.userId, hrReviewedAt: new Date(), hrRemarks: input.remarks }
         : { finalReviewedBy: actor.userId, finalReviewedAt: new Date(), finalRemarks: input.remarks };
-      await this.db
-        .update(resignations)
-        .set({ status: "REJECTED", updatedAt: new Date(), ...reviewFields })
-        .where(eq(resignations.id, resignationId));
+      await transitionResignation(this.db, {
+        organizationId: orgId,
+        resignationId,
+        currentStatus: existing.status,
+        currentVersion: existing.rowVersion,
+        changes: { status: "REJECTED", ...reviewFields },
+      });
       return { success: true };
     }
 
@@ -182,89 +186,65 @@ export class ExitWriteService {
       if (existing.status === "FINAL_APPROVED" || existing.status === "COMPLETED" || existing.status === "IN_PROGRESS") {
         throw new BadRequestException("Cannot withdraw after FINAL approval.");
       }
-      await this.db
-        .update(resignations)
-        .set({ status: "WITHDRAWN", updatedAt: new Date() })
-        .where(eq(resignations.id, resignationId));
+      await transitionResignation(this.db, {
+        organizationId: orgId,
+        resignationId,
+        currentStatus: existing.status,
+        currentVersion: existing.rowVersion,
+        changes: { status: "WITHDRAWN" },
+      });
       return { success: true };
     }
 
     if (input.status === "COMPLETED") {
       if (!actor.isApprover) throw new ForbiddenException("Only admins can complete.");
-      const hasPendingRecovery = await this.assetsRecovery
-        .hasPendingRecovery(orgId, existing.userId)
-        .catch(() => false);
-      if (hasPendingRecovery) {
-        if (!input.overrideAssetGate) {
-          throw new BadRequestException(
-            "Asset recovery is pending for this employee. Recover all assigned assets or complete with an override reason.",
-          );
-        }
-        if (!input.overrideReason) {
-          throw new BadRequestException("An override reason is required to bypass pending asset recovery.");
-        }
-        await this.hrAudit.log({
-          orgId,
-          actorId: actor.userId,
-          entityType: "resignations",
-          entityId: String(resignationId),
-          action: "asset_gate_overridden",
-          after: { reason: input.overrideReason },
-        });
-      }
-      const hasUnverifiedRevokes = await this.identity
-        .hasUnverifiedRevokes(orgId, existing.userId)
-        .catch(() => false);
-      if (hasUnverifiedRevokes) {
-        if (!input.overrideAssetGate) {
-          throw new BadRequestException(
-            "Access removal is not verified for this employee. Verify all revocations or complete with an override reason.",
-          );
-        }
-        if (!input.overrideReason) {
-          throw new BadRequestException("An override reason is required to bypass unverified access removal.");
-        }
-        await this.hrAudit.log({
-          orgId,
-          actorId: actor.userId,
-          entityType: "resignations",
-          entityId: String(resignationId),
-          action: "access_gate_overridden",
-          after: { reason: input.overrideReason },
-        });
-      }
-      await this.db
-        .update(resignations)
-        .set({ status: "COMPLETED", updatedAt: new Date() })
-        .where(eq(resignations.id, resignationId));
+      await this.completionGuard.assertReady({
+        orgId,
+        actorUserId: actor.userId,
+        resignationId,
+        employeeUserId: existing.userId,
+        overrideRequested: input.overrideAssetGate === true,
+        overrideReason: input.overrideReason,
+      });
+      await transitionResignation(this.db, {
+        organizationId: orgId,
+        resignationId,
+        currentStatus: existing.status,
+        currentVersion: existing.rowVersion,
+        changes: { status: "COMPLETED" },
+      });
 
       this.dispatchExitCompleted(orgId, resignationId, existing.userId);
       return { success: true };
     }
 
-    await this.db
-      .update(resignations)
-      .set({
-        ...(input.exitInterviewNotes && { exitInterviewNotes: input.exitInterviewNotes }),
-        ...(input.exitInterviewDate && {
-          exitInterviewDate: new Date(input.exitInterviewDate),
-          exitInterviewConductedBy: actor.userId,
-        }),
-        ...(input.feedback && { feedback: input.feedback }),
-        updatedAt: new Date(),
-      })
-      .where(eq(resignations.id, resignationId));
+    await this.db.transaction(async (tx) => {
+      await transitionResignation(tx, {
+        organizationId: orgId,
+        resignationId,
+        currentStatus: existing.status,
+        currentVersion: existing.rowVersion,
+        changes: {
+          ...(input.exitInterviewNotes && { exitInterviewNotes: input.exitInterviewNotes }),
+          ...(input.exitInterviewDate && {
+            exitInterviewDate: new Date(input.exitInterviewDate),
+            exitInterviewConductedBy: actor.userId,
+          }),
+          ...(input.feedback && { feedback: input.feedback }),
+        },
+      });
 
-    if (input.checklistItems?.length) {
-      await this.db.insert(exitChecklists).values(
-        input.checklistItems.map((item) => ({
-          orgId,
-          resignationId,
-          item,
-          status: "PENDING" as const,
-        })),
-      );
-    }
+      if (input.checklistItems?.length) {
+        await tx.insert(exitChecklists).values(
+          input.checklistItems.map((item) => ({
+            orgId,
+            resignationId,
+            item,
+            status: "PENDING" as const,
+          })),
+        );
+      }
+    });
 
     return { success: true };
   }
@@ -284,16 +264,18 @@ export class ExitWriteService {
 
     const approved = input.decision === "approve";
 
-    await this.db
-      .update(resignations)
-      .set({
+    await transitionResignation(this.db, {
+      organizationId: orgId,
+      resignationId,
+      currentStatus: record.status,
+      currentVersion: record.rowVersion,
+      changes: {
         status: approved ? "HR_APPROVED" : "REJECTED",
         hrReviewedBy: actorUserId,
         hrReviewedAt: new Date(),
         hrRemarks: input.remarks ?? null,
-        updatedAt: new Date(),
-      })
-      .where(eq(resignations.id, resignationId));
+      },
+    });
 
     if (approved) this.resignationJobs.notifyHrApproved(orgId, record.userId);
 
@@ -314,16 +296,18 @@ export class ExitWriteService {
     const approved = input.decision === "approve";
 
     await this.db.transaction(async (tx) => {
-      await tx
-        .update(resignations)
-        .set({
+      await transitionResignation(tx, {
+        organizationId: orgId,
+        resignationId,
+        currentStatus: record.status,
+        currentVersion: record.rowVersion,
+        changes: {
           status: approved ? "FINAL_APPROVED" : "REJECTED",
           finalReviewedBy: actorUserId,
           finalReviewedAt: new Date(),
           finalRemarks: input.remarks,
-          updatedAt: new Date(),
-        })
-        .where(eq(resignations.id, resignationId));
+        },
+      });
 
       if (approved) {
         await tx

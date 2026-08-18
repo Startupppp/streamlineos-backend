@@ -1,12 +1,5 @@
-import {
-  ConflictException,
-  ForbiddenException,
-  Inject,
-  Injectable,
-  InternalServerErrorException,
-  Optional,  NotFoundException,
-} from "@nestjs/common";
-import { and, asc, count, desc, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm";
+import { ForbiddenException, Inject, Injectable, Optional } from "@nestjs/common";
+import { and, count, desc, eq, gte, inArray, lt, lte, sql, type SQL } from "drizzle-orm";
 import {
   leaveBalances,
   leaveRequests,
@@ -15,7 +8,6 @@ import {
   orgUnits,
   organizationMembers,
   users,
-  leavePolicies,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -23,18 +15,9 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import type { CompOffInput } from "./dto/leaves.schemas";
 import { resolveLeavesViewScope } from "./leaves-scope";
-import { HrPolicyEvaluationService } from "../policies/hr-policy-evaluation.service";
 import { LeaveLedgerService } from "./leave-ledger.service";
 
-import { DEFAULT_COMP_OFF_MAX_ACCRUAL } from "../policies/hr-policy-defaults.constants";
-import {
-  DEFAULT_LEAVE_TYPES,
-  provisionEmployeeSelfService,
-} from "../../../common/org/provision-employee-self-service";
-
-const COMP_OFF_LEAVE_TYPE_NAME = "Compensatory Off";
 const TEAM_LEAVES_CAP = 500;
 
 const TEAM_RELATIONS = {
@@ -66,7 +49,6 @@ export class LeavesService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly access: AccessService,
-    @Optional() private readonly policyEval: HrPolicyEvaluationService,
     @Optional() private readonly ledger: LeaveLedgerService,
   ) {}
 
@@ -81,30 +63,35 @@ export class LeavesService {
     });
   }
 
-  async my(orgId: string, userId: string) {
-    const [requests, balances] = await Promise.all([
-      this.db.query.leaveRequests.findMany({
-        where: and(eq(leaveRequests.userId, userId), eq(leaveRequests.orgId, orgId)),
-        with: {
-          leaveType: { columns: { id: true, name: true, daysPerYear: true } },
-          approver: { columns: { id: true, name: true, firstName: true, lastName: true } },
-        },
-        orderBy: [desc(leaveRequests.createdAt)],
-        limit: 200,
-      }),
-      this.db.query.leaveBalances.findMany({
-        where: and(
-          eq(leaveBalances.userId, userId),
-          eq(leaveBalances.orgId, orgId),
-          eq(leaveBalances.year, new Date().getFullYear()),
-        ),
-        with: {
-          leaveType: { columns: { id: true, name: true, daysPerYear: true } },
-        },
-      }),
-    ]);
+  async my(
+    orgId: string,
+    userId: string,
+    query: { cursor?: number; limit: number },
+  ) {
+    const rows = await this.db.query.leaveRequests.findMany({
+      where: and(
+        eq(leaveRequests.userId, userId),
+        eq(leaveRequests.orgId, orgId),
+        query.cursor ? lt(leaveRequests.id, query.cursor) : undefined,
+      ),
+      with: {
+        leaveType: { columns: { id: true, name: true, daysPerYear: true } },
+        approver: { columns: { id: true, name: true, firstName: true, lastName: true } },
+      },
+      orderBy: [desc(leaveRequests.id)],
+      limit: query.limit + 1,
+    });
+    const hasMore = rows.length > query.limit;
+    const data = hasMore ? rows.slice(0, query.limit) : rows;
 
-    return { requests, balances };
+    return {
+      data,
+      pageInfo: {
+        limit: query.limit,
+        hasMore,
+        nextCursor: hasMore ? (data.at(-1)?.id ?? null) : null,
+      },
+    };
   }
 
   async team(u: CurrentUserContext) {
@@ -425,196 +412,4 @@ export class LeavesService {
     return this.ledger.buildLeaveSummary(orgId, periodStart, periodEnd);
   }
 
-  async listLeaveTypes(orgId: string) {
-    return this.db.query.leaveTypes.findMany({
-      where: eq(leaveTypes.orgId, orgId),
-      orderBy: [asc(leaveTypes.name)],
-    });
-  }
-
-  async seedDefaultLeaveTypes(orgId: string) {
-    const seeded = await this.db.transaction((tx) =>
-      provisionEmployeeSelfService(tx, orgId),
-    );
-    return { seeded, skipped: DEFAULT_LEAVE_TYPES.length - seeded };
-  }
-
-  async updateLeaveType(
-    orgId: string,
-    leaveTypeId: number,
-    patch: { name?: string; daysPerYear?: number; carryForward?: boolean },
-  ) {
-    if (patch.name) {
-      const clash = await this.db.query.leaveTypes.findFirst({
-        where: and(eq(leaveTypes.orgId, orgId), eq(leaveTypes.name, patch.name.trim())),
-        columns: { id: true },
-      });
-      if (clash && clash.id !== leaveTypeId) {
-        throw new ConflictException("A leave type with this name already exists");
-      }
-    }
-    const [updated] = await this.db
-      .update(leaveTypes)
-      .set({
-        ...(patch.name !== undefined ? { name: patch.name.trim() } : {}),
-        ...(patch.daysPerYear !== undefined ? { daysPerYear: patch.daysPerYear } : {}),
-        ...(patch.carryForward !== undefined ? { carryForward: patch.carryForward } : {}),
-      })
-      .where(and(eq(leaveTypes.id, leaveTypeId), eq(leaveTypes.orgId, orgId)))
-      .returning();
-    if (!updated) throw new NotFoundException("Leave type not found");
-    return updated;
-  }
-
-  async deleteLeaveType(orgId: string, leaveTypeId: number) {
-    const [type] = await this.db
-      .select({ id: leaveTypes.id })
-      .from(leaveTypes)
-      .where(and(eq(leaveTypes.id, leaveTypeId), eq(leaveTypes.orgId, orgId)))
-      .limit(1);
-    if (!type) throw new NotFoundException("Leave type not found");
-
-    const request = await this.db.query.leaveRequests.findFirst({
-      where: and(eq(leaveRequests.orgId, orgId), eq(leaveRequests.leaveTypeId, leaveTypeId)),
-      columns: { id: true },
-    });
-    if (request) {
-      throw new ConflictException(
-        "This leave type has leave requests and cannot be deleted. Edit it instead.",
-      );
-    }
-
-    const policy = await this.db.query.leavePolicies.findFirst({
-      where: and(eq(leavePolicies.orgId, orgId), eq(leavePolicies.leaveTypeId, leaveTypeId)),
-      columns: { id: true },
-    });
-    if (policy) {
-      throw new ConflictException(
-        "This leave type has policies attached. Delete or reassign the policies first.",
-      );
-    }
-
-    await this.db
-      .delete(leaveTypes)
-      .where(and(eq(leaveTypes.id, leaveTypeId), eq(leaveTypes.orgId, orgId)));
-    return { success: true };
-  }
-
-  async createLeaveType(
-    orgId: string,
-    input: { name: string; daysPerYear: number; carryForward?: boolean },
-  ) {
-    const existing = await this.db.query.leaveTypes.findFirst({
-      where: and(eq(leaveTypes.orgId, orgId), eq(leaveTypes.name, input.name.trim())),
-      columns: { id: true },
-    });
-    if (existing) {
-      throw new ConflictException("A leave type with this name already exists");
-    }
-    const [created] = await this.db
-      .insert(leaveTypes)
-      .values({
-        orgId,
-        name: input.name.trim(),
-        daysPerYear: input.daysPerYear,
-        carryForward: input.carryForward ?? false,
-      })
-      .returning();
-    return created;
-  }
-
-  async compOff(u: CurrentUserContext, input: CompOffInput) {
-    const scope = await resolveLeavesViewScope(this.access, u);
-    if (scope === "none") throw new ForbiddenException("Not authorized to grant comp-off");
-
-    const maxAccrual = await this.resolveCompOffMaxAccrual(u.orgId, input.userId);
-
-    let compOffType = await this.db.query.leaveTypes.findFirst({
-      where: and(
-        eq(leaveTypes.orgId, u.orgId),
-        eq(leaveTypes.name, COMP_OFF_LEAVE_TYPE_NAME),
-      ),
-    });
-
-    if (!compOffType) {
-      const [created] = await this.db
-        .insert(leaveTypes)
-        .values({
-          orgId: u.orgId,
-          name: COMP_OFF_LEAVE_TYPE_NAME,
-          daysPerYear: maxAccrual,
-          carryForward: false,
-        })
-        .returning();
-      compOffType = created;
-    }
-
-    if (!compOffType) {
-      throw new InternalServerErrorException("Failed to find/create comp-off leave type");
-    }
-
-    const existing = await this.db.query.leaveBalances.findFirst({
-      where: and(
-        eq(leaveBalances.userId, input.userId),
-        eq(leaveBalances.leaveTypeId, compOffType.id),
-        eq(leaveBalances.orgId, u.orgId),
-      ),
-    });
-
-    await this.db.transaction(async (tx) => {
-      if (existing) {
-        const newBalance = Number(existing.balance ?? 0) + input.days;
-        await tx
-          .update(leaveBalances)
-          .set({ balance: String(newBalance) })
-          .where(eq(leaveBalances.id, existing.id));
-      } else {
-        await tx.insert(leaveBalances).values({
-          orgId: u.orgId,
-          userId: input.userId,
-          leaveTypeId: compOffType!.id,
-          balance: String(input.days),
-          year: new Date().getFullYear(),
-        });
-      }
-
-      if (this.ledger) {
-        await this.ledger.write(
-          {
-            orgId: u.orgId,
-            userId: input.userId,
-            leaveTypeId: compOffType!.id,
-            txnType: "comp_off_earn",
-            days: input.days,
-            effectiveDate: new Date().toISOString().slice(0, 10),
-            source: "manual",
-            note: "Comp-off granted by manager",
-            createdBy: u.userId,
-          },
-          tx,
-        );
-      }
-    });
-
-    return { success: true, credited: input.days, leaveTypeId: compOffType.id };
-  }
-
-  private async resolveCompOffMaxAccrual(orgId: string, userId: string): Promise<number> {
-    if (!this.policyEval) return DEFAULT_COMP_OFF_MAX_ACCRUAL;
-    try {
-      const result = await this.policyEval.evaluatePolicy(
-        orgId,
-        userId,
-        "comp_off",
-        new Date().toISOString().slice(0, 10),
-      );
-      if (!result) return DEFAULT_COMP_OFF_MAX_ACCRUAL;
-      const rules = result.rules as Record<string, unknown>;
-      const maxAccrual =
-        typeof rules["maxAccrual"] === "number" ? rules["maxAccrual"] : null;
-      return maxAccrual ?? DEFAULT_COMP_OFF_MAX_ACCRUAL;
-    } catch {
-      return DEFAULT_COMP_OFF_MAX_ACCRUAL;
-    }
-  }
 }

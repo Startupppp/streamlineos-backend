@@ -1,6 +1,7 @@
 import { Global, Module } from "@nestjs/common";
 import { Redis } from "@upstash/redis";
 import { CacheService, REDIS } from "./cache.service";
+import { OrgHierarchyCacheService } from "./org-hierarchy-cache.service";
 
 @Global()
 @Module({
@@ -14,7 +15,8 @@ import { CacheService, REDIS } from "./cache.service";
       },
     },
     CacheService,
+    OrgHierarchyCacheService,
   ],
-  exports: [CacheService, REDIS],
+  exports: [CacheService, OrgHierarchyCacheService, REDIS],
 })
 export class CacheModule {}

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ATTENDANCE_RECORD_STATUSES } from "../../../../db/schema/hr/attendance-status";
 import type { HrImportEntity } from "../dto/import-job.dto";
 
 const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
@@ -53,7 +54,7 @@ export const attendanceRowSchema = z
     date: z.string().refine((v) => dateRegex.test(v), { message: "Invalid date (YYYY-MM-DD)" }),
     checkIn: z.string().optional(),
     checkOut: z.string().optional(),
-    status: z.string().optional(),
+    status: z.enum(ATTENDANCE_RECORD_STATUSES).optional(),
   })
   .refine(
     (data) => {

@@ -33,10 +33,33 @@ describe("RateLimitService (in-memory fallback, no redis)", () => {
     expect((await instance.check("api-key-ingest", "b")).allowed).toBe(true);
   });
 
-  // SEC-004. This previously asserted the opposite — that an unknown tier allows
-  // everything — which is what let hr-form:public-view, hr-form:public-submit and
-  // platform-visit run unlimited while appearing protected. An unregistered tier is
-  // a bug, and denying is the only failure mode that is visible.
+  it("limits attendance report delivery requests to five per hour", async () => {
+    const instance = svc();
+    const results = await Promise.all(
+      Array.from({ length: 6 }, () =>
+        instance.check("hr:attendance-report", "manager-1"),
+      ),
+    );
+    expect(results.slice(0, 5).every((result) => result.allowed)).toBe(true);
+    expect(results[5]?.allowed).toBe(false);
+  });
+
+  it.each([
+    ["hr:employee-backfill", 3],
+    ["hr:employee-bulk-onboard", 10],
+    ["hr:effective-changes-apply", 10],
+    ["hr:onboarding-reminders", 3],
+  ])("enforces the %s command tier", async (tier, limit) => {
+    const instance = svc();
+    const results = await Promise.all(
+      Array.from({ length: limit + 1 }, () => instance.check(tier, "admin-1")),
+    );
+
+    expect(results.slice(0, limit).every((result) => result.allowed)).toBe(true);
+    expect(results[limit]?.allowed).toBe(false);
+  });
+
+  // SEC-004: an unregistered tier must fail closed rather than bypassing limits.
   it("denies an unknown tier rather than failing open", async () => {
     const instance = svc();
     const result = await instance.check("unknown-tier", "x");

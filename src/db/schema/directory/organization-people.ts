@@ -8,6 +8,8 @@ import {
   index,
   unique,
   uniqueIndex,
+  foreignKey,
+  check,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
@@ -58,6 +60,10 @@ export const organizationPeople = pgTable(
     linkedinUrl: text("linkedin_url"),
     githubUrl: text("github_url"),
     bio: text("bio"),
+    rowVersion: integer("row_version").default(1).notNull(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    archivedByMembershipId: integer("archived_by_membership_id"),
+    updatedByMembershipId: integer("updated_by_membership_id"),
     deletedAt: timestamp("deleted_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
@@ -79,8 +85,37 @@ export const organizationPeople = pgTable(
     uniqueIndex("uniq_org_people_org_work_email")
       .on(table.organizationId, table.workEmail)
       .where(sql`work_email IS NOT NULL`),
+    uniqueIndex("uniq_org_people_active_work_email_ci")
+      .on(table.organizationId, sql`lower(${table.workEmail})`)
+      .where(
+        sql`${table.workEmail} IS NOT NULL AND ${table.archivedAt} IS NULL AND ${table.deletedAt} IS NULL`,
+      ),
     index("idx_org_people_org").on(table.organizationId),
     index("idx_org_people_user").on(table.userId),
     index("idx_org_people_membership").on(table.organizationMembershipId),
+    index("idx_org_people_updated_actor").on(
+      table.organizationId,
+      table.updatedByMembershipId,
+    ),
+    index("idx_org_people_archived_actor").on(
+      table.organizationId,
+      table.archivedByMembershipId,
+    ),
+    foreignKey({
+      columns: [table.organizationId, table.organizationMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_org_people_org_membership",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.organizationId, table.updatedByMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_org_people_updated_actor",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.organizationId, table.archivedByMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_org_people_archived_actor",
+    }).onDelete("restrict"),
+    check("chk_org_people_row_version", sql`${table.rowVersion} > 0`),
   ],
 );

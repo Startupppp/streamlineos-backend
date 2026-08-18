@@ -5,6 +5,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CreateSubmissionInput, UpdateSubmissionInput } from "./dto/forms.schemas";
+import { allocateTicketNumbers } from "../core/lib/allocate-ticket-number";
 
 type FormRow = typeof projectForms.$inferSelect;
 type SubmissionRow = typeof formSubmissions.$inferSelect;
@@ -78,11 +79,7 @@ export class SubmissionsService {
           skippedActionTypes.push(action.type);
           continue;
         }
-        const [maxRow] = await tx
-          .select({ maxNum: sql<number>`COALESCE(MAX(${tickets.ticketNumber}), 0)` })
-          .from(tickets)
-          .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)));
-        const nextNumber = (maxRow?.maxNum ?? 0) + 1;
+        const nextNumber = await allocateTicketNumbers(tx, orgId, projectId);
         const config = action.config ?? {};
         const titleFieldKey = typeof config["titleField"] === "string" ? config["titleField"] : undefined;
         const rawTitle = titleFieldKey !== undefined ? input.values[titleFieldKey] : undefined;

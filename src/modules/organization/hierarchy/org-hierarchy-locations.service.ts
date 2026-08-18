@@ -15,7 +15,12 @@ import type {
   ListQueryInput,
   UpdateOrgLocationInput,
 } from "./dto/org-hierarchy.schemas";
-import { getOrgUnitStatusFilter } from "./org-hierarchy-list-filters";
+import {
+  getOrgUnitCursorFilter,
+  getOrgUnitStatusFilter,
+  orgUnitNormalizedName,
+  toOrgUnitCursorPage,
+} from "./org-hierarchy-list-filters";
 
 const ORG_LOCATION_COLUMNS = {
   id: orgUnits.id,
@@ -67,9 +72,9 @@ export class OrgHierarchyLocationsService {
   ) {}
 
   async listLocations(orgId: string, query: ListQueryInput) {
-    const { page, limit, search, status } = query;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, search, status } = query;
     const statusFilter = getOrgUnitStatusFilter(status);
+    const cursorFilter = getOrgUnitCursorFilter(cursor);
     const filters = and(
       eq(orgUnits.orgId, orgId),
       eq(orgUnits.kind, "LOCATION"),
@@ -84,21 +89,15 @@ export class OrgHierarchyLocationsService {
           ]
         : []),
       ...(statusFilter ? [statusFilter] : []),
+      ...(cursorFilter ? [cursorFilter] : []),
     );
-    const [rows, [{ count }]] = await Promise.all([
-      this.db
-        .select(ORG_LOCATION_COLUMNS)
-        .from(orgUnits)
-        .where(filters)
-        .orderBy(asc(orgUnits.name), asc(orgUnits.id))
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(orgUnits)
-        .where(filters),
-    ]);
-    return { data: rows.map(toOrgLocation), total: count, page, limit };
+    const rows = await this.db
+      .select(ORG_LOCATION_COLUMNS)
+      .from(orgUnits)
+      .where(filters)
+      .orderBy(asc(orgUnitNormalizedName), asc(orgUnits.id))
+      .limit(limit + 1);
+    return toOrgUnitCursorPage(rows, limit, toOrgLocation);
   }
 
   private async getLocationRow(
@@ -156,7 +155,7 @@ export class OrgHierarchyLocationsService {
     if (!row) throw new Error("Failed to create location");
 
     await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "LOCATION"));
-    await this.audit.log({
+    await this.audit.logCritical({
       userId,
       orgId,
       targetId: row.id,
@@ -212,7 +211,7 @@ export class OrgHierarchyLocationsService {
     if (!row) throw new NotFoundException("Location not found");
 
     await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "LOCATION"));
-    await this.audit.log({
+    await this.audit.logCritical({
       action: "org.location.updated",
       userId,
       orgId,
@@ -239,7 +238,7 @@ export class OrgHierarchyLocationsService {
       );
 
     await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "LOCATION"));
-    await this.audit.log({
+    await this.audit.logCritical({
       action: "org.location.deleted",
       userId,
       orgId,

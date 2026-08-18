@@ -1,30 +1,78 @@
-import {
-  ForbiddenException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from "@nestjs/common";
-import { and, count, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { SQL, and, count, desc, eq, gte, lte, or, sql } from "drizzle-orm";
 import { certifications, documents, organizationMembers } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
 import { AuditService } from "../../../common/audit/audit.service";
-import { DOCUMENT_TYPES, type DocumentType } from "./dto/documents.schemas";
+import { resolveCompatibleList } from "../../../common/db/expand-contract-compat";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import type {
   CreateDocumentInput,
   ListDocumentsInput,
   UpdateDocumentInput,
 } from "./dto/documents.schemas";
-
-function isDocumentType(value: string): value is DocumentType {
-  return (DOCUMENT_TYPES as readonly string[]).includes(value);
-}
+import {
+  decodeDocumentListCursor,
+  encodeDocumentListCursor,
+} from "./document-list-cursor";
+import { loadDocumentTags, syncDocumentTags } from "./document-tag-compat";
 
 function formatDateString(value: Date): string {
   return value.toISOString().split("T")[0];
 }
+
+function documentCategoryCondition(category: string): SQL {
+  switch (category) {
+    case "Contracts":
+      return sql`${documents.type} IN ('CONTRACT', 'OFFER_LETTER')`;
+    case "Policies":
+      return eq(documents.type, "POLICY");
+    case "Tax Forms":
+      return sql`(
+        ${documents.type} = 'ID_PROOF'
+        OR array_to_string(${documents.tags}, ' ') ILIKE '%tax%'
+      )`;
+    case "Templates":
+      return sql`array_to_string(${documents.tags}, ' ') ILIKE '%template%'`;
+    case "Payroll":
+      return eq(documents.type, "PAYSLIP");
+    case "Archives":
+      return eq(documents.type, "OTHER");
+    default:
+      return sql`(
+        ${documents.category} = ${category}
+        OR ${category} = ANY(${documents.tags})
+      )`;
+  }
+}
+
+const documentListSelection = {
+  id: documents.id,
+  orgId: documents.orgId,
+  userId: documents.userId,
+  departmentId: documents.departmentId,
+  name: documents.name,
+  description: documents.description,
+  type: documents.type,
+  category: documents.category,
+  hasFile: sql<boolean>`${documents.fileUrl} <> ''`,
+  fileName: documents.fileName,
+  fileSize: documents.fileSize,
+  mimeType: documents.mimeType,
+  version: documents.version,
+  parentDocumentId: documents.parentDocumentId,
+  isPublic: documents.isPublic,
+  isActive: documents.isActive,
+  expiryDate: documents.expiryDate,
+  expiryReminderSent: documents.expiryReminderSent,
+  tags: documents.tags,
+  metadata: documents.metadata,
+  uploadedBy: documents.uploadedBy,
+  createdAt: documents.createdAt,
+  updatedAt: documents.updatedAt,
+};
 
 @Injectable()
 export class DocumentsService {
@@ -34,54 +82,129 @@ export class DocumentsService {
   ) {}
 
   async listDocuments(orgId: string, userId: string, scope: DataScope, filters: ListDocumentsInput) {
-    const conditions = [eq(documents.orgId, orgId), eq(documents.isActive, true)];
+    const conditions: SQL[] = [
+      eq(documents.orgId, orgId),
+      eq(documents.isActive, true),
+    ];
     conditions.push(applyScope(scope, orgId, userId, { ownerColumn: documents.userId }));
     if (filters.userId && scope === "all") {
       conditions.push(eq(documents.userId, filters.userId));
     }
-    if (filters.type && isDocumentType(filters.type)) {
+    if (filters.type) {
       conditions.push(eq(documents.type, filters.type));
+    }
+    if (filters.search) {
+      const search = `%${filters.search}%`;
+      conditions.push(
+        sql`(
+          ${documents.name} ILIKE ${search}
+          OR ${documents.description} ILIKE ${search}
+          OR ${documents.category} ILIKE ${search}
+          OR array_to_string(${documents.tags}, ' ') ILIKE ${search}
+        )`,
+      );
+    }
+    if (filters.category && filters.category !== "All Files") {
+      conditions.push(documentCategoryCondition(filters.category));
+    }
+    const cursor = filters.cursor
+      ? decodeDocumentListCursor(filters.cursor)
+      : undefined;
+    if (cursor) {
+      const createdAt = new Date(cursor.createdAt);
+      conditions.push(
+        sql`(
+          ${documents.createdAt} < ${createdAt}
+          OR (${documents.createdAt} = ${createdAt} AND ${documents.id} < ${cursor.documentId})
+        )`,
+      );
     }
 
     const whereClause = and(...conditions);
-    const offset = (filters.page - 1) * filters.limit;
-
-    const [rows, [countRow]] = await Promise.all([
-      this.db.query.documents.findMany({
-        where: whereClause,
-        orderBy: [desc(documents.createdAt)],
-        limit: filters.limit,
-        offset,
-      }),
-      this.db.select({ count: count() }).from(documents).where(whereClause),
-    ]);
-
-    const total = countRow?.count ?? 0;
+    const rows = await this.db
+      .select(documentListSelection)
+      .from(documents)
+      .where(whereClause)
+      .orderBy(desc(documents.createdAt), desc(documents.id))
+      .limit(filters.limit + 1);
+    const hasMore = rows.length > filters.limit;
+    const data = rows.slice(0, filters.limit);
+    const tagsByDocumentId = await loadDocumentTags(
+      this.db,
+      orgId,
+      data.map((document) => document.id),
+    );
+    const compatibleData = data.map((document) => ({
+      ...document,
+      tags: resolveCompatibleList(
+        document.tags,
+        tagsByDocumentId.get(document.id),
+      ),
+    }));
+    const last = compatibleData.at(-1);
 
     return {
-      data: rows,
-      pagination: {
-        page: filters.page,
+      data: compatibleData,
+      pageInfo: {
         limit: filters.limit,
-        total,
-        totalPages: Math.ceil(total / filters.limit),
+        hasMore,
+        nextCursor:
+          hasMore && last
+            ? encodeDocumentListCursor({
+                createdAt: new Date(last.createdAt).toISOString(),
+                documentId: last.id,
+              })
+            : null,
       },
     };
+  }
+
+  async getFileReference(
+    orgId: string,
+    userId: string,
+    scope: DataScope,
+    documentId: number,
+  ): Promise<{ documentId: number; fileUrl: string; fileName: string }> {
+    const [document] = await this.db
+      .select({
+        documentId: documents.id,
+        fileUrl: documents.fileUrl,
+        fileName: sql<string>`coalesce(${documents.fileName}, ${documents.name})`,
+      })
+      .from(documents)
+      .where(
+        and(
+          eq(documents.id, documentId),
+          eq(documents.orgId, orgId),
+          eq(documents.isActive, true),
+          or(
+            eq(documents.isPublic, true),
+            applyScope(scope, orgId, userId, { ownerColumn: documents.userId }),
+          ),
+        ),
+      )
+      .limit(1);
+
+    if (!document) throw new NotFoundException("Document not found.");
+    return document;
   }
 
   async createDocument(
     orgId: string,
     userId: string,
-    isAdmin: boolean,
+    scope: DataScope,
     input: CreateDocumentInput,
   ) {
-    const targetUserId = input.userId && isAdmin ? input.userId : userId;
+    const targetUserId = input.userId ?? userId;
 
     if (targetUserId !== userId) {
       const targetMember = await this.db.query.organizationMembers.findFirst({
         where: and(
           eq(organizationMembers.userId, targetUserId),
           eq(organizationMembers.orgId, orgId),
+          applyScope(scope, orgId, userId, {
+            ownerColumn: organizationMembers.userId,
+          }),
         ),
       });
       if (!targetMember) {
@@ -89,29 +212,43 @@ export class DocumentsService {
       }
     }
 
-    const [document] = await this.db
-      .insert(documents)
-      .values({
-        orgId,
-        userId: targetUserId,
-        name: input.name,
-        type: input.type,
-        fileUrl: input.fileUrl,
-        fileName: input.fileName,
-        fileSize: input.fileSize,
-        mimeType: input.mimeType,
-        description: input.description,
-        category: input.category,
-        isPublic: input.isPublic ?? false,
-        expiryDate: input.expiryDate,
-        tags: input.tags,
-        uploadedBy: userId,
-        isActive: true,
-        version: 1,
-      })
-      .returning();
+    const document = await runInTenantTransaction(
+      this.db,
+      async (transaction) => {
+        const [createdDocument] = await transaction
+          .insert(documents)
+          .values({
+            orgId,
+            userId: targetUserId,
+            name: input.name,
+            type: input.type,
+            fileUrl: input.fileUrl,
+            fileName: input.fileName,
+            fileSize: input.fileSize,
+            mimeType: input.mimeType,
+            description: input.description,
+            category: input.category,
+            isPublic: input.isPublic ?? false,
+            expiryDate: input.expiryDate,
+            tags: input.tags,
+            uploadedBy: userId,
+            isActive: true,
+            version: 1,
+          })
+          .returning();
+        if (!createdDocument) throw new Error("Failed to create document");
+        await syncDocumentTags(
+          transaction,
+          orgId,
+          createdDocument.id,
+          input.tags ?? [],
+        );
+        return createdDocument;
+      },
+      { orgId },
+    );
 
-    this.audit.log({
+    await this.audit.logCritical({
       action: "hr.document_uploaded",
       userId,
       orgId,
@@ -126,58 +263,102 @@ export class DocumentsService {
   async updateDocument(
     orgId: string,
     userId: string,
-    isAdmin: boolean,
+    scope: DataScope,
     documentId: number,
     input: UpdateDocumentInput,
   ) {
     const doc = await this.db.query.documents.findFirst({
-      where: and(eq(documents.id, documentId), eq(documents.orgId, orgId)),
+      where: and(
+        eq(documents.id, documentId),
+        eq(documents.orgId, orgId),
+        applyScope(scope, orgId, userId, { ownerColumn: documents.userId }),
+      ),
       columns: { id: true, userId: true, name: true },
     });
     if (!doc) throw new NotFoundException("Document not found.");
 
-    const isOwner = doc.userId === userId;
-    if (!isOwner && !isAdmin) {
-      throw new ForbiddenException("Not authorized to update this document.");
+    if (input.userId) {
+      const targetMember = await this.db.query.organizationMembers.findFirst({
+        where: and(
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.userId, input.userId),
+          applyScope(scope, orgId, userId, {
+            ownerColumn: organizationMembers.userId,
+          }),
+        ),
+      });
+      if (!targetMember) {
+        throw new NotFoundException("Target user not found in your permitted scope.");
+      }
     }
 
-    const [updated] = await this.db
-      .update(documents)
-      .set({
-        ...(input.name !== undefined ? { name: input.name } : {}),
-        ...(input.description !== undefined ? { description: input.description ?? null } : {}),
-        ...(input.type !== undefined ? { type: input.type } : {}),
-        ...(input.category !== undefined ? { category: input.category ?? null } : {}),
-        ...(input.userId !== undefined ? { userId: input.userId ?? null } : {}),
-        ...(input.isPublic !== undefined ? { isPublic: input.isPublic } : {}),
-        ...(input.tags !== undefined ? { tags: input.tags } : {}),
-        ...(input.expiryDate !== undefined ? { expiryDate: input.expiryDate ?? null } : {}),
-        updatedAt: new Date(),
-      })
-      .where(and(eq(documents.id, documentId), eq(documents.orgId, orgId)))
-      .returning();
+    const updated = await runInTenantTransaction(
+      this.db,
+      async (transaction) => {
+        const [updatedDocument] = await transaction
+          .update(documents)
+          .set({
+            ...(input.name !== undefined ? { name: input.name } : {}),
+            ...(input.description !== undefined
+              ? { description: input.description ?? null }
+              : {}),
+            ...(input.type !== undefined ? { type: input.type } : {}),
+            ...(input.category !== undefined ? { category: input.category ?? null } : {}),
+            ...(input.userId !== undefined ? { userId: input.userId ?? null } : {}),
+            ...(input.isPublic !== undefined ? { isPublic: input.isPublic } : {}),
+            ...(input.tags !== undefined ? { tags: input.tags } : {}),
+            ...(input.expiryDate !== undefined
+              ? { expiryDate: input.expiryDate ?? null }
+              : {}),
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(documents.id, documentId),
+              eq(documents.orgId, orgId),
+              applyScope(scope, orgId, userId, { ownerColumn: documents.userId }),
+            ),
+          )
+          .returning();
+        if (!updatedDocument) throw new NotFoundException("Document not found.");
+        if (input.tags !== undefined)
+          await syncDocumentTags(transaction, orgId, documentId, input.tags);
+        return updatedDocument;
+      },
+      { orgId },
+    );
 
     return updated;
   }
 
-  async deleteDocument(orgId: string, userId: string, isAdmin: boolean, documentId: number) {
+  async deleteDocument(
+    orgId: string,
+    userId: string,
+    scope: DataScope,
+    documentId: number,
+  ) {
     const doc = await this.db.query.documents.findFirst({
-      where: and(eq(documents.id, documentId), eq(documents.orgId, orgId)),
+      where: and(
+        eq(documents.id, documentId),
+        eq(documents.orgId, orgId),
+        applyScope(scope, orgId, userId, { ownerColumn: documents.userId }),
+      ),
       columns: { id: true, userId: true, name: true },
     });
     if (!doc) throw new NotFoundException("Document not found.");
 
-    const isOwner = doc.userId === userId;
-    if (!isOwner && !isAdmin) {
-      throw new ForbiddenException("Not authorized to delete this document.");
-    }
-
     await this.db
       .update(documents)
       .set({ isActive: false })
-      .where(and(eq(documents.id, documentId), eq(documents.orgId, orgId)));
+      .where(
+        and(
+          eq(documents.id, documentId),
+          eq(documents.orgId, orgId),
+          applyScope(scope, orgId, userId, { ownerColumn: documents.userId }),
+        ),
+      );
 
-    this.audit.log({
+    await this.audit.logCritical({
       action: "hr.document_deleted",
       userId,
       orgId,
@@ -198,30 +379,33 @@ export class DocumentsService {
 
     const horizon = formatDateString(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000));
 
-    const [byType, total, expiringCount] = await Promise.all([
+    const [byType, [summary]] = await Promise.all([
       this.db
         .select({ type: documents.type, count: count() })
         .from(documents)
         .where(baseWhere)
         .groupBy(documents.type),
-      this.db.select({ count: count() }).from(documents).where(baseWhere),
       this.db
-        .select({ count: count() })
+        .select({
+          total: count(),
+          publicCount: sql<number>`count(*) FILTER (WHERE ${documents.isPublic} = true)`,
+          storageBytes: sql<string>`coalesce(sum(${documents.fileSize}), 0)::text`,
+          expiringCount: sql<number>`count(*) FILTER (
+            WHERE ${documents.expiryDate} IS NOT NULL
+              AND ${documents.expiryDate} <= ${horizon}
+              AND ${documents.expiryDate} >= CURRENT_DATE
+          )`,
+        })
         .from(documents)
-        .where(
-          and(
-            baseWhere,
-            sql`${documents.expiryDate} IS NOT NULL`,
-            sql`${documents.expiryDate} <= ${horizon}`,
-            sql`${documents.expiryDate} >= CURRENT_DATE`,
-          ),
-        ),
+        .where(baseWhere),
     ]);
 
     return {
-      total: total[0]?.count ?? 0,
+      total: Number(summary?.total ?? 0),
       byType: Object.fromEntries(byType.map((r) => [r.type, r.count])),
-      expiringIn30Days: expiringCount[0]?.count ?? 0,
+      publicCount: Number(summary?.publicCount ?? 0),
+      storageBytes: Number(summary?.storageBytes ?? 0),
+      expiringIn30Days: Number(summary?.expiringCount ?? 0),
     };
   }
 
@@ -248,17 +432,35 @@ export class DocumentsService {
     ];
 
     const [expiringDocs, expiringCerts] = await Promise.all([
-      this.db.query.documents.findMany({
-        where: and(...docConditions),
-      }),
+      this.db
+        .select(documentListSelection)
+        .from(documents)
+        .where(and(...docConditions))
+        .orderBy(documents.expiryDate, documents.id)
+        .limit(100),
       this.db.query.certifications.findMany({
         where: and(...certConditions),
         with: { user: { columns: { id: true, name: true } } },
+        orderBy: [certifications.expiryDate, certifications.id],
+        limit: 100,
       }),
     ]);
 
+    const tagsByDocumentId = await loadDocumentTags(
+      this.db,
+      orgId,
+      expiringDocs.map((document) => document.id),
+    );
+    const compatibleExpiringDocuments = expiringDocs.map((document) => ({
+      ...document,
+      tags: resolveCompatibleList(
+        document.tags,
+        tagsByDocumentId.get(document.id),
+      ),
+    }));
+
     return {
-      expiringDocuments: expiringDocs,
+      expiringDocuments: compatibleExpiringDocuments,
       expiringCertifications: expiringCerts,
       totalExpiring: expiringDocs.length + expiringCerts.length,
     };

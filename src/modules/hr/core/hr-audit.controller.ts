@@ -20,8 +20,8 @@ export class HrAuditController {
   @RequirePermission("hr:audit:view")
   list(
     @Query(new ZodValidationPipe(listAuditLogsSchema)) query: ListAuditLogsInput,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.audit.list(u.orgId, query);
+    return this.audit.list(currentUser.orgId, query);
   }
 }

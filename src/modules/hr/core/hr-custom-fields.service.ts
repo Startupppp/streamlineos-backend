@@ -5,12 +5,17 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { customFieldDefinitions } from "../../../db/schema/custom-field-engine";
 import { hrEmploymentCustomFieldValues } from "../../../db/schema/hr/core-org";
+import { hrEmployments, hrPeople } from "../../../db/schema/hr/core-people";
+import { organizationMembers } from "../../../db/schema";
 import type { CreateCustomFieldInput, UpdateCustomFieldInput, UpsertCustomFieldValuesInput } from "./dto/hr-custom-fields.schemas";
+import type { DataScope } from "../../access/access.types";
+import { applyScope } from "../../access/apply-scope";
+import { assertActiveOrgUnit } from "../../../common/org/sync-org-unit-placement";
 
 type HrFieldDef = {
   id: number;
@@ -60,6 +65,40 @@ export class HrCustomFieldsService {
       .limit(1);
     if (!row) throw new NotFoundException("Custom field definition not found");
     return this.toHrFieldDef(row);
+  }
+
+  private async assertEmploymentInScope(
+    orgId: string,
+    actorUserId: string,
+    scope: DataScope,
+    employmentId: number,
+  ): Promise<void> {
+    const [employment] = await this.db
+      .select({ id: hrEmployments.id })
+      .from(hrEmployments)
+      .innerJoin(
+        hrPeople,
+        and(eq(hrPeople.orgId, hrEmployments.orgId), eq(hrPeople.id, hrEmployments.personId)),
+      )
+      .where(
+        and(
+          eq(hrEmployments.id, employmentId),
+          eq(hrEmployments.orgId, orgId),
+          isNull(hrEmployments.deletedAt),
+          isNull(hrPeople.deletedAt),
+          applyScope(scope, orgId, actorUserId, { ownerColumn: hrPeople.userId }),
+        ),
+      )
+      .limit(1);
+    if (!employment) throw new NotFoundException("Employee not found");
+  }
+
+  private assertSupportedValueEntity(entityType: string): void {
+    if (entityType !== "employee") {
+      throw new BadRequestException(
+        "Values are currently supported only for employee custom fields.",
+      );
+    }
   }
 
   async listDefinitions(orgId: string, entityType: string) {
@@ -128,15 +167,19 @@ export class HrCustomFieldsService {
 
   async getEntityValues(
     orgId: string,
+    actorUserId: string,
+    scope: DataScope,
     entityType: string,
     entityId: string,
     canViewSensitive: boolean,
   ) {
+    this.assertSupportedValueEntity(entityType);
     const empId = Number(entityId);
     if (!Number.isInteger(empId) || empId <= 0) {
       throw new BadRequestException("Invalid entity ID — must be a positive integer");
     }
 
+    await this.assertEmploymentInScope(orgId, actorUserId, scope, empId);
     const defs = await this.listDefinitions(orgId, entityType);
     const values = await this.db
       .select({
@@ -164,16 +207,20 @@ export class HrCustomFieldsService {
 
   async upsertEntityValues(
     orgId: string,
+    actorUserId: string,
+    scope: DataScope,
     entityType: string,
     entityId: string,
     input: UpsertCustomFieldValuesInput,
     canManageSensitive: boolean,
   ) {
+    this.assertSupportedValueEntity(entityType);
     const empId = Number(entityId);
     if (!Number.isInteger(empId) || empId <= 0) {
       throw new BadRequestException("Invalid entity ID — must be a positive integer");
     }
 
+    await this.assertEmploymentInScope(orgId, actorUserId, scope, empId);
     const defs = await this.listDefinitions(orgId, entityType);
     const defMap = new Map(defs.map((d) => [d.id, d]));
 
@@ -185,6 +232,7 @@ export class HrCustomFieldsService {
         throw new ForbiddenException("Cannot update sensitive field without hr:sensitive:manage");
       }
       this.validateFieldValue(def.fieldType, item.value, def.isRequired);
+      await this.validateReferenceValue(orgId, def.fieldType, item.value);
     }
 
     const rows = input.values.map((item) => ({
@@ -207,6 +255,37 @@ export class HrCustomFieldsService {
           updatedAt: new Date(),
         },
       });
+  }
+
+  private async validateReferenceValue(
+    orgId: string,
+    fieldType: string,
+    value: unknown,
+  ): Promise<void> {
+    if (value === null || value === undefined || value === "") return;
+    if (fieldType === "department_ref") {
+      if (typeof value !== "string") {
+        throw new BadRequestException("Expected a department ID.");
+      }
+      await assertActiveOrgUnit(this.db, orgId, value, "DEPARTMENT");
+    }
+    if (fieldType === "employee_ref") {
+      if (typeof value !== "string") {
+        throw new BadRequestException("Expected an employee user ID.");
+      }
+      const [member] = await this.db
+        .select({ id: organizationMembers.id })
+        .from(organizationMembers)
+        .where(
+          and(
+            eq(organizationMembers.orgId, orgId),
+            eq(organizationMembers.userId, value),
+            eq(organizationMembers.status, "ACTIVE"),
+          ),
+        )
+        .limit(1);
+      if (!member) throw new BadRequestException("Invalid employee selection.");
+    }
   }
 
   private validateFieldValue(

@@ -2,6 +2,7 @@ import { ALL_PERMISSION_NAMES } from "./catalog";
 
 export const UNIVERSAL_MEMBER_PERMISSION_GRANTS = [
   { permissionKey: "self:onboarding-docs", scope: "own" },
+  { permissionKey: "self:onboarding-tasks", scope: "own" },
   { permissionKey: "kb:articles:view", scope: "all" },
   { permissionKey: "kb:spaces:view", scope: "all" },
   { permissionKey: "kb:pages:view", scope: "all" },
@@ -51,8 +52,6 @@ const EMPLOYEE_SELF_SERVICE = [
   "integrations:connections:manage",
   "onboarding:module-checklists:view",
   "onboarding:tours:view",
-  "hr:onboarding:tasks:view",
-  "hr:onboarding:tasks:complete",
   "timesheets:entries:view",
   "timesheets:entries:create",
   "timesheets:entries:update",

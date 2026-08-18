@@ -1,5 +1,12 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, gte, lte } from "drizzle-orm";
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { attendance, hrAttendanceRegularizations } from "../../../db/schema";
 import { PayrollInputsService } from "../payroll-inputs/payroll-inputs.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -8,7 +15,6 @@ import { HrWorkflowEngineService } from "../workflows/hr-workflow-engine.service
 import { AccessService } from "../../access/access.service";
 import { resolveAttendanceScope } from "./attendance-scope";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { logger } from "../../../common/logger/logger.service";
 import { AuditService } from "../../../common/audit/audit.service";
 
 export interface CreateRegularizationInput {
@@ -42,65 +48,76 @@ export class AttendanceRegularizationService {
       throw new BadRequestException("At least one of requestedCheckIn or requestedCheckOut is required.");
     }
 
-    const existingPending = await this.db.query.hrAttendanceRegularizations.findFirst({
-      where: and(
-        eq(hrAttendanceRegularizations.orgId, u.orgId),
-        eq(hrAttendanceRegularizations.userId, u.userId),
-        eq(hrAttendanceRegularizations.attendanceDate, input.attendanceDate),
-        eq(hrAttendanceRegularizations.status, "PENDING"),
-      ),
-    });
+    return this.db.transaction(async (tx) => {
+      await tx.execute(sql`
+        SELECT pg_advisory_xact_lock(
+          hashtextextended(${`${u.orgId}:${u.userId}:${input.attendanceDate}:regularization`}, 0)
+        )
+      `);
 
-    if (existingPending) {
-      throw new BadRequestException("A pending regularization already exists for this date.");
-    }
+      const existingPending = await tx.query.hrAttendanceRegularizations.findFirst({
+        where: and(
+          eq(hrAttendanceRegularizations.orgId, u.orgId),
+          eq(hrAttendanceRegularizations.userId, u.userId),
+          eq(hrAttendanceRegularizations.attendanceDate, input.attendanceDate),
+          eq(hrAttendanceRegularizations.status, "PENDING"),
+        ),
+      });
+      if (existingPending) {
+        throw new BadRequestException("A pending regularization already exists for this date.");
+      }
 
-    const attendanceRow = await this.db.query.attendance.findFirst({
-      where: and(
-        eq(attendance.orgId, u.orgId),
-        eq(attendance.userId, u.userId),
-        eq(attendance.date, input.attendanceDate),
-      ),
-    });
+      const attendanceRow = await tx.query.attendance.findFirst({
+        where: and(
+          eq(attendance.orgId, u.orgId),
+          eq(attendance.userId, u.userId),
+          eq(attendance.date, input.attendanceDate),
+        ),
+      });
+      const [regularization] = await tx
+        .insert(hrAttendanceRegularizations)
+        .values({
+          orgId: u.orgId,
+          userId: u.userId,
+          attendanceDate: input.attendanceDate,
+          requestedCheckIn: input.requestedCheckIn ? new Date(input.requestedCheckIn) : null,
+          requestedCheckOut: input.requestedCheckOut ? new Date(input.requestedCheckOut) : null,
+          reason: input.reason,
+          status: "PENDING",
+          attendanceId: attendanceRow?.id ?? null,
+        })
+        .returning();
+      if (!regularization) throw new BadRequestException("Failed to create regularization.");
 
-    const [regularization] = await this.db
-      .insert(hrAttendanceRegularizations)
-      .values({
+      const instance = await this.workflowEngine.startWorkflow({
         orgId: u.orgId,
-        userId: u.userId,
-        attendanceDate: input.attendanceDate,
-        requestedCheckIn: input.requestedCheckIn ? new Date(input.requestedCheckIn) : null,
-        requestedCheckOut: input.requestedCheckOut ? new Date(input.requestedCheckOut) : null,
-        reason: input.reason,
-        status: "PENDING",
-        attendanceId: attendanceRow?.id ?? null,
-      })
-      .returning();
+        objectType: "attendance_regularization",
+        objectId: String(regularization.id),
+        requestedByUserId: u.userId,
+        subjectEmployeeId: u.userId,
+        context: {
+          attendanceDate: input.attendanceDate,
+          reason: input.reason,
+          requestedCheckIn: input.requestedCheckIn ?? null,
+          requestedCheckOut: input.requestedCheckOut ?? null,
+        },
+        tx,
+      });
+      if (!instance) throw new BadRequestException("Failed to start regularization workflow.");
 
-    if (!regularization) throw new BadRequestException("Failed to create regularization.");
-
-    const instance = await this.workflowEngine.startWorkflow({
-      orgId: u.orgId,
-      objectType: "attendance_regularization",
-      objectId: String(regularization.id),
-      requestedByUserId: u.userId,
-      subjectEmployeeId: u.userId,
-      context: {
-        attendanceDate: input.attendanceDate,
-        reason: input.reason,
-        requestedCheckIn: input.requestedCheckIn ?? null,
-        requestedCheckOut: input.requestedCheckOut ?? null,
-      },
-    }).catch(() => null);
-
-    if (instance) {
-      await this.db
+      const workflowInstanceId = String(instance.id);
+      await tx
         .update(hrAttendanceRegularizations)
-        .set({ workflowInstanceId: String(instance.id) })
-        .where(eq(hrAttendanceRegularizations.id, regularization.id));
-    }
-
-    return { ...regularization, workflowInstanceId: instance ? String(instance.id) : null };
+        .set({ workflowInstanceId })
+        .where(
+          and(
+            eq(hrAttendanceRegularizations.id, regularization.id),
+            eq(hrAttendanceRegularizations.orgId, u.orgId),
+            eq(hrAttendanceRegularizations.status, "PENDING"),
+          ),
+        );
+      return { ...regularization, workflowInstanceId };
+    });
   }
 
   async list(u: CurrentUserContext, query: ListRegularizationsQuery) {
@@ -134,134 +151,175 @@ export class AttendanceRegularizationService {
     const scope = await resolveAttendanceScope(this.access, u);
     if (scope !== "all") throw new ForbiddenException("Only managers can apply regularizations.");
 
-    const reg = await this.db.query.hrAttendanceRegularizations.findFirst({
-      where: and(
-        eq(hrAttendanceRegularizations.id, regularizationId),
-        eq(hrAttendanceRegularizations.orgId, u.orgId),
-      ),
-    });
+    const applied = await this.db.transaction(async (tx) => {
+      const [reg] = await tx
+        .select()
+        .from(hrAttendanceRegularizations)
+        .where(
+          and(
+            eq(hrAttendanceRegularizations.id, regularizationId),
+            eq(hrAttendanceRegularizations.orgId, u.orgId),
+          ),
+        )
+        .limit(1)
+        .for("update");
+      if (!reg) throw new NotFoundException("Regularization not found.");
+      if (reg.status !== "PENDING") {
+        throw new BadRequestException(`Regularization is already ${reg.status}.`);
+      }
 
-    if (!reg) throw new NotFoundException("Regularization not found.");
-    if (reg.status !== "PENDING") {
-      throw new BadRequestException(`Regularization is already ${reg.status}.`);
-    }
-
-    let originalCheckIn: Date | null = null;
-    let originalCheckOut: Date | null = null;
-    if (reg.attendanceId) {
-      const original = await this.db.query.attendance.findFirst({
-        where: and(eq(attendance.id, reg.attendanceId), eq(attendance.orgId, u.orgId)),
-        columns: { checkIn: true, checkOut: true },
-      });
-      originalCheckIn = original?.checkIn ?? null;
-      originalCheckOut = original?.checkOut ?? null;
-    }
-
-    await this.db.transaction(async (tx) => {
+      let originalCheckIn: Date | null = null;
+      let originalCheckOut: Date | null = null;
       if (reg.attendanceId) {
-        const updateSet: Record<string, unknown> = {
-          status: "PRESENT",
-        };
-        if (reg.requestedCheckIn) updateSet["checkIn"] = reg.requestedCheckIn;
-        if (reg.requestedCheckOut) updateSet["checkOut"] = reg.requestedCheckOut;
+        const [original] = await tx
+          .select({ checkIn: attendance.checkIn, checkOut: attendance.checkOut })
+          .from(attendance)
+          .where(and(eq(attendance.id, reg.attendanceId), eq(attendance.orgId, u.orgId)))
+          .limit(1)
+          .for("update");
+        if (!original) throw new ConflictException("The linked attendance record no longer exists.");
+        originalCheckIn = original.checkIn;
+        originalCheckOut = original.checkOut;
+
+        const checkIn = reg.requestedCheckIn ?? original.checkIn;
+        const checkOut = reg.requestedCheckOut ?? original.checkOut;
+        const workHours = this.workHours(checkIn, checkOut);
 
         await tx
           .update(attendance)
-          .set(updateSet)
+          .set({
+            checkIn,
+            checkOut,
+            workHours,
+            status: checkOut ? "CHECKED_OUT" : "PRESENT",
+          })
           .where(and(eq(attendance.id, reg.attendanceId), eq(attendance.orgId, u.orgId)));
       } else if (reg.requestedCheckIn) {
+        const workHours = this.workHours(reg.requestedCheckIn, reg.requestedCheckOut);
         await tx.insert(attendance).values({
           orgId: u.orgId,
           userId: reg.userId,
           date: reg.attendanceDate,
           checkIn: reg.requestedCheckIn,
           checkOut: reg.requestedCheckOut ?? null,
-          status: "PRESENT",
+          status: reg.requestedCheckOut ? "CHECKED_OUT" : "PRESENT",
+          workHours,
         });
+      } else {
+        throw new BadRequestException("A check-in time is required to create attendance.");
       }
 
-      await tx
+      const changed = await tx
         .update(hrAttendanceRegularizations)
         .set({
           status: "APPROVED",
           approvedBy: u.userId,
           approvedAt: new Date(),
         })
-        .where(eq(hrAttendanceRegularizations.id, regularizationId));
-    });
+        .where(
+          and(
+            eq(hrAttendanceRegularizations.id, regularizationId),
+            eq(hrAttendanceRegularizations.orgId, u.orgId),
+            eq(hrAttendanceRegularizations.status, "PENDING"),
+          ),
+        )
+        .returning({ id: hrAttendanceRegularizations.id });
+      if (changed.length !== 1) {
+        throw new ConflictException("This regularization was already decided.");
+      }
 
-    const monthKey = reg.attendanceDate.slice(0, 7);
-
-    await this.audit.logCritical({
-      action: "hr.attendance_regularization.approved",
-      userId: u.userId,
-      orgId: u.orgId,
-      targetId: String(regularizationId),
-      targetType: "attendance_regularization",
-      metadata: {
-        employeeUserId: reg.userId,
-        attendanceDate: reg.attendanceDate,
-        monthKey,
-        feedsPayrollInputRebuild: true,
-      },
-      before: {
-        checkIn: originalCheckIn?.toISOString() ?? null,
-        checkOut: originalCheckOut?.toISOString() ?? null,
-      },
-      after: {
-        checkIn: reg.requestedCheckIn?.toISOString() ?? null,
-        checkOut: reg.requestedCheckOut?.toISOString() ?? null,
-      },
-    });
-
-    try {
-      const rebuild = await this.payrollInputs.rebuildOpenPeriodForMonth(
-        u.orgId,
-        u.userId,
-        monthKey,
-      );
-      return { success: true, monthKey, payrollInputRebuild: rebuild };
-    } catch (err) {
-      logger.warn("payroll input rebuild after regularization failed", {
+      const monthKey = reg.attendanceDate.slice(0, 7);
+      await this.audit.logCritical({
+        action: "hr.attendance_regularization.approved",
+        userId: u.userId,
         orgId: u.orgId,
-        monthKey,
-        regularizationId,
-        error: err instanceof Error ? err.message : String(err),
+        targetId: String(regularizationId),
+        targetType: "attendance_regularization",
+        metadata: {
+          employeeUserId: reg.userId,
+          attendanceDate: reg.attendanceDate,
+          monthKey,
+          feedsPayrollInputRebuild: true,
+        },
+        before: {
+          checkIn: originalCheckIn?.toISOString() ?? null,
+          checkOut: originalCheckOut?.toISOString() ?? null,
+        },
+        after: {
+          checkIn: reg.requestedCheckIn?.toISOString() ?? originalCheckIn?.toISOString() ?? null,
+          checkOut: reg.requestedCheckOut?.toISOString() ?? originalCheckOut?.toISOString() ?? null,
+        },
       });
-      return {
-        success: true,
-        monthKey,
-        payrollInputRebuild: { rebuilt: false, periodId: null, status: "error" },
-      };
-    }
+      return { reg, monthKey };
+    });
+
+    const rebuild = await this.payrollInputs.rebuildOpenPeriodForMonth(
+      u.orgId,
+      u.userId,
+      applied.monthKey,
+    );
+    return { success: true, monthKey: applied.monthKey, payrollInputRebuild: rebuild };
   }
 
   async reject(u: CurrentUserContext, regularizationId: number, rejectionReason: string) {
     const scope = await resolveAttendanceScope(this.access, u);
     if (scope !== "all") throw new ForbiddenException("Only managers can reject regularizations.");
 
-    const reg = await this.db.query.hrAttendanceRegularizations.findFirst({
-      where: and(
-        eq(hrAttendanceRegularizations.id, regularizationId),
-        eq(hrAttendanceRegularizations.orgId, u.orgId),
-      ),
+    await this.db.transaction(async (tx) => {
+      const [reg] = await tx
+        .select({ status: hrAttendanceRegularizations.status })
+        .from(hrAttendanceRegularizations)
+        .where(
+          and(
+            eq(hrAttendanceRegularizations.id, regularizationId),
+            eq(hrAttendanceRegularizations.orgId, u.orgId),
+          ),
+        )
+        .limit(1)
+        .for("update");
+      if (!reg) throw new NotFoundException("Regularization not found.");
+      if (reg.status !== "PENDING") {
+        throw new BadRequestException(`Regularization is already ${reg.status}.`);
+      }
+
+      const changed = await tx
+        .update(hrAttendanceRegularizations)
+        .set({
+          status: "REJECTED",
+          rejectedBy: u.userId,
+          rejectedAt: new Date(),
+          rejectionReason,
+        })
+        .where(
+          and(
+            eq(hrAttendanceRegularizations.id, regularizationId),
+            eq(hrAttendanceRegularizations.orgId, u.orgId),
+            eq(hrAttendanceRegularizations.status, "PENDING"),
+          ),
+        )
+        .returning({ id: hrAttendanceRegularizations.id });
+      if (changed.length !== 1) {
+        throw new ConflictException("This regularization was already decided.");
+      }
+
+      await this.audit.logCritical({
+        action: "hr.attendance_regularization.rejected",
+        userId: u.userId,
+        orgId: u.orgId,
+        targetId: String(regularizationId),
+        targetType: "attendance_regularization",
+        metadata: { rejectionReason },
+      });
     });
 
-    if (!reg) throw new NotFoundException("Regularization not found.");
-    if (reg.status !== "PENDING") {
-      throw new BadRequestException(`Regularization is already ${reg.status}.`);
-    }
-
-    await this.db
-      .update(hrAttendanceRegularizations)
-      .set({
-        status: "REJECTED",
-        rejectedBy: u.userId,
-        rejectedAt: new Date(),
-        rejectionReason,
-      })
-      .where(and(eq(hrAttendanceRegularizations.id, regularizationId), eq(hrAttendanceRegularizations.orgId, u.orgId)));
-
     return { success: true };
+  }
+
+  private workHours(checkIn: Date | null, checkOut: Date | null): string | null {
+    if (!checkIn || !checkOut) return null;
+    if (checkOut <= checkIn) {
+      throw new BadRequestException("Check-out must be after check-in.");
+    }
+    return ((checkOut.getTime() - checkIn.getTime()) / 3_600_000).toFixed(2);
   }
 }

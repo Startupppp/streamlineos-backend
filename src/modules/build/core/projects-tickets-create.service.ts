@@ -28,6 +28,7 @@ import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
 import type { CreateTicketInput } from "./dto/projects.schemas";
 import { computeNextRunAt } from "./projects-recurrence.util";
 import { normalizeTicketType } from "./tickets-helpers";
+import { allocateTicketNumbers } from "./lib/allocate-ticket-number";
 
 @Injectable()
 export class ProjectsTicketsCreateService {
@@ -72,18 +73,7 @@ export class ProjectsTicketsCreateService {
     }
 
     const [ticket] = await this.db.transaction(async (tx) => {
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
-
-      const maxTicketResult = await tx
-        .select({
-          maxTicketNumber: sql<number>`COALESCE(MAX(${tickets.ticketNumber}), 0)`,
-        })
-        .from(tickets)
-        .where(
-          and(eq(tickets.projectId, projectId), eq(tickets.orgId, u.orgId)),
-        );
-
-      const nextTicketNumber = (maxTicketResult[0]?.maxTicketNumber || 0) + 1;
+      const nextTicketNumber = await allocateTicketNumbers(tx, u.orgId, projectId);
 
       const isRecurring =
         body.isRecurring === true && body.recurrenceRule != null;
@@ -258,16 +248,7 @@ export class ProjectsTicketsCreateService {
     input: { title: string; description: string; type?: string },
   ): Promise<{ id: number }> {
     const [ticket] = await this.db.transaction(async (tx) => {
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
-
-      const maxResult = await tx
-        .select({
-          maxNum: sql<number>`COALESCE(MAX(${tickets.ticketNumber}), 0)`,
-        })
-        .from(tickets)
-        .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)));
-
-      const nextNum = (maxResult[0]?.maxNum ?? 0) + 1;
+      const nextNum = await allocateTicketNumbers(tx, orgId, projectId);
 
       const [created] = await tx
         .insert(tickets)

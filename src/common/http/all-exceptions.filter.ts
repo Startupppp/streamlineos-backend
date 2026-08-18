@@ -4,6 +4,57 @@ import { ZodError } from "zod";
 import { logger } from "../logger/logger.service";
 import { isTransientDbError } from "../db/transient-error";
 
+type ApiErrorEnvelope = {
+  code: string;
+  message: string;
+  details?: unknown;
+};
+
+function defaultCode(status: number): string {
+  const codeByStatus: Partial<Record<number, string>> = {
+    [HttpStatus.BAD_REQUEST]: "BAD_REQUEST",
+    [HttpStatus.UNAUTHORIZED]: "UNAUTHORIZED",
+    [HttpStatus.PAYMENT_REQUIRED]: "PAYMENT_REQUIRED",
+    [HttpStatus.FORBIDDEN]: "FORBIDDEN",
+    [HttpStatus.NOT_FOUND]: "NOT_FOUND",
+    [HttpStatus.CONFLICT]: "CONFLICT",
+    [HttpStatus.PAYLOAD_TOO_LARGE]: "PAYLOAD_TOO_LARGE",
+    [HttpStatus.UNPROCESSABLE_ENTITY]: "UNPROCESSABLE_ENTITY",
+    [HttpStatus.TOO_MANY_REQUESTS]: "RATE_LIMITED",
+    [HttpStatus.SERVICE_UNAVAILABLE]: "SERVICE_UNAVAILABLE",
+  };
+  return codeByStatus[status] ?? `HTTP_${status}`;
+}
+
+function messageFromHttpBody(body: string | Record<string, unknown>): string {
+  if (typeof body === "string") return body;
+  if (typeof body.message === "string" && body.message.trim()) {
+    return body.message;
+  }
+  if (Array.isArray(body.message)) {
+    const messages = body.message.filter(
+      (message): message is string => typeof message === "string" && !!message.trim(),
+    );
+    if (messages.length > 0) return messages.join("; ");
+  }
+  if (typeof body.error === "string" && body.error.trim()) return body.error;
+  return "The request could not be completed.";
+}
+
+function httpErrorEnvelope(
+  status: number,
+  body: string | Record<string, unknown>,
+): ApiErrorEnvelope {
+  if (typeof body === "string") {
+    return { code: defaultCode(status), message: body };
+  }
+  return {
+    code: typeof body.code === "string" ? body.code : defaultCode(status),
+    message: messageFromHttpBody(body),
+    ...(body.details !== undefined ? { details: body.details } : {}),
+  };
+}
+
 function describeUnhandled(exception: unknown): Record<string, unknown> {
   if (!(exception instanceof Error)) return { message: String(exception) };
   const record = exception as unknown as Record<string, unknown>;
@@ -38,48 +89,24 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const res = host.switchToHttp().getResponse<Response>();
 
     if (exception instanceof ZodError) {
-      const detail = exception.issues
-        .map((i) => `${i.path.length ? i.path.join(".") : "body"}: ${i.message}`)
-        .join("; ");
-      res.status(HttpStatus.BAD_REQUEST).json({ error: `Validation failed: ${detail}` });
+      const details = exception.issues.map((issue) => ({
+        path: issue.path.length ? issue.path.join(".") : "body",
+        message: issue.message,
+      }));
+      res.status(HttpStatus.BAD_REQUEST).json({
+        code: "VALIDATION_FAILED",
+        message: "Validation failed.",
+        details,
+      } satisfies ApiErrorEnvelope);
       return;
     }
 
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
       const body = exception.getResponse();
-      if (typeof body === "string") {
-        res.status(status).json({ error: body });
-        return;
-      }
-      const obj = body as Record<string, unknown>;
-      if (typeof obj.code === "string") {
-        const messageField =
-          typeof obj.message === "string"
-            ? { message: obj.message }
-            : typeof obj.error === "string"
-              ? { error: obj.error }
-              : { message: "Error" };
-        res.status(status).json({
-          code: obj.code,
-          ...messageField,
-          ...(obj.details !== undefined ? { details: obj.details } : {}),
-        });
-        return;
-      }
-      if (typeof obj.message === "string") {
-        res.status(status).json({ error: obj.message });
-        return;
-      }
-      if (Array.isArray(obj.message)) {
-        res.status(status).json({ error: (obj.message as string[]).join("; ") });
-        return;
-      }
-      if (typeof obj.error === "string") {
-        res.status(status).json(obj);
-        return;
-      }
-      res.status(status).json({ error: "Error" });
+      res
+        .status(status)
+        .json(httpErrorEnvelope(status, body as string | Record<string, unknown>));
       return;
     }
 
@@ -88,8 +115,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
         error: exception instanceof Error ? exception.message : String(exception),
       });
       res.status(HttpStatus.SERVICE_UNAVAILABLE).json({
-        error: "The service is temporarily unavailable. Please try again.",
-      });
+        code: "SERVICE_UNAVAILABLE",
+        message: "The service is temporarily unavailable. Please try again.",
+      } satisfies ApiErrorEnvelope);
       return;
     }
 
@@ -98,6 +126,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
       ...describeUnhandled(exception),
       request: describeRequest(host),
     });
-    res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ error: "An unexpected error occurred" });
+    res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+      code: "INTERNAL_ERROR",
+      message: "An unexpected error occurred",
+    } satisfies ApiErrorEnvelope);
   }
 }

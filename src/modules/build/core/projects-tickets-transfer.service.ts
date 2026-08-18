@@ -17,6 +17,7 @@ import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { ImportTicketsInput, UpdateTicketInput } from "./dto/projects.schemas";
 import { resolveAssigneeId } from "./tickets-helpers";
+import { allocateTicketNumbers } from "../lib/allocate-ticket-number";
 
 @Injectable()
 export class ProjectsTicketsTransferService {
@@ -133,12 +134,7 @@ export class ProjectsTicketsTransferService {
     await this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
 
-      const [maxRow] = await tx
-        .select({ maxNum: sql<number>`COALESCE(MAX(${tickets.ticketNumber}), 0)` })
-        .from(tickets)
-        .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, u.orgId)));
-
-      let nextNum = (maxRow?.maxNum ?? 0) + 1;
+      let nextNum = await allocateTicketNumbers(tx, u.orgId, projectId, toCreate.length);
 
       const rowsWithNumbers = toCreate.map((item) => {
         const ticketNumber = nextNum++;

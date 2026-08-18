@@ -8,7 +8,7 @@ import { HrWorkflowsModule } from "../workflows/hr-workflows.module";
 import { HrCoreModule } from "../core/hr-core.module";
 import { HrDirectoryModule } from "../directory/hr-directory.module";
 import { HrEnterpriseOpsModule } from "../enterprise-ops/hr-enterprise-ops.module";
-import { SessionsModule } from "../../sessions/sessions.module";
+import { OrganizationModule } from "../../organization/core/organization.module";
 import { ExitController } from "./exit.controller";
 import { TerminationController } from "./termination.controller";
 import { AlumniController } from "./alumni.controller";
@@ -18,7 +18,10 @@ import { OnboardingViewsController } from "./onboarding-views.controller";
 import { ProbationController } from "./probation.controller";
 import { ExitService } from "./exit.service";
 import { ExitWriteService } from "./exit-write.service";
+import { ExperienceLetterService } from "./experience-letter.service";
+import { ExitCompletionGuardService } from "./exit-completion-guard.service";
 import { TerminationService } from "./termination.service";
+import { TerminationCommunicationsService } from "./termination-communications.service";
 import { AlumniService } from "./alumni.service";
 import { HrAnalyticsService } from "./hr-analytics.service";
 import { HrDashboardService } from "./hr-dashboard.service";
@@ -26,10 +29,11 @@ import { HrDashboardReportsService } from "./hr-dashboard-reports.service";
 import { OnboardingViewsService } from "./onboarding-views.service";
 import { ResignationJobsService } from "./resignation-jobs.service";
 import { ProbationService } from "./probation.service";
+import { ProbationReviewReaderService } from "./probation-review-reader.service";
 import { ExitChecklistService } from "./exit-checklist.service";
 
 @Module({
-  imports: [AutomationModule, NotificationsModule, HrAutomationsModule, HrTemplatesModule, HrPoliciesModule, HrWorkflowsModule, HrCoreModule, HrDirectoryModule, HrEnterpriseOpsModule, SessionsModule],
+  imports: [AutomationModule, NotificationsModule, HrAutomationsModule, HrTemplatesModule, HrPoliciesModule, HrWorkflowsModule, HrCoreModule, HrDirectoryModule, HrEnterpriseOpsModule, OrganizationModule],
   controllers: [
     ExitController,
     TerminationController,
@@ -42,7 +46,10 @@ import { ExitChecklistService } from "./exit-checklist.service";
   providers: [
     ExitService,
     ExitWriteService,
+    ExperienceLetterService,
+    ExitCompletionGuardService,
     TerminationService,
+    TerminationCommunicationsService,
     AlumniService,
     HrAnalyticsService,
     HrDashboardService,
@@ -50,8 +57,9 @@ import { ExitChecklistService } from "./exit-checklist.service";
     OnboardingViewsService,
     ResignationJobsService,
     ProbationService,
+    ProbationReviewReaderService,
     ExitChecklistService,
   ],
-  exports: [ProbationService],
+  exports: [ExitService, HrDashboardService, ProbationService],
 })
 export class HrLifecycleModule {}

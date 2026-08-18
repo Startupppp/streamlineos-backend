@@ -220,10 +220,17 @@ export const bankDetailsSchema = z
     }
   });
 
+export const onboardingTaskOwnerRoleSchema = z.enum([
+  "NEW_HIRE",
+  "HR",
+  "MANAGER",
+  "IT",
+]);
+
 export const templateStepSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
-  ownerRole: z.string().default("NEW_HIRE"),
+  ownerRole: onboardingTaskOwnerRoleSchema.default("NEW_HIRE"),
   dueOffsetDays: z.number().int().min(0).default(0),
   isRequired: z.boolean().default(true),
   isComplianceItem: z.boolean().default(false),

@@ -1,23 +1,40 @@
-import type { Db } from "../../db/drizzle.types";
+import { ForbiddenException } from "@nestjs/common";
 import { assertInvitableRole } from "./assert-invitable-role";
-import { isStructuralOrgAdmin } from "./is-structural-org-admin";
 
-/**
- * Resolves the actor's org-admin standing STRUCTURALLY, then guards the
- * structural role being granted. Deriving admin standing from holding
- * `settings:manage` would let any custom role carrying that key promote others
- * to ORG_ADMIN — AC-04 (CLAUDE.md §21).
- */
+export interface OrganizationMembershipAuthorityResolver {
+  canManageOrganizationMembership(
+    orgId: string,
+    userId: string,
+  ): Promise<boolean>;
+}
+
+export async function assertMayManageOrganizationMembership(
+  access: OrganizationMembershipAuthorityResolver,
+  orgId: string,
+  actor: { userId: string; isOrgOwner: boolean },
+): Promise<void> {
+  if (actor.isOrgOwner) return;
+
+  const canManage = await access.canManageOrganizationMembership(
+    orgId,
+    actor.userId,
+  );
+  if (!canManage) {
+    throw new ForbiddenException(
+      "Only an organization owner or administrator can manage organization memberships.",
+    );
+  }
+}
+
 export async function assertMayGrantRole(
-  db: Db,
+  access: OrganizationMembershipAuthorityResolver,
   orgId: string,
   actor: { userId: string; isOrgOwner: boolean },
   role: string,
 ): Promise<void> {
-  const isOrgAdmin = await isStructuralOrgAdmin(db, {
-    orgId,
-    userId: actor.userId,
+  await assertMayManageOrganizationMembership(access, orgId, actor);
+  assertInvitableRole({
     isOrgOwner: actor.isOrgOwner,
-  });
-  assertInvitableRole({ isOrgOwner: actor.isOrgOwner, isOrgAdmin }, role);
+    isOrgAdmin: !actor.isOrgOwner,
+  }, role);
 }

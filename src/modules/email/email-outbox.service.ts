@@ -33,6 +33,11 @@ function resolveScope(explicitOrgId: string | null | undefined): {
   return orgId ? { organizationId: orgId, scope: "TENANT" } : { organizationId: null, scope: "PLATFORM" };
 }
 
+type DurableEmailOptions = Pick<
+  EmailOptions,
+  "to" | "subject" | "html" | "text" | "organizationId"
+>;
+
 @Injectable()
 export class EmailOutboxService {
   private readonly logger = new Logger(EmailOutboxService.name);
@@ -76,6 +81,38 @@ export class EmailOutboxService {
 
     if (remaining.length === 0) return null;
     return { ...options, to: Array.isArray(options.to) ? remaining : remaining[0] };
+  }
+
+  async enqueueForDelivery(
+    options: readonly DurableEmailOptions[],
+  ): Promise<number> {
+    if (options.length === 0) return 0;
+
+    const now = new Date();
+    const inserted = await this.db
+      .insert(emailOutbox)
+      .values(
+        options.map((item) => {
+          const { organizationId, scope } = resolveScope(item.organizationId);
+          return {
+            organizationId,
+            scope,
+            toEmail: Array.isArray(item.to) ? item.to.join(",") : item.to,
+            subject: item.subject,
+            html: item.html,
+            text: item.text ?? null,
+            status: "PENDING" as const,
+            attempts: 0,
+            nextAttemptAt: now,
+            createdAt: now,
+          };
+        }),
+      )
+      .returning({ id: emailOutbox.id });
+
+    if (inserted.length !== options.length)
+      throw new Error("Failed to enqueue all emails");
+    return inserted.length;
   }
 
   async enqueueAndTry(options: EmailOptions): Promise<void> {

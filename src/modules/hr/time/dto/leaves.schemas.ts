@@ -17,10 +17,16 @@ export const leaveCalendarQuerySchema = z.object({
     .optional(),
 });
 
+export const listLeaveRequestsSchema = z
+  .object({
+    cursor: z.coerce.number().int().positive().optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(50),
+  })
+  .strict();
+
 export const updateLeaveSchema = z.object({
-  status: z.enum(["APPROVED", "REJECTED", "PENDING"]),
-  rejectionReason: z.string().optional(),
-});
+  status: z.literal("PENDING"),
+}).strict();
 
 export const approveLeaveSchema = z.object({
   comment: z.string().optional(),
@@ -48,11 +54,11 @@ export const createLeaveSchema = z
         .optional(),
     ),
     priority: z.enum(["LOW", "MEDIUM", "HIGH"]).optional().default("MEDIUM"),
-    approverId: z.string().optional(),
     attachmentUrl: z.string().optional(),
     isHalfDay: z.boolean().optional().default(false),
     halfDayPeriod: z.enum(["AM", "PM"]).optional(),
   })
+  .strict()
   .refine((d) => d.endDate >= d.startDate, {
     message: "End date must be on or after start date",
     path: ["endDate"],
@@ -70,6 +76,9 @@ export const compOffSchema = z.object({
 
 export type LeaveAnalyticsQuery = z.infer<typeof leaveAnalyticsQuerySchema>;
 export type LeaveCalendarQuery = z.infer<typeof leaveCalendarQuerySchema>;
+export type ListLeaveRequestsQuery = z.infer<
+  typeof listLeaveRequestsSchema
+>;
 export type UpdateLeaveInput = z.infer<typeof updateLeaveSchema>;
 export type ApproveLeaveInput = z.infer<typeof approveLeaveSchema>;
 export type RejectLeaveInput = z.infer<typeof rejectLeaveSchema>;

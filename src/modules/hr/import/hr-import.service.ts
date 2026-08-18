@@ -12,9 +12,6 @@ import {
   assets,
   leaveBalances,
   documents,
-  users,
-  organizationMembers,
-  orgUnits,
 } from "../../../db/schema";
 import { hrImportJobs, hrImportRows } from "../../../db/schema/hr/import-jobs";
 import { HrAuditService } from "../core/hr-audit.service";
@@ -256,29 +253,16 @@ export class HrImportService {
   }
 
   async exportEntity(orgId: string, entity: HrImportEntity, input: ExportQueryInput) {
+    if (entity === "employees") {
+      throw new BadRequestException({
+        code: "HR_EMPLOYEE_EXPORT_ASYNC_REQUIRED",
+        message: "Employee exports must be created from the Employee Directory.",
+      });
+    }
+
     const { page, limit } = input;
     const offset = (page - 1) * limit;
 
-    if (entity === "employees") {
-      return this.db
-        .select({
-          employeeId: users.employeeId,
-          firstName: users.firstName,
-          lastName: users.lastName,
-          email: users.email,
-          designation: users.designation,
-          department: orgUnits.name,
-          role: organizationMembers.role,
-          joiningDate: users.joiningDate,
-          isActive: users.isActive,
-        })
-        .from(organizationMembers)
-        .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .leftJoin(orgUnits, and(eq(orgUnits.id, users.orgDepartmentId), eq(orgUnits.kind, "DEPARTMENT")))
-        .where(eq(organizationMembers.orgId, orgId))
-        .limit(limit)
-        .offset(offset);
-    }
     if (entity === "attendance") {
       return this.db
         .select()

@@ -9,6 +9,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { EmployeeOnboardingService } from "./employee-onboarding.service";
 import type { BulkOnboardEmployeeRow, OnboardEmployeeInput } from "./dto/hr-directory.schemas";
 import { ORG_MEMBER_ROLES } from "../../../common/rbac/org-roles";
+import { OrgHierarchyCacheService } from "../../../common/cache/org-hierarchy-cache.service";
 
 @Injectable()
 export class EmployeeBulkOnboardingService {
@@ -16,9 +17,11 @@ export class EmployeeBulkOnboardingService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly onboarding: EmployeeOnboardingService,
+    private readonly hierarchyCache: OrgHierarchyCacheService,
   ) {}
 
   async onboardEmployeesBulk(actor: CurrentUserContext, rows: BulkOnboardEmployeeRow[]) {
+    let hierarchyChanged = false;
     const orgDeptRows = await this.db
       .select({
         id: orgUnits.id,
@@ -37,10 +40,18 @@ export class EmployeeBulkOnboardingService {
 
     const orgDeptByKey = new Map<string, string>();
     const usedCodes = new Set<string>();
-    for (const d of orgDeptRows) {
-      orgDeptByKey.set(d.name.trim().toLowerCase(), d.id);
-      if (d.code?.trim()) orgDeptByKey.set(d.code.trim().toLowerCase(), d.id);
-      if (d.code?.trim()) usedCodes.add(d.code);
+    for (const departmentRecord of orgDeptRows) {
+      orgDeptByKey.set(
+        departmentRecord.name.trim().toLowerCase(),
+        departmentRecord.id,
+      );
+      if (departmentRecord.code?.trim()) {
+        orgDeptByKey.set(
+          departmentRecord.code.trim().toLowerCase(),
+          departmentRecord.id,
+        );
+        usedCodes.add(departmentRecord.code);
+      }
     }
 
     const resolveDepartmentId = async (raw: string): Promise<string | undefined> => {
@@ -65,8 +76,9 @@ export class EmployeeBulkOnboardingService {
         .onConflictDoNothing({ target: [orgUnits.orgId, orgUnits.kind, orgUnits.code] })
         .returning({ id: orgUnits.id, name: orgUnits.name });
 
-      let row = inserted[0];
-      if (!row) {
+      let departmentRecord = inserted[0];
+      if (departmentRecord) hierarchyChanged = true;
+      if (!departmentRecord) {
         const [found] = await this.db
           .select({ id: orgUnits.id, name: orgUnits.name })
           .from(orgUnits)
@@ -79,13 +91,16 @@ export class EmployeeBulkOnboardingService {
             ),
           )
           .limit(1);
-        row = found;
+        departmentRecord = found;
       }
-      if (!row) return undefined;
+      if (!departmentRecord) return undefined;
 
       usedCodes.add(code);
-      orgDeptByKey.set(row.name.trim().toLowerCase(), row.id);
-      return row.id;
+      orgDeptByKey.set(
+        departmentRecord.name.trim().toLowerCase(),
+        departmentRecord.id,
+      );
+      return departmentRecord.id;
     };
 
     const seenEmails = new Set<string>();
@@ -101,9 +116,9 @@ export class EmployeeBulkOnboardingService {
     let failed = 0;
 
     for (let i = 0; i < rows.length; i += 1) {
-      const row = rows[i]!;
+      const employeeRow = rows[i]!;
       const rowNum = i + 1;
-      const email = row.email.trim().toLowerCase();
+      const email = employeeRow.email.trim().toLowerCase();
 
       if (seenEmails.has(email)) {
         failed += 1;
@@ -117,38 +132,38 @@ export class EmployeeBulkOnboardingService {
       }
       seenEmails.add(email);
 
-      let departmentId = row.departmentId;
-      if (departmentId == null && row.department) {
-        departmentId = await resolveDepartmentId(row.department);
+      let departmentId = employeeRow.departmentId;
+      if (departmentId == null && employeeRow.department) {
+        departmentId = await resolveDepartmentId(employeeRow.department);
         if (departmentId == null) {
           failed += 1;
           results.push({
             row: rowNum,
             email,
             success: false,
-            error: `Unknown department "${row.department}". Create it under Organization → Departments (or HR departments) first.`,
+            error: `Unknown department "${employeeRow.department}". Create it under Organization → Departments (or HR departments) first.`,
           });
           continue;
         }
       }
 
       const payload: OnboardEmployeeInput = {
-        firstName: row.firstName.trim(),
-        lastName: row.lastName.trim(),
+        firstName: employeeRow.firstName.trim(),
+        lastName: employeeRow.lastName.trim(),
         email,
-        phone: row.phone,
-        whatsappSameAsPhone: row.whatsappSameAsPhone ?? true,
-        whatsappNumber: row.whatsappNumber,
-        gender: row.gender,
-        designation: row.designation.trim(),
+        phone: employeeRow.phone,
+        whatsappSameAsPhone: employeeRow.whatsappSameAsPhone ?? true,
+        whatsappNumber: employeeRow.whatsappNumber,
+        gender: employeeRow.gender,
+        designation: employeeRow.designation.trim(),
         departmentId,
-        role: row.role || ORG_MEMBER_ROLES.MEMBER,
-        employeeId: row.employeeId,
-        joiningDate: row.joiningDate,
-        dateOfBirth: row.dateOfBirth,
-        taxId: row.taxId,
-        monthlySalary: row.monthlySalary,
-        bankDetails: row.bankDetails,
+        role: employeeRow.role || ORG_MEMBER_ROLES.MEMBER,
+        employeeId: employeeRow.employeeId,
+        joiningDate: employeeRow.joiningDate,
+        dateOfBirth: employeeRow.dateOfBirth,
+        taxId: employeeRow.taxId,
+        monthlySalary: employeeRow.monthlySalary,
+        bankDetails: employeeRow.bankDetails,
       };
 
       try {
@@ -168,7 +183,11 @@ export class EmployeeBulkOnboardingService {
       }
     }
 
-    this.audit.log({
+    if (hierarchyChanged) {
+      await this.hierarchyCache.invalidateAfterMutation(actor.orgId);
+    }
+
+    await this.audit.logCritical({
       action: "hr.employees_bulk_onboarded",
       userId: actor.userId,
       orgId: actor.orgId,

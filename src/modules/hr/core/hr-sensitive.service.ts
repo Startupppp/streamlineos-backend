@@ -9,6 +9,8 @@ import type { Db } from "../../../db/drizzle.module";
 import type { UpdateSensitiveInput } from "./dto/hr-core.schemas";
 import { HrAuditService } from "./hr-audit.service";
 import { encrypt, decrypt } from "../onboarding/core/crypto.helpers";
+import { resolveCompatibleList } from "../../../common/db/expand-contract-compat";
+import { loadSensitiveRecordCollections } from "./hr-sensitive-record-compat";
 
 type SensitiveRow = typeof hrEmployeeSensitiveFields.$inferSelect;
 
@@ -79,7 +81,7 @@ export class HrSensitiveService {
       ipAddress,
     });
 
-    return row ? decryptRow(row) : null;
+    return row ? this.resolveSensitiveRecordCollections(orgId, decryptRow(row)) : null;
   }
 
   async update(
@@ -196,6 +198,40 @@ export class HrSensitiveService {
       ipAddress,
     });
 
-    return decryptRow(updated);
+    return this.resolveSensitiveRecordCollections(orgId, decryptRow(updated));
+  }
+
+  private async resolveSensitiveRecordCollections(
+    organizationId: string,
+    sensitiveRow: SensitiveRow,
+  ): Promise<SensitiveRow> {
+    const normalizedCollections = await loadSensitiveRecordCollections(
+      this.db,
+      organizationId,
+      sensitiveRow.id,
+    );
+    const recordsEqual = (
+      legacyRecord: Record<string, unknown>,
+      normalizedRecord: Record<string, unknown>,
+    ): boolean => JSON.stringify(legacyRecord) === JSON.stringify(normalizedRecord);
+    return {
+      ...sensitiveRow,
+      disciplinaryRecords:
+        sensitiveRow.disciplinaryRecords === null
+          ? null
+          : resolveCompatibleList(
+              sensitiveRow.disciplinaryRecords,
+              normalizedCollections.disciplinaryRecords,
+              recordsEqual,
+            ),
+      grievanceRecords:
+        sensitiveRow.grievanceRecords === null
+          ? null
+          : resolveCompatibleList(
+              sensitiveRow.grievanceRecords,
+              normalizedCollections.grievanceRecords,
+              recordsEqual,
+            ),
+    };
   }
 }

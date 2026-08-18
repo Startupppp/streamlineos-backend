@@ -8,6 +8,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
@@ -18,7 +19,9 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import {
   createLeaveSchema,
+  listLeaveRequestsSchema,
   type CreateLeaveInput,
+  type ListLeaveRequestsQuery,
 } from "./dto/leaves.schemas";
 import {
   createWfhSchema,
@@ -47,8 +50,12 @@ export class EmployeeTimeOffController {
 
   @Get("requests")
   @RequirePermission("self:leaves")
-  requests(@CurrentUser() user: CurrentUserContext) {
-    return this.leaves.my(user.orgId, user.userId);
+  requests(
+    @Query(new ZodValidationPipe(listLeaveRequestsSchema))
+    query: ListLeaveRequestsQuery,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.leaves.my(user.orgId, user.userId, query);
   }
 
   @Get("team-calendar")

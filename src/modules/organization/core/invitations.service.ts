@@ -8,13 +8,16 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { randomUUID, randomBytes } from "node:crypto";
-import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { addDays } from "date-fns";
 import { hashToken } from "../../../common/security/token.util";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AccessService } from "../../access/access.service";
-import { assertMayGrantRole } from "../../../common/rbac/assert-may-grant-role";
+import {
+  assertMayGrantRole,
+  assertMayManageOrganizationMembership,
+} from "../../../common/rbac/assert-may-grant-role";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -33,6 +36,13 @@ import { findActorMembershipId, requireActiveOrg } from "./invitations.helpers";
 export interface InviteActor {
   userId: string;
   isOrgOwner: boolean;
+}
+
+interface InvitationMutationResult {
+  success: true;
+  invitationId: string;
+  organizationName: string;
+  resent: boolean;
 }
 
 @Injectable()
@@ -80,14 +90,17 @@ export class InvitationsService {
     actor: InviteActor,
     email: string,
     role: string,
-  ): Promise<{
-    success: true;
-    invitationId: string;
-    organizationName: string;
-    resent: boolean;
-  }> {
-    const actorUserId = actor.userId;
-    await assertMayGrantRole(this.db, orgId, actor, role);
+  ): Promise<InvitationMutationResult> {
+    await assertMayGrantRole(this.access, orgId, actor, role);
+    return this.inviteAuthorized(orgId, actor.userId, email, role);
+  }
+
+  private async inviteAuthorized(
+    orgId: string,
+    actorUserId: string,
+    email: string,
+    role: string,
+  ): Promise<InvitationMutationResult> {
     const org = await requireActiveOrg(this.db, orgId);
 
     const existingUser = await this.db.query.users.findFirst({
@@ -295,6 +308,8 @@ export class InvitationsService {
       error?: string;
     }>;
   }> {
+    await assertMayGrantRole(this.access, orgId, actor, role);
+
     const results: Array<{
       email: string;
       success: boolean;
@@ -304,7 +319,12 @@ export class InvitationsService {
 
     for (const email of emails) {
       try {
-        const result = await this.invite(orgId, actor, email, role);
+        const result = await this.inviteAuthorized(
+          orgId,
+          actor.userId,
+          email,
+          role,
+        );
         results.push({
           email,
           success: true,
@@ -325,8 +345,9 @@ export class InvitationsService {
   async resend(
     orgId: string,
     invitationId: string,
-    actorUserId: string,
+    actor: InviteActor,
   ): Promise<{ success: true }> {
+    const actorUserId = actor.userId;
     const org = await requireActiveOrg(this.db, orgId);
 
     const invitation = await this.db.query.invitations.findFirst({
@@ -334,11 +355,12 @@ export class InvitationsService {
         eq(invitations.id, invitationId),
         eq(invitations.orgId, orgId),
         isNull(invitations.acceptedAt),
-        inArray(invitations.status, ["PENDING", "EXPIRED"]),
       ),
     });
     if (!invitation)
-      throw new NotFoundException("Invitation is not awaiting a response");
+      throw new NotFoundException("Invitation not found or already accepted");
+
+    await assertMayManageOrganizationMembership(this.access, orgId, actor);
 
     const rawToken = randomBytes(32).toString("hex");
     const newExpiresAt = addDays(new Date(), 7);
