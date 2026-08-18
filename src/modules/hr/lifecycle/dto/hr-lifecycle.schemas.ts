@@ -3,6 +3,17 @@ import { TERMINATION_REASONS, TERMINATION_REASON_OTHER, RESIGNATION_REASONS } fr
 
 const VALID_REASONS: readonly string[] = TERMINATION_REASONS;
 
+const resignationFileReferenceSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(2048)
+  .refine(
+    (value) =>
+      /^https:\/\//i.test(value) || /^resignations\/[a-zA-Z0-9][a-zA-Z0-9/_.-]*$/.test(value),
+    "Must be a stored resignation file reference",
+  );
+
 export const resignationCreateSchema = z.object({
   reason: z.string().min(50, "Detailed reason must be at least 50 characters").max(2000),
   reasonCategory: z.enum(RESIGNATION_REASONS),
@@ -10,7 +21,7 @@ export const resignationCreateSchema = z.object({
   noticePeriodDays: z.number().int().min(0).max(180).optional().default(30),
   willingForExitInterview: z.boolean().optional().default(true),
   companyFeedback: z.string().max(2000).optional(),
-  resignationLetterUrl: z.string().url("Must be a valid URL").optional(),
+  resignationLetterUrl: resignationFileReferenceSchema.optional(),
 });
 
 export const resignationUpdateSchema = z.object({
@@ -118,9 +129,20 @@ export const onboardingDocsSummaryQuerySchema = z.object({
   search: z.string().max(200).optional(),
 });
 
+const onboardingFileReferenceSchema = z
+  .string()
+  .trim()
+  .min(1, "fileUrl is required")
+  .max(2048, "fileUrl is too long")
+  .refine(
+    (value) =>
+      /^https:\/\//i.test(value) || /^(?:onboarding|onboarding-docs)\/[a-zA-Z0-9][a-zA-Z0-9/_.-]*$/.test(value),
+    "fileUrl must be a stored onboarding file reference",
+  );
+
 export const createOnboardingDocSchema = z.object({
   documentTypeId: z.number().int().positive("documentTypeId is required"),
-  fileUrl: z.string().url("fileUrl must be a valid URL"),
+  fileUrl: onboardingFileReferenceSchema,
   fileName: z.string().min(1, "fileName is required"),
   fileSize: z.number().int().positive().optional(),
   mimeType: z.string().optional(),

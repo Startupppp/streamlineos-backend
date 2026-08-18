@@ -163,6 +163,8 @@ export const CACHE_KEYS = {
 
   orgUnits: (orgId: string, kind?: string) =>
     kind ? `org:units:${orgId}:${kind}` : `org:units:${orgId}`,
+  orgHierarchyNamespace: (orgId: string) => `org:hierarchy:${orgId}`,
+  hrHeadcountNamespace: (orgId: string) => `hr:headcount:${orgId}`,
 
   supportReportsOverview: (orgId: string) =>
     `support:reports:overview:${orgId}`,

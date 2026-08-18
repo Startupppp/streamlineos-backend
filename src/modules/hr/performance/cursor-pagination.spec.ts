@@ -2,11 +2,13 @@ import { BadRequestException } from "@nestjs/common";
 import { decodeTimestampCursor, encodeTimestampCursor } from "./cursor-pagination";
 
 describe("timestamp cursor pagination", () => {
-  it("round-trips the deterministic createdAt/id boundary", () => {
+  it("round-trips the deterministic createdAt/recordId boundary", () => {
     const createdAt = new Date("2026-08-04T10:15:30.000Z");
-    expect(decodeTimestampCursor(encodeTimestampCursor({ createdAt, id: 42 }))).toEqual({
+    expect(
+      decodeTimestampCursor(encodeTimestampCursor({ createdAt, recordId: 42 })),
+    ).toEqual({
       createdAt,
-      id: 42,
+      recordId: 42,
     });
   });
 

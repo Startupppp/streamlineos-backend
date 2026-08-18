@@ -1,6 +1,7 @@
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { AccessService } from "../../access/access.service";
 import type { DataScope } from "../../access/access.types";
+import { PgDialect } from "drizzle-orm/pg-core";
 
 jest.mock("../../rbac/permissions", () => ({
   ...jest.requireActual("../../rbac/permissions"),
@@ -8,7 +9,12 @@ jest.mock("../../rbac/permissions", () => ({
 }));
 
 import { isScopable } from "../../rbac/permissions";
-import { ATTENDANCE_PERMISSION, resolveAttendanceScope } from "./attendance-scope";
+import {
+  ATTENDANCE_PERMISSION,
+  attendanceMemberScope,
+  resolveAttendanceReadScope,
+  resolveAttendanceScope,
+} from "./attendance-scope";
 
 const mockAccess = {
   resolveUserPermissions: jest.fn(),
@@ -34,16 +40,19 @@ describe("resolveAttendanceScope", () => {
   });
 
 
-  it("returns all when isOrgOwner is true", async () => {
+  it("resolves owner scope from the database instead of trusting token claims", async () => {
+    (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(
+      new Map<string, DataScope>([[ATTENDANCE_PERMISSION, "all"]]),
+    );
     const result = await resolveAttendanceScope(mockAccess, makeUser({ isOrgOwner: true }));
     expect(result).toBe("all");
-    expect(mockAccess.resolveUserPermissions).not.toHaveBeenCalled();
+    expect(mockAccess.resolveUserPermissions).toHaveBeenCalledWith("o1", "u1");
   });
 
-  it("returns all when the permission is not scopable", async () => {
+  it("fails closed when the permission catalog unexpectedly marks manage unscopable", async () => {
     (isScopable as jest.Mock).mockReturnValue(false);
     const result = await resolveAttendanceScope(mockAccess, makeUser());
-    expect(result).toBe("all");
+    expect(result).toBe("none");
     expect(mockAccess.resolveUserPermissions).not.toHaveBeenCalled();
   });
 
@@ -65,5 +74,25 @@ describe("resolveAttendanceScope", () => {
     (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Map<string, DataScope>());
     const result = await resolveAttendanceScope(mockAccess, makeUser());
     expect(result).toBe("none");
+  });
+
+  it("maps a view-only employee to self-service read scope", async () => {
+    (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Map());
+    await expect(resolveAttendanceReadScope(mockAccess, makeUser())).resolves.toBe("own");
+  });
+
+  it("binds own summary reads to the authenticated user", () => {
+    const compiled = new PgDialect().sqlToQuery(
+      attendanceMemberScope("own", "o1", "u1"),
+    );
+    expect(compiled.params).toEqual(["u1"]);
+  });
+
+  it("binds team summary reads to the actor's tenant teams", () => {
+    const compiled = new PgDialect().sqlToQuery(
+      attendanceMemberScope("team", "o1", "manager-1"),
+    );
+    expect(compiled.params).toContain("manager-1");
+    expect(compiled.params).toContain("o1");
   });
 });

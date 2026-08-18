@@ -8,18 +8,9 @@ export const checkInSchema = z.object({
       address: z.string().max(500).optional(),
     })
     .nullish(),
-  localDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .optional(),
-});
+}).strict();
 
-export const checkOutSchema = z.object({
-  localDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .optional(),
-});
+export const checkOutSchema = z.object({}).strict();
 
 export const monthlyQuerySchema = z.object({
   userId: z.string().optional(),
@@ -49,12 +40,28 @@ export const selfAttendanceHistoryQuerySchema = z.object({
   limit: z.coerce.number().int().min(10).max(100).default(20),
 });
 
-export const createAttendanceRegularizationSchema = z.object({
-  attendanceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  requestedCheckIn: z.string().datetime().optional(),
-  requestedCheckOut: z.string().datetime().optional(),
-  reason: z.string().min(10).max(500),
-});
+export const createAttendanceRegularizationSchema = z
+  .object({
+    attendanceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    requestedCheckIn: z.string().datetime().optional(),
+    requestedCheckOut: z.string().datetime().optional(),
+    reason: z.string().min(10).max(500),
+  })
+  .strict()
+  .refine((value) => value.requestedCheckIn || value.requestedCheckOut, {
+    message: "Provide a corrected check-in or check-out time",
+    path: ["requestedCheckIn"],
+  })
+  .refine(
+    (value) =>
+      !value.requestedCheckIn ||
+      !value.requestedCheckOut ||
+      new Date(value.requestedCheckOut) > new Date(value.requestedCheckIn),
+    {
+      message: "Check-out must be after check-in",
+      path: ["requestedCheckOut"],
+    },
+  );
 
 export const teamStatusQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -64,19 +71,90 @@ export const teamStatusQuerySchema = z.object({
   departmentId: z.string().min(1).optional(),
 });
 
-export const attendanceEmailReportSchema = z.object({
-  to: z.array(z.string().email()).min(1),
-  cc: z.array(z.string().email()).default([]),
-  bcc: z.array(z.string().email()).default([]),
-  startDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .optional(),
-  endDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .optional(),
-});
+export const ATTENDANCE_REPORT_RECIPIENT_LIMIT = 10;
+export const ATTENDANCE_REPORT_MAX_DAYS = 31;
+
+const reportEmailSchema = z
+  .string()
+  .transform((value) => value.trim().toLowerCase())
+  .pipe(z.string().email().max(320));
+
+function parseDateOnly(value: string): Date | null {
+  const parts = value.split("-").map(Number);
+  const [year, month, day] = parts;
+  if (year === undefined || month === undefined || day === undefined) return null;
+
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return parsed;
+}
+
+const reportDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD format")
+  .refine((value) => parseDateOnly(value) !== null, "Enter a valid calendar date");
+
+export const attendanceEmailReportSchema = z
+  .object({
+    to: z.array(reportEmailSchema).min(1).max(ATTENDANCE_REPORT_RECIPIENT_LIMIT),
+    cc: z.array(reportEmailSchema).max(ATTENDANCE_REPORT_RECIPIENT_LIMIT).default([]),
+    bcc: z.array(reportEmailSchema).max(ATTENDANCE_REPORT_RECIPIENT_LIMIT).default([]),
+    startDate: reportDateSchema.optional(),
+    endDate: reportDateSchema.optional(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const recipients = [...value.to, ...value.cc, ...value.bcc];
+    if (recipients.length > ATTENDANCE_REPORT_RECIPIENT_LIMIT) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["to"],
+        message: `Select at most ${ATTENDANCE_REPORT_RECIPIENT_LIMIT} recipients`,
+      });
+    }
+    if (new Set(recipients).size !== recipients.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["to"],
+        message: "Each recipient can appear only once",
+      });
+    }
+
+    if (Boolean(value.startDate) !== Boolean(value.endDate)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: value.startDate ? ["endDate"] : ["startDate"],
+        message: "Select both a start date and an end date",
+      });
+      return;
+    }
+
+    if (!value.startDate || !value.endDate) return;
+    const start = parseDateOnly(value.startDate);
+    const end = parseDateOnly(value.endDate);
+    if (!start || !end) return;
+
+    const dayCount = (end.getTime() - start.getTime()) / 86_400_000 + 1;
+    if (dayCount < 1) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["endDate"],
+        message: "End date must be on or after the start date",
+      });
+    } else if (dayCount > ATTENDANCE_REPORT_MAX_DAYS) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["endDate"],
+        message: `Date range cannot exceed ${ATTENDANCE_REPORT_MAX_DAYS} days`,
+      });
+    }
+  });
 
 const holidayNameSchema = z
   .string()

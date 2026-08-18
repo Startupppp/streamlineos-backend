@@ -11,10 +11,21 @@ export const DOCUMENT_TYPES = [
   "OTHER",
 ] as const;
 
+const documentFileReferenceSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(2048)
+  .refine(
+    (value) =>
+      /^https:\/\//i.test(value) || /^(?:documents|hr-documents)\/[a-zA-Z0-9][a-zA-Z0-9/_.-]*$/.test(value),
+    "Invalid stored document file reference",
+  );
+
 export const createDocumentSchema = z.object({
   name: z.string().min(1).max(255),
   type: z.enum(DOCUMENT_TYPES),
-  fileUrl: z.string().url(),
+  fileUrl: documentFileReferenceSchema,
   fileName: z.string().optional(),
   fileSize: z.number().int().positive().optional(),
   mimeType: z.string().optional(),
@@ -37,12 +48,16 @@ export const updateDocumentSchema = z.object({
   expiryDate: z.string().optional().nullable(),
 });
 
-export const listDocumentsSchema = z.object({
-  userId: z.string().optional(),
-  type: z.string().optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
-});
+export const listDocumentsSchema = z
+  .object({
+    userId: z.string().optional(),
+    type: z.enum(DOCUMENT_TYPES).optional(),
+    cursor: z.string().min(1).max(2048).optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+    search: z.string().trim().max(200).optional(),
+    category: z.string().trim().min(1).max(100).optional(),
+  })
+  .strict();
 
 export const listRichDocumentsSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -74,19 +89,30 @@ export const updateRichDocumentSchema = z.object({
   contentJson: z.unknown().optional(),
 });
 
-export const renderLetterSchema = z.object({
-  templateId: z.number().int().positive(),
-  employeeId: z.number().int().positive().optional(),
-  extraContext: z.record(z.string(), z.string()).optional(),
-});
+const letterEmployeeTargetSchema = z
+  .object({
+    employmentId: z.number().int().positive().optional(),
+    employeeUserId: z.string().min(1).max(255).optional(),
+  })
+  .refine((value) => !(value.employmentId && value.employeeUserId), {
+    message: "Choose one employee target",
+  });
 
-export const saveLetterSchema = z.object({
-  templateId: z.number().int().positive(),
-  templateVersion: z.number().int().positive(),
-  employeeId: z.number().int().positive().optional(),
-  outputHtml: z.string().min(1),
-  contextSnapshot: z.record(z.string(), z.unknown()).optional(),
-});
+export const renderLetterSchema = z
+  .object({
+    templateId: z.number().int().positive(),
+    extraContext: z.record(z.string(), z.string()).optional(),
+  })
+  .and(letterEmployeeTargetSchema);
+
+export const saveLetterSchema = z
+  .object({
+    templateId: z.number().int().positive(),
+    templateVersion: z.number().int().positive(),
+    outputHtml: z.string().min(1),
+    contextSnapshot: z.record(z.string(), z.unknown()).optional(),
+  })
+  .and(letterEmployeeTargetSchema);
 
 export type DocumentType = (typeof DOCUMENT_TYPES)[number];
 export type CreateDocumentInput = z.infer<typeof createDocumentSchema>;

@@ -60,5 +60,6 @@ import { SuccessionService } from "./succession.service";
     CalibrationService,
     SuccessionService,
   ],
+  exports: [DocumentsService],
 })
 export class HrPerformanceModule {}

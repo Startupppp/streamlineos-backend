@@ -1,4 +1,10 @@
-export { getTenantContext, runWithTenantContext, TenantContextService } from "./tenant-context";
+export {
+  getTenantContext,
+  registerAfterCommit,
+  runOutsideTenantContext,
+  runWithTenantContext,
+  TenantContextService,
+} from "./tenant-context";
 export { withTenant } from "./with-tenant";
 export type { TenantTx } from "./with-tenant";
 export { withIdentity } from "./with-identity";

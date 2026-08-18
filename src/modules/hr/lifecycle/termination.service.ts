@@ -3,14 +3,12 @@ import {
   ConflictException,
   Inject,
   Injectable,
-  InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, lte, notInArray, sql } from "drizzle-orm";
 import {
   terminations,
   users,
-  organizations,
   organizationMembers,
   moduleOwnerships,
   roleAssignments,
@@ -24,18 +22,22 @@ import { type Db } from "../../../db/drizzle.module";
 import { ROLE_RANK } from "../../../common/rbac/grantability";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
-import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
-import { EmailService } from "../../email/email.service";
 import { AutomationService } from "../../automation/automation.service";
 import { HrAutomationEngineService } from "../automations/hr-automation-engine.service";
-import { SessionsService } from "../../sessions/sessions.service";
-import { getTerminationEmailTemplate } from "../../email/templates/hr";
-import { formatDdMmmYyyy } from "../../../common/date";
+import { OrgMembershipService } from "../../organization/core/org-membership.service";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import type {
   TerminationCreateInput,
   TerminationReviewInput,
   ListTerminationsQueryInput,
 } from "./dto/hr-lifecycle.schemas";
+import { TerminationCommunicationsService } from "./termination-communications.service";
+import { resolveCompatibleList } from "../../../common/db/expand-contract-compat";
+import {
+  loadTerminationRelationalCollections,
+  syncTerminationReasons,
+} from "./termination-relational-compat";
+import { transitionTermination } from "./lifecycle-transition";
 
 @Injectable()
 export class TerminationService {
@@ -43,19 +45,17 @@ export class TerminationService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly cache: CacheService,
-    private readonly email: EmailService,
+    private readonly communications: TerminationCommunicationsService,
     private readonly automation: AutomationService,
     private readonly hrAutomation: HrAutomationEngineService,
-    private readonly sessions: SessionsService,
+    private readonly memberships: OrgMembershipService,
   ) {}
-
   async list(orgId: string, params: ListTerminationsQueryInput) {
     const limit = Math.min(params.limit, 100);
     const offset = (params.page - 1) * limit;
     const conditions = [eq(terminations.orgId, orgId)];
     if (params.status) conditions.push(eq(terminations.status, params.status));
     const where = and(...conditions);
-
     const [data, statusRows] = await Promise.all([
       this.db
         .select({
@@ -95,9 +95,8 @@ export class TerminationService {
         .select({ status: terminations.status, count: sql<number>`count(*)` })
         .from(terminations)
         .where(eq(terminations.orgId, orgId))
-        .groupBy(terminations.status),
+      .groupBy(terminations.status),
     ]);
-
     const statusCounts: Record<string, number> = {};
     let orgTotal = 0;
     for (const row of statusRows) {
@@ -106,9 +105,20 @@ export class TerminationService {
       orgTotal += rowCount;
     }
     const total = params.status ? (statusCounts[params.status] ?? 0) : orgTotal;
-
+    const relationalCollections = await loadTerminationRelationalCollections(
+      this.db,
+      orgId,
+      data.map((termination) => termination.id),
+    );
+    const compatibleData = data.map((termination) => ({
+      ...termination,
+      reasons: resolveCompatibleList(
+        termination.reasons,
+        relationalCollections.reasonsByTerminationId.get(termination.id),
+      ),
+    }));
     return {
-      data,
+      data: compatibleData,
       pagination: { page: params.page, limit, total, totalPages: Math.ceil(total / limit) },
       statusCounts: { ...statusCounts, ALL: orgTotal },
     };
@@ -116,24 +126,20 @@ export class TerminationService {
 
   async create(orgId: string, actorUserId: string, isOrgAdmin: boolean, input: TerminationCreateInput) {
     if (input.userId === actorUserId) throw new BadRequestException("You cannot terminate yourself.");
-
     const membership = await this.db.query.organizationMembers.findFirst({
       where: and(eq(organizationMembers.userId, input.userId), eq(organizationMembers.orgId, orgId)),
     });
     if (!membership) throw new NotFoundException("Employee not found.");
-
     const targetUser = await this.db.query.users.findFirst({
       where: eq(users.id, input.userId),
       columns: { id: true, isActive: true },
     });
     if (!targetUser) throw new NotFoundException("Employee not found.");
-
     if (membership.isOwner) {
       throw new BadRequestException(
         "The organization owner cannot be terminated. Transfer organization ownership first.",
       );
     }
-
     const [ownedModules, privilegedRoles] = await Promise.all([
       this.db
         .select({ moduleKey: moduleOwnerships.moduleKey })
@@ -154,9 +160,8 @@ export class TerminationService {
             eq(roleAssignments.organizationMembershipId, membership.id),
             lte(roles.rank, ROLE_RANK.MODULE_ADMIN),
           ),
-        ),
+      ),
     ]);
-
     if (ownedModules.length > 0) {
       throw new BadRequestException(
         `This employee owns the following module(s): ${ownedModules.map((m) => m.moduleKey).join(", ")}. Transfer module ownership before terminating them.`,
@@ -199,24 +204,44 @@ export class TerminationService {
 
     const isOrgAdminInitiator = isOrgAdmin;
     const now = new Date();
-    const [record] = await this.db
-      .insert(terminations)
-      .values({
-        orgId,
-        userId: input.userId,
-        reasons: input.reasons,
-        detailedExplanation: input.detailedExplanation,
-        effectiveDate: input.effectiveDate,
-        severanceAmount: input.severanceAmount !== undefined ? input.severanceAmount.toString() : undefined,
-        noticePeriodWaived: input.noticePeriodWaived,
-        internalNotes: input.internalNotes,
-        status: isOrgAdminInitiator ? "APPROVED" : "DRAFT",
-        initiatedBy: actorUserId,
-        ...(isOrgAdminInitiator && { finalReviewedBy: actorUserId, finalReviewedAt: now }),
-      })
-      .returning();
+    const record = await runInTenantTransaction(
+      this.db,
+      async (transaction) => {
+        const [createdTermination] = await transaction
+          .insert(terminations)
+          .values({
+            orgId,
+            userId: input.userId,
+            reasons: input.reasons,
+            detailedExplanation: input.detailedExplanation,
+            effectiveDate: input.effectiveDate,
+            severanceAmount:
+              input.severanceAmount !== undefined
+                ? input.severanceAmount.toString()
+                : undefined,
+            noticePeriodWaived: input.noticePeriodWaived,
+            internalNotes: input.internalNotes,
+            status: isOrgAdminInitiator ? "APPROVED" : "DRAFT",
+            initiatedBy: actorUserId,
+            ...(isOrgAdminInitiator && {
+              finalReviewedBy: actorUserId,
+              finalReviewedAt: now,
+            }),
+          })
+          .returning();
+        if (!createdTermination) throw new Error("Failed to create termination");
+        await syncTerminationReasons(
+          transaction,
+          orgId,
+          createdTermination.id,
+          input.reasons,
+        );
+        return createdTermination;
+      },
+      { orgId },
+    );
 
-    this.audit.log({
+    await this.audit.logCritical({
       action: "TERMINATION_CREATED",
       userId: actorUserId,
       orgId,
@@ -238,7 +263,25 @@ export class TerminationService {
       },
     });
     if (!data) throw new NotFoundException("Termination not found.");
-    return data;
+    const relationalCollections = await loadTerminationRelationalCollections(
+      this.db,
+      orgId,
+      [data.id],
+    );
+    return {
+      ...data,
+      reasons: resolveCompatibleList(
+        data.reasons,
+        relationalCollections.reasonsByTerminationId.get(data.id),
+      ),
+      supportingDocUrls:
+        data.supportingDocUrls === null
+          ? null
+          : resolveCompatibleList(
+              data.supportingDocUrls,
+              relationalCollections.supportingDocumentsByTerminationId.get(data.id),
+            ),
+    };
   }
 
   async submit(orgId: string, actorUserId: string, terminationId: number) {
@@ -252,18 +295,20 @@ export class TerminationService {
 
     const previousStatus = existing.status;
 
-    await this.db
-      .update(terminations)
-      .set({
+    await transitionTermination(this.db, {
+      organizationId: orgId,
+      terminationId,
+      currentStatus: existing.status,
+      currentVersion: existing.rowVersion,
+      changes: {
         status: "PENDING_FINAL",
         finalRemarks: null,
         finalReviewedBy: null,
         finalReviewedAt: null,
-        updatedAt: new Date(),
-      })
-      .where(eq(terminations.id, terminationId));
+      },
+    });
 
-    this.audit.log({
+    await this.audit.logCritical({
       action: "TERMINATION_SUBMITTED",
       userId: actorUserId,
       orgId,
@@ -288,18 +333,20 @@ export class TerminationService {
 
     const newStatus = input.decision === "approve" ? "APPROVED" : "REJECTED";
 
-    await this.db
-      .update(terminations)
-      .set({
+    await transitionTermination(this.db, {
+      organizationId: orgId,
+      terminationId,
+      currentStatus: existing.status,
+      currentVersion: existing.rowVersion,
+      changes: {
         status: newStatus,
         finalReviewedBy: actorUserId,
         finalReviewedAt: new Date(),
         finalRemarks: input.remarks || null,
-        updatedAt: new Date(),
-      })
-      .where(eq(terminations.id, terminationId));
+      },
+    });
 
-    this.audit.log({
+    await this.audit.logCritical({
       action: newStatus === "APPROVED" ? "TERMINATION_APPROVED" : "TERMINATION_REJECTED",
       userId: actorUserId,
       orgId,
@@ -312,134 +359,11 @@ export class TerminationService {
   }
 
   async getLetter(orgId: string, terminationId: number) {
-    const termination = await this.db.query.terminations.findFirst({
-      where: and(eq(terminations.id, terminationId), eq(terminations.orgId, orgId)),
-      with: { user: { columns: { id: true, name: true, designation: true } } },
-    });
-    if (!termination) throw new NotFoundException("Termination not found.");
-
-    const [org] = await this.db
-      .select({ name: organizations.name, supportEmail: organizations.supportEmail })
-      .from(organizations)
-      .where(eq(organizations.id, orgId))
-      .limit(1);
-
-    const employee = termination.user;
-    const employeeName = employee?.name ?? "Employee";
-    const companyName = org?.name ?? "the Company";
-    const hrEmail = org?.supportEmail ?? "";
-    const reasonsList = (termination.reasons ?? []).map((r) => `<li>${r}</li>`).join("\n");
-    const effectiveDate = termination.effectiveDate ? formatDdMmmYyyy(termination.effectiveDate) : "N/A";
-    const severance = termination.severanceAmount;
-
-    const letterHtml = `<div style="font-family:'Times New Roman',serif;max-width:700px;margin:0 auto;padding:40px;line-height:1.8">
-  <div style="text-align:center;margin-bottom:30px;border-bottom:2px solid #333;padding-bottom:15px">
-    <h2 style="margin:0">${companyName}</h2>
-    <p style="margin:5px 0 0;font-size:12px;color:#666">CONFIDENTIAL</p>
-  </div>
-  <p style="text-align:right">Date: ${formatDdMmmYyyy(new Date())}</p>
-  <p>To,<br/><strong>${employeeName}</strong><br/>${employee?.designation ?? "N/A"}<br/>${companyName}</p>
-  <p><strong>Subject: Termination of Employment</strong></p>
-  <p>Dear ${employeeName},</p>
-  <p>This letter is to formally notify you that your employment with <strong>${companyName}</strong> is being terminated, effective <strong>${effectiveDate}</strong>.</p>
-  <p><strong>Reason(s) for Termination:</strong></p>
-  <ul>${reasonsList}</ul>
-  ${severance ? `<p><strong>Severance:</strong> You will receive a severance payment of <strong>${companyName.includes("INR") ? "" : "INR "}${severance}</strong>, subject to applicable deductions and taxes. This amount will be included in your final settlement.</p>` : ""}
-  <p><strong>Final Settlement:</strong> Your final settlement, including any pending salary, leave encashment, and other dues, will be processed within 45 days from the effective date of termination.</p>
-  <p><strong>Return of Company Property:</strong> You are requested to hand over all company assets, documents, and responsibilities to <strong>Reporting Manager/HR</strong> on your last working day.</p>
-  <p><strong>Confidentiality:</strong> All confidentiality and non-disclosure agreements remain in full effect even after termination.</p>
-  <p>We wish you the best in your future endeavours.</p>
-  <p style="margin-top:40px">Sincerely,<br/><br/><strong>Human Resources Department</strong><br/>${companyName}</p>
-  ${hrEmail ? `<p style="margin-top:20px;font-size:11px;color:#999;text-align:center">For queries, please contact HR at <a href="mailto:${hrEmail}">${hrEmail}</a></p>` : ""}
-</div>`;
-
-    return { html: letterHtml };
+    return this.communications.getLetter(orgId, terminationId);
   }
 
   async sendEmail(orgId: string, actorUserId: string, terminationId: number) {
-    const existing = await this.db.query.terminations.findFirst({
-      where: and(eq(terminations.id, terminationId), eq(terminations.orgId, orgId)),
-      with: { user: { columns: { id: true, name: true, email: true, designation: true } } },
-    });
-    if (!existing) throw new NotFoundException("Termination not found.");
-    if (existing.status !== "APPROVED") {
-      throw new BadRequestException("Termination must be FINAL-approved before sending.");
-    }
-    if (existing.emailSentAt && existing.emailStatus === "sent") {
-      throw new ConflictException("Termination email has already been sent.");
-    }
-
-    const employee = existing.user;
-    if (!employee?.email) throw new BadRequestException("Employee email not found.");
-
-    const [org] = await this.db
-      .select({ supportEmail: organizations.supportEmail })
-      .from(organizations)
-      .where(eq(organizations.id, orgId))
-      .limit(1);
-
-    const hrContactEmail = org?.supportEmail ?? "";
-
-    const actor = await this.db.query.users.findFirst({
-      where: eq(users.id, actorUserId),
-      columns: { name: true },
-    });
-
-    const effectiveDateFormatted = existing.effectiveDate ? formatDdMmmYyyy(existing.effectiveDate) : "N/A";
-
-    try {
-      await this.email.sendEmail({
-        to: employee.email,
-        subject: "Notice of employment termination",
-        html: getTerminationEmailTemplate(
-          employee.name ?? "Employee",
-          employee.designation ?? "N/A",
-          effectiveDateFormatted,
-          actor?.name ?? "HR",
-          existing.reasons?.join(", ") ?? "",
-          hrContactEmail,
-        ),
-      });
-
-      await this.db
-        .update(terminations)
-        .set({ status: "SENT", emailSentAt: new Date(), emailStatus: "sent", updatedAt: new Date() })
-        .where(eq(terminations.id, terminationId));
-
-      this.audit.log({
-        action: "TERMINATION_EMAIL_SENT",
-        userId: actorUserId,
-        orgId,
-        targetId: String(terminationId),
-        targetType: "termination",
-        metadata: {
-          employeeId: existing.userId,
-          employeeName: employee.name,
-          employeeEmail: employee.email,
-          pdfAttached: false,
-        },
-      });
-
-      return { success: true };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Unknown email error";
-
-      await this.db
-        .update(terminations)
-        .set({ emailStatus: `failed: ${errorMessage}`, updatedAt: new Date() })
-        .where(eq(terminations.id, terminationId));
-
-      this.audit.log({
-        action: "TERMINATION_EMAIL_FAILED",
-        userId: actorUserId,
-        orgId,
-        targetId: String(terminationId),
-        targetType: "termination",
-        metadata: { employeeId: existing.userId, error: errorMessage },
-      });
-
-      throw new InternalServerErrorException(`Failed to send email: ${errorMessage}`);
-    }
+    return this.communications.sendEmail(orgId, actorUserId, terminationId);
   }
 
   async complete(orgId: string, actorUserId: string, terminationId: number) {
@@ -449,13 +373,14 @@ export class TerminationService {
     if (!existing) throw new NotFoundException("Termination not found.");
     if (existing.status !== "SENT") throw new BadRequestException("Termination letter must be sent first.");
 
-    const assignedAssets = await this.db.transaction(async (tx) => {
-      await tx
-        .update(terminations)
-        .set({ status: "COMPLETED", updatedAt: new Date() })
-        .where(eq(terminations.id, terminationId));
-
-      await tx.update(users).set({ isActive: false }).where(eq(users.id, existing.userId));
+    const assignedAssets = await runInTenantTransaction(this.db, async (tx) => {
+      await transitionTermination(tx, {
+        organizationId: orgId,
+        terminationId,
+        currentStatus: existing.status,
+        currentVersion: existing.rowVersion,
+        changes: { status: "COMPLETED" },
+      });
 
       await tx
         .insert(fnfSettlements)
@@ -478,22 +403,44 @@ export class TerminationService {
         );
       }
 
-      return found;
-    });
+      // Employment termination is tenant-scoped. Archive only this
+      // organization membership so active memberships in other organizations
+      // and the person's global sign-in remain usable.
+      await this.memberships.setMemberLifecycleStatus(
+        orgId,
+        actorUserId,
+        existing.userId,
+        "archived",
+        {
+          reason: "Employment terminated",
+          auditAction: "org.member_archived_after_termination",
+        },
+      );
 
-    await this.sessions.revokeAllForUser(existing.userId);
-    await bustMembershipStatusCache(this.cache, existing.userId, orgId);
+      return found;
+    }, { orgId });
+
     await this.invalidateHrDashboardCache(orgId);
+
+    const relationalCollections = await loadTerminationRelationalCollections(
+      this.db,
+      orgId,
+      [terminationId],
+    );
+    const compatibleReasons = resolveCompatibleList(
+      existing.reasons,
+      relationalCollections.reasonsByTerminationId.get(terminationId),
+    );
 
     this.dispatchEmployeeTerminated(
       orgId,
       terminationId,
       existing.userId,
-      existing.reasons ?? [],
+      compatibleReasons,
       existing.noticePeriodWaived ?? false,
     );
 
-    this.audit.log({
+    await this.audit.logCritical({
       action: "TERMINATION_COMPLETED",
       userId: actorUserId,
       orgId,
@@ -501,7 +448,8 @@ export class TerminationService {
       targetType: "termination",
       metadata: {
         employeeId: existing.userId,
-        userDeactivated: true,
+        organizationMembershipArchived: true,
+        globalAccountDeactivated: false,
         fnfInitiated: true,
         assetsToReturn: assignedAssets.length,
       },

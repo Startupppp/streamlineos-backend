@@ -1,10 +1,14 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, gte, inArray, isNotNull, isNull, lte, or } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, or } from "drizzle-orm";
 import { toZonedTime } from "date-fns-tz";
-import { attendance, employeeShiftAssignments, hrAttendanceRegularizations, orgHolidays, organizationMembers, organizations, rosterEntries, rosters, shiftTemplates, users } from "../../../db/schema";
+import { attendance, employeeShiftAssignments, hrAttendanceRegularizations, organizationMembers, organizations, rosterEntries, rosters, shiftTemplates, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { AttendancePolicyService, type AttendancePolicyRules, type OvertimePolicyRules } from "./attendance-policy.service";
+import { listCompatibleHolidays } from "../../../db/compat/organization-holidays";
+import { AttendancePolicyService } from "./attendance-policy.service";
+import { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { attendanceMemberScope, resolveAttendanceReadScope } from "./attendance-scope";
 
 interface ShiftInfo {
   startTime: string;
@@ -38,14 +42,37 @@ export interface BuildAttendanceSummaryParams {
   limit?: number;
 }
 
+export type BuildScopedAttendanceSummaryParams = Omit<
+  BuildAttendanceSummaryParams,
+  "orgId" | "userIds"
+>;
+
+interface AttendanceSummaryScope {
+  actorUserId: string;
+  dataScope: Awaited<ReturnType<typeof resolveAttendanceReadScope>>;
+}
+
 @Injectable()
 export class AttendanceSummaryService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly policyService: AttendancePolicyService,
+    private readonly access: AccessService,
   ) {}
 
-  async buildAttendanceSummary(params: BuildAttendanceSummaryParams) {
+  async buildScopedAttendanceSummary(
+    currentUser: CurrentUserContext,
+    params: BuildScopedAttendanceSummaryParams,
+  ) {
+    const dataScope = await resolveAttendanceReadScope(this.access, currentUser);
+    return this.build({ ...params, orgId: currentUser.orgId }, { actorUserId: currentUser.userId, dataScope });
+  }
+
+  buildAttendanceSummary(params: BuildAttendanceSummaryParams) {
+    return this.build(params);
+  }
+
+  private async build(params: BuildAttendanceSummaryParams, scope?: AttendanceSummaryScope) {
     const { orgId, periodStart, periodEnd, employeeId, userIds: explicitUserIds } = params;
 
     let members: { userId: string; name: string | null; firstName: string | null; lastName: string | null; email: string }[];
@@ -57,20 +84,35 @@ export class AttendanceSummaryService {
         .select({ userId: organizationMembers.userId, name: users.name, firstName: users.firstName, lastName: users.lastName, email: users.email })
         .from(organizationMembers)
         .innerJoin(users, eq(users.id, organizationMembers.userId))
-        .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true), inArray(organizationMembers.userId, explicitUserIds)));
+        .where(
+          and(
+            eq(organizationMembers.orgId, orgId),
+            eq(organizationMembers.status, "ACTIVE"),
+            eq(users.isActive, true),
+            inArray(organizationMembers.userId, explicitUserIds),
+          ),
+        );
       responseLimit = members.length;
     } else {
       const pageSize = Math.min(params.limit ?? 50, 100);
       const offset = ((params.page ?? 1) - 1) * pageSize;
 
-      const memberConditions = [eq(organizationMembers.orgId, orgId), eq(users.isActive, true)];
+      const memberConditions = [
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.status, "ACTIVE"),
+        eq(users.isActive, true),
+      ];
       if (employeeId) memberConditions.push(eq(organizationMembers.userId, employeeId));
+      if (scope) {
+        memberConditions.push(attendanceMemberScope(scope.dataScope, orgId, scope.actorUserId));
+      }
 
       members = await this.db
         .select({ userId: organizationMembers.userId, name: users.name, firstName: users.firstName, lastName: users.lastName, email: users.email })
         .from(organizationMembers)
         .innerJoin(users, eq(users.id, organizationMembers.userId))
         .where(and(...memberConditions))
+        .orderBy(asc(users.name), asc(organizationMembers.userId))
         .limit(pageSize)
         .offset(offset);
 
@@ -120,10 +162,7 @@ export class AttendanceSummaryService {
           ),
         ),
 
-      this.db
-        .select({ date: orgHolidays.date })
-        .from(orgHolidays)
-        .where(and(eq(orgHolidays.orgId, orgId), gte(orgHolidays.date, periodStart), lte(orgHolidays.date, periodEnd))),
+      listCompatibleHolidays(this.db, orgId, periodStart, periodEnd),
     ]);
 
     const orgTimezone = orgRow[0]?.timezone ?? "Asia/Kolkata";
@@ -188,32 +227,10 @@ export class AttendanceSummaryService {
       if (!assignedShiftByUser.has(r.userId)) assignedShiftByUser.set(r.userId, r);
     }
 
-    const POLICY_CHUNK_SIZE = 25;
-    const attendanceEntries: Array<readonly [string, AttendancePolicyRules]> = [];
-    const overtimeEntries: Array<readonly [string, OvertimePolicyRules]> = [];
-
-    for (let i = 0; i < userIds.length; i += POLICY_CHUNK_SIZE) {
-      const chunk = userIds.slice(i, i + POLICY_CHUNK_SIZE);
-      const [attBatch, otBatch] = await Promise.all([
-        Promise.all(
-          chunk.map(async (uid) => {
-            const rules = await this.policyService.getAttendanceRules(orgId, uid, periodStart);
-            return [uid, rules] as const;
-          }),
-        ),
-        Promise.all(
-          chunk.map(async (uid) => {
-            const rules = await this.policyService.getOvertimeRules(orgId, uid, periodStart);
-            return [uid, rules] as const;
-          }),
-        ),
-      ]);
-      attendanceEntries.push(...attBatch);
-      overtimeEntries.push(...otBatch);
-    }
-
-    const attendanceRulesByUser = new Map(attendanceEntries);
-    const overtimeRulesByUser = new Map(overtimeEntries);
+    const [attendanceRulesByUser, overtimeRulesByUser] = await Promise.all([
+      this.policyService.getAttendanceRulesForEmployees(orgId, userIds, periodStart),
+      this.policyService.getOvertimeRulesForEmployees(orgId, userIds, periodStart),
+    ]);
 
     const results: EmployeeAttendanceSummary[] = members.map((member) => {
         const userId = member.userId;

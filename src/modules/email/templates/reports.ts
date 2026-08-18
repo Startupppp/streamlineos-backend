@@ -11,13 +11,13 @@ export interface MonthlyExpenseReportRow {
   status: string;
 }
 
-export function getWeeklyAttendanceReportTemplate(
-  weekRange: string,
+export function getAttendanceReportTemplate(
+  dateRange: string,
   orgName: string,
   rows: { department: string; name: string; totalHours: string; autoCheckoutDays: number; overtimeDays: number; daysPresent: number }[]
 ): string {
   const sOrgName = escapeHtml(orgName);
-  const sWeekRange = escapeHtml(weekRange);
+  const sDateRange = escapeHtml(dateRange);
   const tableRows = rows
     .map(
       (r) => `
@@ -33,7 +33,7 @@ export function getWeeklyAttendanceReportTemplate(
     .join("");
 
   const content = `
-    <p class="email-text">Attendance for <strong>${sOrgName}</strong> â€” week of <strong>${sWeekRange}</strong>.</p>
+    <p class="email-text">Attendance for <strong>${sOrgName}</strong> â€” <strong>${sDateRange}</strong>.</p>
 
     <table style="width:100%;border-collapse:collapse;margin:24px 0;font-size:14px;">
       <thead>
@@ -53,8 +53,8 @@ export function getWeeklyAttendanceReportTemplate(
   `;
 
   return getEmailTemplate({
-    title: `Attendance report â€” week of ${sWeekRange}`,
-    preheader: `Attendance summary for ${sOrgName} â€” week of ${sWeekRange}`,
+    title: `Attendance report â€” ${sDateRange}`,
+    preheader: `Attendance summary for ${sOrgName} â€” ${sDateRange}`,
     content,
   });
 }

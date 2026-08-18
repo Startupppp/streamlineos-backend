@@ -182,7 +182,7 @@ export type UpdateCostCenterInput = z.infer<typeof updateCostCenterSchema>;
 
 export const listQuerySchema = z
   .object({
-    page: z.coerce.number().int().min(1).default(1),
+    cursor: z.string().min(1).max(2048).optional(),
     limit: z.coerce.number().int().min(1).max(100).default(20),
     search: z.string().trim().optional(),
     status: z

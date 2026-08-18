@@ -1,16 +1,21 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, unique, foreignKey, check } from "drizzle-orm/pg-core";
+import { relations, sql } from "drizzle-orm";
 import { wfhRequestStatusEnum, ticketPriorityEnum, ticketStatusEnum, deviceStatusEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
+import { workers } from "../directory/workers";
+import { workerEngagements } from "../directory/worker-engagements";
+import type { AttendanceRecordStatus } from "./attendance-status";
 
 export const attendance = pgTable("attendance", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  workerId: text("worker_id"),
+  workerEngagementId: text("worker_engagement_id"),
   date: date("date").notNull(),
   checkIn: timestamp("check_in"),
   checkOut: timestamp("check_out"),
-  status: text("status").default("PRESENT").notNull(),
+  status: text("status").$type<AttendanceRecordStatus>().default("PRESENT").notNull(),
   workHours: decimal("work_hours", { precision: 6, scale: 2 }),
   breakHours: decimal("break_hours", { precision: 6, scale: 2 }).default("0").notNull(),
   breaks: jsonb("breaks").$type<{ start: string; end?: string }[]>().default([]).notNull(),
@@ -23,6 +28,30 @@ export const attendance = pgTable("attendance", {
   unique("uniq_attendance_org_id").on(table.orgId, table.id),
   index("idx_attendance_org_date_status").on(table.orgId, table.date, table.status),
   index("idx_attendance_org_user_date").on(table.orgId, table.userId, table.date),
+  index("idx_attendance_org_worker_date").on(table.orgId, table.workerId, table.date),
+  index("idx_attendance_org_engagement_date").on(table.orgId, table.workerEngagementId, table.date),
+  foreignKey({
+    columns: [table.orgId, table.workerId],
+    foreignColumns: [workers.organizationId, workers.workerId],
+    name: "fk_attendance_org_worker",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.orgId, table.workerId, table.workerEngagementId],
+    foreignColumns: [
+      workerEngagements.organizationId,
+      workerEngagements.workerId,
+      workerEngagements.workerEngagementId,
+    ],
+    name: "fk_attendance_worker_engagement",
+  }).onDelete("restrict"),
+  check(
+    "chk_attendance_canonical_subject_pair",
+    sql`(${table.workerId} IS NULL) = (${table.workerEngagementId} IS NULL)`,
+  ),
+  check(
+    "chk_attendance_status",
+    sql`${table.status} IN ('PRESENT', 'ON_BREAK', 'CHECKED_OUT', 'ABSENT', 'HALF_DAY', 'LATE', 'WFH', 'HALFDAY', 'HOLIDAY_WORK', 'LEAVE_WITHOUT_PAY')`,
+  ),
 ]);
 
 export const holidays = pgTable("holidays", {

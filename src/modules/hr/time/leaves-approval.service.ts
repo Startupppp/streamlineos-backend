@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -10,71 +11,26 @@ import {
   leaveBalances,
   leaveRequests,
   leaveTypes,
-  users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { resolveLeavesViewScope } from "./leaves-scope";
+import { leaveApprovalScope, resolveLeavesViewScope } from "./leaves-scope";
 import { AuditService } from "../../../common/audit/audit.service";
-import { EmailService } from "../../email/email.service";
-import { AutomationService } from "../../automation/automation.service";
-import { WebhooksDispatchService } from "../../webhooks/webhooks-dispatch.service";
-import { NotificationsService } from "../../notifications/notifications.service";
 import { LeaveLedgerService } from "./leave-ledger.service";
-import { PayrollInputsService } from "../payroll-inputs/payroll-inputs.service";
-import { CacheService } from "../../../common/cache/cache.service";
-import { logger } from "../../../common/logger/logger.service";
 import type { ApproveLeaveInput, RejectLeaveInput, UpdateLeaveInput } from "./dto/leaves.schemas";
-
-interface LeaveRow {
-  userId: string;
-  leaveTypeId: number;
-  startDate: string;
-  endDate: string;
-}
+import { LeaveDecisionEffectsService } from "./leave-decision-effects.service";
 
 @Injectable()
 export class LeavesApprovalService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
-    private readonly email: EmailService,
-    private readonly automation: AutomationService,
-    private readonly webhooksDispatch: WebhooksDispatchService,
-    private readonly notifications: NotificationsService,
     private readonly access: AccessService,
     private readonly ledger: LeaveLedgerService,
-    private readonly payrollInputs: PayrollInputsService,
-    private readonly cache: CacheService,
+    private readonly effects: LeaveDecisionEffectsService,
   ) {}
-
-  private async invalidateLeaveAnalytics(orgId: string): Promise<void> {
-    await this.cache.invalidateNamespace(`hr:leave-analytics:${orgId}`);
-  }
-
-  private rebuildPayrollInputsForLeaveRange(
-    orgId: string,
-    actorId: string,
-    startDate: string,
-    endDate: string,
-  ): void {
-    const months = new Set<string>();
-    months.add(startDate.slice(0, 7));
-    months.add(endDate.slice(0, 7));
-    for (const monthKey of months) {
-      void this.payrollInputs
-        .rebuildOpenPeriodForMonth(orgId, actorId, monthKey)
-        .catch((err: unknown) => {
-          logger.warn("payroll input rebuild after leave decision failed", {
-            orgId,
-            monthKey,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        });
-    }
-  }
 
   private countWorkdays(startDate: string, endDate: string): number {
     let count = 0;
@@ -93,118 +49,99 @@ export class LeavesApprovalService {
     return this.countWorkdays(startDate, endDate);
   }
 
-  private async dispatchLeaveDecision(
-    u: CurrentUserContext,
-    leaveId: number,
-    existing: LeaveRow,
-    decision: "APPROVED" | "REJECTED",
-    rejectionReason: string | null,
-  ): Promise<void> {
-    try {
-      const [employee, leaveTypeRow, approver] = await Promise.all([
-        this.db.query.users.findFirst({
-          where: eq(users.id, existing.userId),
-          columns: { email: true, name: true },
-        }),
-        existing.leaveTypeId
-          ? this.db.query.leaveTypes.findFirst({
-              where: eq(leaveTypes.id, existing.leaveTypeId),
-              columns: { name: true },
-            })
-          : Promise.resolve(null),
-        this.db.query.users.findFirst({
-          where: eq(users.id, u.userId),
-          columns: { name: true },
-        }),
-      ]);
-
-      const leaveTypeName = leaveTypeRow?.name ?? "Leave";
-      const approverName = approver?.name ?? "HR";
-
-      if (employee?.email) {
-        await this.email.sendLeaveStatusUpdateEmail(
-          employee.email,
-          employee.name ?? "Employee",
-          leaveTypeName,
-          existing.startDate,
-          existing.endDate,
-          decision,
-          approverName,
-          decision === "REJECTED" ? (rejectionReason ?? undefined) : undefined,
-        );
-      }
-
-      await this.automation.runAutomationsForEvent(
-        u.orgId,
-        decision === "APPROVED" ? "leave.approved" : "leave.rejected",
-        {
-          leaveRequestId: leaveId,
-          userId: existing.userId,
-          employeeName: employee?.name ?? "",
-          employeeEmail: employee?.email ?? "",
-          leaveType: leaveTypeName,
-          startDate: existing.startDate,
-          endDate: existing.endDate,
-          decision,
-          approverId: u.userId,
-          rejectionReason: decision === "REJECTED" ? rejectionReason : null,
-          decidedAt: new Date().toISOString(),
-        },
-      );
-    } catch {
-      return;
-    }
+  private leaveYear(startDate: string): number {
+    return Number(startDate.slice(0, 4));
   }
 
-  async updateStatus(u: CurrentUserContext, leaveId: number, body: UpdateLeaveInput) {
-    const scope = await resolveLeavesViewScope(this.access, u);
+  async updateStatus(
+    currentUser: CurrentUserContext,
+    leaveRequestId: number,
+    _input: UpdateLeaveInput,
+  ) {
+    const scope = await resolveLeavesViewScope(this.access, currentUser);
     if (scope === "none") {
       throw new ForbiddenException("Only admins can approve or reject leave requests.");
     }
 
-    const existing = await this.db.query.leaveRequests.findFirst({
-      where: and(eq(leaveRequests.id, leaveId), eq(leaveRequests.orgId, u.orgId)),
-    });
+    const transition = await this.db.transaction(async (tx) => {
+      const [current] = await tx
+        .select()
+        .from(leaveRequests)
+        .where(
+          and(
+            eq(leaveRequests.id, leaveRequestId),
+            eq(leaveRequests.orgId, currentUser.orgId),
+            leaveApprovalScope(scope, currentUser.orgId, currentUser.userId),
+          ),
+        )
+        .limit(1)
+        .for("update");
+      if (!current) return null;
+      if (current.userId === currentUser.userId) {
+        throw new ForbiddenException("You cannot approve or reject your own leave request.");
+      }
+      if (current.status === "PENDING") return { existing: current, changed: false };
+      if (current.status !== "APPROVED" && current.status !== "REJECTED") {
+        throw new BadRequestException(
+          `Cannot revert a ${current.status} leave request to pending.`,
+        );
+      }
 
-    if (existing && scope === "own" && existing.approverId !== u.userId) {
-      throw new ForbiddenException("You can only update leave requests assigned to you.");
-    }
-
-    if (!existing) return { ok: false as const, reason: "not_found" as const };
-    if (existing.userId === u.userId) {
-      throw new ForbiddenException("You cannot approve or reject your own leave request.");
-    }
-
-    await this.db.transaction(async (tx) => {
-      await tx
+      const changed = await tx
         .update(leaveRequests)
         .set({
-          status: body.status,
-          approverId: body.status !== "PENDING" ? u.userId : existing.approverId,
-          rejectionReason: body.status === "REJECTED" ? (body.rejectionReason ?? null) : null,
+          status: "PENDING",
+          approverId: current.approverId,
+          rejectionReason: null,
+          rowVersion: current.rowVersion + 1,
+          updatedAt: new Date(),
         })
-        .where(eq(leaveRequests.id, leaveId));
+        .where(
+          and(
+            eq(leaveRequests.id, leaveRequestId),
+            eq(leaveRequests.orgId, currentUser.orgId),
+            eq(leaveRequests.status, current.status),
+            eq(leaveRequests.rowVersion, current.rowVersion),
+            leaveApprovalScope(scope, currentUser.orgId, currentUser.userId),
+          ),
+        )
+        .returning({ id: leaveRequests.id });
+      if (changed.length !== 1) {
+        throw new ConflictException("This leave request was already updated. Refresh and try again.");
+      }
 
-      if (body.status === "PENDING" && existing.status === "APPROVED" && existing.leaveTypeId) {
+      if (current.status === "APPROVED") {
         const leaveTypeRow = await tx.query.leaveTypes.findFirst({
-          where: eq(leaveTypes.id, existing.leaveTypeId),
+          where: and(
+            eq(leaveTypes.id, current.leaveTypeId),
+            eq(leaveTypes.orgId, currentUser.orgId),
+          ),
           columns: { daysPerYear: true },
         });
 
         if ((leaveTypeRow?.daysPerYear ?? 1) !== 0) {
-          const diffDays = existing.isHalfDay ? 0.5 : this.countWorkdays(existing.startDate, existing.endDate);
+          const diffDays = this.countLeaveDays(
+            current.startDate,
+            current.endDate,
+            current.isHalfDay,
+          );
 
-          const balanceRecord = await tx.query.leaveBalances.findFirst({
-            where: and(
-              eq(leaveBalances.userId, existing.userId),
-              eq(leaveBalances.leaveTypeId, existing.leaveTypeId),
-              eq(leaveBalances.orgId, u.orgId),
-              eq(leaveBalances.year, new Date().getFullYear()),
-            ),
-          });
+          const [balanceRecord] = await tx
+            .select()
+            .from(leaveBalances)
+            .where(
+              and(
+                eq(leaveBalances.userId, current.userId),
+                eq(leaveBalances.leaveTypeId, current.leaveTypeId),
+                eq(leaveBalances.orgId, currentUser.orgId),
+                eq(leaveBalances.year, this.leaveYear(current.startDate)),
+              ),
+            )
+            .limit(1)
+            .for("update");
 
           if (balanceRecord) {
-            const prevLopDays = Number(existing.lopDays ?? 0);
+            const prevLopDays = Number(current.lopDays ?? 0);
             const paidDays = diffDays - prevLopDays;
             const restored = Number(balanceRecord.balance) + paidDays;
             await tx
@@ -214,236 +151,272 @@ export class LeavesApprovalService {
             await tx
               .update(leaveRequests)
               .set({ lopDays: "0" })
-              .where(eq(leaveRequests.id, leaveId));
+              .where(
+                and(
+                  eq(leaveRequests.id, leaveRequestId),
+                  eq(leaveRequests.orgId, currentUser.orgId),
+                ),
+              );
 
-            await this.ledger.write(
+            if (paidDays > 0) await this.ledger.write(
               {
-                orgId: u.orgId,
-                userId: existing.userId,
-                leaveTypeId: existing.leaveTypeId,
+                orgId: currentUser.orgId,
+                userId: current.userId,
+                leaveTypeId: current.leaveTypeId,
                 txnType: "reversal",
                 days: paidDays,
-                effectiveDate: existing.startDate,
+                effectiveDate: current.startDate,
                 source: "request",
-                sourceId: String(leaveId),
-                note: "Status reverted to pending — balance restored",
-                createdBy: u.userId,
+                sourceId: String(leaveRequestId),
+                note: "Status reverted to pending - balance restored",
+                createdBy: currentUser.userId,
               },
               tx,
             );
           }
         }
       }
-    });
-
-    if (existing.status === "PENDING" && (body.status === "APPROVED" || body.status === "REJECTED")) {
-      void this.dispatchLeaveDecision(u, leaveId, existing, body.status, body.rejectionReason ?? null);
-    }
-
-    if (existing.status === "PENDING" && body.status === "APPROVED") {
-      this.webhooksDispatch.dispatch(u.orgId, "leave.approved", {
-        leaveId,
-        userId: existing.userId,
-        startDate: existing.startDate,
-        endDate: existing.endDate,
-        leaveTypeId: existing.leaveTypeId,
+      await this.audit.logCritical({
+        action: "hr.leave_reverted_to_pending",
+        userId: currentUser.userId,
+        orgId: currentUser.orgId,
+        targetId: String(leaveRequestId),
+        targetType: "leave_request",
+        metadata: { previousStatus: current.status },
       });
-    }
+      return { existing: current, changed: true };
+    });
+    if (!transition) return { ok: false as const, reason: "not_found" as const };
 
-    if (
-      existing.status === "PENDING" &&
-      (body.status === "APPROVED" || body.status === "REJECTED")
-    ) {
-      this.rebuildPayrollInputsForLeaveRange(
-        u.orgId,
-        u.userId,
-        existing.startDate,
-        existing.endDate,
+    if (transition.changed)
+      await this.effects.afterRevertedToPending(
+        currentUser.orgId,
+        currentUser.userId,
+        transition.existing,
       );
-    }
-
-    await this.invalidateLeaveAnalytics(u.orgId);
 
     return { ok: true as const };
   }
 
-  async approve(u: CurrentUserContext, leaveId: number, body: ApproveLeaveInput) {
-    const existing = await this.db.query.leaveRequests.findFirst({
-      where: and(eq(leaveRequests.id, leaveId), eq(leaveRequests.orgId, u.orgId)),
-    });
-
-    if (!existing) throw new NotFoundException("Leave request not found.");
-    if (existing.status !== "PENDING") {
-      throw new BadRequestException(`Cannot approve a request with status: ${existing.status}.`);
+  async approve(
+    currentUser: CurrentUserContext,
+    leaveRequestId: number,
+    input: ApproveLeaveInput,
+  ) {
+    const scope = await resolveLeavesViewScope(this.access, currentUser);
+    if (scope === "none") {
+      throw new ForbiddenException("You do not have permission to approve leave requests.");
     }
-    if (existing.userId === u.userId) {
-      throw new ForbiddenException("You cannot approve your own leave request.");
-    }
-
-    const comment = body.comment;
+    const comment = input.comment;
     let lopDaysApplied = 0;
 
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(leaveRequests)
-        .set({ status: "APPROVED", approverId: u.userId, managerComment: comment ?? null })
-        .where(eq(leaveRequests.id, leaveId));
+    const existing = await this.db.transaction(async (tx) => {
+      const [current] = await tx
+        .select()
+        .from(leaveRequests)
+        .where(
+          and(
+            eq(leaveRequests.id, leaveRequestId),
+            eq(leaveRequests.orgId, currentUser.orgId),
+            leaveApprovalScope(scope, currentUser.orgId, currentUser.userId),
+          ),
+        )
+        .limit(1)
+        .for("update");
+      if (!current) throw new NotFoundException("Leave request not found.");
+      if (current.status !== "PENDING") {
+        throw new ConflictException(`Cannot approve a request with status: ${current.status}.`);
+      }
+      if (current.userId === currentUser.userId) {
+        throw new ForbiddenException("You cannot approve your own leave request.");
+      }
 
-      if (!existing.leaveTypeId) return;
+      const changed = await tx
+        .update(leaveRequests)
+        .set({
+          status: "APPROVED",
+          approverId: currentUser.userId,
+          managerComment: comment ?? null,
+          rowVersion: current.rowVersion + 1,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(leaveRequests.id, leaveRequestId),
+            eq(leaveRequests.orgId, currentUser.orgId),
+            eq(leaveRequests.status, "PENDING"),
+            eq(leaveRequests.rowVersion, current.rowVersion),
+            leaveApprovalScope(scope, currentUser.orgId, currentUser.userId),
+          ),
+        )
+        .returning({ id: leaveRequests.id });
+      if (changed.length !== 1) {
+        throw new ConflictException("This leave request was already decided.");
+      }
 
       const leaveTypeRow = await tx.query.leaveTypes.findFirst({
-        where: eq(leaveTypes.id, existing.leaveTypeId),
+        where: and(
+          eq(leaveTypes.id, current.leaveTypeId),
+          eq(leaveTypes.orgId, currentUser.orgId),
+        ),
         columns: { daysPerYear: true },
       });
 
       const isUnpaid = (leaveTypeRow?.daysPerYear ?? 1) === 0;
-      if (isUnpaid) return;
-
-      const diffDays = this.countLeaveDays(existing.startDate, existing.endDate, existing.isHalfDay);
-
-      const balanceRecord = await tx.query.leaveBalances.findFirst({
-        where: and(
-          eq(leaveBalances.userId, existing.userId),
-          eq(leaveBalances.leaveTypeId, existing.leaveTypeId),
-          eq(leaveBalances.orgId, u.orgId),
-          eq(leaveBalances.year, new Date().getFullYear()),
-        ),
-      });
-      if (!balanceRecord) return;
-
-      const available = Number(balanceRecord.balance);
-      const lopDays = available <= 0 ? diffDays : Math.max(0, diffDays - available);
-      const paidDays = diffDays - lopDays;
-      const newBal = Math.max(0, available - paidDays);
-      lopDaysApplied = lopDays;
-
-      await tx
-        .update(leaveRequests)
-        .set({ lopDays: lopDays.toString() })
-        .where(eq(leaveRequests.id, leaveId));
-      await tx
-        .update(leaveBalances)
-        .set({ balance: newBal.toString() })
-        .where(eq(leaveBalances.id, balanceRecord.id));
-
-      if (paidDays > 0) {
-        await this.ledger.write(
-          {
-            orgId: u.orgId,
-            userId: existing.userId,
-            leaveTypeId: existing.leaveTypeId,
-            txnType: "consumption",
-            days: paidDays,
-            effectiveDate: existing.startDate,
-            source: "request",
-            sourceId: String(leaveId),
-            note: comment ?? undefined,
-            createdBy: u.userId,
-          },
-          tx,
+      if (!isUnpaid) {
+        const diffDays = this.countLeaveDays(
+          current.startDate,
+          current.endDate,
+          current.isHalfDay,
         );
+        const [balanceRecord] = await tx
+          .select()
+          .from(leaveBalances)
+          .where(
+            and(
+              eq(leaveBalances.userId, current.userId),
+              eq(leaveBalances.leaveTypeId, current.leaveTypeId),
+              eq(leaveBalances.orgId, currentUser.orgId),
+              eq(leaveBalances.year, this.leaveYear(current.startDate)),
+            ),
+          )
+          .limit(1)
+          .for("update");
+
+        if (balanceRecord) {
+          const available = Number(balanceRecord.balance);
+          const lopDays = Math.max(0, diffDays - Math.max(0, available));
+          const paidDays = diffDays - lopDays;
+          lopDaysApplied = lopDays;
+          await tx
+            .update(leaveRequests)
+            .set({ lopDays: lopDays.toString() })
+            .where(
+              and(
+                eq(leaveRequests.id, leaveRequestId),
+                eq(leaveRequests.orgId, currentUser.orgId),
+              ),
+            );
+          await tx
+            .update(leaveBalances)
+            .set({ balance: Math.max(0, available - paidDays).toString() })
+            .where(eq(leaveBalances.id, balanceRecord.id));
+
+          if (paidDays > 0) {
+            await this.ledger.write(
+              {
+                orgId: currentUser.orgId,
+                userId: current.userId,
+                leaveTypeId: current.leaveTypeId,
+                txnType: "consumption",
+                days: paidDays,
+                effectiveDate: current.startDate,
+                source: "request",
+                sourceId: String(leaveRequestId),
+                note: comment ?? undefined,
+                createdBy: currentUser.userId,
+              },
+              tx,
+            );
+          }
+        }
       }
+      await this.audit.logCritical({
+        action: "hr.leave_approved",
+        userId: currentUser.userId,
+        orgId: currentUser.orgId,
+        targetId: String(leaveRequestId),
+        targetType: "leave_request",
+        metadata: { comment, lopDaysApplied },
+      });
+      return current;
     });
 
-    const lopNote =
-      lopDaysApplied > 0
-        ? ` Note: ${lopDaysApplied} day(s) will be Loss of Pay (LOP) due to insufficient balance.`
-        : "";
-    const commentNote = comment ? ` Manager note: "${comment}"` : "";
-
-    await this.notifications.create({
-      orgId: u.orgId,
-      userId: existing.userId,
-      type: "SUCCESS",
-      title: "Leave Approved",
-      message: `Your leave request has been approved.${lopNote}${commentNote}`,
-      link: "/hr/leaves",
-    });
-
-    this.audit.log({
-      action: "hr.leave_approved",
-      userId: u.userId,
-      orgId: u.orgId,
-      targetId: String(leaveId),
-      targetType: "leave_request",
-      metadata: { comment, lopDaysApplied },
-    });
-
-    void this.dispatchLeaveDecision(u, leaveId, existing, "APPROVED", null);
-
-    this.webhooksDispatch.dispatch(u.orgId, "leave.approved", {
-      leaveId,
-      userId: existing.userId,
-      startDate: existing.startDate,
-      endDate: existing.endDate,
-      leaveTypeId: existing.leaveTypeId,
-    });
-
-    this.rebuildPayrollInputsForLeaveRange(
-      u.orgId,
-      u.userId,
-      existing.startDate,
-      existing.endDate,
+    await this.effects.afterApproved(
+      currentUser,
+      leaveRequestId,
+      existing,
+      comment,
+      lopDaysApplied,
     );
-
-    await this.invalidateLeaveAnalytics(u.orgId);
 
     return { success: true };
   }
 
-  async reject(u: CurrentUserContext, leaveId: number, body: RejectLeaveInput) {
-    const existing = await this.db.query.leaveRequests.findFirst({
-      where: and(eq(leaveRequests.id, leaveId), eq(leaveRequests.orgId, u.orgId)),
+  async reject(
+    currentUser: CurrentUserContext,
+    leaveRequestId: number,
+    input: RejectLeaveInput,
+  ) {
+    const scope = await resolveLeavesViewScope(this.access, currentUser);
+    if (scope === "none") {
+      throw new ForbiddenException("You do not have permission to reject leave requests.");
+    }
+    const { reason, comment } = input;
+
+    const existing = await this.db.transaction(async (tx) => {
+      const [current] = await tx
+        .select()
+        .from(leaveRequests)
+        .where(
+          and(
+            eq(leaveRequests.id, leaveRequestId),
+            eq(leaveRequests.orgId, currentUser.orgId),
+            leaveApprovalScope(scope, currentUser.orgId, currentUser.userId),
+          ),
+        )
+        .limit(1)
+        .for("update");
+      if (!current) throw new NotFoundException("Leave request not found.");
+      if (current.status !== "PENDING") {
+        throw new ConflictException(`Cannot reject a request with status: ${current.status}.`);
+      }
+      if (current.userId === currentUser.userId) {
+        throw new ForbiddenException("You cannot reject your own leave request.");
+      }
+
+      const changed = await tx
+        .update(leaveRequests)
+        .set({
+          status: "REJECTED",
+          approverId: currentUser.userId,
+          rejectionReason: reason,
+          managerComment: comment ?? null,
+          rowVersion: current.rowVersion + 1,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(leaveRequests.id, leaveRequestId),
+            eq(leaveRequests.orgId, currentUser.orgId),
+            eq(leaveRequests.status, "PENDING"),
+            eq(leaveRequests.rowVersion, current.rowVersion),
+            leaveApprovalScope(scope, currentUser.orgId, currentUser.userId),
+          ),
+        )
+        .returning({ id: leaveRequests.id });
+      if (changed.length !== 1) {
+        throw new ConflictException("This leave request was already decided.");
+      }
+
+      await this.audit.logCritical({
+        action: "hr.leave_rejected",
+        userId: currentUser.userId,
+        orgId: currentUser.orgId,
+        targetId: String(leaveRequestId),
+        targetType: "leave_request",
+        metadata: { reason, comment },
+      });
+      return current;
     });
 
-    if (!existing) throw new NotFoundException("Leave request not found.");
-    if (existing.status !== "PENDING") {
-      throw new BadRequestException(`Cannot reject a request with status: ${existing.status}.`);
-    }
-    if (existing.userId === u.userId) {
-      throw new ForbiddenException("You cannot reject your own leave request.");
-    }
-
-    const { reason, comment } = body;
-
-    await this.db
-      .update(leaveRequests)
-      .set({
-        status: "REJECTED",
-        approverId: u.userId,
-        rejectionReason: reason,
-        managerComment: comment ?? null,
-      })
-      .where(eq(leaveRequests.id, leaveId));
-
-    await this.notifications.create({
-      orgId: u.orgId,
-      userId: existing.userId,
-      type: "ERROR",
-      title: "Leave Rejected",
-      message: `Your leave request has been rejected. Reason: ${reason}${comment ? ` — "${comment}"` : ""}`,
-      link: "/hr/leaves",
-    });
-
-    this.rebuildPayrollInputsForLeaveRange(
-      u.orgId,
-      u.userId,
-      existing.startDate,
-      existing.endDate,
+    await this.effects.afterRejected(
+      currentUser,
+      leaveRequestId,
+      existing,
+      reason,
+      comment,
     );
-
-    this.audit.log({
-      action: "hr.leave_rejected",
-      userId: u.userId,
-      orgId: u.orgId,
-      targetId: String(leaveId),
-      targetType: "leave_request",
-      metadata: { reason, comment },
-    });
-
-    void this.dispatchLeaveDecision(u, leaveId, existing, "REJECTED", reason);
-
-    await this.invalidateLeaveAnalytics(u.orgId);
 
     return { success: true };
   }

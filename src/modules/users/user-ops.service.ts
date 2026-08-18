@@ -11,11 +11,7 @@ import { EmailService } from "../email/email.service";
 import { AccessService } from "../access/access.service";
 import {
   and,
-  count,
-  desc,
   eq,
-  gt,
-  gte,
   inArray,
   isNull,
   sql,
@@ -27,10 +23,8 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { InvitationsService } from "../organization/core/invitations.service";
 import {
-  invitations,
   magicLinkTokens,
   organizationMembers,
   users,
@@ -42,13 +36,18 @@ import {
 import type { BulkUpdateUsersInput, ImportUsersRow } from "./dto/users.schemas";
 import { UsersService } from "./users.service";
 import { syncStructuralRoleAssignment } from "../../common/rbac/sync-structural-role";
-import { assertMayGrantRole } from "../../common/rbac/assert-may-grant-role";
+import {
+  assertMayGrantRole,
+  assertMayManageOrganizationMembership,
+} from "../../common/rbac/assert-may-grant-role";
 import { assertNoOwnerAmongTargets } from "../../common/rbac/assert-target-not-owner";
-import { membershipStatusToUserStatus } from "../organization/core/org-membership.service";
 import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
+import { UserOperationsReporter } from "./user-operations.reporter";
 
 @Injectable()
 export class UserOpsService {
+  private readonly reporter: UserOperationsReporter;
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
@@ -57,151 +56,16 @@ export class UserOpsService {
     private readonly usersSvc: UsersService,
     private readonly access: AccessService,
     private readonly email: EmailService,
-  ) {}
+  ) {
+    this.reporter = new UserOperationsReporter(db, cache);
+  }
 
   async exportUsers(orgId: string): Promise<string> {
-    const data = await this.db
-      .select({
-        id: users.id,
-        email: users.email,
-        firstName: users.firstName,
-        lastName: users.lastName,
-        role: organizationMembers.role,
-        membershipStatus: organizationMembers.status,
-        emailVerified: users.emailVerified,
-        departmentId: users.orgDepartmentId,
-        designation: users.designation,
-        phone: users.phone,
-        joinedAt: organizationMembers.joinedAt,
-        createdAt: users.createdAt,
-      })
-      .from(organizationMembers)
-      .innerJoin(users, eq(organizationMembers.userId, users.id))
-      .where(eq(organizationMembers.orgId, orgId))
-      .orderBy(desc(organizationMembers.joinedAt));
-
-    const headers = [
-      "id",
-      "email",
-      "firstName",
-      "lastName",
-      "role",
-      "status",
-      "emailVerified",
-      "departmentId",
-      "designation",
-      "phone",
-      "joinedAt",
-      "createdAt",
-    ] as const;
-
-    const csvCell = (
-      val: string | boolean | Date | null | undefined,
-    ): string => {
-      if (val === null || val === undefined) return "";
-      if (val instanceof Date) return val.toISOString();
-      return String(val).replace(/,/g, ";");
-    };
-
-    const rows = data.map((u) =>
-      [
-        csvCell(u.id),
-        csvCell(u.email),
-        csvCell(u.firstName),
-        csvCell(u.lastName),
-        csvCell(u.role),
-        csvCell(membershipStatusToUserStatus(u.membershipStatus)),
-        csvCell(u.emailVerified),
-        csvCell(u.departmentId),
-        csvCell(u.designation),
-        csvCell(u.phone),
-        csvCell(u.joinedAt),
-        csvCell(u.createdAt),
-      ].join(","),
-    );
-
-    return [headers.join(","), ...rows].join("\n");
+    return this.reporter.exportUsers(orgId);
   }
 
   async getStats(orgId: string) {
-    return this.cache.cached(
-      CACHE_KEYS.usersStats(orgId),
-      async () => {
-        const [
-          totalResult,
-          activeResult,
-          suspendedResult,
-          archivedResult,
-          pendingResult,
-          newThisMonthResult,
-        ] = await Promise.all([
-          this.db
-            .select({ count: count() })
-            .from(organizationMembers)
-            .where(eq(organizationMembers.orgId, orgId)),
-          this.db
-            .select({ count: count() })
-            .from(organizationMembers)
-            .where(
-              and(
-                eq(organizationMembers.orgId, orgId),
-                inArray(organizationMembers.status, ["ACTIVE", "INVITED"]),
-              ),
-            ),
-          this.db
-            .select({ count: count() })
-            .from(organizationMembers)
-            .where(
-              and(
-                eq(organizationMembers.orgId, orgId),
-                eq(organizationMembers.status, "SUSPENDED"),
-              ),
-            ),
-          this.db
-            .select({ count: count() })
-            .from(organizationMembers)
-            .where(
-              and(
-                eq(organizationMembers.orgId, orgId),
-                eq(organizationMembers.status, "LEFT"),
-              ),
-            ),
-          this.db
-            .select({ count: count() })
-            .from(invitations)
-            .where(
-              and(
-                eq(invitations.orgId, orgId),
-                eq(invitations.status, "PENDING"),
-                isNull(invitations.acceptedAt),
-                gt(invitations.expiresAt, new Date()),
-              ),
-            ),
-          this.db
-            .select({ count: count() })
-            .from(organizationMembers)
-            .where(
-              and(
-                eq(organizationMembers.orgId, orgId),
-                gte(
-                  organizationMembers.joinedAt,
-                  sql`DATE_TRUNC('month', NOW())`,
-                ),
-              ),
-            ),
-        ]);
-
-        return {
-          total: totalResult[0]?.count ?? 0,
-          active: activeResult[0]?.count ?? 0,
-          suspended: suspendedResult[0]?.count ?? 0,
-          archived: archivedResult[0]?.count ?? 0,
-          pendingInvitations: pendingResult[0]?.count ?? 0,
-          newThisMonth: newThisMonthResult[0]?.count ?? 0,
-        };
-      },
-      60,
-    );
+    return this.reporter.getStats(orgId);
   }
 
   private async bulkUpdateStatus(
@@ -232,8 +96,8 @@ export class UserOpsService {
     }
     return {
       results,
-      succeeded: results.filter((r) => r.success).length,
-      failed: results.filter((r) => !r.success).length,
+      succeeded: results.filter((result) => result.success).length,
+      failed: results.filter((result) => !result.success).length,
     };
   }
 
@@ -311,7 +175,9 @@ export class UserOpsService {
           inArray(organizationMembers.userId, userIds),
         ),
       );
-      const tenantUserIds = memberRows.map((r) => r.userId);
+      const tenantUserIds = memberRows.map(
+        (membership) => membership.userId,
+      );
 
       if (tenantUserIds.length === 0) return [];
 
@@ -413,7 +279,9 @@ export class UserOpsService {
 
     if (role) {
       await Promise.all(
-        scopedIds.map((id) => bustMembershipStatusCache(this.cache, id, orgId)),
+        scopedIds.map((memberUserId) =>
+          bustMembershipStatusCache(this.cache, memberUserId, orgId),
+        ),
       );
     }
 
@@ -470,6 +338,8 @@ export class UserOpsService {
   }
 
   async importUsers(orgId: string, rows: ImportUsersRow[], actor: InviteActor) {
+    await assertMayManageOrganizationMembership(this.access, orgId, actor);
+
     const actorUserId = actor.userId;
     const results: Array<{
       email: string;
@@ -500,8 +370,8 @@ export class UserOpsService {
       }
     }
 
-    const succeeded = results.filter((r) => r.success).length;
-    const failed = results.filter((r) => !r.success).length;
+    const succeeded = results.filter((result) => result.success).length;
+    const failed = results.filter((result) => !result.success).length;
 
     this.audit.log({
       action: "user.bulk_imported",

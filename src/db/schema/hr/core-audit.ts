@@ -28,6 +28,11 @@ export const hrAuditLogs = pgTable("hr_audit_logs", {
   index("idx_hr_audit_logs_org_entity").on(table.orgId, table.entityType, table.entityId),
   index("idx_hr_audit_logs_actor").on(table.actorId),
   index("idx_hr_audit_logs_created_at").on(table.createdAt),
+  index("idx_hr_audit_logs_org_created_id").on(
+    table.orgId,
+    table.createdAt,
+    table.id,
+  ),
   index("idx_hr_audit_logs_org_action").on(table.orgId, table.action),
 ]);
 

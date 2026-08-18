@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import { randomUUID } from "crypto";
 import { Readable } from "stream";
 import { extname } from "path";
 import {
@@ -45,6 +46,15 @@ const MIME_MAP: Record<string, string> = {
   ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 };
 
+const PRIVATE_HR_FOLDERS = new Set([
+  "documents",
+  "hr-documents",
+  "onboarding",
+  "onboarding-docs",
+  "resignations",
+  "hr-exports",
+]);
+
 @Injectable()
 export class StorageService {
   constructor(private readonly compression: MediaCompressionService) {}
@@ -90,6 +100,13 @@ export class StorageService {
     return bucket;
   }
 
+  private publicUrlFor(folder: string, key: string, override?: string): string {
+    const folderRoot = folder.split("/", 1)[0] ?? folder;
+    if (PRIVATE_HR_FOLDERS.has(folderRoot)) return key;
+    const publicBase = override || process.env.NEXT_PUBLIC_R2_PUBLIC_URL;
+    return publicBase ? `${publicBase}/${key}` : key;
+  }
+
   async uploadFile(
     buffer: Buffer,
     folder = "uploads",
@@ -101,7 +118,7 @@ export class StorageService {
     const bucketName = this.resolveBucket(bucketOverride);
 
     const sanitizedName = fileName.replace(/[^a-zA-Z0-9.-]/g, "-");
-    const key = `${folder}/${Date.now()}-${sanitizedName}`;
+    const key = `${folder}/${randomUUID()}-${sanitizedName}`;
 
     await this.getClient().send(
       new PutObjectCommand({
@@ -112,10 +129,43 @@ export class StorageService {
       }),
     );
 
-    const publicBase = publicUrlOverride || process.env.NEXT_PUBLIC_R2_PUBLIC_URL;
-    const publicUrl = publicBase ? `${publicBase}/${key}` : key;
+    return {
+      url: this.publicUrlFor(folder, key, publicUrlOverride),
+      key,
+      size: buffer.length,
+      mimeType,
+    };
+  }
 
-    return { url: publicUrl, key, size: buffer.length, mimeType };
+  async uploadFileStream(
+    body: Readable,
+    contentLength: number,
+    folder = "uploads",
+    fileName = "file",
+    mimeType = "application/octet-stream",
+    bucketOverride?: string,
+    publicUrlOverride?: string,
+  ): Promise<UploadResult> {
+    const bucketName = this.resolveBucket(bucketOverride);
+    const sanitizedName = fileName.replace(/[^a-zA-Z0-9.-]/g, "-");
+    const key = `${folder}/${randomUUID()}-${sanitizedName}`;
+
+    await this.getClient().send(
+      new PutObjectCommand({
+        Bucket: bucketName,
+        Key: key,
+        Body: body,
+        ContentLength: contentLength,
+        ContentType: mimeType,
+      }),
+    );
+
+    return {
+      url: this.publicUrlFor(folder, key, publicUrlOverride),
+      key,
+      size: contentLength,
+      mimeType,
+    };
   }
 
   async uploadCompressed(
@@ -176,14 +226,23 @@ export class StorageService {
   }
 
   getFileKeyFromUrl(url: string): string {
-    const base = process.env.NEXT_PUBLIC_R2_PUBLIC_URL;
-    return base ? url.replace(`${base}/`, "") : url;
+    const value = url.trim();
+    if (!/^https?:\/\//i.test(value)) return value;
+
+    const base = process.env.NEXT_PUBLIC_R2_PUBLIC_URL?.replace(/\/$/, "");
+    if (!base || !value.startsWith(`${base}/`)) return "";
+
+    try {
+      return decodeURIComponent(value.slice(base.length + 1).split(/[?#]/, 1)[0] ?? "");
+    } catch {
+      return "";
+    }
   }
 
   getFileNameFromKey(key: string): string {
     const parts = key.split("/");
     const last = parts[parts.length - 1] ?? "download";
-    const match = last.match(/^\d+-(.+)$/);
+    const match = last.match(/^(?:\d+|[0-9a-f-]{36})-(.+)$/i);
     return match ? match[1] : last;
   }
 
@@ -192,8 +251,10 @@ export class StorageService {
   }
 
   isValidFileKey(key: string): boolean {
+    if (!key || key.length > 1024) return false;
     if (key.includes("..") || key.includes("\\") || key.startsWith("/")) return false;
     if (key.includes("\0")) return false;
-    return true;
+    if (/^[a-z][a-z0-9+.-]*:/i.test(key) || key.includes("?") || key.includes("#")) return false;
+    return /^[a-zA-Z0-9][a-zA-Z0-9/_.-]*$/.test(key);
   }
 }

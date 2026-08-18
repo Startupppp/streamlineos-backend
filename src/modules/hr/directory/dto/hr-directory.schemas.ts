@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const listEmployeesSchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
+  cursor: z.string().min(1).max(2048).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   search: z.string().optional(),
   q: z.string().optional(),
@@ -10,7 +10,7 @@ export const listEmployeesSchema = z.object({
   isActive: z.enum(["true", "false", "all"]).optional().default("true"),
   /** Org/job role on the user record (e.g. ENGINEERING, HR). Omit for all roles. */
   role: z.string().min(1).max(64).optional(),
-});
+}).strict();
 
 export const availabilitySchema = z.object({
   userIds: z.string().optional(),
@@ -23,9 +23,34 @@ export const findExpertSchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
 
+export const skillsMatrixQuerySchema = z
+  .object({
+    cursor: z.string().min(1).max(2048).optional(),
+    limit: z.coerce.number().int().min(1).max(50).default(20),
+  })
+  .strict();
+
 export const headcountSchema = z.object({
   groupBy: z.enum(["department", "role", "branch"]).default("department"),
 });
+
+export const orgChartQuerySchema = z
+  .object({
+    parentId: z.string().min(1).max(128).optional(),
+    search: z.string().trim().min(2).max(100).optional(),
+    cursor: z.string().min(1).max(2048).optional(),
+    limit: z.coerce.number().int().min(1).max(50).default(20),
+  })
+  .strict()
+  .superRefine((query, ctx) => {
+    if (query.parentId && query.search) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "parentId and search cannot be combined",
+        path: ["search"],
+      });
+    }
+  });
 
 export const createTeamEventSchema = z
   .object({
@@ -176,43 +201,28 @@ export const updateBgvSchema = z
 
 const MIN_AGE_MS = 16 * 365.25 * 24 * 60 * 60 * 1000;
 
-export const updateEmployeeSchema = z.object({
-  name: z.string().trim().min(1).max(100).optional(),
-  firstName: z.string().trim().min(1).max(100).optional(),
-  lastName: z.string().trim().min(1).max(100).optional(),
-  designation: z.string().optional(),
-  departmentId: z.string().optional(),
-  phone: z.string().optional(),
-  image: z.string().optional(),
-  isActive: z.boolean().optional(),
-  role: z.string().optional(),
-  gender: z.enum(["MALE", "FEMALE", "OTHER"]).optional(),
-  taxId: z.string().optional(),
-  monthlySalary: z.number().min(0, "Salary cannot be negative").max(9_999_999, "Salary exceeds maximum").optional(),
-  bankDetails: z
-    .object({
-      accountNumber: z.string().optional(),
-      bankName: z.string().optional(),
-      branch: z.string().optional(),
-      ifsc: z.string().optional(),
-      accountHolder: z.string().optional(),
-      pfUanNumber: z
-        .string()
-        .regex(/^\d{12}$/, "UAN must be 12 digits")
-        .optional()
-        .or(z.literal("")),
-      esiIpNumber: z.string().max(20).optional().or(z.literal("")),
-    })
-    .optional(),
-  skills: z.array(z.string()).optional(),
-  bio: z.string().max(500).optional(),
-  linkedinUrl: z.string().url().optional().or(z.literal("")),
-  twitterUrl: z.string().url().optional().or(z.literal("")),
-  githubUrl: z.string().url().optional().or(z.literal("")),
-  websiteUrl: z.string().url().optional().or(z.literal("")),
-  joiningDate: z.string().optional(),
-  reportingTo: z.string().nullable().optional(),
-});
+export const updateEmployeeSchema = z
+  .object({
+    name: z.string().trim().min(1).max(100).optional(),
+    firstName: z.string().trim().min(1).max(100).optional(),
+    lastName: z.string().trim().min(1).max(100).optional(),
+    designation: z.string().optional(),
+    departmentId: z.string().optional(),
+    phone: z.string().optional(),
+    image: z.string().optional(),
+    isActive: z.boolean().optional(),
+    role: z.string().optional(),
+    gender: z.enum(["MALE", "FEMALE", "OTHER"]).optional(),
+    skills: z.array(z.string()).optional(),
+    bio: z.string().max(500).optional(),
+    linkedinUrl: z.string().url().optional().or(z.literal("")),
+    twitterUrl: z.string().url().optional().or(z.literal("")),
+    githubUrl: z.string().url().optional().or(z.literal("")),
+    websiteUrl: z.string().url().optional().or(z.literal("")),
+    joiningDate: z.string().optional(),
+    reportingTo: z.string().nullable().optional(),
+  })
+  .strict();
 
 export const onboardEmployeeSchema = z.object({
   firstName: z.string(),
@@ -303,7 +313,9 @@ export type BulkOnboardEmployeesInput = z.infer<typeof bulkOnboardEmployeesSchem
 export type ListEmployeesInput = z.infer<typeof listEmployeesSchema>;
 export type AvailabilityInput = z.infer<typeof availabilitySchema>;
 export type FindExpertInput = z.infer<typeof findExpertSchema>;
+export type SkillsMatrixQueryInput = z.infer<typeof skillsMatrixQuerySchema>;
 export type HeadcountInput = z.infer<typeof headcountSchema>;
+export type OrgChartQueryInput = z.infer<typeof orgChartQuerySchema>;
 export type CreateTeamEventInput = z.infer<typeof createTeamEventSchema>;
 export type CreateAssetReturnInput = z.infer<typeof createAssetReturnSchema>;
 export type PatchAssetReturnInput = z.infer<typeof patchAssetReturnSchema>;

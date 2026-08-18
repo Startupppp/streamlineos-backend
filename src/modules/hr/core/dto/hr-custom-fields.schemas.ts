@@ -13,6 +13,12 @@ const fieldTypeEnum = z.enum([
   "currency",
 ]);
 
+export const hrCustomFieldEntityTypeSchema = z.enum([
+  "employee",
+  "department",
+  "job_role",
+]);
+
 const RESERVED_KEYS = new Set([
   "id",
   "email",
@@ -71,7 +77,7 @@ const settingsSchema = z.object({
 }).optional();
 
 export const createCustomFieldSchema = z.object({
-  entityType: z.string().min(1).max(100),
+  entityType: hrCustomFieldEntityTypeSchema,
   name: nameSchema,
   key: keySchema,
   fieldType: fieldTypeEnum,
@@ -97,12 +103,27 @@ export const updateCustomFieldSchema = z.object({
 });
 
 export const upsertCustomFieldValuesSchema = z.object({
-  values: z.array(
-    z.object({
-      fieldDefinitionId: z.number().int().positive(),
-      value: z.unknown(),
-    }),
-  ),
+  values: z
+    .array(
+      z.object({
+        fieldDefinitionId: z.number().int().positive(),
+        value: z.unknown(),
+      }),
+    )
+    .min(1)
+    .max(100),
+}).superRefine((input, context) => {
+  const seen = new Set<number>();
+  input.values.forEach((item, index) => {
+    if (seen.has(item.fieldDefinitionId)) {
+      context.addIssue({
+        code: "custom",
+        path: ["values", index, "fieldDefinitionId"],
+        message: "Each custom field may be submitted only once.",
+      });
+    }
+    seen.add(item.fieldDefinitionId);
+  });
 });
 
 export type CreateCustomFieldInput = z.infer<typeof createCustomFieldSchema>;

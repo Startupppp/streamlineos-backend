@@ -1,19 +1,17 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gte, sql } from "drizzle-orm";
 import {
   resignations,
   users,
   organizations,
   organizationMembers,
-  richDocuments,
-  hrTemplates,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { HrTemplateRenderService } from "../templates/hr-template-render.service";
-import { formatDdMmmYyyy, formatDdMmmYyyyTime, formatLongInIN, subMonths } from "../../../common/date";
+import { formatDdMmmYyyy, formatDdMmmYyyyTime, subMonths } from "../../../common/date";
 import { generateResignationLetter } from "./letters";
-import type { ExperienceLetterInput, ListResignationsQueryInput } from "./dto/hr-lifecycle.schemas";
+import type { ListResignationsQueryInput } from "./dto/hr-lifecycle.schemas";
+import { transitionResignation } from "./lifecycle-transition";
 
 type StepStatus = "completed" | "active" | "pending" | "rejected";
 
@@ -36,6 +34,16 @@ interface TimelineRecord {
   finalReviewer?: { name: string | null } | null;
 }
 
+function protectResignationFile<T extends { resignationLetterUrl: string | null }>(
+  record: T,
+): Omit<T, "resignationLetterUrl"> & { hasResignationLetter: boolean } {
+  const { resignationLetterUrl, ...safeRecord } = record;
+  return {
+    ...safeRecord,
+    hasResignationLetter: Boolean(resignationLetterUrl),
+  };
+}
+
 export interface TimelineStep {
   label: string;
   status: StepStatus;
@@ -46,10 +54,7 @@ export interface TimelineStep {
 
 @Injectable()
 export class ExitService {
-  constructor(
-    @Inject(DRIZZLE) private readonly db: Db,
-    private readonly templateRender: HrTemplateRenderService,
-  ) {}
+  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async list(orgId: string, userId: string, isAdmin: boolean, params: ListResignationsQueryInput) {
     const limit = Math.min(params.limit, 100);
@@ -81,7 +86,7 @@ export class ExitService {
     const total = countRows[0]?.total ?? 0;
 
     return {
-      data,
+      data: data.map(protectResignationFile),
       pagination: { page: params.page, limit, total, totalPages: Math.ceil(total / limit) },
     };
   }
@@ -102,7 +107,29 @@ export class ExitService {
       throw new ForbiddenException("Forbidden");
     }
 
-    return { ...data, progress: this.buildTimeline(data) };
+    return {
+      ...protectResignationFile(data),
+      progress: this.buildTimeline(data),
+    };
+  }
+
+  async getFileReference(
+    orgId: string,
+    userId: string,
+    isAdmin: boolean,
+    resignationId: number,
+  ): Promise<{ id: number; fileUrl: string }> {
+    const record = await this.db.query.resignations.findFirst({
+      where: and(eq(resignations.id, resignationId), eq(resignations.orgId, orgId)),
+      columns: { id: true, userId: true, resignationLetterUrl: true },
+    });
+    if (!record?.resignationLetterUrl) {
+      throw new NotFoundException("Resignation letter not found.");
+    }
+    if (!isAdmin && record.userId !== userId) {
+      throw new ForbiddenException("Forbidden");
+    }
+    return { id: record.id, fileUrl: record.resignationLetterUrl };
   }
 
   private buildTimeline(record: TimelineRecord): TimelineStep[] {
@@ -276,83 +303,15 @@ export class ExitService {
       throw new BadRequestException("Resignation cannot be withdrawn at this stage.");
     }
 
-    await this.db
-      .update(resignations)
-      .set({ status: "WITHDRAWN", updatedAt: new Date() })
-      .where(eq(resignations.id, resignationId));
+    await transitionResignation(this.db, {
+      organizationId: orgId,
+      resignationId,
+      currentStatus: record.status,
+      currentVersion: record.rowVersion,
+      changes: { status: "WITHDRAWN" },
+    });
 
     return { success: true };
-  }
-
-  async createExperienceLetter(orgId: string, actorUserId: string, input: ExperienceLetterInput) {
-    const employee = await this.db.query.users.findFirst({
-      where: eq(users.id, input.userId),
-    });
-    if (!employee) throw new NotFoundException("Employee not found.");
-
-    const name =
-      `${employee.firstName ?? ""} ${employee.lastName ?? ""}`.trim() || employee.name || "Employee";
-    const joiningDate = employee.joiningDate ? formatLongInIN(employee.joiningDate) : "N/A";
-    const relievingDate = formatLongInIN(input.relievingDate);
-
-    const [experienceTemplate] = await this.db
-      .select()
-      .from(hrTemplates)
-      .where(
-        and(
-          eq(hrTemplates.orgId, orgId),
-          eq(hrTemplates.kind, "letter"),
-          eq(hrTemplates.letterType, "experience"),
-          eq(hrTemplates.status, "active"),
-          isNull(hrTemplates.deletedAt),
-        ),
-      )
-      .limit(1);
-
-    let contentJson: Record<string, unknown>;
-
-    if (experienceTemplate) {
-      const templateContent = experienceTemplate.content as { bodyHtml?: string };
-      const bodyHtml = templateContent.bodyHtml ?? "";
-      const ctx = await this.templateRender.buildContext(orgId, actorUserId, undefined, {
-        "employee.fullName": name,
-        "employee.joiningDate": joiningDate,
-        "employee.designation": employee.designation ?? "a team member",
-        "employee.relievingDate": relievingDate,
-      }, false);
-      const renderedHtml = this.templateRender.renderHtml(bodyHtml, ctx);
-      contentJson = { html: renderedHtml };
-    } else {
-      contentJson = {
-        type: "doc",
-        content: [
-          { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: "Experience Certificate" }] },
-          { type: "paragraph", content: [{ type: "text", text: `Date: ${new Date().toLocaleDateString("en-IN", { year: "numeric", month: "long", day: "numeric" })}` }] },
-          { type: "paragraph" },
-          { type: "paragraph", content: [{ type: "text", text: "To Whom It May Concern," }] },
-          { type: "paragraph", content: [{ type: "text", text: `This is to certify that ${name} was employed with our organization from ${joiningDate} to ${relievingDate} as ${employee.designation ?? "a team member"}.` }] },
-          { type: "paragraph", content: [{ type: "text", text: `We wish ${name} all the best in their future endeavors.` }] },
-          { type: "paragraph" },
-          { type: "paragraph", content: [{ type: "text", text: "Sincerely," }] },
-          { type: "paragraph", content: [{ type: "text", marks: [{ type: "bold" }], text: "HR Department" }] },
-        ],
-      };
-    }
-
-    const [doc] = await this.db
-      .insert(richDocuments)
-      .values({
-        orgId,
-        title: `Experience Certificate - ${name}`,
-        contentJson,
-        templateType: "experience_letter",
-        isPublished: false,
-        version: 1,
-        createdBy: actorUserId,
-      })
-      .returning();
-
-    return { documentId: doc.id, title: doc.title };
   }
 
   async getAnalytics(orgId: string) {

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Headers, HttpCode, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -27,6 +27,9 @@ import {
   type UpdateOrgHolidayInput,
 } from "./dto/attendance.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
+import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 @RequireModule("hr")
 @Controller("hr/attendance")
@@ -37,28 +40,49 @@ export class AttendanceController {
   @Post("check-in")
   @HttpCode(200)
   @RequirePermission("hr:attendance:view")
+  @Idempotent("hr.attendance.check-in")
   checkIn(
-    @Body(new ZodValidationPipe(checkInSchema)) body: CheckInInput,
-    @CurrentUser() u: CurrentUserContext,
+    @Body(new ZodValidationPipe(checkInSchema)) input: CheckInInput,
+    @CurrentUser() currentUser: CurrentUserContext,
+    @Headers("idempotency-key") idempotencyKey: string,
   ) {
-    return this.attendance.checkIn(u.orgId, u.userId, body);
+    return this.attendance.checkIn(
+      currentUser.orgId,
+      currentUser.userId,
+      input,
+      idempotencyKey,
+    );
   }
 
   @Post("check-out")
   @HttpCode(200)
   @RequirePermission("hr:attendance:view")
+  @Idempotent("hr.attendance.check-out")
   checkOut(
-    @Body(new ZodValidationPipe(checkOutSchema)) body: CheckOutInput,
-    @CurrentUser() u: CurrentUserContext,
+    @Body(new ZodValidationPipe(checkOutSchema)) _validatedInput: CheckOutInput,
+    @CurrentUser() currentUser: CurrentUserContext,
+    @Headers("idempotency-key") idempotencyKey: string,
   ) {
-    return this.attendance.checkOut(u.orgId, u.userId, body.localDate);
+    return this.attendance.checkOut(
+      currentUser.orgId,
+      currentUser.userId,
+      idempotencyKey,
+    );
   }
 
   @Post("break")
   @HttpCode(200)
   @RequirePermission("hr:attendance:view")
-  toggleBreak(@CurrentUser() u: CurrentUserContext) {
-    return this.attendance.toggleBreak(u.orgId, u.userId);
+  @Idempotent("hr.attendance.toggle-break")
+  toggleBreak(
+    @CurrentUser() currentUser: CurrentUserContext,
+    @Headers("idempotency-key") idempotencyKey: string,
+  ) {
+    return this.attendance.toggleBreak(
+      currentUser.orgId,
+      currentUser.userId,
+      idempotencyKey,
+    );
   }
 
   @Get("status")
@@ -105,6 +129,8 @@ export class AttendanceController {
 
   @Post("email-report")
   @RequirePermission("hr:attendance:manage")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("hr:attendance-report")
   emailReport(
     @Body(new ZodValidationPipe(attendanceEmailReportSchema)) body: AttendanceEmailReportInput,
     @CurrentUser() u: CurrentUserContext,

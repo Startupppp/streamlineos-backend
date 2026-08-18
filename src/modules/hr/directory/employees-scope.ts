@@ -4,13 +4,29 @@ import { AccessService } from "../../access/access.service";
 import { isScopable } from "../../rbac/permissions";
 
 export const EMPLOYEES_VIEW_PERMISSION = "hr:employees:view";
+export const EMPLOYEES_MANAGE_PERMISSION = "hr:employees:manage";
 
-export async function resolveEmployeesScope(
+async function resolveEmployeePermissionScope(
   access: AccessService,
-  u: CurrentUserContext,
+  currentUser: CurrentUserContext,
+  permission: string,
 ): Promise<DataScope> {
-  if (u.isOrgOwner) return "all";
-  if (!isScopable(EMPLOYEES_VIEW_PERMISSION)) return "all";
-  const resolved = await access.resolveUserPermissions(u.orgId, u.userId);
-  return resolved.get(EMPLOYEES_VIEW_PERMISSION) ?? "none";
+  if (currentUser.isOrgOwner) return "all";
+  if (!isScopable(permission)) return "all";
+  const resolved = await access.resolveUserPermissions(currentUser.orgId, currentUser.userId);
+  return resolved.get(permission) ?? "none";
+}
+
+export function resolveEmployeesScope(
+  access: AccessService,
+  currentUser: CurrentUserContext,
+): Promise<DataScope> {
+  return resolveEmployeePermissionScope(access, currentUser, EMPLOYEES_VIEW_PERMISSION);
+}
+
+export function resolveEmployeesManageScope(
+  access: AccessService,
+  currentUser: CurrentUserContext,
+): Promise<DataScope> {
+  return resolveEmployeePermissionScope(access, currentUser, EMPLOYEES_MANAGE_PERMISSION);
 }

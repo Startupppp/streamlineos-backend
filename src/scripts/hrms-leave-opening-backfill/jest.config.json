@@ -1,0 +1,16 @@
+{
+  "rootDir": "../../..",
+  "roots": ["<rootDir>/src/scripts/hrms-leave-opening-backfill"],
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "testRegex": ".*\\.spec\\.ts$",
+  "transform": {
+    "^.+\\.ts$": [
+      "ts-jest",
+      {
+        "tsconfig": "<rootDir>/src/scripts/hrms-leave-opening-backfill/tsconfig.json"
+      }
+    ]
+  },
+  "testEnvironment": "node",
+  "maxWorkers": 1
+}

@@ -1,7 +1,12 @@
-import { pgTable, text, serial, timestamp, boolean, decimal, date, integer, index, uniqueIndex, unique, check } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, decimal, date, integer, index, uniqueIndex, unique, check, foreignKey } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { leaveStatusEnum } from "../common/enums";
-import { organizations, users } from "../common/auth";
+import { organizationMembers, organizations, users } from "../common/auth";
+import { workerEngagements } from "../directory/worker-engagements";
+import { workers } from "../directory/workers";
+
+type LeaveRequestPriority = "LOW" | "MEDIUM" | "HIGH";
+type LeaveHalfDayPeriod = "AM" | "PM";
 
 export const leaveTypes = pgTable("leave_types", {
   id: serial("id").primaryKey(),
@@ -32,21 +37,27 @@ export const leaveRequests = pgTable("leave_requests", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  workerId: text("worker_id"),
+  workerEngagementId: text("worker_engagement_id"),
   leaveTypeId: integer("leave_type_id").references(() => leaveTypes.id, { onDelete: "restrict" }).notNull(),
   startDate: date("start_date").notNull(),
   endDate: date("end_date").notNull(),
   reason: text("reason"),
-  priority: text("priority").default("MEDIUM").notNull(),
+  priority: text("priority").$type<LeaveRequestPriority>().default("MEDIUM").notNull(),
   status: leaveStatusEnum("status").default("PENDING").notNull(),
   approverId: text("approver_id").references(() => users.id, { onDelete: "set null" }),
   rejectionReason: text("rejection_reason"),
   managerComment: text("manager_comment"),
   attachmentUrl: text("attachment_url"),
   isHalfDay: boolean("is_half_day").default(false).notNull(),
-  halfDayPeriod: text("half_day_period"),
+  halfDayPeriod: text("half_day_period").$type<LeaveHalfDayPeriod>(),
   coveringEmployeeId: text("covering_employee_id").references(() => users.id, { onDelete: "set null" }),
   lopDays: decimal("lop_days", { precision: 5, scale: 1 }).default("0").notNull(),
+  rowVersion: integer("row_version").default(1).notNull(),
+  createdByMembershipId: integer("created_by_membership_id"),
+  updatedByMembershipId: integer("updated_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   unique("uniq_leave_requests_org_id").on(table.orgId, table.id),
   index("idx_leave_requests_user_id").on(table.userId),
@@ -55,6 +66,48 @@ export const leaveRequests = pgTable("leave_requests", {
   index("idx_leave_requests_org_user_status").on(table.orgId, table.userId, table.status),
   index("idx_leave_requests_org_created").on(table.orgId, table.createdAt),
   index("idx_leave_requests_org_approver").on(table.orgId, table.approverId),
+  index("idx_leave_requests_org_worker").on(table.orgId, table.workerId),
+  index("idx_leave_requests_org_engagement").on(
+    table.orgId,
+    table.workerEngagementId,
+  ),
+  foreignKey({
+    columns: [table.orgId, table.workerId],
+    foreignColumns: [workers.organizationId, workers.workerId],
+    name: "fk_leave_requests_org_worker",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.orgId, table.workerId, table.workerEngagementId],
+    foreignColumns: [
+      workerEngagements.organizationId,
+      workerEngagements.workerId,
+      workerEngagements.workerEngagementId,
+    ],
+    name: "fk_leave_requests_worker_engagement",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.orgId, table.createdByMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_leave_requests_created_actor",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.orgId, table.updatedByMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_leave_requests_updated_actor",
+  }).onDelete("restrict"),
+  check("chk_leave_requests_row_version", sql`${table.rowVersion} > 0`),
+  check(
+    "chk_leave_requests_priority",
+    sql`${table.priority} IN ('LOW', 'MEDIUM', 'HIGH')`,
+  ),
+  check(
+    "chk_leave_requests_half_day_period",
+    sql`${table.halfDayPeriod} IS NULL OR ${table.halfDayPeriod} IN ('AM', 'PM')`,
+  ),
+  check(
+    "chk_leave_requests_canonical_subject_pair",
+    sql`(${table.workerId} IS NULL) = (${table.workerEngagementId} IS NULL)`,
+  ),
 ]);
 
 export const leaveBlackoutDates = pgTable("leave_blackout_dates", {
@@ -69,6 +122,10 @@ export const leaveBlackoutDates = pgTable("leave_blackout_dates", {
 }, (table) => [
   unique("uniq_leave_blackout_dates_org_id").on(table.orgId, table.id),
   index("idx_leave_blackout_org").on(table.orgId, table.startDate),
+  check(
+    "chk_leave_blackout_dates_applies_to",
+    sql`length(btrim(${table.appliesTo})) > 0`,
+  ),
 ]);
 
 export const leaveRequestsRelations = relations(leaveRequests, ({ one }) => ({

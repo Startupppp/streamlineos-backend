@@ -5,10 +5,11 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   hrEmployments,
   hrEmploymentHistory,
+  hrPeople,
   type hrEmploymentLifecycleStatusEnum,
 } from "../../../db/schema/hr/core-people";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -19,6 +20,10 @@ import type {
   TransitionStatusInput,
 } from "./dto/hr-core.schemas";
 import { HrAuditService } from "./hr-audit.service";
+import { applyScope } from "../../access/apply-scope";
+import type { DataScope } from "../../access/access.types";
+import { hrJobLevels, hrJobRoles } from "../../../db/schema/hr/core-org";
+import { assertActiveOrgUnit } from "../../../common/org/sync-org-unit-placement";
 
 type LifecycleStatus = typeof hrEmploymentLifecycleStatusEnum.enumValues[number];
 
@@ -35,6 +40,30 @@ const ALLOWED_TRANSITIONS: Record<LifecycleStatus, LifecycleStatus[]> = {
   SUSPENDED: ["ACTIVE", "NOTICE", "EXITED"],
 };
 
+const EMPLOYMENT_VIEW_COLUMNS = {
+  id: hrEmployments.id,
+  orgId: hrEmployments.orgId,
+  personId: hrEmployments.personId,
+  employeeNumber: hrEmployments.employeeNumber,
+  lifecycleStatus: hrEmployments.lifecycleStatus,
+  workerType: hrEmployments.workerType,
+  departmentId: hrEmployments.departmentId,
+  jobRoleId: hrEmployments.jobRoleId,
+  jobLevelId: hrEmployments.jobLevelId,
+  employmentTypeId: hrEmployments.employmentTypeId,
+  locationId: hrEmployments.locationId,
+  designation: hrEmployments.designation,
+  joiningDate: hrEmployments.joiningDate,
+  probationEndDate: hrEmployments.probationEndDate,
+  confirmationDate: hrEmployments.confirmationDate,
+  noticeStartDate: hrEmployments.noticeStartDate,
+  expectedLastDay: hrEmployments.expectedLastDay,
+  lastWorkingDay: hrEmployments.lastWorkingDay,
+  isPrimary: hrEmployments.isPrimary,
+  createdAt: hrEmployments.createdAt,
+  updatedAt: hrEmployments.updatedAt,
+};
+
 @Injectable()
 export class HrEmploymentsService {
   constructor(
@@ -42,43 +71,125 @@ export class HrEmploymentsService {
     private readonly audit: HrAuditService,
   ) {}
 
-  async list(orgId: string, opts: { page: number; limit: number }) {
-    const { page, limit } = opts;
-    const offset = (page - 1) * limit;
-    const where = and(eq(hrEmployments.orgId, orgId), isNull(hrEmployments.deletedAt));
+  private async assertReferences(
+    orgId: string,
+    input: Partial<
+      Pick<
+        CreateEmploymentInput,
+        | "personId"
+        | "departmentId"
+        | "locationId"
+        | "jobRoleId"
+        | "jobLevelId"
+        | "employmentTypeId"
+      >
+    >,
+  ): Promise<void> {
+    const checks: Array<Promise<unknown>> = [];
 
-    const [data, totalResult] = await Promise.all([
-      this.db
-        .select({
-          id: hrEmployments.id,
-          orgId: hrEmployments.orgId,
-          personId: hrEmployments.personId,
-          employeeNumber: hrEmployments.employeeNumber,
-          lifecycleStatus: hrEmployments.lifecycleStatus,
-          workerType: hrEmployments.workerType,
-          departmentId: hrEmployments.departmentId,
-          designation: hrEmployments.designation,
-          joiningDate: hrEmployments.joiningDate,
-          isPrimary: hrEmployments.isPrimary,
-          createdAt: hrEmployments.createdAt,
-        })
-        .from(hrEmployments)
-        .where(where)
-        .orderBy(hrEmployments.id)
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(hrEmployments).where(where),
-    ]);
+    if (input.personId !== undefined) {
+      checks.push(
+        this.db
+          .select({ id: hrPeople.id })
+          .from(hrPeople)
+          .where(
+            and(
+              eq(hrPeople.id, input.personId),
+              eq(hrPeople.orgId, orgId),
+              isNull(hrPeople.deletedAt),
+            ),
+          )
+          .limit(1)
+          .then(([person]) => {
+            if (!person) throw new BadRequestException("Invalid employee selection.");
+          }),
+      );
+    }
+    if (input.departmentId !== undefined) {
+      checks.push(assertActiveOrgUnit(this.db, orgId, input.departmentId, "DEPARTMENT"));
+    }
+    if (input.locationId !== undefined) {
+      checks.push(assertActiveOrgUnit(this.db, orgId, input.locationId, "LOCATION"));
+    }
+    if (input.jobRoleId !== undefined) {
+      checks.push(this.assertActiveJobRole(orgId, input.jobRoleId));
+    }
+    if (input.jobLevelId !== undefined) {
+      checks.push(this.assertActiveJobLevel(orgId, input.jobLevelId));
+    }
+    if (input.employmentTypeId !== undefined) {
+      throw new BadRequestException(
+        "Employment type IDs are not supported by the current catalog. Use workerType instead.",
+      );
+    }
 
-    const total = totalResult[0]?.total ?? 0;
-
-    return {
-      data,
-      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
-    };
+    await Promise.all(checks);
   }
 
-  async getOne(orgId: string, employmentId: number) {
+  private async assertActiveJobRole(orgId: string, jobRoleId: number): Promise<void> {
+    const [jobRole] = await this.db
+      .select({ id: hrJobRoles.id })
+      .from(hrJobRoles)
+      .where(
+        and(
+          eq(hrJobRoles.id, jobRoleId),
+          eq(hrJobRoles.orgId, orgId),
+          eq(hrJobRoles.isActive, true),
+        ),
+      )
+      .limit(1);
+    if (!jobRole) throw new BadRequestException("Invalid job role selection.");
+  }
+
+  private async assertActiveJobLevel(orgId: string, jobLevelId: number): Promise<void> {
+    const [jobLevel] = await this.db
+      .select({ id: hrJobLevels.id })
+      .from(hrJobLevels)
+      .where(
+        and(
+          eq(hrJobLevels.id, jobLevelId),
+          eq(hrJobLevels.orgId, orgId),
+          eq(hrJobLevels.isActive, true),
+        ),
+      )
+      .limit(1);
+    if (!jobLevel) throw new BadRequestException("Invalid job level selection.");
+  }
+
+  async getOne(
+    orgId: string,
+    actorUserId: string,
+    employmentId: number,
+    scope: DataScope,
+  ) {
+    const [employment] = await this.db
+      .select(EMPLOYMENT_VIEW_COLUMNS)
+      .from(hrEmployments)
+      .innerJoin(
+        hrPeople,
+        and(
+          eq(hrPeople.orgId, hrEmployments.orgId),
+          eq(hrPeople.id, hrEmployments.personId),
+        ),
+      )
+      .where(
+        and(
+          eq(hrEmployments.id, employmentId),
+          eq(hrEmployments.orgId, orgId),
+          isNull(hrEmployments.deletedAt),
+          eq(hrPeople.orgId, orgId),
+          isNull(hrPeople.deletedAt),
+          applyScope(scope, orgId, actorUserId, {
+            ownerColumn: hrPeople.userId,
+          }),
+        ),
+      )
+      .limit(1);
+    if (!employment) throw new NotFoundException("Employment not found");
+    return employment;
+  }
+
+  private async getOneForMutation(orgId: string, employmentId: number) {
     const employment = await this.db.query.hrEmployments.findFirst({
       where: and(
         eq(hrEmployments.id, employmentId),
@@ -91,6 +202,7 @@ export class HrEmploymentsService {
   }
 
   async create(orgId: string, actorId: string, input: CreateEmploymentInput) {
+    await this.assertReferences(orgId, input);
     const [existing] = await this.db
       .select({ id: hrEmployments.id })
       .from(hrEmployments)
@@ -138,7 +250,8 @@ export class HrEmploymentsService {
   }
 
   async update(orgId: string, employmentId: number, actorId: string, input: UpdateEmploymentInput) {
-    const existing = await this.getOne(orgId, employmentId);
+    const existing = await this.getOneForMutation(orgId, employmentId);
+    await this.assertReferences(orgId, input);
 
     if (input.employeeNumber && input.employeeNumber !== existing.employeeNumber) {
       const [dup] = await this.db
@@ -189,10 +302,41 @@ export class HrEmploymentsService {
     return updated;
   }
 
-  async transition(orgId: string, employmentId: number, actorId: string, input: TransitionStatusInput) {
-    const existing = await this.getOne(orgId, employmentId);
-    const fromStatus = existing.lifecycleStatus as LifecycleStatus;
-    const toStatus = input.toStatus as LifecycleStatus;
+  async transition(
+    orgId: string,
+    employmentId: number,
+    actorId: string,
+    input: TransitionStatusInput,
+    tx?: Db,
+  ) {
+    if (tx) return this.transitionInTransaction(tx, orgId, employmentId, actorId, input);
+    return this.db.transaction((transaction) =>
+      this.transitionInTransaction(transaction, orgId, employmentId, actorId, input),
+    );
+  }
+
+  private async transitionInTransaction(
+    tx: Db,
+    orgId: string,
+    employmentId: number,
+    actorId: string,
+    input: TransitionStatusInput,
+  ) {
+    const [existing] = await tx
+      .select()
+      .from(hrEmployments)
+      .where(
+        and(
+          eq(hrEmployments.id, employmentId),
+          eq(hrEmployments.orgId, orgId),
+          isNull(hrEmployments.deletedAt),
+        ),
+      )
+      .limit(1)
+      .for("update");
+    if (!existing) throw new NotFoundException("Employment not found.");
+    const fromStatus: LifecycleStatus = existing.lifecycleStatus;
+    const toStatus: LifecycleStatus = input.toStatus;
 
     if (fromStatus === toStatus) {
       return existing;
@@ -215,40 +359,54 @@ export class HrEmploymentsService {
       extra.probationEndDate = existing.probationEndDate ?? undefined;
     }
 
-    const [updated] = await this.db.transaction(async (tx) => {
-      await tx.insert(hrEmploymentHistory).values({
-        orgId,
-        employmentId,
-        fromStatus,
-        toStatus,
-        reason: input.reason ?? null,
-        notes: input.notes ?? null,
-        effectiveDate: input.effectiveDate ?? null,
-        createdBy: actorId,
-      });
-
-      return tx
-        .update(hrEmployments)
-        .set(extra)
-        .where(and(eq(hrEmployments.id, employmentId), eq(hrEmployments.orgId, orgId)))
-        .returning();
-    });
-
-    await this.audit.log({
+    await tx.insert(hrEmploymentHistory).values({
       orgId,
-      actorId,
-      entityType: "hr_employments",
-      entityId: String(employmentId),
-      action: `status.transition.${fromStatus}.to.${toStatus}`,
-      before: { lifecycleStatus: fromStatus },
-      after: { lifecycleStatus: toStatus, reason: input.reason ?? null },
+      employmentId,
+      fromStatus,
+      toStatus,
+      reason: input.reason ?? null,
+      notes: input.notes ?? null,
+      effectiveDate: input.effectiveDate ?? null,
+      createdBy: actorId,
     });
+
+    const [updated] = await tx
+      .update(hrEmployments)
+      .set({
+        ...extra,
+        rowVersion: sql`${hrEmployments.rowVersion} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(hrEmployments.id, employmentId),
+          eq(hrEmployments.orgId, orgId),
+          eq(hrEmployments.lifecycleStatus, fromStatus),
+          eq(hrEmployments.rowVersion, existing.rowVersion),
+          isNull(hrEmployments.deletedAt),
+        ),
+      )
+      .returning();
+    if (!updated) throw new ConflictException("The employment was updated by another request.");
+
+    await this.audit.log(
+      {
+        orgId,
+        actorId,
+        entityType: "hr_employments",
+        entityId: String(employmentId),
+        action: `status.transition.${fromStatus}.to.${toStatus}`,
+        before: { lifecycleStatus: fromStatus },
+        after: { lifecycleStatus: toStatus, reason: input.reason ?? null },
+      },
+      tx,
+    );
 
     return updated;
   }
 
   async remove(orgId: string, employmentId: number, actorId: string) {
-    const existing = await this.getOne(orgId, employmentId);
+    const existing = await this.getOneForMutation(orgId, employmentId);
 
     await this.db
       .update(hrEmployments)

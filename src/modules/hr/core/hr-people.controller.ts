@@ -19,19 +19,21 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { HrPeopleService } from "./hr-people.service";
+import { HrEmployeeRecordListsService } from "./hr-employee-record-lists.service";
 import { PersonEmploymentSyncService } from "./person-employment-sync.service";
+import { AccessService } from "../../access/access.service";
+import { resolveEmployeesScope } from "../directory/employees-scope";
 import {
   createPersonSchema,
-  paginationSchema,
+  listPeopleSchema,
   updatePersonSchema,
   type CreatePersonInput,
+  type ListPeopleInput,
   type UpdatePersonInput,
 } from "./dto/hr-core.schemas";
-import { z } from "zod";
-
-const listPeopleSchema = paginationSchema.extend({
-  search: z.string().optional(),
-});
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
+import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 
 @RequireModule("hr")
 @Controller("hr/people")
@@ -39,35 +41,63 @@ const listPeopleSchema = paginationSchema.extend({
 export class HrPeopleController {
   constructor(
     private readonly people: HrPeopleService,
+    private readonly employeeRecordLists: HrEmployeeRecordListsService,
     private readonly personEmploymentSync: PersonEmploymentSyncService,
+    private readonly access: AccessService,
   ) {}
 
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:view")
-  list(
-    @Query(new ZodValidationPipe(listPeopleSchema)) query: z.infer<typeof listPeopleSchema>,
-    @CurrentUser() u: CurrentUserContext,
+  async list(
+    @Query(new ZodValidationPipe(listPeopleSchema)) query: ListPeopleInput,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.people.list(u.orgId, { page: query.page, limit: query.limit, search: query.search });
+    const scope = await resolveEmployeesScope(this.access, currentUser);
+    if (query.page !== undefined) {
+      return this.employeeRecordLists.listPeoplePage(
+        currentUser.orgId,
+        currentUser.userId,
+        { page: query.page, limit: query.limit, search: query.search },
+        scope,
+      );
+    }
+    return this.employeeRecordLists.listPeopleCursor(
+      currentUser.orgId,
+      currentUser.userId,
+      { cursor: query.cursor, limit: query.limit, search: query.search },
+      scope,
+    );
   }
 
   @Post("backfill-from-members")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
+  @Idempotent("hr.people.backfill-from-members")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("hr:employee-backfill")
   @HttpCode(200)
-  backfillFromMembers(@CurrentUser() u: CurrentUserContext) {
-    return this.personEmploymentSync.backfillOrg(u.orgId, u.userId);
+  backfillFromMembers(@CurrentUser() currentUser: CurrentUserContext) {
+    return this.personEmploymentSync.backfillOrg(
+      currentUser.orgId,
+      currentUser.userId,
+    );
   }
 
   @Get(":personId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:view")
-  getOne(
+  async getOne(
     @Param("personId", ParseIntPipe) personId: number,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.people.getOne(u.orgId, personId);
+    const scope = await resolveEmployeesScope(this.access, currentUser);
+    return this.people.getOne(
+      currentUser.orgId,
+      currentUser.userId,
+      personId,
+      scope,
+    );
   }
 
   @Post()
@@ -76,9 +106,9 @@ export class HrPeopleController {
   @HttpCode(201)
   create(
     @Body(new ZodValidationPipe(createPersonSchema)) body: CreatePersonInput,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.people.create(u.orgId, u.userId, body);
+    return this.people.create(currentUser.orgId, currentUser.userId, body);
   }
 
   @Patch(":personId")
@@ -87,9 +117,14 @@ export class HrPeopleController {
   update(
     @Param("personId", ParseIntPipe) personId: number,
     @Body(new ZodValidationPipe(updatePersonSchema)) body: UpdatePersonInput,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.people.update(u.orgId, personId, u.userId, body);
+    return this.people.update(
+      currentUser.orgId,
+      personId,
+      currentUser.userId,
+      body,
+    );
   }
 
   @Delete(":personId")
@@ -98,8 +133,12 @@ export class HrPeopleController {
   @RequirePermission("hr:employees:manage")
   remove(
     @Param("personId", ParseIntPipe) personId: number,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.people.remove(u.orgId, personId, u.userId);
+    return this.people.remove(
+      currentUser.orgId,
+      personId,
+      currentUser.userId,
+    );
   }
 }

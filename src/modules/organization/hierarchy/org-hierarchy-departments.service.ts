@@ -5,7 +5,8 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, ilike, isNull, or } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
 import { orgUnits } from "../../../db/schema/common/organization";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -18,7 +19,12 @@ import type {
   UpdateOrgDepartmentInput,
   ListQueryInput,
 } from "./dto/org-hierarchy.schemas";
-import { getOrgUnitStatusFilter } from "./org-hierarchy-list-filters";
+import {
+  getOrgUnitCursorFilter,
+  getOrgUnitStatusFilter,
+  orgUnitNormalizedName,
+  toOrgUnitCursorPage,
+} from "./org-hierarchy-list-filters";
 
 const ORG_DEPT_COLUMNS = {
   id: orgUnits.id,
@@ -32,6 +38,12 @@ const ORG_DEPT_COLUMNS = {
   createdAt: orgUnits.createdAt,
   updatedAt: orgUnits.updatedAt,
   deletedAt: orgUnits.deletedAt,
+};
+
+const departmentBranches = alias(orgUnits, "department_branches");
+const ORG_DEPT_LIST_COLUMNS = {
+  ...ORG_DEPT_COLUMNS,
+  branchName: departmentBranches.name,
 };
 
 type OrgDepartmentRow = Pick<
@@ -65,6 +77,15 @@ export function toOrgDepartment(row: OrgDepartmentRow) {
   };
 }
 
+function toOrgDepartmentList(
+  row: OrgDepartmentRow & { branchName: string | null },
+) {
+  return {
+    ...toOrgDepartment(row),
+    branchName: row.branchName,
+  };
+}
+
 @Injectable()
 export class OrgHierarchyDepartmentsService {
   constructor(
@@ -74,27 +95,32 @@ export class OrgHierarchyDepartmentsService {
   ) {}
 
   async listDepartments(orgId: string, query: ListQueryInput) {
-    const { page, limit, search, status } = query;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, search, status } = query;
     const statusFilter = getOrgUnitStatusFilter(status);
+    const cursorFilter = getOrgUnitCursorFilter(cursor);
     const filters = and(
       eq(orgUnits.orgId, orgId),
       eq(orgUnits.kind, "DEPARTMENT"),
       isNull(orgUnits.deletedAt),
       ...(search ? [or(ilike(orgUnits.name, `%${search}%`), ilike(orgUnits.code, `%${search}%`))] : []),
       ...(statusFilter ? [statusFilter] : []),
+      ...(cursorFilter ? [cursorFilter] : []),
     );
-    const [rows, [{ count }]] = await Promise.all([
-      this.db
-        .select(ORG_DEPT_COLUMNS)
-        .from(orgUnits)
-        .where(filters)
-        .orderBy(asc(orgUnits.name), asc(orgUnits.id))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ count: sql<number>`count(*)::int` }).from(orgUnits).where(filters),
-    ]);
-    return { data: rows.map(toOrgDepartment), total: count, page, limit };
+    const rows = await this.db
+      .select(ORG_DEPT_LIST_COLUMNS)
+      .from(orgUnits)
+      .leftJoin(
+        departmentBranches,
+        and(
+          eq(departmentBranches.id, orgUnits.parentId),
+          eq(departmentBranches.orgId, orgUnits.orgId),
+          eq(departmentBranches.kind, "BRANCH"),
+        ),
+      )
+      .where(filters)
+      .orderBy(asc(orgUnitNormalizedName), asc(orgUnits.id))
+      .limit(limit + 1);
+    return toOrgUnitCursorPage(rows, limit, toOrgDepartmentList);
   }
 
   async getDepartment(orgId: string, id: string) {
@@ -141,7 +167,7 @@ export class OrgHierarchyDepartmentsService {
     if (!row) throw new Error("Failed to create department");
 
     await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "DEPARTMENT"));
-    await this.audit.log({ action: "org.department.created", userId, orgId, targetId: row.id, targetType: "org_unit" });
+    await this.audit.logCritical({ action: "org.department.created", userId, orgId, targetId: row.id, targetType: "org_unit" });
 
     return toOrgDepartment(row);
   }
@@ -177,7 +203,7 @@ export class OrgHierarchyDepartmentsService {
     if (!row) throw new NotFoundException("Department not found");
 
     await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "DEPARTMENT"));
-    await this.audit.log({ action: "org.department.updated", userId, orgId, targetId: id, targetType: "org_unit" });
+    await this.audit.logCritical({ action: "org.department.updated", userId, orgId, targetId: id, targetType: "org_unit" });
 
     return toOrgDepartment(row);
   }
@@ -192,7 +218,7 @@ export class OrgHierarchyDepartmentsService {
       .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "DEPARTMENT")));
 
     await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "DEPARTMENT"));
-    await this.audit.log({ action: "org.department.deleted", userId, orgId, targetId: id, targetType: "org_unit" });
+    await this.audit.logCritical({ action: "org.department.deleted", userId, orgId, targetId: id, targetType: "org_unit" });
   }
 
   async moveDepartment(orgId: string, departmentId: string, newBranchId: string | null) {

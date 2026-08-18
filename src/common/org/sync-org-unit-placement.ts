@@ -1,12 +1,12 @@
 import { BadRequestException } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { orgUnitMembers, orgUnits, type OrgUnitKind } from "../../db/schema";
 import type { DbOrTx } from "../rbac/access-invalidate";
 
 export type PlacementUpdate = Partial<Record<OrgUnitKind, string | null | undefined>>;
 
-async function assertUnitInOrg(
+export async function assertActiveOrgUnit(
   tx: DbOrTx,
   orgId: string,
   unitId: string,
@@ -15,7 +15,15 @@ async function assertUnitInOrg(
   const [unit] = await tx
     .select({ id: orgUnits.id })
     .from(orgUnits)
-    .where(and(eq(orgUnits.id, unitId), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, kind)))
+    .where(
+      and(
+        eq(orgUnits.id, unitId),
+        eq(orgUnits.orgId, orgId),
+        eq(orgUnits.kind, kind),
+        eq(orgUnits.status, "ACTIVE"),
+        isNull(orgUnits.deletedAt),
+      ),
+    )
     .limit(1);
 
   if (!unit) throw new BadRequestException(`Invalid ${kind.toLowerCase()} selection.`);
@@ -31,7 +39,7 @@ export async function syncOrgUnitPlacement(
     [OrgUnitKind, string | null | undefined]
   >) {
     if (unitId === undefined) continue;
-    if (unitId !== null) await assertUnitInOrg(tx, orgId, unitId, kind);
+    if (unitId !== null) await assertActiveOrgUnit(tx, orgId, unitId, kind);
 
     const existing = await tx
       .select({ id: orgUnitMembers.id })

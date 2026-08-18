@@ -1,10 +1,26 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { hrPeople } from "../../../db/schema/hr/core-people";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import type { CreatePersonInput, UpdatePersonInput } from "./dto/hr-core.schemas";
 import { HrAuditService } from "./hr-audit.service";
+import { applyScope } from "../../access/apply-scope";
+import type { DataScope } from "../../access/access.types";
+
+const PERSON_VIEW_COLUMNS = {
+  id: hrPeople.id,
+  orgId: hrPeople.orgId,
+  userId: hrPeople.userId,
+  firstName: hrPeople.firstName,
+  lastName: hrPeople.lastName,
+  workEmail: hrPeople.workEmail,
+  phone: hrPeople.phone,
+  gender: hrPeople.gender,
+  avatarUrl: hrPeople.avatarUrl,
+  createdAt: hrPeople.createdAt,
+  updatedAt: hrPeople.updatedAt,
+};
 
 @Injectable()
 export class HrPeopleService {
@@ -13,57 +29,31 @@ export class HrPeopleService {
     private readonly audit: HrAuditService,
   ) {}
 
-  async list(orgId: string, opts: { page: number; limit: number; search?: string }) {
-    const { page, limit, search } = opts;
-    const offset = (page - 1) * limit;
-
-    const baseWhere = and(
-      eq(hrPeople.orgId, orgId),
-      isNull(hrPeople.deletedAt),
-    );
-
-    const where = search
-      ? and(
-          baseWhere,
-          or(
-            ilike(hrPeople.firstName, `%${search}%`),
-            ilike(hrPeople.lastName, `%${search}%`),
-            ilike(hrPeople.workEmail, `%${search}%`),
-          ),
-        )
-      : baseWhere;
-
-    const [data, totalResult] = await Promise.all([
-      this.db
-        .select({
-          id: hrPeople.id,
-          orgId: hrPeople.orgId,
-          userId: hrPeople.userId,
-          firstName: hrPeople.firstName,
-          lastName: hrPeople.lastName,
-          workEmail: hrPeople.workEmail,
-          phone: hrPeople.phone,
-          gender: hrPeople.gender,
-          avatarUrl: hrPeople.avatarUrl,
-          createdAt: hrPeople.createdAt,
-        })
-        .from(hrPeople)
-        .where(where)
-        .orderBy(hrPeople.firstName)
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(hrPeople).where(where),
-    ]);
-
-    const total = totalResult[0]?.total ?? 0;
-
-    return {
-      data,
-      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
-    };
+  async getOne(
+    orgId: string,
+    actorUserId: string,
+    personId: number,
+    scope: DataScope,
+  ) {
+    const [person] = await this.db
+      .select(PERSON_VIEW_COLUMNS)
+      .from(hrPeople)
+      .where(
+        and(
+          eq(hrPeople.id, personId),
+          eq(hrPeople.orgId, orgId),
+          isNull(hrPeople.deletedAt),
+          applyScope(scope, orgId, actorUserId, {
+            ownerColumn: hrPeople.userId,
+          }),
+        ),
+      )
+      .limit(1);
+    if (!person) throw new NotFoundException("Person not found");
+    return person;
   }
 
-  async getOne(orgId: string, personId: number) {
+  private async getOneForMutation(orgId: string, personId: number) {
     const person = await this.db.query.hrPeople.findFirst({
       where: and(
         eq(hrPeople.id, personId),
@@ -122,7 +112,7 @@ export class HrPeopleService {
   }
 
   async update(orgId: string, personId: number, actorId: string, input: UpdatePersonInput) {
-    const existing = await this.getOne(orgId, personId);
+    const existing = await this.getOneForMutation(orgId, personId);
 
     if (input.workEmail && input.workEmail.toLowerCase() !== existing.workEmail) {
       const [dup] = await this.db
@@ -175,7 +165,7 @@ export class HrPeopleService {
   }
 
   async remove(orgId: string, personId: number, actorId: string) {
-    const existing = await this.getOne(orgId, personId);
+    const existing = await this.getOneForMutation(orgId, personId);
 
     await this.db
       .update(hrPeople)

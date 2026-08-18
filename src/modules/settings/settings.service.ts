@@ -461,10 +461,6 @@ export class SettingsService {
   }
 
   async updateUserRole(u: CurrentUserContext, targetUserId: string, role: string) {
-    if (!u.isOrgOwner) {
-      throw new ForbiddenException("Only the organization owner can change member roles");
-    }
-
     const member = await this.db.query.organizationMembers.findFirst({
       where: and(
         eq(organizationMembers.userId, targetUserId),
@@ -480,7 +476,6 @@ export class SettingsService {
       );
     }
 
-    // Rejects OWNER outright so a second owner cannot be minted outside the transfer flow
     await assertMayGrantRole(this.access, u.orgId, u, role);
 
     await this.db.transaction(async (tx) => {

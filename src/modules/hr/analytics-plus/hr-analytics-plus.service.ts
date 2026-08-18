@@ -10,133 +10,18 @@ import {
 import {
   hrHeadcountPlans,
 } from "../../../db/schema/hr/workforce-planning";
+import { HrCommandCenterAnalyticsService } from "./hr-command-center-analytics.service";
 
 @Injectable()
 export class HrAnalyticsPlusService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly commandCenter: HrCommandCenterAnalyticsService,
   ) {}
 
   getCommandCenter(orgId: string, departmentId?: string) {
-    return this.cache.cached(
-      `hr:analytics-plus:cc:${orgId}:${departmentId ?? "all"}`,
-      () => this.buildCommandCenter(orgId, departmentId),
-      CACHE_TTL.MEDIUM,
-    );
-  }
-
-  private async buildCommandCenter(orgId: string, _?: string) {
-    const now = new Date();
-    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const twelveMonthsAgo = new Date(now.getFullYear() - 1, now.getMonth(), 1);
-    const yearStart = new Date(now.getFullYear(), 0, 1);
-
-    const [
-      headcountByStatus,
-      attritionRate,
-      avgTenure,
-      leaveUtilization,
-      attendanceRate,
-      openCases,
-      avgMood,
-      lastPayroll,
-    ] = await Promise.all([
-      this.db.execute(sql`
-        SELECT lifecycle_status, COUNT(*) as count
-        FROM hr_employments
-        WHERE org_id = ${orgId} AND deleted_at IS NULL
-        GROUP BY lifecycle_status
-      `),
-      this.db.execute(sql`
-        SELECT
-          COUNT(*) FILTER (WHERE exit_date >= ${twelveMonthsAgo.toISOString()} AND exit_date <= NOW()) as exits,
-          COUNT(*) FILTER (WHERE lifecycle_status = 'ACTIVE') as active
-        FROM hr_employments
-        WHERE org_id = ${orgId} AND deleted_at IS NULL
-      `),
-      this.db.execute(sql`
-        SELECT AVG(EXTRACT(EPOCH FROM (NOW() - joining_date::timestamp)) / 2592000) as avg_months
-        FROM hr_employments
-        WHERE org_id = ${orgId} AND lifecycle_status = 'ACTIVE' AND joining_date IS NOT NULL AND deleted_at IS NULL
-      `),
-      this.db.execute(sql`
-        SELECT
-          SUM(CASE WHEN txn_type = 'consumption' THEN days::numeric ELSE 0 END) as consumed,
-          SUM(CASE WHEN txn_type = 'accrual' THEN days::numeric ELSE 0 END) as accrued
-        FROM hr_leave_ledger
-        WHERE org_id = ${orgId} AND effective_date >= ${yearStart.toISOString().split("T")[0]}
-      `),
-      this.db.execute(sql`
-        SELECT
-          COUNT(*) FILTER (WHERE status = 'PRESENT') as present,
-          COUNT(*) as total
-        FROM attendance
-        WHERE org_id = ${orgId} AND date >= ${thirtyDaysAgo.toISOString().split("T")[0]}
-      `),
-      this.db.execute(sql`
-        SELECT COUNT(*) as count
-        FROM hr_cases
-        WHERE org_id = ${orgId} AND status IN ('open','under_investigation') AND deleted_at IS NULL
-      `),
-      this.db.execute(sql`
-        SELECT AVG(mood) as avg_mood
-        FROM hr_mood_checkins
-        WHERE org_id = ${orgId} AND date >= ${thirtyDaysAgo.toISOString().split("T")[0]}
-      `),
-      this.db.execute(sql`
-        SELECT gross_total, month
-        FROM payroll_runs
-        WHERE org_id = ${orgId} AND status = 'PAID'
-        ORDER BY month DESC
-        LIMIT 1
-      `),
-    ]);
-
-    const statusMap: Record<string, number> = {};
-    for (const row of headcountByStatus) {
-      statusMap[String(row.lifecycle_status)] = Number(row.count);
-    }
-
-    const attrRow = attritionRate[0];
-    const active = Number(attrRow?.active ?? 0);
-    const exits = Number(attrRow?.exits ?? 0);
-    const attritionPct = active > 0 ? Number(((exits / (active + exits)) * 100).toFixed(1)) : 0;
-
-    const tenureMonthsRaw = avgTenure[0]?.avg_months;
-    const avgTenureMonths = tenureMonthsRaw ? Number(Number(tenureMonthsRaw).toFixed(1)) : 0;
-
-    const leaveRow = leaveUtilization[0];
-    const leaveAccrued = Number(leaveRow?.accrued ?? 0);
-    const leaveUtil = leaveAccrued > 0
-      ? Number(((Number(leaveRow?.consumed ?? 0) / leaveAccrued) * 100).toFixed(1))
-      : 0;
-
-    const attRow = attendanceRate[0];
-    const attTotal = Number(attRow?.total ?? 0);
-    const attendancePct = attTotal > 0
-      ? Number(((Number(attRow?.present ?? 0) / attTotal) * 100).toFixed(1))
-      : 0;
-
-    const casesCount = Number(openCases[0]?.count ?? 0);
-    const moodRaw = avgMood[0]?.avg_mood;
-    const payrollGrossRaw = lastPayroll[0]?.gross_total;
-
-    return {
-      headcount: {
-        total: Object.values(statusMap).reduce((a, b) => a + b, 0),
-        active: statusMap["ACTIVE"] ?? 0,
-        probation: statusMap["ONBOARDING"] ?? 0,
-        notice: statusMap["NOTICE"] ?? 0,
-      },
-      attritionRate12mo: attritionPct,
-      avgTenureMonths,
-      leaveUtilizationPct: leaveUtil,
-      attendanceRatePct: attendancePct,
-      openCasesCount: casesCount,
-      avgMood: moodRaw ? Number(Number(moodRaw).toFixed(2)) : null,
-      payrollCostLastMonth: payrollGrossRaw ? Number(payrollGrossRaw) : null,
-    };
+    return this.commandCenter.getCommandCenter(orgId, departmentId);
   }
 
   getAttrition(orgId: string, departmentId?: string) {
@@ -436,7 +321,7 @@ export class HrAnalyticsPlusService {
 
   async updateHeadcountPlan(
     orgId: string,
-    id: number,
+    headcountPlanId: number,
     data: Partial<{
       departmentId: string;
       budgetedHeadcount: number;
@@ -447,7 +332,12 @@ export class HrAnalyticsPlusService {
     const [row] = await this.db
       .update(hrHeadcountPlans)
       .set(data)
-      .where(and(eq(hrHeadcountPlans.id, id), eq(hrHeadcountPlans.orgId, orgId)))
+      .where(
+        and(
+          eq(hrHeadcountPlans.id, headcountPlanId),
+          eq(hrHeadcountPlans.orgId, orgId),
+        ),
+      )
       .returning();
     return row;
   }

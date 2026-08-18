@@ -1,0 +1,274 @@
+import type { Permission } from "./types";
+
+export const HR_ENTERPRISE_PERMISSIONS: Permission[] = [
+  {
+    name: "hr:forms:view",
+    resource: "hr:forms",
+    action: "view",
+    description: "View HR forms and submissions",
+  },
+  {
+    name: "hr:forms:manage",
+    resource: "hr:forms",
+    action: "manage",
+    description: "Build and manage HR forms and review submissions",
+  },
+  {
+    name: "hr:legalhold:view",
+    resource: "hr:legalhold",
+    action: "view",
+    description: "View legal holds and investigation locks",
+  },
+  {
+    name: "hr:legalhold:manage",
+    resource: "hr:legalhold",
+    action: "manage",
+    description: "Place and release legal holds (sensitive)",
+  },
+  {
+    name: "hr:retention:manage",
+    resource: "hr:retention",
+    action: "manage",
+    description:
+      "Manage data retention policies and deletion/anonymization requests",
+  },
+  {
+    name: "hr:positions:view",
+    resource: "hr:positions",
+    action: "view",
+    description: "View positions and reorg scenarios",
+  },
+  {
+    name: "hr:positions:manage",
+    resource: "hr:positions",
+    action: "manage",
+    description: "Manage positions, headcount, and reorg simulations",
+  },
+  {
+    name: "hr:labor:view",
+    resource: "hr:labor",
+    action: "view",
+    description: "View union memberships, agreements, and labor cases",
+  },
+  {
+    name: "hr:labor:manage",
+    resource: "hr:labor",
+    action: "manage",
+    description: "Manage union relations and collective agreements",
+  },
+  {
+    name: "hr:compensation:manage",
+    resource: "hr:compensation",
+    action: "manage",
+    description:
+      "Manage compensation planning cycles, calibration, and budgets",
+  },
+  {
+    name: "hr:equity:view",
+    resource: "hr:equity",
+    action: "view",
+    description: "View equity grants and vesting (sensitive)",
+  },
+  {
+    name: "hr:equity:manage",
+    resource: "hr:equity",
+    action: "manage",
+    description:
+      "Manage ESOP/equity grants, vesting, and exercises (sensitive)",
+  },
+  {
+    name: "hr:accommodations:view",
+    resource: "hr:accommodations",
+    action: "view",
+    description: "View workplace accommodation requests",
+  },
+  {
+    name: "hr:accommodations:manage",
+    resource: "hr:accommodations",
+    action: "manage",
+    description: "Manage accommodation requests and adjustment tasks",
+  },
+  {
+    name: "hr:emergency:manage",
+    resource: "hr:emergency",
+    action: "manage",
+    description: "Manage emergency events and safety check-ins",
+  },
+  {
+    name: "hr:identity:view",
+    resource: "hr:identity",
+    action: "view",
+    description: "View identity provisioning and access lifecycle",
+  },
+  {
+    name: "hr:identity:manage",
+    resource: "hr:identity",
+    action: "manage",
+    description: "Manage joiner/mover/leaver access provisioning",
+  },
+  {
+    name: "hr:eventstream:view",
+    resource: "hr:eventstream",
+    action: "view",
+    description: "View the immutable HR event stream and BI exports",
+  },
+  {
+    name: "hr:shifts:view",
+    resource: "hr:shifts",
+    action: "view",
+    description: "View shift templates and assignments",
+  },
+  {
+    name: "hr:shifts:manage",
+    resource: "hr:shifts",
+    action: "manage",
+    description: "Manage shifts, rosters, and swap requests",
+  },
+  {
+    name: "hr:geofencing:manage",
+    resource: "hr:geofencing",
+    action: "manage",
+    description: "Manage geofence locations",
+  },
+  {
+    name: "hr:biometric:manage",
+    resource: "hr:biometric",
+    action: "manage",
+    description: "Manage biometric devices",
+  },
+  {
+    name: "hr:feedback:view",
+    resource: "hr:feedback",
+    action: "view",
+    description: "View 360 feedback cycles",
+  },
+  {
+    name: "hr:kpis:view",
+    resource: "hr:kpis",
+    action: "view",
+    description: "View KPIs and competency frameworks",
+  },
+  {
+    name: "hr:kpis:manage",
+    resource: "hr:kpis",
+    action: "manage",
+    description: "Manage KPIs and competency frameworks",
+  },
+  {
+    name: "hr:announcements:view",
+    resource: "hr:announcements",
+    action: "view",
+    description: "View announcements",
+  },
+  {
+    name: "hr:announcements:manage",
+    resource: "hr:announcements",
+    action: "manage",
+    description: "Create and manage announcements",
+  },
+  {
+    name: "hr:tax:view",
+    resource: "hr:tax",
+    action: "view",
+    description: "View tax declarations",
+  },
+  {
+    name: "hr:tax:manage",
+    resource: "hr:tax",
+    action: "manage",
+    description: "Review and approve tax declarations",
+  },
+  {
+    name: "hr:travel:view",
+    resource: "hr:travel",
+    action: "view",
+    description: "View travel requests",
+  },
+  {
+    name: "hr:travel:create",
+    resource: "hr:travel",
+    action: "create",
+    description: "Submit travel requests",
+  },
+  {
+    name: "hr:travel:manage",
+    resource: "hr:travel",
+    action: "manage",
+    description: "Approve travel requests",
+  },
+  {
+    name: "hr:requisitions:view",
+    resource: "hr:requisitions",
+    action: "view",
+    description: "View job requisitions",
+  },
+  {
+    name: "hr:requisitions:manage",
+    resource: "hr:requisitions",
+    action: "manage",
+    description: "Manage and approve job requisitions",
+  },
+  {
+    name: "hr:payroll:manage",
+    resource: "hr:payroll",
+    action: "manage",
+    description:
+      "Manage payroll templates, policy settings, components, and calendar",
+  },
+  {
+    name: "hr:payroll:lock",
+    resource: "hr:payroll",
+    action: "lock",
+    description: "Lock an approved payroll run to freeze the snapshot",
+  },
+  {
+    name: "hr:payroll:reopen",
+    resource: "hr:payroll",
+    action: "reopen",
+    description: "Reopen an approved or locked payroll run with a reason",
+  },
+  {
+    name: "hr:payroll:publish",
+    resource: "hr:payroll",
+    action: "publish",
+    description: "Publish payslips to the employee portal or via email",
+  },
+  {
+    name: "hr:payroll:export",
+    resource: "hr:payroll",
+    action: "export",
+    description: "Export payroll reports, journal files, and bank payout files",
+  },
+  {
+    name: "hr:bank-details:view",
+    resource: "hr:bank-details",
+    action: "view",
+    description: "View unmasked employee bank account details (sensitive)",
+  },
+  {
+    name: "hr:loans:view",
+    resource: "hr:loans",
+    action: "view",
+    description: "View employee loan requests and EMI schedules",
+  },
+  {
+    name: "hr:loans:manage",
+    resource: "hr:loans",
+    action: "manage",
+    description:
+      "Approve, disburse, and manage loan adjustments (skip/foreclose)",
+  },
+  {
+    name: "hr:import:manage",
+    resource: "hr:import",
+    action: "manage",
+    description: "Create, preview, commit, and roll back HR bulk import jobs",
+  },
+  {
+    name: "hr:export:manage",
+    resource: "hr:export",
+    action: "manage",
+    description:
+      "Export HR entity data (employees, attendance, assets, leave balances, documents)",
+  },
+];

@@ -33,6 +33,32 @@ describe("RateLimitService (in-memory fallback, no redis)", () => {
     expect((await instance.check("api-key-ingest", "b")).allowed).toBe(true);
   });
 
+  it("limits attendance report delivery requests to five per hour", async () => {
+    const instance = svc();
+    const results = await Promise.all(
+      Array.from({ length: 6 }, () =>
+        instance.check("hr:attendance-report", "manager-1"),
+      ),
+    );
+    expect(results.slice(0, 5).every((result) => result.allowed)).toBe(true);
+    expect(results[5]?.allowed).toBe(false);
+  });
+
+  it.each([
+    ["hr:employee-backfill", 3],
+    ["hr:employee-bulk-onboard", 10],
+    ["hr:effective-changes-apply", 10],
+    ["hr:onboarding-reminders", 3],
+  ])("enforces the %s command tier", async (tier, limit) => {
+    const instance = svc();
+    const results = await Promise.all(
+      Array.from({ length: limit + 1 }, () => instance.check(tier, "admin-1")),
+    );
+
+    expect(results.slice(0, limit).every((result) => result.allowed)).toBe(true);
+    expect(results[limit]?.allowed).toBe(false);
+  });
+
   it("allows any identifier for an unknown tier", async () => {
     const instance = svc();
     expect((await instance.check("unknown-tier", "x")).allowed).toBe(true);

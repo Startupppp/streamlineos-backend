@@ -6,6 +6,7 @@ import type { Db } from "../../../db/drizzle.module";
 import { orgUnits, organizations } from "../../../db/schema";
 import { ModuleChecklistService } from "../../hr/onboarding/flow/module-checklist.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { OrgHierarchyCacheService } from "../../../common/cache/org-hierarchy-cache.service";
 
 const INDUSTRY_TEMPLATES: Record<string, string[]> = {
   "it-services": ["Engineering", "Product", "Operations", "HR"],
@@ -77,11 +78,14 @@ function teamCode(deptName: string): string {
   return deptName.substring(0, 4).toUpperCase().replace(/\s/g, "") + "T";
 }
 
-function requireCreatedId(row: { id: string } | undefined, kind: string): string {
-  if (!row) {
-    throw new Error(`Failed to create ${kind}`);
+function requireCreatedId(
+  createdUnit: { id: string } | undefined,
+  unitKind: string,
+): string {
+  if (!createdUnit) {
+    throw new Error(`Failed to create ${unitKind}`);
   }
-  return row.id;
+  return createdUnit.id;
 }
 
 @Injectable()
@@ -89,6 +93,7 @@ export class WorkspaceOnboardingService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly checklists: ModuleChecklistService,
+    private readonly hierarchyCache: OrgHierarchyCacheService,
   ) {}
 
   async generateWorkspace(
@@ -133,13 +138,13 @@ export class WorkspaceOnboardingService {
         )
         .limit(1);
 
-      let buId: string | undefined = existingBu?.id;
+      let businessUnitId: string | undefined = existingBu?.id;
       if (!existingBu) {
         const [insertedBu] = await tx
           .insert(orgUnits)
           .values({ id: randomUUID(), orgId, kind: "BUSINESS_UNIT", name: orgName, code: "HQ" })
           .returning({ id: orgUnits.id });
-        buId = requireCreatedId(insertedBu, "business unit");
+        businessUnitId = requireCreatedId(insertedBu, "business unit");
         createdBusinessUnits = 1;
       }
 
@@ -160,14 +165,14 @@ export class WorkspaceOnboardingService {
       if (!existingBranch) {
         const [insertedBranch] = await tx
           .insert(orgUnits)
-          .values({ id: randomUUID(), orgId, kind: "BRANCH", name: "Main Office", code: "MAIN", parentId: buId })
+          .values({ id: randomUUID(), orgId, kind: "BRANCH", name: "Main Office", code: "MAIN", parentId: businessUnitId })
           .returning({ id: orgUnits.id });
         branchId = requireCreatedId(insertedBranch, "branch");
         createdBranches = 1;
-      } else if (existingBranch.parentId !== buId) {
+      } else if (existingBranch.parentId !== businessUnitId) {
         await tx
           .update(orgUnits)
-          .set({ parentId: buId })
+          .set({ parentId: businessUnitId })
           .where(
             and(
               eq(orgUnits.id, existingBranch.id),
@@ -183,14 +188,14 @@ export class WorkspaceOnboardingService {
           .where(and(eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "DEPARTMENT"), eq(orgUnits.name, deptName), isNull(orgUnits.deletedAt)))
           .limit(1);
 
-        let deptId: string | undefined = existingDept?.id;
+        let departmentId: string | undefined = existingDept?.id;
         if (!existingDept) {
           const code = deptCode(deptName);
           const [insertedDept] = await tx
             .insert(orgUnits)
             .values({ id: randomUUID(), orgId, kind: "DEPARTMENT", name: deptName, code, parentId: branchId })
             .returning({ id: orgUnits.id });
-          deptId = requireCreatedId(insertedDept, "department");
+          departmentId = requireCreatedId(insertedDept, "department");
           createdDepartments += 1;
         } else if (existingDept.parentId !== branchId) {
           await tx
@@ -212,12 +217,12 @@ export class WorkspaceOnboardingService {
           if (!existingTeam) {
             const suffix = teamIndex === 0 ? "" : String(teamIndex + 1);
             const code = `${teamCode(deptName)}${suffix}`;
-            await tx.insert(orgUnits).values({ id: randomUUID(), orgId, kind: "TEAM", name: teamName, code, parentId: deptId });
+            await tx.insert(orgUnits).values({ id: randomUUID(), orgId, kind: "TEAM", name: teamName, code, parentId: departmentId });
             createdTeams += 1;
-          } else if (existingTeam.parentId !== deptId) {
+          } else if (existingTeam.parentId !== departmentId) {
             await tx
               .update(orgUnits)
-              .set({ parentId: deptId })
+              .set({ parentId: departmentId })
               .where(
                 and(
                   eq(orgUnits.id, existingTeam.id),
@@ -229,6 +234,8 @@ export class WorkspaceOnboardingService {
         }
       }
     }, { orgId });
+
+    await this.hierarchyCache.invalidateAfterMutation(orgId);
 
     return {
       businessUnits: createdBusinessUnits,

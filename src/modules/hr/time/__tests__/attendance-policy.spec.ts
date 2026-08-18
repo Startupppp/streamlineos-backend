@@ -19,6 +19,7 @@ const mockDb = {
 
 const mockPolicyEval = {
   evaluatePolicy: jest.fn(),
+  evaluatePolicies: jest.fn(),
 };
 
 describe("AttendancePolicyService — getAttendanceRules", () => {
@@ -64,6 +65,25 @@ describe("AttendancePolicyService — getAttendanceRules", () => {
     expect(rules.lateArrivalPenalty).toBe("half_day");
     expect(rules.enforceGeofence).toBe(true);
     expect(rules.minReclockInMinutes).toBe(5);
+  });
+
+  it("maps one batched policy evaluation into per-employee rules", async () => {
+    mockPolicyEval.evaluatePolicies.mockResolvedValueOnce(
+      new Map([
+        ["u1", { rules: { graceMinutes: 5 } }],
+        ["u2", null],
+      ]),
+    );
+
+    const rules = await service.getAttendanceRulesForEmployees(
+      "org1",
+      ["u1", "u2"],
+      "2026-07-11",
+    );
+
+    expect(mockPolicyEval.evaluatePolicies).toHaveBeenCalledTimes(1);
+    expect(rules.get("u1")?.graceMinutes).toBe(5);
+    expect(rules.get("u2")?.graceMinutes).toBe(15);
   });
 });
 

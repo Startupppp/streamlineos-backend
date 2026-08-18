@@ -284,4 +284,38 @@ describe("HrPolicyEvaluationService", () => {
       ).rejects.toThrow(NotFoundException);
     });
   });
+
+  describe("evaluatePolicies", () => {
+    it("loads all employee attributes in three bounded queries", async () => {
+      mockDb.select = makeSelectMock([
+        [
+          { userId: "u1", designation: "Engineer", locationId: null },
+          { userId: "u2", designation: "Manager", locationId: null },
+        ],
+        [
+          { userId: "u1", orgUnitId: "dept-1", kind: "DEPARTMENT" },
+          { userId: "u2", orgUnitId: "team-1", kind: "TEAM" },
+        ],
+        [{ userId: "u2", slug: "MANAGER" }],
+      ]);
+      mockDb.query.hrPolicies.findMany.mockResolvedValue([
+        makePolicy({
+          name: "Organization attendance",
+          scopes: [{ scopeType: "organization", scopeValue: "org1" }],
+        }),
+      ]);
+
+      const result = await service.evaluatePolicies(
+        "org1",
+        ["u1", "u2"],
+        "attendance",
+        "2026-07-11",
+      );
+
+      expect(mockDb.select).toHaveBeenCalledTimes(3);
+      expect(mockDb.query.hrPolicies.findMany).toHaveBeenCalledTimes(1);
+      expect(result.get("u1")?.policy.name).toBe("Organization attendance");
+      expect(result.get("u2")?.policy.name).toBe("Organization attendance");
+    });
+  });
 });

@@ -1,6 +1,7 @@
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { AccessService } from "../../access/access.service";
 import type { DataScope } from "../../access/access.types";
+import { PgDialect } from "drizzle-orm/pg-core";
 
 jest.mock("../../rbac/permissions", () => ({
   ...jest.requireActual("../../rbac/permissions"),
@@ -8,7 +9,11 @@ jest.mock("../../rbac/permissions", () => ({
 }));
 
 import { isScopable } from "../../rbac/permissions";
-import { LEAVES_PERMISSION, resolveLeavesViewScope } from "./leaves-scope";
+import {
+  LEAVES_PERMISSION,
+  leaveApprovalScope,
+  resolveLeavesViewScope,
+} from "./leaves-scope";
 
 const mockAccess = {
   resolveUserPermissions: jest.fn(),
@@ -34,16 +39,19 @@ describe("resolveLeavesViewScope", () => {
   });
 
 
-  it("returns all when isOrgOwner is true", async () => {
+  it("does not trust a token owner claim and resolves current database access", async () => {
+    (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(
+      new Map<string, DataScope>([[LEAVES_PERMISSION, "all"]]),
+    );
     const result = await resolveLeavesViewScope(mockAccess, makeUser({ isOrgOwner: true }));
     expect(result).toBe("all");
-    expect(mockAccess.resolveUserPermissions).not.toHaveBeenCalled();
+    expect(mockAccess.resolveUserPermissions).toHaveBeenCalledWith("o1", "u1");
   });
 
-  it("returns all when the permission is not scopable", async () => {
+  it("fails closed when the permission catalog is unexpectedly not scopable", async () => {
     (isScopable as jest.Mock).mockReturnValue(false);
     const result = await resolveLeavesViewScope(mockAccess, makeUser());
-    expect(result).toBe("all");
+    expect(result).toBe("none");
     expect(mockAccess.resolveUserPermissions).not.toHaveBeenCalled();
   });
 
@@ -65,5 +73,20 @@ describe("resolveLeavesViewScope", () => {
     (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Map<string, DataScope>());
     const result = await resolveLeavesViewScope(mockAccess, makeUser());
     expect(result).toBe("none");
+  });
+
+  it("binds own-scope decisions to the server-assigned approver", () => {
+    const compiled = new PgDialect().sqlToQuery(
+      leaveApprovalScope("own", "o1", "approver-1"),
+    );
+    expect(compiled.params).toEqual(["approver-1"]);
+  });
+
+  it("requires both assignment and team visibility for team scope", () => {
+    const compiled = new PgDialect().sqlToQuery(
+      leaveApprovalScope("team", "o1", "approver-1"),
+    );
+    expect(compiled.params).toContain("approver-1");
+    expect(compiled.params).toContain("o1");
   });
 });

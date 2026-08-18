@@ -163,11 +163,10 @@ export class CompPlanningService {
       await this.effectiveChanges.create(orgId, actorId, {
         employmentId: input.employmentId,
         changeType: "compensation",
-        oldValue: { salaryCents: existing.currentSalaryCents },
         newValue: { salaryCents: existing.currentSalaryCents + Number(finalCents) },
         effectiveFrom: input.effectiveFrom,
         notes: `Comp cycle approval: +${finalCents} cents`,
-      });
+      }, tx);
     });
 
     await this.audit.log({ orgId, actorId, entityType: "hr_comp_recommendations", entityId: String(recId), action: "approved", after: { finalCents } });

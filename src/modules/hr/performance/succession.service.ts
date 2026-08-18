@@ -20,7 +20,10 @@ export class SuccessionService {
         cursor
           ? or(
               lt(hrSuccessionPlans.createdAt, cursor.createdAt),
-              and(eq(hrSuccessionPlans.createdAt, cursor.createdAt), lt(hrSuccessionPlans.id, cursor.id)),
+              and(
+                eq(hrSuccessionPlans.createdAt, cursor.createdAt),
+                lt(hrSuccessionPlans.id, cursor.recordId),
+              ),
             )
           : undefined,
       ))
@@ -33,7 +36,7 @@ export class SuccessionService {
     return {
       items,
       nextCursor: hasMore && last
-        ? encodeTimestampCursor({ createdAt: last.createdAt, id: last.id })
+        ? encodeTimestampCursor({ createdAt: last.createdAt, recordId: last.id })
         : null,
     };
   }

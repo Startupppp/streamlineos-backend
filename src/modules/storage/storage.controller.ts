@@ -36,6 +36,7 @@ import {
 } from "../../db/schema";
 import { StorageService, type FileStreamResult } from "./storage.service";
 import { validateMagicBytes } from "./file-signatures";
+import { AccessService } from "../access/access.service";
 
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
 
@@ -43,19 +44,31 @@ const SENSITIVE_KEY_PREFIXES = [
   "payroll/",
   "payslips/",
   "hr-documents/",
+  "documents/",
   "hr/",
   "onboarding/",
+  "onboarding-docs/",
   "candidate-vault/",
   "candidates/",
   "esign/",
   "e-sign/",
   "signatures/",
   "bank-batches/",
+  "resignations/",
 ];
 
 function isSensitiveKey(fileKey: string): boolean {
   const normalized = fileKey.replace(/^\/+/, "").toLowerCase();
   return SENSITIVE_KEY_PREFIXES.some((prefix) => normalized.startsWith(prefix));
+}
+
+type FileOwner = {
+  orgId: string;
+  access: "GENERIC" | "HR_DOCUMENT" | "ONBOARDING_DOCUMENT" | "PAYSLIP" | "CANDIDATE_VAULT";
+};
+
+function requiresDedicatedAccess(owner: FileOwner): boolean {
+  return owner.access !== "GENERIC";
 }
 
 const ALLOWED_UPLOAD_TYPES = [
@@ -70,6 +83,16 @@ const ALLOWED_UPLOAD_TYPES = [
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 ];
 
+const GENERIC_SENSITIVE_UPLOAD_PERMISSIONS: Readonly<
+  Record<string, readonly string[]>
+> = {
+  documents: ["hr:documents:manage"],
+  "hr-documents": ["hr:documents:manage"],
+  onboarding: ["self:onboarding-docs", "hr:onboarding:manage"],
+  "onboarding-docs": ["self:onboarding-docs", "hr:onboarding:manage"],
+  resignations: ["hr:exit:create", "hr:exit:manage"],
+};
+
 @Controller("storage")
 @UseGuards(JwtAuthGuard)
 export class StorageController {
@@ -77,6 +100,7 @@ export class StorageController {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly storage: StorageService,
     private readonly audit: AuditService,
+    private readonly access: AccessService,
   ) {}
 
   @Post("upload")
@@ -93,6 +117,7 @@ export class StorageController {
 
     const rawFolder = folderField && folderField.length > 0 ? folderField : "uploads";
     const folder = rawFolder.replace(/[^a-zA-Z0-9_-]/g, "-");
+    await this.assertUploadAllowed(folder, u);
 
     if (file.size > MAX_UPLOAD_SIZE) throw new BadRequestException("File too large (max 10MB)");
     if (!ALLOWED_UPLOAD_TYPES.includes(file.mimetype)) {
@@ -153,9 +178,11 @@ export class StorageController {
     });
     const orgId = member?.orgId ?? u.orgId;
 
-    const fileOwnerOrgId = await this.resolveFileOwnerOrgId(fileKey);
-    if (fileOwnerOrgId !== null) {
-      if (fileOwnerOrgId !== orgId) throw new ForbiddenException("Access denied");
+    const fileOwner = await this.resolveFileOwner(fileKey);
+    if (fileOwner !== null) {
+      if (fileOwner.orgId !== orgId || requiresDedicatedAccess(fileOwner)) {
+        throw new ForbiddenException("Access denied");
+      }
     } else if (isSensitiveKey(fileKey)) {
       throw new ForbiddenException("Access denied");
     }
@@ -197,8 +224,12 @@ export class StorageController {
     if (!member) throw new ForbiddenException("Forbidden");
 
     if (isSensitiveKey(keyParam)) {
-      const fileOwnerOrgId = await this.resolveFileOwnerOrgId(keyParam);
-      if (fileOwnerOrgId !== (member.orgId ?? u.orgId)) {
+      const fileOwner = await this.resolveFileOwner(keyParam);
+      if (
+        fileOwner === null ||
+        fileOwner.orgId !== (member.orgId ?? u.orgId) ||
+        requiresDedicatedAccess(fileOwner)
+      ) {
         throw new ForbiddenException("Access denied");
       }
     }
@@ -211,11 +242,12 @@ export class StorageController {
 
   /**
    * Storage keys aren't org-namespaced, so this is the only place cross-org ownership can be
-   * checked. Omitting a table here means files of that type cannot be proven to belong to any
+   * checked. Protected resource types are denied here even for the same tenant and must use
+   * their permission- and record-scoped download endpoint. Omitting a table means a file cannot be proven to belong to any
    * org: callers treat an unresolved sensitive key as a denial, so a missing table locks its
    * own file type out rather than exposing it. Returns the owning orgId, or null if untracked.
    */
-  private async resolveFileOwnerOrgId(fileKey: string): Promise<string | null> {
+  private async resolveFileOwner(fileKey: string): Promise<FileOwner | null> {
     const like = `%${fileKey}%`;
     const [doc, onboardingDoc, expense, reimbursement, handbookVersion, payslip, vaultDoc] =
       await Promise.all([
@@ -229,16 +261,32 @@ export class StorageController {
           where: ilike(candidateDocumentsVault.fileUrl, like),
         }),
       ]);
-    return (
-      doc?.orgId ??
-      onboardingDoc?.orgId ??
-      expense?.orgId ??
-      reimbursement?.orgId ??
-      handbookVersion?.orgId ??
-      payslip?.orgId ??
-      vaultDoc?.orgId ??
-      null
+    if (doc) return { orgId: doc.orgId, access: "HR_DOCUMENT" };
+    if (onboardingDoc) return { orgId: onboardingDoc.orgId, access: "ONBOARDING_DOCUMENT" };
+    if (payslip) return { orgId: payslip.orgId, access: "PAYSLIP" };
+    if (vaultDoc) return { orgId: vaultDoc.orgId, access: "CANDIDATE_VAULT" };
+    const genericOrgId =
+      expense?.orgId ?? reimbursement?.orgId ?? handbookVersion?.orgId ?? null;
+    return genericOrgId ? { orgId: genericOrgId, access: "GENERIC" } : null;
+  }
+
+  private async assertUploadAllowed(
+    folder: string,
+    user: CurrentUserContext,
+  ): Promise<void> {
+    const required = GENERIC_SENSITIVE_UPLOAD_PERMISSIONS[folder];
+    const isSensitive = isSensitiveKey(`${folder}/file`);
+    if (!isSensitive) return;
+    if (user.isOrgOwner && required) return;
+    if (!required) throw new ForbiddenException("Use the feature-specific upload endpoint");
+
+    const permissions = await this.access.resolveUserPermissions(
+      user.orgId,
+      user.userId,
     );
+    if (!required.some((permission) => permissions.has(permission))) {
+      throw new ForbiddenException("Access denied");
+    }
   }
 
   private async openStream(key: string, notFoundMessage: string): Promise<FileStreamResult> {

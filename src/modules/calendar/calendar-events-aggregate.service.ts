@@ -1,47 +1,17 @@
 import { Inject, Injectable } from "@nestjs/common";
-import {
-  and,
-  desc,
-  eq,
-  exists,
-  gte,
-  lte,
-  isNotNull,
-  inArray,
-  or,
-} from "drizzle-orm";
-import { formatInTimeZone, toZonedTime } from "date-fns-tz";
-import {
-  calendarEvents,
-  eventAttendees,
-  leaveRequests,
-  interviews,
-  tasks,
-  orgHolidays,
-  organizations,
-  users,
-  tickets,
-  projects,
-  projectMembers,
-  attendance,
-  wfhRequests,
-  interviewPanelMembers,
-  rosterEntries,
-  rosters,
-  organizationMembers,
-} from "../../db/schema";
+import { formatInTimeZone } from "date-fns-tz";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CalendarEventItem, LinkedTicket } from "./calendar.types";
 import { dateOnly } from "./calendar.types";
 import { AttendancePolicyService } from "../hr/time/attendance-policy.service";
+import { CalendarEventSourceLoader } from "./calendar-event-source.loader";
 
 const WEEKDAY_NAMES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 
 function dateAtNoonUtc(date: string): Date {
   return new Date(`${date}T12:00:00.000Z`);
 }
-
 function enumerateDates(start: string, end: string): string[] {
   const dates: string[] = [];
   const current = new Date(`${start}T00:00:00.000Z`);
@@ -55,10 +25,14 @@ function enumerateDates(start: string, end: string): string[] {
 
 @Injectable()
 export class CalendarEventsAggregateService {
+  private readonly sourceLoader: CalendarEventSourceLoader;
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly attendancePolicy: AttendancePolicyService,
-  ) {}
+  ) {
+    this.sourceLoader = new CalendarEventSourceLoader(db, attendancePolicy);
+  }
 
   async getEvents(
     orgId: string,
@@ -66,8 +40,7 @@ export class CalendarEventsAggregateService {
     start: Date,
     end: Date,
   ): Promise<CalendarEventItem[]> {
-    const policyDate = dateOnly(end.getTime() < Date.now() ? end : new Date());
-    const [
+    const {
       eventsData,
       leavesData,
       interviewsData,
@@ -81,358 +54,122 @@ export class CalendarEventsAggregateService {
       attendanceRules,
       shiftRosterRules,
       membershipData,
-    ] =
-      await Promise.all([
-        this.db.query.calendarEvents.findMany({
-          where: and(
-            eq(calendarEvents.orgId, orgId),
-            gte(calendarEvents.startDate, start),
-            lte(calendarEvents.startDate, end),
-          ),
-          with: { creator: { columns: { name: true } } },
-          orderBy: (t, { asc }) => [asc(t.startDate)],
-        }),
-
-        this.db
-          .select({
-            id: leaveRequests.id,
-            userId: leaveRequests.userId,
-            startDate: leaveRequests.startDate,
-            endDate: leaveRequests.endDate,
-            reason: leaveRequests.reason,
-            userName: users.name,
-            isHalfDay: leaveRequests.isHalfDay,
-            halfDayPeriod: leaveRequests.halfDayPeriod,
-          })
-          .from(leaveRequests)
-          .innerJoin(users, eq(leaveRequests.userId, users.id))
-          .where(
-            and(
-              eq(leaveRequests.orgId, orgId),
-              eq(leaveRequests.status, "APPROVED"),
-              lte(leaveRequests.startDate, dateOnly(end)),
-              gte(leaveRequests.endDate, dateOnly(start)),
-            ),
-          ),
-
-        this.db
-          .select({
-            id: interviews.id,
-            scheduledAt: interviews.scheduledAt,
-            duration: interviews.duration,
-            type: interviews.type,
-            interviewerId: interviews.interviewerId,
-            location: interviews.location,
-            meetingLink: interviews.meetingLink,
-          })
-          .from(interviews)
-          .where(
-            and(
-              eq(interviews.orgId, orgId),
-              gte(interviews.scheduledAt, start),
-              lte(interviews.scheduledAt, end),
-              or(
-                eq(interviews.interviewerId, userId),
-                exists(
-                  this.db
-                    .select({ id: interviewPanelMembers.id })
-                    .from(interviewPanelMembers)
-                    .where(
-                      and(
-                        eq(interviewPanelMembers.orgId, orgId),
-                        eq(interviewPanelMembers.interviewId, interviews.id),
-                        eq(interviewPanelMembers.userId, userId),
-                      ),
-                    ),
-                ),
-              ),
-            ),
-          ),
-
-        this.db
-          .select({
-            id: tasks.id,
-            title: tasks.title,
-            dueDate: tasks.dueDate,
-            status: tasks.status,
-            assigneeId: tasks.assigneeId,
-          })
-          .from(tasks)
-          .where(
-            and(
-              eq(tasks.orgId, orgId),
-              eq(tasks.assigneeId, userId),
-              isNotNull(tasks.dueDate),
-              gte(tasks.dueDate, start),
-              lte(tasks.dueDate, end),
-            ),
-          ),
-
-        this.db
-          .select({
-            id: orgHolidays.id,
-            name: orgHolidays.name,
-            date: orgHolidays.date,
-          })
-          .from(orgHolidays)
-          .where(
-            and(
-              eq(orgHolidays.orgId, orgId),
-              gte(orgHolidays.date, dateOnly(start)),
-              lte(orgHolidays.date, dateOnly(end)),
-            ),
-          ),
-
-        this.db
-          .select({
-            id: tickets.id,
-            title: tickets.title,
-            dueDate: tickets.dueDate,
-            status: tickets.status,
-            ticketNumber: tickets.ticketNumber,
-            projectId: projects.id,
-            projectKey: projects.key,
-          })
-          .from(tickets)
-          .innerJoin(projects, eq(tickets.projectId, projects.id))
-          .innerJoin(projectMembers, eq(projectMembers.projectId, projects.id))
-          .where(
-            and(
-              eq(tickets.orgId, orgId),
-              eq(projectMembers.userId, userId),
-              isNotNull(tickets.dueDate),
-              gte(tickets.dueDate, dateOnly(start)),
-              lte(tickets.dueDate, dateOnly(end)),
-            ),
-          ),
-
-        this.db
-          .select({
-            id: attendance.id,
-            date: attendance.date,
-            checkIn: attendance.checkIn,
-            checkOut: attendance.checkOut,
-            status: attendance.status,
-            workHours: attendance.workHours,
-            breakHours: attendance.breakHours,
-            createdAt: attendance.createdAt,
-          })
-          .from(attendance)
-          .where(
-            and(
-              eq(attendance.orgId, orgId),
-              eq(attendance.userId, userId),
-              gte(attendance.date, dateOnly(start)),
-              lte(attendance.date, dateOnly(end)),
-            ),
-          )
-          .orderBy(desc(attendance.createdAt)),
-
-        this.db
-          .select({ id: wfhRequests.id, date: wfhRequests.date })
-          .from(wfhRequests)
-          .where(
-            and(
-              eq(wfhRequests.orgId, orgId),
-              eq(wfhRequests.userId, userId),
-              eq(wfhRequests.status, "APPROVED"),
-              gte(wfhRequests.date, dateOnly(start)),
-              lte(wfhRequests.date, dateOnly(end)),
-            ),
-          ),
-
-        this.db
-          .select({ timezone: organizations.timezone })
-          .from(organizations)
-          .where(eq(organizations.id, orgId))
-          .limit(1),
-
-        this.db
-          .select({ date: rosterEntries.date })
-          .from(rosterEntries)
-          .innerJoin(
-            rosters,
-            and(eq(rosters.id, rosterEntries.rosterId), eq(rosters.orgId, orgId)),
-          )
-          .where(
-            and(
-              eq(rosterEntries.userId, userId),
-              gte(rosterEntries.date, dateOnly(start)),
-              lte(rosterEntries.date, dateOnly(end)),
-            ),
-          ),
-
-        this.attendancePolicy.getAttendanceRules(orgId, userId, policyDate),
-        this.attendancePolicy.getShiftRosterRules(orgId, userId, policyDate),
-        this.db
-          .select({
-            joinedAt: organizationMembers.joinedAt,
-            activatedAt: organizationMembers.activatedAt,
-            joiningDate: users.joiningDate,
-          })
-          .from(organizationMembers)
-          .innerJoin(users, eq(users.id, organizationMembers.userId))
-          .where(
-            and(
-              eq(organizationMembers.orgId, orgId),
-              eq(organizationMembers.userId, userId),
-            ),
-          )
-          .limit(1),
-      ]);
-
-    const eventIds = eventsData.map((e) => e.id);
-    const ticketEntityIds: number[] = [];
-    for (const ev of eventsData) {
-      if (ev.entityType === "ticket" && ev.entityId != null) {
-        const parsed = parseInt(ev.entityId, 10);
-        if (!Number.isNaN(parsed)) ticketEntityIds.push(parsed);
-      }
-    }
-
-    const rsvpMap = new Map<number, string>();
-    const linkedTicketMap = new Map<number, LinkedTicket>();
-
-    await Promise.all([
-      (async () => {
-        if (eventIds.length === 0) return;
-        const rows = await this.db
-          .select({ eventId: eventAttendees.eventId, status: eventAttendees.status })
-          .from(eventAttendees)
-          .where(
-            and(eq(eventAttendees.userId, userId), inArray(eventAttendees.eventId, eventIds)),
-          );
-        for (const row of rows) {
-          rsvpMap.set(row.eventId, row.status ?? "pending");
-        }
-      })(),
-      (async () => {
-        if (ticketEntityIds.length === 0) return;
-        const rows = await this.db
-          .select({
-            id: tickets.id,
-            ticketNumber: tickets.ticketNumber,
-            title: tickets.title,
-            projectId: projects.id,
-            status: tickets.status,
-            projectKey: projects.key,
-          })
-          .from(tickets)
-          .innerJoin(projects, eq(tickets.projectId, projects.id))
-          .where(and(eq(tickets.orgId, orgId), inArray(tickets.id, ticketEntityIds)));
-        for (const row of rows) {
-          linkedTicketMap.set(row.id, {
-            id: row.id,
-            key: `${row.projectKey}-${row.ticketNumber}`,
-            title: row.title,
-            projectId: row.projectId,
-            status: row.status,
-          });
-        }
-      })(),
-    ]);
+      rsvpMap,
+      linkedTicketMap,
+    } = await this.sourceLoader.load(orgId, userId, start, end);
 
     const result: CalendarEventItem[] = [];
 
-    for (const ev of eventsData) {
+    for (const calendarEvent of eventsData) {
       let linkedTicket: LinkedTicket | null | undefined;
-      if (ev.entityType === "ticket" && ev.entityId != null) {
-        const parsed = parseInt(ev.entityId, 10);
-        linkedTicket = Number.isNaN(parsed) ? null : (linkedTicketMap.get(parsed) ?? null);
+      if (
+        calendarEvent.entityType === "ticket" &&
+        calendarEvent.entityId != null
+      ) {
+        const linkedTicketIdentifier = parseInt(calendarEvent.entityId, 10);
+        linkedTicket = Number.isNaN(linkedTicketIdentifier)
+          ? null
+          : (linkedTicketMap.get(linkedTicketIdentifier) ?? null);
       }
       result.push({
-        id: `event-${ev.id}`,
-        title: ev.title,
-        start: ev.startDate,
-        end: ev.endDate,
-        allDay: ev.allDay ?? false,
-        color: ev.color,
-        category: ev.category,
+        id: `event-${calendarEvent.id}`,
+        title: calendarEvent.title,
+        start: calendarEvent.startDate,
+        end: calendarEvent.endDate,
+        allDay: calendarEvent.allDay ?? false,
+        color: calendarEvent.color,
+        category: calendarEvent.category,
         source: "event",
-        location: ev.location,
-        meetingUrl: ev.meetingUrl,
-        description: ev.description,
-        creatorName: ev.creator?.name ?? null,
-        entityId: ev.entityId,
-        entityType: ev.entityType,
-        myRsvpStatus: rsvpMap.get(ev.id) ?? null,
+        location: calendarEvent.location,
+        meetingUrl: calendarEvent.meetingUrl,
+        description: calendarEvent.description,
+        creatorName: calendarEvent.creator?.name ?? null,
+        entityId: calendarEvent.entityId,
+        entityType: calendarEvent.entityType,
+        myRsvpStatus: rsvpMap.get(calendarEvent.id) ?? null,
         linkedTicket,
       });
     }
 
-    for (const lv of leavesData) {
-      const halfDayLabel = lv.isHalfDay
-        ? `Half-day leave${lv.halfDayPeriod ? ` (${lv.halfDayPeriod})` : ""}`
+    for (const leaveRequest of leavesData) {
+      const halfDayLabel = leaveRequest.isHalfDay
+        ? `Half-day leave${
+            leaveRequest.halfDayPeriod
+              ? ` (${leaveRequest.halfDayPeriod})`
+              : ""
+          }`
         : "OOO";
       result.push({
-        id: `leave-${lv.id}`,
-        title: `${lv.userName ?? "Employee"} - ${halfDayLabel}`,
-        start: dateAtNoonUtc(lv.startDate),
-        end: dateAtNoonUtc(lv.endDate),
+        id: `leave-${leaveRequest.id}`,
+        title: `${leaveRequest.userName ?? "Employee"} - ${halfDayLabel}`,
+        start: dateAtNoonUtc(leaveRequest.startDate),
+        end: dateAtNoonUtc(leaveRequest.endDate),
         allDay: true,
         color: "green",
         category: "leave",
         source: "leave",
-        description: lv.reason ?? null,
-        creatorName: lv.userName ?? null,
+        description: leaveRequest.reason ?? null,
+        creatorName: leaveRequest.userName ?? null,
       });
     }
 
-    for (const iv of interviewsData) {
-      const ivEnd = new Date(iv.scheduledAt);
-      ivEnd.setMinutes(ivEnd.getMinutes() + (iv.duration ?? 60));
+    for (const interview of interviewsData) {
+      const interviewEnd = new Date(interview.scheduledAt);
+      interviewEnd.setMinutes(
+        interviewEnd.getMinutes() + (interview.duration ?? 60),
+      );
       result.push({
-        id: `interview-${iv.id}`,
-        title: `Interview (${iv.type ?? "Video"})`,
-        start: iv.scheduledAt,
-        end: ivEnd,
+        id: `interview-${interview.id}`,
+        title: `Interview (${interview.type ?? "Video"})`,
+        start: interview.scheduledAt,
+        end: interviewEnd,
         allDay: false,
         color: "orange",
         category: "interview",
         source: "interview",
-        location: iv.location ?? iv.meetingLink ?? null,
+        location: interview.location ?? interview.meetingLink ?? null,
       });
     }
 
-    for (const tk of tasksData) {
-      if (!tk.dueDate) continue;
+    for (const task of tasksData) {
+      if (!task.dueDate) continue;
       result.push({
-        id: `task-${tk.id}`,
-        title: tk.title,
-        start: tk.dueDate,
-        end: tk.dueDate,
+        id: `task-${task.id}`,
+        title: task.title,
+        start: task.dueDate,
+        end: task.dueDate,
         allDay: true,
-        color: tk.status === "completed" ? "gray" : "red",
+        color: task.status === "completed" ? "gray" : "red",
         category: "task",
         source: "task",
       });
     }
 
-    for (const pt of projectTicketsData) {
-      if (!pt.dueDate) continue;
-      const ptDate = new Date(pt.dueDate);
+    for (const projectTicket of projectTicketsData) {
+      if (!projectTicket.dueDate) continue;
+      const projectTicketDate = new Date(projectTicket.dueDate);
       result.push({
-        id: `ticket-${pt.id}`,
-        title: `${pt.projectKey}-${pt.ticketNumber}: ${pt.title}`,
-        start: ptDate,
-        end: ptDate,
+        id: `ticket-${projectTicket.id}`,
+        title: `${projectTicket.projectKey}-${projectTicket.ticketNumber}: ${projectTicket.title}`,
+        start: projectTicketDate,
+        end: projectTicketDate,
         allDay: true,
         color: "blue",
         category: "task",
         source: "task",
         entityType: "ticket",
-        entityId: String(pt.id),
-        projectId: pt.projectId,
+        entityId: String(projectTicket.id),
+        projectId: projectTicket.projectId,
       });
     }
 
-    for (const hd of holidaysData) {
-      const hdDate = dateAtNoonUtc(hd.date);
+    for (const holiday of holidaysData) {
+      const holidayDate = dateAtNoonUtc(holiday.date);
       result.push({
-        id: `holiday-${hd.id}`,
-        title: hd.name,
-        start: hdDate,
-        end: hdDate,
+        id: `holiday-${holiday.id}`,
+        title: holiday.name,
+        start: holidayDate,
+        end: holidayDate,
         allDay: true,
         color: "purple",
         category: "holiday",
@@ -634,7 +371,10 @@ export class CalendarEventsAggregateService {
       });
     }
 
-    result.sort((a, b) => a.start.getTime() - b.start.getTime());
+    result.sort(
+      (leftEvent, rightEvent) =>
+        leftEvent.start.getTime() - rightEvent.start.getTime(),
+    );
     return result;
   }
 }

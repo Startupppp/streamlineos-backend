@@ -71,5 +71,6 @@ import { RecruitmentHandoffService } from "./recruitment-handoff.service";
     RecruitmentTalentPoolsService,
     RecruitmentHandoffService,
   ],
+  exports: [RecruitmentOffersService, RecruitmentRequisitionsService],
 })
 export class HrRecruitmentModule {}

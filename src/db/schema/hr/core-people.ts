@@ -11,10 +11,14 @@ import {
   uniqueIndex,
   date,
   unique,
+  foreignKey,
+  check,
 } from "drizzle-orm/pg-core";
 import { sql, relations } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations, organizationMembers, users } from "../common/auth";
 import { orgUnits } from "../common/organization";
+import { organizationPeople } from "../directory/organization-people";
+import { workers } from "../directory/workers";
 
 export const hrEmploymentLifecycleStatusEnum = pgEnum("hr_employment_lifecycle_status", [
   "CANDIDATE",
@@ -68,6 +72,7 @@ export const hrPeople = pgTable("hr_people", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+  organizationPersonId: text("organization_person_id"),
   firstName: text("first_name").notNull(),
   lastName: text("last_name").notNull(),
   workEmail: text("work_email").notNull(),
@@ -90,20 +95,50 @@ export const hrPeople = pgTable("hr_people", {
     phone?: string;
   }>(),
   avatarUrl: text("avatar_url"),
+  rowVersion: integer("row_version").default(1).notNull(),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  archivedByMembershipId: integer("archived_by_membership_id"),
+  updatedByMembershipId: integer("updated_by_membership_id"),
   deletedAt: timestamp("deleted_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_hr_people_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_hr_people_org_work_email").on(table.orgId, table.workEmail),
+  uniqueIndex("uniq_hr_people_org_person_link")
+    .on(table.orgId, table.organizationPersonId)
+    .where(sql`${table.organizationPersonId} IS NOT NULL`),
   index("idx_hr_people_org").on(table.orgId),
   index("idx_hr_people_user").on(table.userId),
+  index("idx_hr_people_updated_actor").on(table.orgId, table.updatedByMembershipId),
+  index("idx_hr_people_archived_actor").on(table.orgId, table.archivedByMembershipId),
+  foreignKey({
+    columns: [table.orgId, table.organizationPersonId],
+    foreignColumns: [
+      organizationPeople.organizationId,
+      organizationPeople.organizationPersonId,
+    ],
+    name: "fk_hr_people_org_person",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.orgId, table.updatedByMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_hr_people_updated_actor",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.orgId, table.archivedByMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_hr_people_archived_actor",
+  }).onDelete("restrict"),
+  check("chk_hr_people_row_version", sql`${table.rowVersion} > 0`),
 ]);
 
 export const hrEmployments = pgTable("hr_employments", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   personId: integer("person_id").references(() => hrPeople.id, { onDelete: "cascade" }).notNull(),
+  workerId: text("worker_id"),
+  workerEngagementId: text("worker_engagement_id"),
   employeeNumber: text("employee_number").notNull(),
   lifecycleStatus: hrEmploymentLifecycleStatusEnum("lifecycle_status").default("ACTIVE").notNull(),
   workerType: hrWorkerTypeEnum("worker_type").default("FULL_TIME").notNull(),
@@ -122,16 +157,63 @@ export const hrEmployments = pgTable("hr_employments", {
   exitDate: date("exit_date"),
   exitReason: text("exit_reason"),
   isPrimary: boolean("is_primary").default(true).notNull(),
+  rowVersion: integer("row_version").default(1).notNull(),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  archivedByMembershipId: integer("archived_by_membership_id"),
+  updatedByMembershipId: integer("updated_by_membership_id"),
   deletedAt: timestamp("deleted_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_hr_employments_org_id").on(table.orgId, table.id),
+  unique("uniq_hr_employments_org_id_person").on(
+    table.orgId,
+    table.id,
+    table.personId,
+  ),
   uniqueIndex("uniq_hr_employments_org_emp_num").on(table.orgId, table.employeeNumber),
+  uniqueIndex("uniq_hr_employments_org_engagement_link")
+    .on(table.orgId, table.workerEngagementId)
+    .where(sql`${table.workerEngagementId} IS NOT NULL`),
   index("idx_hr_employments_org").on(table.orgId),
   index("idx_hr_employments_person").on(table.personId),
+  index("idx_hr_employments_org_person").on(table.orgId, table.personId),
+  index("idx_hr_employments_worker").on(table.orgId, table.workerId),
   index("idx_hr_employments_org_status").on(table.orgId, table.lifecycleStatus),
   index("idx_hr_employments_dept").on(table.departmentId),
+  index("idx_hr_employments_updated_actor").on(
+    table.orgId,
+    table.updatedByMembershipId,
+  ),
+  index("idx_hr_employments_archived_actor").on(
+    table.orgId,
+    table.archivedByMembershipId,
+  ),
+  foreignKey({
+    columns: [table.orgId, table.personId],
+    foreignColumns: [hrPeople.orgId, hrPeople.id],
+    name: "fk_hr_employments_org_person",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.orgId, table.workerId],
+    foreignColumns: [workers.organizationId, workers.workerId],
+    name: "fk_hr_employments_org_worker",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.orgId, table.updatedByMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_hr_employments_updated_actor",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.orgId, table.archivedByMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_hr_employments_archived_actor",
+  }).onDelete("restrict"),
+  check(
+    "chk_hr_employments_canonical_link",
+    sql`(${table.workerId} IS NULL) = (${table.workerEngagementId} IS NULL)`,
+  ),
+  check("chk_hr_employments_row_version", sql`${table.rowVersion} > 0`),
 ]);
 
 export const hrEmployeeSensitiveFields = pgTable("hr_employee_sensitive_fields", {
@@ -242,12 +324,20 @@ export const hrReportingLines = pgTable("hr_reporting_lines", {
 export const hrPeopleRelations = relations(hrPeople, ({ one, many }) => ({
   org: one(organizations, { fields: [hrPeople.orgId], references: [organizations.id] }),
   user: one(users, { fields: [hrPeople.userId], references: [users.id] }),
+  canonicalPerson: one(organizationPeople, {
+    fields: [hrPeople.organizationPersonId],
+    references: [organizationPeople.organizationPersonId],
+  }),
   employments: many(hrEmployments),
 }));
 
 export const hrEmploymentsRelations = relations(hrEmployments, ({ one, many }) => ({
   org: one(organizations, { fields: [hrEmployments.orgId], references: [organizations.id] }),
   person: one(hrPeople, { fields: [hrEmployments.personId], references: [hrPeople.id] }),
+  canonicalWorker: one(workers, {
+    fields: [hrEmployments.workerId],
+    references: [workers.workerId],
+  }),
   department: one(orgUnits, { fields: [hrEmployments.departmentId], references: [orgUnits.id] }),
   location: one(orgUnits, { fields: [hrEmployments.locationId], references: [orgUnits.id] }),
   sensitiveFields: one(hrEmployeeSensitiveFields, { fields: [hrEmployments.id], references: [hrEmployeeSensitiveFields.employmentId] }),

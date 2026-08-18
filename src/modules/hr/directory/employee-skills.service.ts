@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { SQL, and, eq, ilike, inArray, notInArray, or } from "drizzle-orm";
+import { and, asc, desc, eq, gt, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   employeeSkills,
   orgUnitMembers,
@@ -10,9 +10,17 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_TTL } from "../../../common/cache/cache-keys";
-import type { FindExpertInput } from "./dto/hr-directory.schemas";
+import type {
+  FindExpertInput,
+  SkillsMatrixQueryInput,
+} from "./dto/hr-directory.schemas";
+import { applyScope } from "../../access/apply-scope";
+import type { DataScope } from "../../access/access.types";
+import {
+  decodeEmployeeListCursor,
+  encodeEmployeeListCursor,
+} from "./employee-list-cursor";
+import { listBoundedEmployeeSkills } from "./employee-skills-page-query";
 
 export interface ExpertResult {
   userId: string;
@@ -26,75 +34,41 @@ export interface ExpertResult {
   matchedLevel: number;
 }
 
-function buildVariants(skill: string): string[] {
-  const base = skill.trim().toLowerCase();
-  const normalized = base.replace(/[.\s-]+/g, "");
-  const withDots = base.replace(/\s+/g, ".");
-  const variants = new Set([base, normalized, withDots]);
-  return Array.from(variants);
-}
-
 @Injectable()
 export class EmployeeSkillsService {
-  constructor(
-    @Inject(DRIZZLE) private readonly db: Db,
-    private readonly cache: CacheService,
-  ) {}
+  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async findExpert(orgId: string, query: FindExpertInput): Promise<ExpertResult[]> {
-    const terminatedUserIds = await this.db
-      .select({ userId: terminations.userId })
-      .from(terminations)
-      .where(
-        and(
-          eq(terminations.orgId, orgId),
-          inArray(terminations.status, ["APPROVED", "COMPLETED", "SENT"]),
-        ),
-      )
-      .limit(5000);
-
-    const excludedIds = terminatedUserIds.map((t) => t.userId);
-
-    const activeMembers = await this.db
-      .select({ userId: organizationMembers.userId })
-      .from(organizationMembers)
-      .innerJoin(users, eq(users.id, organizationMembers.userId))
-      .where(
-        and(
-          eq(organizationMembers.orgId, orgId),
-          eq(users.isActive, true),
-          excludedIds.length > 0 ? notInArray(organizationMembers.userId, excludedIds) : undefined,
-        ),
-      )
-      .limit(2000);
-
-    if (activeMembers.length === 0) return [];
-
-    const activeMemberIds = activeMembers.map((m) => m.userId);
-
-    const variants = buildVariants(query.skill);
-    const skillConditions = variants.map((v) => ilike(employeeSkills.skillName, `%${v}%`));
-
-    const matchingSkillRows = await this.db
-      .select({ userId: employeeSkills.userId })
-      .from(employeeSkills)
-      .where(
-        and(
-          eq(employeeSkills.orgId, orgId),
-          inArray(employeeSkills.userId, activeMemberIds),
-          or(...skillConditions),
-        ),
-      );
-
-    if (matchingSkillRows.length === 0) return [];
-
-    const userIdSet = [...new Set(matchingSkillRows.map((r) => r.userId))];
-
-    const userConditions: SQL[] = [
-      eq(organizationMembers.orgId, orgId),
-      inArray(organizationMembers.userId, userIdSet),
+  async findExpert(
+    orgId: string,
+    actorUserId: string,
+    query: FindExpertInput,
+    scope: DataScope,
+  ): Promise<ExpertResult[]> {
+    const search = query.skill.trim().toLowerCase();
+    const normalizedSearch = search.replace(/[.\s-]+/g, "");
+    const normalizedSkillName = sql<string>`lower(regexp_replace(${employeeSkills.skillName}, '[.\\s-]+', '', 'g'))`;
+    const skillConditions = [
+      eq(sql<string>`lower(${employeeSkills.skillName})`, search),
+      eq(normalizedSkillName, normalizedSearch),
+      ilike(employeeSkills.skillName, `${search}%`),
     ];
-    if (query.role) userConditions.push(eq(organizationMembers.role, query.role));
+    const matchedLevel = sql<number>`max(coalesce(${employeeSkills.level}, 1))::int`;
+    const matchedSkill = sql<string>`(array_agg(${employeeSkills.skillName} order by coalesce(${employeeSkills.level}, 1) desc, ${employeeSkills.skillName} asc))[1]`;
+    const department = sql<string | null>`min(${orgUnits.name})`;
+
+    const conditions = [
+      eq(organizationMembers.orgId, orgId),
+      eq(organizationMembers.status, "ACTIVE"),
+      eq(users.isActive, true),
+      eq(employeeSkills.orgId, orgId),
+      or(...skillConditions),
+      isNull(terminations.id),
+      applyScope(scope, orgId, actorUserId, {
+        ownerColumn: organizationMembers.userId,
+      }),
+    ];
+    if (query.role) conditions.push(eq(organizationMembers.role, query.role));
+    if (query.department) conditions.push(ilike(orgUnits.name, `${query.department}%`));
 
     const memberRows = await this.db
       .select({
@@ -103,132 +77,193 @@ export class EmployeeSkillsService {
         image: users.image,
         designation: users.designation,
         role: organizationMembers.role,
+        department,
+        matchedSkill,
+        matchedLevel,
       })
       .from(organizationMembers)
       .innerJoin(users, eq(users.id, organizationMembers.userId))
-      .where(and(...userConditions))
+      .innerJoin(
+        employeeSkills,
+        and(
+          eq(employeeSkills.orgId, organizationMembers.orgId),
+          eq(employeeSkills.userId, organizationMembers.userId),
+        ),
+      )
+      .leftJoin(
+        terminations,
+        and(
+          eq(terminations.orgId, organizationMembers.orgId),
+          eq(terminations.userId, organizationMembers.userId),
+          inArray(terminations.status, ["APPROVED", "COMPLETED", "SENT"]),
+        ),
+      )
+      .leftJoin(
+        orgUnitMembers,
+        and(
+          eq(orgUnitMembers.orgId, organizationMembers.orgId),
+          eq(orgUnitMembers.userId, organizationMembers.userId),
+        ),
+      )
+      .leftJoin(
+        orgUnits,
+        and(
+          eq(orgUnits.orgId, organizationMembers.orgId),
+          eq(orgUnits.id, orgUnitMembers.orgUnitId),
+          eq(orgUnits.kind, "DEPARTMENT"),
+          eq(orgUnits.status, "ACTIVE"),
+        ),
+      )
+      .where(and(...conditions))
+      .groupBy(
+        users.id,
+        users.name,
+        users.image,
+        users.designation,
+        organizationMembers.role,
+      )
+      .orderBy(desc(matchedLevel), asc(sql`lower(${users.name})`), asc(users.id))
       .limit(query.limit);
+    if (memberRows.length === 0) return [];
 
-    const memberMap = new Map(memberRows.map((m) => [m.userId, m]));
-
-    let filteredUserIds = [...memberMap.keys()];
-
-    if (query.department) {
-      const orgDeptRows = await this.db
-        .select({ id: orgUnits.id })
-        .from(orgUnits)
-        .where(and(eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "DEPARTMENT"), ilike(orgUnits.name, `%${query.department}%`)));
-
-      if (orgDeptRows.length === 0) return [];
-
-      const orgDeptIdValues = orgDeptRows.map((d) => d.id);
-
-      const deptMemberRows = await this.db
-        .select({ userId: orgUnitMembers.userId })
-        .from(orgUnitMembers)
-        .where(inArray(orgUnitMembers.orgUnitId, orgDeptIdValues));
-
-      const deptUserSet = new Set(deptMemberRows.map((d) => d.userId));
-      filteredUserIds = filteredUserIds.filter((id) => deptUserSet.has(id));
-
-      if (filteredUserIds.length === 0) return [];
-    }
-
-    const allSkillsForUsers = await this.db
-      .select({ userId: employeeSkills.userId, skillName: employeeSkills.skillName, level: employeeSkills.level })
-      .from(employeeSkills)
-      .where(and(eq(employeeSkills.orgId, orgId), inArray(employeeSkills.userId, filteredUserIds)));
+    const allSkillsForUsers = await listBoundedEmployeeSkills(
+      this.db,
+      orgId,
+      memberRows.map((member) => member.userId),
+    );
 
     const skillsByUser = new Map<string, { name: string; level: number }[]>();
-    for (const s of allSkillsForUsers) {
-      const list = skillsByUser.get(s.userId) ?? [];
-      list.push({ name: s.skillName, level: s.level ?? 1 });
-      skillsByUser.set(s.userId, list);
+    for (const employeeSkill of allSkillsForUsers) {
+      const employeeSkillList = skillsByUser.get(employeeSkill.userId) ?? [];
+      employeeSkillList.push({
+        name: employeeSkill.skillName,
+        level: employeeSkill.level ?? 1,
+      });
+      skillsByUser.set(employeeSkill.userId, employeeSkillList);
     }
 
-    const lowerVariants = variants.map((v) => v.toLowerCase());
-
-    const expertList: ExpertResult[] = [];
-
-    for (const userId of filteredUserIds) {
-      const member = memberMap.get(userId);
-      if (!member) continue;
-
-      const userSkills = skillsByUser.get(userId) ?? [];
-      const matchedSkills = userSkills.filter((s) =>
-        lowerVariants.some(
-          (v) =>
-            s.name.toLowerCase().replace(/[.\s-]+/g, "").includes(v) ||
-            s.name.toLowerCase().includes(v),
-        ),
-      );
-
-      if (matchedSkills.length === 0) continue;
-
-      const bestMatch = matchedSkills.reduce(
-        (best, cur) => (cur.level > best.level ? cur : best),
-        matchedSkills[0],
-      );
-
-      expertList.push({
-        userId,
+    return memberRows.map((member) => ({
+        userId: member.userId,
         name: member.name,
         image: member.image,
         designation: member.designation,
-        department: null,
+        department: member.department,
         role: member.role,
-        skills: [...userSkills].sort((a, b) => b.level - a.level),
-        matchedSkill: bestMatch.name,
-        matchedLevel: bestMatch.level,
-      });
-    }
-
-    return expertList.sort((a, b) => b.matchedLevel - a.matchedLevel);
+        skills: [...(skillsByUser.get(member.userId) ?? [])].sort(
+          (leftSkill, rightSkill) => rightSkill.level - leftSkill.level,
+        ),
+        matchedSkill: member.matchedSkill,
+        matchedLevel: member.matchedLevel,
+      }));
   }
 
-  getSkillsMatrix(orgId: string) {
-    return this.cache.cached(
-      `hr:skills-matrix:${orgId}`,
-      async () => {
-        const allSkills = await this.db.query.employeeSkills.findMany({
-          where: eq(employeeSkills.orgId, orgId),
-          with: { user: { columns: { id: true, name: true, image: true } } },
-          limit: 5000,
-        });
+  async getSkillsMatrix(
+    orgId: string,
+    actorUserId: string,
+    scope: DataScope,
+    query: SkillsMatrixQueryInput,
+  ) {
+    const cursor = query.cursor
+      ? decodeEmployeeListCursor(query.cursor)
+      : undefined;
+    const normalizedName = sql<string>`lower(coalesce(${users.name}, ${users.email}, ''))`;
+    const memberConditions = [
+      eq(organizationMembers.orgId, orgId),
+      eq(organizationMembers.status, "ACTIVE"),
+      eq(users.isActive, true),
+      applyScope(scope, orgId, actorUserId, {
+        ownerColumn: organizationMembers.userId,
+      }),
+    ];
+    if (cursor) {
+      memberConditions.push(
+        or(
+          gt(normalizedName, cursor.name),
+          and(
+            eq(normalizedName, cursor.name),
+            gt(organizationMembers.userId, cursor.employeeUserId),
+          ),
+        )!,
+      );
+    }
 
-        const members = await this.db
-          .select({
-            userId: organizationMembers.userId,
-            name: users.name,
-            image: users.image,
-          })
-          .from(organizationMembers)
-          .leftJoin(users, eq(users.id, organizationMembers.userId))
-          .where(eq(organizationMembers.orgId, orgId))
-          .limit(100);
+    const memberRows = await this.db
+      .select({
+        userId: organizationMembers.userId,
+        cursorName: normalizedName,
+        name: users.name,
+        image: users.image,
+      })
+      .from(organizationMembers)
+      .innerJoin(users, eq(users.id, organizationMembers.userId))
+      .innerJoin(
+        employeeSkills,
+        and(
+          eq(employeeSkills.orgId, organizationMembers.orgId),
+          eq(employeeSkills.userId, organizationMembers.userId),
+        ),
+      )
+      .where(and(...memberConditions))
+      .groupBy(
+        organizationMembers.userId,
+        users.name,
+        users.email,
+        users.image,
+      )
+      .orderBy(asc(normalizedName), asc(organizationMembers.userId))
+      .limit(query.limit + 1);
 
-        const skillNames = [...new Set(allSkills.map((s) => s.skillName))].sort();
+    const hasMore = memberRows.length > query.limit;
+    const pageMembers = memberRows.slice(0, query.limit);
+    const lastMember = pageMembers.at(-1);
+    if (pageMembers.length === 0) {
+      return {
+        employees: [],
+        skills: [],
+        pageInfo: { limit: query.limit, hasMore: false, nextCursor: null },
+      };
+    }
 
-        const matrixMap = new Map<string, Map<string, number>>();
-        for (const skill of allSkills) {
-          const userMatrix = matrixMap.get(skill.userId) ?? new Map<string, number>();
-          userMatrix.set(skill.skillName, skill.level ?? 1);
-          matrixMap.set(skill.userId, userMatrix);
-        }
-
-        const employeesWithSkills = members
-          .filter((m) => matrixMap.has(m.userId))
-          .map((m) => ({
-            userId: m.userId,
-            name: m.name,
-            image: m.image,
-            skills: Object.fromEntries(matrixMap.get(m.userId) ?? new Map<string, number>()),
-          }))
-          .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
-
-        return { employees: employeesWithSkills, skills: skillNames };
-      },
-      CACHE_TTL.MEDIUM,
+    const pageEmployeeUserIds = pageMembers.map((member) => member.userId);
+    const pageSkills = await listBoundedEmployeeSkills(
+      this.db,
+      orgId,
+      pageEmployeeUserIds,
     );
+
+    const skillsByEmployee = new Map<string, Map<string, number>>();
+    for (const employeeSkill of pageSkills) {
+      const employeeSkillMap =
+        skillsByEmployee.get(employeeSkill.userId) ?? new Map<string, number>();
+      employeeSkillMap.set(employeeSkill.skillName, employeeSkill.level ?? 1);
+      skillsByEmployee.set(employeeSkill.userId, employeeSkillMap);
+    }
+
+    return {
+      employees: pageMembers.map((member) => ({
+        userId: member.userId,
+        name: member.name,
+        image: member.image,
+        skills: Object.fromEntries(
+          skillsByEmployee.get(member.userId) ?? new Map<string, number>(),
+        ),
+      })),
+      skills: [
+        ...new Set(pageSkills.map((employeeSkill) => employeeSkill.skillName)),
+      ].sort((leftSkillName, rightSkillName) =>
+        leftSkillName.localeCompare(rightSkillName),
+      ),
+      pageInfo: {
+        limit: query.limit,
+        hasMore,
+        nextCursor:
+          hasMore && lastMember
+            ? encodeEmployeeListCursor({
+                name: lastMember.cursorName,
+                employeeUserId: lastMember.userId,
+              })
+            : null,
+      },
+    };
   }
 }

@@ -20,6 +20,11 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { HrCustomFieldsService } from "./hr-custom-fields.service";
+import { AccessService } from "../../access/access.service";
+import {
+  resolveEmployeesManageScope,
+  resolveEmployeesScope,
+} from "../directory/employees-scope";
 import {
   createCustomFieldSchema,
   updateCustomFieldSchema,
@@ -33,7 +38,10 @@ import {
 @Controller("hr/custom-fields")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class HrCustomFieldsController {
-  constructor(private readonly svc: HrCustomFieldsService) {}
+  constructor(
+    private readonly svc: HrCustomFieldsService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get("definitions")
   @RequirePermission("settings:custom-fields:manage")
@@ -76,43 +84,77 @@ export class HrCustomFieldsController {
 
   @Get(":entityType/:entityId/values")
   @RequirePermission("hr:employees:view")
-  getValues(
+  async getValues(
     @Param("entityType") entityType: string,
     @Param("entityId") entityId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.getEntityValues(u.orgId, entityType, entityId, false);
+    const scope = await resolveEmployeesScope(this.access, u);
+    return this.svc.getEntityValues(
+      u.orgId,
+      u.userId,
+      scope,
+      entityType,
+      entityId,
+      false,
+    );
   }
 
   @Get(":entityType/:entityId/values/sensitive")
   @RequirePermission("hr:sensitive:view")
-  getValuesSensitive(
+  async getValuesSensitive(
     @Param("entityType") entityType: string,
     @Param("entityId") entityId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.getEntityValues(u.orgId, entityType, entityId, true);
+    const scope = await resolveEmployeesScope(this.access, u);
+    return this.svc.getEntityValues(
+      u.orgId,
+      u.userId,
+      scope,
+      entityType,
+      entityId,
+      true,
+    );
   }
 
   @Put(":entityType/:entityId/values")
   @RequirePermission("hr:employees:update")
-  upsertValues(
+  async upsertValues(
     @Param("entityType") entityType: string,
     @Param("entityId") entityId: string,
     @Body(new ZodValidationPipe(upsertCustomFieldValuesSchema)) body: UpsertCustomFieldValuesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.upsertEntityValues(u.orgId, entityType, entityId, body, false);
+    const scope = await resolveEmployeesManageScope(this.access, u);
+    return this.svc.upsertEntityValues(
+      u.orgId,
+      u.userId,
+      scope,
+      entityType,
+      entityId,
+      body,
+      false,
+    );
   }
 
   @Put(":entityType/:entityId/values/sensitive")
   @RequirePermission("hr:sensitive:manage")
-  upsertValuesSensitive(
+  async upsertValuesSensitive(
     @Param("entityType") entityType: string,
     @Param("entityId") entityId: string,
     @Body(new ZodValidationPipe(upsertCustomFieldValuesSchema)) body: UpsertCustomFieldValuesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.upsertEntityValues(u.orgId, entityType, entityId, body, true);
+    const scope = await resolveEmployeesManageScope(this.access, u);
+    return this.svc.upsertEntityValues(
+      u.orgId,
+      u.userId,
+      scope,
+      entityType,
+      entityId,
+      body,
+      true,
+    );
   }
 }

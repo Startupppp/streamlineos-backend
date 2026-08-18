@@ -15,10 +15,27 @@ import type { EntitlementsService } from "./entitlements.service";
 import { bumpPermissionsVersion, type DbOrTx } from "../../common/rbac/access-invalidate";
 import {
   ALL_PERMISSION_NAMES,
+  ROLE_DEFAULT_PERMISSIONS,
   UNIVERSAL_MEMBER_PERMISSIONS,
 } from "../rbac/permissions";
 import { logger } from "../../common/logger/logger.service";
 import { makeMfaPolicyStub } from "../../../test/helpers/mfa-policy-stub";
+
+const ACTIVE_MEMBER_BASELINE_PERMISSIONS = new Set([
+  ...UNIVERSAL_MEMBER_PERMISSIONS,
+  ...(ROLE_DEFAULT_PERMISSIONS["MEMBER"] ?? []),
+]);
+
+function expectActiveMemberBaseline(
+  resolvedPermissions: Map<string, DataScope>,
+): void {
+  for (const permissionKey of ACTIVE_MEMBER_BASELINE_PERMISSIONS) {
+    expect(resolvedPermissions.has(permissionKey)).toBe(true);
+  }
+  expect(new Set(resolvedPermissions.keys()).size).toBe(
+    resolvedPermissions.size,
+  );
+}
 
 describe("broadest", () => {
   it("ranks none < own < team < all", () => {
@@ -273,7 +290,7 @@ function buildService(db: unknown): AccessService {
 }
 
 describe("AccessService.resolveUserPermissions", () => {
-  it("resolves only universal capabilities for an active member with no role assignments", async () => {
+  it("resolves the universal and self-service baseline for an active member with no role assignments", async () => {
     const db = {
       query: {
         accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
@@ -294,7 +311,7 @@ describe("AccessService.resolveUserPermissions", () => {
     expect(Array.from(result.keys())).toEqual(
       expect.arrayContaining([...UNIVERSAL_MEMBER_PERMISSIONS]),
     );
-    expect(result.size).toBe(UNIVERSAL_MEMBER_PERMISSIONS.length);
+    expectActiveMemberBaseline(result);
   });
 
   it("resolves role grants for an active member with a role_assignments row", async () => {
@@ -345,7 +362,7 @@ describe("AccessService.resolveUserPermissions", () => {
     expect(result.get("hr:employees:view")).toBe("own");
   });
 
-  it("group membership with no group role contributes only universal permissions", async () => {
+  it("group membership with no group role contributes only baseline permissions", async () => {
     const db = {
       query: {
         accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
@@ -364,7 +381,7 @@ describe("AccessService.resolveUserPermissions", () => {
 
     const result = await buildService(db).resolveUserPermissions("org-1", "user-6");
 
-    expect(result.size).toBe(UNIVERSAL_MEMBER_PERMISSIONS.length);
+    expectActiveMemberBaseline(result);
   });
 
   it("merges group-inherited role grants with direct role grants (broadest scope wins)", async () => {
@@ -397,7 +414,7 @@ describe("AccessService.resolveUserPermissions", () => {
     expect(result.get("hr:employees:view")).toBe("all");
   });
 
-  it("keeps only universal permissions when all role assignments are revoked", async () => {
+  it("keeps baseline permissions when all role assignments are revoked", async () => {
     const db = {
       query: {
         accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
@@ -415,10 +432,10 @@ describe("AccessService.resolveUserPermissions", () => {
 
     const result = await buildService(db).resolveUserPermissions("org-1", "user-3");
 
-    expect(result.size).toBe(UNIVERSAL_MEMBER_PERMISSIONS.length);
+    expectActiveMemberBaseline(result);
   });
 
-  it("keeps only universal permissions when all assignments are expired", async () => {
+  it("keeps baseline permissions when all assignments are expired", async () => {
     const db = {
       query: {
         accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
@@ -436,7 +453,7 @@ describe("AccessService.resolveUserPermissions", () => {
 
     const result = await buildService(db).resolveUserPermissions("org-1", "user-4");
 
-    expect(result.size).toBe(UNIVERSAL_MEMBER_PERMISSIONS.length);
+    expectActiveMemberBaseline(result);
   });
 });
 
@@ -483,8 +500,13 @@ describe("AccessService.resolveUserPermissions — module ownership grants", () 
 
     const result = await buildService(db).resolveUserPermissions("org-owner", "user-owner");
 
-    expect(result.size).toBe(UNIVERSAL_MEMBER_PERMISSIONS.length);
-    expect(result.has("hr:employees:view")).toBe(false);
+    for (const permissionKey of ACTIVE_MEMBER_BASELINE_PERMISSIONS) {
+      if (moduleOf(permissionKey) === "hr") {
+        expect(result.has(permissionKey)).toBe(false);
+      } else {
+        expect(result.has(permissionKey)).toBe(true);
+      }
+    }
   });
 });
 
@@ -591,7 +613,7 @@ describe("AccessService.resolveUserPermissions — unknown permission keys are o
     const result = await buildService(db).resolveUserPermissions("org-stale", "user-stale");
 
     expect(result.has(STALE_KEY)).toBe(false);
-    expect(result.size).toBe(UNIVERSAL_MEMBER_PERMISSIONS.length);
+    expectActiveMemberBaseline(result);
   });
 
   it("a known role-grant key still resolves normally when accompanied by a stale key", async () => {
@@ -619,9 +641,7 @@ describe("AccessService.resolveUserPermissions — unknown permission keys are o
 
     expect(result.has(STALE_KEY)).toBe(false);
     expect(result.get(KNOWN_KEY)).toBe("all");
-    expect(result.size).toBe(
-      new Set([...UNIVERSAL_MEMBER_PERMISSIONS, KNOWN_KEY]).size,
-    );
+    expectActiveMemberBaseline(result);
   });
 
   it("a stale key in a delegation row is dropped and does not appear in the resolved map", async () => {
@@ -643,7 +663,7 @@ describe("AccessService.resolveUserPermissions — unknown permission keys are o
     const result = await buildService(db).resolveUserPermissions("org-del", "user-del");
 
     expect(result.has(STALE_KEY)).toBe(false);
-    expect(result.size).toBe(UNIVERSAL_MEMBER_PERMISSIONS.length);
+    expectActiveMemberBaseline(result);
   });
 
   it("the same stale key triggers the warning log only once across multiple resolve calls (per-instance dedup)", async () => {
@@ -881,7 +901,7 @@ describe("AccessService.membersWithPermission", () => {
     const svc = buildSvc({
       selectResults: [
         [],
-        [{ id: 77 }],
+        [{ roleId: 77 }],
       ],
       distinctResults: [
         [],

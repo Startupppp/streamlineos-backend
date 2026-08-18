@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   HttpCode,
+  NotFoundException,
   Param,
   ParseIntPipe,
   Patch,
@@ -17,6 +18,9 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { AccessService } from "../../access/access.service";
+import type { DataScope } from "../../access/access.types";
+import { AuditService } from "../../../common/audit/audit.service";
+import { StorageService } from "../../storage/storage.service";
 import { OnboardingViewsService } from "./onboarding-views.service";
 import { resolveOnboardingManageScope } from "./onboarding-scope";
 import {
@@ -38,11 +42,13 @@ export class OnboardingViewsController {
   constructor(
     private readonly onboardingViews: OnboardingViewsService,
     private readonly access: AccessService,
+    private readonly storage: StorageService,
+    private readonly audit: AuditService,
   ) {}
 
-  private async canManageOnboarding(u: CurrentUserContext): Promise<boolean> {
-    if (u.isOrgOwner) return true;
-    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+  private async canManageOnboarding(currentUser: CurrentUserContext): Promise<boolean> {
+    if (currentUser.isOrgOwner) return true;
+    const perms = await this.access.resolveUserPermissions(currentUser.orgId, currentUser.userId);
     return perms.has("hr:onboarding:manage");
   }
 
@@ -50,19 +56,19 @@ export class OnboardingViewsController {
   @RequirePermission("hr:onboarding:manage")
   async summary(
     @Query(new ZodValidationPipe(onboardingDocsSummaryQuerySchema)) query: OnboardingDocsSummaryQueryInput,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    const scope = await resolveOnboardingManageScope(this.access, u);
-    return this.onboardingViews.summary(u.orgId, query, scope, u.userId);
+    const scope = await resolveOnboardingManageScope(this.access, currentUser);
+    return this.onboardingViews.summary(currentUser.orgId, query, scope, currentUser.userId);
   }
 
   @Get("me")
   @RequirePermission("self:onboarding-docs")
   listMine(
     @Query(new ZodValidationPipe(listOnboardingDocsQuerySchema)) query: ListOnboardingDocsQueryInput,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.onboardingViews.list(u.orgId, u.userId, false, query, "own");
+    return this.onboardingViews.list(currentUser.orgId, currentUser.userId, false, query, "own");
   }
 
   @Post("me")
@@ -71,20 +77,29 @@ export class OnboardingViewsController {
   createMine(
     @Body(new ZodValidationPipe(createOwnOnboardingDocSchema))
     body: CreateOwnOnboardingDocInput,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.onboardingViews.create(u.orgId, u.userId, false, body, "own");
+    return this.onboardingViews.create(currentUser.orgId, currentUser.userId, false, body, "own");
+  }
+
+  @Get("me/:docId/file")
+  @RequirePermission("self:onboarding-docs")
+  getMyFile(
+    @Param("docId", ParseIntPipe) docId: number,
+    @CurrentUser() currentUser: CurrentUserContext,
+  ) {
+    return this.signFile(currentUser, docId, "own");
   }
 
   @Get()
   @RequirePermission("hr:onboarding:manage")
   async list(
     @Query(new ZodValidationPipe(listOnboardingDocsQuerySchema)) query: ListOnboardingDocsQueryInput,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    const isAdmin = await this.canManageOnboarding(u);
-    const scope = isAdmin ? await resolveOnboardingManageScope(this.access, u) : "own";
-    return this.onboardingViews.list(u.orgId, u.userId, isAdmin, query, scope);
+    const isAdmin = await this.canManageOnboarding(currentUser);
+    const scope = isAdmin ? await resolveOnboardingManageScope(this.access, currentUser) : "own";
+    return this.onboardingViews.list(currentUser.orgId, currentUser.userId, isAdmin, query, scope);
   }
 
   @Post()
@@ -92,21 +107,61 @@ export class OnboardingViewsController {
   @RequirePermission("hr:onboarding:manage")
   async create(
     @Body(new ZodValidationPipe(createOnboardingDocSchema)) body: CreateOnboardingDocInput,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    const canManage = await this.canManageOnboarding(u);
-    const scope = canManage ? await resolveOnboardingManageScope(this.access, u) : "own";
-    return this.onboardingViews.create(u.orgId, u.userId, canManage, body, scope);
+    const canManage = await this.canManageOnboarding(currentUser);
+    const scope = canManage ? await resolveOnboardingManageScope(this.access, currentUser) : "own";
+    return this.onboardingViews.create(currentUser.orgId, currentUser.userId, canManage, body, scope);
+  }
+
+  @Get(":docId/file")
+  @RequirePermission("hr:onboarding:manage")
+  async getFile(
+    @Param("docId", ParseIntPipe) docId: number,
+    @CurrentUser() currentUser: CurrentUserContext,
+  ) {
+    const scope = await resolveOnboardingManageScope(this.access, currentUser);
+    return this.signFile(currentUser, docId, scope);
   }
 
   @Patch(":docId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:onboarding:manage")
-  review(
+  async review(
     @Param("docId", ParseIntPipe) docId: number,
     @Body(new ZodValidationPipe(reviewOnboardingDocSchema)) body: ReviewOnboardingDocInput,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.onboardingViews.review(u.orgId, u.userId, docId, body);
+    const scope = await resolveOnboardingManageScope(this.access, currentUser);
+    return this.onboardingViews.review(currentUser.orgId, currentUser.userId, docId, body, scope);
+  }
+
+  private async signFile(
+    currentUser: CurrentUserContext,
+    docId: number,
+    scope: DataScope,
+  ): Promise<{ url: string; fileName: string; expiresIn: number }> {
+    const document = await this.onboardingViews.getFileReference(
+      currentUser.orgId,
+      currentUser.userId,
+      docId,
+      scope,
+    );
+    const fileKey = this.storage.getFileKeyFromUrl(document.fileUrl);
+    if (!this.storage.isValidFileKey(fileKey)) {
+      throw new NotFoundException("Document file is unavailable.");
+    }
+
+    const expiresIn = 300;
+    const url = await this.storage.getFileUrl(fileKey, expiresIn);
+    await this.audit.logCritical({
+      action: "hr.onboarding_document_viewed",
+      userId: currentUser.userId,
+      orgId: currentUser.orgId,
+      targetId: String(document.id),
+      targetType: "onboarding_document",
+      metadata: { fileName: document.fileName },
+    });
+    return { url, fileName: document.fileName, expiresIn };
   }
 }

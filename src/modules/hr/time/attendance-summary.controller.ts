@@ -29,8 +29,7 @@ export class AttendanceSummaryController {
     @Query(new ZodValidationPipe(attendanceSummaryQuerySchema)) query: z.infer<typeof attendanceSummaryQuerySchema>,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.summaryService.buildAttendanceSummary({
-      orgId: u.orgId,
+    return this.summaryService.buildScopedAttendanceSummary(u, {
       periodStart: query.periodStart,
       periodEnd: query.periodEnd,
       employeeId: query.employeeId,

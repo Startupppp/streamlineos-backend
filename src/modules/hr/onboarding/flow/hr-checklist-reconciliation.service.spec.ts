@@ -12,6 +12,7 @@ import {
   moduleSetupChecklistItems,
   offerLetterTemplates,
   onboardingTemplates,
+  orgHolidays,
   orgUnits,
   organizationMembers,
   payrollPolicies,
@@ -61,6 +62,7 @@ describe("HrChecklistReconciliationService", () => {
     hrPositions,
     leavePolicies,
     holidays,
+    orgHolidays,
     shiftTemplates,
     onboardingTemplates,
     documentTypes,
@@ -80,9 +82,21 @@ describe("HrChecklistReconciliationService", () => {
     for (const table of ALL_TABLES) counts.set(table, 0);
 
     mockDb = {
-      select: jest.fn().mockImplementation(() => ({
+      select: jest.fn().mockImplementation((selection: unknown) => ({
         from: jest.fn().mockImplementation((table: unknown) => ({
-          where: jest.fn().mockResolvedValue([{ value: counts.get(table) ?? 0 }]),
+          where: jest.fn().mockImplementation(() => {
+            const value = counts.get(table) ?? 0;
+            const readsId =
+              typeof selection === "object" &&
+              selection !== null &&
+              Object.hasOwn(selection, "id");
+            const rows = readsId ? (value > 0 ? [{ id: value }] : []) : [{ value }];
+            const promise = Promise.resolve(rows);
+            return {
+              limit: jest.fn().mockResolvedValue(rows),
+              then: promise.then.bind(promise),
+            };
+          }),
         })),
       })),
       update: jest.fn().mockImplementation(() => ({
@@ -107,7 +121,7 @@ describe("HrChecklistReconciliationService", () => {
   });
 
   it("flips a todo item to done once its backing data exists", async () => {
-    setCount(holidays, 1);
+    setCount(orgHolidays, 1);
     const items = [item("holiday_calendar", "todo")];
 
     const changed = await svc.reconcile(ORG_ID, items);

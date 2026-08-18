@@ -1,21 +1,30 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { count, eq, sql } from "drizzle-orm";
+import { and, asc, count, eq, gt, sql } from "drizzle-orm";
 import { notifications, onboardingTasks, users } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
-import { EmailService } from "../../../email/email.service";
-import { logger } from "../../../../common/logger/logger.service";
+import { EmailOutboxService } from "../../../email/email-outbox.service";
 import { getOnboardingReminderEmailTemplate } from "../../../email/templates/notifications-misc";
+
+const ONBOARDING_REMINDER_BATCH_SIZE = 100;
+
+interface OnboardingReminderRecipient {
+  userId: string;
+  userName: string | null;
+  userEmail: string | null;
+  totalTasks: number;
+  pendingTasks: number;
+}
 
 @Injectable()
 export class OnboardingAdminService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly email: EmailService,
+    private readonly emailOutbox: EmailOutboxService,
   ) {}
 
-  async getProgressSummary(orgId: string) {
-    const rows = await this.db
+  async getProgressSummary(organizationId: string) {
+    const progressRows = await this.db
       .select({
         userId: onboardingTasks.userId,
         userName: users.name,
@@ -25,27 +34,87 @@ export class OnboardingAdminService {
       })
       .from(onboardingTasks)
       .leftJoin(users, eq(onboardingTasks.userId, users.id))
-      .where(eq(onboardingTasks.orgId, orgId))
+      .where(eq(onboardingTasks.orgId, organizationId))
       .groupBy(onboardingTasks.userId, users.name);
 
-    return rows.map((r) => ({
-      userId: r.userId,
-      userName: r.userName ?? r.userId,
-      totalTasks: r.totalTasks,
-      completedTasks: r.completedTasks ?? 0,
+    return progressRows.map((progressRow) => ({
+      userId: progressRow.userId,
+      userName: progressRow.userName ?? progressRow.userId,
+      totalTasks: progressRow.totalTasks,
+      completedTasks: progressRow.completedTasks ?? 0,
       percentComplete:
-        r.totalTasks > 0
-          ? Math.round(((r.completedTasks ?? 0) / r.totalTasks) * 100)
+        progressRow.totalTasks > 0
+          ? Math.round(
+              ((progressRow.completedTasks ?? 0) / progressRow.totalTasks) *
+                100,
+            )
           : 0,
-      lastCompletedAt: r.lastCompletedAt ?? null,
+      lastCompletedAt: progressRow.lastCompletedAt ?? null,
     }));
   }
 
   async sendReminders(
-    orgId: string,
-    _: string,
+    organizationId: string,
   ): Promise<{ sent: number; total: number }> {
-    const incompleteUsers = await this.db
+    let afterUserId: string | undefined;
+    let queuedEmailCount = 0;
+    let reminderRecipientCount = 0;
+
+    while (true) {
+      const reminderPage = await this.listReminderRecipients(
+        organizationId,
+        afterUserId,
+      );
+      const reminderRecipients = reminderPage.slice(
+        0,
+        ONBOARDING_REMINDER_BATCH_SIZE,
+      );
+
+      if (reminderRecipients.length === 0) break;
+
+      await this.db.insert(notifications).values(
+        reminderRecipients.map((recipient) => ({
+          orgId: organizationId,
+          userId: recipient.userId,
+          type: "WARNING" as const,
+          title: "Onboarding Reminder",
+          message: `You have ${recipient.pendingTasks} pending onboarding task(s). Please complete them at your earliest convenience.`,
+          link: "/hr/onboarding/my-tasks",
+        })),
+      );
+
+      queuedEmailCount += await this.emailOutbox.enqueueForDelivery(
+        reminderRecipients.flatMap((recipient) =>
+          recipient.userEmail
+            ? [
+                {
+                  to: recipient.userEmail,
+                  subject: "Onboarding reminder — pending tasks",
+                  html: getOnboardingReminderEmailTemplate(
+                    recipient.userName ?? "there",
+                    recipient.pendingTasks,
+                    recipient.totalTasks,
+                  ),
+                  organizationId,
+                },
+              ]
+            : [],
+        ),
+      );
+      reminderRecipientCount += reminderRecipients.length;
+
+      if (reminderPage.length <= ONBOARDING_REMINDER_BATCH_SIZE) break;
+      afterUserId = reminderRecipients[reminderRecipients.length - 1]?.userId;
+    }
+
+    return { sent: queuedEmailCount, total: reminderRecipientCount };
+  }
+
+  private listReminderRecipients(
+    organizationId: string,
+    afterUserId?: string,
+  ): Promise<OnboardingReminderRecipient[]> {
+    return this.db
       .select({
         userId: onboardingTasks.userId,
         userName: users.name,
@@ -55,46 +124,19 @@ export class OnboardingAdminService {
       })
       .from(onboardingTasks)
       .innerJoin(users, eq(onboardingTasks.userId, users.id))
-      .where(eq(onboardingTasks.orgId, orgId))
+      .where(
+        afterUserId
+          ? and(
+              eq(onboardingTasks.orgId, organizationId),
+              gt(onboardingTasks.userId, afterUserId),
+            )
+          : eq(onboardingTasks.orgId, organizationId),
+      )
       .groupBy(onboardingTasks.userId, users.name, users.email)
       .having(
         sql`COUNT(CASE WHEN ${onboardingTasks.status} != 'COMPLETED' THEN 1 END) > 0`,
-      );
-
-    if (incompleteUsers.length === 0) {
-      return { sent: 0, total: 0 };
-    }
-
-    let sentCount = 0;
-
-    for (const user of incompleteUsers) {
-      await this.db.insert(notifications).values({
-        orgId,
-        userId: user.userId,
-        type: "WARNING",
-        title: "Onboarding Reminder",
-        message: `You have ${user.pendingTasks} pending onboarding task(s). Please complete them at your earliest convenience.`,
-        link: "/hr/onboarding/my-tasks",
-      });
-
-      if (user.userEmail) {
-        try {
-          await this.email.sendEmail({
-            to: user.userEmail,
-            subject: "Onboarding reminder — pending tasks",
-            html: getOnboardingReminderEmailTemplate(
-              user.userName ?? "there",
-              user.pendingTasks,
-              user.totalTasks,
-            ),
-          });
-          sentCount++;
-        } catch {
-          logger.warn("Failed to send onboarding reminder email", { userId: user.userId });
-        }
-      }
-    }
-
-    return { sent: sentCount, total: incompleteUsers.length };
+      )
+      .orderBy(asc(onboardingTasks.userId))
+      .limit(ONBOARDING_REMINDER_BATCH_SIZE + 1);
   }
 }

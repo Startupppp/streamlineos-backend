@@ -13,36 +13,46 @@ import {
 const MAX_ATTEMPTS = 8;
 const BATCH_SIZE = 20;
 
+type DurableEmailOptions = Pick<
+  EmailOptions,
+  "to" | "subject" | "html" | "text" | "organizationId"
+>;
+
 @Injectable()
 export class EmailOutboxService {
   private readonly logger = new Logger(EmailOutboxService.name);
 
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async enqueueAndTry(options: EmailOptions): Promise<void> {
-    const toEmail = Array.isArray(options.to) ? options.to.join(",") : options.to;
-    const now = new Date();
+  async enqueueForDelivery(options: readonly DurableEmailOptions[]): Promise<number> {
+    if (options.length === 0) return 0;
 
+    const now = new Date();
     const inserted = await this.db
       .insert(emailOutbox)
-      .values({
-        organizationId: options.organizationId ?? null,
-        toEmail,
-        subject: options.subject,
-        html: options.html,
-        text: options.text ?? null,
-        status: "PENDING",
-        attempts: 0,
-        nextAttemptAt: now,
-        createdAt: now,
-      })
+      .values(
+        options.map((item) => ({
+          organizationId: item.organizationId ?? null,
+          toEmail: Array.isArray(item.to) ? item.to.join(",") : item.to,
+          subject: item.subject,
+          html: item.html,
+          text: item.text ?? null,
+          status: "PENDING" as const,
+          attempts: 0,
+          nextAttemptAt: now,
+          createdAt: now,
+        })),
+      )
       .returning({ id: emailOutbox.id });
 
-    const row = inserted[0];
-    if (!row) {
-      this.logger.error("EMAIL_OUTBOX: insert failed", { to: toEmail, subject: options.subject });
-      throw new Error("Failed to enqueue email");
+    if (inserted.length !== options.length) {
+      throw new Error("Failed to enqueue all emails");
     }
+    return inserted.length;
+  }
+
+  async enqueueAndTry(options: EmailOptions): Promise<void> {
+    const { row, toEmail } = await this.insertPending(options);
 
     if (getEmailProvider() === "none") {
       await this.db
@@ -98,6 +108,37 @@ export class EmailOutboxService {
       });
       throw err instanceof Error ? err : new Error(errorMessage);
     }
+  }
+
+  private async insertPending(
+    options: EmailOptions,
+  ): Promise<{ row: { id: string }; toEmail: string }> {
+    const toEmail = Array.isArray(options.to) ? options.to.join(",") : options.to;
+    const now = new Date();
+    const inserted = await this.db
+      .insert(emailOutbox)
+      .values({
+        organizationId: options.organizationId ?? null,
+        toEmail,
+        subject: options.subject,
+        html: options.html,
+        text: options.text ?? null,
+        status: "PENDING",
+        attempts: 0,
+        nextAttemptAt: now,
+        createdAt: now,
+      })
+      .returning({ id: emailOutbox.id });
+
+    const row = inserted[0];
+    if (!row) {
+      this.logger.error("EMAIL_OUTBOX: insert failed", {
+        to: toEmail,
+        subject: options.subject,
+      });
+      throw new Error("Failed to enqueue email");
+    }
+    return { row, toEmail };
   }
 
   async processRetries(): Promise<{ processed: number; sent: number; dead: number }> {

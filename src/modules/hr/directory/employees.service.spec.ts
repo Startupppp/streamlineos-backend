@@ -68,17 +68,17 @@ describe("EmployeesService.listEmployees — DataScope wiring", () => {
   function buildDb() {
     const dataChain = {
       orderBy: jest.fn().mockReturnThis(),
-      limit: jest.fn().mockReturnThis(),
-      offset: jest.fn().mockResolvedValue([]),
+      limit: jest.fn().mockResolvedValue([]),
     };
     return {
+      dataChain,
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           innerJoin: jest.fn().mockReturnValue({
             leftJoin: jest.fn().mockReturnValue({
               where: jest.fn().mockReturnValue(dataChain),
             }),
-            where: jest.fn().mockResolvedValue([{ total: 0 }]),
+            where: jest.fn().mockReturnValue(dataChain),
           }),
         }),
       }),
@@ -110,6 +110,7 @@ describe("EmployeesService.listEmployees — DataScope wiring", () => {
     await svc.listEmployees(ORG, USER, {}, "own");
     expect(applyScopeSpy).toHaveBeenCalledWith(
       "own",
+      ORG,
       USER,
       expect.objectContaining({ ownerColumn: expect.anything() }),
     );
@@ -121,6 +122,7 @@ describe("EmployeesService.listEmployees — DataScope wiring", () => {
     await svc.listEmployees(ORG, USER, {}, "all");
     expect(applyScopeSpy).toHaveBeenCalledWith(
       "all",
+      ORG,
       USER,
       expect.objectContaining({ ownerColumn: expect.anything() }),
     );
@@ -132,19 +134,22 @@ describe("EmployeesService.listEmployees — DataScope wiring", () => {
     await svc.listEmployees(ORG, USER, {}, "none");
     expect(applyScopeSpy).toHaveBeenCalledWith(
       "none",
+      ORG,
       USER,
       expect.objectContaining({ ownerColumn: expect.anything() }),
     );
   });
 
-  it("returns a paginated envelope with correct page/limit/total", async () => {
+  it("returns a bounded cursor envelope without an exact count", async () => {
     const db = buildDb();
     const svc = buildService(db);
-    const result = await svc.listEmployees(ORG, USER, { page: 2, limit: 5 }, "all");
+    const result = await svc.listEmployees(ORG, USER, { limit: 5 }, "all");
     expect(result).toMatchObject({
       data: [],
-      pagination: { page: 2, limit: 5, total: 0, totalPages: 0 },
+      pageInfo: { limit: 5, hasMore: false, nextCursor: null },
     });
+    expect(db.select).toHaveBeenCalledTimes(1);
+    expect(db.dataChain.limit).toHaveBeenCalledWith(6);
   });
 
   it("queries the DB even when scope=none (DB filter from applyScope handles the deny)", async () => {
@@ -152,5 +157,14 @@ describe("EmployeesService.listEmployees — DataScope wiring", () => {
     const svc = buildService(db);
     await svc.listEmployees(ORG, USER, {}, "none");
     expect(db.select).toHaveBeenCalled();
+  });
+
+  it("never selects salary in the standard employee-list DTO", async () => {
+    const db = buildDb();
+    const svc = buildService(db);
+    await svc.listEmployees(ORG, USER, {}, "all");
+
+    const selectedFields = db.select.mock.calls[0]?.[0];
+    expect(selectedFields).not.toHaveProperty("monthlySalary");
   });
 });

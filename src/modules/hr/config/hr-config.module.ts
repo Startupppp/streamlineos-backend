@@ -49,5 +49,6 @@ import { HrNotificationPreferencesService } from "./hr-notification-preferences.
     HrHandbookService,
     HrNotificationPreferencesService,
   ],
+  exports: [HrHolidaysService],
 })
 export class HrConfigModule {}

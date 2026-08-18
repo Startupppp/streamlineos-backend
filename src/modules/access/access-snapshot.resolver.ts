@@ -1,0 +1,116 @@
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { isPersonalTokenPermissionDelegable } from "../../common/rbac/personal-token-policy";
+import type { AccessSnapshot, DataScope } from "./access.types";
+import {
+  allCatalogScopes,
+  CATALOG_MODULES,
+  EMPTY_DENIED_MODULES,
+  isPlanGatedModule,
+} from "./access-policy";
+import { EntitlementsService } from "./entitlements.service";
+import { MfaPolicyService } from "./mfa-policy.service";
+
+export class AccessSnapshotResolver {
+  constructor(
+    private readonly entitlements: EntitlementsService,
+    private readonly mfaPolicy: MfaPolicyService,
+    private readonly getPermissionsVersion: (orgId: string) => Promise<number>,
+    private readonly resolveUserPermissions: (
+      orgId: string,
+      userId: string,
+    ) => Promise<Map<string, DataScope>>,
+    private readonly getUserDeniedModules: (
+      orgId: string,
+      userId: string,
+    ) => Promise<Set<string>>,
+    private readonly canManageOrganizationMembership: (
+      orgId: string,
+      userId: string,
+    ) => Promise<boolean>,
+  ) {}
+
+  async computeAccessSnapshot(
+    orgId: string,
+    userId: string,
+    currentUserContext: CurrentUserContext,
+  ): Promise<AccessSnapshot> {
+    const [version, mfa] = await Promise.all([
+      this.getPermissionsVersion(orgId),
+      this.mfaPolicy.resolve(orgId, userId),
+    ]);
+
+    const tokenScopes = currentUserContext.tokenScopes;
+
+    if (currentUserContext.isOrgOwner) {
+      const catalog = allCatalogScopes();
+      const scopes: Record<string, DataScope> = {};
+      for (const [key, scope] of Object.entries(catalog)) {
+        if (
+          tokenScopes &&
+          (!isPersonalTokenPermissionDelegable(key) ||
+            !tokenScopes.includes(key))
+        )
+          continue;
+        scopes[key] = scope;
+      }
+      return {
+        permissions: Object.keys(scopes),
+        scopes,
+        modules: await this.resolveModuleFlags(orgId, EMPTY_DENIED_MODULES),
+        isOrgOwner: currentUserContext.isOrgOwner,
+        canManageOrganizationMembership: true,
+        mfa,
+        version,
+      };
+    }
+
+    const resolved = await this.resolveUserPermissions(orgId, userId);
+    const scopes: Record<string, DataScope> = {};
+    const permissions: string[] = [];
+    for (const [key, scope] of resolved) {
+      if (scope === "none") continue;
+      if (
+        tokenScopes &&
+        (!isPersonalTokenPermissionDelegable(key) || !tokenScopes.includes(key))
+      )
+        continue;
+      scopes[key] = scope;
+      permissions.push(key);
+    }
+
+    const [denied, canManageOrganizationMembership] = await Promise.all([
+      this.getUserDeniedModules(orgId, userId),
+      this.canManageOrganizationMembership(orgId, userId),
+    ]);
+    const modules = await this.resolveModuleFlags(orgId, denied);
+
+    return {
+      permissions,
+      scopes,
+      modules,
+      isOrgOwner: currentUserContext.isOrgOwner,
+      canManageOrganizationMembership,
+      mfa,
+      version,
+    };
+  }
+
+  /** Module on/off flags for the access snapshot. */
+  private async resolveModuleFlags(
+    orgId: string,
+    denied: ReadonlySet<string>,
+  ): Promise<Record<string, boolean>> {
+    const effective = await this.entitlements.getEffectiveModuleMap(orgId);
+    const modules: Record<string, boolean> = {};
+    for (const moduleKey of CATALOG_MODULES) {
+      if (!isPlanGatedModule(moduleKey)) {
+        modules[moduleKey] = true;
+        continue;
+      }
+      const orgEnabled =
+        moduleKey in effective ? effective[moduleKey] === true : true;
+      modules[moduleKey] = orgEnabled && !denied.has(moduleKey);
+    }
+    return modules;
+  }
+}
