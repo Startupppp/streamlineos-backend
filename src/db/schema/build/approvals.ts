@@ -1,4 +1,5 @@
-import { pgTable, pgEnum, text, timestamp, integer, index, unique } from "drizzle-orm/pg-core";
+import { pgEnum, text, timestamp, integer, index, unique } from "drizzle-orm/pg-core";
+import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
@@ -24,7 +25,7 @@ export const approvalStatusEnum = pgEnum("approval_status", [
   "cancelled",
 ]);
 
-export const projectApprovals = pgTable("project_approvals", {
+export const projectApprovals = build.table("project_approvals", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),

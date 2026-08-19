@@ -266,7 +266,7 @@ export class ProjectsWorkQueryService {
     if (labelIds && labelIds.length > 0) {
       conditions.push(
         sql`EXISTS (
-          SELECT 1 FROM ticket_label_mappings tlm
+          SELECT 1 FROM build.ticket_label_mappings tlm
           WHERE tlm.ticket_id = ${tickets.id}
           AND tlm.label_id = ANY(ARRAY[${sql.join(labelIds.map((id) => sql`${id}`), sql`, `)}]::int[])
         )`,

@@ -1,4 +1,15 @@
-import { pgTable, pgEnum, text, timestamp, integer, index, unique, uniqueIndex, jsonb, type AnyPgColumn } from "drizzle-orm/pg-core";
+import {
+  pgEnum,
+  text,
+  timestamp,
+  integer,
+  index,
+  unique,
+  uniqueIndex,
+  jsonb,
+  type AnyPgColumn,
+} from "drizzle-orm/pg-core";
+import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects, sprints } from "./core";
@@ -9,7 +20,7 @@ export const testCaseAutomationStatusEnum = pgEnum("test_case_automation_status"
 export const testRunStatusEnum = pgEnum("test_run_status", ["not_started", "in_progress", "completed", "aborted"]);
 export const testResultStatusEnum = pgEnum("test_result_status", ["not_run", "passed", "failed", "blocked", "skipped"]);
 
-export const testSuites = pgTable("test_suites", {
+export const testSuites = build.table("test_suites", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
@@ -27,7 +38,7 @@ export const testSuites = pgTable("test_suites", {
   unique("uniq_test_suites_org_id").on(table.orgId, table.id),
 ]);
 
-export const testCases = pgTable("test_cases", {
+export const testCases = build.table("test_cases", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
@@ -51,7 +62,7 @@ export const testCases = pgTable("test_cases", {
   unique("uniq_test_cases_org_id").on(table.orgId, table.id),
 ]);
 
-export const testRuns = pgTable("test_runs", {
+export const testRuns = build.table("test_runs", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
@@ -77,7 +88,7 @@ export const testRuns = pgTable("test_runs", {
   unique("uniq_test_runs_org_id").on(table.orgId, table.id),
 ]);
 
-export const testRunResults = pgTable("test_run_results", {
+export const testRunResults = build.table("test_run_results", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
@@ -100,7 +111,7 @@ export const bugSeverityEnum = pgEnum("bug_severity", ["blocker", "critical", "m
 export const bugPriorityEnum = pgEnum("bug_priority", ["low", "medium", "high", "urgent"]);
 export const bugStatusEnum = pgEnum("bug_status", ["new", "triaged", "assigned", "in_progress", "fixed", "ready_for_qa", "verified", "reopened", "closed"]);
 
-export const bugs = pgTable("bugs", {
+export const bugs = build.table("bugs", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),

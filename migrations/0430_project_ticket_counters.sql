@@ -1,24 +1,13 @@
--- 0430: gap-free, contention-free ticket number allocation.
+-- 0430: gap-free ticket number allocation via a per-project counter row.
 --
--- Every ticket create allocated its number with COALESCE(MAX(ticket_number),0)+1. Two problems:
+-- Six call sites allocated with COALESCE(MAX(ticket_number),0)+1 and only ONE held
+-- pg_advisory_xact_lock, so concurrent creates through the other five could collide on
+-- uniq_tickets_project_number. This is a correctness fix, not a speed one: the old MAX was an
+-- Index Scan Backward (4 buffers / 0.052ms) and the counter UPDATE is 0.087ms.
+-- It also drops a lock taken in Postgres' single global advisory namespace.
 --
---  1. THROUGHPUT. projects-tickets-create wrapped it in pg_advisory_xact_lock(projectId), which
---     serialises every ticket creation in a project for the whole transaction — the insert, the
---     activity write and anything else all hold the lock. The MAX is also an index scan whose cost
---     grows with the project. At 100M rows this is the module's worst insert bottleneck.
---
---  2. CORRECTNESS. Only that one path took the lock. epics.service, workspace.service,
---     projects-tickets-transfer and projects-templates all did MAX+1 with no lock at all, so two
---     concurrent creates through different paths could compute the same number and collide on
---     uniq_tickets_project_number (project_id, ticket_number).
---
--- A counter row replaces both: one UPDATE ... RETURNING takes a single row lock for microseconds,
--- costs the same regardless of project size, and is atomic across every call site.
---
--- Allocation is monotonic, not gap-free across rollbacks: a transaction that aborts after allocating
--- leaves its number unused. That is the correct trade — reusing numbers would let a deleted ticket's
--- identifier reappear on a different ticket, and PROJ-123 is a durable human reference.
-
+-- Numbers are monotonic, not gap-free across rollbacks: an aborted transaction leaves its number
+-- unused, which is correct — PROJ-123 is a durable reference and must never be reissued.
 CREATE TABLE IF NOT EXISTS "project_ticket_counters" (
   "org_id"             text    NOT NULL,
   "project_id"         integer NOT NULL,

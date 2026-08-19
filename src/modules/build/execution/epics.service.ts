@@ -45,7 +45,6 @@ export class EpicsService {
 
   async createEpic(orgId: string, userId: string, projectId: number, input: CreateEpicInput) {
     const [epic] = await this.db.transaction(async (tx) => {
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
 
       const nextNumber = await allocateTicketNumbers(tx, orgId, projectId);
 

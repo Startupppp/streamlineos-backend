@@ -1,8 +1,9 @@
-import { pgTable, text, integer, timestamp, unique, uniqueIndex, index } from "drizzle-orm/pg-core";
+import { text, integer, timestamp, unique, uniqueIndex, index } from "drizzle-orm/pg-core";
+import { build } from "./namespaces";
 import { organizations, users } from "../common/auth";
 import { tickets } from "./tasks";
 
-export const commentDrafts = pgTable("comment_drafts", {
+export const commentDrafts = build.table("comment_drafts", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),

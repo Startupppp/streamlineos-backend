@@ -1,4 +1,5 @@
-import { pgTable, pgEnum, text, integer, timestamp, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgEnum, text, integer, timestamp, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
@@ -16,7 +17,7 @@ export const portfolioHealthEnum = pgEnum("project_portfolio_health", [
   "off_track",
 ]);
 
-export const projectPortfolios = pgTable("project_portfolios", {
+export const projectPortfolios = build.table("project_portfolios", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),
@@ -34,7 +35,7 @@ export const projectPortfolios = pgTable("project_portfolios", {
   unique("uniq_project_portfolios_org_id").on(t.orgId, t.id),
 ]);
 
-export const projectPrograms = pgTable("project_programs", {
+export const projectPrograms = build.table("project_programs", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   portfolioId: integer("portfolio_id").references(() => projectPortfolios.id, { onDelete: "set null" }),
@@ -53,7 +54,7 @@ export const projectPrograms = pgTable("project_programs", {
   unique("uniq_project_programs_org_id").on(t.orgId, t.id),
 ]);
 
-export const portfolioProjects = pgTable("portfolio_projects", {
+export const portfolioProjects = build.table("portfolio_projects", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   portfolioId: integer("portfolio_id").references(() => projectPortfolios.id, { onDelete: "cascade" }).notNull(),
@@ -65,7 +66,7 @@ export const portfolioProjects = pgTable("portfolio_projects", {
   unique("uniq_portfolio_projects_org_id").on(t.orgId, t.id),
 ]);
 
-export const programProjects = pgTable("program_projects", {
+export const programProjects = build.table("program_projects", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   programId: integer("program_id").references(() => projectPrograms.id, { onDelete: "cascade" }).notNull(),

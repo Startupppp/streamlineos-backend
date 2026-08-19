@@ -19,11 +19,6 @@ const makeUser = (overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
   ...overrides,
 });
 
-/**
- * Separation of duties. `timesheets/core` already refused self-approval through
- * canActOnPeriod, but this second writer on the same table did not, so the control was
- * reachable around. These entries carry payrollStatus, so they feed payroll.
- */
 describe("TimesheetsService — approver cannot action their own entry", () => {
   let svc: TimesheetsService;
   let findFirst: jest.Mock;

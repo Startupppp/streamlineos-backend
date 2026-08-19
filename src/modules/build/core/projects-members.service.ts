@@ -307,7 +307,7 @@ export class ProjectsMembersService {
         and(
           eq(ticketAssignees.userId, userId),
           sql`${ticketAssignees.ticketId} IN (
-              SELECT id FROM tickets
+              SELECT id FROM build.tickets
               WHERE project_id = ${projectId}
               AND org_id = ${orgId}
               AND status NOT IN ('DONE', 'CANCELLED')

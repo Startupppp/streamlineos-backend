@@ -1,13 +1,5 @@
-import {
-  pgTable,
-  text,
-  boolean,
-  timestamp,
-  index,
-  unique,
-  uniqueIndex,
-  check,
-} from "drizzle-orm/pg-core";
+import { text, boolean, timestamp, index, unique, uniqueIndex, check } from "drizzle-orm/pg-core";
+import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { organizations } from "../common/auth";
@@ -17,7 +9,7 @@ import { organizations } from "../common/auth";
  * (Organization → Product Management → PM Workspace → Managed Product / Delivery Team / Project).
  * Never the tenant. Exactly one default per eligible Organization (partial unique on is_default).
  */
-export const pmWorkspaces = pgTable(
+export const pmWorkspaces = build.table(
   "pm_workspaces",
   {
     pmWorkspaceId: text("pm_workspace_id")

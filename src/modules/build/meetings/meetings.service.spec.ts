@@ -127,7 +127,7 @@ describe("ActionItemsService.convertToTask", () => {
         projectMeetings: { findFirst: jest.fn().mockResolvedValue({ id: 2 }) },
         meetingActionItems: { findFirst: jest.fn().mockResolvedValue(item) },
       },
-      execute: jest.fn().mockResolvedValue(undefined),
+      execute: jest.fn().mockResolvedValue([{ start: 1 }]),
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnThis(),
         where: jest.fn().mockResolvedValue([{ maxNum: 0 }]),

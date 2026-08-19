@@ -1,10 +1,20 @@
-import { pgTable, text, timestamp, date, integer, index, unique, uniqueIndex, check } from "drizzle-orm/pg-core";
+import {
+  text,
+  timestamp,
+  date,
+  integer,
+  index,
+  unique,
+  uniqueIndex,
+  check,
+} from "drizzle-orm/pg-core";
+import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
 import { tickets } from "./ticket-core";
 
-export const projectReleases = pgTable(
+export const projectReleases = build.table(
   "project_releases",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -40,7 +50,7 @@ export const projectReleases = pgTable(
   ],
 );
 
-export const releaseTickets = pgTable(
+export const releaseTickets = build.table(
   "release_tickets",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),

@@ -1,4 +1,15 @@
-import { pgTable, pgEnum, text, timestamp, jsonb, integer, boolean, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import {
+  pgEnum,
+  text,
+  timestamp,
+  jsonb,
+  integer,
+  boolean,
+  index,
+  unique,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
+import { build } from "./namespaces";
 import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
@@ -19,7 +30,7 @@ export const whiteboardVisibilityEnum = pgEnum("whiteboard_visibility", [
 ]);
 export const whiteboardShareRoleEnum = pgEnum("whiteboard_share_role", ["viewer", "editor"]);
 
-export const projectWhiteboards = pgTable(
+export const projectWhiteboards = build.table(
   "project_whiteboards",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -51,7 +62,7 @@ export const projectWhiteboards = pgTable(
   ],
 );
 
-export const projectWhiteboardShares = pgTable(
+export const projectWhiteboardShares = build.table(
   "project_whiteboard_shares",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),

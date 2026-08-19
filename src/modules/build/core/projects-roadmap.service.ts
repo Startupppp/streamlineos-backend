@@ -202,16 +202,16 @@ export class ProjectsRoadmapService {
         );
 
       await tx.execute(sql`
-        UPDATE feedback_votes v
+        UPDATE build.feedback_votes v
         SET feedback_post_id = ${targetId}
         WHERE v.feedback_post_id = ${postId}
           AND v.org_id = ${orgId}
           AND NOT EXISTS (
-            SELECT 1 FROM feedback_votes k
+            SELECT 1 FROM build.feedback_votes k
             WHERE k.feedback_post_id = ${targetId} AND k.voter_key = v.voter_key
           )
           AND NOT EXISTS (
-            SELECT 1 FROM feedback_votes h
+            SELECT 1 FROM build.feedback_votes h
             WHERE h.feedback_post_id = ${targetId}
               AND h.voter_ip_hash IS NOT NULL
               AND h.voter_ip_hash = v.voter_ip_hash
@@ -234,8 +234,8 @@ export class ProjectsRoadmapService {
         .where(and(eq(feedbackPosts.id, postId), eq(feedbackPosts.orgId, orgId)));
 
       await tx.execute(sql`
-        UPDATE feedback_posts p
-        SET votes = (SELECT count(*) FROM feedback_votes v WHERE v.feedback_post_id = p.id)
+        UPDATE build.feedback_posts p
+        SET votes = (SELECT count(*) FROM build.feedback_votes v WHERE v.feedback_post_id = p.id)
         WHERE p.org_id = ${orgId} AND p.id IN (${postId}, ${targetId})
       `);
 

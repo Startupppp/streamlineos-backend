@@ -67,13 +67,6 @@ export class SubmissionsService {
     const createdTicketIds: number[] = [];
 
     const [submission] = await this.db.transaction(async (tx) => {
-      const needsTicket = form.actions.some(
-        (a) => a.type === "create_task" || a.type === "create_bug",
-      );
-      if (needsTicket) {
-        await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
-      }
-
       for (const action of form.actions) {
         if (action.type !== "create_task" && action.type !== "create_bug") {
           skippedActionTypes.push(action.type);

@@ -1,9 +1,10 @@
-import { pgTable, text, integer, boolean, jsonb, timestamp, index, unique } from "drizzle-orm/pg-core";
+import { text, integer, boolean, jsonb, timestamp, index, unique } from "drizzle-orm/pg-core";
+import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects, projectStatuses } from "./core";
 
-export const workflowTransitions = pgTable("workflow_transitions", {
+export const workflowTransitions = build.table("workflow_transitions", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),

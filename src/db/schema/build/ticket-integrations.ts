@@ -1,9 +1,21 @@
-import { pgTable, text, bigserial, timestamp, boolean, integer, index, unique, jsonb, varchar, check } from "drizzle-orm/pg-core";
+import {
+  text,
+  bigserial,
+  timestamp,
+  boolean,
+  integer,
+  index,
+  unique,
+  jsonb,
+  varchar,
+  check,
+} from "drizzle-orm/pg-core";
+import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
 
-export const projectWebhooks = pgTable(
+export const projectWebhooks = build.table(
   "project_webhooks",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -31,7 +43,7 @@ export const projectWebhooks = pgTable(
   ],
 );
 
-export const webhookDeliveries = pgTable(
+export const webhookDeliveries = build.table(
   "webhook_deliveries",
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
@@ -63,7 +75,7 @@ export const webhookDeliveries = pgTable(
   ],
 );
 
-export const projectAutomations = pgTable(
+export const projectAutomations = build.table(
   "project_automations",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),

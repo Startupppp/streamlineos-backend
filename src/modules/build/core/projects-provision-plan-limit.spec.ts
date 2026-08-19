@@ -9,6 +9,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { ProjectsEmailService } from "./projects-email.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { CreateProjectInput } from "./dto/projects.schemas";
+import { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
 
 const ORG_ID = "org-abc";
 const CREATOR_ID = "user-xyz";
@@ -51,6 +52,12 @@ describe("ProjectsProvisionService.createProject — plan limit enforcement", ()
         {
           provide: ProjectsEmailService,
           useValue: { notifyProjectMembers: jest.fn().mockResolvedValue(undefined) },
+        },
+        {
+          provide: PmWorkspacesService,
+          useValue: {
+            resolveDefaultWorkspaceId: jest.fn().mockResolvedValue("ws-default"),
+          },
         },
       ],
     }).compile();

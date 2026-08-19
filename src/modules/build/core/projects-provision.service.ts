@@ -40,10 +40,6 @@ export class ProjectsProvisionService {
 
     await this.planLimits.assertWithinLimit(orgId, "projects");
 
-    // projects.pm_workspace_id is NOT NULL with no default (migration 0333). Nothing set it, so
-    // every createProject failed with a not-null violation. resolveDefaultWorkspaceId provisions
-    // the org's default workspace on first use and is idempotent; it runs before the transaction
-    // because it opens its own.
     const pmWorkspaceId = await this.pmWorkspaces.resolveDefaultWorkspaceId(orgId);
 
     const project = await this.db.transaction(async (tx) => {

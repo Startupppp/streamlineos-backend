@@ -1,32 +1,13 @@
--- 0424: make ticket title search use idx_tickets_title_trgm again.
+-- 0424: restore index-backed ticket title search under RLS.
 --
--- Under RLS the app role cannot use ANY text index. Every search operator is
--- proleakproof=false (ts_match_vq, similarity_op, textlike, texticlike), and a
--- non-leakproof user qual may not be evaluated before the RLS security qual, so it can
--- never become an index condition. Measured on tickets (203k rows), same query, same data:
+-- Search operators are not leakproof, so under an RLS security qual they can never become an index
+-- condition: measured Seq Scan 12,036 buffers / 134.8ms as streamline_app vs Bitmap Index Scan
+-- 16 buffers / 0.34ms as owner. ALTER FUNCTION ... LEAKPROOF is impossible on Neon (no superuser).
 --
---   neondb_owner  (BYPASSRLS)  Bitmap Index Scan   16 buffers      0.34 ms
---   streamline_app (RLS on)    Seq Scan        12,036 buffers    134.80 ms
---
--- ALTER FUNCTION ... LEAKPROOF is the textbook fix and is IMPOSSIBLE HERE: it requires a
--- true superuser, and on Neon neondb_owner and neon_superuser are both rolsuper=false.
--- It fails 42501 even as owner. Do not try it again.
---
--- A SECURITY DEFINER function owned by a BYPASSRLS role is the remaining escape: Postgres
--- never inlines SECURITY DEFINER functions, so the body runs outside the security barrier
--- and the trigram index is usable. Measured 1 ms vs 1090 ms over 5 runs.
---
--- SAFETY -- this bypasses RLS, so the guarantees live here rather than in a policy:
---   * the org comes from app.current_org_id(), NEVER a parameter, so a caller cannot ask
---     for another tenant and it fails closed (42501) when the GUC is absent;
---   * it returns ONLY ids, never row data, so nothing is disclosed that the caller could
---     not already fetch -- the caller's real query still runs under RLS and still applies
---     the RBAC DataScope clause, so this cannot widen who sees which ticket;
---   * EXECUTE is revoked from PUBLIC and granted solely to streamline_app.
---
--- Callers must only use this for terms of 3+ characters: pg_trgm indexes on 3-grams, so a
--- shorter term degenerates to matching everything and would be slower than the seq scan.
-
+-- A SECURITY DEFINER function owned by the BYPASSRLS role is the remaining escape. Safety rests
+-- here rather than in a policy: org comes from app.current_org_id() and never a parameter (fails
+-- closed 42501), it returns ids only, the caller's query still runs under RLS with its DataScope,
+-- and EXECUTE is revoked from PUBLIC.
 CREATE OR REPLACE FUNCTION app.search_ticket_ids(p_q text)
 RETURNS SETOF integer
 LANGUAGE sql

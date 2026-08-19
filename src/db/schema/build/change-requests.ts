@@ -1,4 +1,5 @@
-import { pgTable, pgEnum, text, timestamp, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgEnum, text, timestamp, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
@@ -14,7 +15,7 @@ export const changeRequestStatusEnum = pgEnum("change_request_status", [
   "completed",
 ]);
 
-export const changeRequests = pgTable("change_requests", {
+export const changeRequests = build.table("change_requests", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),

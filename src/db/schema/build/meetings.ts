@@ -1,4 +1,16 @@
-import { pgTable, pgEnum, text, timestamp, integer, boolean, date, jsonb, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import {
+  pgEnum,
+  text,
+  timestamp,
+  integer,
+  boolean,
+  date,
+  jsonb,
+  index,
+  unique,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
+import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects, sprints } from "./core";
@@ -8,7 +20,7 @@ export const meetingTypeEnum = pgEnum("meeting_type", ["meeting", "standup", "re
 export const projectMeetingStatusEnum = pgEnum("project_meeting_status", ["scheduled", "in_progress", "completed", "cancelled"]);
 export const actionItemStatusEnum = pgEnum("action_item_status", ["open", "in_progress", "done", "converted", "cancelled"]);
 
-export const projectMeetings = pgTable("project_meetings", {
+export const projectMeetings = build.table("project_meetings", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
@@ -35,7 +47,7 @@ export const projectMeetings = pgTable("project_meetings", {
   unique("uniq_project_meetings_org_id").on(t.orgId, t.id),
 ]);
 
-export const meetingAttendees = pgTable("meeting_attendees", {
+export const meetingAttendees = build.table("meeting_attendees", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   meetingId: integer("meeting_id").references(() => projectMeetings.id, { onDelete: "cascade" }).notNull(),
@@ -48,7 +60,7 @@ export const meetingAttendees = pgTable("meeting_attendees", {
   unique("uniq_meeting_attendees_org_id").on(t.orgId, t.id),
 ]);
 
-export const meetingActionItems = pgTable("meeting_action_items", {
+export const meetingActionItems = build.table("meeting_action_items", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   meetingId: integer("meeting_id").references(() => projectMeetings.id, { onDelete: "cascade" }).notNull(),
@@ -70,7 +82,7 @@ export const meetingActionItems = pgTable("meeting_action_items", {
   unique("uniq_meeting_action_items_org_id").on(t.orgId, t.id),
 ]);
 
-export const meetingStandupEntries = pgTable("meeting_standup_entries", {
+export const meetingStandupEntries = build.table("meeting_standup_entries", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   meetingId: integer("meeting_id").references(() => projectMeetings.id, { onDelete: "cascade" }).notNull(),

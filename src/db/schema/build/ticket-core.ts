@@ -1,4 +1,18 @@
-import { pgTable, text, timestamp, boolean, decimal, date, integer, numeric, foreignKey, index, unique, uniqueIndex, jsonb } from "drizzle-orm/pg-core";
+import {
+  text,
+  timestamp,
+  boolean,
+  decimal,
+  date,
+  integer,
+  numeric,
+  foreignKey,
+  index,
+  unique,
+  uniqueIndex,
+  jsonb,
+} from "drizzle-orm/pg-core";
+import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
 import {
   ticketTypeEnum,
@@ -9,7 +23,7 @@ import { organizations, users } from "../common/auth";
 import { projects, sprints, projectStatuses, modules, cycles } from "./core";
 import { clients } from "../crm/contacts";
 
-export const tickets = pgTable(
+export const tickets = build.table(
   "tickets",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -120,7 +134,7 @@ export const tickets = pgTable(
   ],
 );
 
-export const workItemRelations = pgTable(
+export const workItemRelations = build.table(
   "work_item_relations",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),

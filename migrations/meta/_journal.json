@@ -1310,6 +1310,20 @@
       "when": 1786701406560,
       "tag": "0430_project_ticket_counters",
       "breakpoints": true
+    },
+    {
+      "idx": 187,
+      "version": "7",
+      "when": 1786701466560,
+      "tag": "0431_build_events_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 188,
+      "version": "7",
+      "when": 1786701526560,
+      "tag": "0432_build_schema",
+      "breakpoints": true
     }
   ]
 }

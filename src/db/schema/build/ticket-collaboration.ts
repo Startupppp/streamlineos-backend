@@ -1,10 +1,24 @@
-import { pgTable, text, bigserial, bigint, timestamp, boolean, date, integer, foreignKey, index, unique, uniqueIndex, varchar } from "drizzle-orm/pg-core";
+import {
+  text,
+  bigserial,
+  bigint,
+  timestamp,
+  boolean,
+  date,
+  integer,
+  foreignKey,
+  index,
+  unique,
+  uniqueIndex,
+  varchar,
+} from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { tickets } from "./ticket-core";
 import { customFieldDefinitions } from "../custom-field-engine";
+import { build, buildEvents } from "./namespaces";
 
-export const ticketAssignees = pgTable(
+export const ticketAssignees = build.table(
   "ticket_assignees",
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
@@ -31,7 +45,7 @@ export const ticketAssignees = pgTable(
   ],
 );
 
-export const ticketComments = pgTable(
+export const ticketComments = buildEvents.table(
   "ticket_comments",
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
@@ -64,7 +78,7 @@ export const ticketComments = pgTable(
   ],
 );
 
-export const ticketAttachments = pgTable(
+export const ticketAttachments = build.table(
   "ticket_attachments",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -90,7 +104,7 @@ export const ticketAttachments = pgTable(
   ],
 );
 
-export const ticketLabels = pgTable(
+export const ticketLabels = build.table(
   "ticket_labels",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -107,7 +121,7 @@ export const ticketLabels = pgTable(
   ],
 );
 
-export const ticketLabelMappings = pgTable(
+export const ticketLabelMappings = build.table(
   "ticket_label_mappings",
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
@@ -130,7 +144,7 @@ export const ticketLabelMappings = pgTable(
   ],
 );
 
-export const ticketWatchers = pgTable(
+export const ticketWatchers = build.table(
   "ticket_watchers",
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
@@ -151,7 +165,7 @@ export const ticketWatchers = pgTable(
   ],
 );
 
-export const ticketChecklists = pgTable(
+export const ticketChecklists = build.table(
   "ticket_checklists",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -174,7 +188,7 @@ export const ticketChecklists = pgTable(
   ],
 );
 
-export const ticketChecklistItems = pgTable(
+export const ticketChecklistItems = build.table(
   "ticket_checklist_items",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -198,7 +212,7 @@ export const ticketChecklistItems = pgTable(
   ],
 );
 
-export const ticketCustomFieldValues = pgTable(
+export const ticketCustomFieldValues = build.table(
   "ticket_custom_field_values",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -228,7 +242,7 @@ export const ticketCustomFieldValues = pgTable(
   ],
 );
 
-export const ticketCommentReactions = pgTable(
+export const ticketCommentReactions = build.table(
   "ticket_comment_reactions",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -257,7 +271,7 @@ export const ticketCommentReactions = pgTable(
   ],
 );
 
-export const ticketRelatedLinks = pgTable(
+export const ticketRelatedLinks = build.table(
   "ticket_related_links",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),

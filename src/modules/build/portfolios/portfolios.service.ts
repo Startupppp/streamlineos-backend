@@ -76,7 +76,7 @@ export class PortfoliosService {
           inArray(projectDailySnapshots.projectId, projectIds),
           sql`${projectDailySnapshots.snapshotDate} = (
             SELECT MAX(s2.snapshot_date)
-            FROM project_daily_snapshots s2
+            FROM build.project_daily_snapshots s2
             WHERE s2.project_id = ${projectDailySnapshots.projectId}
           )`,
         ),

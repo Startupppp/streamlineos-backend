@@ -1,4 +1,5 @@
-import { pgTable, pgEnum, text, timestamp, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgEnum, text, timestamp, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
@@ -9,7 +10,7 @@ export const riskImpactEnum = pgEnum("risk_impact", ["low", "medium", "high"]);
 export const riskStatusEnum = pgEnum("risk_status", ["open", "mitigating", "monitoring", "accepted", "closed"]);
 export const decisionStatusEnum = pgEnum("decision_status", ["proposed", "accepted", "superseded", "revisit"]);
 
-export const projectRisks = pgTable("project_risks", {
+export const projectRisks = build.table("project_risks", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
@@ -33,7 +34,7 @@ export const projectRisks = pgTable("project_risks", {
   unique("uniq_project_risks_org_id").on(t.orgId, t.id),
 ]);
 
-export const projectDecisions = pgTable("project_decisions", {
+export const projectDecisions = build.table("project_decisions", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),

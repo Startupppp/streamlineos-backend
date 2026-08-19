@@ -31,12 +31,6 @@ function makeRows(n: number) {
   }));
 }
 
-/**
- * The board is the query-count benchmark: N columns x M cards with assignees and
- * labels is where PM tools hit 200+ queries. The property that matters is not the
- * absolute number but that it does not grow with the number of cards, so this asserts
- * the count is identical for 3 rows and for 500.
- */
 describe("board query count is bounded and independent of card count", () => {
   function buildHarness(rowCount: number) {
     let queries = 0;

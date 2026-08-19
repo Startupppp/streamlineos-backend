@@ -159,11 +159,11 @@ export class ProjectsTicketsQueryService {
       const ancestorCheck = await this.db.execute(sql`
         WITH RECURSIVE ancestors AS (
           SELECT id, parent_ticket_id
-          FROM tickets
+          FROM build.tickets
           WHERE id = ${parentRow[0].id} AND org_id = ${u.orgId}
           UNION ALL
           SELECT t.id, t.parent_ticket_id
-          FROM tickets t
+          FROM build.tickets t
           INNER JOIN ancestors a ON t.id = a.parent_ticket_id
           WHERE t.org_id = ${u.orgId}
         )

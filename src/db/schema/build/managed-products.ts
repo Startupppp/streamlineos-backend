@@ -1,10 +1,22 @@
-import { pgTable, text, timestamp, integer, jsonb, date, index, unique, uniqueIndex, foreignKey, check } from "drizzle-orm/pg-core";
+import {
+  text,
+  timestamp,
+  integer,
+  jsonb,
+  date,
+  index,
+  unique,
+  uniqueIndex,
+  foreignKey,
+  check,
+} from "drizzle-orm/pg-core";
+import { build } from "./namespaces";
 import { relations, sql } from "drizzle-orm";
 import { managedProductStatusEnum } from "../common/enums";
 import { organizations, users, organizationMembers } from "../common/auth";
 import { pmWorkspaces } from "./pm-workspaces";
 
-export const managedProducts = pgTable(
+export const managedProducts = build.table(
   "managed_products",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -47,7 +59,7 @@ export const managedProducts = pgTable(
   ],
 );
 
-export const managedProductReleases = pgTable(
+export const managedProductReleases = build.table(
   "managed_product_releases",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),

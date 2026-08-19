@@ -56,15 +56,15 @@ async function resolveUsers(orgId) {
 }
 
 async function reset(orgId) {
-  await sql`delete from projects where org_id = ${orgId} and key like ${KEY_PREFIX + "%"}`;
-  await sql`delete from pm_workspaces where org_id = ${orgId} and slug = 'seed-load'`;
+  await sql`delete from build.projects where org_id = ${orgId} and key like ${KEY_PREFIX + "%"}`;
+  await sql`delete from build.pm_workspaces where org_id = ${orgId} and slug = 'seed-load'`;
   log(`reset: cleared seeded projects for ${orgId}`);
 }
 
 async function ensureWorkspace(orgId) {
   const id = `ws-seed-${orgId.slice(0, 8)}`;
   await sql`
-    insert into pm_workspaces (pm_workspace_id, org_id, name, slug, is_default)
+    insert into build.pm_workspaces (pm_workspace_id, org_id, name, slug, is_default)
     values (${id}, ${orgId}, 'Seed Load Workspace', 'seed-load', false)
     on conflict do nothing`;
   return id;
@@ -72,7 +72,7 @@ async function ensureWorkspace(orgId) {
 
 async function seedProjects(orgId, workspaceId, count, users) {
   await sql`
-    insert into projects (org_id, pm_workspace_id, name, key, status, created_at, updated_at)
+    insert into build.projects (org_id, pm_workspace_id, name, key, status, created_at, updated_at)
     select ${orgId}, ${workspaceId},
            'Seed Project ' || g,
            ${KEY_PREFIX} || g,
@@ -82,12 +82,12 @@ async function seedProjects(orgId, workspaceId, count, users) {
     from generate_series(1, ${count}::int) g`;
 
   const projects = await sql`
-    select id from projects where org_id = ${orgId} and key like ${KEY_PREFIX + "%"} order by id`;
+    select id from build.projects where org_id = ${orgId} and key like ${KEY_PREFIX + "%"} order by id`;
   const ids = projects.map((p) => p.id);
   log(`projects: ${ids.length}`);
 
   await sql`
-    insert into project_statuses (org_id, project_id, name, "order", type, created_at)
+    insert into build.project_statuses (org_id, project_id, name, "order", type, created_at)
     select ${orgId}, p.id, s.name, s.ord, s.typ, now()
     from unnest(${sql.array(ids)}::int[]) p(id)
     cross join (values
@@ -95,7 +95,7 @@ async function seedProjects(orgId, workspaceId, count, users) {
       ('IN_REVIEW',2,'started'),('DONE',3,'completed')) s(name, ord, typ)`;
 
   await sql`
-    insert into sprints (org_id, project_id, name, start_date, end_date)
+    insert into build.sprints (org_id, project_id, name, start_date, end_date)
     select ${orgId}, p.id, 'Sprint ' || s.n,
            now() - ((s.n * 14) || ' days')::interval,
            now() - (((s.n - 1) * 14) || ' days')::interval
@@ -103,14 +103,14 @@ async function seedProjects(orgId, workspaceId, count, users) {
     cross join generate_series(1, ${SPRINTS_PER_PROJECT}::int) s(n)`;
 
   await sql`
-    insert into project_members (project_id, user_id, org_id)
+    insert into build.project_members (project_id, user_id, org_id)
     select p.id, u.uid, ${orgId}
     from unnest(${sql.array(ids)}::int[]) p(id)
     cross join unnest(${sql.array(users)}::text[]) u(uid)
     on conflict do nothing`;
 
   await sql`
-    insert into ticket_labels (org_id, name, color, created_at)
+    insert into build.ticket_labels (org_id, name, color, created_at)
     select ${orgId}, 'seed-label-' || g, '#3B82F6', now()
     from generate_series(1, ${LABELS_PER_PROJECT}::int) g
     on conflict do nothing`;
@@ -122,7 +122,7 @@ async function seedTickets(orgId, projectIds, total, users) {
   const perProject = Math.ceil(total / projectIds.length);
   await chunked(total, "tickets", async (offset, size) => {
     await sql`
-      insert into tickets (
+      insert into build.tickets (
         org_id, project_id, title, description, ticket_number, type, status, priority,
         assignee_id, reporter_id, points, rank, start_date, due_date,
         completion_percentage, created_at, updated_at)
@@ -159,15 +159,15 @@ async function seedTickets(orgId, projectIds, total, users) {
   });
 
   await sql`
-    update tickets t set sprint_id = s.id
+    update build.tickets t set sprint_id = s.id
     from (select id, project_id, row_number() over (partition by project_id order by id) rn
-          from sprints where org_id = ${orgId}) s
+          from build.sprints where org_id = ${orgId}) s
     where t.org_id = ${orgId} and t.project_id = s.project_id
       and (t.id % ${SPRINTS_PER_PROJECT}) = (s.rn % ${SPRINTS_PER_PROJECT})`;
 
   const [range] = await sql`
     select min(id)::int lo, max(id)::int hi, count(*)::int n
-    from tickets where org_id = ${orgId}`;
+    from build.tickets where org_id = ${orgId}`;
   log(`tickets: id range ${range.lo}..${range.hi} (perProject≈${perProject})`);
   return range;
 }
@@ -176,19 +176,19 @@ async function seedTicketChildren(orgId, range, users, projectCount) {
   const span = range.hi - range.lo + 1;
 
   await sql`
-    insert into ticket_assignees (org_id, ticket_id, user_id, assigned_at)
+    insert into build.ticket_assignees (org_id, ticket_id, user_id, assigned_at)
     select ${orgId}, t.id, t.assignee_id, t.created_at
-    from tickets t where t.org_id = ${orgId} and t.assignee_id is not null
+    from build.tickets t where t.org_id = ${orgId} and t.assignee_id is not null
     on conflict do nothing`;
   log("ticket_assignees: done");
 
   const labels = await sql`
-    select id from ticket_labels where org_id = ${orgId} order by id limit ${LABELS_PER_PROJECT}`;
+    select id from build.ticket_labels where org_id = ${orgId} order by id limit ${LABELS_PER_PROJECT}`;
   if (labels.length) {
     await sql`
-      insert into ticket_label_mappings (org_id, ticket_id, label_id, created_at)
+      insert into build.ticket_label_mappings (org_id, ticket_id, label_id, created_at)
       select ${orgId}, t.id, l.id, t.created_at
-      from tickets t
+      from build.tickets t
       join lateral (
         select id from unnest(${sql.array(labels.map((l) => l.id))}::int[]) with ordinality z(id, rn)
         where z.rn = (t.id % ${labels.length}) + 1
@@ -231,12 +231,12 @@ async function seedTicketChildren(orgId, range, users, projectCount) {
   });
 
   await sql`
-    insert into work_item_relations (org_id, work_item_id, related_work_item_id, relation_type, created_at)
+    insert into build.work_item_relations (org_id, work_item_id, related_work_item_id, relation_type, created_at)
     select ${orgId}, a.id, b.id,
            (array['blocks','blocked_by','duplicate_of','relates_to'])[1 + (a.id % 4)]::work_item_relation_type,
            a.created_at
-    from tickets a
-    join tickets b on b.id = a.id + ${projectCount} and b.project_id = a.project_id
+    from build.tickets a
+    join build.tickets b on b.id = a.id + ${projectCount} and b.project_id = a.project_id
     where a.org_id = ${orgId} and a.id % 3 = 0
     limit ${RELATIONS}::int
     on conflict do nothing`;
@@ -264,7 +264,7 @@ async function seedTimesheets(orgId, range, users) {
              now() - ((g % 400) || ' days')::interval,
              now() - ((g % 100) || ' days')::interval
       from generate_series(${offset + 1}::int, ${offset + size}::int) g
-      join tickets t on t.id = ${range.lo} + (g % ${span})
+      join build.tickets t on t.id = ${range.lo} + (g % ${span})
       join lateral (
         select uid from unnest(${sql.array(users)}::text[]) with ordinality x(uid, rn)
         where x.rn = (g % ${users.length}) + 1
@@ -309,7 +309,7 @@ async function main() {
   const counts = await sql`
     select relname, n_live_tup::int rows, pg_size_pretty(pg_total_relation_size(relid)) size
     from pg_stat_user_tables
-    where schemaname = 'public' and n_live_tup > 0
+    where schemaname in ('public','build','build_events') and n_live_tup > 0
     order by n_live_tup desc limit 15`;
   console.table(counts.map((r) => ({ table: r.relname, rows: r.rows, size: r.size })));
 }

@@ -107,8 +107,8 @@ export class WorkspaceCopilotTools {
               COUNT(*) AS total,
               COUNT(*) FILTER (WHERE t.status = 'DONE') AS done,
               COUNT(*) FILTER (WHERE t.status IN ('IN_PROGRESS','IN_REVIEW')) AS in_progress
-            FROM tickets t
-            LEFT JOIN projects p ON p.id = t.project_id
+            FROM build.tickets t
+            LEFT JOIN build.projects p ON p.id = t.project_id
             WHERE t.org_id = ${orgId}
               AND t.assignee_id = ${targetUserId}
               ${projectId !== undefined ? sql`AND t.project_id = ${projectId}` : sql``}

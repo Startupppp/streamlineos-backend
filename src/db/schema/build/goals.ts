@@ -1,4 +1,16 @@
-import { pgTable, pgEnum, text, timestamp, numeric, date, integer, foreignKey, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import {
+  pgEnum,
+  text,
+  timestamp,
+  numeric,
+  date,
+  integer,
+  foreignKey,
+  index,
+  unique,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
+import { build } from "./namespaces";
 import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
@@ -8,7 +20,7 @@ export const goalLevelEnum = pgEnum("okr_goal_level", ["company", "team", "indiv
 export const goalStatusEnum = pgEnum("okr_goal_status", ["not_started", "on_track", "at_risk", "off_track", "completed"]);
 export const keyResultMetricEnum = pgEnum("okr_kr_metric", ["number", "percentage", "currency", "boolean"]);
 
-export const okrGoals = pgTable("okr_goals", {
+export const okrGoals = build.table("okr_goals", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   title: text("title").notNull(),
@@ -33,7 +45,7 @@ export const okrGoals = pgTable("okr_goals", {
   unique("uniq_okr_goals_org_id").on(table.orgId, table.id),
 ]);
 
-export const okrKeyResults = pgTable("okr_key_results", {
+export const okrKeyResults = build.table("okr_key_results", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   goalId: integer("goal_id").references(() => okrGoals.id, { onDelete: "cascade" }).notNull(),
@@ -51,7 +63,7 @@ export const okrKeyResults = pgTable("okr_key_results", {
   unique("uniq_okr_key_results_org_id").on(table.orgId, table.id),
 ]);
 
-export const okrUpdates = pgTable("okr_updates", {
+export const okrUpdates = build.table("okr_updates", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   goalId: integer("goal_id").references(() => okrGoals.id, { onDelete: "cascade" }).notNull(),
@@ -66,7 +78,7 @@ export const okrUpdates = pgTable("okr_updates", {
   unique("uniq_okr_updates_org_id").on(table.orgId, table.id),
 ]);
 
-export const okrLinks = pgTable("okr_links", {
+export const okrLinks = build.table("okr_links", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   goalId: integer("goal_id").references(() => okrGoals.id, { onDelete: "cascade" }).notNull(),

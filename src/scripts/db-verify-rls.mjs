@@ -194,12 +194,12 @@ try {
       (SELECT count(DISTINCT c.oid)::int FROM pg_class c
         JOIN pg_namespace n2 ON n2.oid = c.relnamespace
         JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
-        WHERE n2.nspname='public' AND c.relkind='r'
+        WHERE n2.nspname IN ('public','build','build_events') AND c.relkind='r'
           AND a.attname IN ('org_id','organization_id')
           AND format_type(a.atttypid, NULL)='text') AS tenant_columns,
       (SELECT count(*)::int FROM pg_class c
         JOIN pg_namespace n ON n.oid=c.relnamespace
-        WHERE n.nspname='public' AND c.relrowsecurity) AS rls_enabled`;
+        WHERE n.nspname IN ('public','build','build_events') AND c.relrowsecurity) AS rls_enabled`;
   console.log(
     `
 coverage: ${coverage.rls_enabled} of ${coverage.tenant_columns} tenant-scoped tables have RLS enabled`,

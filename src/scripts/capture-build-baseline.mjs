@@ -188,13 +188,13 @@ async function main() {
            pg_size_pretty(pg_relation_size(relid)) heap,
            pg_size_pretty(pg_indexes_size(relid)) idx,
            pg_size_pretty(pg_total_relation_size(relid)) total
-    from pg_stat_user_tables where schemaname='public' and n_live_tup > 100
+    from pg_stat_user_tables where schemaname in ('public','build','build_events') and n_live_tup > 100
     order by n_live_tup desc`;
 
   const idx = await sql`
     select relname, indexrelname, idx_scan::int scans, pg_size_pretty(pg_relation_size(indexrelid)) size
     from pg_stat_user_indexes
-    where schemaname='public' and relname in
+    where schemaname in ('public','build','build_events') and relname in
       ('tickets','ticket_comments','ticket_activity_log','ticket_assignees','ticket_label_mappings','timesheets','work_item_relations','projects')
     order by relname, scans`;
 

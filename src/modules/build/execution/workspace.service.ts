@@ -9,6 +9,7 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { allocateTicketNumbers } from "../core/lib/allocate-ticket-number";
 import type {
   CreateIntakeInput,
   CreateMilestoneInput,
@@ -136,12 +137,7 @@ export class IntakeService {
 
     if (input.status === "accepted") {
       return this.db.transaction(async (tx) => {
-        await tx.execute(sql`SELECT pg_advisory_xact_lock(${item.projectId})`);
-
-        const [maxTicket] = await tx
-          .select({ max: sql<number>`COALESCE(MAX(${tickets.ticketNumber}), 0)` })
-          .from(tickets)
-          .where(and(eq(tickets.projectId, item.projectId), eq(tickets.orgId, orgId)));
+        const ticketNumber = await allocateTicketNumbers(tx, orgId, item.projectId);
 
         const description =
           typeof item.description === "object"
@@ -157,7 +153,7 @@ export class IntakeService {
             projectId: item.projectId,
             title: item.title,
             description,
-            ticketNumber: (maxTicket?.max ?? 0) + 1,
+            ticketNumber,
             reporterId: userId,
           })
           .returning();

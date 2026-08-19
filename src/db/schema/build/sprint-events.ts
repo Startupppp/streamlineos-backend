@@ -1,15 +1,8 @@
-import {
-  pgEnum,
-  pgTable,
-  bigserial,
-  text,
-  integer,
-  timestamp,
-  index,
-} from "drizzle-orm/pg-core";
+import { pgEnum, bigserial, text, integer, timestamp, index } from "drizzle-orm/pg-core";
 import { organizations, users } from "../common/auth";
 import { sprints } from "./core";
 import { tickets } from "./ticket-core";
+import { buildEvents } from "./namespaces";
 
 export const sprintScopeEventTypeEnum = pgEnum("sprint_scope_event_type", [
   "added",
@@ -19,7 +12,7 @@ export const sprintScopeEventTypeEnum = pgEnum("sprint_scope_event_type", [
   "reopened",
 ]);
 
-export const sprintScopeEvents = pgTable(
+export const sprintScopeEvents = buildEvents.table(
   "sprint_scope_events",
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),

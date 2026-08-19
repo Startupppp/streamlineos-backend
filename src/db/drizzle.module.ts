@@ -79,7 +79,7 @@ export class DrizzleModule implements OnApplicationBootstrap, OnApplicationShutd
         EXISTS (
           SELECT 1 FROM pg_class c
           JOIN pg_namespace n ON n.oid = c.relnamespace
-          WHERE n.nspname = 'public' AND c.relrowsecurity
+          WHERE n.nspname IN ('public', 'build', 'build_events') AND c.relrowsecurity
         ) AS policies_exist
     `);
 

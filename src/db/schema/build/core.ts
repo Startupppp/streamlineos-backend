@@ -1,4 +1,17 @@
-import { pgTable, bigint, text, timestamp, jsonb, decimal, date, integer, index, unique, uniqueIndex, check } from "drizzle-orm/pg-core";
+import {
+  bigint,
+  text,
+  timestamp,
+  jsonb,
+  decimal,
+  date,
+  integer,
+  index,
+  unique,
+  uniqueIndex,
+  check,
+} from "drizzle-orm/pg-core";
+import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
 import {
   projectStatusEnum,
@@ -11,7 +24,7 @@ import { deals } from "../crm/deals";
 import { managedProducts } from "./managed-products";
 import { pmWorkspaces } from "./pm-workspaces";
 
-export const projects = pgTable(
+export const projects = build.table(
   "projects",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -67,7 +80,7 @@ export const projects = pgTable(
   ],
 );
 
-export const sprints = pgTable(
+export const sprints = build.table(
   "sprints",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -99,7 +112,7 @@ export const sprints = pgTable(
   ],
 );
 
-export const projectStatuses = pgTable(
+export const projectStatuses = build.table(
   "project_statuses",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -120,7 +133,7 @@ export const projectStatuses = pgTable(
   ],
 );
 
-export const cycles = pgTable(
+export const cycles = build.table(
   "cycles",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -151,7 +164,7 @@ export const cycles = pgTable(
   ],
 );
 
-export const modules = pgTable(
+export const modules = build.table(
   "modules",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -183,7 +196,7 @@ export const modules = pgTable(
   ],
 );
 
-export const projectTemplates = pgTable(
+export const projectTemplates = build.table(
   "project_templates",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -205,7 +218,7 @@ export const projectTemplates = pgTable(
   ],
 );
 
-export const projectTemplateTickets = pgTable(
+export const projectTemplateTickets = build.table(
   "project_template_tickets",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),

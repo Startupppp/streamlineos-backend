@@ -12,7 +12,10 @@ if (!adminUrl) {
 
 const role = process.env.APP_DB_ROLE || "streamline_app";
 const password = process.env.APP_DB_PASSWORD || "";
-const schema = process.env.APP_DB_SCHEMA || "public";
+const schemas = (process.env.APP_DB_SCHEMA || "public,build,build_events")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 
 // Providers ship shared roles whose privileges must never be rewritten by this script
 const RESERVED = new Set([
@@ -61,7 +64,7 @@ try {
   const [{ current_user: owner }] = await sql`SELECT current_user`;
   console.log(`Granting role : ${role}`);
   console.log(`Object owner  : ${owner}`);
-  console.log(`Schema        : ${schema}\n`);
+  console.log(`Schemas       : ${schemas.join(", ")}\n`);
 
   let [attrs] = await sql`
     SELECT rolsuper, rolcreatedb, rolcreaterole, rolbypassrls, rolcanlogin
@@ -110,37 +113,47 @@ try {
     console.log("SKIP  set password (APP_DB_PASSWORD not set — use the provider console)");
   }
 
-  await repair(
-    "revoke object creation in schema",
-    `REVOKE CREATE ON SCHEMA ${ident(schema)} FROM ${ident(role)}`,
-  );
-  // A direct revoke is not enough: CREATE usually arrives via the PUBLIC pseudo-role,
-  // and a table the app role owns would be exempt from its own RLS policies
-  await repair(
-    "revoke object creation from PUBLIC",
-    `REVOKE CREATE ON SCHEMA ${ident(schema)} FROM PUBLIC`,
-  );
-  await repair("grant schema usage", `GRANT USAGE ON SCHEMA ${ident(schema)} TO ${ident(role)}`);
-  await repair(
-    "grant DML on existing tables",
-    `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ${ident(schema)} TO ${ident(role)}`,
-  );
-  await repair(
-    "grant sequence usage",
-    `GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ${ident(schema)} TO ${ident(role)}`,
-  );
+  for (const schema of schemas) {
+    const [present] = await sql`SELECT 1 AS ok FROM pg_namespace WHERE nspname = ${schema}`;
+    if (!present) {
+      console.log(`SKIP  schema ${schema} does not exist yet`);
+      continue;
+    }
+    await repair(
+      `revoke object creation in ${schema}`,
+      `REVOKE CREATE ON SCHEMA ${ident(schema)} FROM ${ident(role)}`,
+    );
+    // A direct revoke is not enough: CREATE usually arrives via the PUBLIC pseudo-role,
+    // and a table the app role owns would be exempt from its own RLS policies
+    await repair(
+      `revoke object creation from PUBLIC in ${schema}`,
+      `REVOKE CREATE ON SCHEMA ${ident(schema)} FROM PUBLIC`,
+    );
+    await repair(
+      `grant usage on ${schema}`,
+      `GRANT USAGE ON SCHEMA ${ident(schema)} TO ${ident(role)}`,
+    );
+    await repair(
+      `grant DML on existing tables in ${schema}`,
+      `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ${ident(schema)} TO ${ident(role)}`,
+    );
+    await repair(
+      `grant sequence usage in ${schema}`,
+      `GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ${ident(schema)} TO ${ident(role)}`,
+    );
 
-  // Without these, every table a future migration adds is invisible to the app
-  await repair(
-    "default privileges for future tables",
-    `ALTER DEFAULT PRIVILEGES FOR ROLE ${ident(owner)} IN SCHEMA ${ident(schema)}
-     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO ${ident(role)}`,
-  );
-  await repair(
-    "default privileges for future sequences",
-    `ALTER DEFAULT PRIVILEGES FOR ROLE ${ident(owner)} IN SCHEMA ${ident(schema)}
-     GRANT USAGE, SELECT ON SEQUENCES TO ${ident(role)}`,
-  );
+    // Without these, every table a future migration adds is invisible to the app
+    await repair(
+      `default privileges for future tables in ${schema}`,
+      `ALTER DEFAULT PRIVILEGES FOR ROLE ${ident(owner)} IN SCHEMA ${ident(schema)}
+       GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO ${ident(role)}`,
+    );
+    await repair(
+      `default privileges for future sequences in ${schema}`,
+      `ALTER DEFAULT PRIVILEGES FOR ROLE ${ident(owner)} IN SCHEMA ${ident(schema)}
+       GRANT USAGE, SELECT ON SEQUENCES TO ${ident(role)}`,
+    );
+  }
 
   const [final] = await sql`
     SELECT rolsuper, rolcreatedb, rolcreaterole, rolbypassrls, rolcanlogin
@@ -148,9 +161,10 @@ try {
   const [counts] = await sql`
     SELECT
       (SELECT count(*)::int FROM information_schema.tables
-        WHERE table_schema = ${schema} AND table_type = 'BASE TABLE') AS tables,
-      (SELECT count(DISTINCT table_name)::int FROM information_schema.role_table_grants
-        WHERE table_schema = ${schema} AND grantee = ${role}) AS granted`;
+        WHERE table_schema = ANY(${schemas}) AND table_type = 'BASE TABLE') AS tables,
+      (SELECT count(DISTINCT table_schema || '.' || table_name)::int
+        FROM information_schema.role_table_grants
+        WHERE table_schema = ANY(${schemas}) AND grantee = ${role}) AS granted`;
 
   console.log("\n--- verification ---");
   if (!final) {
@@ -163,11 +177,16 @@ try {
   }
   console.log(`tables granted: ${counts.granted}/${counts.tables}`);
 
-  const [canCreate] = await sql`SELECT has_schema_privilege(${role}, ${schema}, 'CREATE') AS yes`;
-  console.log(`can create objects: ${canCreate.yes} (must be false)`);
+  const creatable = await sql`
+    SELECT nspname FROM pg_namespace
+    WHERE nspname = ANY(${schemas}) AND has_schema_privilege(${role}, nspname, 'CREATE')`;
+  console.log(
+    `can create objects in: ${creatable.length === 0 ? "(none)" : creatable.map((r) => r.nspname).join(", ")} (must be none)`,
+  );
 
   const blockers = [];
-  if (canCreate.yes) blockers.push(`${role} can still create objects in ${schema}`);
+  for (const { nspname } of creatable)
+    blockers.push(`${role} can still create objects in ${nspname}`);
   if (!final) blockers.push(`role ${role} does not exist`);
   else {
     if (final.rolsuper || final.rolcreatedb || final.rolcreaterole || final.rolbypassrls) {

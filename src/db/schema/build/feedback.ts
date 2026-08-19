@@ -1,4 +1,16 @@
-import { pgTable, pgEnum, text, integer, boolean, jsonb, timestamp, decimal, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
+import {
+  pgEnum,
+  text,
+  integer,
+  boolean,
+  jsonb,
+  timestamp,
+  decimal,
+  index,
+  uniqueIndex,
+  unique,
+} from "drizzle-orm/pg-core";
+import { build } from "./namespaces";
 import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
@@ -82,7 +94,7 @@ export const feedbucketSubmissionPriorityEnum = pgEnum("feedbucket_submission_pr
   "urgent",
 ]);
 
-export const feedbucketWidgets = pgTable(
+export const feedbucketWidgets = build.table(
   "feedbucket_widgets",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -115,7 +127,7 @@ export const feedbucketWidgets = pgTable(
   ],
 );
 
-export const feedbucketSubmissions = pgTable(
+export const feedbucketSubmissions = build.table(
   "feedbucket_submissions",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -161,7 +173,7 @@ export const feedbucketSubmissions = pgTable(
   ],
 );
 
-export const feedbucketAttachments = pgTable(
+export const feedbucketAttachments = build.table(
   "feedbucket_attachments",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),

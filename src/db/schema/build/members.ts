@@ -1,4 +1,19 @@
-import { pgTable, text, bigint, timestamp, boolean, jsonb, decimal, date, integer, foreignKey, index, unique, uniqueIndex, check } from "drizzle-orm/pg-core";
+import {
+  text,
+  bigint,
+  timestamp,
+  boolean,
+  jsonb,
+  decimal,
+  date,
+  integer,
+  foreignKey,
+  index,
+  unique,
+  uniqueIndex,
+  check,
+} from "drizzle-orm/pg-core";
+import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
 import {
   intakeStatusEnum,
@@ -9,7 +24,7 @@ import { organizations, users } from "../common/auth";
 import { projects } from "./core";
 import { tickets } from "./tasks";
 
-export const projectMembers = pgTable("project_members", {
+export const projectMembers = build.table("project_members", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
@@ -26,7 +41,7 @@ export const projectMembers = pgTable("project_members", {
   unique("uniq_project_members_org_id").on(table.orgId, table.id),
 ]);
 
-export const projectViews = pgTable("project_views", {
+export const projectViews = build.table("project_views", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
@@ -49,7 +64,7 @@ export const projectViews = pgTable("project_views", {
   unique("uniq_project_views_org_id").on(table.orgId, table.id),
 ]);
 
-export const intakeItems = pgTable("intake_items", {
+export const intakeItems = build.table("intake_items", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
@@ -71,7 +86,7 @@ export const intakeItems = pgTable("intake_items", {
   unique("uniq_intake_items_org_id").on(table.orgId, table.id),
 ]);
 
-export const pages = pgTable("pages", {
+export const pages = build.table("pages", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
@@ -93,7 +108,7 @@ export const pages = pgTable("pages", {
   unique("uniq_pages_org_id").on(table.orgId, table.id),
 ]);
 
-export const projectMilestones = pgTable("project_milestones", {
+export const projectMilestones = build.table("project_milestones", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),

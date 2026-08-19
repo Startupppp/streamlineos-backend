@@ -167,7 +167,7 @@ export class PlanLimitsService {
       const rows = await this.db.execute(sql`
         SELECT
           (SELECT COUNT(*)::int FROM organization_members WHERE org_id = ${orgId})                                                         AS members,
-          (SELECT COUNT(*)::int FROM projects WHERE org_id = ${orgId})                                                                    AS projects,
+          (SELECT COUNT(*)::int FROM build.projects WHERE org_id = ${orgId})                                                              AS projects,
           (SELECT COUNT(*)::int FROM kb_pages WHERE org_id = ${orgId} AND deleted_at IS NULL)                                             AS "kbPages",
           (SELECT COUNT(*)::int FROM chat_channels WHERE org_id = ${orgId})                                                               AS "chatChannels",
           (SELECT COUNT(*)::int FROM leads WHERE org_id = ${orgId} AND deleted_at IS NULL)                                                AS "crmLeads",
@@ -294,7 +294,7 @@ export class PlanLimitsService {
       }
       case "projects": {
         const rows = await this.db.execute(
-          sql`SELECT COUNT(*)::int AS count FROM projects WHERE org_id = ${orgId}`,
+          sql`SELECT COUNT(*)::int AS count FROM build.projects WHERE org_id = ${orgId}`,
         );
         return Number(rows[0]?.["count"] ?? 0);
       }

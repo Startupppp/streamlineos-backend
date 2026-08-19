@@ -1,4 +1,16 @@
-import { pgTable, pgEnum, text, timestamp, boolean, integer, decimal, index, unique, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core";
+import {
+  pgEnum,
+  text,
+  timestamp,
+  boolean,
+  integer,
+  decimal,
+  index,
+  unique,
+  uniqueIndex,
+  type AnyPgColumn,
+} from "drizzle-orm/pg-core";
+import { build } from "./namespaces";
 import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
@@ -9,7 +21,7 @@ export const roadmapStatusEnum = pgEnum("roadmap_status", ["planned", "in_progre
 export const feedbackStatusEnum = pgEnum("feedback_status", ["open", "planned", "in_progress", "completed", "declined"]);
 export const changelogTypeEnum = pgEnum("changelog_type", ["feature", "improvement", "fix"]);
 
-export const roadmapItems = pgTable("roadmap_items", {
+export const roadmapItems = build.table("roadmap_items", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   title: text("title").notNull(),
@@ -35,7 +47,7 @@ export const roadmapItems = pgTable("roadmap_items", {
   unique("uniq_roadmap_items_org_id").on(table.orgId, table.id),
 ]);
 
-export const roadmapVotes = pgTable("roadmap_votes", {
+export const roadmapVotes = build.table("roadmap_votes", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   roadmapItemId: integer("roadmap_item_id").references(() => roadmapItems.id, { onDelete: "cascade" }).notNull(),
@@ -48,7 +60,7 @@ export const roadmapVotes = pgTable("roadmap_votes", {
   unique("uniq_roadmap_votes_org_id").on(table.orgId, table.id),
 ]);
 
-export const feedbackPosts = pgTable("feedback_posts", {
+export const feedbackPosts = build.table("feedback_posts", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   title: text("title").notNull(),
@@ -76,7 +88,7 @@ export const feedbackPosts = pgTable("feedback_posts", {
   unique("uniq_feedback_posts_org_id").on(table.orgId, table.id),
 ]);
 
-export const feedbackVotes = pgTable("feedback_votes", {
+export const feedbackVotes = build.table("feedback_votes", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   feedbackPostId: integer("feedback_post_id").references(() => feedbackPosts.id, { onDelete: "cascade" }).notNull(),
@@ -89,7 +101,7 @@ export const feedbackVotes = pgTable("feedback_votes", {
   unique("uniq_feedback_votes_org_id").on(table.orgId, table.id),
 ]);
 
-export const changelogEntries = pgTable("changelog_entries", {
+export const changelogEntries = build.table("changelog_entries", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   title: text("title").notNull(),

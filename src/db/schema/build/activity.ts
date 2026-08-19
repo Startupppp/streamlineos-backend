@@ -1,7 +1,18 @@
-import { pgTable, pgEnum, text, bigserial, bigint, integer, timestamp, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import {
+  pgEnum,
+  text,
+  bigserial,
+  bigint,
+  integer,
+  timestamp,
+  index,
+  unique,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { tickets, ticketComments } from "./tasks";
+import { build, buildEvents } from "./namespaces";
 
 export const ticketActivityActionEnum = pgEnum("ticket_activity_action", [
   "created",
@@ -20,7 +31,7 @@ export const ticketActivityActionEnum = pgEnum("ticket_activity_action", [
   "type_changed",
 ]);
 
-export const ticketActivityLog = pgTable("ticket_activity_log", {
+export const ticketActivityLog = buildEvents.table("ticket_activity_log", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   ticketId: integer("ticket_id").references(() => tickets.id, { onDelete: "cascade" }).notNull(),
@@ -35,7 +46,7 @@ export const ticketActivityLog = pgTable("ticket_activity_log", {
   unique("uniq_ticket_activity_log_org_id").on(table.orgId, table.id),
 ]);
 
-export const ticketCommentMentions = pgTable("ticket_comment_mentions", {
+export const ticketCommentMentions = build.table("ticket_comment_mentions", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   commentId: bigint("comment_id", { mode: "number" }).references(() => ticketComments.id, { onDelete: "cascade" }).notNull(),
