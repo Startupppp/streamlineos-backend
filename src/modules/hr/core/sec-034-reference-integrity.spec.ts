@@ -181,6 +181,7 @@ describe("SEC-034 reference integrity", () => {
 
     await expect(
       service.updateEngagement("org-1", "actor-1", "engagement-1", {
+        expectedVersion: 1,
         managerEngagementId: "engagement-1",
       }),
     ).rejects.toThrow("cannot manage itself");

@@ -1,7 +1,12 @@
 import { runWithTenantContext } from "../tenant";
 import { CACHE_KEYS } from "./cache-keys";
 import type { CacheService } from "./cache.service";
-import { OrgHierarchyCacheService } from "./org-hierarchy-cache.service";
+import {
+  OrgHierarchyCacheService,
+  type OrgHierarchyCacheResource,
+} from "./org-hierarchy-cache.service";
+
+const TREE: OrgHierarchyCacheResource = "tree:ADJACENCY:r1";
 
 describe("OrgHierarchyCacheService", () => {
   let cache: {
@@ -31,25 +36,25 @@ describe("OrgHierarchyCacheService", () => {
 
     await service.read(
       "org-1",
-      "tree",
+      TREE,
       { actorUserId: "user-all", scope: "all" },
       fetchTree,
     );
     await service.read(
       "org-1",
-      "tree",
+      TREE,
       { actorUserId: "user-1", scope: "team" },
       fetchTree,
     );
     await service.read(
       "org-1",
-      "tree",
+      TREE,
       { actorUserId: "user-2", scope: "team" },
       fetchTree,
     );
     await service.read(
       "org-2",
-      "tree",
+      TREE,
       { actorUserId: "user-1", scope: "team" },
       fetchTree,
     );
@@ -63,10 +68,10 @@ describe("OrgHierarchyCacheService", () => {
       ]);
     expect(cache.cachedVersioned.mock.calls.map((cacheCall) => cacheCall[1]))
       .toEqual([
-        "tree:scope:all",
-        "tree:scope:team:actor:user-1",
-        "tree:scope:team:actor:user-2",
-        "tree:scope:team:actor:user-1",
+        "tree:ADJACENCY:r1:scope:all",
+        "tree:ADJACENCY:r1:scope:team:actor:user-1",
+        "tree:ADJACENCY:r1:scope:team:actor:user-2",
+        "tree:ADJACENCY:r1:scope:team:actor:user-1",
       ]);
   });
 

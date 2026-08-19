@@ -25,7 +25,7 @@ import {
   isModernApiToken,
   legacyApiTokenPrefix,
 } from "./api-token-hash";
-import { organizationMembers, organizations, userApiTokens, users } from "../../db/schema";
+import { organizationMembers, organizations, userApiTokens, users, userSessions } from "../../db/schema";
 import { MembershipStateService } from "./membership-state.service";
 
 interface OrgContext {
@@ -113,26 +113,37 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     if (claims !== null) {
-      if (this.redis && !claims.sessionId.startsWith("pat:")) {
+      if (!claims.sessionId.startsWith("pat:")) {
         const cachedOk = this.revocationCache.get(claims.sessionId);
         if (!(cachedOk && cachedOk > Date.now())) {
-          let revoked: boolean | null = null;
-          let lookupFailed = false;
-          try {
-            revoked = await this.redis.get<boolean>(
-              `revoked:session:${claims.sessionId}`,
-            );
-          } catch (err) {
-            lookupFailed = true;
-            this.logger.error(
-              `session revocation lookup failed, treating session as live: ${err instanceof Error ? err.message : String(err)}`,
-            );
+          let tombstone: boolean | null = null;
+          let useDatabase = this.redis === null;
+          if (this.redis) {
+            try {
+              tombstone = await this.redis.get<boolean>(
+                `revoked:session:${claims.sessionId}`,
+              );
+            } catch (err) {
+              useDatabase = true;
+              this.logger.error(
+                `session revocation lookup failed, falling back to the database: ${err instanceof Error ? err.message : String(err)}`,
+              );
+            }
           }
+
+          let revoked = tombstone === true;
+          let resolved = true;
+          if (useDatabase) {
+            const stored = await this.isRevokedInDatabase(claims.sessionId);
+            revoked = stored === true;
+            resolved = stored !== null;
+          }
+
           if (revoked) {
             this.revocationCache.delete(claims.sessionId);
             throw new UnauthorizedException("Session has been revoked");
           }
-          if (!lookupFailed) {
+          if (resolved) {
             this.revocationCache.set(
               claims.sessionId,
               Date.now() + REVOCATION_CACHE_TTL_MS,
@@ -214,6 +225,29 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     throw new UnauthorizedException("Unauthorized");
+  }
+
+  /**
+   * Redis holds the revocation tombstone, but it is a cache, not the record.
+   * When it is missing or erroring, `user_sessions.is_revoked` is the durable
+   * answer — so an Upstash outage costs a database read, not a 500 on every
+   * authenticated request and not a silently unenforced revocation. Only a
+   * double failure returns null, and the caller then treats the session as live.
+   */
+  private async isRevokedInDatabase(sessionId: string): Promise<boolean | null> {
+    try {
+      const rows = await this.db
+        .select({ isRevoked: userSessions.isRevoked })
+        .from(userSessions)
+        .where(eq(userSessions.id, sessionId))
+        .limit(1);
+      return rows[0]?.isRevoked ?? false;
+    } catch (err) {
+      this.logger.error(
+        `database revocation fallback failed, treating session as live: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return null;
+    }
   }
 
   private async resolveOrgContext(userId: string): Promise<OrgContext | null> {

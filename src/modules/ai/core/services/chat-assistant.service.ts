@@ -19,6 +19,7 @@ import {
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { runInNewTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import { resolveLlmRetryPolicy } from "../providers/llm-retry";
+import { withTenantScopedTools } from "../tenant-scoped-tools";
 import { type Db } from "../../../../db/drizzle.module";
 import { getTodayString } from "../../../../common/date";
 import { logger } from "../../../../common/logger/logger.service";
@@ -421,7 +422,11 @@ Tone: Professional, concise, actionable.`;
       ...inlineTools,
     };
 
-    const effectiveTools = persona ? filterToolsByPersona(allBuiltTools, persona) : allBuiltTools;
+    const effectiveTools = withTenantScopedTools(
+      persona ? filterToolsByPersona(allBuiltTools, persona) : allBuiltTools,
+      this.db,
+      orgId,
+    );
 
     const buildStream = () => streamText({
       model: resolveChatModel(),
