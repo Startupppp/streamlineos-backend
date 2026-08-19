@@ -17,6 +17,7 @@ import { RequirePermission } from "../../../access/require-permission.decorator"
 import { RateLimitGuard } from "../../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../../common/ratelimit/use-rate-limit.decorator";
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
+import { NoTenantTransaction } from "../../../../common/tenant/no-tenant-transaction.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
 import { LlmService } from "../providers/llm.service";
@@ -69,6 +70,7 @@ type StalePipelineQuery = z.infer<typeof stalePipelineQuerySchema>;
 @UseGuards(JwtAuthGuard, PermissionGuard, RateLimitGuard)
 @RequirePermission("crm:ai:use")
 @UseRateLimit("ai:invoke")
+@NoTenantTransaction()
 export class CrmCopilotController {
   constructor(
     private readonly llm: LlmService,

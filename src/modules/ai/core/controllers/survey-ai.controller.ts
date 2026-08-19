@@ -12,6 +12,7 @@ import { RequirePermission } from "../../../access/require-permission.decorator"
 import { RateLimitGuard } from "../../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../../common/ratelimit/use-rate-limit.decorator";
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
+import { NoTenantTransaction } from "../../../../common/tenant/no-tenant-transaction.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { LlmService } from "../providers/llm.service";
 import { SurveyAiService } from "../services/survey-ai.service";
@@ -19,6 +20,7 @@ import { SurveyAiService } from "../services/survey-ai.service";
 @Controller("ai")
 @UseGuards(JwtAuthGuard, PermissionGuard, RateLimitGuard)
 @UseRateLimit("ai:invoke")
+@NoTenantTransaction()
 export class SurveyAiController {
   constructor(
     private readonly llm: LlmService,

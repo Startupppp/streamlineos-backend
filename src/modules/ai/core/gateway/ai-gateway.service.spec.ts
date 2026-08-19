@@ -139,7 +139,7 @@ describe("AiGatewayService", () => {
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.kind).toBe("provider_unavailable");
-      expect(ledger.release).toHaveBeenCalledWith(42, "provider_error");
+      expect(ledger.release).toHaveBeenCalledWith(42, "provider_error", "org_1");
     });
 
     it("returns not_configured when provider error message contains 'not configured'", async () => {

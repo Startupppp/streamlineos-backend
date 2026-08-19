@@ -6,6 +6,7 @@ import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
 import { AiFeedbackService } from "../services/ai-feedback.service";
+import { NoTenantTransaction } from "../../../../common/tenant/no-tenant-transaction.decorator";
 import {
   createFeedbackSchema,
   feedbackSummaryQuerySchema,
@@ -15,6 +16,7 @@ import {
 
 @Controller("ai/feedback")
 @UseGuards(JwtAuthGuard, PermissionGuard)
+@NoTenantTransaction()
 export class AiFeedbackController {
   constructor(private readonly aiFeedback: AiFeedbackService) {}
 

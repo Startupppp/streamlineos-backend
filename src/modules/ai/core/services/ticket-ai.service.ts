@@ -14,6 +14,7 @@ import {
   users,
 } from "../../../../db/schema";
 import { AuditService } from "../../../../common/audit/audit.service";
+import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import {
   TicketSummaryOutputSchema,
   TicketCommentsSummaryOutputSchema,
@@ -71,13 +72,15 @@ export class TicketAiService {
   }
 
   async summarizeTicket(orgId: string, userId: string, projectId: number, ticketId: number) {
-    const ticket = await this.assertTicket(orgId, projectId, ticketId);
-
-    const comments = await this.db
-      .select({ content: ticketComments.content })
-      .from(ticketComments)
-      .where(and(eq(ticketComments.ticketId, ticketId), eq(ticketComments.orgId, orgId), isNull(ticketComments.deletedAt)))
-      .limit(10);
+    const { ticket, comments } = await runInTenantTransaction(this.db, async () => {
+      const ticket = await this.assertTicket(orgId, projectId, ticketId);
+      const comments = await this.db
+        .select({ content: ticketComments.content })
+        .from(ticketComments)
+        .where(and(eq(ticketComments.ticketId, ticketId), eq(ticketComments.orgId, orgId), isNull(ticketComments.deletedAt)))
+        .limit(10);
+      return { ticket, comments };
+    }, { orgId });
 
     const commentBlock = comments.length > 0
       ? comments.map((c, i) => `Comment ${i + 1}: ${c.content.slice(0, 500)}`).join("\n")
@@ -109,18 +112,17 @@ Provide a summary, key points, and any blockers visible in the discussion.`;
   }
 
   async summarizeComments(orgId: string, userId: string, projectId: number, ticketId: number) {
-    await this.assertTicket(orgId, projectId, ticketId);
-
-    const comments = await this.db
-      .select({ content: ticketComments.content, createdAt: ticketComments.createdAt })
-      .from(ticketComments)
-      .where(and(eq(ticketComments.ticketId, ticketId), eq(ticketComments.orgId, orgId), isNull(ticketComments.deletedAt)))
-      .orderBy(asc(ticketComments.createdAt))
-      .limit(50);
-
-    if (comments.length === 0) {
-      throw new BadRequestException("This ticket has no comments to summarize");
-    }
+    const comments = await runInTenantTransaction(this.db, async () => {
+      await this.assertTicket(orgId, projectId, ticketId);
+      const rows = await this.db
+        .select({ content: ticketComments.content, createdAt: ticketComments.createdAt })
+        .from(ticketComments)
+        .where(and(eq(ticketComments.ticketId, ticketId), eq(ticketComments.orgId, orgId), isNull(ticketComments.deletedAt)))
+        .orderBy(asc(ticketComments.createdAt))
+        .limit(50);
+      if (rows.length === 0) throw new BadRequestException("This ticket has no comments to summarize");
+      return rows;
+    }, { orgId });
 
     const commentBlock = comments
       .map((c, i) => `Comment ${i + 1}: ${c.content.slice(0, 800)}`)
@@ -156,7 +158,9 @@ Summarize the discussion, key themes, and any open questions still unresolved.`;
   }
 
   async improveDescription(orgId: string, userId: string, projectId: number, ticketId: number, draft?: string) {
-    const ticket = await this.assertTicket(orgId, projectId, ticketId);
+    const ticket = await runInTenantTransaction(this.db, async () => {
+      return this.assertTicket(orgId, projectId, ticketId);
+    }, { orgId });
 
     const sourceText = (draft ?? ticket.description ?? ticket.title).slice(0, TEXT_LIMIT);
 
@@ -186,15 +190,15 @@ Produce an improved HTML description.`;
   }
 
   async suggestSubtasks(orgId: string, userId: string, projectId: number, ticketId: number) {
-    const ticket = await this.assertTicket(orgId, projectId, ticketId);
-
-    const existingSubtasks = await this.db
-      .select({ title: tickets.title })
-      .from(tickets)
-      .where(and(eq(tickets.parentTicketId, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
-      .limit(50);
-
-    const existingTitles = existingSubtasks.map((s) => s.title);
+    const { ticket, existingTitles } = await runInTenantTransaction(this.db, async () => {
+      const ticket = await this.assertTicket(orgId, projectId, ticketId);
+      const existingSubtasks = await this.db
+        .select({ title: tickets.title })
+        .from(tickets)
+        .where(and(eq(tickets.parentTicketId, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
+        .limit(50);
+      return { ticket, existingTitles: existingSubtasks.map((s) => s.title) };
+    }, { orgId });
 
     const system = "You are a project management assistant. Suggest 3-7 concrete, actionable subtasks to complete the given ticket. Avoid duplicating existing subtasks.";
     const user = `Ticket: "${ticket.title}"
@@ -224,25 +228,26 @@ Suggest 3-7 subtask titles.`;
   }
 
   async generateChecklist(orgId: string, userId: string, projectId: number, ticketId: number) {
-    const ticket = await this.assertTicket(orgId, projectId, ticketId);
-
-    const titlePlain = ticket.title.trim();
-    const descriptionPlain = stripHtml(ticket.description ?? "");
-    if (!titlePlain && !descriptionPlain) {
-      throw new BadRequestException("Add a title or description before generating a checklist");
-    }
-
-    const existingChecklists = await this.db.query.ticketChecklists.findMany({
-      where: and(eq(ticketChecklists.ticketId, ticketId), eq(ticketChecklists.orgId, orgId)),
-      columns: { title: true },
-      with: {
-        items: {
-          columns: { text: true },
-          limit: 50,
+    const { ticket, existingChecklists } = await runInTenantTransaction(this.db, async () => {
+      const ticket = await this.assertTicket(orgId, projectId, ticketId);
+      const titlePlain = ticket.title.trim();
+      const descriptionPlain = stripHtml(ticket.description ?? "");
+      if (!titlePlain && !descriptionPlain) {
+        throw new BadRequestException("Add a title or description before generating a checklist");
+      }
+      const existingChecklists = await this.db.query.ticketChecklists.findMany({
+        where: and(eq(ticketChecklists.ticketId, ticketId), eq(ticketChecklists.orgId, orgId)),
+        columns: { title: true },
+        with: {
+          items: {
+            columns: { text: true },
+            limit: 50,
+          },
         },
-      },
-      limit: 20,
-    });
+        limit: 20,
+      });
+      return { ticket, existingChecklists };
+    }, { orgId });
 
     const existingItemTexts = existingChecklists.flatMap((checklist) =>
       checklist.items.map((item) => item.text),
@@ -300,58 +305,66 @@ Suggest a checklist title and 4-10 items.`;
   }
 
   async extractMeetingActions(orgId: string, userId: string, projectId: number, meetingId: number) {
-    const [meeting] = await this.db
-      .select({
-        id: projectMeetings.id,
-        title: projectMeetings.title,
-        type: projectMeetings.type,
-        scheduledAt: projectMeetings.scheduledAt,
-        notes: projectMeetings.notes,
-      })
-      .from(projectMeetings)
-      .where(
-        and(
-          eq(projectMeetings.id, meetingId),
-          eq(projectMeetings.orgId, orgId),
-          eq(projectMeetings.projectId, projectId),
-          isNull(projectMeetings.deletedAt),
-        ),
-      )
-      .limit(1);
+    const ctx = await runInTenantTransaction(this.db, async () => {
+      const [meeting] = await this.db
+        .select({
+          id: projectMeetings.id,
+          title: projectMeetings.title,
+          type: projectMeetings.type,
+          scheduledAt: projectMeetings.scheduledAt,
+          notes: projectMeetings.notes,
+        })
+        .from(projectMeetings)
+        .where(
+          and(
+            eq(projectMeetings.id, meetingId),
+            eq(projectMeetings.orgId, orgId),
+            eq(projectMeetings.projectId, projectId),
+            isNull(projectMeetings.deletedAt),
+          ),
+        )
+        .limit(1);
 
-    if (!meeting) throw new NotFoundException("Meeting not found");
+      if (!meeting) throw new NotFoundException("Meeting not found");
+      if (!meeting.notes || meeting.notes.trim() === "") return { empty: true as const };
+      const notes = meeting.notes;
 
-    if (!meeting.notes || meeting.notes.trim() === "") {
+      const [attendeeRows, existingItems] = await Promise.all([
+        this.db
+          .select({
+            firstName: users.firstName,
+            lastName: users.lastName,
+            name: users.name,
+          })
+          .from(meetingAttendees)
+          .innerJoin(users, eq(users.id, meetingAttendees.userId))
+          .where(and(eq(meetingAttendees.meetingId, meetingId), eq(meetingAttendees.orgId, orgId)))
+          .limit(20),
+        this.db
+          .select({ title: meetingActionItems.title })
+          .from(meetingActionItems)
+          .where(
+            and(
+              eq(meetingActionItems.meetingId, meetingId),
+              eq(meetingActionItems.orgId, orgId),
+              isNull(meetingActionItems.deletedAt),
+            ),
+          )
+          .limit(20),
+      ]);
+
+      return { empty: false as const, meeting, notes, attendeeRows, existingItems };
+    }, { orgId });
+
+    if (ctx.empty) {
       return { actions: [], summary: "Meeting has no notes to extract actions from.", suggestions: true };
     }
 
-    const attendeeRows = await this.db
-      .select({
-        firstName: users.firstName,
-        lastName: users.lastName,
-        name: users.name,
-      })
-      .from(meetingAttendees)
-      .innerJoin(users, eq(users.id, meetingAttendees.userId))
-      .where(and(eq(meetingAttendees.meetingId, meetingId), eq(meetingAttendees.orgId, orgId)))
-      .limit(20);
-
+    const { meeting, notes, attendeeRows, existingItems } = ctx;
     const attendeeNames = attendeeRows.map((r) => {
       const full = `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim();
       return full !== "" ? full : (r.name ?? "");
     }).filter(Boolean);
-
-    const existingItems = await this.db
-      .select({ title: meetingActionItems.title })
-      .from(meetingActionItems)
-      .where(
-        and(
-          eq(meetingActionItems.meetingId, meetingId),
-          eq(meetingActionItems.orgId, orgId),
-          isNull(meetingActionItems.deletedAt),
-        ),
-      )
-      .limit(20);
 
     const existingTitles = existingItems.map((i) => i.title);
 
@@ -372,7 +385,7 @@ Suggest a checklist title and 4-10 items.`;
     const user = `Meeting: "${meeting.title}" (${meeting.type}) | ${scheduledLabel}
 Attendees: ${attendeesBlock}
 Notes:
-${meeting.notes.slice(0, 2000)}
+${notes.slice(0, 2000)}
 Existing action items (do NOT duplicate): ${existingBlock}
 
 Extract up to 10 proposed action items. Cite the attendee name when ownership is clear.`;
@@ -398,13 +411,15 @@ Extract up to 10 proposed action items. Cite the attendee name when ownership is
     projectId: number,
     draft: { title?: string; description?: string },
   ) {
-    await this.assertProject(orgId, projectId);
-
     const plainDescription = stripHtml(draft.description ?? "").slice(0, TEXT_LIMIT);
     const currentTitle = (draft.title ?? "").trim();
     if (!plainDescription && !currentTitle) {
       throw new BadRequestException("Provide a title or description to suggest a title");
     }
+
+    await runInTenantTransaction(this.db, async () => {
+      await this.assertProject(orgId, projectId);
+    }, { orgId });
 
     const system =
       "You are a project management assistant. Suggest one concise, actionable issue title (max 120 characters). Output only the title — no quotes, no preamble.";
@@ -443,12 +458,14 @@ Suggest a clear issue title.`;
     projectId: number,
     draft: { title?: string; description?: string },
   ) {
-    await this.assertProject(orgId, projectId);
-
     const sourceText = (draft.description?.trim() || draft.title?.trim() || "").slice(0, TEXT_LIMIT);
     if (!sourceText) {
       throw new BadRequestException("Provide a title or description to improve");
     }
+
+    await runInTenantTransaction(this.db, async () => {
+      await this.assertProject(orgId, projectId);
+    }, { orgId });
 
     const system = `You are a technical writer specializing in software tickets.
 Rewrite the provided text into a well-structured ticket description using HTML tags compatible with TipTap/ProseMirror (<p>, <ul>, <li>, <strong>, <em>).
@@ -487,20 +504,21 @@ Produce an improved HTML description.`;
     projectId: number,
     draft: { title?: string; description?: string },
   ) {
-    await this.assertProject(orgId, projectId);
-
     const plainDescription = stripHtml(draft.description ?? "").slice(0, TEXT_LIMIT);
     const currentTitle = (draft.title ?? "").trim();
     if (!plainDescription && !currentTitle) {
       throw new BadRequestException("Provide a title or description to suggest fields");
     }
 
-    const labels = await this.db
-      .select({ id: ticketLabels.id, name: ticketLabels.name })
-      .from(ticketLabels)
-      .where(eq(ticketLabels.orgId, orgId))
-      .orderBy(asc(ticketLabels.name))
-      .limit(100);
+    const labels = await runInTenantTransaction(this.db, async () => {
+      await this.assertProject(orgId, projectId);
+      return this.db
+        .select({ id: ticketLabels.id, name: ticketLabels.name })
+        .from(ticketLabels)
+        .where(eq(ticketLabels.orgId, orgId))
+        .orderBy(asc(ticketLabels.name))
+        .limit(100);
+    }, { orgId });
 
     const labelCatalog =
       labels.length > 0
@@ -553,13 +571,15 @@ Suggest priority, points, and matching labels with a short rationale.`;
   }
 
   async handoffSummary(orgId: string, userId: string, projectId: number, ticketId: number) {
-    const ticket = await this.assertTicket(orgId, projectId, ticketId);
-
-    const comments = await this.db
-      .select({ content: ticketComments.content, createdAt: ticketComments.createdAt })
-      .from(ticketComments)
-      .where(and(eq(ticketComments.ticketId, ticketId), eq(ticketComments.orgId, orgId), isNull(ticketComments.deletedAt)))
-      .limit(10);
+    const { ticket, comments } = await runInTenantTransaction(this.db, async () => {
+      const ticket = await this.assertTicket(orgId, projectId, ticketId);
+      const comments = await this.db
+        .select({ content: ticketComments.content, createdAt: ticketComments.createdAt })
+        .from(ticketComments)
+        .where(and(eq(ticketComments.ticketId, ticketId), eq(ticketComments.orgId, orgId), isNull(ticketComments.deletedAt)))
+        .limit(10);
+      return { ticket, comments };
+    }, { orgId });
 
     const commentBlock =
       comments.length > 0

@@ -17,6 +17,8 @@ import {
   tickets,
 } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
+import { runInNewTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
+import { resolveLlmRetryPolicy } from "../providers/llm-retry";
 import { type Db } from "../../../../db/drizzle.module";
 import { getTodayString } from "../../../../common/date";
 import { logger } from "../../../../common/logger/logger.service";
@@ -426,36 +428,47 @@ Tone: Professional, concise, actionable.`;
       messages: modelMessages,
       system: contextPrompt,
       temperature: 0.7,
+      // Retry only; a model swap cannot be applied once tokens have reached the client.
+      maxRetries: resolveLlmRetryPolicy().maxRetriesPerModel,
       stopWhen: stepCountIs(10),
       onFinish: async ({ text, usage }) => {
         const promptTokens = usage?.inputTokens ?? 0;
         const completionTokens = usage?.outputTokens ?? 0;
         const { costUsd, milliCredits } = computeTokenCharge(modelId, promptTokens, completionTokens);
-        void this.ledger.settle(reservationId, {
-          actualMilli: milliCredits,
-          model: modelId,
-          promptTokens,
-          completionTokens,
-          totalTokens: promptTokens + completionTokens,
-          costUsd,
-        }).catch(() => undefined);
-        void this.usageSvc.track({
-          orgId,
-          userId,
-          feature: CHAT_FEATURE,
-          model: modelId,
-          promptTokens,
-          completionTokens,
-          creditsMilli: milliCredits,
-        }).catch(() => undefined);
+        // Runs once the response has streamed, so the request transaction has committed and
+        // its tenant GUC is gone; without a fresh one every write here dies 42501, unlogged.
         try {
-          if (conversationId !== undefined) {
-            await this.history.appendToConversation(orgId, userId, conversationId, "assistant", text);
-          } else {
-            await this.history.append(orgId, userId, "assistant", text);
-          }
+          await runInNewTenantTransaction(this.db, orgId, async () => {
+            await this.ledger.settle(reservationId, {
+              orgId,
+              actualMilli: milliCredits,
+              model: modelId,
+              promptTokens,
+              completionTokens,
+              totalTokens: promptTokens + completionTokens,
+              costUsd,
+            });
+            await this.usageSvc.track({
+              orgId,
+              userId,
+              feature: CHAT_FEATURE,
+              model: modelId,
+              promptTokens,
+              completionTokens,
+              creditsMilli: milliCredits,
+            });
+            if (conversationId !== undefined) {
+              await this.history.appendToConversation(orgId, userId, conversationId, "assistant", text);
+            } else {
+              await this.history.append(orgId, userId, "assistant", text);
+            }
+          });
         } catch (error) {
-          logger.error("Failed to persist assistant chat message", { error });
+          logger.error("Failed to finalise assistant chat turn", {
+            error: error instanceof Error ? (error.stack ?? error.message) : String(error),
+            orgId,
+            reservationId,
+          });
         }
       },
       tools: effectiveTools,
@@ -464,7 +477,7 @@ Tone: Professional, concise, actionable.`;
     try {
       return buildStream();
     } catch (error) {
-      void this.ledger.release(reservationId, "stream_setup_error").catch(() => undefined);
+      void this.ledger.release(reservationId, "stream_setup_error", orgId).catch(() => undefined);
       throw error;
     }
   }

@@ -17,6 +17,8 @@ import { AiGatewayService } from "../gateway/ai-gateway.service";
 import { AiConfirmationService, type ProposeResult } from "../../confirmation/ai-confirmation.service";
 import { ComposioGateway, ComposioToolError } from "../../../integrations/core/composio.gateway";
 import { unwrapAiResult } from "./gateway-result.util";
+import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
+import type { TenantTx } from "../../../../common/tenant/with-tenant";
 import { agendaOutputSchema, followUpOutputSchema, type AgendaOutput, type FollowUpOutput } from "../dto/meetings-output.schemas";
 
 const MAX_NOTES = 2000;
@@ -66,8 +68,8 @@ export class MeetingsPrepService {
     return id;
   }
 
-  private async loadEvent(orgId: string, eventId: number): Promise<MeetingEventContext> {
-    const rows = await this.db
+  private async loadEvent(orgId: string, eventId: number, tx: TenantTx): Promise<MeetingEventContext> {
+    const rows = await tx
       .select({
         id: calendarEvents.id,
         title: calendarEvents.title,
@@ -92,7 +94,7 @@ export class MeetingsPrepService {
     const event = rows[0];
     if (!event) throw new NotFoundException("Calendar event not found");
 
-    const attendeeRows = await this.db
+    const attendeeRows = await tx
       .select({
         userId: eventAttendees.userId,
         name: users.name,
@@ -108,8 +110,8 @@ export class MeetingsPrepService {
     };
   }
 
-  private async getActiveConnections(orgId: string, userId: string) {
-    return this.db
+  private async getActiveConnections(orgId: string, userId: string, tx: TenantTx) {
+    return tx
       .select({
         id: userIntegrationConnections.id,
         toolkit: userIntegrationConnections.toolkit,
@@ -134,11 +136,17 @@ export class MeetingsPrepService {
     opts: { includeCrmContext?: boolean; includeProjectContext?: boolean },
   ): Promise<{ agenda: AgendaOutput; connectedIntegrations: boolean }> {
     const eventId = this.parseEventId(rawEventId);
-    const event = await this.loadEvent(orgId, eventId);
-
-    const connections = this.composio.isConfigured()
-      ? await this.getActiveConnections(orgId, userId)
-      : [];
+    const { event, connections } = await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const event = await this.loadEvent(orgId, eventId, tx);
+        const connections = this.composio.isConfigured()
+          ? await this.getActiveConnections(orgId, userId, tx)
+          : [];
+        return { event, connections };
+      },
+      { orgId },
+    );
 
     const hasConnections = connections.length > 0;
 
@@ -200,7 +208,11 @@ Generate:
     actionItems: string[] | undefined,
   ): Promise<{ followUp: FollowUpOutput; eventTitle: string }> {
     const eventId = this.parseEventId(rawEventId);
-    const event = await this.loadEvent(orgId, eventId);
+    const event = await runInTenantTransaction(
+      this.db,
+      (tx) => this.loadEvent(orgId, eventId, tx),
+      { orgId },
+    );
 
     const attendeeList =
       event.attendees.length > 0
@@ -257,7 +269,11 @@ Generate:
     channel: "calendar" | "none",
   ): Promise<ProposeResult> {
     const eventId = this.parseEventId(rawEventId);
-    await this.loadEvent(orgId, eventId);
+    await runInTenantTransaction(
+      this.db,
+      (tx) => this.loadEvent(orgId, eventId, tx),
+      { orgId },
+    );
 
     return this.confirmation.propose({
       orgId,
@@ -288,10 +304,14 @@ Generate:
     const followUpBody = String(rawPayload["followUpBody"] ?? "");
     const channel = String(rawPayload["channel"] ?? "none") as "calendar" | "none";
 
-    const event = await this.loadEvent(orgId, eventId);
+    const event = await runInTenantTransaction(
+      this.db,
+      (tx) => this.loadEvent(orgId, eventId, tx),
+      { orgId },
+    );
 
     if (channel === "none") {
-      await this.confirmation.markExecuted(confirmed.proposalId, { channel: "none", status: "acknowledged" });
+      await this.confirmation.markExecuted(confirmed.proposalId, { channel: "none", status: "acknowledged" }, orgId);
       return { executed: true, channel: "none" };
     }
 
@@ -299,7 +319,11 @@ Generate:
       throw new ForbiddenException("Composio integration is not configured");
     }
 
-    const connections = await this.getActiveConnections(orgId, userId);
+    const connections = await runInTenantTransaction(
+      this.db,
+      (tx) => this.getActiveConnections(orgId, userId, tx),
+      { orgId },
+    );
     const primary = connections.find((c) => c.isPrimary) ?? connections[0];
 
     if (!primary) {
@@ -341,7 +365,7 @@ Generate:
         );
       }
 
-      await this.confirmation.markExecuted(confirmed.proposalId, { channel, status: "sent" });
+      await this.confirmation.markExecuted(confirmed.proposalId, { channel, status: "sent" }, orgId);
       return { executed: true, channel };
     } catch (error) {
       if (error instanceof ComposioToolError && error.isAuthError) {

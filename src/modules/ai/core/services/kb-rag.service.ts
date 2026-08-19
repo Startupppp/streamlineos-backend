@@ -11,7 +11,10 @@ import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import { EmbeddingsService } from "../providers/embeddings.service";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
-
+import {
+  runInTenantTransaction,
+  runInNewTenantTransaction,
+} from "../../../../common/tenant/run-in-tenant-transaction";
 
 const DEFAULT_TOP_K = 6;
 const SEARCH_POOL_K = DEFAULT_TOP_K * 4;
@@ -64,41 +67,50 @@ export class KbRagService {
     return this.embeddings.isConfigured();
   }
 
-  private async searchChunks(opts: AnswerOptions): Promise<KbSearchResult[]> {
-    const { orgId, question, articleId } = opts;
-    const vector = this.embeddings.toVectorLiteral(await this.embeddings.embedQuery(question));
-    const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
+  // Runs the vector search inside a transaction using a precomputed embedding vector.
+  // All access predicates (tenant scope, published/public status, space audience) are unchanged.
+  private async fetchChunks(
+    orgId: string,
+    vector: string,
+    articleId?: number,
+  ): Promise<KbSearchResult[]> {
+    return runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
+        const conditions: SQL[] = [
+          eq(kbArticleChunks.orgId, orgId),
+          eq(kbArticles.status, "published"),
+          eq(kbArticles.visibility, "public"),
+          inArray(kbSpaces.audience, ["public", "mixed"]),
+          isNull(kbSpaces.deletedAt),
+        ];
+        if (articleId !== undefined) conditions.push(eq(kbArticleChunks.articleId, articleId));
 
-    const conditions: SQL[] = [
-      eq(kbArticleChunks.orgId, orgId),
-      eq(kbArticles.status, "published"),
-      eq(kbArticles.visibility, "public"),
-      inArray(kbSpaces.audience, ["public", "mixed"]),
-      isNull(kbSpaces.deletedAt),
-    ];
-    if (articleId) conditions.push(eq(kbArticleChunks.articleId, articleId));
+        const pool = await tx
+          .select({
+            id: kbArticleChunks.id,
+            articleId: kbArticles.id,
+            attachmentId: kbArticleChunks.attachmentId,
+            source: kbArticleChunks.source,
+            content: kbArticleChunks.content,
+            title: kbArticles.title,
+            slug: kbArticles.slug,
+            attachmentName: kbArticleAttachments.fileName,
+            similarity: sql<number>`(1 - (${distance}))::float8`,
+          })
+          .from(kbArticleChunks)
+          .innerJoin(kbArticles, eq(kbArticles.id, kbArticleChunks.articleId))
+          .innerJoin(kbSpaces, eq(kbArticles.spaceId, kbSpaces.id))
+          .leftJoin(kbArticleAttachments, eq(kbArticleAttachments.id, kbArticleChunks.attachmentId))
+          .where(and(...conditions))
+          .orderBy(distance)
+          .limit(SEARCH_POOL_K);
 
-    const pool = await this.db
-      .select({
-        id: kbArticleChunks.id,
-        articleId: kbArticles.id,
-        attachmentId: kbArticleChunks.attachmentId,
-        source: kbArticleChunks.source,
-        content: kbArticleChunks.content,
-        title: kbArticles.title,
-        slug: kbArticles.slug,
-        attachmentName: kbArticleAttachments.fileName,
-        similarity: sql<number>`(1 - (${distance}))::float8`,
-      })
-      .from(kbArticleChunks)
-      .innerJoin(kbArticles, eq(kbArticles.id, kbArticleChunks.articleId))
-      .innerJoin(kbSpaces, eq(kbArticles.spaceId, kbSpaces.id))
-      .leftJoin(kbArticleAttachments, eq(kbArticleAttachments.id, kbArticleChunks.attachmentId))
-      .where(and(...conditions))
-      .orderBy(distance)
-      .limit(SEARCH_POOL_K);
-
-    return pool.slice(0, DEFAULT_TOP_K);
+        return pool.slice(0, DEFAULT_TOP_K);
+      },
+      { orgId },
+    );
   }
 
   private dedupeSources(results: KbSearchResult[]): KbAnswerSource[] {
@@ -122,39 +134,49 @@ export class KbRagService {
   }
 
   private async hasPublishedPublicArticles(orgId: string): Promise<boolean> {
-    const [row] = await this.db
-      .select({ id: kbArticles.id })
-      .from(kbArticles)
-      .innerJoin(kbSpaces, eq(kbArticles.spaceId, kbSpaces.id))
-      .where(
-        and(
-          eq(kbArticles.orgId, orgId),
-          eq(kbArticles.status, "published"),
-          eq(kbArticles.visibility, "public"),
-          inArray(kbSpaces.audience, ["public", "mixed"]),
-          isNull(kbSpaces.deletedAt),
-        ),
-      )
-      .limit(1);
-    return Boolean(row);
+    return runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const [row] = await tx
+          .select({ id: kbArticles.id })
+          .from(kbArticles)
+          .innerJoin(kbSpaces, eq(kbArticles.spaceId, kbSpaces.id))
+          .where(
+            and(
+              eq(kbArticles.orgId, orgId),
+              eq(kbArticles.status, "published"),
+              eq(kbArticles.visibility, "public"),
+              inArray(kbSpaces.audience, ["public", "mixed"]),
+              isNull(kbSpaces.deletedAt),
+            ),
+          )
+          .limit(1);
+        return Boolean(row);
+      },
+      { orgId },
+    );
   }
 
   private recordNoContext(orgId: string, question: string, actorId?: string): void {
-    this.db
-      .insert(kbEvents)
-      .values({
+    void runInNewTenantTransaction(this.db, orgId, async (tx) => {
+      await tx.insert(kbEvents).values({
         orgId,
         eventType: "ai_answer_no_context",
         actorId: actorId ?? null,
         query: question,
-      })
-      .catch((err: unknown) => {
-        this.logger.warn(`Failed to record ai_answer_no_context event: ${err}`);
       });
+    }).catch((err: unknown) => {
+      this.logger.warn(`Failed to record ai_answer_no_context event: ${err}`);
+    });
   }
 
   private async runAnswer(opts: AnswerOptions): Promise<KbAnswer> {
-    const results = await this.searchChunks(opts);
+    // Embedding call is outside any transaction — it is slow and must not pin a pooled connection.
+    const vector = this.embeddings.toVectorLiteral(
+      await this.embeddings.embedQuery(opts.question),
+    );
+
+    const results = await this.fetchChunks(opts.orgId, vector, opts.articleId);
 
     if (results.length === 0) {
       this.recordNoContext(opts.orgId, opts.question);
@@ -180,6 +202,7 @@ export class KbRagService {
 
     const user = `Context excerpts:\n\n${context}\n\nQuestion: ${opts.question}`;
 
+    // LLM call is outside any transaction.
     const gatewayResult = await this.aiGateway.invokeText({
       actor: { orgId: opts.orgId, userId: null },
       feature: "kb.public-ask",

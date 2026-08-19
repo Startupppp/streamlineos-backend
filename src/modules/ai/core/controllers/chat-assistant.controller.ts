@@ -390,7 +390,7 @@ export class ChatAssistantController {
       }
     }
 
-    await this.confirmation.markExecuted(proposalId, result);
+    await this.confirmation.markExecuted(proposalId, result, u.orgId);
     return { ok: true, result, summary };
   }
 }

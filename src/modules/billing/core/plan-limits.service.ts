@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, Optional } from "@nestjs/common";
 import { sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import type { Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import {
@@ -89,8 +90,13 @@ export class PlanLimitsService {
   }
 
   private async queryTier(orgId: string): Promise<{ tier: PlanTier; plan: EffectivePlan }> {
-    const rows = await this.db.execute(
-      sql`SELECT plan, status, trial_ends_at, created_at FROM subscriptions WHERE org_id = ${orgId} ORDER BY created_at DESC LIMIT 1`,
+    const rows = await runInTenantTransaction(
+      this.db,
+      (tx) =>
+        tx.execute(
+          sql`SELECT plan, status, trial_ends_at, created_at FROM subscriptions WHERE org_id = ${orgId} ORDER BY created_at DESC LIMIT 1`,
+        ),
+      { orgId },
     );
     const row = rows[0];
     if (!row) {

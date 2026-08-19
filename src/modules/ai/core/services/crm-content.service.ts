@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { organizationMembers, users } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
+import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
 
 import {
@@ -66,15 +67,6 @@ export class CrmContentService {
     return result.data;
   }
 
-  private async getSender(userId: string, orgId: string): Promise<{ name: string; role?: string }> {
-    const [user] = await this.db
-      .select({ name: users.name, role: organizationMembers.role })
-      .from(users)
-      .innerJoin(organizationMembers, and(eq(organizationMembers.userId, users.id), eq(organizationMembers.orgId, orgId)))
-      .where(eq(users.id, userId));
-    return { name: user?.name || "Sales Team", role: user?.role || undefined };
-  }
-
   private async generateFollowUpEmail(
     input: EmailGeneratorInput,
     actor: { orgId: string; userId: string | null },
@@ -95,7 +87,15 @@ export class CrmContentService {
 
   async generateEmail(userId: string, input: GenerateEmailInput, actor?: { orgId: string; userId: string | null }) {
     const resolvedActor = actor ?? { orgId: "", userId };
-    const sender = await this.getSender(userId, resolvedActor.orgId);
+    const sender = await runInTenantTransaction(this.db, async (tx) => {
+      const [user] = await tx
+        .select({ name: users.name, role: organizationMembers.role })
+        .from(users)
+        .innerJoin(organizationMembers, and(eq(organizationMembers.userId, users.id), eq(organizationMembers.orgId, resolvedActor.orgId)))
+        .where(eq(users.id, userId));
+      return { name: user?.name || "Sales Team", role: user?.role || undefined };
+    }, { orgId: resolvedActor.orgId });
+
     const base = {
       leadName: input.leadName,
       company: input.company,

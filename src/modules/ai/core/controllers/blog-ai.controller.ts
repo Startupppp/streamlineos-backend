@@ -14,6 +14,7 @@ import { RateLimitGuard } from "../../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../../common/ratelimit/use-rate-limit.decorator";
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { NoTenantTransaction } from "../../../../common/tenant/no-tenant-transaction.decorator";
 import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
 import { LlmService } from "../providers/llm.service";
 import { BlogAiService } from "../services/blog-ai.service";
@@ -32,6 +33,7 @@ type SummarizeInput = z.infer<typeof summarizeSchema>;
 @Controller("ai")
 @UseGuards(JwtAuthGuard, PermissionGuard, RateLimitGuard)
 @UseRateLimit("ai:invoke")
+@NoTenantTransaction()
 export class BlogAiController {
   constructor(
     private readonly llm: LlmService,
@@ -50,7 +52,7 @@ export class BlogAiController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     this.ensureLlm();
-    return this.blogAi.improveWriting(u.userId, postId, body);
+    return this.blogAi.improveWriting(u.orgId, u.userId, postId, body);
   }
 
   @Post("blog/posts/:postId/suggest-title")
@@ -61,7 +63,7 @@ export class BlogAiController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     this.ensureLlm();
-    return this.blogAi.suggestTitle(u.userId, postId, body);
+    return this.blogAi.suggestTitle(u.orgId, u.userId, postId, body);
   }
 
   @Post("blog/posts/:postId/summarize")
@@ -72,6 +74,6 @@ export class BlogAiController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     this.ensureLlm();
-    return this.blogAi.summarize(u.userId, postId, body);
+    return this.blogAi.summarize(u.orgId, u.userId, postId, body);
   }
 }

@@ -15,6 +15,7 @@ import {
   orgAiCredits,
 } from "../../../db/schema";
 import { TRIAL_GRANT_MILLI } from "./ai-credit-units";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import type { AiCreditReserveInput, AiCreditSettleInput } from "../../ai/core/gateway/credit-ledger.interface";
 
 @Injectable()
@@ -26,21 +27,12 @@ export class AiCreditsReservationService {
     const { orgId, userId, feature, credits, idempotencyKey } = input;
 
     if (idempotencyKey) {
-      const [existing] = await this.db
-        .select({ id: aiCreditReservations.id })
-        .from(aiCreditReservations)
-        .where(
-          and(
-            eq(aiCreditReservations.orgId, orgId),
-            eq(aiCreditReservations.idempotencyKey, idempotencyKey),
-          ),
-        )
-        .limit(1);
-      if (existing) return { reservationId: existing.id };
+      const existingId = await this.findByIdempotencyKey(orgId, idempotencyKey);
+      if (existingId !== null) return { reservationId: existingId };
     }
 
     try {
-      return await this.db.transaction(async (tx) => {
+      return await runInTenantTransaction(this.db, (outer) => outer.transaction(async (tx) => {
         let [wallet] = await tx
           .select()
           .from(orgAiCredits)
@@ -88,10 +80,21 @@ export class AiCreditsReservationService {
           .returning({ id: aiCreditReservations.id });
 
         return { reservationId: reservation.id };
-      });
+      }), { orgId });
     } catch (err: unknown) {
-      if ((err as { code?: string }).code === "23505" && idempotencyKey) {
-        const [existing] = await this.db
+      if (isUniqueViolation(err) && idempotencyKey) {
+        const existingId = await this.findByIdempotencyKey(orgId, idempotencyKey);
+        if (existingId !== null) return { reservationId: existingId };
+      }
+      throw err;
+    }
+  }
+
+  private async findByIdempotencyKey(orgId: string, idempotencyKey: string): Promise<number | null> {
+    return runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const [existing] = await tx
           .select({ id: aiCreditReservations.id })
           .from(aiCreditReservations)
           .where(
@@ -101,21 +104,25 @@ export class AiCreditsReservationService {
             ),
           )
           .limit(1);
-        if (existing) return { reservationId: existing.id };
-      }
-      throw err;
-    }
+        return existing?.id ?? null;
+      },
+      { orgId },
+    );
   }
 
   async settle(
     reservationId: number,
     input: AiCreditSettleInput,
   ): Promise<void> {
-    await this.db.transaction(async (tx) => {
+    const orgId = input.orgId;
+
+    await runInTenantTransaction(this.db, async (tx) => {
       const [reservation] = await tx
         .select()
         .from(aiCreditReservations)
-        .where(eq(aiCreditReservations.id, reservationId))
+        .where(
+          and(eq(aiCreditReservations.id, reservationId), eq(aiCreditReservations.orgId, orgId)),
+        )
         .for("update");
 
       if (!reservation) throw new NotFoundException("Reservation not found");
@@ -175,15 +182,17 @@ export class AiCreditsReservationService {
           updatedAt: new Date(),
         })
         .where(eq(aiCreditReservations.id, reservationId));
-    });
+    }, { orgId });
   }
 
-  async release(reservationId: number, reason: string): Promise<void> {
-    await this.db.transaction(async (tx) => {
+  async release(reservationId: number, reason: string, orgId: string): Promise<void> {
+    await runInTenantTransaction(this.db, async (tx) => {
       const [reservation] = await tx
         .select()
         .from(aiCreditReservations)
-        .where(eq(aiCreditReservations.id, reservationId))
+        .where(
+          and(eq(aiCreditReservations.id, reservationId), eq(aiCreditReservations.orgId, orgId)),
+        )
         .for("update");
 
       if (!reservation) throw new NotFoundException("Reservation not found");
@@ -214,13 +223,13 @@ export class AiCreditsReservationService {
           updatedAt: new Date(),
         })
         .where(eq(aiCreditReservations.id, reservationId));
-    });
+    }, { orgId });
   }
 
   async sweepExpiredReservations(): Promise<number> {
     const now = new Date();
     const expired = await this.db
-      .select({ id: aiCreditReservations.id })
+      .select({ id: aiCreditReservations.id, orgId: aiCreditReservations.orgId })
       .from(aiCreditReservations)
       .where(
         and(
@@ -233,7 +242,7 @@ export class AiCreditsReservationService {
     let swept = 0;
     for (const row of expired) {
       try {
-        await this.release(row.id, "expired");
+        await this.release(row.id, "expired", row.orgId);
         swept++;
       } catch (err) {
         this.logger.warn(`Failed to sweep expired reservation ${row.id}: ${err instanceof Error ? err.message : String(err)}`);
@@ -241,4 +250,10 @@ export class AiCreditsReservationService {
     }
     return swept;
   }
+}
+
+function isUniqueViolation(err: unknown): boolean {
+  if (err === null || typeof err !== "object") return false;
+  const code: unknown = Reflect.get(err, "code");
+  return code === "23505";
 }

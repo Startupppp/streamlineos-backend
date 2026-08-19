@@ -13,6 +13,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { NoTenantTransaction } from "../../../common/tenant/no-tenant-transaction.decorator";
 import { AiSummariesService } from "./ai-summaries.service";
 import { saveSnapshotSchema, isAllowedEntityType } from "./save-snapshot.dto";
 import type { SnapshotWithDiff } from "./ai-summaries.types";
@@ -20,6 +21,7 @@ import type { AiSummarySnapshot } from "../../../db/schema/ai/ai-summaries";
 
 @Controller("ai/summaries")
 @UseGuards(JwtAuthGuard, PermissionGuard)
+@NoTenantTransaction()
 export class AiSummariesController {
   constructor(private readonly aiSummaries: AiSummariesService) {}
 

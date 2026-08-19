@@ -391,8 +391,8 @@ export class AiCreditsService {
     return this.reservation.settle(reservationId, input);
   }
 
-  async release(reservationId: number, reason: string): Promise<void> {
-    return this.reservation.release(reservationId, reason);
+  async release(reservationId: number, reason: string, orgId: string): Promise<void> {
+    return this.reservation.release(reservationId, reason, orgId);
   }
 
   async sweepExpiredReservations(): Promise<number> {

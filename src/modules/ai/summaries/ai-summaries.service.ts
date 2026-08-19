@@ -2,6 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { desc, eq, and } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { aiSummarySnapshots } from "../../../db/schema/ai/ai-summaries";
 import type { AiSummarySnapshot } from "../../../db/schema/ai/ai-summaries";
 import type {
@@ -47,19 +48,24 @@ export class AiSummariesService {
     payload: SnapshotPayload,
     userId: string,
   ): Promise<AiSummarySnapshot> {
-    const [row] = await this.db
-      .insert(aiSummarySnapshots)
-      .values({
-        orgId,
-        entityType,
-        entityId,
-        summary: payload.summary,
-        structured: payload.structured,
-        citations: payload.citations,
-        correlationId: payload.correlationId,
-        generatedBy: userId,
-      })
-      .returning();
+    const [row] = await runInTenantTransaction(
+      this.db,
+      (tx) =>
+        tx
+          .insert(aiSummarySnapshots)
+          .values({
+            orgId,
+            entityType,
+            entityId,
+            summary: payload.summary,
+            structured: payload.structured,
+            citations: payload.citations,
+            correlationId: payload.correlationId,
+            generatedBy: userId,
+          })
+          .returning(),
+      { orgId },
+    );
     return row;
   }
 
@@ -68,18 +74,23 @@ export class AiSummariesService {
     entityType: string,
     entityId: string,
   ): Promise<SnapshotWithDiff | null> {
-    const rows = await this.db
-      .select()
-      .from(aiSummarySnapshots)
-      .where(
-        and(
-          eq(aiSummarySnapshots.orgId, orgId),
-          eq(aiSummarySnapshots.entityType, entityType),
-          eq(aiSummarySnapshots.entityId, entityId),
-        ),
-      )
-      .orderBy(desc(aiSummarySnapshots.createdAt))
-      .limit(2);
+    const rows = await runInTenantTransaction(
+      this.db,
+      (tx) =>
+        tx
+          .select()
+          .from(aiSummarySnapshots)
+          .where(
+            and(
+              eq(aiSummarySnapshots.orgId, orgId),
+              eq(aiSummarySnapshots.entityType, entityType),
+              eq(aiSummarySnapshots.entityId, entityId),
+            ),
+          )
+          .orderBy(desc(aiSummarySnapshots.createdAt))
+          .limit(2),
+      { orgId },
+    );
 
     const [current, prior] = rows;
 

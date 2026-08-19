@@ -5,7 +5,8 @@ import { type Db } from "../../../../db/drizzle.module";
 import { blogPosts } from "../../../../db/schema";
 import { AuditService } from "../../../../common/audit/audit.service";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
-
+import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
+import type { TenantTx } from "../../../../common/tenant/with-tenant";
 import { unwrapAiResult } from "./gateway-result.util";
 
 @Injectable()
@@ -16,8 +17,8 @@ export class BlogAiService {
     private readonly audit: AuditService,
   ) {}
 
-  private async assertPost(postId: string) {
-    const [post] = await this.db
+  private async assertPost(postId: string, tx: TenantTx) {
+    const [post] = await tx
       .select({
         id: blogPosts.id,
         title: blogPosts.title,
@@ -32,8 +33,12 @@ export class BlogAiService {
     return post;
   }
 
-  async improveWriting(userId: string, postId: string, draft: { content: string }) {
-    const post = await this.assertPost(postId);
+  async improveWriting(orgId: string, userId: string, postId: string, draft: { content: string }) {
+    const post = await runInTenantTransaction(
+      this.db,
+      (tx) => this.assertPost(postId, tx),
+      { orgId },
+    );
 
     const sourceContent = (draft.content || post.content || post.title).slice(0, 3000);
 
@@ -55,8 +60,12 @@ export class BlogAiService {
     return { content: content.slice(0, 4000) };
   }
 
-  async suggestTitle(userId: string, postId: string, draft?: { content?: string; excerpt?: string }) {
-    const post = await this.assertPost(postId);
+  async suggestTitle(orgId: string, userId: string, postId: string, draft?: { content?: string; excerpt?: string }) {
+    const post = await runInTenantTransaction(
+      this.db,
+      (tx) => this.assertPost(postId, tx),
+      { orgId },
+    );
 
     const sourceText = (draft?.content || post.content || post.excerpt || "").slice(0, 1500);
 
@@ -77,8 +86,12 @@ export class BlogAiService {
     return { title: title.trim().replace(/^["']|["']$/g, "").slice(0, 256) };
   }
 
-  async summarize(userId: string, postId: string, draft?: { content?: string }) {
-    const post = await this.assertPost(postId);
+  async summarize(orgId: string, userId: string, postId: string, draft?: { content?: string }) {
+    const post = await runInTenantTransaction(
+      this.db,
+      (tx) => this.assertPost(postId, tx),
+      { orgId },
+    );
 
     const sourceText = (draft?.content || post.content || "").slice(0, 2000);
 

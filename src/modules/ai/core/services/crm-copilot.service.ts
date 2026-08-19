@@ -4,6 +4,7 @@ import { z } from "zod";
 import { auditLogs, dealActivities, deals, leadActivities, leads } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
+import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
 
 import { OrgFeaturesService } from "./org-features.service";
@@ -59,50 +60,56 @@ export class CrmCopilotService {
     targetType: string,
     targetId: string,
   ): Promise<void> {
-    await this.db.insert(auditLogs).values({
-      action,
-      userId,
-      orgId,
-      targetId,
-      targetType,
-      metadata: { source: "crm-copilot" },
-    });
+    await runInTenantTransaction(this.db, async (tx) => {
+      await tx.insert(auditLogs).values({
+        action,
+        userId,
+        orgId,
+        targetId,
+        targetType,
+        metadata: { source: "crm-copilot" },
+      });
+    }, { orgId });
   }
 
   async leadSummary(orgId: string, leadId: number, userId: string) {
     const flags = await this.orgFeatures.getFlags(orgId);
     if (!flags.aiLeadScoring) throw new ForbiddenException("AI features are disabled for this organization");
 
-    const [[lead], activities] = await Promise.all([
-      this.db
-        .select({
-          id: leads.id,
-          name: leads.name,
-          email: leads.email,
-          company: leads.company,
-          status: leads.status,
-          priority: leads.priority,
-          score: leads.score,
-          potentialValue: leads.potentialValue,
-          notes: leads.notes,
-        })
-        .from(leads)
-        .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId))),
-      this.db
-        .select({
-          type: leadActivities.type,
-          date: leadActivities.date,
-          subject: leadActivities.subject,
-          notes: leadActivities.notes,
-          outcome: leadActivities.outcome,
-        })
-        .from(leadActivities)
-        .where(eq(leadActivities.leadId, leadId))
-        .orderBy(desc(leadActivities.date))
-        .limit(10),
-    ]);
+    const ctx = await runInTenantTransaction(this.db, async (tx) => {
+      const [[lead], activities] = await Promise.all([
+        tx
+          .select({
+            id: leads.id,
+            name: leads.name,
+            email: leads.email,
+            company: leads.company,
+            status: leads.status,
+            priority: leads.priority,
+            score: leads.score,
+            potentialValue: leads.potentialValue,
+            notes: leads.notes,
+          })
+          .from(leads)
+          .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId))),
+        tx
+          .select({
+            type: leadActivities.type,
+            date: leadActivities.date,
+            subject: leadActivities.subject,
+            notes: leadActivities.notes,
+            outcome: leadActivities.outcome,
+          })
+          .from(leadActivities)
+          .where(eq(leadActivities.leadId, leadId))
+          .orderBy(desc(leadActivities.date))
+          .limit(10),
+      ]);
+      return { lead: lead ?? null, activities };
+    }, { orgId });
 
-    if (!lead) throw new NotFoundException("Lead not found");
+    if (!ctx.lead) throw new NotFoundException("Lead not found");
+    const { lead, activities } = ctx;
 
     const activitiesText = activities.length === 0
       ? "No activities recorded."
@@ -154,34 +161,38 @@ ${truncate(activitiesText, 1500)}`;
     const flags = await this.orgFeatures.getFlags(orgId);
     if (!flags.aiLeadScoring) throw new ForbiddenException("AI features are disabled for this organization");
 
-    const [[deal], activities] = await Promise.all([
-      this.db
-        .select({
-          id: deals.id,
-          name: deals.name,
-          value: deals.value,
-          stage: deals.stage,
-          probability: deals.probability,
-          contactPerson: deals.contactPerson,
-          expectedCloseDate: deals.expectedCloseDate,
-          notes: deals.notes,
-        })
-        .from(deals)
-        .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt))),
-      this.db
-        .select({
-          type: dealActivities.type,
-          subject: dealActivities.subject,
-          notes: dealActivities.notes,
-          createdAt: dealActivities.createdAt,
-        })
-        .from(dealActivities)
-        .where(eq(dealActivities.dealId, dealId))
-        .orderBy(desc(dealActivities.createdAt))
-        .limit(10),
-    ]);
+    const ctx = await runInTenantTransaction(this.db, async (tx) => {
+      const [[deal], activities] = await Promise.all([
+        tx
+          .select({
+            id: deals.id,
+            name: deals.name,
+            value: deals.value,
+            stage: deals.stage,
+            probability: deals.probability,
+            contactPerson: deals.contactPerson,
+            expectedCloseDate: deals.expectedCloseDate,
+            notes: deals.notes,
+          })
+          .from(deals)
+          .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt))),
+        tx
+          .select({
+            type: dealActivities.type,
+            subject: dealActivities.subject,
+            notes: dealActivities.notes,
+            createdAt: dealActivities.createdAt,
+          })
+          .from(dealActivities)
+          .where(eq(dealActivities.dealId, dealId))
+          .orderBy(desc(dealActivities.createdAt))
+          .limit(10),
+      ]);
+      return { deal: deal ?? null, activities };
+    }, { orgId });
 
-    if (!deal) throw new NotFoundException("Deal not found");
+    if (!ctx.deal) throw new NotFoundException("Deal not found");
+    const { deal, activities } = ctx;
 
     const activitiesText = activities.length === 0
       ? "No activities recorded."
@@ -229,12 +240,15 @@ ${truncate(activitiesText, 1500)}`;
     if (!flags.aiLeadScoring) throw new ForbiddenException("AI features are disabled for this organization");
 
     const fetchLimit = Math.min(limit * 2, 40);
-    const topLeads = await this.db
-      .select({ id: leads.id, name: leads.name, score: leads.score })
-      .from(leads)
-      .where(and(eq(leads.orgId, orgId), isNull(leads.deletedAt)))
-      .orderBy(desc(leads.score))
-      .limit(fetchLimit);
+    const topLeads = await runInTenantTransaction(this.db, (tx) =>
+      tx
+        .select({ id: leads.id, name: leads.name, score: leads.score })
+        .from(leads)
+        .where(and(eq(leads.orgId, orgId), isNull(leads.deletedAt)))
+        .orderBy(desc(leads.score))
+        .limit(fetchLimit),
+      { orgId },
+    );
 
     const results: Array<{ leadId: number; leadName: string; action: string; urgency: string; reasoning: string; evidence: unknown[]; rationale: string }> = [];
 
@@ -266,35 +280,30 @@ ${truncate(activitiesText, 1500)}`;
     const flags = await this.orgFeatures.getFlags(orgId);
     if (!flags.aiEmailDraft) throw new ForbiddenException("AI email draft is disabled for this organization");
 
-    let entityName: string;
-    let company: string | null = null;
-    let contextLine: string;
-
-    if (input.entityType === "lead") {
-      const [lead] = await this.db
-        .select({ name: leads.name, company: leads.company, designation: leads.designation, potentialValue: leads.potentialValue, status: leads.status })
-        .from(leads)
-        .where(and(eq(leads.id, input.entityId), eq(leads.orgId, orgId)));
-      if (!lead) throw new NotFoundException("Lead not found");
-      entityName = lead.name;
-      company = lead.company;
-      contextLine = `Status: ${lead.status}, Value: ${lead.potentialValue ?? "N/A"}`;
-    } else {
-      const [deal] = await this.db
-        .select({ name: deals.name, contactPerson: deals.contactPerson, value: deals.value, stage: deals.stage })
-        .from(deals)
-        .where(and(eq(deals.id, input.entityId), eq(deals.orgId, orgId), isNull(deals.deletedAt)));
-      if (!deal) throw new NotFoundException("Deal not found");
-      entityName = deal.contactPerson ?? deal.name;
-      contextLine = `Deal: ${deal.name}, Stage: ${deal.stage}, Value: ${deal.value}`;
-    }
+    const entityCtx = await runInTenantTransaction(this.db, async (tx) => {
+      if (input.entityType === "lead") {
+        const [lead] = await tx
+          .select({ name: leads.name, company: leads.company, designation: leads.designation, potentialValue: leads.potentialValue, status: leads.status })
+          .from(leads)
+          .where(and(eq(leads.id, input.entityId), eq(leads.orgId, orgId)));
+        if (!lead) throw new NotFoundException("Lead not found");
+        return { entityName: lead.name, company: lead.company, contextLine: `Status: ${lead.status}, Value: ${lead.potentialValue ?? "N/A"}` };
+      } else {
+        const [deal] = await tx
+          .select({ name: deals.name, contactPerson: deals.contactPerson, value: deals.value, stage: deals.stage })
+          .from(deals)
+          .where(and(eq(deals.id, input.entityId), eq(deals.orgId, orgId), isNull(deals.deletedAt)));
+        if (!deal) throw new NotFoundException("Deal not found");
+        return { entityName: deal.contactPerson ?? deal.name, company: null as string | null, contextLine: `Deal: ${deal.name}, Stage: ${deal.stage}, Value: ${deal.value}` };
+      }
+    }, { orgId });
 
     const actor = { orgId, userId };
     const draft = await this.content.generateEmail(userId, {
-      leadName: entityName,
-      company: company ?? undefined,
+      leadName: entityCtx.entityName,
+      company: entityCtx.company ?? undefined,
       tone: input.tone,
-      context: `Intent: ${input.intent}. ${contextLine}`,
+      context: `Intent: ${input.intent}. ${entityCtx.contextLine}`,
     }, actor);
 
     await this.auditAiAction(orgId, userId, "ai.crm.email_draft", input.entityType, String(input.entityId));
@@ -348,14 +357,21 @@ Return JSON with summary, keyPoints, actionItems, objections, sentiment.`,
     const flags = await this.orgFeatures.getFlags(orgId);
     if (!flags.aiLeadScoring) throw new ForbiddenException("AI features are disabled for this organization");
 
-    const [lead] = await this.db
-      .select({ id: leads.id, name: leads.name })
-      .from(leads)
-      .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId)));
+    const { lead, allGroups } = await runInTenantTransaction(this.db, async (tx) => {
+      const [lead] = await tx
+        .select({ id: leads.id, name: leads.name })
+        .from(leads)
+        .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId)));
+
+      if (!lead) return { lead: null, allGroups: [] as Awaited<ReturnType<typeof findDuplicateLeads>> };
+
+      // this.db is the ALS proxy; within runInTenantTransaction the ALS context is
+      // active, so the proxy routes through the open transaction's tenant GUC.
+      const allGroups = await findDuplicateLeads(this.db, orgId);
+      return { lead, allGroups };
+    }, { orgId });
 
     if (!lead) throw new NotFoundException("Lead not found");
-
-    const allGroups = await findDuplicateLeads(this.db, orgId);
 
     const relevant = allGroups.filter((g) => g.leads.some((l) => l.id === leadId));
 
@@ -390,32 +406,38 @@ Return JSON with summary, keyPoints, actionItems, objections, sentiment.`,
     const flags = await this.orgFeatures.getFlags(orgId);
     if (!flags.aiLeadScoring) throw new ForbiddenException("AI features are disabled for this organization");
 
-    const [[lead], activityCount] = await Promise.all([
-      this.db
-        .select({ id: leads.id, name: leads.name, score: leads.score, priority: leads.priority, status: leads.status, source: leads.source })
-        .from(leads)
-        .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId))),
-      this.db
-        .select({ date: leadActivities.date })
-        .from(leadActivities)
-        .where(eq(leadActivities.leadId, leadId))
-        .orderBy(desc(leadActivities.date))
-        .limit(10),
-    ]);
+    const { lead, citations } = await runInTenantTransaction(this.db, async (tx) => {
+      const [[lead], activityCount] = await Promise.all([
+        tx
+          .select({ id: leads.id, name: leads.name, score: leads.score, priority: leads.priority, status: leads.status, source: leads.source })
+          .from(leads)
+          .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId))),
+        tx
+          .select({ date: leadActivities.date })
+          .from(leadActivities)
+          .where(eq(leadActivities.leadId, leadId))
+          .orderBy(desc(leadActivities.date))
+          .limit(10),
+      ]);
+
+      if (!lead) return { lead: null, citations: [] as CitationItem[] };
+
+      const built: CitationItem[] = [
+        { id: `lead-score-${leadId}`, title: "AI Lead Score", snippet: `Score: ${lead.score ?? "Not scored"}, Priority: ${lead.priority ?? "N/A"}` },
+        { id: `lead-status-${leadId}`, title: "Lead Status", snippet: `Status: ${lead.status}, Source: ${lead.source ?? "N/A"}` },
+      ];
+      if (activityCount.length > 0) {
+        built.push({
+          id: `lead-activity-${leadId}`,
+          title: "Activity History",
+          snippet: `${activityCount.length} activities. Latest: ${activityCount[0]?.date ? new Date(activityCount[0].date).toLocaleDateString("en-IN") : "N/A"}`,
+        });
+      }
+
+      return { lead, citations: built };
+    }, { orgId });
 
     if (!lead) throw new NotFoundException("Lead not found");
-
-    const citations: CitationItem[] = [
-      { id: `lead-score-${leadId}`, title: "AI Lead Score", snippet: `Score: ${lead.score ?? "Not scored"}, Priority: ${lead.priority ?? "N/A"}` },
-      { id: `lead-status-${leadId}`, title: "Lead Status", snippet: `Status: ${lead.status}, Source: ${lead.source ?? "N/A"}` },
-    ];
-    if (activityCount.length > 0) {
-      citations.push({
-        id: `lead-activity-${leadId}`,
-        title: "Activity History",
-        snippet: `${activityCount.length} activities. Latest: ${activityCount[0]?.date ? new Date(activityCount[0].date).toLocaleDateString("en-IN") : "N/A"}`,
-      });
-    }
 
     const base = await this.leadSummary(orgId, leadId, userId);
     return { ...base, citations };
@@ -425,42 +447,50 @@ Return JSON with summary, keyPoints, actionItems, objections, sentiment.`,
     const flags = await this.orgFeatures.getFlags(orgId);
     if (!flags.aiLeadScoring) throw new ForbiddenException("AI features are disabled for this organization");
 
-    const [[deal], activities] = await Promise.all([
-      this.db
-        .select({ id: deals.id, name: deals.name, stage: deals.stage, value: deals.value, probability: deals.probability, assignedToId: deals.assignedToId })
-        .from(deals)
-        .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt))),
-      this.db
-        .select({ createdAt: dealActivities.createdAt })
-        .from(dealActivities)
-        .where(eq(dealActivities.dealId, dealId))
-        .orderBy(desc(dealActivities.createdAt))
-        .limit(10),
-    ]);
+    const { deal, citations } = await runInTenantTransaction(this.db, async (tx) => {
+      const [[deal], activities] = await Promise.all([
+        tx
+          .select({ id: deals.id, name: deals.name, stage: deals.stage, value: deals.value, probability: deals.probability, assignedToId: deals.assignedToId })
+          .from(deals)
+          .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt))),
+        tx
+          .select({ createdAt: dealActivities.createdAt })
+          .from(dealActivities)
+          .where(eq(dealActivities.dealId, dealId))
+          .orderBy(desc(dealActivities.createdAt))
+          .limit(10),
+      ]);
+
+      if (!deal) return { deal: null, citations: [] as CitationItem[] };
+
+      const built: CitationItem[] = [
+        { id: `deal-stage-${dealId}`, title: "Deal Stage & Value", snippet: `Stage: ${deal.stage}, Value: ₹${Number(deal.value ?? 0).toLocaleString("en-IN")}` },
+        { id: `deal-probability-${dealId}`, title: "Win Probability", snippet: `Current probability: ${deal.probability}%` },
+      ];
+      if (activities.length > 0) {
+        built.push({
+          id: `deal-activity-${dealId}`,
+          title: "Activity History",
+          snippet: `${activities.length} activities. Latest: ${activities[0]?.createdAt ? new Date(activities[0].createdAt).toLocaleDateString("en-IN") : "N/A"}`,
+        });
+      }
+
+      return { deal, citations: built };
+    }, { orgId });
 
     if (!deal) throw new NotFoundException("Deal not found");
-
-    const citations: CitationItem[] = [
-      { id: `deal-stage-${dealId}`, title: "Deal Stage & Value", snippet: `Stage: ${deal.stage}, Value: ₹${Number(deal.value ?? 0).toLocaleString("en-IN")}` },
-      { id: `deal-probability-${dealId}`, title: "Win Probability", snippet: `Current probability: ${deal.probability}%` },
-    ];
-    if (activities.length > 0) {
-      citations.push({
-        id: `deal-activity-${dealId}`,
-        title: "Activity History",
-        snippet: `${activities.length} activities. Latest: ${activities[0]?.createdAt ? new Date(activities[0].createdAt).toLocaleDateString("en-IN") : "N/A"}`,
-      });
-    }
 
     const base = await this.dealSummary(orgId, dealId, userId);
     return { ...base, citations };
   }
 
   stalePipelineDigest(orgId: string, userId: string, inactiveDays?: number) {
-    return this.pipeline.stalePipelineDigest(orgId, userId, inactiveDays);
+    // CrmPipelineService needs its own @NoTenantTransaction conversion; wrapping
+    // here preserves the ambient GUC for its DB calls without regressing behaviour.
+    return runInTenantTransaction(this.db, () => this.pipeline.stalePipelineDigest(orgId, userId, inactiveDays), { orgId });
   }
 
   dataQualityCopilot(orgId: string, userId: string) {
-    return this.pipeline.dataQualityCopilot(orgId, userId);
+    return runInTenantTransaction(this.db, () => this.pipeline.dataQualityCopilot(orgId, userId), { orgId });
   }
 }

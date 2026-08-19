@@ -24,6 +24,18 @@ function _makeInsertChain(returnValue: unknown) {
   return { into, values, returning };
 }
 
+/**
+ * The ledger now opens its own tenant transaction, so the handle `db.transaction`
+ * yields must also carry the `set_config` round trip and support a nested savepoint.
+ */
+function tenantTx(leaf: Record<string, unknown>) {
+  return {
+    ...leaf,
+    execute: jest.fn().mockResolvedValue([]),
+    transaction: jest.fn().mockImplementation((fn: (tx: unknown) => Promise<unknown>) => fn(leaf)),
+  };
+}
+
 function buildDb(overrides: Record<string, unknown> = {}) {
   return {
     select: jest.fn(),
@@ -82,8 +94,7 @@ describe("AiCreditsReservationService — reserve/settle/release ledger", () => 
           }),
         });
 
-        const tx = { select: txSelect, update: txUpdate, insert: txInsert };
-        return fn(tx);
+        return fn(tenantTx({ select: txSelect, update: txUpdate, insert: txInsert }));
       });
 
       const result = await svc.reserve({
@@ -97,12 +108,17 @@ describe("AiCreditsReservationService — reserve/settle/release ledger", () => 
     });
 
     it("replays idempotent reserve — returns existing reservation id", async () => {
-      db.select = jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({
-          where: jest.fn().mockReturnValue({
-            limit: jest.fn().mockResolvedValue([{ id: 99 }]),
+      const txInsert = jest.fn();
+
+      db.transaction = jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+        const txSelect = jest.fn().mockReturnValue({
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue([{ id: 99 }]),
+            }),
           }),
-        }),
+        });
+        return fn(tenantTx({ select: txSelect, insert: txInsert }));
       });
 
       const result = await svc.reserve({
@@ -114,7 +130,7 @@ describe("AiCreditsReservationService — reserve/settle/release ledger", () => 
       });
 
       expect(result).toEqual({ reservationId: 99 });
-      expect(db.transaction).not.toHaveBeenCalled();
+      expect(txInsert).not.toHaveBeenCalled();
     });
 
     it("throws BadRequestException when balance is insufficient", async () => {
@@ -134,8 +150,7 @@ describe("AiCreditsReservationService — reserve/settle/release ledger", () => 
             }),
           }),
         });
-        const tx = { select: txSelect };
-        return fn(tx);
+        return fn(tenantTx({ select: txSelect }));
       });
 
       await expect(
@@ -164,10 +179,10 @@ describe("AiCreditsReservationService — reserve/settle/release ledger", () => 
         const txInsert = jest.fn().mockReturnValue({
           values: jest.fn().mockResolvedValue([]),
         });
-        return fn({ select: txSelect, update: txUpdate, insert: txInsert });
+        return fn(tenantTx({ select: txSelect, update: txUpdate, insert: txInsert }));
       });
 
-      await expect(svc.settle(1, {})).resolves.toBeUndefined();
+      await expect(svc.settle(1, { orgId: "org1" })).resolves.toBeUndefined();
     });
 
     it("settles partially — refunds the difference when actual < reserved", async () => {
@@ -186,10 +201,10 @@ describe("AiCreditsReservationService — reserve/settle/release ledger", () => 
         const txUpdateSet = jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) });
         const txUpdate = jest.fn().mockReturnValue({ set: txUpdateSet });
         const txInsert = jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue([]) });
-        return fn({ select: txSelect, update: txUpdate, insert: txInsert });
+        return fn(tenantTx({ select: txSelect, update: txUpdate, insert: txInsert }));
       });
 
-      await expect(svc.settle(2, { actualMilli: 7000 })).resolves.toBeUndefined();
+      await expect(svc.settle(2, { orgId: "org1", actualMilli: 7000 })).resolves.toBeUndefined();
     });
 
     it("charges overage — balance goes negative when actual > reserved", async () => {
@@ -212,10 +227,10 @@ describe("AiCreditsReservationService — reserve/settle/release ledger", () => 
         });
         const txUpdate = jest.fn().mockReturnValue({ set: txUpdateSet });
         const txInsert = jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue([]) });
-        return fn({ select: txSelect, update: txUpdate, insert: txInsert });
+        return fn(tenantTx({ select: txSelect, update: txUpdate, insert: txInsert }));
       });
 
-      await expect(svc.settle(8, { actualMilli: 8000 })).resolves.toBeUndefined();
+      await expect(svc.settle(8, { orgId: "org1", actualMilli: 8000 })).resolves.toBeUndefined();
       expect(capturedNewBalance).toBe(-3000);
     });
 
@@ -230,10 +245,10 @@ describe("AiCreditsReservationService — reserve/settle/release ledger", () => 
             }),
           }),
         });
-        return fn({ select: txSelect });
+        return fn(tenantTx({ select: txSelect }));
       });
 
-      await expect(svc.settle(3, {})).resolves.toBeUndefined();
+      await expect(svc.settle(3, { orgId: "org1" })).resolves.toBeUndefined();
     });
   });
 
@@ -254,10 +269,10 @@ describe("AiCreditsReservationService — reserve/settle/release ledger", () => 
         const txUpdate = jest.fn().mockReturnValue({
           set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
         });
-        return fn({ select: txSelect, update: txUpdate });
+        return fn(tenantTx({ select: txSelect, update: txUpdate }));
       });
 
-      await expect(svc.release(5, "user-cancelled")).resolves.toBeUndefined();
+      await expect(svc.release(5, "user-cancelled", "org1")).resolves.toBeUndefined();
     });
 
     it("is idempotent — silently returns when already RELEASED", async () => {
@@ -271,10 +286,10 @@ describe("AiCreditsReservationService — reserve/settle/release ledger", () => 
             }),
           }),
         });
-        return fn({ select: txSelect });
+        return fn(tenantTx({ select: txSelect }));
       });
 
-      await expect(svc.release(6, "dup")).resolves.toBeUndefined();
+      await expect(svc.release(6, "dup", "org1")).resolves.toBeUndefined();
     });
 
     it("throws ConflictException when releasing a SETTLED reservation", async () => {
@@ -288,16 +303,16 @@ describe("AiCreditsReservationService — reserve/settle/release ledger", () => 
             }),
           }),
         });
-        return fn({ select: txSelect });
+        return fn(tenantTx({ select: txSelect }));
       });
 
-      await expect(svc.release(7, "bad")).rejects.toThrow(ConflictException);
+      await expect(svc.release(7, "bad", "org1")).rejects.toThrow(ConflictException);
     });
   });
 
   describe("sweepExpiredReservations", () => {
     it("releases only expired RESERVED rows and returns the count", async () => {
-      const expired = [{ id: 10 }, { id: 11 }];
+      const expired = [{ id: 10, orgId: "org1" }, { id: 11, orgId: "org2" }];
 
       db.select = jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
@@ -326,7 +341,7 @@ describe("AiCreditsReservationService — reserve/settle/release ledger", () => 
         const txUpdate = jest.fn().mockReturnValue({
           set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
         });
-        return fn({ select: txSelect, update: txUpdate });
+        return fn(tenantTx({ select: txSelect, update: txUpdate }));
       });
 
       const count = await svc.sweepExpiredReservations();

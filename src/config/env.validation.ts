@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { poolEnvShape } from "../db/pool.config";
 
 const deploymentSecret = z.string().min(32).optional();
 const emptyToUndefined = (value: unknown) =>
@@ -24,6 +25,7 @@ const schema = z
     APP_DATABASE_URL: z.preprocess(emptyToUndefined, z.string().optional()),
     /** Session-mode connection for migrations and db:verify-rls; only Neon can be derived automatically. */
     DIRECT_DATABASE_URL: z.preprocess(emptyToUndefined, z.string().optional()),
+    ...poolEnvShape,
     BACKEND_JWT_SECRET: z
       .string()
       .min(

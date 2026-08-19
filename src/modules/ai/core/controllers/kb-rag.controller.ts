@@ -2,11 +2,13 @@ import { Body, Controller, HttpCode, Post, ServiceUnavailableException, BadReque
 import { Public } from "../../../../common/auth/public.decorator";
 import { RateLimitGuard } from "../../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../../common/ratelimit/use-rate-limit.decorator";
+import { NoTenantTransaction } from "../../../../common/tenant/no-tenant-transaction.decorator";
 import { KbRagService } from "../services/kb-rag.service";
 import { kbAskSchema } from "../dto/request.schemas";
 
 @Public()
 @Controller("public/kb")
+@NoTenantTransaction()
 export class KbRagController {
   constructor(private readonly kbRag: KbRagService) {}
 
