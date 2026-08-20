@@ -40,7 +40,7 @@ export class ChatPinsService {
       where: and(eq(chatMessages.id, messageId), eq(chatMessages.channelId, channelId), eq(chatMessages.isDeleted, false)),
     });
     if (!message) throw new NotFoundException("Message not found");
-    await this.db.insert(chatPinnedMessages).values({ channelId, messageId, pinnedBy: userId }).onConflictDoNothing();
+    await this.db.insert(chatPinnedMessages).values({ orgId: message.orgId, channelId, messageId, pinnedBy: userId }).onConflictDoNothing();
     return { ok: true };
   }
 

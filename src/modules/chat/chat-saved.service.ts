@@ -41,7 +41,7 @@ export class ChatSavedService {
   async save(userId: string, messageId: number) {
     const message = await this.db.query.chatMessages.findFirst({
       where: and(eq(chatMessages.id, messageId), eq(chatMessages.isDeleted, false)),
-      columns: { id: true, channelId: true },
+      columns: { id: true, channelId: true, orgId: true },
     });
     if (!message) throw new NotFoundException("Message not found");
 
@@ -50,7 +50,7 @@ export class ChatSavedService {
     });
     if (!membership) throw new ForbiddenException("Access denied");
 
-    await this.db.insert(chatSavedMessages).values({ userId, messageId }).onConflictDoNothing();
+    await this.db.insert(chatSavedMessages).values({ orgId: message.orgId, userId, messageId }).onConflictDoNothing();
     return { ok: true };
   }
 

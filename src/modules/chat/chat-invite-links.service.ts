@@ -28,18 +28,18 @@ export class ChatInviteLinksService {
   }
 
   async getOrCreateInviteLink(channelId: number, userId: string) {
-    await this.assertAdmin(channelId, userId);
+    const member = await this.assertAdmin(channelId, userId);
 
     const existing = await this.findActiveLink(channelId);
     if (existing) return { token: existing.token };
 
     const token = randomBytes(24).toString("hex");
-    await this.db.insert(chatChannelInviteLinks).values({ channelId, token, createdBy: userId });
+    await this.db.insert(chatChannelInviteLinks).values({ orgId: member.orgId, channelId, token, createdBy: userId });
     return { token };
   }
 
   async regenerateInviteLink(channelId: number, userId: string) {
-    await this.assertAdmin(channelId, userId);
+    const member = await this.assertAdmin(channelId, userId);
 
     await this.db
       .update(chatChannelInviteLinks)
@@ -52,7 +52,7 @@ export class ChatInviteLinksService {
       );
 
     const token = randomBytes(24).toString("hex");
-    await this.db.insert(chatChannelInviteLinks).values({ channelId, token, createdBy: userId });
+    await this.db.insert(chatChannelInviteLinks).values({ orgId: member.orgId, channelId, token, createdBy: userId });
     return { token };
   }
 
@@ -77,6 +77,7 @@ export class ChatInviteLinksService {
     });
     if (!existingMember) {
       await this.db.insert(chatChannelMembers).values({
+        orgId: channel.orgId,
         channelId: channel.id,
         userId,
         role: "MEMBER",

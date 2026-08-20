@@ -150,10 +150,10 @@ export class ChatHuddlesService {
 
       const [created] = await tx
         .insert(chatHuddles)
-        .values({ channelId, startedBy: userId, status: "active", calendarEventId: calEvent?.id, hasVideo: false })
+        .values({ orgId, channelId, startedBy: userId, status: "active", calendarEventId: calEvent?.id, hasVideo: false })
         .returning();
 
-      await tx.insert(chatHuddleParticipants).values({ huddleId: created.id, userId });
+      await tx.insert(chatHuddleParticipants).values({ orgId, huddleId: created.id, userId });
 
       return created;
     });
@@ -217,7 +217,7 @@ export class ChatHuddlesService {
 
     await this.db
       .insert(chatHuddleParticipants)
-      .values({ huddleId, userId })
+      .values({ orgId, huddleId, userId })
       .onConflictDoUpdate({
         target: [chatHuddleParticipants.huddleId, chatHuddleParticipants.userId],
         set: { leftAt: null, joinedAt: new Date(), isMuted: false, handRaised: false, lastSeenAt: new Date() },

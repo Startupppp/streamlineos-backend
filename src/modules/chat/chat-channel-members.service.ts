@@ -94,6 +94,7 @@ export class ChatChannelMembersService {
     if (existing) throw new ConflictException("User is already a member of this channel");
 
     await this.db.insert(chatChannelMembers).values({
+      orgId: channel.orgId,
       channelId,
       userId: targetUserId,
       role: "MEMBER",
@@ -169,6 +170,7 @@ export class ChatChannelMembersService {
     if (existing) return { ok: true };
 
     await this.db.insert(chatChannelMembers).values({
+      orgId,
       channelId,
       userId,
       role: "MEMBER",

@@ -151,6 +151,7 @@ export class DealsService {
 
     await this.db.insert(chatChannelMembers).values(
       memberIds.map((uid) => ({
+        orgId,
         channelId: newChannel.id,
         userId: uid,
         role: uid === userId ? "ADMIN" : "MEMBER",

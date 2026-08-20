@@ -132,9 +132,18 @@ export class ChatMessagesService {
     }
 
     const { message, insertedAttachments } = await this.db.transaction(async (tx) => {
+      const [channel] = await tx
+        .select({ id: chatChannels.id })
+        .from(chatChannels)
+        .where(and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, orgId)))
+        .limit(1);
+
+      if (!channel) throw new NotFoundException("Channel not found");
+
       const [created] = await tx
         .insert(chatMessages)
         .values({
+          orgId,
           channelId,
           senderId: userId,
           content: sanitizedContent?.trim() || null,
@@ -147,6 +156,7 @@ export class ChatMessagesService {
       if (body.attachments && body.attachments.length > 0) {
         attachmentRows = await tx.insert(chatAttachments).values(
           body.attachments.map((a) => ({
+            orgId,
             messageId: created.id,
             fileName: a.fileName,
             fileUrl: a.fileUrl,
@@ -409,6 +419,7 @@ export class ChatMessagesService {
       const [created] = await tx
         .insert(chatMessages)
         .values({
+          orgId,
           channelId,
           senderId,
           content,

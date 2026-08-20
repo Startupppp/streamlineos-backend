@@ -255,8 +255,8 @@ export class ChatChannelsService {
           .returning();
 
         await tx.insert(chatChannelMembers).values([
-          { channelId: created.id, userId, role: "MEMBER" },
-          { channelId: created.id, userId: targetUserId, role: "MEMBER" },
+          { orgId, channelId: created.id, userId, role: "MEMBER" },
+          { orgId, channelId: created.id, userId: targetUserId, role: "MEMBER" },
         ]);
 
         return created;
@@ -292,6 +292,7 @@ export class ChatChannelsService {
 
       await tx.insert(chatChannelMembers).values(
         allMembers.map((uid) => ({
+          orgId,
           channelId: created.id,
           userId: uid,
           role: uid === userId ? "ADMIN" : "MEMBER",
@@ -322,6 +323,7 @@ export class ChatChannelsService {
       const isMember = existing.members.some((m) => m.userId === userId);
       if (!isMember) {
         await this.db.insert(chatChannelMembers).values({
+          orgId,
           channelId: existing.id,
           userId,
           role: "MEMBER",
@@ -352,6 +354,7 @@ export class ChatChannelsService {
         .returning();
 
       await tx.insert(chatChannelMembers).values({
+        orgId,
         channelId: created.id,
         userId,
         role: "ADMIN",

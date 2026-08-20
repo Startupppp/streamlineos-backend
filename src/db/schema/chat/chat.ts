@@ -56,6 +56,9 @@ export const chatChannelMembers = pgTable(
   "chat_channel_members",
   {
     id: serial("id").primaryKey(),
+    orgId: text("org_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
     channelId: integer("channel_id")
       .references(() => chatChannels.id, { onDelete: "cascade" })
       .notNull(),
@@ -76,6 +79,8 @@ export const chatChannelMembers = pgTable(
     uniqueIndex("uniq_channel_member").on(table.channelId, table.userId),
     index("idx_chat_members_user").on(table.userId),
     index("idx_chat_members_channel").on(table.channelId),
+    index("idx_chat_channel_members_org").on(table.orgId),
+    unique("uniq_chat_channel_members_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -83,6 +88,9 @@ export const chatMessages = pgTable(
   "chat_messages",
   {
     id: serial("id").primaryKey(),
+    orgId: text("org_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
     channelId: integer("channel_id")
       .references(() => chatChannels.id, { onDelete: "cascade" })
       .notNull(),
@@ -118,6 +126,8 @@ export const chatMessages = pgTable(
       table.isDeleted,
       table.createdAt,
     ),
+    index("idx_chat_messages_org").on(table.orgId),
+    unique("uniq_chat_messages_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -125,6 +135,9 @@ export const chatAttachments = pgTable(
   "chat_attachments",
   {
     id: serial("id").primaryKey(),
+    orgId: text("org_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
     messageId: integer("message_id")
       .references(() => chatMessages.id, { onDelete: "cascade" })
       .notNull(),
@@ -135,7 +148,11 @@ export const chatAttachments = pgTable(
     mimeType: text("mime_type").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
-  (table) => [index("idx_chat_attachments_msg").on(table.messageId)],
+  (table) => [
+    index("idx_chat_attachments_msg").on(table.messageId),
+    index("idx_chat_attachments_org").on(table.orgId),
+    unique("uniq_chat_attachments_org_id").on(table.orgId, table.id),
+  ],
 );
 
 export const chatUserPresence = pgTable(
@@ -163,6 +180,9 @@ export const chatPinnedMessages = pgTable(
   "chat_pinned_messages",
   {
     id: serial("id").primaryKey(),
+    orgId: text("org_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
     channelId: integer("channel_id")
       .references(() => chatChannels.id, { onDelete: "cascade" })
       .notNull(),
@@ -177,6 +197,8 @@ export const chatPinnedMessages = pgTable(
   (table) => [
     uniqueIndex("uniq_chat_pinned_msg").on(table.channelId, table.messageId),
     index("idx_chat_pinned_channel").on(table.channelId),
+    index("idx_chat_pinned_messages_org").on(table.orgId),
+    unique("uniq_chat_pinned_messages_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -184,6 +206,9 @@ export const chatSavedMessages = pgTable(
   "chat_saved_messages",
   {
     id: serial("id").primaryKey(),
+    orgId: text("org_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
     userId: text("user_id")
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
@@ -195,6 +220,8 @@ export const chatSavedMessages = pgTable(
   (table) => [
     uniqueIndex("uniq_saved_message").on(table.userId, table.messageId),
     index("idx_saved_messages_user").on(table.userId),
+    index("idx_chat_saved_messages_org").on(table.orgId),
+    unique("uniq_chat_saved_messages_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -331,6 +358,9 @@ export const chatHuddles = pgTable(
   "chat_huddles",
   {
     id: serial("id").primaryKey(),
+    orgId: text("org_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
     channelId: integer("channel_id")
       .references(() => chatChannels.id, { onDelete: "cascade" })
       .notNull(),
@@ -345,6 +375,8 @@ export const chatHuddles = pgTable(
   },
   (table) => [
     index("idx_chat_huddles_channel").on(table.channelId, table.status),
+    index("idx_chat_huddles_org").on(table.orgId),
+    unique("uniq_chat_huddles_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -352,6 +384,9 @@ export const chatHuddleParticipants = pgTable(
   "chat_huddle_participants",
   {
     id: serial("id").primaryKey(),
+    orgId: text("org_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
     huddleId: integer("huddle_id")
       .references(() => chatHuddles.id, { onDelete: "cascade" })
       .notNull(),
@@ -370,6 +405,8 @@ export const chatHuddleParticipants = pgTable(
   (table) => [
     uniqueIndex("uniq_huddle_participant").on(table.huddleId, table.userId),
     index("idx_huddle_participants_huddle").on(table.huddleId),
+    index("idx_chat_huddle_participants_org").on(table.orgId),
+    unique("uniq_chat_huddle_participants_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -377,6 +414,9 @@ export const chatChannelInviteLinks = pgTable(
   "chat_channel_invite_links",
   {
     id: serial("id").primaryKey(),
+    orgId: text("org_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
     channelId: integer("channel_id")
       .references(() => chatChannels.id, { onDelete: "cascade" })
       .notNull(),
@@ -390,6 +430,8 @@ export const chatChannelInviteLinks = pgTable(
   (table) => [
     uniqueIndex("uniq_chat_invite_link_token").on(table.token),
     index("idx_chat_invite_links_channel").on(table.channelId, table.revokedAt),
+    index("idx_chat_channel_invite_links_org").on(table.orgId),
+    unique("uniq_chat_channel_invite_links_org_id").on(table.orgId, table.id),
   ],
 );
 
