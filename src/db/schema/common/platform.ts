@@ -42,6 +42,28 @@ export const platformMessages = pgTable(
   ],
 );
 
+export const platformWaitlistSignups = pgTable(
+  "platform_waitlist_signups",
+  {
+    id: serial("id").primaryKey(),
+    email: text("email").notNull(),
+    name: text("name").notNull(),
+    company: text("company"),
+    teamSize: text("team_size"),
+    source: text("source").default("landing").notNull(),
+    status: text("status").default("PENDING").notNull(),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("uniq_platform_waitlist_signups_email").on(table.email),
+    index("idx_platform_waitlist_signups_status").on(table.status),
+    index("idx_platform_waitlist_signups_source").on(table.source),
+    index("idx_platform_waitlist_signups_created").on(table.createdAt),
+  ],
+);
+
 export const platformVisits = pgTable(
   "platform_visits",
   {

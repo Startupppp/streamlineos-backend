@@ -103,6 +103,18 @@ export const contactSubmitSchema = z
   })
   .strict();
 
+export const waitlistJoinSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    email: z.string().trim().email().max(320).toLowerCase(),
+    company: z.string().trim().max(200).optional(),
+    teamSize: z
+      .enum(["1-10", "11-50", "51-200", "201-1000", "1000+"])
+      .optional(),
+    source: z.enum(["landing", "pricing"]).optional(),
+  })
+  .strict();
+
 export type ApplyInput = z.infer<typeof applySchema>;
 export type OfferRespondInput = z.infer<typeof offerRespondSchema>;
 export type RoadmapQueryInput = z.infer<typeof roadmapQuerySchema>;
@@ -118,3 +130,4 @@ export type PublicFormSubmitInput = z.infer<typeof publicFormSubmitSchema>;
 export type ExternalReferrerRegisterInput = z.infer<typeof externalReferrerRegisterSchema>;
 export type ExternalReferralSubmitInput = z.infer<typeof externalReferralSubmitSchema>;
 export type ContactSubmitInput = z.infer<typeof contactSubmitSchema>;
+export type WaitlistJoinInput = z.infer<typeof waitlistJoinSchema>;

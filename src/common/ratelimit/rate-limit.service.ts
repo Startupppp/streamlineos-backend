@@ -18,6 +18,7 @@ const TIERS: Record<string, Tier> = {
   "auth:email-otp": { limit: 3, windowSecs: 600 },
   "auth:email-otp-verify": { limit: 10, windowSecs: 600 },
   "public:contact": { limit: 5, windowSecs: 3600 },
+  "public:waitlist": { limit: 5, windowSecs: 3600 },
   "chat:send-message": { limit: 30, windowSecs: 60 },
   "chat:huddle": { limit: 20, windowSecs: 60 },
   "chat:huddle-signal": { limit: 240, windowSecs: 60 },

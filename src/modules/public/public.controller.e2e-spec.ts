@@ -58,6 +58,7 @@ describe("Public auth (e2e)", () => {
       body: {},
     },
     { method: "post", path: "/public/intake/not-a-number", body: {} },
+    { method: "post", path: "/public/waitlist", body: {} },
   ];
 
   it.each(publicRoutes)(

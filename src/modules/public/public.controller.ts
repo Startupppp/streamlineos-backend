@@ -29,6 +29,7 @@ import { IntakeService } from "./intake.service";
 import { OrgService } from "./org.service";
 import { PublicFormsService } from "./public-forms.service";
 import { ContactService } from "./contact.service";
+import { WaitlistService } from "./waitlist.service";
 import {
   applySchema,
   contactSubmitSchema,
@@ -45,6 +46,7 @@ import {
   roadmapFeedbackSchema,
   roadmapQuerySchema,
   roadmapVoteSchema,
+  waitlistJoinSchema,
   type ApplyInput,
   type ContactSubmitInput,
   type ExternalReferralSubmitInput,
@@ -60,6 +62,7 @@ import {
   type RoadmapFeedbackInput,
   type RoadmapQueryInput,
   type RoadmapVoteInput,
+  type WaitlistJoinInput,
 } from "./dto/public.schemas";
 
 function clientIp(req: Request): string | undefined {
@@ -67,6 +70,12 @@ function clientIp(req: Request): string | undefined {
   const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
   const candidate = raw?.split(",")[0]?.trim() || req.ip;
   return candidate ? candidate.slice(0, 100) : undefined;
+}
+
+function clientUserAgent(req: Request): string | undefined {
+  const raw = req.headers["user-agent"];
+  const candidate = Array.isArray(raw) ? raw[0] : raw;
+  return candidate ? candidate.slice(0, 500) : undefined;
 }
 
 @Public()
@@ -81,6 +90,7 @@ export class PublicController {
     private readonly org: OrgService,
     private readonly publicForms: PublicFormsService,
     private readonly contact: ContactService,
+    private readonly waitlist: WaitlistService,
     @Inject(DRIZZLE) private readonly db: Db,
   ) {}
 
@@ -93,6 +103,20 @@ export class PublicController {
     @Req() req: Request,
   ) {
     return this.contact.submit(body, clientIp(req));
+  }
+
+  @Post("waitlist")
+  @HttpCode(201)
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("public:waitlist")
+  joinWaitlist(
+    @Body(new ZodValidationPipe(waitlistJoinSchema)) body: WaitlistJoinInput,
+    @Req() req: Request,
+  ) {
+    return this.waitlist.join(body, {
+      ipAddress: clientIp(req),
+      userAgent: clientUserAgent(req),
+    });
   }
 
   @Get("application-status/:token")
