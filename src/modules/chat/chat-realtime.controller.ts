@@ -10,9 +10,11 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { AblyService } from "../realtime/ably.service";
 import { ChatChannelsService } from "./chat-channels.service";
 
+@RequireModule("chat")
 @Controller("chat")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ChatRealtimeController {

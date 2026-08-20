@@ -169,7 +169,7 @@ export const chatUserPresence = pgTable(
     lastSeenAt: timestamp("last_seen_at").defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex("uniq_chat_presence_user").on(table.userId),
+    uniqueIndex("uniq_chat_presence_org_user").on(table.orgId, table.userId),
     index("idx_chat_presence_org").on(table.orgId, table.status),
     index("idx_chat_presence_lastseen").on(table.orgId, table.lastSeenAt),
     unique("uniq_chat_user_presence_org_id").on(table.orgId, table.id),

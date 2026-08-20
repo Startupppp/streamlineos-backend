@@ -81,7 +81,7 @@ export class ChatPresenceController {
     if (query.query.length < 2) {
       throw new BadRequestException("Query must be at least 2 characters");
     }
-    return this.presence.searchMessages(u.userId, query.query, query.channelId, query.limit ?? 20);
+    return this.presence.searchMessages(u.userId, u.orgId, query.query, query.channelId, query.limit ?? 20);
   }
 
   @ApiOperation({ summary: "List all users in the organisation for mentions and invites" })

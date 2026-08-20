@@ -1,39 +1,59 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, gte, ilike, lte, or, sql } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, inArray, lt, lte, or, sql } from "drizzle-orm";
 import { chatChannelMembers, chatChannels, chatMessages, organizationMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+
+const CHAT_SEARCH_ID_CAP = 1000;
+const TRIGRAM_MIN_TERM_LENGTH = 3;
 
 @Injectable()
 export class ChatSearchService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
+  /**
+   * Trigram index is unusable under RLS, so selective terms resolve through the
+   * SECURITY DEFINER helper; an over-broad term (cap+1 hits) falls back to plain
+   * ILIKE, which is the faster plan in exactly that case.
+   */
+  private async resolveContentMatch(term: string): Promise<SQL<unknown>> {
+    const like = sql`${chatMessages.content} ILIKE ${"%" + term + "%"}`;
+    if (term.length < TRIGRAM_MIN_TERM_LENGTH) return like;
+    const idRows = await this.db.execute(
+      sql`SELECT app.search_chat_message_ids(${term}, ${CHAT_SEARCH_ID_CAP + 1}) AS id`,
+    );
+    if (idRows.length > CHAT_SEARCH_ID_CAP) return like;
+    const ids = idRows.map((row) => Number(row["id"]));
+    if (ids.length === 0) return sql`false`;
+    return inArray(chatMessages.id, ids);
+  }
+
   async searchMessages(orgId: string, userId: string, query: string, limit = 20, cursor?: number, from?: string, to?: string, sender?: string) {
-    if (!query.trim()) return { results: [], nextCursor: undefined };
-    const q = `%${query.trim()}%`;
-
-    const memberChannels = await this.db
-      .select({ channelId: chatChannelMembers.channelId })
-      .from(chatChannelMembers)
-      .innerJoin(chatChannels, eq(chatChannels.id, chatChannelMembers.channelId))
-      .where(and(eq(chatChannelMembers.userId, userId), eq(chatChannels.orgId, orgId)));
-
-    const memberChannelIds = memberChannels.map(m => m.channelId);
-    if (memberChannelIds.length === 0) return { results: [], nextCursor: undefined };
+    const term = query.trim();
+    if (!term) return { results: [], nextCursor: undefined };
 
     const conditions = [
-      sql`${chatMessages.channelId} = ANY(ARRAY[${sql.join(memberChannelIds.map(id => sql`${id}`), sql`, `)}]::int[])`,
-      ilike(chatMessages.content, q),
+      eq(chatMessages.orgId, orgId),
+      // Membership is an indexed correlated subquery, not an unbounded id list
+      // materialised into the statement on every request.
+      sql`EXISTS (SELECT 1 FROM ${chatChannelMembers} m
+                  WHERE m.channel_id = ${chatMessages.channelId}
+                    AND m.org_id = ${orgId}
+                    AND m.user_id = ${userId})`,
+      await this.resolveContentMatch(term),
       eq(chatMessages.isDeleted, false),
     ];
-    if (cursor) conditions.push(sql`${chatMessages.id} < ${cursor}`);
+    // Cursor and sort key must be the same column or pagination skips and repeats
+    // rows; id is monotonic with insertion here. Revisit if this table is ever partitioned.
+    if (cursor) conditions.push(lt(chatMessages.id, cursor));
     if (from) conditions.push(gte(chatMessages.createdAt, new Date(from)));
     if (to) conditions.push(lte(chatMessages.createdAt, new Date(to)));
     if (sender) conditions.push(eq(chatMessages.senderId, sender));
 
     const rows = await this.db.query.chatMessages.findMany({
       where: and(...conditions),
-      orderBy: [desc(chatMessages.createdAt)],
+      orderBy: [desc(chatMessages.id)],
       limit: limit + 1,
       with: {
         sender: { columns: { id: true, name: true, image: true } },
@@ -53,7 +73,7 @@ export class ChatSearchService {
     const memberChannels = await this.db
       .select({ channelId: chatChannelMembers.channelId })
       .from(chatChannelMembers)
-      .where(eq(chatChannelMembers.userId, userId));
+      .where(and(eq(chatChannelMembers.orgId, orgId), eq(chatChannelMembers.userId, userId)));
 
     const memberChannelIds = new Set(memberChannels.map(m => m.channelId));
 

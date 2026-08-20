@@ -55,44 +55,49 @@ export class ManagerInboxController {
     return this.teamRewards.getReportTotalRewards(u.orgId, u.userId, userId);
   }
 
-  @Post("reimbursements/:id/approve")
+  @Post("reimbursements/:reimbursementId/approve")
   @HttpCode(200)
   @RequirePermission("self:payroll")
   approveReimbursement(
     @CurrentUser() u: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("reimbursementId", ParseIntPipe) reimbursementId: number,
   ) {
-    return this.inbox.approveReimbursement(u.orgId, u.userId, id);
+    return this.inbox.approveReimbursement(u.orgId, u.userId, reimbursementId);
   }
 
-  @Post("reimbursements/:id/reject")
+  @Post("reimbursements/:reimbursementId/reject")
   @HttpCode(200)
   @RequirePermission("self:payroll")
   rejectReimbursement(
     @CurrentUser() u: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("reimbursementId", ParseIntPipe) reimbursementId: number,
     @Body(new ZodValidationPipe(managerRejectSchema)) body: ManagerReject,
   ) {
-    return this.inbox.rejectReimbursement(u.orgId, u.userId, id, body.reason);
+    return this.inbox.rejectReimbursement(
+      u.orgId,
+      u.userId,
+      reimbursementId,
+      body.reason,
+    );
   }
 
-  @Post("loans/:id/approve")
+  @Post("loans/:loanId/approve")
   @HttpCode(200)
   @RequirePermission("self:payroll")
   approveLoan(
     @CurrentUser() u: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("loanId", ParseIntPipe) loanId: number,
   ) {
-    return this.inbox.approveLoan(u.orgId, u.userId, id);
+    return this.inbox.approveLoan(u.orgId, u.userId, loanId);
   }
 
-  @Post("loans/:id/reject")
+  @Post("loans/:loanId/reject")
   @HttpCode(200)
   @RequirePermission("self:payroll")
   rejectLoan(
     @CurrentUser() u: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("loanId", ParseIntPipe) loanId: number,
   ) {
-    return this.inbox.rejectLoan(u.orgId, u.userId, id);
+    return this.inbox.rejectLoan(u.orgId, u.userId, loanId);
   }
 }

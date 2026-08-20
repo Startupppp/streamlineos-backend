@@ -1324,6 +1324,20 @@
       "when": 1786701526560,
       "tag": "0432_build_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 189,
+      "version": "7",
+      "when": 1786701586560,
+      "tag": "0433_chat_presence_org_scoped_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 190,
+      "version": "7",
+      "when": 1786701646560,
+      "tag": "0434_chat_message_search",
+      "breakpoints": true
     }
   ]
 }

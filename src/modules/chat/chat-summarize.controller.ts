@@ -14,8 +14,10 @@ import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { ChatSummarizeService } from "./chat-summarize.service";
 
+@RequireModule("chat")
 @Controller("chat/channels/:channelId/summarize")
 @UseGuards(JwtAuthGuard, PermissionGuard, RateLimitGuard)
 @RequirePermission("chat:messages:read")

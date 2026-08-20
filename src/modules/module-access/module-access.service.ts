@@ -88,23 +88,40 @@ function moduleOf(permissionKey: string): string {
   return permissionKey.split(":")[0] ?? permissionKey;
 }
 
+const VIEW_ACTIONS = ["view", "read"] as const;
+
+/**
+ * The sibling read key for a write grant, at any arity. The catalog is not
+ * uniformly `module:resource:action` — 53 keys are two-segment (`surveys:create`)
+ * and some are four (`build:workspaces:members:manage`) — and it uses both `view`
+ * and `read` as the read verb. Deriving from the last segment rather than a fixed
+ * position covers every shape.
+ */
+export function impliedViewKey(
+  catalog: ReadonlySet<string>,
+  permissionKey: string,
+): string | null {
+  const parts = permissionKey.split(":");
+  if (parts.length < 2) return null;
+  const action = parts[parts.length - 1];
+  if (!action || VIEW_ACTIONS.some((verb) => verb === action)) return null;
+  const prefix = parts.slice(0, -1);
+  for (const verb of VIEW_ACTIONS) {
+    const candidate = [...prefix, verb].join(":");
+    if (catalog.has(candidate)) return candidate;
+  }
+  return null;
+}
+
 function normalizeModulePermissionItems(
   catalog: ReadonlySet<string>,
   items: ReadonlyMap<string, DataScope>,
 ): Map<string, DataScope> {
   const normalized = new Map(items);
   for (const [permissionKey, scope] of items) {
-    const [moduleKey, resource, action] = permissionKey.split(":");
-    if (
-      !moduleKey ||
-      !resource ||
-      !action ||
-      action === "view" ||
-      scope === "none"
-    )
-      continue;
-    const viewKey = `${moduleKey}:${resource}:view`;
-    if (!catalog.has(viewKey)) continue;
+    if (scope === "none") continue;
+    const viewKey = impliedViewKey(catalog, permissionKey);
+    if (!viewKey) continue;
     const existing = normalized.get(viewKey);
     normalized.set(
       viewKey,

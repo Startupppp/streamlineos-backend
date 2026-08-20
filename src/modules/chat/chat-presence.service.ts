@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, desc, eq, gt, ilike, inArray, ne } from "drizzle-orm";
+import { and, count, desc, eq, gt, ilike, inArray, ne, sql } from "drizzle-orm";
 import {
   chatChannelMembers,
   chatMessages,
@@ -23,7 +23,7 @@ export class ChatPresenceService {
       .insert(chatUserPresence)
       .values({ userId, orgId, status: "ONLINE", lastSeenAt: new Date() })
       .onConflictDoUpdate({
-        target: chatUserPresence.userId,
+        target: [chatUserPresence.orgId, chatUserPresence.userId],
         set: { status: "ONLINE", lastSeenAt: new Date() },
       });
 
@@ -51,7 +51,7 @@ export class ChatPresenceService {
       .insert(chatUserPresence)
       .values({ userId, orgId, status: body.status, lastSeenAt: new Date() })
       .onConflictDoUpdate({
-        target: chatUserPresence.userId,
+        target: [chatUserPresence.orgId, chatUserPresence.userId],
         set: { status: body.status, lastSeenAt: new Date() },
       });
 
@@ -82,20 +82,16 @@ export class ChatPresenceService {
     }
   }
 
-  async searchMessages(userId: string, query: string, channelId: number | undefined, limit: number) {
-    const myChannels = await this.db
-      .select({ channelId: chatChannelMembers.channelId })
-      .from(chatChannelMembers)
-      .where(eq(chatChannelMembers.userId, userId));
-
-    const myChannelIds = myChannels.map((c) => c.channelId);
-    if (myChannelIds.length === 0) return [];
-
+  async searchMessages(userId: string, orgId: string, query: string, channelId: number | undefined, limit: number) {
     const safeQuery = query.replace(/[%_\\]/g, "\\$&");
     const conditions = [
+      eq(chatMessages.orgId, orgId),
       ilike(chatMessages.content, `%${safeQuery}%`),
       eq(chatMessages.isDeleted, false),
-      inArray(chatMessages.channelId, myChannelIds),
+      sql`EXISTS (SELECT 1 FROM ${chatChannelMembers} m
+                  WHERE m.channel_id = ${chatMessages.channelId}
+                    AND m.org_id = ${orgId}
+                    AND m.user_id = ${userId})`,
     ];
 
     if (channelId) conditions.push(eq(chatMessages.channelId, channelId));

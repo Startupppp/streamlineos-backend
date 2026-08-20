@@ -211,14 +211,43 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     }
     return version;
   }
+  /**
+   * Runs on every permission-checked request. The caches are read before any
+   * transaction is opened: a warm hit must cost zero round trips, because on a
+   * pooled connection each transaction is its own BEGIN / SET LOCAL / COMMIT
+   * sequence and this path is the most frequently executed one in the product.
+   */
   async resolveUserPermissions(
     orgId: string,
     userId: string,
   ): Promise<Map<string, DataScope>> {
+    const version = await this.getPermissionsVersion(orgId);
+    const permsKey = `${orgId}:${userId}:${version}`;
+    const cachedPerms = this.permsCache.get(permsKey);
+    const cachedMembership = this.membershipAccessCache.get(`${orgId}:${userId}`);
+    const now = Date.now();
+
+    if (
+      cachedPerms &&
+      cachedPerms.expiresAt > now &&
+      cachedMembership &&
+      cachedMembership.expiresAt > now
+    ) {
+      if (!cachedMembership.active) return new Map();
+      const warm = this.applyUniversalGrants(
+        new Map(Object.entries(cachedPerms.perms)),
+      );
+      if (cachedMembership.isOwnerOrAdmin) return warm;
+      const denied = this.deniedModulesCache.get(`${orgId}:${userId}:${version}`);
+      if (denied && denied.expiresAt > now) {
+        this.stripDeniedModules(warm, denied.modules);
+        return warm;
+      }
+    }
+
     return runInTenantTransaction(
       this.db,
       async () => {
-        const version = await this.getPermissionsVersion(orgId);
         const permsKey = `${orgId}:${userId}:${version}`;
         const local = this.permsCache.get(permsKey);
         let map: Map<string, DataScope>;
@@ -244,31 +273,41 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
         }
         const membership = await this.getMembershipAccessState(orgId, userId);
         if (!membership.active) return new Map();
-        for (const grant of UNIVERSAL_MEMBER_PERMISSION_GRANTS) {
-          const existing = map.get(grant.permissionKey);
-          map.set(
-            grant.permissionKey,
-            existing ? broadest(existing, grant.scope) : grant.scope,
-          );
-        }
-        for (const grant of EMPLOYEE_SELF_SERVICE_GRANTS) {
-          const existing = map.get(grant.permissionKey);
-          map.set(
-            grant.permissionKey,
-            existing ? broadest(existing, grant.scope) : grant.scope,
-          );
-        }
+        this.applyUniversalGrants(map);
         if (membership.isOwnerOrAdmin) return map;
         const denied = await this.getUserDeniedModules(orgId, userId);
-        if (denied.size > 0) {
-          for (const key of Array.from(map.keys())) {
-            if (denied.has(moduleOf(key))) map.delete(key);
-          }
-        }
+        this.stripDeniedModules(map, denied);
         return map;
       },
       { orgId },
     );
+  }
+
+  /** Grants every active member holds regardless of role. Shared by both paths. */
+  private applyUniversalGrants(
+    map: Map<string, DataScope>,
+  ): Map<string, DataScope> {
+    for (const grant of [
+      ...UNIVERSAL_MEMBER_PERMISSION_GRANTS,
+      ...EMPLOYEE_SELF_SERVICE_GRANTS,
+    ]) {
+      const existing = map.get(grant.permissionKey);
+      map.set(
+        grant.permissionKey,
+        existing ? broadest(existing, grant.scope) : grant.scope,
+      );
+    }
+    return map;
+  }
+
+  private stripDeniedModules(
+    map: Map<string, DataScope>,
+    denied: ReadonlySet<string>,
+  ): void {
+    if (denied.size === 0) return;
+    for (const key of Array.from(map.keys())) {
+      if (denied.has(moduleOf(key))) map.delete(key);
+    }
   }
   private readonly membershipAccessCache = new Map<
     string,
@@ -309,6 +348,9 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     orgId: string,
     userId: string,
   ): Promise<boolean> {
+    const cached = this.membershipAccessCache.get(`${orgId}:${userId}`);
+    if (cached && cached.expiresAt > Date.now()) return cached.isOwnerOrAdmin;
+
     return runInTenantTransaction(
       this.db,
       async () =>
