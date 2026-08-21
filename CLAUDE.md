@@ -72,6 +72,14 @@
 
 Permissions resolve from the DB on **every request** via `AccessService`. **CASL is fully removed from both repos.**
 
+**There are exactly six standings, and no custom roles.** Org owner · org admin · org member, and per module: module owner · module admin · module member. Do not add a seventh, and do not offer role creation as a product surface — a role is a fixed template, not user content.
+
+**Capability is narrowed per person, not by inventing a role.** A module owner, module admin, org admin or org owner may attach specific permissions to one person — a member *or* an admin — and may change that person's role. The grantee can then do only what they hold, and sees only the screens those permissions unlock; navigation and controls derive from the resolved set, never from the role name. A per-person grant may only narrow or extend within the grantor's own authority; it never crosses into another module.
+
+⚠ **Not built yet.** Today permissions attach to roles (`role_permission_grants`); the only per-person tables are `user_delegations` (temporary, acting-for) and `user_module_access` (deny-override, can only *remove* module access). A durable per-person grant does not exist. Treat the paragraph above as the target model, and check before assuming a call site can express it.
+
+⚠ **A key added to a module template reaches new organisations only.** `seedSystemRolesForOrg` grants on role *creation*, and `seed-system-roles.spec.ts` asserts a re-seed must not touch an existing role's grants (so an owner's revocation is never silently restored). Any change that adds a permission key to a template must ship a backfill migration too, or it is inert everywhere that already exists — see `0436` for the shape.
+
 **Keys** are `"module:resource:action"` (`"hr:employees:view"`), lowercase, **module segment first** — module scoping slices on segment one, so that part is load-bearing. Prefer `action` ∈ view · create · update · delete · manage · assign · export · approve · reject · import, but a **domain verb is legitimate where it carries authority the generic set cannot express** (`payroll:runs:post`, `sign:envelopes:void`, `inventory:transfers:ship`) — collapsing those into `manage` loses a real distinction. ~137 of 631 keys use one; that is the catalog being right, not drift.
 
 Arity is not fixed at three: 53 keys are two-segment (`surveys:create`) and some are four (`build:workspaces:members:manage`). Both are fine — the only code that ever depended on position-two was the implied-view rule, which now derives the sibling read key from the **last** segment at any length. Served by `GET /me/access` — **never** from JWT claims.

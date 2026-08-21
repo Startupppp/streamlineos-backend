@@ -69,12 +69,6 @@ export class ProjectsTicketsController {
     return this.tickets.searchOrgTickets(u.orgId, u.userId, query.q, query.limit);
   }
 
-  @Get("my-work")
-  @RequirePermission("build:tickets:view")
-  getMyWork(@CurrentUser() u: CurrentUserContext) {
-    return this.tickets.getMyWork(u.orgId, u.userId);
-  }
-
   @Get(":projectId/tickets/export")
   @RequirePermission("build:tickets:view")
   exportTickets(

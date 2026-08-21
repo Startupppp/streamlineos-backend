@@ -1,7 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import {
   and,
-  asc,
   count,
   desc,
   eq,
@@ -63,12 +62,6 @@ const WORK_ROW_SELECTION = {
   assigneeImage: users.image,
 } as const;
 
-const MY_WORK_LIMIT = 100;
-
-const MY_WORK_PRIORITY_ORDER = sql`CASE ${tickets.priority} WHEN 'URGENT' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'MEDIUM' THEN 3 WHEN 'LOW' THEN 4 ELSE 5 END ASC`;
-
-const MY_WORK_UNION_ORDER = sql`u.due_date ASC NULLS LAST, CASE u.priority WHEN 'URGENT' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'MEDIUM' THEN 3 WHEN 'LOW' THEN 4 ELSE 5 END ASC, u.id ASC`;
-
 @Injectable()
 export class ProjectsWorkQueryService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
@@ -124,50 +117,6 @@ export class ProjectsWorkQueryService {
       .limit(limit);
 
     return rows;
-  }
-
-  async getMyWork(orgId: string, userId: string) {
-    const idRows = await this.db.execute(
-      assignedOrParticipatingIds({
-        orgId,
-        userId,
-        baseWhere: and(
-          eq(tickets.orgId, orgId),
-          ne(projects.status, "ARCHIVED"),
-          isNull(tickets.deletedAt),
-        ),
-        carry: sql`${tickets.dueDate} AS due_date, ${tickets.priority} AS priority`,
-        orderBy: MY_WORK_UNION_ORDER,
-        limit: MY_WORK_LIMIT,
-        offset: 0,
-      }),
-    );
-
-    const { ids } = readIdsAndTotal(idRows);
-    if (ids.length === 0) return [];
-
-    return this.db
-      .select({
-        id: tickets.id,
-        title: tickets.title,
-        status: tickets.status,
-        priority: tickets.priority,
-        type: tickets.type,
-        dueDate: tickets.dueDate,
-        ticketNumber: tickets.ticketNumber,
-        projectId: projects.id,
-        projectName: projects.name,
-        projectKey: projects.key,
-      })
-      .from(tickets)
-      .innerJoin(projects, eq(tickets.projectId, projects.id))
-      .where(and(eq(tickets.orgId, orgId), inArray(tickets.id, ids)))
-      .orderBy(
-        sql`${tickets.dueDate} ASC NULLS LAST`,
-        MY_WORK_PRIORITY_ORDER,
-        asc(tickets.id),
-      )
-      .limit(MY_WORK_LIMIT);
   }
 
   async getAllWork(u: CurrentUserContext, query: AllWorkQuery) {

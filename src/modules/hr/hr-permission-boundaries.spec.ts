@@ -1,5 +1,6 @@
 import { REQUIRE_PERMISSION } from "../access/require-permission.decorator";
 import { HrCustomFieldsController } from "./core/hr-custom-fields.controller";
+import { HrOrgStructureCompatController } from "./core/hr-org-structure-compat.controller";
 import { BackgroundVerificationController } from "./directory/background-verification.controller";
 import { DelegationsController } from "./governance/delegations/delegations.controller";
 import { RecruitmentPipelineController } from "./recruitment/recruitment-pipeline.controller";
@@ -45,19 +46,19 @@ describe("HR least-privilege controller boundaries", () => {
     ).toBe("hr:sensitive:view");
   });
 
-  it("uses the dedicated settings permission for field definitions", () => {
+  it("gates field definitions on HR's own namespace, not global settings", () => {
     expect(
       permissionFor(HrCustomFieldsController.prototype.listDefinitions),
-    ).toBe("settings:custom-fields:manage");
+    ).toBe("hr:custom-fields:manage");
     expect(
       permissionFor(HrCustomFieldsController.prototype.createDefinition),
-    ).toBe("settings:custom-fields:manage");
+    ).toBe("hr:custom-fields:manage");
     expect(
       permissionFor(HrCustomFieldsController.prototype.updateDefinition),
-    ).toBe("settings:custom-fields:manage");
+    ).toBe("hr:custom-fields:manage");
     expect(
       permissionFor(HrCustomFieldsController.prototype.deleteDefinition),
-    ).toBe("settings:custom-fields:manage");
+    ).toBe("hr:custom-fields:manage");
 
     expect(permissionFor(HrCustomFieldsController.prototype.getValues)).toBe(
       "hr:employees:view",
@@ -65,6 +66,21 @@ describe("HR least-privilege controller boundaries", () => {
     expect(
       permissionFor(HrCustomFieldsController.prototype.upsertValues),
     ).toBe("hr:employees:update");
+  });
+
+  it("leaves organisation structure on global settings — hierarchy is global administration", () => {
+    const controller = HrOrgStructureCompatController.prototype;
+    for (const handler of [controller.listLocations, controller.listTeams])
+      expect(permissionFor(handler)).toBe("settings:view");
+    for (const handler of [
+      controller.createLocation,
+      controller.updateLocation,
+      controller.deleteLocation,
+      controller.createTeam,
+      controller.updateTeam,
+      controller.deleteTeam,
+    ])
+      expect(permissionFor(handler)).toBe("settings:organization:manage");
   });
 
   it("uses the dedicated onboarding permission for the complete hiring flow", () => {

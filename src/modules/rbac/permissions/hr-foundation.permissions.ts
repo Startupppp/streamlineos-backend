@@ -166,6 +166,12 @@ export const HR_FOUNDATION_PERMISSIONS: Permission[] = [
     scopable: true,
   },
   {
+    name: "hr:custom-fields:manage",
+    resource: "hr:custom-fields",
+    action: "manage",
+    description: "Manage HR custom field definitions",
+  },
+  {
     name: "hr:sensitive:view",
     resource: "hr:sensitive",
     action: "view",

@@ -221,10 +221,6 @@ export class ProjectsTicketsService {
     return this.workQuery.searchOrgTickets(orgId, userId, q, limit);
   }
 
-  async getMyWork(orgId: string, userId: string) {
-    return this.workQuery.getMyWork(orgId, userId);
-  }
-
   async getAllWork(u: CurrentUserContext, query: AllWorkQuery) {
     return this.workQuery.getAllWork(u, query);
   }

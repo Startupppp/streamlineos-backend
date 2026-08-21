@@ -44,7 +44,7 @@ export class HrCustomFieldsController {
   ) {}
 
   @Get("definitions")
-  @RequirePermission("settings:custom-fields:manage")
+  @RequirePermission("hr:custom-fields:manage")
   listDefinitions(
     @Query("entityType") entityType: string = "employee",
     @CurrentUser() u: CurrentUserContext,
@@ -54,7 +54,7 @@ export class HrCustomFieldsController {
 
   @Post("definitions")
   @HttpCode(201)
-  @RequirePermission("settings:custom-fields:manage")
+  @RequirePermission("hr:custom-fields:manage")
   createDefinition(
     @Body(new ZodValidationPipe(createCustomFieldSchema)) body: CreateCustomFieldInput,
     @CurrentUser() u: CurrentUserContext,
@@ -63,7 +63,7 @@ export class HrCustomFieldsController {
   }
 
   @Patch("definitions/:fieldId")
-  @RequirePermission("settings:custom-fields:manage")
+  @RequirePermission("hr:custom-fields:manage")
   updateDefinition(
     @Param("fieldId", ParseIntPipe) fieldId: number,
     @Body(new ZodValidationPipe(updateCustomFieldSchema)) body: UpdateCustomFieldInput,
@@ -74,7 +74,7 @@ export class HrCustomFieldsController {
 
   @Delete("definitions/:fieldId")
   @HttpCode(204)
-  @RequirePermission("settings:custom-fields:manage")
+  @RequirePermission("hr:custom-fields:manage")
   deleteDefinition(
     @Param("fieldId", ParseIntPipe) fieldId: number,
     @CurrentUser() u: CurrentUserContext,
