@@ -32,6 +32,7 @@ const baseRole = {
 
 function makeTx(casReturns: Array<{ id: number }>) {
   return {
+    execute: jest.fn().mockResolvedValue([]),
     update: jest.fn().mockReturnValue({
       set: jest.fn().mockReturnValue({
         where: jest.fn().mockReturnValue({
@@ -48,6 +49,29 @@ function makeTx(casReturns: Array<{ id: number }>) {
   };
 }
 
+function makeDb(
+  role: typeof baseRole | undefined,
+  txMock: ReturnType<typeof makeTx>,
+): Db {
+  return {
+    query: {
+      roles: { findFirst: jest.fn().mockResolvedValue(role) },
+    },
+    select: jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnValue({
+        innerJoin: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            limit: jest.fn().mockResolvedValue([]),
+          }),
+        }),
+      }),
+    }),
+    transaction: jest.fn().mockImplementation(
+      (fn: (tx: ReturnType<typeof makeTx>) => Promise<unknown>) => fn(txMock),
+    ),
+  } as unknown as Db;
+}
+
 function makeService(
   role: typeof baseRole | undefined,
   txMock: ReturnType<typeof makeTx>,
@@ -57,15 +81,7 @@ function makeService(
   const access = {
     resolveUserPermissions: jest.fn().mockResolvedValue(new Map()),
   } as unknown as AccessService;
-  const db = {
-    query: {
-      roles: { findFirst: jest.fn().mockResolvedValue(role) },
-    },
-    transaction: jest.fn().mockImplementation(
-      (fn: (tx: ReturnType<typeof makeTx>) => Promise<unknown>) => fn(txMock),
-    ),
-  } as unknown as Db;
-  return new RolePermissionService(db, cache, audit, access);
+  return new RolePermissionService(makeDb(role, txMock), cache, audit, access);
 }
 
 describe("RolePermissionService.setRolePermissions — CAS", () => {
@@ -93,23 +109,13 @@ describe("RolePermissionService.setRolePermissions — CAS", () => {
     } as unknown as AccessService;
 
     const firstTx = makeTx([{ id: 1 }]);
-    const firstDb = {
-      query: { roles: { findFirst: jest.fn().mockResolvedValue({ ...baseRole, version: 1 }) } },
-      transaction: jest.fn().mockImplementation(
-        (fn: (tx: ReturnType<typeof makeTx>) => Promise<unknown>) => fn(firstTx),
-      ),
-    } as unknown as Db;
+    const firstDb = makeDb({ ...baseRole, version: 1 }, firstTx);
     const svc1 = new RolePermissionService(firstDb, cache, audit, access);
     const result1 = await svc1.setRolePermissions(ownerActor, 1, { version: 1, items: [] });
     expect(result1).toEqual({ success: true, version: 2 });
 
     const secondTx = makeTx([{ id: 1 }]);
-    const secondDb = {
-      query: { roles: { findFirst: jest.fn().mockResolvedValue({ ...baseRole, version: result1.version }) } },
-      transaction: jest.fn().mockImplementation(
-        (fn: (tx: ReturnType<typeof makeTx>) => Promise<unknown>) => fn(secondTx),
-      ),
-    } as unknown as Db;
+    const secondDb = makeDb({ ...baseRole, version: result1.version }, secondTx);
     const svc2 = new RolePermissionService(secondDb, cache, audit, access);
     const result2 = await svc2.setRolePermissions(ownerActor, 1, { version: result1.version, items: [] });
     expect(result2).toEqual({ success: true, version: 3 });
