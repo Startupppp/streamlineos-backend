@@ -63,6 +63,34 @@ describe("Home surfaces are allowed to everyone", () => {
     },
   );
 
+  it("gives a suspended member nothing, universal or otherwise", async () => {
+    const db = {
+      query: {
+        organizationMembers: {
+          findFirst: () =>
+            Promise.resolve({
+              isOwner: false,
+              status: "SUSPENDED",
+              id: 1,
+              role: "MEMBER",
+            }),
+        },
+      },
+      select: () => ({ from: () => ({ where: () => Promise.resolve([]) }) }),
+    } as unknown as Db;
+
+    const resolver = new AccessPermissionResolver(
+      () => db,
+      (read) => read() as Promise<never>,
+      new Set<string>(),
+      new Map(),
+      1000,
+    );
+    const resolved = await resolver.computeUserPermissions("org-1", "u-1");
+    expect(resolved).toEqual({});
+    for (const [, key] of HOME_SURFACES) expect(resolved[key]).toBeUndefined();
+  });
+
   it("resolves them for an active member holding no role at all", async () => {
     const resolved = await resolverForMemberWithNoRoles().computeUserPermissions(
       "org-1",

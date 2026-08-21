@@ -1,8 +1,13 @@
 import { AccessService } from "../access.service";
 import type { Db } from "../../../db/drizzle.module";
 
+const transactionCalls = { count: 0 };
+
 jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
-  runInTenantTransaction: (_db: unknown, fn: (tx: unknown) => Promise<unknown>) => fn({}),
+  runInTenantTransaction: (_db: unknown, fn: (tx: unknown) => Promise<unknown>) => {
+    transactionCalls.count += 1;
+    return fn({});
+  },
 }));
 
 const ORG = "org-1";
@@ -66,7 +71,25 @@ function buildService(roleGrants: { permissionKey: string; scope: string }[]) {
   );
 }
 
+beforeEach(() => {
+  transactionCalls.count = 0;
+});
+
 describe("warm and cold permission resolution agree", () => {
+  it("serves the second call from cache without opening another transaction", async () => {
+    const service = buildService([
+      { permissionKey: "hr:employees:view", scope: "all" },
+    ]);
+
+    await service.resolveUserPermissions(ORG, USER);
+    const afterCold = transactionCalls.count;
+    await service.resolveUserPermissions(ORG, USER);
+    const warmCost = transactionCalls.count - afterCold;
+
+    expect(afterCold).toBeGreaterThan(0);
+    expect(warmCost).toBe(0);
+  });
+
   it("returns the identical permission set on the second, cache-served call", async () => {
     const service = buildService([
       { permissionKey: "hr:employees:view", scope: "all" },
