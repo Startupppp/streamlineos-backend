@@ -27,16 +27,16 @@ describe("ProjectsGovernance risks+decisions auth/RBAC (e2e)", () => {
   }
 
   const protectedRoutes: ReadonlyArray<[Method, string]> = [
-    ["get", "/projects/1/risks"],
-    ["get", "/projects/1/risks/2"],
-    ["post", "/projects/1/risks"],
-    ["patch", "/projects/1/risks/2"],
-    ["delete", "/projects/1/risks/2"],
-    ["get", "/projects/1/decisions"],
-    ["get", "/projects/1/decisions/2"],
-    ["post", "/projects/1/decisions"],
-    ["patch", "/projects/1/decisions/2"],
-    ["delete", "/projects/1/decisions/2"],
+    ["get", "/build/1/risks"],
+    ["get", "/build/1/risks/2"],
+    ["post", "/build/1/risks"],
+    ["patch", "/build/1/risks/2"],
+    ["delete", "/build/1/risks/2"],
+    ["get", "/build/1/decisions"],
+    ["get", "/build/1/decisions/2"],
+    ["post", "/build/1/decisions"],
+    ["patch", "/build/1/decisions/2"],
+    ["delete", "/build/1/decisions/2"],
   ];
 
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
@@ -48,7 +48,7 @@ describe("ProjectsGovernance risks+decisions auth/RBAC (e2e)", () => {
   it("403 on GET /projects/1/risks without projects:risks:view ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .get("/projects/1/risks")
+      .get("/build/1/risks")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
@@ -57,7 +57,7 @@ describe("ProjectsGovernance risks+decisions auth/RBAC (e2e)", () => {
   it("403 on GET /projects/1/risks/2 without projects:risks:view ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .get("/projects/1/risks/2")
+      .get("/build/1/risks/2")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
@@ -66,7 +66,7 @@ describe("ProjectsGovernance risks+decisions auth/RBAC (e2e)", () => {
   it("403 on POST /projects/1/risks without projects:risks:manage ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .post("/projects/1/risks")
+      .post("/build/1/risks")
       .set("Authorization", `Bearer ${token}`)
       .send({ title: "DB failure risk" });
     expect(res.status).toBe(403);
@@ -76,7 +76,7 @@ describe("ProjectsGovernance risks+decisions auth/RBAC (e2e)", () => {
   it("403 on PATCH /projects/1/risks/2 without projects:risks:manage ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .patch("/projects/1/risks/2")
+      .patch("/build/1/risks/2")
       .set("Authorization", `Bearer ${token}`)
       .send({ status: "mitigated" });
     expect(res.status).toBe(403);
@@ -86,7 +86,7 @@ describe("ProjectsGovernance risks+decisions auth/RBAC (e2e)", () => {
   it("403 on DELETE /projects/1/risks/2 without projects:risks:manage ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .delete("/projects/1/risks/2")
+      .delete("/build/1/risks/2")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
@@ -95,7 +95,7 @@ describe("ProjectsGovernance risks+decisions auth/RBAC (e2e)", () => {
   it("403 on GET /projects/1/decisions without projects:decisions:view ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .get("/projects/1/decisions")
+      .get("/build/1/decisions")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
@@ -104,7 +104,7 @@ describe("ProjectsGovernance risks+decisions auth/RBAC (e2e)", () => {
   it("403 on GET /projects/1/decisions/2 without projects:decisions:view ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .get("/projects/1/decisions/2")
+      .get("/build/1/decisions/2")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
@@ -113,7 +113,7 @@ describe("ProjectsGovernance risks+decisions auth/RBAC (e2e)", () => {
   it("403 on POST /projects/1/decisions without projects:decisions:manage ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .post("/projects/1/decisions")
+      .post("/build/1/decisions")
       .set("Authorization", `Bearer ${token}`)
       .send({ title: "Use PostgreSQL over MySQL" });
     expect(res.status).toBe(403);
@@ -123,7 +123,7 @@ describe("ProjectsGovernance risks+decisions auth/RBAC (e2e)", () => {
   it("403 on PATCH /projects/1/decisions/2 without projects:decisions:manage ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .patch("/projects/1/decisions/2")
+      .patch("/build/1/decisions/2")
       .set("Authorization", `Bearer ${token}`)
       .send({ status: "accepted" });
     expect(res.status).toBe(403);
@@ -133,7 +133,7 @@ describe("ProjectsGovernance risks+decisions auth/RBAC (e2e)", () => {
   it("403 on DELETE /projects/1/decisions/2 without projects:decisions:manage ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .delete("/projects/1/decisions/2")
+      .delete("/build/1/decisions/2")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
@@ -145,7 +145,7 @@ describe("ProjectsGovernance risks+decisions auth/RBAC (e2e)", () => {
       enabledModules: ["build"],
     });
     const res = await request(app.getHttpServer())
-      .get("/projects/1/risks")
+      .get("/build/1/risks")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).not.toBe(401);
     expect(res.status).not.toBe(403);
@@ -157,7 +157,7 @@ describe("ProjectsGovernance risks+decisions auth/RBAC (e2e)", () => {
       enabledModules: ["build"],
     });
     const res = await request(app.getHttpServer())
-      .get("/projects/1/decisions")
+      .get("/build/1/decisions")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).not.toBe(401);
     expect(res.status).not.toBe(403);

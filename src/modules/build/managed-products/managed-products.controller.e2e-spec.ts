@@ -33,9 +33,9 @@ describe("ManagedProducts auth/RBAC (e2e)", () => {
   const PRODUCT_ID = "1";
 
   const protectedRoutes: ReadonlyArray<[Method, string]> = [
-    ["get", "/projects/managed-products"],
+    ["get", "/build/managed-products"],
     ["get", `/projects/managed-products/${PRODUCT_ID}`],
-    ["post", "/projects/managed-products"],
+    ["post", "/build/managed-products"],
     ["patch", `/projects/managed-products/${PRODUCT_ID}`],
     ["delete", `/projects/managed-products/${PRODUCT_ID}`],
   ];
@@ -52,7 +52,7 @@ describe("ManagedProducts auth/RBAC (e2e)", () => {
   it("403 on POST /projects/managed-products without projects:managed-products:create permission", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .post("/projects/managed-products")
+      .post("/build/managed-products")
       .set("Authorization", `Bearer ${token}`)
       .send({ name: "Product Alpha" });
     expect(res.status).toBe(403);
@@ -81,7 +81,7 @@ describe("ManagedProducts auth/RBAC (e2e)", () => {
   it("403 on GET /projects/managed-products without projects:managed-products:view permission", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .get("/projects/managed-products")
+      .get("/build/managed-products")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });

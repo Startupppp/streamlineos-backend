@@ -27,20 +27,20 @@ describe("ProjectsPortfolios/Programs auth/RBAC (e2e)", () => {
   }
 
   const protectedRoutes: ReadonlyArray<[Method, string]> = [
-    ["get", "/projects/portfolios"],
-    ["get", "/projects/portfolios/1"],
-    ["post", "/projects/portfolios"],
-    ["patch", "/projects/portfolios/1"],
-    ["delete", "/projects/portfolios/1"],
-    ["post", "/projects/portfolios/1/projects"],
-    ["delete", "/projects/portfolios/1/projects/2"],
-    ["get", "/projects/programs"],
-    ["get", "/projects/programs/1"],
-    ["post", "/projects/programs"],
-    ["patch", "/projects/programs/1"],
-    ["delete", "/projects/programs/1"],
-    ["post", "/projects/programs/1/projects"],
-    ["delete", "/projects/programs/1/projects/2"],
+    ["get", "/build/portfolios"],
+    ["get", "/build/portfolios/1"],
+    ["post", "/build/portfolios"],
+    ["patch", "/build/portfolios/1"],
+    ["delete", "/build/portfolios/1"],
+    ["post", "/build/portfolios/1/projects"],
+    ["delete", "/build/portfolios/1/projects/2"],
+    ["get", "/build/programs"],
+    ["get", "/build/programs/1"],
+    ["post", "/build/programs"],
+    ["patch", "/build/programs/1"],
+    ["delete", "/build/programs/1"],
+    ["post", "/build/programs/1/projects"],
+    ["delete", "/build/programs/1/projects/2"],
   ];
 
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
@@ -52,7 +52,7 @@ describe("ProjectsPortfolios/Programs auth/RBAC (e2e)", () => {
   it("403 on GET /projects/portfolios without projects:portfolios:view ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .get("/projects/portfolios")
+      .get("/build/portfolios")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
@@ -61,7 +61,7 @@ describe("ProjectsPortfolios/Programs auth/RBAC (e2e)", () => {
   it("403 on POST /projects/portfolios without projects:portfolios:manage ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .post("/projects/portfolios")
+      .post("/build/portfolios")
       .set("Authorization", `Bearer ${token}`)
       .send({ name: "Q3 Portfolio" });
     expect(res.status).toBe(403);
@@ -71,7 +71,7 @@ describe("ProjectsPortfolios/Programs auth/RBAC (e2e)", () => {
   it("403 on POST /projects/portfolios/1/projects without projects:portfolios:manage ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .post("/projects/portfolios/1/projects")
+      .post("/build/portfolios/1/projects")
       .set("Authorization", `Bearer ${token}`)
       .send({ projectId: 5 });
     expect(res.status).toBe(403);
@@ -81,7 +81,7 @@ describe("ProjectsPortfolios/Programs auth/RBAC (e2e)", () => {
   it("403 on GET /projects/programs without projects:programs:view ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .get("/projects/programs")
+      .get("/build/programs")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
@@ -90,7 +90,7 @@ describe("ProjectsPortfolios/Programs auth/RBAC (e2e)", () => {
   it("403 on POST /projects/programs without projects:programs:manage ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .post("/projects/programs")
+      .post("/build/programs")
       .set("Authorization", `Bearer ${token}`)
       .send({ name: "Alpha Program" });
     expect(res.status).toBe(403);
@@ -100,7 +100,7 @@ describe("ProjectsPortfolios/Programs auth/RBAC (e2e)", () => {
   it("403 on POST /projects/programs/1/projects without projects:programs:manage ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .post("/projects/programs/1/projects")
+      .post("/build/programs/1/projects")
       .set("Authorization", `Bearer ${token}`)
       .send({ projectId: 7 });
     expect(res.status).toBe(403);
@@ -113,7 +113,7 @@ describe("ProjectsPortfolios/Programs auth/RBAC (e2e)", () => {
       enabledModules: ["build"],
     });
     const res = await request(app.getHttpServer())
-      .get("/projects/portfolios")
+      .get("/build/portfolios")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).not.toBe(401);
     expect(res.status).not.toBe(403);

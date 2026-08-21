@@ -27,45 +27,45 @@ describe("ProjectsExecution auth/RBAC (e2e)", () => {
   }
 
   const protectedRoutes: ReadonlyArray<[Method, string]> = [
-    ["get", "/projects/1/sprints"],
-    ["post", "/projects/1/sprints"],
-    ["get", "/projects/1/sprints/1"],
-    ["patch", "/projects/1/sprints/1"],
-    ["get", "/projects/1/cycles"],
-    ["post", "/projects/1/cycles"],
-    ["patch", "/projects/1/cycles/1"],
-    ["delete", "/projects/1/cycles/1"],
-    ["get", "/projects/1/modules"],
-    ["post", "/projects/1/modules"],
-    ["patch", "/projects/1/modules/1"],
-    ["delete", "/projects/1/modules/1"],
-    ["get", "/projects/1/epics"],
-    ["post", "/projects/1/epics"],
-    ["get", "/projects/1/milestones"],
-    ["post", "/projects/1/milestones"],
-    ["patch", "/projects/1/milestones/1"],
-    ["delete", "/projects/1/milestones/1"],
-    ["get", "/projects/1/intake"],
-    ["post", "/projects/1/intake"],
-    ["patch", "/projects/1/intake/1"],
-    ["get", "/projects/1/views"],
-    ["post", "/projects/1/views"],
-    ["patch", "/projects/1/views/1"],
-    ["delete", "/projects/1/views/1"],
-    ["get", "/projects/1/whiteboards"],
-    ["post", "/projects/1/whiteboards"],
-    ["get", "/projects/1/whiteboards/1"],
-    ["patch", "/projects/1/whiteboards/1"],
-    ["delete", "/projects/1/whiteboards/1"],
-    ["get", "/projects/time-entries"],
-    ["get", "/projects/time-entries/team"],
-    ["patch", "/projects/time-entries/1"],
-    ["delete", "/projects/time-entries/1"],
-    ["patch", "/projects/time-entries/1/approve"],
-    ["patch", "/projects/time-entries/1/reject"],
-    ["get", "/projects/billing-summary"],
-    ["get", "/projects/1/tickets/1/time-entries"],
-    ["post", "/projects/1/tickets/1/time-entries"],
+    ["get", "/build/1/sprints"],
+    ["post", "/build/1/sprints"],
+    ["get", "/build/1/sprints/1"],
+    ["patch", "/build/1/sprints/1"],
+    ["get", "/build/1/cycles"],
+    ["post", "/build/1/cycles"],
+    ["patch", "/build/1/cycles/1"],
+    ["delete", "/build/1/cycles/1"],
+    ["get", "/build/1/modules"],
+    ["post", "/build/1/modules"],
+    ["patch", "/build/1/modules/1"],
+    ["delete", "/build/1/modules/1"],
+    ["get", "/build/1/epics"],
+    ["post", "/build/1/epics"],
+    ["get", "/build/1/milestones"],
+    ["post", "/build/1/milestones"],
+    ["patch", "/build/1/milestones/1"],
+    ["delete", "/build/1/milestones/1"],
+    ["get", "/build/1/intake"],
+    ["post", "/build/1/intake"],
+    ["patch", "/build/1/intake/1"],
+    ["get", "/build/1/views"],
+    ["post", "/build/1/views"],
+    ["patch", "/build/1/views/1"],
+    ["delete", "/build/1/views/1"],
+    ["get", "/build/1/whiteboards"],
+    ["post", "/build/1/whiteboards"],
+    ["get", "/build/1/whiteboards/1"],
+    ["patch", "/build/1/whiteboards/1"],
+    ["delete", "/build/1/whiteboards/1"],
+    ["get", "/build/time-entries"],
+    ["get", "/build/time-entries/team"],
+    ["patch", "/build/time-entries/1"],
+    ["delete", "/build/time-entries/1"],
+    ["patch", "/build/time-entries/1/approve"],
+    ["patch", "/build/time-entries/1/reject"],
+    ["get", "/build/billing-summary"],
+    ["get", "/build/1/tickets/1/time-entries"],
+    ["post", "/build/1/tickets/1/time-entries"],
   ];
 
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
@@ -77,7 +77,7 @@ describe("ProjectsExecution auth/RBAC (e2e)", () => {
   it("402 MODULE_NOT_ENABLED on POST /projects/1/sprints when projects module is off", async () => {
     const token = await signToken({ permissions: [], enabledModules: [] });
     const res = await request(app.getHttpServer())
-      .post("/projects/1/sprints")
+      .post("/build/1/sprints")
       .set("Authorization", `Bearer ${token}`)
       .send({});
     expect(res.status).toBe(402);
@@ -87,7 +87,7 @@ describe("ProjectsExecution auth/RBAC (e2e)", () => {
   it("403 on POST /projects/1/sprints without projects:sprints manage", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .post("/projects/1/sprints")
+      .post("/build/1/sprints")
       .set("Authorization", `Bearer ${token}`)
       .send({});
     expect(res.status).toBe(403);
@@ -97,7 +97,7 @@ describe("ProjectsExecution auth/RBAC (e2e)", () => {
   it("403 on GET /projects/time-entries/team without projects:timesheets manage", async () => {
     const token = await signToken({ permissions: [], enabledModules: [] });
     const res = await request(app.getHttpServer())
-      .get("/projects/time-entries/team")
+      .get("/build/time-entries/team")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Only admins can view team timesheets" });
@@ -106,7 +106,7 @@ describe("ProjectsExecution auth/RBAC (e2e)", () => {
   it("403 on PATCH /projects/time-entries/1/approve without projects:timesheets manage", async () => {
     const token = await signToken({ permissions: [], enabledModules: [] });
     const res = await request(app.getHttpServer())
-      .patch("/projects/time-entries/1/approve")
+      .patch("/build/time-entries/1/approve")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Only admins can approve timesheets" });

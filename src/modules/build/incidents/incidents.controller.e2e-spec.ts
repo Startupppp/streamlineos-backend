@@ -29,12 +29,12 @@ describe("ProjectsIncidents auth/RBAC (e2e)", () => {
   }
 
   const protectedRoutes: ReadonlyArray<[Method, string]> = [
-    ["get", "/projects/1/incidents"],
-    ["get", "/projects/1/incidents/2"],
-    ["post", "/projects/1/incidents"],
-    ["patch", "/projects/1/incidents/2"],
-    ["delete", "/projects/1/incidents/2"],
-    ["post", "/projects/1/incidents/2/updates"],
+    ["get", "/build/1/incidents"],
+    ["get", "/build/1/incidents/2"],
+    ["post", "/build/1/incidents"],
+    ["patch", "/build/1/incidents/2"],
+    ["delete", "/build/1/incidents/2"],
+    ["post", "/build/1/incidents/2/updates"],
   ];
 
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
@@ -46,7 +46,7 @@ describe("ProjectsIncidents auth/RBAC (e2e)", () => {
   it("403 on GET /projects/1/incidents without projects:incidents:view ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .get("/projects/1/incidents")
+      .get("/build/1/incidents")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
@@ -55,7 +55,7 @@ describe("ProjectsIncidents auth/RBAC (e2e)", () => {
   it("403 on GET /projects/1/incidents/2 without projects:incidents:view ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .get("/projects/1/incidents/2")
+      .get("/build/1/incidents/2")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
@@ -64,7 +64,7 @@ describe("ProjectsIncidents auth/RBAC (e2e)", () => {
   it("403 on POST /projects/1/incidents without projects:incidents:manage ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .post("/projects/1/incidents")
+      .post("/build/1/incidents")
       .set("Authorization", `Bearer ${token}`)
       .send({ title: "DB replication lag" });
     expect(res.status).toBe(403);
@@ -74,7 +74,7 @@ describe("ProjectsIncidents auth/RBAC (e2e)", () => {
   it("403 on PATCH /projects/1/incidents/2 without projects:incidents:manage ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .patch("/projects/1/incidents/2")
+      .patch("/build/1/incidents/2")
       .set("Authorization", `Bearer ${token}`)
       .send({ status: "investigating" });
     expect(res.status).toBe(403);
@@ -84,7 +84,7 @@ describe("ProjectsIncidents auth/RBAC (e2e)", () => {
   it("403 on DELETE /projects/1/incidents/2 without projects:incidents:manage ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .delete("/projects/1/incidents/2")
+      .delete("/build/1/incidents/2")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
@@ -93,7 +93,7 @@ describe("ProjectsIncidents auth/RBAC (e2e)", () => {
   it("403 on POST /projects/1/incidents/2/updates without projects:incidents:manage ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .post("/projects/1/incidents/2/updates")
+      .post("/build/1/incidents/2/updates")
       .set("Authorization", `Bearer ${token}`)
       .send({ message: "Investigated root cause" });
     expect(res.status).toBe(403);
@@ -106,7 +106,7 @@ describe("ProjectsIncidents auth/RBAC (e2e)", () => {
       enabledModules: ["build"],
     });
     const res = await request(app.getHttpServer())
-      .get("/projects/1/incidents")
+      .get("/build/1/incidents")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).not.toBe(401);
     expect(res.status).not.toBe(403);
@@ -118,7 +118,7 @@ describe("ProjectsIncidents auth/RBAC (e2e)", () => {
       enabledModules: ["build"],
     });
     const res = await request(app.getHttpServer())
-      .post("/projects/1/incidents")
+      .post("/build/1/incidents")
       .set("Authorization", `Bearer ${token}`)
       .send({ title: "DB replication lag" });
     expect(res.status).not.toBe(401);

@@ -29,20 +29,20 @@ describe("Client Portal / Change Requests / Client Visibility auth/RBAC (e2e)", 
   }
 
   const protectedRoutes: ReadonlyArray<[Method, string]> = [
-    ["get", "/projects/portal/projects"],
-    ["get", "/projects/portal/projects/1/overview"],
-    ["get", "/projects/portal/projects/1/change-requests"],
-    ["post", "/projects/portal/projects/1/change-requests"],
-    ["get", "/projects/1/change-requests"],
-    ["get", "/projects/1/change-requests/2"],
-    ["post", "/projects/1/change-requests"],
-    ["patch", "/projects/1/change-requests/2"],
-    ["delete", "/projects/1/change-requests/2"],
-    ["get", "/projects/1/client-visibility"],
-    ["patch", "/projects/1/client-visibility/tickets/2"],
-    ["patch", "/projects/1/client-visibility/milestones/2"],
-    ["patch", "/projects/1/client-visibility/comments/2"],
-    ["patch", "/projects/1/client-visibility/attachments/2"],
+    ["get", "/build/portal/projects"],
+    ["get", "/build/portal/projects/1/overview"],
+    ["get", "/build/portal/projects/1/change-requests"],
+    ["post", "/build/portal/projects/1/change-requests"],
+    ["get", "/build/1/change-requests"],
+    ["get", "/build/1/change-requests/2"],
+    ["post", "/build/1/change-requests"],
+    ["patch", "/build/1/change-requests/2"],
+    ["delete", "/build/1/change-requests/2"],
+    ["get", "/build/1/client-visibility"],
+    ["patch", "/build/1/client-visibility/tickets/2"],
+    ["patch", "/build/1/client-visibility/milestones/2"],
+    ["patch", "/build/1/client-visibility/comments/2"],
+    ["patch", "/build/1/client-visibility/attachments/2"],
   ];
 
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
@@ -54,7 +54,7 @@ describe("Client Portal / Change Requests / Client Visibility auth/RBAC (e2e)", 
   it("403 on GET /projects/portal/projects without projects:portal:view ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: [] });
     const res = await request(app.getHttpServer())
-      .get("/projects/portal/projects")
+      .get("/build/portal/projects")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
@@ -63,7 +63,7 @@ describe("Client Portal / Change Requests / Client Visibility auth/RBAC (e2e)", 
   it("403 on GET /projects/portal/projects/1/overview without projects:portal:view ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: [] });
     const res = await request(app.getHttpServer())
-      .get("/projects/portal/projects/1/overview")
+      .get("/build/portal/projects/1/overview")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
@@ -72,7 +72,7 @@ describe("Client Portal / Change Requests / Client Visibility auth/RBAC (e2e)", 
   it("403 on GET /projects/1/change-requests without projects:changerequests:view ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: [] });
     const res = await request(app.getHttpServer())
-      .get("/projects/1/change-requests")
+      .get("/build/1/change-requests")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
@@ -81,7 +81,7 @@ describe("Client Portal / Change Requests / Client Visibility auth/RBAC (e2e)", 
   it("403 on POST /projects/1/change-requests without projects:changerequests:create ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: [] });
     const res = await request(app.getHttpServer())
-      .post("/projects/1/change-requests")
+      .post("/build/1/change-requests")
       .set("Authorization", `Bearer ${token}`)
       .send({ title: "Add OAuth" });
     expect(res.status).toBe(403);
@@ -91,7 +91,7 @@ describe("Client Portal / Change Requests / Client Visibility auth/RBAC (e2e)", 
   it("403 on PATCH /projects/1/change-requests/2 without projects:changerequests:manage ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: [] });
     const res = await request(app.getHttpServer())
-      .patch("/projects/1/change-requests/2")
+      .patch("/build/1/change-requests/2")
       .set("Authorization", `Bearer ${token}`)
       .send({ status: "approved" });
     expect(res.status).toBe(403);
@@ -101,7 +101,7 @@ describe("Client Portal / Change Requests / Client Visibility auth/RBAC (e2e)", 
   it("403 on DELETE /projects/1/change-requests/2 without projects:changerequests:manage ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: [] });
     const res = await request(app.getHttpServer())
-      .delete("/projects/1/change-requests/2")
+      .delete("/build/1/change-requests/2")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
@@ -110,7 +110,7 @@ describe("Client Portal / Change Requests / Client Visibility auth/RBAC (e2e)", 
   it("403 on GET /projects/1/client-visibility without projects:clientvisibility:manage ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: [] });
     const res = await request(app.getHttpServer())
-      .get("/projects/1/client-visibility")
+      .get("/build/1/client-visibility")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
@@ -119,7 +119,7 @@ describe("Client Portal / Change Requests / Client Visibility auth/RBAC (e2e)", 
   it("403 on PATCH /projects/1/client-visibility/tickets/2 without projects:clientvisibility:manage ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: [] });
     const res = await request(app.getHttpServer())
-      .patch("/projects/1/client-visibility/tickets/2")
+      .patch("/build/1/client-visibility/tickets/2")
       .set("Authorization", `Bearer ${token}`)
       .send({ clientVisible: true });
     expect(res.status).toBe(403);
@@ -132,7 +132,7 @@ describe("Client Portal / Change Requests / Client Visibility auth/RBAC (e2e)", 
       enabledModules: ["build"],
     });
     const res = await request(app.getHttpServer())
-      .get("/projects/portal/projects")
+      .get("/build/portal/projects")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).not.toBe(401);
     expect(res.status).not.toBe(403);
@@ -144,7 +144,7 @@ describe("Client Portal / Change Requests / Client Visibility auth/RBAC (e2e)", 
       enabledModules: ["build"],
     });
     const res = await request(app.getHttpServer())
-      .post("/projects/1/change-requests")
+      .post("/build/1/change-requests")
       .set("Authorization", `Bearer ${token}`)
       .send({ title: "Add OAuth" });
     expect(res.status).not.toBe(401);
@@ -157,7 +157,7 @@ describe("Client Portal / Change Requests / Client Visibility auth/RBAC (e2e)", 
       enabledModules: ["build"],
     });
     const res = await request(app.getHttpServer())
-      .get("/projects/1/client-visibility")
+      .get("/build/1/client-visibility")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).not.toBe(401);
     expect(res.status).not.toBe(403);

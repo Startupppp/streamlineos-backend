@@ -143,7 +143,7 @@ describeWithDb(
       });
 
       const res = await request(app.getHttpServer())
-        .get("/projects")
+        .get("/build")
         .set("Authorization", `Bearer ${token}`);
 
       expect(res.status).toBe(200);
@@ -168,7 +168,7 @@ describeWithDb(
       });
 
       const res = await request(app.getHttpServer())
-        .get("/projects")
+        .get("/build")
         .set("Authorization", `Bearer ${token}`);
 
       expect(res.status).toBe(200);
@@ -191,7 +191,7 @@ describeWithDb(
       });
 
       const res = await request(app.getHttpServer())
-        .get("/projects")
+        .get("/build")
         .set("Authorization", `Bearer ${token}`);
 
       expect(res.status).toBe(200);
@@ -208,7 +208,7 @@ describeWithDb(
       });
 
       const res = await request(app.getHttpServer())
-        .get("/projects")
+        .get("/build")
         .set("Authorization", `Bearer ${token}`);
 
       expect(res.status).toBe(200);

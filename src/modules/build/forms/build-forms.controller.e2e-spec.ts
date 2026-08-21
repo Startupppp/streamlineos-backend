@@ -27,14 +27,14 @@ describe("ProjectsForms auth/RBAC (e2e)", () => {
   }
 
   const protectedRoutes: ReadonlyArray<[Method, string]> = [
-    ["get", "/projects/1/forms"],
-    ["get", "/projects/1/forms/2"],
-    ["post", "/projects/1/forms"],
-    ["patch", "/projects/1/forms/2"],
-    ["delete", "/projects/1/forms/2"],
-    ["get", "/projects/1/forms/2/submissions"],
-    ["post", "/projects/1/forms/2/submissions"],
-    ["patch", "/projects/1/forms/2/submissions/3"],
+    ["get", "/build/1/forms"],
+    ["get", "/build/1/forms/2"],
+    ["post", "/build/1/forms"],
+    ["patch", "/build/1/forms/2"],
+    ["delete", "/build/1/forms/2"],
+    ["get", "/build/1/forms/2/submissions"],
+    ["post", "/build/1/forms/2/submissions"],
+    ["patch", "/build/1/forms/2/submissions/3"],
   ];
 
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
@@ -46,7 +46,7 @@ describe("ProjectsForms auth/RBAC (e2e)", () => {
   it("403 on POST /projects/1/forms without projects:forms:manage ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .post("/projects/1/forms")
+      .post("/build/1/forms")
       .set("Authorization", `Bearer ${token}`)
       .send({ name: "My Form", fields: [], actions: [] });
     expect(res.status).toBe(403);
@@ -56,7 +56,7 @@ describe("ProjectsForms auth/RBAC (e2e)", () => {
   it("403 on GET /projects/1/forms without projects:forms:view ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .get("/projects/1/forms")
+      .get("/build/1/forms")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
@@ -65,7 +65,7 @@ describe("ProjectsForms auth/RBAC (e2e)", () => {
   it("403 on GET /projects/1/forms/2/submissions without projects:forms:manage ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .get("/projects/1/forms/2/submissions")
+      .get("/build/1/forms/2/submissions")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
@@ -74,7 +74,7 @@ describe("ProjectsForms auth/RBAC (e2e)", () => {
   it("403 on POST /projects/1/forms/2/submissions without projects:forms:view ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .post("/projects/1/forms/2/submissions")
+      .post("/build/1/forms/2/submissions")
       .set("Authorization", `Bearer ${token}`)
       .send({ values: {} });
     expect(res.status).toBe(403);
@@ -84,7 +84,7 @@ describe("ProjectsForms auth/RBAC (e2e)", () => {
   it("does NOT enforce an ability gate on GET /projects/1/forms with projects:forms:view (auth-only pass-through check)", async () => {
     const token = await signToken({ permissions: ["build:forms:view"], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .get("/projects/1/forms")
+      .get("/build/1/forms")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).not.toBe(401);
     expect(res.status).not.toBe(403);

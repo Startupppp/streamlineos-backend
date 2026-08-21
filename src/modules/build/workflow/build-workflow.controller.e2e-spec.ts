@@ -27,12 +27,12 @@ describe("ProjectsWorkflow auth/RBAC (e2e)", () => {
   }
 
   const protectedRoutes: ReadonlyArray<[Method, string]> = [
-    ["get", "/projects/1/workflow/transitions"],
-    ["post", "/projects/1/workflow/transitions"],
-    ["patch", "/projects/1/workflow/transitions/2"],
-    ["delete", "/projects/1/workflow/transitions/2"],
-    ["get", "/projects/1/workflow/allowed/3"],
-    ["patch", "/projects/1/workflow/statuses/4/wip"],
+    ["get", "/build/1/workflow/transitions"],
+    ["post", "/build/1/workflow/transitions"],
+    ["patch", "/build/1/workflow/transitions/2"],
+    ["delete", "/build/1/workflow/transitions/2"],
+    ["get", "/build/1/workflow/allowed/3"],
+    ["patch", "/build/1/workflow/statuses/4/wip"],
   ];
 
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
@@ -44,7 +44,7 @@ describe("ProjectsWorkflow auth/RBAC (e2e)", () => {
   it("403 on GET /projects/1/workflow/transitions without projects:workflow:view ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .get("/projects/1/workflow/transitions")
+      .get("/build/1/workflow/transitions")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
@@ -53,7 +53,7 @@ describe("ProjectsWorkflow auth/RBAC (e2e)", () => {
   it("403 on POST /projects/1/workflow/transitions without projects:workflow:manage ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .post("/projects/1/workflow/transitions")
+      .post("/build/1/workflow/transitions")
       .set("Authorization", `Bearer ${token}`)
       .send({ toStatusId: 2 });
     expect(res.status).toBe(403);
@@ -63,7 +63,7 @@ describe("ProjectsWorkflow auth/RBAC (e2e)", () => {
   it("403 on PATCH /projects/1/workflow/transitions/2 without projects:workflow:manage ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .patch("/projects/1/workflow/transitions/2")
+      .patch("/build/1/workflow/transitions/2")
       .set("Authorization", `Bearer ${token}`)
       .send({ name: "Updated" });
     expect(res.status).toBe(403);
@@ -73,7 +73,7 @@ describe("ProjectsWorkflow auth/RBAC (e2e)", () => {
   it("403 on GET /projects/1/workflow/allowed/3 without projects:workflow:view ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .get("/projects/1/workflow/allowed/3")
+      .get("/build/1/workflow/allowed/3")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
@@ -82,7 +82,7 @@ describe("ProjectsWorkflow auth/RBAC (e2e)", () => {
   it("403 on PATCH /projects/1/workflow/statuses/4/wip without projects:workflow:manage ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .patch("/projects/1/workflow/statuses/4/wip")
+      .patch("/build/1/workflow/statuses/4/wip")
       .set("Authorization", `Bearer ${token}`)
       .send({ wipLimit: 3 });
     expect(res.status).toBe(403);
@@ -95,7 +95,7 @@ describe("ProjectsWorkflow auth/RBAC (e2e)", () => {
       enabledModules: ["build"],
     });
     const res = await request(app.getHttpServer())
-      .get("/projects/1/workflow/transitions")
+      .get("/build/1/workflow/transitions")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).not.toBe(401);
     expect(res.status).not.toBe(403);

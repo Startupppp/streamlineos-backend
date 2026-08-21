@@ -27,69 +27,69 @@ describe("Projects auth/RBAC (e2e)", () => {
   }
 
   const protectedRoutes: ReadonlyArray<[Method, string]> = [
-    ["get", "/projects"],
-    ["post", "/projects"],
-    ["post", "/projects/from-deal"],
-    ["get", "/projects/labels"],
-    ["post", "/projects/labels"],
-    ["get", "/projects/resource-allocation"],
-    ["get", "/projects/1"],
-    ["patch", "/projects/1"],
-    ["delete", "/projects/1"],
-    ["get", "/projects/1/members"],
-    ["post", "/projects/1/members"],
-    ["delete", "/projects/1/members"],
-    ["get", "/projects/1/custom-states"],
-    ["post", "/projects/1/custom-states"],
-    ["get", "/projects/1/labels"],
-    ["post", "/projects/1/labels"],
-    ["get", "/projects/1/tickets"],
-    ["post", "/projects/1/tickets"],
-    ["post", "/projects/1/tickets/bulk"],
-    ["patch", "/projects/1/tickets/2/rank"],
-    ["get", "/projects/1/tickets/2"],
-    ["patch", "/projects/1/tickets/2"],
-    ["delete", "/projects/1/tickets/2"],
-    ["get", "/projects/1/tickets/2/activity"],
-    ["post", "/projects/1/tickets/2/comments"],
-    ["get", "/projects/1/tickets/2/subtasks"],
-    ["get", "/projects/1/tickets/2/relations"],
-    ["post", "/projects/1/tickets/2/relations"],
-    ["delete", "/projects/1/tickets/2/relations"],
-    ["get", "/projects/1/tickets/2/watchers"],
-    ["post", "/projects/1/tickets/2/watchers"],
-    ["delete", "/projects/1/tickets/2/watchers"],
-    ["post", "/projects/1/tickets/2/labels"],
-    ["delete", "/projects/1/tickets/2/labels/3"],
-    ["post", "/projects/1/tickets/2/attachments"],
-    ["get", "/projects/1/tickets/2/git-links"],
-    ["get", "/projects/1/analytics"],
-    ["get", "/projects/1/reports/burnup"],
-    ["get", "/projects/1/reports/cfd"],
-    ["get", "/projects/1/reports/critical-path"],
-    ["get", "/projects/1/reports/velocity"],
-    ["post", "/projects/1/reports/snapshot"],
-    ["get", "/projects/1/budget"],
-    ["patch", "/projects/1/budget"],
-    ["get", "/projects/templates"],
-    ["post", "/projects/templates"],
-    ["delete", "/projects/templates/1"],
-    ["post", "/projects/templates/1/apply"],
-    ["get", "/projects/roadmap"],
-    ["post", "/projects/roadmap"],
-    ["get", "/projects/roadmap/1"],
-    ["patch", "/projects/roadmap/1"],
-    ["delete", "/projects/roadmap/1"],
-    ["get", "/projects/feedback"],
-    ["post", "/projects/feedback"],
-    ["get", "/projects/feedback/1"],
-    ["patch", "/projects/feedback/1"],
-    ["delete", "/projects/feedback/1"],
-    ["get", "/projects/changelog"],
-    ["post", "/projects/changelog"],
-    ["get", "/projects/changelog/1"],
-    ["patch", "/projects/changelog/1"],
-    ["delete", "/projects/changelog/1"],
+    ["get", "/build"],
+    ["post", "/build"],
+    ["post", "/build/from-deal"],
+    ["get", "/build/labels"],
+    ["post", "/build/labels"],
+    ["get", "/build/resource-allocation"],
+    ["get", "/build/1"],
+    ["patch", "/build/1"],
+    ["delete", "/build/1"],
+    ["get", "/build/1/members"],
+    ["post", "/build/1/members"],
+    ["delete", "/build/1/members"],
+    ["get", "/build/1/custom-states"],
+    ["post", "/build/1/custom-states"],
+    ["get", "/build/1/labels"],
+    ["post", "/build/1/labels"],
+    ["get", "/build/1/tickets"],
+    ["post", "/build/1/tickets"],
+    ["post", "/build/1/tickets/bulk"],
+    ["patch", "/build/1/tickets/2/rank"],
+    ["get", "/build/1/tickets/2"],
+    ["patch", "/build/1/tickets/2"],
+    ["delete", "/build/1/tickets/2"],
+    ["get", "/build/1/tickets/2/activity"],
+    ["post", "/build/1/tickets/2/comments"],
+    ["get", "/build/1/tickets/2/subtasks"],
+    ["get", "/build/1/tickets/2/relations"],
+    ["post", "/build/1/tickets/2/relations"],
+    ["delete", "/build/1/tickets/2/relations"],
+    ["get", "/build/1/tickets/2/watchers"],
+    ["post", "/build/1/tickets/2/watchers"],
+    ["delete", "/build/1/tickets/2/watchers"],
+    ["post", "/build/1/tickets/2/labels"],
+    ["delete", "/build/1/tickets/2/labels/3"],
+    ["post", "/build/1/tickets/2/attachments"],
+    ["get", "/build/1/tickets/2/git-links"],
+    ["get", "/build/1/analytics"],
+    ["get", "/build/1/reports/burnup"],
+    ["get", "/build/1/reports/cfd"],
+    ["get", "/build/1/reports/critical-path"],
+    ["get", "/build/1/reports/velocity"],
+    ["post", "/build/1/reports/snapshot"],
+    ["get", "/build/1/budget"],
+    ["patch", "/build/1/budget"],
+    ["get", "/build/templates"],
+    ["post", "/build/templates"],
+    ["delete", "/build/templates/1"],
+    ["post", "/build/templates/1/apply"],
+    ["get", "/build/roadmap"],
+    ["post", "/build/roadmap"],
+    ["get", "/build/roadmap/1"],
+    ["patch", "/build/roadmap/1"],
+    ["delete", "/build/roadmap/1"],
+    ["get", "/build/feedback"],
+    ["post", "/build/feedback"],
+    ["get", "/build/feedback/1"],
+    ["patch", "/build/feedback/1"],
+    ["delete", "/build/feedback/1"],
+    ["get", "/build/changelog"],
+    ["post", "/build/changelog"],
+    ["get", "/build/changelog/1"],
+    ["patch", "/build/changelog/1"],
+    ["delete", "/build/changelog/1"],
   ];
 
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
@@ -101,7 +101,7 @@ describe("Projects auth/RBAC (e2e)", () => {
   it("403 on POST /projects without projects create ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: [] });
     const res = await request(app.getHttpServer())
-      .post("/projects")
+      .post("/build")
       .set("Authorization", `Bearer ${token}`)
       .send({ name: "x" });
     expect(res.status).toBe(403);
@@ -111,7 +111,7 @@ describe("Projects auth/RBAC (e2e)", () => {
   it("403 on GET /projects/roadmap without projects:roadmap view ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: [] });
     const res = await request(app.getHttpServer())
-      .get("/projects/roadmap")
+      .get("/build/roadmap")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
@@ -120,7 +120,7 @@ describe("Projects auth/RBAC (e2e)", () => {
   it("403 on POST /projects/changelog without projects:roadmap manage ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: [] });
     const res = await request(app.getHttpServer())
-      .post("/projects/changelog")
+      .post("/build/changelog")
       .set("Authorization", `Bearer ${token}`)
       .send({ title: "x" });
     expect(res.status).toBe(403);
@@ -129,7 +129,7 @@ describe("Projects auth/RBAC (e2e)", () => {
 
   it("does NOT enforce an ability gate on GET /projects (auth-only)", async () => {
     const token = await signToken({ permissions: [], enabledModules: [] });
-    const res = await request(app.getHttpServer()).get("/projects").set("Authorization", `Bearer ${token}`);
+    const res = await request(app.getHttpServer()).get("/build").set("Authorization", `Bearer ${token}`);
     expect(res.status).not.toBe(401);
     expect(res.status).not.toBe(403);
   });

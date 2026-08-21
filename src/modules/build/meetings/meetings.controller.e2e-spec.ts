@@ -31,18 +31,18 @@ describe("ProjectsMeetings / ActionItems auth/RBAC (e2e)", () => {
   }
 
   const protectedRoutes: ReadonlyArray<[Method, string]> = [
-    ["get", "/projects/1/meetings"],
-    ["get", "/projects/1/meetings/2"],
-    ["post", "/projects/1/meetings"],
-    ["patch", "/projects/1/meetings/2"],
-    ["delete", "/projects/1/meetings/2"],
-    ["post", "/projects/1/meetings/2/attendees"],
-    ["delete", "/projects/1/meetings/2/attendees/user-x"],
-    ["put", "/projects/1/meetings/2/standup"],
-    ["post", "/projects/1/meetings/2/action-items"],
-    ["patch", "/projects/1/meetings/2/action-items/3"],
-    ["delete", "/projects/1/meetings/2/action-items/3"],
-    ["post", "/projects/1/meetings/2/action-items/3/convert-to-task"],
+    ["get", "/build/1/meetings"],
+    ["get", "/build/1/meetings/2"],
+    ["post", "/build/1/meetings"],
+    ["patch", "/build/1/meetings/2"],
+    ["delete", "/build/1/meetings/2"],
+    ["post", "/build/1/meetings/2/attendees"],
+    ["delete", "/build/1/meetings/2/attendees/user-x"],
+    ["put", "/build/1/meetings/2/standup"],
+    ["post", "/build/1/meetings/2/action-items"],
+    ["patch", "/build/1/meetings/2/action-items/3"],
+    ["delete", "/build/1/meetings/2/action-items/3"],
+    ["post", "/build/1/meetings/2/action-items/3/convert-to-task"],
   ];
 
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
@@ -54,7 +54,7 @@ describe("ProjectsMeetings / ActionItems auth/RBAC (e2e)", () => {
   it("403 on GET /projects/1/meetings without projects:meetings:view ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .get("/projects/1/meetings")
+      .get("/build/1/meetings")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
@@ -63,7 +63,7 @@ describe("ProjectsMeetings / ActionItems auth/RBAC (e2e)", () => {
   it("403 on POST /projects/1/meetings without projects:meetings:manage ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .post("/projects/1/meetings")
+      .post("/build/1/meetings")
       .set("Authorization", `Bearer ${token}`)
       .send({ title: "Sprint Review" });
     expect(res.status).toBe(403);
@@ -73,7 +73,7 @@ describe("ProjectsMeetings / ActionItems auth/RBAC (e2e)", () => {
   it("403 on DELETE /projects/1/meetings/2 without projects:meetings:manage ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .delete("/projects/1/meetings/2")
+      .delete("/build/1/meetings/2")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
@@ -82,7 +82,7 @@ describe("ProjectsMeetings / ActionItems auth/RBAC (e2e)", () => {
   it("403 on POST /projects/1/meetings/2/attendees without projects:meetings:manage ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .post("/projects/1/meetings/2/attendees")
+      .post("/build/1/meetings/2/attendees")
       .set("Authorization", `Bearer ${token}`)
       .send({ userId: "user-3" });
     expect(res.status).toBe(403);
@@ -92,7 +92,7 @@ describe("ProjectsMeetings / ActionItems auth/RBAC (e2e)", () => {
   it("403 on PUT /projects/1/meetings/2/standup without projects:meetings:view ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .put("/projects/1/meetings/2/standup")
+      .put("/build/1/meetings/2/standup")
       .set("Authorization", `Bearer ${token}`)
       .send({ today: "finishing tests" });
     expect(res.status).toBe(403);
@@ -102,7 +102,7 @@ describe("ProjectsMeetings / ActionItems auth/RBAC (e2e)", () => {
   it("403 on POST /projects/1/meetings/2/action-items without projects:meetings:manage ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .post("/projects/1/meetings/2/action-items")
+      .post("/build/1/meetings/2/action-items")
       .set("Authorization", `Bearer ${token}`)
       .send({ title: "Write docs" });
     expect(res.status).toBe(403);
@@ -112,7 +112,7 @@ describe("ProjectsMeetings / ActionItems auth/RBAC (e2e)", () => {
   it("403 on POST convert-to-task without projects:meetings:manage ability", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .post("/projects/1/meetings/2/action-items/3/convert-to-task")
+      .post("/build/1/meetings/2/action-items/3/convert-to-task")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
@@ -124,7 +124,7 @@ describe("ProjectsMeetings / ActionItems auth/RBAC (e2e)", () => {
       enabledModules: ["build"],
     });
     const res = await request(app.getHttpServer())
-      .get("/projects/1/meetings")
+      .get("/build/1/meetings")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).not.toBe(401);
     expect(res.status).not.toBe(403);
@@ -136,7 +136,7 @@ describe("ProjectsMeetings / ActionItems auth/RBAC (e2e)", () => {
       enabledModules: ["build"],
     });
     const res = await request(app.getHttpServer())
-      .post("/projects/1/meetings")
+      .post("/build/1/meetings")
       .set("Authorization", `Bearer ${token}`)
       .send({ title: "Sprint Review" });
     expect(res.status).not.toBe(401);
