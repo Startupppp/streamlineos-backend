@@ -1,12 +1,14 @@
-import { seedSystemRolesForOrg } from "../seed-system-roles";
-import { MODULE_CATALOG } from "../../../common/rbac/module-vocabulary";
+import {
+  MODULE_ADMIN_MODULES,
+  seedSystemRolesForOrg,
+} from "../seed-system-roles";
 import { ACCESS_MANAGED_MODULES } from "../permissions";
 
 const ORG_ID = "org-seed-test";
 const ORG_WIDE_SYSTEM_ROLES = 2;
 const EXPECTED_SYSTEM_ROLE_COUNT =
   ORG_WIDE_SYSTEM_ROLES +
-  MODULE_CATALOG.length +
+  MODULE_ADMIN_MODULES.length +
   ACCESS_MANAGED_MODULES.length * 2;
 
 function makeInsertChain(returningValue: unknown[] = []) {

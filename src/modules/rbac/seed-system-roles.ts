@@ -5,6 +5,17 @@ import { MODULE_CATALOG } from "../../common/rbac/module-vocabulary";
 import { ROLE_RANK } from "../../common/rbac/grantability";
 import { ACCESS_MANAGED_MODULES, MODULE_ACCESS_PERMISSIONS, moduleScopedPermissions, ROLE_DEFAULT_PERMISSIONS } from "./permissions";
 
+/**
+ * Every module with a ladder needs an admin rung, but `MODULE_CATALOG` also
+ * decides plan gating: a key whose module sits there resolves to NO_MODULE
+ * unless the organisation has it enabled. Deriving the admin rung from the union
+ * keeps the two questions apart, so a module can be delegatable without becoming
+ * plan-gated — which for mail and calendar would 403 every route they own.
+ */
+export const MODULE_ADMIN_MODULES: readonly string[] = Array.from(
+  new Set<string>([...MODULE_CATALOG, ...ACCESS_MANAGED_MODULES]),
+);
+
 export async function resolveDbPermissionSet(db: Db): Promise<Set<string>> {
   const rows = await db
     .select({ name: permissions.name })
@@ -90,7 +101,7 @@ export async function seedSystemRolesForOrg(
       moduleKey: null,
       permissionKeys: buildOrgMemberPermissionKeys(dbCatalog),
     },
-    ...MODULE_CATALOG.map((mod) => ({
+    ...MODULE_ADMIN_MODULES.map((mod) => ({
       slug: `${mod.toUpperCase()}_MODULE_ADMIN`,
       name: `${mod.charAt(0).toUpperCase() + mod.slice(1)} Module Admin`,
       rank: ROLE_RANK.MODULE_ADMIN,
