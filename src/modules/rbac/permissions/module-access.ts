@@ -12,6 +12,9 @@ export const ACCESS_MANAGED_MODULES = [
   "sign",
   "timesheets",
   "home",
+  "workflows",
+  "blog",
+  "directory",
 ] as const;
 
 export const MODULE_ACCESS_PERMISSIONS: Permission[] =

@@ -78,14 +78,14 @@ describe("Directory people mutations: correct gates", () => {
 
 describe("Directory worker routes: correct gates", () => {
   const expectations: ReadonlyArray<[keyof DirectoryController, string]> = [
-    ["listWorkers", "workforce:workers:view"],
-    ["getWorker", "workforce:workers:view"],
-    ["listEngagements", "workforce:workers:view"],
-    ["createWorker", "workforce:workers:manage"],
-    ["createEngagement", "workforce:workers:manage"],
-    ["updateEngagement", "workforce:workers:manage"],
-    ["cancelEngagement", "workforce:workers:manage"],
-    ["terminateEngagement", "workforce:workers:terminate"],
+    ["listWorkers", "directory:workers:view"],
+    ["getWorker", "directory:workers:view"],
+    ["listEngagements", "directory:workers:view"],
+    ["createWorker", "directory:workers:manage"],
+    ["createEngagement", "directory:workers:manage"],
+    ["updateEngagement", "directory:workers:manage"],
+    ["cancelEngagement", "directory:workers:manage"],
+    ["terminateEngagement", "directory:workers:terminate"],
   ];
 
   it.each(expectations)("DirectoryController#%s requires %s", (method, key) => {

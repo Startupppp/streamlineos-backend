@@ -76,7 +76,7 @@ describe("Directory auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ error: "Permission denied" });
   });
 
-  it("403 on POST /directory/workers without workforce:workers:manage permission", async () => {
+  it("403 on POST /directory/workers without directory:workers:manage permission", async () => {
     const token = await signToken({ permissions: [], enabledModules: [] });
     const res = await request(app.getHttpServer())
       .post("/directory/workers")
@@ -86,7 +86,7 @@ describe("Directory auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ error: "Permission denied" });
   });
 
-  it("403 on POST /directory/engagements/:id/terminate without workforce:workers:terminate permission", async () => {
+  it("403 on POST /directory/engagements/:id/terminate without directory:workers:terminate permission", async () => {
     const token = await signToken({ permissions: [], enabledModules: [] });
     const res = await request(app.getHttpServer())
       .post(`/directory/engagements/${ENGAGEMENT_ID}/terminate`)
@@ -96,7 +96,7 @@ describe("Directory auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ error: "Permission denied" });
   });
 
-  it("403 on POST /directory/engagements/:id/cancel without workforce:workers:manage permission", async () => {
+  it("403 on POST /directory/engagements/:id/cancel without directory:workers:manage permission", async () => {
     const token = await signToken({ permissions: [], enabledModules: [] });
     const res = await request(app.getHttpServer())
       .post(`/directory/engagements/${ENGAGEMENT_ID}/cancel`)
@@ -114,7 +114,7 @@ describe("Directory auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ error: "Permission denied" });
   });
 
-  it("403 on GET /directory/workers without workforce:workers:view permission", async () => {
+  it("403 on GET /directory/workers without directory:workers:view permission", async () => {
     const token = await signToken({ permissions: [], enabledModules: [] });
     const res = await request(app.getHttpServer())
       .get("/directory/workers")

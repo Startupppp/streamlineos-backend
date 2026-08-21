@@ -59,6 +59,10 @@ const FALLBACK_CORE_MODULE_KEYS: ReadonlySet<string> = new Set<string>([
   "chat",
   "mail",
   "calendar",
+  "notifications",
+  "workflows",
+  "blog",
+  "directory",
 ]);
 
 @Injectable()

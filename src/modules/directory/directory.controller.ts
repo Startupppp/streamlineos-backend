@@ -92,7 +92,7 @@ export class DirectoryController {
 
   @Get("workers")
   @UseGuards(PermissionGuard)
-  @RequirePermission("workforce:workers:view")
+  @RequirePermission("directory:workers:view")
   listWorkers(
     @Query(new ZodValidationPipe(listWorkersQuerySchema)) query: ListWorkersQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -102,7 +102,7 @@ export class DirectoryController {
 
   @Get("workers/:workerId")
   @UseGuards(PermissionGuard)
-  @RequirePermission("workforce:workers:view")
+  @RequirePermission("directory:workers:view")
   getWorker(
     @Param("workerId") workerId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -113,7 +113,7 @@ export class DirectoryController {
   @Post("workers")
   @HttpCode(201)
   @UseGuards(PermissionGuard)
-  @RequirePermission("workforce:workers:manage")
+  @RequirePermission("directory:workers:manage")
   createWorker(
     @Body(new ZodValidationPipe(createWorkerSchema)) body: CreateWorkerInput,
     @CurrentUser() u: CurrentUserContext,
@@ -123,7 +123,7 @@ export class DirectoryController {
 
   @Get("workers/:workerId/engagements")
   @UseGuards(PermissionGuard)
-  @RequirePermission("workforce:workers:view")
+  @RequirePermission("directory:workers:view")
   listEngagements(
     @Param("workerId") workerId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -134,7 +134,7 @@ export class DirectoryController {
   @Post("workers/:workerId/engagements")
   @HttpCode(201)
   @UseGuards(PermissionGuard)
-  @RequirePermission("workforce:workers:manage")
+  @RequirePermission("directory:workers:manage")
   createEngagement(
     @Param("workerId") workerId: string,
     @Body(new ZodValidationPipe(createEngagementSchema)) body: CreateEngagementInput,
@@ -145,7 +145,7 @@ export class DirectoryController {
 
   @Patch("engagements/:workerEngagementId")
   @UseGuards(PermissionGuard)
-  @RequirePermission("workforce:workers:manage")
+  @RequirePermission("directory:workers:manage")
   updateEngagement(
     @Param("workerEngagementId") workerEngagementId: string,
     @Body(new ZodValidationPipe(updateEngagementSchema)) body: UpdateEngagementInput,
@@ -157,7 +157,7 @@ export class DirectoryController {
   @Post("engagements/:workerEngagementId/cancel")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
-  @RequirePermission("workforce:workers:manage")
+  @RequirePermission("directory:workers:manage")
   cancelEngagement(
     @Param("workerEngagementId") workerEngagementId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -172,7 +172,7 @@ export class DirectoryController {
   @Post("engagements/:workerEngagementId/terminate")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
-  @RequirePermission("workforce:workers:terminate")
+  @RequirePermission("directory:workers:terminate")
   terminateEngagement(
     @Param("workerEngagementId") workerEngagementId: string,
     @Body(new ZodValidationPipe(terminateEngagementSchema)) body: TerminateEngagementInput,

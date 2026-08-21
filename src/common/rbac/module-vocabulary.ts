@@ -31,7 +31,7 @@ export function isPlanGatedModule(module: string): boolean {
  */
 const MODULE_PERMISSION_NAMESPACES: Readonly<Record<string, readonly string[]>> =
   {
-    home: ["chat", "mail", "calendar"],
+    home: ["chat", "mail", "calendar", "notifications"],
   };
 
 export function namespacesForModule(moduleKey: string): readonly string[] {
