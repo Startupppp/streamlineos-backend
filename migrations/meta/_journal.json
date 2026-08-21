@@ -1352,6 +1352,62 @@
       "when": 1786701766560,
       "tag": "0436_hr_custom_fields_grant_backfill",
       "breakpoints": true
+    },
+    {
+      "idx": 193,
+      "version": "7",
+      "when": 1786701767560,
+      "tag": "0437_chat_calendar_vocabulary_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 194,
+      "version": "7",
+      "when": 1786701768560,
+      "tag": "0438_user_permission_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 195,
+      "version": "7",
+      "when": 1786701769560,
+      "tag": "0439_chat_mail_calendar_delegatable",
+      "breakpoints": true
+    },
+    {
+      "idx": 196,
+      "version": "7",
+      "when": 1786701770560,
+      "tag": "0440_mail_calendar_core_modules",
+      "breakpoints": true
+    },
+    {
+      "idx": 197,
+      "version": "7",
+      "when": 1786701771560,
+      "tag": "0441_home_module_ladder",
+      "breakpoints": true
+    },
+    {
+      "idx": 198,
+      "version": "7",
+      "when": 1786701772560,
+      "tag": "0442_directory_workers_namespace",
+      "breakpoints": true
+    },
+    {
+      "idx": 199,
+      "version": "7",
+      "when": 1786701773560,
+      "tag": "0443_workflows_blog_directory_delegatable",
+      "breakpoints": true
+    },
+    {
+      "idx": 200,
+      "version": "7",
+      "when": 1786701774560,
+      "tag": "0444_home_notifications_namespace",
+      "breakpoints": true
     }
   ]
 }

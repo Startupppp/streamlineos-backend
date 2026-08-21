@@ -68,6 +68,8 @@ async function mintToken(actor) {
   })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(actor.userId)
+    .setAudience("streamlineos-api")
+    .setIssuer("streamlineos-web")
     .setIssuedAt()
     .setExpirationTime("10m")
     .sign(new TextEncoder().encode(SECRET));
