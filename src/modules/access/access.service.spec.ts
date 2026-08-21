@@ -303,6 +303,7 @@ describe("AccessService.resolveUserPermissions", () => {
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([])),
     };
 
@@ -324,6 +325,7 @@ describe("AccessService.resolveUserPermissions", () => {
       },
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([{ roleId: 10 }]))
+        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([{ id: 10, slug: "HR_ADMIN" }]))
@@ -349,6 +351,7 @@ describe("AccessService.resolveUserPermissions", () => {
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([{ principalGroupId: "group-uuid-1" }]))
+        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([{ roleId: 20 }]))
         .mockReturnValueOnce(makeSelectChain([{ id: 20, slug: "HR_VIEWER" }]))
@@ -376,6 +379,7 @@ describe("AccessService.resolveUserPermissions", () => {
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([])),
     };
 
@@ -395,6 +399,7 @@ describe("AccessService.resolveUserPermissions", () => {
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([{ roleId: 30 }]))
         .mockReturnValueOnce(makeSelectChain([{ principalGroupId: "group-uuid-3" }]))
+        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([{ roleId: 31 }]))
         .mockReturnValueOnce(makeSelectChain([
@@ -427,6 +432,7 @@ describe("AccessService.resolveUserPermissions", () => {
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([])),
     };
 
@@ -444,6 +450,7 @@ describe("AccessService.resolveUserPermissions", () => {
         },
       },
       select: jest.fn()
+        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
@@ -471,6 +478,7 @@ describe("AccessService.resolveUserPermissions — module ownership grants", () 
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([{ moduleKey: "hr" }]))
         .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([])),
     };
 
@@ -494,6 +502,7 @@ describe("AccessService.resolveUserPermissions — module ownership grants", () 
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([{ moduleKey: "hr" }]))
+        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([{ moduleKey: "hr" }])),
     };
@@ -604,6 +613,7 @@ describe("AccessService.resolveUserPermissions — unknown permission keys are o
         .mockReturnValueOnce(makeSelectChain([{ roleId: 50 }]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([{ id: 50, slug: "STALE_ROLE" }]))
         .mockReturnValueOnce(makeSelectChain([{ roleId: 50, permissionKey: STALE_KEY, scope: "all" }]))
         .mockReturnValueOnce(makeSelectChain([]))
@@ -626,6 +636,7 @@ describe("AccessService.resolveUserPermissions — unknown permission keys are o
       },
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([{ roleId: 51 }]))
+        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([{ id: 51, slug: "MIXED_ROLE" }]))
@@ -656,6 +667,7 @@ describe("AccessService.resolveUserPermissions — unknown permission keys are o
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([{ permissionKey: STALE_KEY }]))
         .mockReturnValueOnce(makeSelectChain([])),
     };
@@ -676,6 +688,7 @@ describe("AccessService.resolveUserPermissions — unknown permission keys are o
       },
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([{ roleId: 52 }]))
+        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([{ id: 52, slug: "STALE_R2" }]))

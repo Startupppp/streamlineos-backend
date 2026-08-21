@@ -17,6 +17,7 @@ function buildResolver(options: Options) {
     options.roleIds ?? [],
     [],
     [],
+    options.personalGrants ?? [],
     ...(options.roleIds && options.roleIds.length > 0
       ? [
           [{ id: options.roleIds[0]?.roleId ?? 1, slug: "HR_MODULE_MEMBER" }],
@@ -24,7 +25,6 @@ function buildResolver(options: Options) {
         ]
       : []),
     [],
-    options.personalGrants ?? [],
   ];
   let cursor = 0;
 

@@ -81,7 +81,8 @@ export class AccessPermissionResolver {
     const membershipId = member?.id ?? 0;
     const now = new Date();
 
-    const [assignmentRows, groupMemberRows, ownershipRows] = await Promise.all([
+    const [assignmentRows, groupMemberRows, ownershipRows, personalGrantRows] =
+      await Promise.all([
       this.safeAccessTableRead(
         () =>
           this.db
@@ -129,6 +130,25 @@ export class AccessPermissionResolver {
               ),
             ),
         [] as { moduleKey: string }[],
+      ),
+      this.safeAccessTableRead(
+        () =>
+          this.db
+            .select({
+              permissionKey: userPermissionGrants.permissionKey,
+              scope: userPermissionGrants.scope,
+            })
+            .from(userPermissionGrants)
+            .where(
+              and(
+                eq(userPermissionGrants.orgId, orgId),
+                eq(
+                  userPermissionGrants.organizationMembershipId,
+                  membershipId,
+                ),
+              ),
+            ),
+        [] as { permissionKey: string; scope: DataScope }[],
       ),
     ]);
 
@@ -270,25 +290,9 @@ export class AccessPermissionResolver {
       mergeIfKnown(row.permissionKey, "all", "delegation");
     }
 
-    const personalGrantRows = await this.safeAccessTableRead(
-      () =>
-        this.db
-          .select({
-            permissionKey: userPermissionGrants.permissionKey,
-            scope: userPermissionGrants.scope,
-          })
-          .from(userPermissionGrants)
-          .where(
-            and(
-              eq(userPermissionGrants.orgId, orgId),
-              eq(userPermissionGrants.organizationMembershipId, membershipId),
-            ),
-          ),
-      [] as { permissionKey: string; scope: DataScope }[],
-    );
-
-    for (const row of personalGrantRows)
+    for (const row of personalGrantRows) {
       mergeIfKnown(row.permissionKey, row.scope, "user-grant");
+    }
 
     for (const { moduleKey } of ownershipRows) {
       for (const key of moduleScopedPermissions(moduleKey)) {
