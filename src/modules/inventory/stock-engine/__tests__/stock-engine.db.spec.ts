@@ -11,6 +11,7 @@
  * semantics and ledger/snapshot agreement are only provable against Postgres.
  */
 import { randomUUID } from "node:crypto";
+import dotenv from "dotenv";
 import postgres from "postgres";
 
 const ENABLED = process.env.INV_DB_TESTS === "1";
@@ -19,7 +20,7 @@ const describeDb = ENABLED ? describe : describe.skip;
 function connect() {
   if (!process.env.DATABASE_URL && !process.env.APP_DATABASE_URL) {
     // jest-setup.ts does not load .env; these specs are opt-in and need the real URL.
-    (require("dotenv") as { config: (o: { path: string }) => void }).config({ path: ".env" });
+    dotenv.config({ path: ".env" });
   }
   // DATABASE_URL first: these specs create and drop scratch tables, which the
   // RLS-enforced application role is not permitted to do.
