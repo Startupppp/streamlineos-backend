@@ -259,6 +259,7 @@ describe("AccessService.resolveUserPermissions — module owner access", () => {
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([{ moduleKey: "hr" }]))
         .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([])),
     };
 
@@ -291,6 +292,7 @@ describe("AccessService.resolveUserPermissions — member with a single role inh
       },
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([{ roleId: 10 }]))
+        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([{ id: 10, slug: "CUSTOM_HR_VIEWER" }]))
@@ -328,6 +330,7 @@ describe("AccessService.resolveUserPermissions — member with two role sources:
         .mockReturnValueOnce(makeSelectChain([{ roleId: 20 }]))
         .mockReturnValueOnce(makeSelectChain([{ principalGroupId: "g-1" }]))
         .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([{ roleId: 21 }]))
         .mockReturnValueOnce(makeSelectChain([
           { id: 20, slug: "CUSTOM_OWN" },
@@ -363,6 +366,7 @@ describe("AccessService.resolveUserPermissions — member with no role assignmen
         },
       },
       select: jest.fn()
+        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
@@ -405,6 +409,7 @@ describe("AccessService.resolveUserPermissions — HEADLINE: a \"Recruitment HR\
       },
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([{ roleId: 30 }]))
+        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([{ id: 30, slug: "RECRUITMENT_HR" }]))

@@ -1,3 +1,4 @@
+import { moduleOwningNamespace } from "./module-vocabulary";
 import { BadRequestException, ForbiddenException } from "@nestjs/common";
 
 export const ROLE_RANK = {
@@ -68,7 +69,7 @@ export function buildPermissionModuleMap(
   const map = new Map<string, string | null>();
   for (const key of keys) {
     const idx = key.indexOf(":");
-    map.set(key, idx === -1 ? null : key.slice(0, idx));
+    map.set(key, idx === -1 ? null : moduleOwningNamespace(key.slice(0, idx)));
   }
   return map;
 }

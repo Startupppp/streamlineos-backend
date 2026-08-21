@@ -312,6 +312,7 @@ describe("AccessService.resolveUserPermissions - group-derived role resolution",
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([{ principalGroupId: "group-uuid-1" }]))
         .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([{ roleId: 20 }]))
         .mockReturnValueOnce(makeSelectChain([{ id: 20, slug: "HR_VIEWER" }]))
         .mockReturnValueOnce(makeSelectChain([
@@ -358,6 +359,7 @@ describe("AccessService.resolveUserPermissions - group-derived role resolution",
       select: jest.fn()
         .mockReturnValueOnce(makeSelectChain([{ roleId: 30 }]))
         .mockReturnValueOnce(makeSelectChain([{ principalGroupId: "group-uuid-2" }]))
+        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([{ roleId: 31 }]))
         .mockReturnValueOnce(makeSelectChain([

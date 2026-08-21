@@ -11,9 +11,7 @@ export const ACCESS_MANAGED_MODULES = [
   "payroll",
   "sign",
   "timesheets",
-  "chat",
-  "mail",
-  "calendar",
+  "home",
 ] as const;
 
 export const MODULE_ACCESS_PERMISSIONS: Permission[] =

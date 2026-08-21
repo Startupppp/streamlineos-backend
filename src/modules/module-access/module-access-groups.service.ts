@@ -1,3 +1,4 @@
+import { moduleOwningNamespace } from "../../common/rbac/module-vocabulary";
 import {
   BadRequestException,
   ConflictException,
@@ -76,7 +77,7 @@ import type {
 const MANAGED_MODULES = new Set<string>(ACCESS_MANAGED_MODULES);
 
 function moduleOf(permissionKey: string): string {
-  return permissionKey.split(":")[0] ?? permissionKey;
+  return moduleOwningNamespace(permissionKey.split(":")[0] ?? permissionKey);
 }
 
 export interface ModuleRoleGroup {

@@ -53,7 +53,13 @@ interface ModuleMapEntry {
 
 const MODULE_MAP_LOCAL_TTL_MS = 15_000;
 
-const FALLBACK_CORE_MODULE_KEYS: ReadonlySet<string> = new Set<string>(["kb", "chat"]);
+const FALLBACK_CORE_MODULE_KEYS: ReadonlySet<string> = new Set<string>([
+  "kb",
+  "home",
+  "chat",
+  "mail",
+  "calendar",
+]);
 
 @Injectable()
 export class EntitlementsService implements OnModuleInit {
