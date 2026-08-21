@@ -1,6 +1,34 @@
 import { PayrollJobsWorkerService } from "../payroll-jobs-worker.service";
 import type { PayrollJobsService } from "../payroll-jobs.service";
 
+jest.mock("../../../../common/tenant", () => ({
+  forEachOrg: async (
+    _db: unknown,
+    _name: string,
+    fn: (tx: unknown, orgId: string) => Promise<void>,
+  ) => {
+    await fn(
+      {
+        update: jest.fn().mockReturnValue({
+          set: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({
+              returning: jest.fn().mockResolvedValue([]),
+            }),
+          }),
+        }),
+      },
+      "org-a",
+    );
+    return { organizations: 1, succeeded: 1, failed: 0 };
+  },
+  withTenant: (
+    _db: unknown,
+    _opts: unknown,
+    fn: (tx: unknown) => Promise<unknown>,
+  ) => fn({}),
+  runWithTenantContext: (_opts: unknown, fn: () => Promise<unknown>) => fn(),
+}));
+
 describe("PayrollJobsWorkerService", () => {
   function makeWorker(handlers: {
     generate?: { generateRun: jest.Mock };

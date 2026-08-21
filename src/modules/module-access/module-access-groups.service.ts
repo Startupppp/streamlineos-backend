@@ -720,22 +720,23 @@ export class ModuleAccessGroupsService {
     await this.assertAccess(actor, moduleKey, "manage");
     await this.assertGroupBelongsToModule(actor.orgId, moduleKey, groupId);
 
-    if (!actor.isOrgOwner && userId === actor.userId) {
-      throw new ForbiddenException(
-        "You cannot remove yourself from a module group",
-      );
-    }
-
     const ownerUserId = await this.resolveModuleOwnerUserId(
       actor.orgId,
       moduleKey,
     );
+
     if (ownerUserId !== null && userId === ownerUserId) {
       if (!actor.isOrgOwner && actor.userId !== ownerUserId) {
         throw new ForbiddenException(
           "Only the module owner, an org owner, or a platform admin may modify the module owner's group memberships",
         );
       }
+    }
+
+    if (!actor.isOrgOwner && userId === actor.userId && actor.userId !== ownerUserId) {
+      throw new ForbiddenException(
+        "You cannot remove yourself from a module group",
+      );
     }
 
     const member = await this.db.query.organizationMembers.findFirst({

@@ -5,6 +5,10 @@ jest.mock("../feedbucket-ai.service");
 jest.mock("../../storage/storage.service");
 jest.mock("../../../common/ratelimit/rate-limit.service");
 jest.mock("../../notifications/notifications.service");
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: <T>(_db: unknown, fn: () => Promise<T>) => fn(),
+  runInNewTenantTransaction: <T>(_db: unknown, _orgId: string, fn: () => Promise<T>) => fn(),
+}));
 
 import {
   BadRequestException,

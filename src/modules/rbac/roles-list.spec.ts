@@ -22,6 +22,7 @@ describe("RolesService.getRoles", () => {
       updatedAt: new Date("2026-08-02T00:00:00.000Z"),
       explicitPermissionCount: 7,
       universalGrantCount: 2,
+      memberCount: 5,
     };
     const offset = jest.fn().mockResolvedValue([role]);
     const limit = jest.fn().mockReturnValue({ offset });
@@ -62,6 +63,7 @@ describe("RolesService.getRoles", () => {
           createdAt: role.createdAt,
           updatedAt: role.updatedAt,
           permissionCount: UNIVERSAL_MEMBER_PERMISSIONS.length + 5,
+          memberCount: 5,
         },
       ],
       pagination: {

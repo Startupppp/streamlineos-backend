@@ -4,6 +4,7 @@ import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
+import { AccessService } from "../access/access.service";
 import { RoleLockoutService } from "./role-lockout.service";
 import { RoleMemberService } from "./role-member.service";
 
@@ -42,6 +43,7 @@ describe("RoleMemberService active membership enforcement", () => {
         { provide: AuditService, useValue: { log: jest.fn() } },
         { provide: NotificationDispatchService, useValue: {} },
         { provide: RoleLockoutService, useValue: {} },
+        { provide: AccessService, useValue: { resolveUserPermissions: jest.fn(), getPermissionsVersion: jest.fn() } },
       ],
     }).compile();
     service = moduleRef.get(RoleMemberService);
@@ -59,7 +61,7 @@ describe("RoleMemberService active membership enforcement", () => {
             orgId: "org-a",
             role: "ORG_ADMIN",
             permissions: [],
-            isOrgOwner: false,
+            isOrgOwner: true,
             tokenScopes: null,
             sessionId: "session",
           },

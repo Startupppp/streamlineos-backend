@@ -166,6 +166,8 @@ function makeFakeDb(store: ReturnType<typeof makeStore>) {
       }),
     }),
 
+    execute: jest.fn().mockResolvedValue([]),
+
     transaction: async <T>(cb: (tx: Record<string, unknown>) => Promise<T>): Promise<T> => cb(db),
   };
 
@@ -298,6 +300,7 @@ describe("AiConfirmationService — isolated unit tests", () => {
         if (prop === "transaction") {
           return async <T>(cb: (tx: unknown) => Promise<T>) => cb(overrideSelect);
         }
+        if (prop === "execute") return jest.fn().mockResolvedValue([]);
         return undefined;
       },
     });
@@ -365,6 +368,7 @@ describe("AiConfirmationService — isolated unit tests", () => {
             }),
           });
         }
+        if (prop === "execute") return jest.fn().mockResolvedValue([]);
         return undefined;
       },
     });
@@ -427,6 +431,7 @@ describe("AiConfirmationService — isolated unit tests", () => {
             }),
           });
         }
+        if (prop === "execute") return jest.fn().mockResolvedValue([]);
         return undefined;
       },
     });
@@ -557,6 +562,7 @@ function buildConfirmDb(
     }),
   });
 
+  db.execute = jest.fn().mockResolvedValue([]);
   db.transaction = async <T>(cb: (tx: typeof db) => Promise<T>): Promise<T> => cb(db);
 
   return db as never;
@@ -597,6 +603,7 @@ function buildSimpleSelectDb(
     }),
   });
 
+  db.execute = jest.fn().mockResolvedValue([]);
   db.transaction = async <T>(cb: (tx: typeof db) => Promise<T>): Promise<T> => cb(db);
 
   return db as never;
@@ -622,6 +629,7 @@ function buildSweepDb(store: ReturnType<typeof makeStore>): never {
     }),
   });
 
+  db.execute = jest.fn().mockResolvedValue([]);
   db.transaction = async <T>(cb: (tx: typeof db) => Promise<T>): Promise<T> => cb(db);
 
   return db as never;

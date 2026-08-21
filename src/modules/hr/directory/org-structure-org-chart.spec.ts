@@ -96,7 +96,7 @@ describe("OrgStructureService organization chart", () => {
     expect(result.pageInfo.hasMore).toBe(true);
     expect(decodeOrgChartCursor(result.pageInfo.nextCursor ?? "")).toEqual({
       name: "ben",
-      id: "employee-2",
+      employeeUserId: "employee-2",
     });
   });
 

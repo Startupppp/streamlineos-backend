@@ -96,10 +96,28 @@ describe("PRD E2E scenarios 1–12 (contract journey)", () => {
     const publishing = {
       publish: jest.fn().mockRejectedValue(new Error("PDF boom")),
     };
+    const tx = {
+      execute: jest.fn().mockResolvedValue([]),
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            returning: jest.fn().mockResolvedValue([]),
+          }),
+        }),
+      }),
+    };
+    const db = {
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockResolvedValue([{ id: "o" }]),
+      }),
+      transaction: jest.fn().mockImplementation((fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
+    };
     const worker = new PayrollJobsWorkerService(
       jobs as never,
       { get: jest.fn() } as never,
-      {} as never,
+      db as never,
       undefined,
       publishing as never,
       undefined,

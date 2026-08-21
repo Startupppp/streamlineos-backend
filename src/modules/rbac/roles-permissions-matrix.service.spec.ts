@@ -1,5 +1,5 @@
 import { RolePermissionService } from "./role-permission.service";
-import { ROLE_DEFAULT_PERMISSIONS } from "./permissions";
+import { ROLE_DEFAULT_PERMISSIONS, UNIVERSAL_MEMBER_PERMISSIONS } from "./permissions";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
@@ -100,7 +100,7 @@ describe("RolePermissionService.getPermissionsMatrix", () => {
       roleId: 1,
       roleName: "Admin",
       roleSlug: "OWNER",
-      permissions: ["settings:rbac:manage", "hr:employees:view"],
+      permissions: [...UNIVERSAL_MEMBER_PERMISSIONS, "settings:rbac:manage", "hr:employees:view"],
     });
 
     const salesEntry = result.find((r) => r.roleId === 2);
@@ -108,7 +108,7 @@ describe("RolePermissionService.getPermissionsMatrix", () => {
       roleId: 2,
       roleName: "Sales",
       roleSlug: "SALES",
-      permissions: ["crm:leads:view"],
+      permissions: [...UNIVERSAL_MEMBER_PERMISSIONS, "crm:leads:view"],
     });
   });
 
@@ -133,8 +133,8 @@ describe("RolePermissionService.getPermissionsMatrix", () => {
     expect(result.find((r) => r.roleId === 1)?.permissions).toEqual(
       expect.arrayContaining(["hr:employees:view", "hr:employees:create"]),
     );
-    expect(result.find((r) => r.roleId === 2)?.permissions).toEqual(["hr:employees:view"]);
-    expect(result.find((r) => r.roleId === 3)?.permissions).toEqual(["hr:employees:view"]);
+    expect(result.find((r) => r.roleId === 2)?.permissions).toEqual([...UNIVERSAL_MEMBER_PERMISSIONS, "hr:employees:view"]);
+    expect(result.find((r) => r.roleId === 3)?.permissions).toEqual([...UNIVERSAL_MEMBER_PERMISSIONS, "hr:employees:view"]);
   });
 
   it("falls back to ROLE_DEFAULT_PERMISSIONS when no grants exist for a custom slug with no default", async () => {
@@ -153,7 +153,7 @@ describe("RolePermissionService.getPermissionsMatrix", () => {
       roleId: 10,
       roleName: "Custom",
       roleSlug: "CUSTOM_SLUG",
-      permissions: [],
+      permissions: [...UNIVERSAL_MEMBER_PERMISSIONS],
     });
   });
 
@@ -173,7 +173,7 @@ describe("RolePermissionService.getPermissionsMatrix", () => {
       roleId: 5,
       roleName: "Member",
       roleSlug: "MEMBER",
-      permissions: ROLE_DEFAULT_PERMISSIONS["MEMBER"],
+      permissions: Array.from(new Set([...UNIVERSAL_MEMBER_PERMISSIONS, ...(ROLE_DEFAULT_PERMISSIONS["MEMBER"] ?? [])])),
     });
   });
 
@@ -202,7 +202,7 @@ describe("RolePermissionService.getPermissionsMatrix", () => {
       roleId: 99,
       roleName: "Unknown Role",
       roleSlug: "UNKNOWN_SLUG_WITH_NO_DEFAULT",
-      permissions: [],
+      permissions: [...UNIVERSAL_MEMBER_PERMISSIONS],
     });
   });
 
@@ -221,10 +221,10 @@ describe("RolePermissionService.getPermissionsMatrix", () => {
     const result = await svc.getPermissionsMatrix("org-5");
 
     const adminEntry = result.find((r) => r.roleId === 1);
-    expect(adminEntry?.permissions).toEqual(["settings:rbac:manage"]);
+    expect(adminEntry?.permissions).toEqual([...UNIVERSAL_MEMBER_PERMISSIONS, "settings:rbac:manage"]);
 
     const engineerEntry = result.find((r) => r.roleId === 2);
-    expect(engineerEntry?.permissions).toEqual([]);
+    expect(engineerEntry?.permissions).toEqual([...UNIVERSAL_MEMBER_PERMISSIONS]);
   });
 });
 

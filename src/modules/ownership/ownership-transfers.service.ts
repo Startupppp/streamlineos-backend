@@ -116,7 +116,7 @@ export class OwnershipTransfersService {
 
       await this.cache.invalidateNamespace(`ownership:transfers:${orgId}`);
 
-      registerAfterCommit(() =>
+      const notifyOrg = () =>
         this.notifyRequested(
           orgId,
           actorUserId,
@@ -129,8 +129,8 @@ export class OwnershipTransfersService {
             transferId: transfer.id,
             scope: "organization",
           });
-        }),
-      );
+        });
+      if (!registerAfterCommit(notifyOrg)) void notifyOrg();
 
       return { transferId: transfer.id, expiresAt: transfer.expiresAt };
     } catch (err: unknown) {
@@ -245,7 +245,7 @@ export class OwnershipTransfersService {
         this.cache.invalidateNamespace(`ownership:transfers:${orgId}`),
       ]);
 
-      registerAfterCommit(() =>
+      const notifyModule = () =>
         this.notifyRequested(
           orgId,
           actorUserId,
@@ -258,8 +258,8 @@ export class OwnershipTransfersService {
             transferId: transfer.id,
             scope: moduleKey,
           });
-        }),
-      );
+        });
+      if (!registerAfterCommit(notifyModule)) void notifyModule();
 
       return { transferId: transfer.id, expiresAt: transfer.expiresAt };
     } catch (err: unknown) {

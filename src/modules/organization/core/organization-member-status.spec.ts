@@ -9,6 +9,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { SessionsService } from "../../sessions/sessions.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { AblyService } from "../../realtime/ably.service";
 import { orgUnitMembers, users } from "../../../db/schema";
 import {
   runWithTenantContext,
@@ -30,6 +31,7 @@ describe("OrgMembershipService member status guards", () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         OrgMembershipService,
+        { provide: AblyService, useValue: { revokeUserTokens: jest.fn() } },
         {
           provide: EmailService,
           useValue: {
@@ -154,6 +156,7 @@ describe("OrgMembershipService — module-ownership guards", () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         OrgMembershipService,
+        { provide: AblyService, useValue: { revokeUserTokens: jest.fn() } },
         {
           provide: EmailService,
           useValue: {

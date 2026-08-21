@@ -561,7 +561,7 @@ describe("InvAiExplainService - confirmReorderProposal", () => {
     expect(confirmation.markExecuted).toHaveBeenCalledTimes(1);
     expect(confirmation.markExecuted).toHaveBeenCalledWith(101, {
       poId: "po-1",
-    });
+    }, "org-1");
   });
 
   it("should throw NotFoundException when confirmed payload has no vendorId", async () => {

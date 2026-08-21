@@ -36,6 +36,12 @@ function buildCache(statusKeys: string[] = ["NEW"]) {
         return fn();
       },
     ),
+    cachedVersioned: jest.fn().mockImplementation(
+      async (namespace: string, key: string, fn: () => Promise<unknown>) => {
+        if (key === "status-keys") return statusKeys;
+        return fn();
+      },
+    ),
   };
 }
 
@@ -62,6 +68,7 @@ describe("LeadsBoardService.getBoard — DataScope routing (no branch filter)", 
 
     expect(applyScopeSpy).toHaveBeenCalledWith(
       "own",
+      ORG,
       USER,
       expect.objectContaining({ ownerColumn: expect.anything() }),
     );
@@ -76,6 +83,7 @@ describe("LeadsBoardService.getBoard — DataScope routing (no branch filter)", 
 
     expect(applyScopeSpy).toHaveBeenCalledWith(
       "all",
+      ORG,
       USER,
       expect.objectContaining({ ownerColumn: expect.anything() }),
     );
@@ -151,6 +159,7 @@ describe("LeadsBoardService.getStats — DataScope routing (no branch filter)", 
 
     expect(applyScopeSpy).toHaveBeenCalledWith(
       "own",
+      ORG,
       USER,
       expect.objectContaining({ ownerColumn: expect.anything() }),
     );
@@ -165,6 +174,7 @@ describe("LeadsBoardService.getStats — DataScope routing (no branch filter)", 
 
     expect(applyScopeSpy).toHaveBeenCalledWith(
       "all",
+      ORG,
       USER,
       expect.objectContaining({ ownerColumn: expect.anything() }),
     );

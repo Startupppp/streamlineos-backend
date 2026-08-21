@@ -4,7 +4,11 @@ import { resolve } from "node:path";
 const bundleRoot = "migrations/pending/hrms-lifecycle-concurrency";
 
 function readBundleFile(fileName: string): string {
-  return readFileSync(resolve(process.cwd(), bundleRoot, fileName), "utf8");
+  return readFileSync(resolve(process.cwd(), bundleRoot, fileName), "utf8").replace(/\r\n/g, "\n");
+}
+
+function readSchemaFile(relativePath: string): string {
+  return readFileSync(resolve(process.cwd(), relativePath), "utf8").replace(/\r\n/g, "\n");
 }
 
 describe("HRMS lifecycle concurrency review bundle", () => {
@@ -12,18 +16,9 @@ describe("HRMS lifecycle concurrency review bundle", () => {
   const forward = readBundleFile("0001_hrms_lifecycle_concurrency.sql");
   const rollback = readBundleFile("0001_hrms_lifecycle_concurrency.down.sql");
   const verification = readBundleFile("0002_hrms_lifecycle_concurrency.verify.sql");
-  const attendanceSchema = readFileSync(
-    resolve(process.cwd(), "src/db/schema/hr/attendance.ts"),
-    "utf8",
-  );
-  const lifecycleSchema = readFileSync(
-    resolve(process.cwd(), "src/db/schema/hr/offboarding.ts"),
-    "utf8",
-  );
-  const leaveSchema = readFileSync(
-    resolve(process.cwd(), "src/db/schema/hr/leaves.ts"),
-    "utf8",
-  );
+  const attendanceSchema = readSchemaFile("src/db/schema/hr/attendance.ts");
+  const lifecycleSchema = readSchemaFile("src/db/schema/hr/offboarding.ts");
+  const leaveSchema = readSchemaFile("src/db/schema/hr/leaves.ts");
 
   it("backfills positive lifecycle versions before enforcing not-null", () => {
     expect(backfill).toContain("UPDATE public.resignations");

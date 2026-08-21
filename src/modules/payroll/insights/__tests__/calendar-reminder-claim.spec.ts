@@ -28,7 +28,7 @@ function createFakeDb(options: FakeDbOptions) {
       return {
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
-            limit: jest.fn().mockResolvedValue([]),
+            orderBy: jest.fn().mockResolvedValue([]),
           }),
         }),
       };

@@ -78,12 +78,14 @@ describe("forEachOrg", () => {
 
     expect(execute).toHaveBeenCalledTimes(2);
     const orgIds = new Set<string>();
-    for (const call of execute.mock.calls) {
-      const chunks: unknown[] = (call[0] as { queryChunks: unknown[] }).queryChunks;
-      for (const chunk of chunks) {
-        if (typeof chunk === "string") orgIds.add(chunk);
-      }
+    function collectNestedStrings(value: unknown): void {
+      if (typeof value === "string") { orgIds.add(value); return; }
+      if (!value || typeof value !== "object") return;
+      const obj = value as Record<string, unknown>;
+      if ("queryChunks" in obj && Array.isArray(obj.queryChunks))
+        for (const c of obj.queryChunks as unknown[]) collectNestedStrings(c);
     }
+    for (const call of execute.mock.calls) collectNestedStrings(call[0]);
     expect(orgIds).toContain("org-a");
     expect(orgIds).toContain("org-b");
   });

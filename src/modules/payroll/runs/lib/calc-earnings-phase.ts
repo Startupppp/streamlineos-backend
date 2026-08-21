@@ -137,7 +137,7 @@ export function calcEarningsPhase(params: EarningsPhaseParams): EarningsPhaseRes
         sortOrder: comp.sortOrder,
         explain: {
           method: comp.calcMethod,
-          formula: comp.formula ?? undefined,
+          ...(comp.formula ? { formula: comp.formula } : {}),
           inputs: { ctc: monthlyCtcPaise / 100, percent: comp.percent ? parseFloat(comp.percent) : 0 },
           steps: [
             comp.calcMethod === "PERCENT_OF_BASIC"

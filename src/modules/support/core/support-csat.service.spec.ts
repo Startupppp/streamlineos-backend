@@ -3,6 +3,14 @@ import { ConflictException, NotFoundException } from "@nestjs/common";
 import { SupportCsatService } from "./support-csat.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 
+jest.mock("../../../common/tenant/with-public-token", () => ({
+  withPublicToken: (_db: unknown, _token: string, fn: (tx: unknown) => Promise<unknown>) => fn(_db),
+}));
+
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: (_db: unknown, fn: (tx: unknown) => Promise<unknown>) => fn(_db),
+}));
+
 const mockDb = {
   query: {
     supportCsatRequests: { findFirst: jest.fn(), findMany: jest.fn() },

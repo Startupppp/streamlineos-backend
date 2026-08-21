@@ -36,6 +36,7 @@ function createHarness(permissionEntries: Array<[string, DataScope]> = []) {
   const access = {
     resolveUserPermissions: jest.fn().mockResolvedValue(permissions),
     isModuleEnabled: jest.fn().mockResolvedValue(true),
+    canManageOrganizationMembership: jest.fn().mockResolvedValue(false),
   };
   const analytics = { getCommandCenter: methodMock() };
   const dashboard = {

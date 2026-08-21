@@ -1,4 +1,7 @@
 jest.mock("@composio/core", () => ({ Composio: jest.fn() }));
+jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: (db: unknown, fn: (tx: unknown) => Promise<unknown>) => fn(db),
+}));
 
 import { HttpException, HttpStatus, NotFoundException, ForbiddenException } from "@nestjs/common";
 import { Test, type TestingModule } from "@nestjs/testing";
@@ -369,6 +372,7 @@ describe("MeetingsPrepService", () => {
       expect(confirmation.markExecuted).toHaveBeenCalledWith(
         1,
         expect.objectContaining({ status: "sent" }),
+        ORG_A,
       );
     });
 

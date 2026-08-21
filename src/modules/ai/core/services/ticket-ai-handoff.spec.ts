@@ -1,3 +1,7 @@
+jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: (db: unknown, fn: (tx: unknown) => Promise<unknown>) => fn(db),
+}));
+
 import { NotFoundException } from "@nestjs/common";
 import { TicketAiService } from "./ticket-ai.service";
 import type { Db } from "../../../../db/drizzle.module";

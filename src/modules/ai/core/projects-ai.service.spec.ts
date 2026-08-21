@@ -1,5 +1,11 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import { HttpException, HttpStatus, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: (_db: unknown, fn: (tx: unknown) => Promise<unknown>) => fn(_db),
+  runInNewTenantTransaction: (_db: unknown, _orgId: string, fn: (tx: unknown) => Promise<unknown>) => fn(_db),
+}));
+
 import { ProjectsAiService } from "./services/projects-ai.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AiGatewayService } from "./gateway/ai-gateway.service";

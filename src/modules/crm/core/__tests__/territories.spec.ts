@@ -26,7 +26,9 @@ function makeDbWithTerritories(rows: TerritoryRow[], reps: RepRow[] = []) {
       })
       .mockReturnValue({
         from: jest.fn().mockReturnValue({
-          where: jest.fn().mockResolvedValue(reps),
+          where: jest.fn().mockReturnValue({
+            limit: jest.fn().mockResolvedValue(reps),
+          }),
         }),
       }),
   };

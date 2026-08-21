@@ -54,9 +54,16 @@ describe("runInTenantTransaction", () => {
     expect(mockDb.transaction).toHaveBeenCalledTimes(1);
     expect(mockExecute).toHaveBeenCalledTimes(1);
 
-    // Drizzle's sql tag pushes interpolated values as raw primitives into queryChunks
-    const sqlArg = mockExecute.mock.calls[0]?.[0] as { queryChunks: unknown[] };
-    expect(sqlArg.queryChunks).toContain("org-explicit");
+    function containsString(value: unknown, target: string): boolean {
+      if (typeof value === "string") return value === target;
+      if (!value || typeof value !== "object") return false;
+      const obj = value as Record<string, unknown>;
+      if ("queryChunks" in obj && Array.isArray(obj.queryChunks))
+        return (obj.queryChunks as unknown[]).some((c) => containsString(c, target));
+      return false;
+    }
+    const sqlArg = mockExecute.mock.calls[0]?.[0];
+    expect(containsString(sqlArg, "org-explicit")).toBe(true);
     expect(fn).toHaveBeenCalledWith(mockTx);
   });
 

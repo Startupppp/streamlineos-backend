@@ -51,6 +51,8 @@ describe("ChatChannelMembersService", () => {
       mockDb.query.chatChannelMembers.findFirst
         .mockResolvedValueOnce({ userId: "user1", role: "ADMIN" })
         .mockResolvedValueOnce({ userId: "user2" });
+      mockDb.query.chatChannels.findFirst.mockResolvedValueOnce({ orgId: "org1" });
+      mockDb.where.mockResolvedValueOnce([{ userId: "user2" }]);
       await expect(service.addMember(1, "user2", "user1")).rejects.toThrow(ConflictException);
     });
   });

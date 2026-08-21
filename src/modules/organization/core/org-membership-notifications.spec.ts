@@ -7,6 +7,7 @@ import { EmailService } from "../../email/email.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { SessionsService } from "../../sessions/sessions.service";
 import { OrgMembershipService } from "./org-membership.service";
+import { AblyService } from "../../realtime/ably.service";
 
 const ORG = "org-a";
 const ACTOR = "actor-1";
@@ -30,16 +31,24 @@ describe("OrgMembershipService access notifications", () => {
   const forUpdate = () =>
     Object.assign(Promise.resolve([]), { limit: jest.fn().mockResolvedValue([]) });
 
+  const joinChain: Record<string, jest.Mock> = {
+    innerJoin: jest.fn(),
+    leftJoin: jest.fn(),
+    where: jest.fn(),
+    orderBy: jest.fn().mockResolvedValue([]),
+  };
+  joinChain.innerJoin.mockReturnValue({ where: selectWhere });
+  joinChain.leftJoin.mockReturnValue(joinChain);
+  joinChain.where.mockReturnValue({
+    for: jest.fn().mockImplementation(forUpdate),
+    limit: jest.fn().mockResolvedValue([]),
+    orderBy: jest.fn().mockResolvedValue([]),
+  });
+
   const tx = {
     execute: jest.fn().mockResolvedValue([]),
     select: jest.fn().mockReturnValue({
-      from: jest.fn().mockReturnValue({
-        innerJoin: jest.fn().mockReturnValue({ where: selectWhere }),
-        where: jest.fn().mockReturnValue({
-          for: jest.fn().mockImplementation(forUpdate),
-          limit: jest.fn().mockResolvedValue([]),
-        }),
-      }),
+      from: jest.fn().mockReturnValue(joinChain),
     }),
     update: jest.fn().mockReturnValue({
       set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
@@ -82,6 +91,7 @@ describe("OrgMembershipService access notifications", () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         OrgMembershipService,
+        { provide: AblyService, useValue: { revokeUserTokens: jest.fn() } },
         { provide: DRIZZLE, useValue: db },
         { provide: AuditService, useValue: { log: jest.fn() } },
         {

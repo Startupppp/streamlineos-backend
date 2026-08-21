@@ -206,7 +206,7 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
       sortOrder: comp.sortOrder,
       explain: {
         method: comp.calcMethod,
-        formula: comp.formula ?? undefined,
+        ...(comp.formula ? { formula: comp.formula } : {}),
         inputs: { amount: paise / 100 },
         steps: [`${comp.name} = ₹${(paise / 100).toFixed(2)} (adjustment / clawback)`],
       },

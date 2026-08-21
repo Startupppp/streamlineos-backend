@@ -1,3 +1,7 @@
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: (db: unknown, fn: (tx: unknown) => Promise<unknown>) => fn(db),
+}));
+
 import { Test, type TestingModule } from "@nestjs/testing";
 import { AiSummariesService } from "./ai-summaries.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";

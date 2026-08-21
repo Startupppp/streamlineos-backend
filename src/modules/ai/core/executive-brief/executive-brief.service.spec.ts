@@ -1,7 +1,14 @@
 import { Test } from "@nestjs/testing";
+
+jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: (_db: unknown, fn: (tx: unknown) => Promise<unknown>) => fn(_db),
+  runInNewTenantTransaction: (_db: unknown, _orgId: string, fn: (tx: unknown) => Promise<unknown>) => fn(_db),
+}));
+
 import { ExecutiveBriefService } from "./executive-brief.service";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
 import { AiSummariesService } from "../../summaries/ai-summaries.service";
+import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { ProjectsAnalyticsService } from "../../../build/core/projects-analytics.service";
 import { CrmSalesDashboardService } from "../../../crm/core/crm-sales-dashboard.service";
 import { SupportReportsService } from "../../../support/core/support-reports.service";
@@ -83,6 +90,7 @@ async function buildSvc(opts: {
   const module = await Test.createTestingModule({
     providers: [
       ExecutiveBriefService,
+      { provide: DRIZZLE, useValue: {} },
       { provide: AiSummariesService, useValue: makeSummaries() },
     ],
   }).compile();

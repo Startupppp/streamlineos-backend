@@ -1,5 +1,11 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import { ForbiddenException, HttpException, HttpStatus, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: (_db: unknown, fn: (tx: unknown) => Promise<unknown>) => fn(_db),
+  runInNewTenantTransaction: (_db: unknown, _orgId: string, fn: (tx: unknown) => Promise<unknown>) => fn(_db),
+}));
+
 import { CrmCopilotService } from "./services/crm-copilot.service";
 import { AiGatewayService } from "./gateway/ai-gateway.service";
 import { OrgFeaturesService } from "./services/org-features.service";

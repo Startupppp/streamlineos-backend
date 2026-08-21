@@ -1,3 +1,8 @@
+jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: (db: unknown, fn: (tx: unknown) => Promise<unknown>) => fn(db),
+  runInNewTenantTransaction: (db: unknown, _orgId: string, fn: (tx: unknown) => Promise<unknown>) => fn(db),
+}));
+
 import {
   BadRequestException,
   ServiceUnavailableException,

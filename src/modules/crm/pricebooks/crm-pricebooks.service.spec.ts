@@ -1,3 +1,8 @@
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: <T>(_db: unknown, fn: (tx: unknown) => Promise<T>) => fn(_db),
+  runInNewTenantTransaction: <T>(_db: unknown, _orgId: string, fn: (tx: unknown) => Promise<T>) => fn(_db),
+}));
+
 import { ConflictException, NotFoundException } from "@nestjs/common";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";

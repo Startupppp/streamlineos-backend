@@ -267,7 +267,8 @@
     "gross": "161035.39",
     "deductions": "19087.03",
     "employerContributions": "25.00",
-    "net": "143748.36"
+    "net": "143748.36",
+    "residualPaise": 0
   },
   "variance": null,
   "wageDefinitionWarning": "Labour Code wage definition: Basic+DA is 0.0% of gross (minimum 50%)."

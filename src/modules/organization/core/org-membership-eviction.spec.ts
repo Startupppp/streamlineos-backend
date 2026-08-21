@@ -7,6 +7,7 @@ import { SessionsService } from "../../sessions/sessions.service";
 import { EmailService } from "../../email/email.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { OrgMembershipService } from "./org-membership.service";
+import { AblyService } from "../../realtime/ably.service";
 
 describe("OrgMembershipService access revocation", () => {
   it("evicts only the requested organization without revoking account sessions", async () => {
@@ -19,6 +20,7 @@ describe("OrgMembershipService access revocation", () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         OrgMembershipService,
+        { provide: AblyService, useValue: { revokeUserTokens: jest.fn() } },
         {
           provide: EmailService,
           useValue: {

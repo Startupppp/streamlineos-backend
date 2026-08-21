@@ -1,3 +1,7 @@
+jest.mock("../../../common/tenant/with-public-token", () => ({
+  withPublicToken: <T>(_db: unknown, _token: string, fn: (tx: unknown) => Promise<T>) => fn(_db),
+}));
+
 import { FeedbucketPublicService } from "../feedbucket-public.service";
 import type { Db } from "../../../db/drizzle.module";
 

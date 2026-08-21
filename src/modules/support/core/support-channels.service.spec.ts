@@ -4,6 +4,10 @@ import { SupportChannelsService } from "./support-channels.service";
 import { SupportTicketsService } from "./support-tickets.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: (_db: unknown, fn: (tx: unknown) => Promise<unknown>) => fn(_db),
+}));
+
 const mockSelectChain = {
   from: jest.fn(),
   innerJoin: jest.fn(),

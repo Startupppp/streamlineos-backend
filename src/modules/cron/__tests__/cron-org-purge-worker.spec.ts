@@ -12,9 +12,10 @@ const mockAudit = { log: jest.fn() };
 const mockCache = {
   invalidate: jest.fn().mockResolvedValue(undefined),
   invalidatePattern: jest.fn().mockResolvedValue(undefined),
+  invalidateNamespace: jest.fn().mockResolvedValue(undefined),
 };
 const mockOrgMembership = {
-  revokeMemberAccess: jest.fn().mockResolvedValue(undefined),
+  revokeOrgScopedAccess: jest.fn().mockResolvedValue(undefined),
 };
 
 describe("CronOrgPurgeWorkerService — both status columns stay consistent", () => {
@@ -26,8 +27,9 @@ describe("CronOrgPurgeWorkerService — both status columns stay consistent", ()
 
   beforeEach(async () => {
     jest.resetAllMocks();
-    mockOrgMembership.revokeMemberAccess.mockResolvedValue(undefined);
+    mockOrgMembership.revokeOrgScopedAccess.mockResolvedValue(undefined);
     mockCache.invalidate.mockResolvedValue(undefined);
+    mockCache.invalidateNamespace.mockResolvedValue(undefined);
 
     mockDb = {
       select: jest.fn(),
@@ -86,7 +88,7 @@ describe("CronOrgPurgeWorkerService — both status columns stay consistent", ()
       status: "PURGED",
     });
     expect(capturedSetArg?.purgedAt).toBeInstanceOf(Date);
-    expect(mockOrgMembership.revokeMemberAccess).toHaveBeenCalledWith(ORG_ID, MEMBER_ID);
+    expect(mockOrgMembership.revokeOrgScopedAccess).toHaveBeenCalledWith(ORG_ID, MEMBER_ID);
   });
 
   it("skips purge and reports skipped=1 when the row is already claimed (SKIP LOCKED returns nothing)", async () => {
@@ -111,7 +113,7 @@ describe("CronOrgPurgeWorkerService — both status columns stay consistent", ()
 
     expect(result.processed).toBe(0);
     expect(result.skipped).toBe(1);
-    expect(mockOrgMembership.revokeMemberAccess).not.toHaveBeenCalled();
+    expect(mockOrgMembership.revokeOrgScopedAccess).not.toHaveBeenCalled();
   });
 
   it("returns processed=0 skipped=0 when there are no purge-scheduled candidates", async () => {
