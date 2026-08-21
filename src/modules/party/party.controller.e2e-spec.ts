@@ -1,20 +1,13 @@
-import { Test } from "@nestjs/testing";
-import { INestApplication } from "@nestjs/common";
+import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { AppModule } from "../../app.module";
-import { AllExceptionsFilter } from "../../common/http/all-exceptions.filter";
-import { signToken } from "../../../test/helpers/sign-token";
+import { createE2eApp } from "test/helpers/e2e-app";
+import { signToken } from "test/helpers/sign-token";
 
 describe("Party auth/RBAC (e2e)", () => {
   let app: INestApplication;
 
   beforeAll(async () => {
-    process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
-    process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-    const ref = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    app = ref.createNestApplication();
-    app.useGlobalFilters(new AllExceptionsFilter());
-    await app.init();
+    app = await createE2eApp();
   });
 
   afterAll(async () => {
@@ -57,7 +50,7 @@ describe("Party auth/RBAC (e2e)", () => {
     async (method, path) => {
       const res = await callRoute(method, path);
       expect(res.status).toBe(401);
-      expect(res.body).toEqual({ error: "Unauthorized" });
+      expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
     },
   );
 
@@ -68,7 +61,7 @@ describe("Party auth/RBAC (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ name: "Acme Corp", type: "COMPANY" });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on PATCH /party/parties/:partyId without party:parties:update permission", async () => {
@@ -78,7 +71,7 @@ describe("Party auth/RBAC (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ name: "Updated Corp" });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on DELETE /party/parties/:partyId without party:parties:delete permission", async () => {
@@ -87,7 +80,7 @@ describe("Party auth/RBAC (e2e)", () => {
       .delete(`/party/parties/${PARTY_ID}`)
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on POST /party/parties/:partyId/contacts without party:contacts:manage permission", async () => {
@@ -97,7 +90,7 @@ describe("Party auth/RBAC (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ name: "Jane Doe", email: "jane@example.com" });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on GET /party/parties without party:parties:view permission", async () => {
@@ -106,6 +99,6 @@ describe("Party auth/RBAC (e2e)", () => {
       .get("/party/parties")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 });

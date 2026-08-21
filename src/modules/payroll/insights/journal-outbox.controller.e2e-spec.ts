@@ -1,12 +1,11 @@
 process.env.APP_URL ??= "http://localhost:1000";
 
-import { Test } from "@nestjs/testing";
 import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { AppModule } from "../../../app.module";
-import { AllExceptionsFilter } from "../../../common/http/all-exceptions.filter";
-import { signToken } from "../../../../test/helpers/sign-token";
+import { signToken } from "test/helpers/sign-token";
+import { createE2eApp } from "test/helpers/e2e-app";
 import { AccessService } from "../../access/access.service";
+import { EntitlementsService } from "../../access/entitlements.service";
 import { JournalOutboxService } from "./journal-outbox.service";
 
 const mockBatch = {
@@ -45,6 +44,12 @@ const mockOutbox = {
   reconcile: jest.fn().mockResolvedValue({ ...mockBatch, reconciliationStatus: "RECONCILED" }),
 };
 
+const alwaysOnEntitlements = {
+  isModuleEnabled: async (): Promise<boolean> => true,
+  getModuleMap: async (): Promise<Record<string, boolean>> => ({}),
+  getEffectiveModuleMap: async (): Promise<Record<string, boolean>> => ({}),
+};
+
 const access = (perms: [string, string][]) => ({
   resolveUserPermissions: jest.fn().mockResolvedValue(new Map(perms)),
   isModuleEnabled: jest.fn().mockResolvedValue(true),
@@ -73,16 +78,13 @@ const WRITE_ROUTES: ReadonlyArray<[Method, string]> = [
 ];
 
 async function buildApp(accessMock: ReturnType<typeof access>): Promise<INestApplication> {
-  process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
-  process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-  const ref = await Test.createTestingModule({ imports: [AppModule] })
-    .overrideProvider(AccessService).useValue(accessMock)
-    .overrideProvider(JournalOutboxService).useValue(mockOutbox)
-    .compile();
-  const app = ref.createNestApplication();
-  app.useGlobalFilters(new AllExceptionsFilter());
-  await app.init();
-  return app;
+  return createE2eApp({
+    overrides: [
+      { provide: AccessService, useValue: accessMock },
+      { provide: EntitlementsService, useValue: alwaysOnEntitlements },
+      { provide: JournalOutboxService, useValue: mockOutbox },
+    ],
+  });
 }
 
 describe("journal outbox — auth (e2e)", () => {

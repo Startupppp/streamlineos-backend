@@ -1,5 +1,4 @@
-import { Test } from "@nestjs/testing";
-import { INestApplication } from "@nestjs/common";
+import type { INestApplication } from "@nestjs/common";
 import {
   BadRequestException,
   ConflictException,
@@ -7,14 +6,13 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import request from "supertest";
-import { AppModule } from "../../../app.module";
-import { AllExceptionsFilter } from "../../../common/http/all-exceptions.filter";
-import { signToken } from "../../../../test/helpers/sign-token";
-import { stubMembershipState } from "../../../../test/helpers/membership-state";
+import { signToken } from "test/helpers/sign-token";
+import { createE2eApp } from "test/helpers/e2e-app";
 import { OwnershipService } from "../ownership.service";
 import { OwnershipTransfersService } from "../ownership-transfers.service";
 import { OwnershipTransferResponseService } from "../ownership-transfer-response.service";
 import { AccessService } from "../../access/access.service";
+import { MembershipStateService } from "../../../common/auth/membership-state.service";
 
 const TRANSFER_ID = "c8a3e1f0-aaaa-bbbb-cccc-d9e7f0a1b2c3";
 
@@ -62,32 +60,27 @@ const mockAccessService = {
   isModuleEnabled: jest.fn(),
 };
 
+const membershipStateStub = {
+  isAccountActive: async (): Promise<boolean> => true,
+  resolve: async (userId: string): Promise<{ active: boolean; isOwner: boolean; role: string }> =>
+    userId === "owner_os_1"
+      ? { active: true, isOwner: true, role: "MEMBER" }
+      : { active: true, isOwner: false, role: "MEMBER" },
+};
+
 describe("OwnershipController auth / RBAC (e2e)", () => {
   let app: INestApplication;
 
   beforeAll(async () => {
-    process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
-    process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-
-    const ref = await stubMembershipState(
-      Test.createTestingModule({ imports: [AppModule] })
-        .overrideProvider(OwnershipService)
-        .useValue(mockOwnershipService)
-        .overrideProvider(OwnershipTransfersService)
-        .useValue(mockTransfersService)
-        .overrideProvider(OwnershipTransferResponseService)
-        .useValue(mockTransferResponseService)
-        .overrideProvider(AccessService)
-        .useValue(mockAccessService),
-      {
-        owner_os_1: { isOwner: true },
-        member_os_1: { isOwner: false },
-      },
-    ).compile();
-
-    app = ref.createNestApplication();
-    app.useGlobalFilters(new AllExceptionsFilter());
-    await app.init();
+    app = await createE2eApp({
+      overrides: [
+        { provide: OwnershipService, useValue: mockOwnershipService },
+        { provide: OwnershipTransfersService, useValue: mockTransfersService },
+        { provide: OwnershipTransferResponseService, useValue: mockTransferResponseService },
+        { provide: AccessService, useValue: mockAccessService },
+        { provide: MembershipStateService, useValue: membershipStateStub },
+      ],
+    });
   });
 
   afterAll(async () => app.close());
@@ -135,7 +128,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
   it.each(authedRoutes)("401 on %s %s without a token", async (method, path) => {
     const res = await callRoute(method, path);
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: "Unauthorized" });
+    expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
   });
 
   describe("Permission guard", () => {
@@ -212,7 +205,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
         .set("Authorization", `Bearer ${token}`)
         .send({ toMembershipId: 99 });
       expect(res.status).toBe(403);
-      expect(res.body).toMatchObject({ error: expect.stringContaining("org owner") });
+      expect(res.body).toMatchObject({ code: "FORBIDDEN", message: expect.stringContaining("org owner") });
     });
 
     it("PUT /ownership/modules/hr/owner → 403 when non-owner holds ownership:modules:manage permission", async () => {
@@ -225,11 +218,11 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
         .set("Authorization", `Bearer ${token}`)
         .send({ ownerMembershipId: 5 });
       expect(res.status).toBe(403);
-      expect(res.body).toMatchObject({ error: expect.stringContaining("org owner") });
+      expect(res.body).toMatchObject({ code: "FORBIDDEN", message: expect.stringContaining("org owner") });
     });
 
     it("platform admin also passes controller-level check for org transfer", async () => {
-      const token = await signToken({ isOrgOwner: false});
+      const token = await signToken({ isOrgOwner: false });
       const res = await request(app.getHttpServer())
         .post("/ownership/org/transfer")
         .set("Authorization", `Bearer ${token}`)
@@ -249,7 +242,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
         .set("Authorization", `Bearer ${token}`)
         .send({ toMembershipId: 99 });
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ error: expect.stringContaining("ACTIVE") });
+      expect(res.body).toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("ACTIVE") });
     });
 
     it("POST /ownership/org/transfer → 409 when a PENDING transfer already exists for this scope", async () => {
@@ -291,7 +284,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
         .post(`/ownership/transfers/${TRANSFER_ID}/accept`)
         .set("Authorization", `Bearer ${token}`);
       expect(res.status).toBe(403);
-      expect(res.body).toMatchObject({ error: expect.stringContaining("recipient") });
+      expect(res.body).toMatchObject({ code: "FORBIDDEN", message: expect.stringContaining("recipient") });
     });
 
     it("POST /ownership/transfers/:id/accept → 400 when the initiator is no longer the org owner", async () => {
@@ -306,7 +299,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
         .post(`/ownership/transfers/${TRANSFER_ID}/accept`)
         .set("Authorization", `Bearer ${token}`);
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ error: expect.stringContaining("longer the organization owner") });
+      expect(res.body).toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("longer the organization owner") });
     });
 
     it("POST /ownership/transfers/:id/accept → 400 when the transfer has expired", async () => {
@@ -321,7 +314,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
         .post(`/ownership/transfers/${TRANSFER_ID}/accept`)
         .set("Authorization", `Bearer ${token}`);
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ error: expect.stringContaining("expired") });
+      expect(res.body).toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("expired") });
     });
 
     it("PUT /ownership/modules/hr/owner → 200 when org owner force-reassigns a module owner", async () => {
@@ -344,7 +337,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
         .set("Authorization", `Bearer ${token}`)
         .send({ ownerMembershipId: 99 });
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ error: expect.stringContaining("ACTIVE") });
+      expect(res.body).toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("ACTIVE") });
     });
   });
 
@@ -424,7 +417,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
         .set("Authorization", `Bearer ${token}`)
         .send({});
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ error: expect.stringContaining("Validation failed") });
+      expect(res.body).toMatchObject({ code: "VALIDATION_FAILED" });
     });
 
     it("PUT /ownership/modules/hr/owner → 400 when ownerMembershipId is not a positive integer", async () => {
@@ -434,7 +427,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
         .set("Authorization", `Bearer ${token}`)
         .send({ ownerMembershipId: -5 });
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ error: expect.stringContaining("Validation failed") });
+      expect(res.body).toMatchObject({ code: "VALIDATION_FAILED" });
     });
 
     it("POST /ownership/org/transfer → 400 when toMembershipId is not a positive integer", async () => {
@@ -444,7 +437,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
         .set("Authorization", `Bearer ${token}`)
         .send({ toMembershipId: 0 });
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ error: expect.stringContaining("Validation failed") });
+      expect(res.body).toMatchObject({ code: "VALIDATION_FAILED" });
     });
 
     it("POST /ownership/org/transfer → 400 when expiresInHours exceeds maximum", async () => {
@@ -454,7 +447,7 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
         .set("Authorization", `Bearer ${token}`)
         .send({ toMembershipId: 1, expiresInHours: 999 });
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ error: expect.stringContaining("Validation failed") });
+      expect(res.body).toMatchObject({ code: "VALIDATION_FAILED" });
     });
   });
 });

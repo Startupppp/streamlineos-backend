@@ -1,23 +1,14 @@
-import { Test } from "@nestjs/testing";
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { AppModule } from "../../../app.module";
-import { AllExceptionsFilter } from "../../../common/http/all-exceptions.filter";
-import { signToken } from "../../../../test/helpers/sign-token";
+import { createE2eApp } from "test/helpers/e2e-app";
+import { signToken } from "test/helpers/sign-token";
 
-// The AiModule import (langchain/openai + embeddings clients) added in Phase 6 measurably
-// increased per-request latency under --runInBand load; the default 5s timeout is too tight.
 jest.setTimeout(20000);
 
 describe("Support auth/RBAC (e2e)", () => {
   let app: INestApplication;
   beforeAll(async () => {
-    process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
-    process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-    const ref = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    app = ref.createNestApplication();
-    app.useGlobalFilters(new AllExceptionsFilter());
-    await app.init();
+    app = await createE2eApp();
   });
   afterAll(async () => app.close());
 
@@ -162,7 +153,7 @@ describe("Support auth/RBAC (e2e)", () => {
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
     const res = await callRoute(method, path);
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: "Unauthorized" });
+    expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
   });
 
   it("403 on GET /support/macros without support:macros view", async () => {
@@ -171,7 +162,7 @@ describe("Support auth/RBAC (e2e)", () => {
       .get("/support/macros")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on POST /support/macros without support:macros manage", async () => {
@@ -181,7 +172,7 @@ describe("Support auth/RBAC (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ title: "x", body: "y" });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on GET /support/kb/categories without support:kb view", async () => {
@@ -190,7 +181,7 @@ describe("Support auth/RBAC (e2e)", () => {
       .get("/support/kb/categories")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on POST /support/kb/articles without support:kb manage", async () => {
@@ -200,7 +191,7 @@ describe("Support auth/RBAC (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ title: "x" });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on GET /support/macros/usage without support:macros view", async () => {
@@ -209,7 +200,7 @@ describe("Support auth/RBAC (e2e)", () => {
       .get("/support/macros/usage")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on POST /support/macros/1/preview without support:macros view", async () => {
@@ -219,7 +210,7 @@ describe("Support auth/RBAC (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ ticketId: 1 });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on POST /support/macros/1/apply without support:tickets:reply", async () => {
@@ -229,7 +220,7 @@ describe("Support auth/RBAC (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ ticketId: 1 });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on PUT /support/agent-skills/user1 without support:macros:manage", async () => {
@@ -239,7 +230,7 @@ describe("Support auth/RBAC (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ skills: ["billing"] });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on PUT /support/agent-availability/me without support:tickets:reply", async () => {
@@ -249,7 +240,7 @@ describe("Support auth/RBAC (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ isAvailable: false });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on POST /support/vip-clients without support:macros:manage", async () => {
@@ -259,7 +250,7 @@ describe("Support auth/RBAC (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ clientId: 1 });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on GET /support/reports/csat without support:reports:view", async () => {
@@ -268,7 +259,7 @@ describe("Support auth/RBAC (e2e)", () => {
       .get("/support/reports/csat")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("402 MODULE_NOT_ENABLED on GET /support/macros when support module is disabled", async () => {
@@ -426,7 +417,7 @@ describe("Support auth/RBAC (e2e)", () => {
       const req = callRoute(method, path).set("Authorization", `Bearer ${token}`);
       const res = body ? await req.send(body) : await req;
       expect(res.status).toBe(403);
-      expect(res.body).toMatchObject({ error: "Permission denied" });
+      expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
     },
   );
 
@@ -440,7 +431,7 @@ describe("Support auth/RBAC (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ body: "internal note attempt", isInternal: true });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on POST /support/1/snooze without support:tickets:manage", async () => {
@@ -450,7 +441,7 @@ describe("Support auth/RBAC (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ snoozedUntil: new Date(Date.now() + 86_400_000).toISOString() });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on POST /support/1/split without support:tickets:manage", async () => {
@@ -460,7 +451,7 @@ describe("Support auth/RBAC (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ title: "New split-off issue" });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on PUT /support/1/draft without support:tickets:reply", async () => {
@@ -470,7 +461,7 @@ describe("Support auth/RBAC (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ body: "draft text" });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on POST /support/1/external-links without support:tickets:manage", async () => {
@@ -480,7 +471,7 @@ describe("Support auth/RBAC (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ entityType: "project", entityId: 1 });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("402 MODULE_NOT_ENABLED on GET /support when support module is disabled", async () => {
@@ -497,7 +488,7 @@ describe("Support auth/RBAC (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ name: "Billing" });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   describe("POST /support/inbound/email/:orgId (webhook, no JWT)", () => {

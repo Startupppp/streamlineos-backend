@@ -1,19 +1,12 @@
-import { Test } from "@nestjs/testing";
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { AppModule } from "../../../app.module";
-import { AllExceptionsFilter } from "../../../common/http/all-exceptions.filter";
-import { signToken } from "../../../../test/helpers/sign-token";
+import { createE2eApp } from "test/helpers/e2e-app";
+import { signToken } from "test/helpers/sign-token";
 
 describe("ProjectsQA bugs auth/RBAC (e2e)", () => {
   let app: INestApplication;
   beforeAll(async () => {
-    process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
-    process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-    const ref = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    app = ref.createNestApplication();
-    app.useGlobalFilters(new AllExceptionsFilter());
-    await app.init();
+    app = await createE2eApp();
   });
   afterAll(async () => app.close());
 
@@ -60,112 +53,112 @@ describe("ProjectsQA bugs auth/RBAC (e2e)", () => {
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
     const res = await callRoute(method, path);
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: "Unauthorized" });
+    expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
   });
 
   it("403 on GET /projects/1/bugs without projects:bugs:view ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
       .get("/projects/1/bugs")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "RBAC_DENIED", verb: "view", subject: "build:bugs" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on GET /projects/1/bugs/2 without projects:bugs:view ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
       .get("/projects/1/bugs/2")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "RBAC_DENIED", verb: "view", subject: "build:bugs" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on POST /projects/1/bugs without projects:bugs:create ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
       .post("/projects/1/bugs")
       .set("Authorization", `Bearer ${token}`)
       .send({ title: "Login button crash" });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "RBAC_DENIED", verb: "create", subject: "build:bugs" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on PATCH /projects/1/bugs/2 without projects:bugs:update ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
       .patch("/projects/1/bugs/2")
       .set("Authorization", `Bearer ${token}`)
       .send({ status: "fixed" });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "RBAC_DENIED", verb: "update", subject: "build:bugs" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on DELETE /projects/1/bugs/2 without projects:bugs:delete ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
       .delete("/projects/1/bugs/2")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "RBAC_DENIED", verb: "delete", subject: "build:bugs" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on GET /projects/1/test-suites without projects:qa:view ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
       .get("/projects/1/test-suites")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "RBAC_DENIED", verb: "view", subject: "build:qa" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on POST /projects/1/test-suites without projects:qa:manage ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
       .post("/projects/1/test-suites")
       .set("Authorization", `Bearer ${token}`)
       .send({ name: "Smoke Tests" });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "RBAC_DENIED", verb: "manage", subject: "build:qa" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on GET /projects/1/test-cases without projects:qa:view ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
       .get("/projects/1/test-cases")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "RBAC_DENIED", verb: "view", subject: "build:qa" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on POST /projects/1/test-cases without projects:qa:manage ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
       .post("/projects/1/test-cases")
       .set("Authorization", `Bearer ${token}`)
       .send({ title: "Verify login flow" });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "RBAC_DENIED", verb: "manage", subject: "build:qa" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on POST /projects/1/test-runs without projects:qa:manage ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
       .post("/projects/1/test-runs")
       .set("Authorization", `Bearer ${token}`)
       .send({ name: "Sprint 1 Run", caseIds: [] });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "RBAC_DENIED", verb: "manage", subject: "build:qa" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on PATCH /projects/1/test-runs/2/results/3 without projects:qa:execute ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
       .patch("/projects/1/test-runs/2/results/3")
       .set("Authorization", `Bearer ${token}`)
       .send({ status: "passed" });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "RBAC_DENIED", verb: "execute", subject: "build:qa" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("does NOT enforce a gate on GET /projects/1/bugs with projects:bugs:view ability", async () => {

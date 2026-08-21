@@ -1,10 +1,9 @@
-import { Test } from "@nestjs/testing";
 import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { AppModule } from "../../../app.module";
-import { AllExceptionsFilter } from "../../../common/http/all-exceptions.filter";
-import { signToken } from "../../../../test/helpers/sign-token";
+import { signToken } from "test/helpers/sign-token";
+import { createE2eApp } from "test/helpers/e2e-app";
 import { AccessService } from "../../access/access.service";
+import { EntitlementsService } from "../../access/entitlements.service";
 import { ApprovalsService } from "./approvals.service";
 import { LockingService } from "./locking.service";
 import { PayoutBatchesService } from "./payout-batches.service";
@@ -85,6 +84,12 @@ const mockPublishingService = {
   downloadPdf: jest.fn().mockResolvedValue({ buffer: Buffer.from(""), contentType: "application/pdf" }),
 };
 
+const alwaysOnEntitlements = {
+  isModuleEnabled: async (): Promise<boolean> => true,
+  getModuleMap: async (): Promise<Record<string, boolean>> => ({}),
+  getEffectiveModuleMap: async (): Promise<Record<string, boolean>> => ({}),
+};
+
 type Method = "get" | "post" | "patch" | "delete";
 
 const allProtectedRoutes: ReadonlyArray<[Method, string]> = [
@@ -114,20 +119,17 @@ const allProtectedRoutes: ReadonlyArray<[Method, string]> = [
 ];
 
 async function buildApp(accessMock: typeof permittedAccess): Promise<INestApplication> {
-  process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
-  process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-  const ref = await Test.createTestingModule({ imports: [AppModule] })
-    .overrideProvider(AccessService).useValue(accessMock)
-    .overrideProvider(ApprovalsService).useValue(mockApprovalsService)
-    .overrideProvider(LockingService).useValue(mockLockingService)
-    .overrideProvider(PayoutBatchesService).useValue(mockPayoutBatchesService)
-    .overrideProvider(PayslipTemplatesService).useValue(mockPayslipTemplatesService)
-    .overrideProvider(PublishingService).useValue(mockPublishingService)
-    .compile();
-  const app = ref.createNestApplication();
-  app.useGlobalFilters(new AllExceptionsFilter());
-  await app.init();
-  return app;
+  return createE2eApp({
+    overrides: [
+      { provide: AccessService, useValue: accessMock },
+      { provide: EntitlementsService, useValue: alwaysOnEntitlements },
+      { provide: ApprovalsService, useValue: mockApprovalsService },
+      { provide: LockingService, useValue: mockLockingService },
+      { provide: PayoutBatchesService, useValue: mockPayoutBatchesService },
+      { provide: PayslipTemplatesService, useValue: mockPayslipTemplatesService },
+      { provide: PublishingService, useValue: mockPublishingService },
+    ],
+  });
 }
 
 describe("payroll-payout auth/RBAC — 401 (e2e)", () => {
@@ -138,13 +140,13 @@ describe("payroll-payout auth/RBAC — 401 (e2e)", () => {
   it.each(allProtectedRoutes)("401 on %s %s without token", async (method, path) => {
     const res = await request(app.getHttpServer())[method](path);
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: "Unauthorized" });
+    expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
   });
 
   it("GET /payroll/payslips/1/download → 401 without token (auth-only guard)", async () => {
     const res = await request(app.getHttpServer()).get("/payroll/payslips/1/download");
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: "Unauthorized" });
+    expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
   });
 });
 
@@ -184,7 +186,7 @@ describe("payroll-payout RBAC — 403 when no permissions (e2e)", () => {
     const res = await request(app.getHttpServer())[method](path)
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 });
 
@@ -199,7 +201,7 @@ describe("payroll-payout RBAC — specific permission key enforcement (e2e)", ()
       .post("/payroll/runs/1/lock")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("POST /payroll/runs/1/reopen → 403 for approve-only caller (requires payroll:runs:manage)", async () => {
@@ -209,7 +211,7 @@ describe("payroll-payout RBAC — specific permission key enforcement (e2e)", ()
       .set("Authorization", `Bearer ${token}`)
       .send({ reason: "reopening" });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("GET /payroll/runs/1/payout/validation → 403 for approve-only (requires payroll:bank:manage)", async () => {
@@ -218,7 +220,7 @@ describe("payroll-payout RBAC — specific permission key enforcement (e2e)", ()
       .get("/payroll/runs/1/payout/validation")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("POST /payroll/runs/1/payslips/publish → 403 for approve-only (requires payroll:payslips:manage)", async () => {
@@ -228,7 +230,7 @@ describe("payroll-payout RBAC — specific permission key enforcement (e2e)", ()
       .set("Authorization", `Bearer ${token}`)
       .send({});
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("GET /payroll/employees/u1/bank → 403 for approve-only (requires payroll:bank:view)", async () => {
@@ -237,7 +239,7 @@ describe("payroll-payout RBAC — specific permission key enforcement (e2e)", ()
       .get("/payroll/employees/u1/bank")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 });
 
@@ -319,7 +321,7 @@ describe("payroll-payout RBAC — 200 for permitted caller (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({});
     expect(res.status).toBe(400);
-    expect(res.body).toMatchObject({ error: expect.stringContaining("Validation failed") });
+    expect(res.body).toMatchObject({ code: "VALIDATION_FAILED" });
   });
 
   it("POST /payroll/runs/1/approvals/1/reject → 400 when comment missing", async () => {
@@ -329,6 +331,6 @@ describe("payroll-payout RBAC — 200 for permitted caller (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({});
     expect(res.status).toBe(400);
-    expect(res.body).toMatchObject({ error: expect.stringContaining("Validation failed") });
+    expect(res.body).toMatchObject({ code: "VALIDATION_FAILED" });
   });
 });

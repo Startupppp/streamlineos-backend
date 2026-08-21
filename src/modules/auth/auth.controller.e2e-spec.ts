@@ -1,21 +1,14 @@
-import { Test } from "@nestjs/testing";
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { AppModule } from "../../app.module";
-import { AllExceptionsFilter } from "../../common/http/all-exceptions.filter";
+import { createE2eApp } from "test/helpers/e2e-app";
 import { signToken } from "../../../test/helpers/sign-token";
 
 describe("Auth controller (e2e)", () => {
   let app: INestApplication;
 
   beforeAll(async () => {
-    process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
-    process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
     process.env.INTERNAL_API_SECRET ??= "e2e-test-internal-secret";
-    const ref = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    app = ref.createNestApplication();
-    app.useGlobalFilters(new AllExceptionsFilter());
-    await app.init();
+    app = await createE2eApp();
   });
 
   afterAll(async () => app.close());
@@ -40,13 +33,13 @@ describe("Auth controller (e2e)", () => {
   it.each(protectedPostRoutes)("401 on POST %s without a token", async (path) => {
     const res = await request(app.getHttpServer()).post(path).send({});
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: "Unauthorized" });
+    expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
   });
 
   it("401 on GET /auth/audit/analytics without a token", async () => {
     const res = await request(app.getHttpServer()).get("/auth/audit/analytics");
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: "Unauthorized" });
+    expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
   });
 
   it("403 on GET /auth/audit/analytics with valid JWT but no settings:manage permission", async () => {
@@ -62,7 +55,7 @@ describe("Auth controller (e2e)", () => {
       .post("/auth/register")
       .send({ firstName: "A", email: "not-an-email", companyName: "Co" });
     expect(res.status).toBe(400);
-    expect(res.body).toMatchObject({ error: expect.stringContaining("Validation failed") });
+    expect(res.body).toMatchObject({ code: "VALIDATION_FAILED", message: "Validation failed." });
   });
 
   it("400 on POST /auth/register when companyName is missing", async () => {
@@ -70,13 +63,13 @@ describe("Auth controller (e2e)", () => {
       .post("/auth/register")
       .send({ firstName: "A", email: "test@example.com" });
     expect(res.status).toBe(400);
-    expect(res.body).toMatchObject({ error: expect.stringContaining("Validation failed") });
+    expect(res.body).toMatchObject({ code: "VALIDATION_FAILED", message: "Validation failed." });
   });
 
   it("403 on GET /auth/session-data/:userId when x-internal-secret header is absent", async () => {
     const res = await request(app.getHttpServer()).get("/auth/session-data/user-abc");
     expect(res.status).toBe(403);
-    expect(res.body).toEqual({ error: "Forbidden" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Forbidden" });
   });
 
   it("403 on GET /auth/session-data/:userId when x-internal-secret header is wrong", async () => {
@@ -84,7 +77,7 @@ describe("Auth controller (e2e)", () => {
       .get("/auth/session-data/user-abc")
       .set("x-internal-secret", "completely-wrong-value");
     expect(res.status).toBe(403);
-    expect(res.body).toEqual({ error: "Forbidden" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Forbidden" });
   });
 
   it("GET /auth/session-data/:userId with correct x-internal-secret is not 403", async () => {
@@ -140,7 +133,7 @@ describe("Auth controller (e2e)", () => {
       .post("/auth/google")
       .send({ email: "g@example.com", googleId: "gid123" });
     expect(res.status).toBe(403);
-    expect(res.body).toEqual({ error: "Forbidden" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Forbidden" });
   });
 
   it("POST /auth/google with wrong x-internal-secret returns 403", async () => {
@@ -149,6 +142,6 @@ describe("Auth controller (e2e)", () => {
       .set("x-internal-secret", "wrong")
       .send({ email: "g@example.com", googleId: "gid123" });
     expect(res.status).toBe(403);
-    expect(res.body).toEqual({ error: "Forbidden" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Forbidden" });
   });
 });

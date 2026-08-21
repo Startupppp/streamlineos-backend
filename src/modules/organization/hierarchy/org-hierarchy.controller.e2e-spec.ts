@@ -1,10 +1,7 @@
-import { Test } from "@nestjs/testing";
-import { INestApplication } from "@nestjs/common";
+import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { AppModule } from "../../../app.module";
-import { AllExceptionsFilter } from "../../../common/http/all-exceptions.filter";
-import { signToken } from "../../../../test/helpers/sign-token";
-import { stubMembershipState } from "../../../../test/helpers/membership-state";
+import { createE2eApp } from "test/helpers/e2e-app";
+import { signToken } from "test/helpers/sign-token";
 
 const ORG_ID = "org_test_001";
 const USER_ID = "user_test_001";
@@ -15,18 +12,7 @@ describe("/org-hierarchy (e2e)", () => {
   let memberToken: string;
 
   beforeAll(async () => {
-    process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
-    process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-    const moduleRef = await stubMembershipState(
-      Test.createTestingModule({ imports: [AppModule] }),
-      {
-        [USER_ID]: { role: "OWNER", isOwner: true },
-        user_test_002: { role: "MEMBER" },
-      },
-    ).compile();
-    app = moduleRef.createNestApplication();
-    app.useGlobalFilters(new AllExceptionsFilter());
-    await app.init();
+    app = await createE2eApp();
 
     ownerToken = await signToken({ sub: USER_ID, orgId: ORG_ID });
     memberToken = await signToken({ sub: "user_test_002", orgId: ORG_ID });

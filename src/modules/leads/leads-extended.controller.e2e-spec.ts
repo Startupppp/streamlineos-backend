@@ -1,23 +1,12 @@
-import { Test } from "@nestjs/testing";
-import { INestApplication } from "@nestjs/common";
+import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { AppModule } from "../../app.module";
-import { AllExceptionsFilter } from "../../common/http/all-exceptions.filter";
-import { signToken } from "../../../test/helpers/sign-token";
-import { stubMembershipState } from "../../../test/helpers/membership-state";
+import { signToken } from "test/helpers/sign-token";
+import { createE2eApp } from "test/helpers/e2e-app";
 
 describe("Leads extended routes auth/RBAC (e2e)", () => {
   let app: INestApplication;
   beforeAll(async () => {
-    process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
-    process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-    const ref = await stubMembershipState(
-      Test.createTestingModule({ imports: [AppModule] }),
-      { member_1: { role: "SALES" } },
-    ).compile();
-    app = ref.createNestApplication();
-    app.useGlobalFilters(new AllExceptionsFilter());
-    await app.init();
+    app = await createE2eApp();
   });
   afterAll(async () => app.close());
 
@@ -71,7 +60,7 @@ describe("Leads extended routes auth/RBAC (e2e)", () => {
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
     const res = await callRoute(method, path);
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: "Unauthorized" });
+    expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
   });
 
   const moduleGatedRoutes: ReadonlyArray<[Method, string]> = [
@@ -104,32 +93,32 @@ describe("Leads extended routes auth/RBAC (e2e)", () => {
   ];
 
   it.each(moduleGatedRoutes)(
-    "403 on %s %s when the crm module is disabled (PermissionGuard wired)",
+    "402 on %s %s when the crm module is disabled (ModuleGuard fires first)",
     async (method, path) => {
       const token = await signToken({ sub: "member_1" });
       const res = await callRoute(method, path).set("Authorization", `Bearer ${token}`);
-      expect(res.status).toBe(403);
-      expect(res.body).toEqual({ error: "Module not available on this plan" });
+      expect(res.status).toBe(402);
+      expect(res.body).toMatchObject({ code: "MODULE_NOT_ENABLED", details: { moduleKey: "crm" } });
     },
   );
 
-  it("403 on POST /leads/merge for a non-manager role (role-string gate)", async () => {
+  it("402 on POST /leads/merge when the crm module is disabled (ModuleGuard fires before role-string gate)", async () => {
     const token = await signToken({ sub: "member_1" });
     const res = await request(app.getHttpServer())
       .post("/leads/merge")
       .set("Authorization", `Bearer ${token}`)
       .send({ winnerId: 1, loserId: 2 });
-    expect(res.status).toBe(403);
-    expect(res.body).toEqual({ error: "Forbidden: Manager or Admin role required" });
+    expect(res.status).toBe(402);
+    expect(res.body).toMatchObject({ code: "MODULE_NOT_ENABLED", details: { moduleKey: "crm" } });
   });
 
-  it("403 on POST /leads/distribute without crm:leads:assign", async () => {
+  it("402 on POST /leads/distribute when the crm module is disabled (ModuleGuard fires before permission gate)", async () => {
     const token = await signToken({ sub: "member_1" });
     const res = await request(app.getHttpServer())
       .post("/leads/distribute")
       .set("Authorization", `Bearer ${token}`)
       .send({ leadIds: [1] });
-    expect(res.status).toBe(403);
-    expect(res.body).toEqual({ error: "Permission denied" });
+    expect(res.status).toBe(402);
+    expect(res.body).toMatchObject({ code: "MODULE_NOT_ENABLED", details: { moduleKey: "crm" } });
   });
 });

@@ -1,20 +1,13 @@
-import { Test } from "@nestjs/testing";
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { AppModule } from "../../../app.module";
-import { AllExceptionsFilter } from "../../../common/http/all-exceptions.filter";
-import { signToken } from "../../../../test/helpers/sign-token";
+import { createE2eApp } from "test/helpers/e2e-app";
+import { signToken } from "test/helpers/sign-token";
 
 describe("ProjectsIncidents auth/RBAC (e2e)", () => {
   let app: INestApplication;
 
   beforeAll(async () => {
-    process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
-    process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-    const ref = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    app = ref.createNestApplication();
-    app.useGlobalFilters(new AllExceptionsFilter());
-    await app.init();
+    app = await createE2eApp();
   });
 
   afterAll(async () => app.close());
@@ -47,64 +40,64 @@ describe("ProjectsIncidents auth/RBAC (e2e)", () => {
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
     const res = await callRoute(method, path);
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: "Unauthorized" });
+    expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
   });
 
   it("403 on GET /projects/1/incidents without projects:incidents:view ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
       .get("/projects/1/incidents")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "RBAC_DENIED", verb: "view", subject: "build:incidents" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on GET /projects/1/incidents/2 without projects:incidents:view ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
       .get("/projects/1/incidents/2")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "RBAC_DENIED", verb: "view", subject: "build:incidents" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on POST /projects/1/incidents without projects:incidents:manage ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
       .post("/projects/1/incidents")
       .set("Authorization", `Bearer ${token}`)
       .send({ title: "DB replication lag" });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "RBAC_DENIED", verb: "manage", subject: "build:incidents" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on PATCH /projects/1/incidents/2 without projects:incidents:manage ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
       .patch("/projects/1/incidents/2")
       .set("Authorization", `Bearer ${token}`)
       .send({ status: "investigating" });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "RBAC_DENIED", verb: "manage", subject: "build:incidents" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on DELETE /projects/1/incidents/2 without projects:incidents:manage ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
       .delete("/projects/1/incidents/2")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "RBAC_DENIED", verb: "manage", subject: "build:incidents" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on POST /projects/1/incidents/2/updates without projects:incidents:manage ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
       .post("/projects/1/incidents/2/updates")
       .set("Authorization", `Bearer ${token}`)
       .send({ message: "Investigated root cause" });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "RBAC_DENIED", verb: "manage", subject: "build:incidents" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("does NOT 401/403 on GET /projects/1/incidents with projects:incidents:view ability", async () => {

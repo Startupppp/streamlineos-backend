@@ -3,7 +3,8 @@ import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { AppModule } from "../../app.module";
 import { AllExceptionsFilter } from "../../common/http/all-exceptions.filter";
-import { signToken } from "../../../test/helpers/sign-token";
+import { signToken } from "test/helpers/sign-token";
+import { createE2eApp } from "test/helpers/e2e-app";
 import { stubMembershipState } from "../../../test/helpers/membership-state";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -23,48 +24,40 @@ import { eq } from "drizzle-orm";
 describe("Leads PermissionGuard wiring (e2e, no DB required)", () => {
   let app: INestApplication;
   beforeAll(async () => {
-    process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
-    process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-    const ref = await stubMembershipState(
-      Test.createTestingModule({ imports: [AppModule] }),
-      { member_1: { role: "MEMBER" } },
-    ).compile();
-    app = ref.createNestApplication();
-    app.useGlobalFilters(new AllExceptionsFilter());
-    await app.init();
+    app = await createE2eApp();
   });
   afterAll(async () => app.close());
 
   it("401 on GET /leads without a token", async () => {
     const res = await request(app.getHttpServer()).get("/leads");
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: "Unauthorized" });
+    expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
   });
 
-  it("403 on GET /leads when the crm module is disabled for the org", async () => {
+  it("402 on GET /leads when the crm module is disabled for the org", async () => {
     const token = await signToken({ sub: "member_1" });
     const res = await request(app.getHttpServer()).get("/leads").set("Authorization", `Bearer ${token}`);
-    expect(res.status).toBe(403);
-    expect(res.body).toEqual({ error: "Module not available on this plan" });
+    expect(res.status).toBe(402);
+    expect(res.body).toMatchObject({ code: "MODULE_NOT_ENABLED", details: { moduleKey: "crm" } });
   });
 
-  it("403 on POST /leads when the crm module is disabled for the org", async () => {
+  it("402 on POST /leads when the crm module is disabled for the org", async () => {
     const token = await signToken({ sub: "member_1" });
     const res = await request(app.getHttpServer())
       .post("/leads")
       .set("Authorization", `Bearer ${token}`)
       .send({ name: "x", phone: "1", source: "other", priority: "WARM" });
-    expect(res.status).toBe(403);
-    expect(res.body).toEqual({ error: "Module not available on this plan" });
+    expect(res.status).toBe(402);
+    expect(res.body).toMatchObject({ code: "MODULE_NOT_ENABLED", details: { moduleKey: "crm" } });
   });
 
-  it("403 on DELETE /leads/1 when the crm module is disabled for the org", async () => {
+  it("402 on DELETE /leads/1 when the crm module is disabled for the org", async () => {
     const token = await signToken({ sub: "member_1" });
     const res = await request(app.getHttpServer())
       .delete("/leads/1")
       .set("Authorization", `Bearer ${token}`);
-    expect(res.status).toBe(403);
-    expect(res.body).toEqual({ error: "Module not available on this plan" });
+    expect(res.status).toBe(402);
+    expect(res.body).toMatchObject({ code: "MODULE_NOT_ENABLED", details: { moduleKey: "crm" } });
   });
 });
 

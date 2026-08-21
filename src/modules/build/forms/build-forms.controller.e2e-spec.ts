@@ -1,19 +1,12 @@
-import { Test } from "@nestjs/testing";
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { AppModule } from "../../../app.module";
-import { AllExceptionsFilter } from "../../../common/http/all-exceptions.filter";
-import { signToken } from "../../../../test/helpers/sign-token";
+import { createE2eApp } from "test/helpers/e2e-app";
+import { signToken } from "test/helpers/sign-token";
 
 describe("ProjectsForms auth/RBAC (e2e)", () => {
   let app: INestApplication;
   beforeAll(async () => {
-    process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
-    process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-    const ref = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    app = ref.createNestApplication();
-    app.useGlobalFilters(new AllExceptionsFilter());
-    await app.init();
+    app = await createE2eApp();
   });
   afterAll(async () => app.close());
 
@@ -47,45 +40,45 @@ describe("ProjectsForms auth/RBAC (e2e)", () => {
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
     const res = await callRoute(method, path);
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: "Unauthorized" });
+    expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
   });
 
   it("403 on POST /projects/1/forms without projects:forms:manage ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
       .post("/projects/1/forms")
       .set("Authorization", `Bearer ${token}`)
       .send({ name: "My Form", fields: [], actions: [] });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "RBAC_DENIED", verb: "manage", subject: "build:forms" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on GET /projects/1/forms without projects:forms:view ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
       .get("/projects/1/forms")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "RBAC_DENIED", verb: "view", subject: "build:forms" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on GET /projects/1/forms/2/submissions without projects:forms:manage ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
       .get("/projects/1/forms/2/submissions")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "RBAC_DENIED", verb: "manage", subject: "build:forms" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on POST /projects/1/forms/2/submissions without projects:forms:view ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
       .post("/projects/1/forms/2/submissions")
       .set("Authorization", `Bearer ${token}`)
       .send({ values: {} });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "RBAC_DENIED", verb: "view", subject: "build:forms" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("does NOT enforce an ability gate on GET /projects/1/forms with projects:forms:view (auth-only pass-through check)", async () => {

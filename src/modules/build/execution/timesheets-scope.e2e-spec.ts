@@ -1,8 +1,6 @@
-import { Test } from "@nestjs/testing";
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { AppModule } from "../../../app.module";
-import { AllExceptionsFilter } from "../../../common/http/all-exceptions.filter";
+import { createE2eApp } from "test/helpers/e2e-app";
 import { signToken } from "../../../../test/helpers/sign-token";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -94,11 +92,7 @@ describeWithDb(
 
     beforeAll(async () => {
       process.env.DATABASE_URL = RBAC_E2E_DATABASE_URL;
-      process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-      const ref = await Test.createTestingModule({ imports: [AppModule] }).compile();
-      app = ref.createNestApplication();
-      app.useGlobalFilters(new AllExceptionsFilter());
-      await app.init();
+      app = await createE2eApp();
       db = app.get<Db>(DRIZZLE);
       accessService = app.get(AccessService);
       await cleanup();

@@ -1,5 +1,4 @@
-import { Test } from "@nestjs/testing";
-import { INestApplication } from "@nestjs/common";
+import type { INestApplication } from "@nestjs/common";
 import {
   BadRequestException,
   ConflictException,
@@ -7,13 +6,10 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import request from "supertest";
-import { AppModule } from "../../../app.module";
-import { AllExceptionsFilter } from "../../../common/http/all-exceptions.filter";
-import { signToken } from "../../../../test/helpers/sign-token";
-import { stubMembershipState } from "../../../../test/helpers/membership-state";
+import { signToken } from "test/helpers/sign-token";
+import { createE2eApp } from "test/helpers/e2e-app";
 import { ModuleAccessService } from "../module-access.service";
 import { ModuleAccessGroupsService } from "../module-access-groups.service";
-import { AccessService } from "../../access/access.service";
 
 const ROLE_ID = 7;
 const GROUP_ID = 9;
@@ -67,43 +63,22 @@ const mockModuleAccessGroupsService = {
   cancelOwnershipTransfer: jest.fn(),
 };
 
-const mockAccessService = {
-  resolveUserPermissions: jest.fn(),
-  isModuleEnabled: jest.fn(),
-};
-
 describe("ModuleAccessController auth / RBAC (e2e)", () => {
   let app: INestApplication;
 
   beforeAll(async () => {
-    process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
-    process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-
-    const ref = await stubMembershipState(
-      Test.createTestingModule({ imports: [AppModule] })
-        .overrideProvider(ModuleAccessService)
-        .useValue(mockModuleAccessService)
-        .overrideProvider(ModuleAccessGroupsService)
-        .useValue(mockModuleAccessGroupsService)
-        .overrideProvider(AccessService)
-        .useValue(mockAccessService),
-      {
-        owner_ma_1: { isOwner: true },
-        member_ma_1: { isOwner: false },
-      },
-    ).compile();
-
-    app = ref.createNestApplication();
-    app.useGlobalFilters(new AllExceptionsFilter());
-    await app.init();
+    app = await createE2eApp({
+      overrides: [
+        { provide: ModuleAccessService, useValue: mockModuleAccessService },
+        { provide: ModuleAccessGroupsService, useValue: mockModuleAccessGroupsService },
+      ],
+    });
   });
 
   afterAll(async () => app.close());
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockAccessService.isModuleEnabled.mockResolvedValue(true);
-    mockAccessService.resolveUserPermissions.mockResolvedValue(new Map<string, string>());
     mockModuleAccessService.listCatalog.mockResolvedValue(stubCatalog);
     mockModuleAccessService.listRoles.mockResolvedValue([stubRole]);
     mockModuleAccessService.setRolePermissions.mockResolvedValue({ success: true });
@@ -154,7 +129,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
   it.each(authedRoutes)("401 on %s %s without a token", async (method, path) => {
     const res = await callRoute(method, path);
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: "Unauthorized" });
+    expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
   });
 
   describe("Authorization — who may read module access screens", () => {
@@ -272,7 +247,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
           items: [{ permissionKey: "crm:leads:view", scope: "all" }],
         });
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ error: expect.stringContaining("crm:leads:view") });
+      expect(res.body).toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("crm:leads:view") });
     });
 
     it("PUT /module-access/hr/groups/:id/permissions → 400 when permission key is outside hr namespace", async () => {
@@ -290,7 +265,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
           items: [{ permissionKey: "inventory:products:view", scope: "all" }],
         });
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ error: expect.stringContaining("inventory:products:view") });
+      expect(res.body).toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("inventory:products:view") });
     });
 
     it("module admin cannot grant a permission they do not hold themselves → 403", async () => {
@@ -308,7 +283,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
           items: [{ permissionKey: "hr:employees:delete", scope: "all" }],
         });
       expect(res.status).toBe(403);
-      expect(res.body).toMatchObject({ error: expect.stringContaining("cannot grant") });
+      expect(res.body).toMatchObject({ code: "FORBIDDEN", message: expect.stringContaining("cannot grant") });
     });
   });
 
@@ -466,7 +441,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
         .set("Authorization", `Bearer ${token}`)
         .send({});
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ error: expect.stringContaining("Validation failed") });
+      expect(res.body).toMatchObject({ code: "VALIDATION_FAILED" });
     });
 
     it("PUT /module-access/hr/roles/:id/permissions → 400 when items array is missing", async () => {
@@ -476,7 +451,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
         .set("Authorization", `Bearer ${token}`)
         .send({});
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ error: expect.stringContaining("Validation failed") });
+      expect(res.body).toMatchObject({ code: "VALIDATION_FAILED" });
     });
 
     it("POST /module-access/hr/ownership/transfer → 400 when toUserId is missing", async () => {
@@ -486,7 +461,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
         .set("Authorization", `Bearer ${token}`)
         .send({});
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ error: expect.stringContaining("Validation failed") });
+      expect(res.body).toMatchObject({ code: "VALIDATION_FAILED" });
     });
 
     it("GET /module-access/invalid key!/catalog → 400 due to moduleKey regex failure", async () => {
@@ -495,7 +470,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
         .get("/module-access/INVALID%20KEY/catalog")
         .set("Authorization", `Bearer ${token}`);
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ error: expect.stringContaining("Validation failed") });
+      expect(res.body).toMatchObject({ code: "VALIDATION_FAILED" });
     });
   });
 });

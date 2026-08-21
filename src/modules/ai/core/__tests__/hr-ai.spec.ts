@@ -10,6 +10,7 @@ import request from "supertest";
 import { HrAiController } from "../controllers/hr-ai.controller";
 import { HrAiService } from "../services/hr-ai.service";
 import { LlmService } from "../providers/llm.service";
+import { PlanLimitsService } from "../../../billing/core/plan-limits.service";
 import { JwtAuthGuard } from "../../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../../access/permission.guard";
 import { RateLimitGuard } from "../../../../common/ratelimit/rate-limit.guard";
@@ -72,6 +73,7 @@ async function buildApp(options: {
     providers: [
       { provide: HrAiService, useValue: hrService },
       { provide: LlmService, useValue: mockLlmService },
+      { provide: PlanLimitsService, useValue: { assertFeature: jest.fn().mockResolvedValue(undefined) } },
     ],
   })
     .overrideGuard(JwtAuthGuard)

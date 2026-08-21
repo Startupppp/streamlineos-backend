@@ -1,8 +1,6 @@
-import { Test } from "@nestjs/testing";
-import { INestApplication } from "@nestjs/common";
+import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { AppModule } from "../../../app.module";
-import { AllExceptionsFilter } from "../../../common/http/all-exceptions.filter";
+import { createE2eApp } from "test/helpers/e2e-app";
 import { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
 
 describe("Invitations auth/routing (e2e)", () => {
@@ -13,15 +11,9 @@ describe("Invitations auth/routing (e2e)", () => {
   });
 
   beforeAll(async () => {
-    process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
-    process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-    const ref = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(RateLimitService)
-      .useValue({ check: rateLimitCheck })
-      .compile();
-    app = ref.createNestApplication();
-    app.useGlobalFilters(new AllExceptionsFilter());
-    await app.init();
+    app = await createE2eApp({
+      overrides: [{ provide: RateLimitService, useValue: { check: rateLimitCheck } }],
+    });
   });
 
   afterAll(async () => app.close());
@@ -68,7 +60,7 @@ describe("Invitations auth/routing (e2e)", () => {
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
     const res = await callRoute(method, path).send({});
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: "Unauthorized" });
+    expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
   });
 
   it("400 on POST /organization/invitations/accept when token field is missing", async () => {
@@ -76,7 +68,7 @@ describe("Invitations auth/routing (e2e)", () => {
       .post("/organization/invitations/accept")
       .send({});
     expect(res.status).toBe(400);
-    expect(res.body).toMatchObject({ error: expect.stringContaining("Validation failed") });
+    expect(res.body).toMatchObject({ code: "VALIDATION_FAILED" });
   });
 
   it(

@@ -1,19 +1,12 @@
-import { Test } from "@nestjs/testing";
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { AppModule } from "../../../app.module";
-import { AllExceptionsFilter } from "../../../common/http/all-exceptions.filter";
+import { createE2eApp } from "test/helpers/e2e-app";
 import { signToken } from "../../../../test/helpers/sign-token";
 
 describe("ProjectsExecution auth/RBAC (e2e)", () => {
   let app: INestApplication;
   beforeAll(async () => {
-    process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
-    process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-    const ref = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    app = ref.createNestApplication();
-    app.useGlobalFilters(new AllExceptionsFilter());
-    await app.init();
+    app = await createE2eApp();
   });
   afterAll(async () => app.close());
 
@@ -78,7 +71,7 @@ describe("ProjectsExecution auth/RBAC (e2e)", () => {
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
     const res = await callRoute(method, path);
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: "Unauthorized" });
+    expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
   });
 
   it("402 MODULE_NOT_ENABLED on POST /projects/1/sprints when projects module is off", async () => {
@@ -88,7 +81,7 @@ describe("ProjectsExecution auth/RBAC (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({});
     expect(res.status).toBe(402);
-    expect(res.body).toMatchObject({ code: "MODULE_NOT_ENABLED", moduleKey: "build" });
+    expect(res.body).toMatchObject({ code: "MODULE_NOT_ENABLED", details: { moduleKey: "build" } });
   });
 
   it("403 on POST /projects/1/sprints without projects:sprints manage", async () => {
@@ -98,7 +91,7 @@ describe("ProjectsExecution auth/RBAC (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({});
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "RBAC_DENIED", verb: "manage", subject: "build:sprints" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on GET /projects/time-entries/team without projects:timesheets manage", async () => {
@@ -107,7 +100,7 @@ describe("ProjectsExecution auth/RBAC (e2e)", () => {
       .get("/projects/time-entries/team")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toEqual({ error: "Only admins can view team timesheets" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Only admins can view team timesheets" });
   });
 
   it("403 on PATCH /projects/time-entries/1/approve without projects:timesheets manage", async () => {
@@ -116,6 +109,6 @@ describe("ProjectsExecution auth/RBAC (e2e)", () => {
       .patch("/projects/time-entries/1/approve")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toEqual({ error: "Only admins can approve timesheets" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Only admins can approve timesheets" });
   });
 });

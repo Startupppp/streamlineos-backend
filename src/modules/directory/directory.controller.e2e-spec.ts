@@ -1,20 +1,13 @@
-import { Test } from "@nestjs/testing";
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { AppModule } from "../../app.module";
-import { AllExceptionsFilter } from "../../common/http/all-exceptions.filter";
+import { createE2eApp } from "test/helpers/e2e-app";
 import { signToken } from "../../../test/helpers/sign-token";
 
 describe("Directory auth/RBAC (e2e)", () => {
   let app: INestApplication;
 
   beforeAll(async () => {
-    process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
-    process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-    const ref = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    app = ref.createNestApplication();
-    app.useGlobalFilters(new AllExceptionsFilter());
-    await app.init();
+    app = await createE2eApp();
   });
 
   afterAll(async () => {
@@ -62,7 +55,7 @@ describe("Directory auth/RBAC (e2e)", () => {
     async (method, path) => {
       const res = await callRoute(method, path);
       expect(res.status).toBe(401);
-      expect(res.body).toEqual({ error: "Unauthorized" });
+      expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
     },
   );
 
@@ -73,7 +66,7 @@ describe("Directory auth/RBAC (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ name: "Alice Example" });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on POST /directory/workers without directory:workers:manage permission", async () => {
@@ -83,7 +76,7 @@ describe("Directory auth/RBAC (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ personId: PERSON_ID });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on POST /directory/engagements/:id/terminate without directory:workers:terminate permission", async () => {
@@ -93,7 +86,7 @@ describe("Directory auth/RBAC (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ reason: "test" });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on POST /directory/engagements/:id/cancel without directory:workers:manage permission", async () => {
@@ -102,7 +95,7 @@ describe("Directory auth/RBAC (e2e)", () => {
       .post(`/directory/engagements/${ENGAGEMENT_ID}/cancel`)
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on GET /directory/people without directory:people:view permission", async () => {
@@ -111,7 +104,7 @@ describe("Directory auth/RBAC (e2e)", () => {
       .get("/directory/people")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on GET /directory/workers without directory:workers:view permission", async () => {
@@ -120,6 +113,6 @@ describe("Directory auth/RBAC (e2e)", () => {
       .get("/directory/workers")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 });

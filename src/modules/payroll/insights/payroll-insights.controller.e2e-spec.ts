@@ -1,10 +1,9 @@
-import { Test } from "@nestjs/testing";
 import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { AppModule } from "../../../app.module";
-import { AllExceptionsFilter } from "../../../common/http/all-exceptions.filter";
-import { signToken } from "../../../../test/helpers/sign-token";
+import { signToken } from "test/helpers/sign-token";
+import { createE2eApp } from "test/helpers/e2e-app";
 import { AccessService } from "../../access/access.service";
+import { EntitlementsService } from "../../access/entitlements.service";
 import { ReportsService } from "./reports.service";
 import { JournalService } from "./journal.service";
 import { FnfInsightsService } from "./fnf.service";
@@ -40,7 +39,6 @@ const mockSummary = {
 };
 const mockRegister = { rows: [], columns: [] };
 const mockRows = { rows: [] };
-const mockBankPayout = { batches: [] };
 const mockVariance = { perEmployee: [] };
 const mockJournal = { lines: [], totalDebit: "0.00", totalCredit: "0.00" };
 const mockFnfList = [{ id: 1, status: "DRAFT", userId: "u1" }];
@@ -59,7 +57,7 @@ const mockReportsService = {
   getDeductions: jest.fn().mockResolvedValue({ rows: [], columns: [] }),
   getReimbursements: jest.fn().mockResolvedValue({ rows: [], columns: [] }),
   getTax: jest.fn().mockResolvedValue({ rows: [], columns: [] }),
-  getBankPayout: jest.fn().mockResolvedValue(mockBankPayout),
+  getBankPayout: jest.fn().mockResolvedValue({ batches: [] }),
   getVariance: jest.fn().mockResolvedValue(mockVariance),
 };
 
@@ -133,26 +131,29 @@ const mockDrizzle = {
   },
 };
 
+const alwaysOnEntitlements = {
+  isModuleEnabled: async (): Promise<boolean> => true,
+  getModuleMap: async (): Promise<Record<string, boolean>> => ({}),
+  getEffectiveModuleMap: async (): Promise<Record<string, boolean>> => ({}),
+};
+
 type Method = "get" | "post" | "patch" | "delete";
 
 async function buildApp(accessMock: typeof permittedAccess): Promise<INestApplication> {
-  process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
-  process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-  const ref = await Test.createTestingModule({ imports: [AppModule] })
-    .overrideProvider(AccessService).useValue(accessMock)
-    .overrideProvider(ReportsService).useValue(mockReportsService)
-    .overrideProvider(JournalService).useValue(mockJournalService)
-    .overrideProvider(FnfInsightsService).useValue(mockFnfService)
-    .overrideProvider(TaxWindowsService).useValue(mockTaxWindowsService)
-    .overrideProvider(EssService).useValue(mockEssService)
-    .overrideProvider(AccountingMappingsService).useValue(mockAccountingMappingsService)
-    .overrideProvider(CalendarService).useValue(mockCalendarService)
-    .overrideProvider(DRIZZLE).useValue(mockDrizzle)
-    .compile();
-  const app = ref.createNestApplication();
-  app.useGlobalFilters(new AllExceptionsFilter());
-  await app.init();
-  return app;
+  return createE2eApp({
+    overrides: [
+      { provide: AccessService, useValue: accessMock },
+      { provide: EntitlementsService, useValue: alwaysOnEntitlements },
+      { provide: ReportsService, useValue: mockReportsService },
+      { provide: JournalService, useValue: mockJournalService },
+      { provide: FnfInsightsService, useValue: mockFnfService },
+      { provide: TaxWindowsService, useValue: mockTaxWindowsService },
+      { provide: EssService, useValue: mockEssService },
+      { provide: AccountingMappingsService, useValue: mockAccountingMappingsService },
+      { provide: CalendarService, useValue: mockCalendarService },
+      { provide: DRIZZLE, useValue: mockDrizzle },
+    ],
+  });
 }
 
 describe("payroll-insights auth/RBAC — 401 (e2e)", () => {
@@ -186,7 +187,7 @@ describe("payroll-insights auth/RBAC — 401 (e2e)", () => {
   it.each(protectedRoutes)("401 on %s %s without token", async (method, path) => {
     const res = await request(app.getHttpServer())[method](path);
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: "Unauthorized" });
+    expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
   });
 });
 
@@ -218,7 +219,7 @@ describe("payroll-insights RBAC — 403 when no permissions (e2e)", () => {
     const res = await request(app.getHttpServer())[method](path)
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 });
 
@@ -390,6 +391,6 @@ describe("payroll-insights — FnF requires payroll:fnf:view (e2e)", () => {
       .get("/payroll/fnf")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 });

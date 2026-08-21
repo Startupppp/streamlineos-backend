@@ -1,11 +1,10 @@
-import { Test } from "@nestjs/testing";
 import type { INestApplication } from "@nestjs/common";
 import { ConflictException, NotFoundException } from "@nestjs/common";
 import request from "supertest";
-import { AppModule } from "../../../app.module";
-import { AllExceptionsFilter } from "../../../common/http/all-exceptions.filter";
-import { signToken } from "../../../../test/helpers/sign-token";
+import { signToken } from "test/helpers/sign-token";
+import { createE2eApp } from "test/helpers/e2e-app";
 import { AccessService } from "../../access/access.service";
+import { EntitlementsService } from "../../access/entitlements.service";
 import { PayrollTemplatesService, seedPayrollTemplates } from "./templates.service";
 import { PayrollPoliciesService } from "./policies.service";
 import { PayrollComponentsService } from "./components.service";
@@ -60,6 +59,12 @@ const mockComponentsService = {
   remove: jest.fn().mockResolvedValue({ ok: true }),
 };
 
+const alwaysOnEntitlements = {
+  isModuleEnabled: async (): Promise<boolean> => true,
+  getModuleMap: async (): Promise<Record<string, boolean>> => ({}),
+  getEffectiveModuleMap: async (): Promise<Record<string, boolean>> => ({}),
+};
+
 type Method = "get" | "post" | "patch" | "delete";
 const protectedRoutes: ReadonlyArray<[Method, string]> = [
   ["get", "/payroll/templates"],
@@ -82,18 +87,15 @@ const protectedRoutes: ReadonlyArray<[Method, string]> = [
 ];
 
 async function buildApp(accessMock: typeof permittedAccess): Promise<INestApplication> {
-  process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
-  process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-  const ref = await Test.createTestingModule({ imports: [AppModule] })
-    .overrideProvider(AccessService).useValue(accessMock)
-    .overrideProvider(PayrollTemplatesService).useValue(mockTemplatesService)
-    .overrideProvider(PayrollPoliciesService).useValue(mockPoliciesService)
-    .overrideProvider(PayrollComponentsService).useValue(mockComponentsService)
-    .compile();
-  const app = ref.createNestApplication();
-  app.useGlobalFilters(new AllExceptionsFilter());
-  await app.init();
-  return app;
+  return createE2eApp({
+    overrides: [
+      { provide: AccessService, useValue: accessMock },
+      { provide: EntitlementsService, useValue: alwaysOnEntitlements },
+      { provide: PayrollTemplatesService, useValue: mockTemplatesService },
+      { provide: PayrollPoliciesService, useValue: mockPoliciesService },
+      { provide: PayrollComponentsService, useValue: mockComponentsService },
+    ],
+  });
 }
 
 describe("payroll-setup auth/RBAC — 401 (e2e)", () => {
@@ -104,7 +106,7 @@ describe("payroll-setup auth/RBAC — 401 (e2e)", () => {
   it.each(protectedRoutes)("401 on %s %s without token", async (method, path) => {
     const res = await request(app.getHttpServer())[method](path);
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: "Unauthorized" });
+    expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
   });
 });
 
@@ -137,7 +139,7 @@ describe("payroll-setup RBAC — 403 when no permissions (e2e)", () => {
     const res = await request(app.getHttpServer())[method](path)
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 });
 
@@ -237,7 +239,7 @@ describe("payroll-setup RBAC — view-only caller blocked from manage routes (e2
       .set("Authorization", `Bearer ${token}`)
       .send({ name: "Copy" });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("POST /payroll/policies/1/activate → 403 for view-only caller", async () => {
@@ -247,7 +249,7 @@ describe("payroll-setup RBAC — view-only caller blocked from manage routes (e2
       .set("Authorization", `Bearer ${token}`)
       .send({ templateKey: "INDIAN_STANDARD" });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("POST /payroll/components → 403 for view-only caller", async () => {
@@ -257,7 +259,7 @@ describe("payroll-setup RBAC — view-only caller blocked from manage routes (e2
       .set("Authorization", `Bearer ${token}`)
       .send({ code: "BONUS", name: "Bonus", type: "EARNING", calcMethod: "FIXED" });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("DELETE /payroll/components/1 → 403 for view-only caller", async () => {
@@ -266,7 +268,7 @@ describe("payroll-setup RBAC — view-only caller blocked from manage routes (e2
       .delete("/payroll/components/1")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("DELETE /payroll/templates/1 → 403 for view-only caller", async () => {
@@ -275,7 +277,7 @@ describe("payroll-setup RBAC — view-only caller blocked from manage routes (e2
       .delete("/payroll/templates/1")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 });
 

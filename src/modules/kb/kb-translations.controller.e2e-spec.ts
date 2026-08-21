@@ -1,36 +1,27 @@
-import { Test } from "@nestjs/testing";
-import { INestApplication } from "@nestjs/common";
+import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { AppModule } from "../../app.module";
-import { AllExceptionsFilter } from "../../common/http/all-exceptions.filter";
-import { signToken } from "../../../test/helpers/sign-token";
-import { AccessService } from "../../modules/access/access.service";
+import { createE2eApp } from "test/helpers/e2e-app";
+import { signToken } from "test/helpers/sign-token";
 import { KbIndexingService } from "../../modules/kb/kb-indexing.service";
 import { KbTranslationsService } from "../../modules/kb/kb-translations.service";
+
 describe("KB Translations auth/RBAC (e2e)", () => {
   let app: INestApplication;
   beforeAll(async () => {
-    process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
-    process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-    const ref = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(AccessService)
-      .useValue({
-        resolveUserPermissions: async () => new Map(),
-        isModuleEnabled: async (_orgId: string, _moduleKey: string) => true,
-      })
-      .overrideProvider(KbIndexingService)
-      .useValue({})
-      .overrideProvider(KbTranslationsService)
-      .useValue({
-        list: async () => [],
-        get: async () => ({ id: 1, articleId: 1, locale: "es", title: "Hola", content: "" }),
-        upsert: async () => ({ id: 1, articleId: 1, locale: "es", title: "Hola", content: "" }),
-        remove: async () => ({ deleted: true }),
-      })
-      .compile();
-    app = ref.createNestApplication();
-    app.useGlobalFilters(new AllExceptionsFilter());
-    await app.init();
+    app = await createE2eApp({
+      overrides: [
+        { provide: KbIndexingService, useValue: {} },
+        {
+          provide: KbTranslationsService,
+          useValue: {
+            list: async () => [],
+            get: async () => ({ id: 1, articleId: 1, locale: "es", title: "Hola", content: "" }),
+            upsert: async () => ({ id: 1, articleId: 1, locale: "es", title: "Hola", content: "" }),
+            remove: async () => ({ deleted: true }),
+          },
+        },
+      ],
+    });
   });
   afterAll(async () => app.close());
 
@@ -62,7 +53,7 @@ describe("KB Translations auth/RBAC (e2e)", () => {
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
     const res = await callRoute(method, path);
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: "Unauthorized" });
+    expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
   });
 
   const abilities: ReadonlyArray<[Method, string]> = [
@@ -75,14 +66,14 @@ describe("KB Translations auth/RBAC (e2e)", () => {
     const token = await signToken({ permissions: [], enabledModules: [] });
     const res = await callRoute(method, path).set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(402);
-    expect(res.body).toMatchObject({ code: "MODULE_NOT_ENABLED", moduleKey: "kb" });
+    expect(res.body).toMatchObject({ code: "MODULE_NOT_ENABLED", details: { moduleKey: "kb" } });
   });
 
   it.each(abilities)("403 on %s %s without permission", async (method, path) => {
     const token = await signToken({ permissions: [], enabledModules: ["kb"] });
     const res = await callRoute(method, path).set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("GET /kb/articles/1/translations/es returns translation for authorized user", async () => {
