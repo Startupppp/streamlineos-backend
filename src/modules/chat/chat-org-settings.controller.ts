@@ -1,4 +1,4 @@
-import { Body, Controller, ForbiddenException, Get, Patch, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Patch, UseGuards } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from "@nestjs/swagger";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
@@ -26,17 +26,14 @@ export class ChatOrgSettingsController {
     return this.settings.getSettings(u.orgId);
   }
 
-  @ApiOperation({ summary: "Update org-level chat settings (org admins only)" })
+  @ApiOperation({ summary: "Update org-level chat settings (chat admins only)" })
   @ApiResponse({ status: 200, description: "OK" })
   @Patch()
-  @RequirePermission("settings:manage")
+  @RequirePermission("chat:org-settings:manage")
   update(
     @Body(new ZodValidationPipe(updateChatOrgSettingsSchema)) body: UpdateChatOrgSettingsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner) {
-      throw new ForbiddenException("Only org admins can manage chat settings");
-    }
     return this.settings.updateSettings(u.orgId, u.userId, body);
   }
 }

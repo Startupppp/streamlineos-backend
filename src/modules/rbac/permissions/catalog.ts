@@ -13,6 +13,7 @@ import { SALES_PERMISSIONS } from "./sales";
 import { SHARED_PERMISSIONS } from "./shared";
 import { SUPPORT_PERMISSIONS } from "./support";
 import { CHAT_PERMISSIONS } from "./chat";
+import { CALENDAR_PERMISSIONS } from "./calendar";
 import { API_TOKEN_PERMISSIONS } from "./api-tokens";
 import { BILLING_PERMISSIONS } from "./billing";
 import { WORKFLOW_PERMISSIONS } from "./workflows";
@@ -58,6 +59,7 @@ export const PERMISSIONS: Permission[] = [
   ...SHARED_PERMISSIONS,
   ...SUPPORT_PERMISSIONS,
   ...CHAT_PERMISSIONS,
+  ...CALENDAR_PERMISSIONS,
   ...API_TOKEN_PERMISSIONS,
   ...BILLING_PERMISSIONS,
   ...WORKFLOW_PERMISSIONS,

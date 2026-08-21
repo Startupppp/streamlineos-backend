@@ -16,6 +16,7 @@ export { SALES_PERMISSIONS } from "./sales";
 export { SHARED_PERMISSIONS } from "./shared";
 export { SUPPORT_PERMISSIONS } from "./support";
 export { CHAT_PERMISSIONS } from "./chat";
+export { CALENDAR_PERMISSIONS } from "./calendar";
 export { API_TOKEN_PERMISSIONS } from "./api-tokens";
 export { BILLING_PERMISSIONS } from "./billing";
 export { WORKFLOW_PERMISSIONS } from "./workflows";

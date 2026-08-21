@@ -43,17 +43,17 @@ describe("Billing auth/RBAC (e2e)", () => {
     expect(res.body).toEqual({ error: "Unauthorized" });
   });
 
-  it("403 on POST /billing/razorpay without manage settings", async () => {
+  it("403 on POST /billing/razorpay without billing:subscription:manage", async () => {
     const token = await signToken({ permissions: [], enabledModules: [] });
     const res = await request(app.getHttpServer())
       .post("/billing/razorpay")
       .set("Authorization", `Bearer ${token}`)
       .send({ plan: "STARTER" });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "RBAC_DENIED", verb: "manage", subject: "settings" });
+    expect(res.body).toMatchObject({ code: "RBAC_DENIED", verb: "manage", subject: "billing:subscription" });
   });
 
-  it("403 on PATCH /billing/razorpay without manage settings", async () => {
+  it("403 on PATCH /billing/razorpay without billing:subscription:manage", async () => {
     const token = await signToken({ permissions: [], enabledModules: [] });
     const res = await request(app.getHttpServer())
       .patch("/billing/razorpay")
@@ -65,16 +65,16 @@ describe("Billing auth/RBAC (e2e)", () => {
         plan: "STARTER",
       });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "RBAC_DENIED", verb: "manage", subject: "settings" });
+    expect(res.body).toMatchObject({ code: "RBAC_DENIED", verb: "manage", subject: "billing:subscription" });
   });
 
-  it("does NOT enforce an ability gate on GET /billing (auth-only)", async () => {
+  it("403 on GET /billing without billing:subscription:view", async () => {
     const token = await signToken({ permissions: [], enabledModules: [] });
     const res = await request(app.getHttpServer())
       .get("/billing")
       .set("Authorization", `Bearer ${token}`);
-    expect(res.status).not.toBe(401);
-    expect(res.status).not.toBe(403);
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: "RBAC_DENIED", verb: "view", subject: "billing:subscription" });
   });
 
   it("401 on POST /billing/ai-credits/purchase without a token", async () => {

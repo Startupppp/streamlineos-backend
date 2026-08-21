@@ -26,6 +26,36 @@ export const CHAT_PERMISSIONS: Permission[] = [
     description: "Send and edit chat messages",
   },
   {
+    name: "chat:huddles:start",
+    resource: "chat:huddles",
+    action: "start",
+    description: "Start a voice or video huddle in a channel",
+  },
+  {
+    name: "chat:huddles:moderate",
+    resource: "chat:huddles",
+    action: "moderate",
+    description: "Kick participants from an active huddle",
+  },
+  {
+    name: "chat:invite-links:manage",
+    resource: "chat:invite-links",
+    action: "manage",
+    description: "Mint or regenerate channel invite links",
+  },
+  {
+    name: "chat:messages:pin",
+    resource: "chat:messages",
+    action: "pin",
+    description: "Pin or unpin messages in a channel",
+  },
+  {
+    name: "chat:org-settings:manage",
+    resource: "chat:org-settings",
+    action: "manage",
+    description: "Manage organisation-wide chat settings",
+  },
+  {
     name: "ai:chat:use",
     resource: "ai:chat",
     action: "use",

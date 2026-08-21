@@ -20,7 +20,7 @@ export class ChatInviteLinksController {
   @ApiResponse({ status: 200, description: "OK" })
   @Post("channels/:channelId/invite-link")
   @HttpCode(200)
-  @RequirePermission("chat:channels:write")
+  @RequirePermission("chat:invite-links:manage")
   getOrCreate(
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -32,7 +32,7 @@ export class ChatInviteLinksController {
   @ApiResponse({ status: 200, description: "OK" })
   @Post("channels/:channelId/invite-link/regenerate")
   @HttpCode(200)
-  @RequirePermission("chat:channels:write")
+  @RequirePermission("chat:invite-links:manage")
   regenerate(
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,

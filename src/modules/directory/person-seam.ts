@@ -21,6 +21,10 @@ export type PersonEmployment = {
 
 export type PersonResolutionPath = "membership" | "payee-worker" | "person-record";
 
+export type PayableIdentity =
+  | { kind: "user"; userId: string }
+  | { kind: "worker"; workerId: string };
+
 export type ResolvedPerson = {
   resolvedVia: PersonResolutionPath;
   organizationPersonId: string | null;
@@ -29,6 +33,7 @@ export type ResolvedPerson = {
   isMember: boolean;
   isPayeeWorker: boolean;
   employment: PersonEmployment | null;
+  payableAs: PayableIdentity | null;
   payable: boolean;
 };
 
@@ -38,6 +43,15 @@ export type PersonResolution =
 
 function unresolved(subject: PersonSubject): PersonResolution {
   return { status: "unresolved", subject };
+}
+
+function resolved(
+  person: Omit<ResolvedPerson, "payable">,
+): PersonResolution {
+  return {
+    status: "resolved",
+    person: { ...person, payable: person.payableAs !== null },
+  };
 }
 
 function payeeWorkerColumns() {
@@ -127,37 +141,31 @@ async function resolveUser(
     columns: { id: true },
   });
   if (membership) {
-    return {
-      status: "resolved",
-      person: {
-        resolvedVia: "membership",
-        organizationPersonId: null,
-        userId: subject.userId,
-        workerId: null,
-        isMember: true,
-        isPayeeWorker: false,
-        employment: null,
-        payable: true,
-      },
-    };
+    return resolved({
+      resolvedVia: "membership",
+      organizationPersonId: null,
+      userId: subject.userId,
+      workerId: null,
+      isMember: true,
+      isPayeeWorker: false,
+      employment: null,
+      payableAs: { kind: "user", userId: subject.userId },
+    });
   }
 
   const worker = await findPayeeWorkerByUser(db, orgId, subject.userId);
   if (!worker) return unresolved(subject);
 
-  return {
-    status: "resolved",
-    person: {
-      resolvedVia: "payee-worker",
-      organizationPersonId: worker.organizationPersonId ?? null,
-      userId: worker.userId ?? subject.userId,
-      workerId: worker.workerId,
-      isMember: false,
-      isPayeeWorker: true,
-      employment: null,
-      payable: true,
-    },
-  };
+  return resolved({
+    resolvedVia: "payee-worker",
+    organizationPersonId: worker.organizationPersonId ?? null,
+    userId: worker.userId ?? subject.userId,
+    workerId: worker.workerId,
+    isMember: false,
+    isPayeeWorker: true,
+    employment: null,
+    payableAs: { kind: "worker", workerId: worker.workerId },
+  });
 }
 
 async function resolveWorker(
@@ -168,19 +176,27 @@ async function resolveWorker(
   const worker = await findPayeeWorkerById(db, orgId, subject.workerId);
   if (!worker) return unresolved(subject);
 
-  return {
-    status: "resolved",
-    person: {
-      resolvedVia: "payee-worker",
-      organizationPersonId: worker.organizationPersonId ?? null,
-      userId: worker.userId ?? null,
-      workerId: worker.workerId,
-      isMember: false,
-      isPayeeWorker: true,
-      employment: null,
-      payable: true,
-    },
-  };
+  return resolved({
+    resolvedVia: "payee-worker",
+    organizationPersonId: worker.organizationPersonId ?? null,
+    userId: worker.userId ?? null,
+    workerId: worker.workerId,
+    isMember: false,
+    isPayeeWorker: true,
+    employment: null,
+    payableAs: { kind: "worker", workerId: worker.workerId },
+  });
+}
+
+function payableIdentityForPerson(
+  isMember: boolean,
+  userId: string | null,
+  isPayeeWorker: boolean,
+  workerId: string | null,
+): PayableIdentity | null {
+  if (isMember && userId) return { kind: "user", userId };
+  if (isPayeeWorker && workerId) return { kind: "worker", workerId };
+  return null;
 }
 
 async function resolvePersonRecord(
@@ -228,19 +244,21 @@ async function resolvePersonRecord(
   const isMember = person.membershipId !== null;
   const isPayeeWorker = worker?.isPayee === true;
 
-  return {
-    status: "resolved",
-    person: {
-      resolvedVia: "person-record",
-      organizationPersonId: person.organizationPersonId,
-      userId: person.userId,
-      workerId: worker?.workerId ?? null,
+  return resolved({
+    resolvedVia: "person-record",
+    organizationPersonId: person.organizationPersonId,
+    userId: person.userId,
+    workerId: worker?.workerId ?? null,
+    isMember,
+    isPayeeWorker,
+    employment,
+    payableAs: payableIdentityForPerson(
       isMember,
+      person.userId,
       isPayeeWorker,
-      employment,
-      payable: isMember || isPayeeWorker,
-    },
-  };
+      worker?.workerId ?? null,
+    ),
+  });
 }
 
 export function resolvePerson(

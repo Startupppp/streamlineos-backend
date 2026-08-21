@@ -265,24 +265,6 @@ export const SHARED_PERMISSIONS: Permission[] = [
     description: "View the audit log",
   },
   {
-    name: "calendar:read",
-    resource: "calendar",
-    action: "read",
-    description: "View calendar events",
-  },
-  {
-    name: "calendar:write",
-    resource: "calendar",
-    action: "write",
-    description: "Create and manage calendar events",
-  },
-  {
-    name: "calendar:ai:use",
-    resource: "calendar:ai",
-    action: "use",
-    description: "Use AI meeting preparation and follow-up features",
-  },
-  {
     name: "integrations:connections:view",
     resource: "integrations:connections",
     action: "view",

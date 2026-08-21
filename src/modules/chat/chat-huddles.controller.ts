@@ -51,7 +51,7 @@ export class ChatHuddlesController {
   @ApiResponse({ status: 429, description: "Rate limited" })
   @Post("channels/:channelId/huddle/start")
   @HttpCode(201)
-  @RequirePermission("chat:channels:write")
+  @RequirePermission("chat:huddles:start")
   async startHuddle(
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -183,7 +183,7 @@ export class ChatHuddlesController {
   @ApiResponse({ status: 200, description: "OK" })
   @Post("huddles/:huddleId/kick")
   @HttpCode(200)
-  @RequirePermission("chat:channels:write")
+  @RequirePermission("chat:huddles:moderate")
   kickParticipant(
     @Param("huddleId", ParseIntPipe) huddleId: number,
     @Body(new ZodValidationPipe(kickSchema)) body: KickInput,

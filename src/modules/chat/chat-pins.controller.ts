@@ -30,7 +30,7 @@ export class ChatPinsController {
   @ApiResponse({ status: 200, description: "OK" })
   @Post()
   @HttpCode(200)
-  @RequirePermission("chat:messages:write")
+  @RequirePermission("chat:messages:pin")
   pin(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Body(new ZodValidationPipe(pinMessageSchema)) body: PinMessageInput,
@@ -43,7 +43,7 @@ export class ChatPinsController {
   @ApiResponse({ status: 200, description: "OK" })
   @Delete(":messageId")
   @HttpCode(200)
-  @RequirePermission("chat:messages:write")
+  @RequirePermission("chat:messages:pin")
   unpin(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Param("messageId", ParseIntPipe) messageId: number,

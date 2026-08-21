@@ -53,6 +53,7 @@ import {
   resolveActorRankContext,
   resolveModuleOwnerUserId,
 } from "./module-access.helpers";
+import { canTransferModuleOwnership } from "./module-standing";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
 import { AccessService } from "../access/access.service";
@@ -178,12 +179,7 @@ export class ModuleAccessGroupsService {
     if (!(await this.access.isModuleEnabled(actor.orgId, moduleKey))) {
       throw new ForbiddenException(`The ${moduleKey} module is not enabled`);
     }
-    if (actor.isOrgOwner) return;
-    const ownerUserId = await this.resolveModuleOwnerUserId(
-      actor.orgId,
-      moduleKey,
-    );
-    if (ownerUserId !== null && ownerUserId === actor.userId) return;
+    if (await canTransferModuleOwnership(this.db, actor, moduleKey)) return;
     throw moduleOwnershipDenied();
   }
 

@@ -136,6 +136,80 @@ describe("resolvePerson", () => {
     expect(viaRecord.resolvedVia).toBe("person-record");
   });
 
+  it("names the identity a member is payable as", async () => {
+    const person = expectResolved(
+      await resolvePerson(createDb({ membership: { id: 7 } }), ORG, {
+        kind: "user",
+        userId: "user-1",
+      }),
+    );
+    expect(person.payableAs).toEqual({ kind: "user", userId: "user-1" });
+  });
+
+  it("names the identity a login-less payee is payable as", async () => {
+    const person = expectResolved(
+      await resolvePerson(
+        createDb({ results: [[{ workerId: "w-2", organizationPersonId: "p-2", userId: null }]] }),
+        ORG,
+        { kind: "worker", workerId: "w-2" },
+      ),
+    );
+    expect(person.payableAs).toEqual({ kind: "worker", workerId: "w-2" });
+  });
+
+  it("pays a person who is both a member and a payee worker through their membership, matching the user path", async () => {
+    const person = expectResolved(
+      await resolvePerson(
+        createDb({
+          results: [
+            [{ organizationPersonId: "p-5", userId: "user-5", membershipId: 3 }],
+            [{ workerId: "w-5", isPayee: true }],
+            [],
+          ],
+        }),
+        ORG,
+        { kind: "person", organizationPersonId: "p-5" },
+      ),
+    );
+    expect(person.payableAs).toEqual({ kind: "user", userId: "user-5" });
+  });
+
+  it("pays a login-less person through their payee worker record", async () => {
+    const person = expectResolved(
+      await resolvePerson(
+        createDb({
+          results: [
+            [{ organizationPersonId: "p-6", userId: null, membershipId: null }],
+            [{ workerId: "w-6", isPayee: true }],
+            [],
+          ],
+        }),
+        ORG,
+        { kind: "person", organizationPersonId: "p-6" },
+      ),
+    );
+    expect(person.payableAs).toEqual({ kind: "worker", workerId: "w-6" });
+    expect(person.payable).toBe(true);
+  });
+
+  it("refuses to call a person payable with no identity to pay them by", async () => {
+    const person = expectResolved(
+      await resolvePerson(
+        createDb({
+          results: [
+            [{ organizationPersonId: "p-7", userId: null, membershipId: 4 }],
+            [{ workerId: "w-7", isPayee: false }],
+            [],
+          ],
+        }),
+        ORG,
+        { kind: "person", organizationPersonId: "p-7" },
+      ),
+    );
+    expect(person.payableAs).toBeNull();
+    expect(person.payable).toBe(false);
+  });
+
   it.each([
     ["user", { kind: "user" as const, userId: "nobody" }],
     ["worker", { kind: "worker" as const, workerId: "nobody" }],

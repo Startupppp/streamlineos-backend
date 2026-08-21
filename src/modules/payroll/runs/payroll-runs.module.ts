@@ -9,6 +9,8 @@ import { GeneratePipelineService } from "./generate-pipeline.service";
 import { ProfilesController } from "./profiles.controller";
 import { WorkerProfilesController } from "./worker-profiles.controller";
 import { ProfilesService } from "./profiles.service";
+import { PayeeEligibilityController } from "./payee-eligibility.controller";
+import { PayeeEligibilityService } from "./payee-eligibility.service";
 import { InputsController } from "./inputs.controller";
 import { InputsService } from "./inputs.service";
 import { ExceptionsController } from "./exceptions.controller";
@@ -26,6 +28,7 @@ import { PayrollRunLockService } from "../run-lock.service";
     RunsController,
     ProfilesController,
     WorkerProfilesController,
+    PayeeEligibilityController,
     InputsController,
     ExceptionsController,
     LoanAdjustmentsController,
@@ -36,6 +39,7 @@ import { PayrollRunLockService } from "../run-lock.service";
     GenerateService,
     GeneratePipelineService,
     ProfilesService,
+    PayeeEligibilityService,
     InputsService,
     ExceptionsService,
     LoanAdjustmentsService,
