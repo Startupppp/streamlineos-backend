@@ -9,6 +9,7 @@ import {
   rolePermissionGrants,
   roles,
   userDelegationPermissions,
+  userPermissionGrants,
   userDelegations,
 } from "../../db/schema";
 import { logger } from "../../common/logger/logger.service";
@@ -268,6 +269,26 @@ export class AccessPermissionResolver {
     for (const row of delegatedPermissionRows) {
       mergeIfKnown(row.permissionKey, "all", "delegation");
     }
+
+    const personalGrantRows = await this.safeAccessTableRead(
+      () =>
+        this.db
+          .select({
+            permissionKey: userPermissionGrants.permissionKey,
+            scope: userPermissionGrants.scope,
+          })
+          .from(userPermissionGrants)
+          .where(
+            and(
+              eq(userPermissionGrants.orgId, orgId),
+              eq(userPermissionGrants.organizationMembershipId, membershipId),
+            ),
+          ),
+      [] as { permissionKey: string; scope: DataScope }[],
+    );
+
+    for (const row of personalGrantRows)
+      mergeIfKnown(row.permissionKey, row.scope, "user-grant");
 
     for (const { moduleKey } of ownershipRows) {
       for (const key of moduleScopedPermissions(moduleKey)) {
