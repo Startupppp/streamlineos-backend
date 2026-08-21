@@ -12,6 +12,8 @@
 - **Cross-module access goes through the other module's service**, never its repository or schema.
 - **Schema folders:** `db/schema/` = `common/` (enums, auth, organization, access, shared, notifications, workflow, integrations, idempotency, outbox) + one folder per business module, each with an `index.ts`. Consumers import only from the root barrel `db/schema`. Folder names match the real domain, never codenames; remove dead schema files in any reorg.
 - **A new module is not wired until it is registered in `app.module.ts`** — an unregistered module compiles green and does not exist at runtime.
+- **`organization_people` is the person; everything else is a facet of one.** A human in an organisation is exactly one `organization_people` row. `organization_members` adds a **login**, `workers` adds **payability** (`is_payee`), `hr_people` + `hr_employments` add **employment**. A person may hold any combination, including none — an employee with no login, a payee with no employment. Never infer one facet from another: employed does not mean payable, and a member is not automatically a worker.
+- **Resolve a person through the seam, not by querying a facet.** `modules/directory/person-seam.ts` takes a `PersonSubject` (`user` | `worker` | `person`) and returns a discriminated `PersonResolution`; an unknown subject is `{ status: "unresolved" }`, a **value**, never a throw, so the caller can explain the failure. It re-asserts `orgId` on every query rather than leaning on RLS, so a cross-tenant subject resolves unresolved — surface that as 404, never 403. It returns identity and flags only; anything sensitive stays behind its own permission gate at the call site. Resolution **short-circuits**, so `resolvedVia` says which path answered — only `person-record` populates every facet, and a `membership` answer reports `workerId: null` because it never looked. Need all the facets? Resolve by `person`.
 
 ## 2. Validation, Guards, Serialization
 
@@ -70,7 +72,11 @@
 
 Permissions resolve from the DB on **every request** via `AccessService`. **CASL is fully removed from both repos.**
 
-**Keys** are `"module:resource:action"`, three lowercase segments (`"hr:employees:view"`); `action` ∈ view · create · update · delete · manage · assign · export · approve · reject · import. Served by `GET /me/access` — **never** from JWT claims.
+**Keys** are `"module:resource:action"` (`"hr:employees:view"`), lowercase, **module segment first** — module scoping slices on segment one, so that part is load-bearing. Prefer `action` ∈ view · create · update · delete · manage · assign · export · approve · reject · import, but a **domain verb is legitimate where it carries authority the generic set cannot express** (`payroll:runs:post`, `sign:envelopes:void`, `inventory:transfers:ship`) — collapsing those into `manage` loses a real distinction. ~137 of 631 keys use one; that is the catalog being right, not drift.
+
+Arity is not fixed at three: 53 keys are two-segment (`surveys:create`) and some are four (`build:workspaces:members:manage`). Both are fine — the only code that ever depended on position-two was the implied-view rule, which now derives the sibling read key from the **last** segment at any length. Served by `GET /me/access` — **never** from JWT claims.
+
+**Both catalog directions are tested** (`lib/rbac/permissions/__tests__/catalog-sync.test.ts`): backend ⊆ frontend union so every gated key is typeable, and union ⊆ backend so a union-only ghost can't type-check everywhere while making `useCan` false forever. Never add a key to the frontend union by hand without a backing catalog entry.
 
 **Key files (do not delete)**
 
@@ -119,6 +125,9 @@ Permissions resolve from the DB on **every request** via `AccessService`. **CASL
 ## 7. Performance
 
 - **AI endpoints must be efficient end-to-end:** assemble prompt context in the fewest queries (`Promise.all`, explicit projection, hard caps on rows and text length — never dump whole entities into prompts); default to the fast/cheap model tier with a per-feature output cap and use the standard tier only where quality demands it; short-circuit BEFORE any provider call when there is no eligible context; never re-embed unchanged content (hash the **source text**, not the rejoined chunks); dedupe in-flight AI requests; cache derived context tenant-scoped with explicit invalidation; vector queries always hit an ANN (HNSW) index; every call records latency/tokens/cost through the AI gateway.
+- **A covering index on an RLS table must contain `org_id`.** The policy adds `org_id = app.current_org_id()`, which is not leakproof, so it is evaluated against the heap tuple and an index-only scan stays impossible unless the index supplies `org_id` itself — the planner will refuse the index outright, which reads as "the index didn't help". Lead with `org_id`, then the filter columns, then whatever the query projects. `VACUUM ANALYZE` first: an index-only scan also needs the visibility map, so a bulk-loaded table refuses one regardless of the index.
+- **Measure in buffers, not milliseconds, as `streamline_app` with the tenant GUC set.** Wall-clock lies on a warm cache and the owner role bypasses RLS, so its plans omit the cost that matters. `pnpm db:check-build-reads` is the worked example.
+- **An `OR` between an indexed predicate and a semi-join defeats both** — `assignee_id = me OR EXISTS(participation)` cannot use the assignee index, so the scan becomes O(organisation) regardless of how few rows match. Split it into a `UNION` of independently-indexed branches, and carry the total with `count(*) OVER ()` so page and count are one pass. The inverse also holds: once the outer set is already narrowed (one project), the single pass with `EXISTS` is cheaper than the UNION. Measure both before choosing.
 - Stateless handlers, structured logging, graceful shutdown. Health is hand-rolled in `src/health/health.controller.ts` (`/health`, `/health/ready`, `/health/db`) — `@nestjs/terminus` is **not** installed; don't import it.
 
 ## 8. Testing & Verification

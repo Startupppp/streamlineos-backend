@@ -15,6 +15,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { ParseResourceIdPipe } from "../../../common/pipes/parse-resource-id.pipe";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ProjectsService } from "./projects.service";
 import {
@@ -33,7 +34,7 @@ export class ProjectsByIdController {
   @Get(":projectId")
   @RequirePermission("build:view")
   getProject(
-    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("projectId", ParseResourceIdPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.projects.getProject(u, projectId);
@@ -42,7 +43,7 @@ export class ProjectsByIdController {
   @Patch(":projectId")
   @RequirePermission("build:update")
   updateProject(
-    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("projectId", ParseResourceIdPipe) projectId: number,
     @Body(new ZodValidationPipe(updateProjectSchema)) body: UpdateProjectInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
@@ -53,7 +54,7 @@ export class ProjectsByIdController {
   @RequirePermission("build:delete")
   @HttpCode(204)
   deleteProject(
-    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("projectId", ParseResourceIdPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.projects.deleteProject(u, projectId);
@@ -62,7 +63,7 @@ export class ProjectsByIdController {
   @Patch(":projectId/managed-product")
   @RequirePermission("build:managed-products:update")
   linkManagedProduct(
-    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("projectId", ParseResourceIdPipe) projectId: number,
     @Body(new ZodValidationPipe(linkManagedProductSchema))
     body: LinkManagedProductInput,
     @CurrentUser() u: CurrentUserContext,

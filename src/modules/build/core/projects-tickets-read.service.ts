@@ -143,8 +143,8 @@ export class ProjectsTicketsReadService {
         columns: { managerId: true },
       }),
     ]);
-    if (perms.has("build:manage")) return { hasAccess: true, role: "OWNER" };
     if (!project) return { hasAccess: false, role: null };
+    if (perms.has("build:manage")) return { hasAccess: true, role: "OWNER" };
     if (project.managerId === userId)
       return { hasAccess: true, role: "MANAGER" };
     const membership = await this.db
@@ -232,7 +232,7 @@ export class ProjectsTicketsReadService {
         ? or(
             eq(tickets.assigneeId, u.userId),
             eq(tickets.reporterId, u.userId),
-            sql`EXISTS (SELECT 1 FROM ${ticketAssignees} ta WHERE ta.ticket_id = ${tickets.id} AND ta.user_id = ${u.userId})`,
+            sql`EXISTS (SELECT 1 FROM ${ticketAssignees} ta WHERE ta.org_id = ${u.orgId} AND ta.user_id = ${u.userId} AND ta.ticket_id = ${tickets.id})`,
           )
         : undefined;
 
@@ -325,72 +325,21 @@ export class ProjectsTicketsReadService {
       orderBy === "rank"
         ? [asc(tickets.rank), desc(tickets.createdAt), asc(tickets.id)]
         : dir === "asc"
-          ? [asc(col), desc(tickets.createdAt)]
-          : [desc(col), desc(tickets.createdAt)];
+          ? [asc(col), desc(tickets.createdAt), asc(tickets.id)]
+          : [desc(col), desc(tickets.createdAt), asc(tickets.id)];
 
-    if (scope !== "all" && orderBy === "rank") {
-      const filterWhere =
-        filterConditions.length > 0 ? and(...filterConditions) : undefined;
-      const branchLimit = offset + limit;
-
-      const idQuery = sql`
-        SELECT id FROM (
-          (SELECT ${tickets.id}, ${tickets.rank}, ${tickets.createdAt}
-           FROM ${tickets}
-           WHERE ${tickets.orgId} = ${u.orgId}
-             AND ${tickets.projectId} = ${projectId}
-             AND ${tickets.deletedAt} IS NULL
-             AND (${tickets.assigneeId} = ${u.userId} OR ${tickets.reporterId} = ${u.userId})
-             ${filterWhere ? sql`AND ${filterWhere}` : sql``}
-           ORDER BY ${tickets.rank} ASC, ${tickets.createdAt} DESC, ${tickets.id} ASC
-           LIMIT ${branchLimit})
-          UNION
-          (SELECT ${tickets.id}, ${tickets.rank}, ${tickets.createdAt}
-           FROM ${tickets}
-           INNER JOIN ${ticketAssignees}
-             ON ${ticketAssignees.ticketId} = ${tickets.id}
-             AND ${ticketAssignees.userId} = ${u.userId}
-             AND ${ticketAssignees.orgId} = ${u.orgId}
-           WHERE ${tickets.orgId} = ${u.orgId}
-             AND ${tickets.projectId} = ${projectId}
-             AND ${tickets.deletedAt} IS NULL
-             ${filterWhere ? sql`AND ${filterWhere}` : sql``}
-           ORDER BY ${tickets.rank} ASC, ${tickets.createdAt} DESC, ${tickets.id} ASC
-           LIMIT ${branchLimit})
-        ) u
-        ORDER BY u.rank ASC, u.created_at DESC, u.id ASC
-        LIMIT ${limit} OFFSET ${offset}
-      `;
-
-      const [idRows, countResult] = await Promise.all([
-        this.db.execute(idQuery),
-        this.db.select({ total: count() }).from(tickets).where(where),
-      ]);
-
-      const ids = idRows.map((r) => Number(r["id"]));
-      const total = Number(countResult[0]?.total ?? 0);
-
-      if (ids.length === 0)
-        return {
-          data: [],
-          total,
-          page,
-          limit,
-          totalPages: Math.ceil(total / limit),
-        };
-
-      const dataResult = await this.queryTickets(
-        inArray(tickets.id, ids),
+    if (scope !== "all") {
+      const { ids, total } = await this.pageScopedTicketIds(
+        where,
         sortExpr,
         limit,
+        offset,
       );
-      return {
-        data: dataResult,
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
-      };
+      const data =
+        ids.length > 0
+          ? await this.queryTickets(inArray(tickets.id, ids), sortExpr, limit)
+          : [];
+      return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
     }
 
     const [dataResult, countResult] = await Promise.all([
@@ -406,6 +355,31 @@ export class ProjectsTicketsReadService {
       limit,
       totalPages: Math.ceil(total / limit),
     };
+  }
+
+  private async pageScopedTicketIds(
+    where: SQL<unknown> | undefined,
+    sortExpr: SQL<unknown>[],
+    limit: number,
+    offset: number,
+  ): Promise<{ ids: number[]; total: number }> {
+    const rows = await this.db
+      .select({ id: tickets.id, total: sql<string>`count(*) OVER ()` })
+      .from(tickets)
+      .where(where)
+      .orderBy(...sortExpr)
+      .limit(limit)
+      .offset(offset);
+
+    const first = rows[0];
+    if (first) return { ids: rows.map((row) => row.id), total: Number(first.total) };
+
+    if (offset === 0) return { ids: [], total: 0 };
+    const countResult = await this.db
+      .select({ total: count() })
+      .from(tickets)
+      .where(where);
+    return { ids: [], total: Number(countResult[0]?.total ?? 0) };
   }
 
   async getTicket(u: CurrentUserContext, ticketId: number) {

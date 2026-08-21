@@ -1338,6 +1338,13 @@
       "when": 1786701646560,
       "tag": "0434_chat_message_search",
       "breakpoints": true
+    },
+    {
+      "idx": 191,
+      "version": "7",
+      "when": 1786701706560,
+      "tag": "0435_build_ticket_assignees_tenant_covering",
+      "breakpoints": true
     }
   ]
 }

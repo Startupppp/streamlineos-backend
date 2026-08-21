@@ -42,6 +42,11 @@ export const ticketAssignees = build.table(
       table.userId,
     ),
     index("idx_ticket_assignees_user_id").on(table.userId),
+    index("idx_ticket_assignees_org_user_ticket").on(
+      table.orgId,
+      table.userId,
+      table.ticketId,
+    ),
   ],
 );
 

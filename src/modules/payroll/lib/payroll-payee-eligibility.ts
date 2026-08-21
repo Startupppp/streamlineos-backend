@@ -1,6 +1,5 @@
 import { ForbiddenException } from "@nestjs/common";
-import { and, eq, isNull } from "drizzle-orm";
-import { organizationMembers, organizationPeople, workers } from "../../../db/schema";
+import { resolvePerson } from "../../directory/person-seam";
 import type { Db } from "../../../db/drizzle.module";
 
 export async function assertPayrollPayeeEligible(
@@ -9,35 +8,9 @@ export async function assertPayrollPayeeEligible(
   userId: string,
   message = "Person is not eligible for payroll in this organization",
 ): Promise<void> {
-  const membership = await db.query.organizationMembers.findFirst({
-    where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)),
-    columns: { id: true },
-  });
-  if (membership) return;
-
-  const [payeeWorker] = await db
-    .select({ workerId: workers.workerId })
-    .from(workers)
-    .innerJoin(
-      organizationPeople,
-      and(
-        eq(workers.organizationPersonId, organizationPeople.organizationPersonId),
-        eq(workers.organizationId, organizationPeople.organizationId),
-      ),
-    )
-    .where(
-      and(
-        eq(workers.organizationId, orgId),
-        eq(organizationPeople.userId, userId),
-        eq(workers.isPayee, true),
-        isNull(workers.deletedAt),
-      ),
-    )
-    .limit(1);
-
-  if (payeeWorker) return;
-
-  throw new ForbiddenException(message);
+  const resolution = await resolvePerson(db, orgId, { kind: "user", userId });
+  if (resolution.status !== "resolved" || !resolution.person.payable)
+    throw new ForbiddenException(message);
 }
 
 export async function assertPayrollWorkerPayeeEligible(
@@ -46,32 +19,12 @@ export async function assertPayrollWorkerPayeeEligible(
   workerId: string,
   message = "Worker is not eligible for payroll in this organization",
 ): Promise<{ workerId: string; userId: string | null }> {
-  const [row] = await db
-    .select({
-      workerId: workers.workerId,
-      userId: organizationPeople.userId,
-    })
-    .from(workers)
-    .innerJoin(
-      organizationPeople,
-      and(
-        eq(workers.organizationPersonId, organizationPeople.organizationPersonId),
-        eq(workers.organizationId, organizationPeople.organizationId),
-      ),
-    )
-    .where(
-      and(
-        eq(workers.organizationId, orgId),
-        eq(workers.workerId, workerId),
-        eq(workers.isPayee, true),
-        isNull(workers.deletedAt),
-      ),
-    )
-    .limit(1);
-
-  if (!row) {
+  const resolution = await resolvePerson(db, orgId, { kind: "worker", workerId });
+  if (resolution.status !== "resolved" || !resolution.person.payable)
     throw new ForbiddenException(message);
-  }
 
-  return row;
+  return {
+    workerId: resolution.person.workerId ?? workerId,
+    userId: resolution.person.userId,
+  };
 }

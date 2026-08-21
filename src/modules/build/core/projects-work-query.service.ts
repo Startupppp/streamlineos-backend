@@ -1,9 +1,23 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, count, desc, eq, gte, inArray, isNull, lte, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNull,
+  lte,
+  ne,
+  notInArray,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import {
   projectMembers,
   projects,
-  ticketAssignees,
   ticketLabelMappings,
   ticketLabels,
   ticketWatchers,
@@ -14,26 +28,67 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { AllWorkQuery } from "./dto/projects.schemas";
+import {
+  assignedOrParticipatingIds,
+  readIdsAndTotal,
+  resolveWorkSort,
+  type WorkSort,
+} from "./work-scope-union";
 
-const ALL_WORK_ORDERBY_COLUMNS = {
-  created: tickets.createdAt,
-  updated: tickets.updatedAt,
+const WORK_ROW_SELECTION = {
+  id: tickets.id,
+  title: tickets.title,
+  status: tickets.status,
   priority: tickets.priority,
+  type: tickets.type,
   dueDate: tickets.dueDate,
+  startDate: tickets.startDate,
+  ticketNumber: tickets.ticketNumber,
+  points: tickets.points,
+  estimate: tickets.estimate,
   rank: tickets.rank,
+  createdAt: tickets.createdAt,
+  updatedAt: tickets.updatedAt,
+  assigneeId: tickets.assigneeId,
+  sprintId: tickets.sprintId,
+  cycleId: tickets.cycleId,
+  epicId: tickets.epicId,
+  projectId: projects.id,
+  projectKey: projects.key,
+  projectName: projects.name,
+  assigneeName: users.name,
+  assigneeFirstName: users.firstName,
+  assigneeLastName: users.lastName,
+  assigneeEmail: users.email,
+  assigneeImage: users.image,
 } as const;
+
+const MY_WORK_LIMIT = 100;
+
+const MY_WORK_PRIORITY_ORDER = sql`CASE ${tickets.priority} WHEN 'URGENT' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'MEDIUM' THEN 3 WHEN 'LOW' THEN 4 ELSE 5 END ASC`;
+
+const MY_WORK_UNION_ORDER = sql`u.due_date ASC NULLS LAST, CASE u.priority WHEN 'URGENT' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'MEDIUM' THEN 3 WHEN 'LOW' THEN 4 ELSE 5 END ASC, u.id ASC`;
 
 @Injectable()
 export class ProjectsWorkQueryService {
-  constructor(
-    @Inject(DRIZZLE) private readonly db: Db,
-  ) {}
+  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async searchOrgTickets(orgId: string, userId: string, q: string, limit: number) {
+  private watches(orgId: string, userId: string): SQL<unknown> {
+    return sql`EXISTS (SELECT 1 FROM ${ticketWatchers} tw WHERE tw.org_id = ${orgId} AND tw.user_id = ${userId} AND tw.ticket_id = ${tickets.id})`;
+  }
+
+  async searchOrgTickets(
+    orgId: string,
+    userId: string,
+    q: string,
+    limit: number,
+  ) {
     const memberProjectIds = await this.db
       .select({ projectId: projectMembers.projectId })
       .from(projectMembers)
-      .where(eq(projectMembers.userId, userId));
+      .where(
+        and(eq(projectMembers.orgId, orgId), eq(projectMembers.userId, userId)),
+      );
 
     const ids = memberProjectIds.map((r) => r.projectId);
     if (ids.length === 0) return [];
@@ -72,18 +127,24 @@ export class ProjectsWorkQueryService {
   }
 
   async getMyWork(orgId: string, userId: string) {
-    const assigneeRows = await this.db
-      .select({ ticketId: ticketAssignees.ticketId })
-      .from(ticketAssignees)
-      .where(eq(ticketAssignees.userId, userId))
-      .limit(500);
+    const idRows = await this.db.execute(
+      assignedOrParticipatingIds({
+        orgId,
+        userId,
+        baseWhere: and(
+          eq(tickets.orgId, orgId),
+          ne(projects.status, "ARCHIVED"),
+          isNull(tickets.deletedAt),
+        ),
+        carry: sql`${tickets.dueDate} AS due_date, ${tickets.priority} AS priority`,
+        orderBy: MY_WORK_UNION_ORDER,
+        limit: MY_WORK_LIMIT,
+        offset: 0,
+      }),
+    );
 
-    const assigneeTicketIds = assigneeRows.map((r) => r.ticketId);
-
-    const assigneeCondition =
-      assigneeTicketIds.length > 0
-        ? or(eq(tickets.assigneeId, userId), inArray(tickets.id, assigneeTicketIds))
-        : eq(tickets.assigneeId, userId);
+    const { ids } = readIdsAndTotal(idRows);
+    if (ids.length === 0) return [];
 
     return this.db
       .select({
@@ -100,19 +161,13 @@ export class ProjectsWorkQueryService {
       })
       .from(tickets)
       .innerJoin(projects, eq(tickets.projectId, projects.id))
-      .where(
-        and(
-          eq(tickets.orgId, orgId),
-          ne(projects.status, "ARCHIVED"),
-          isNull(tickets.deletedAt),
-          assigneeCondition,
-        ),
-      )
+      .where(and(eq(tickets.orgId, orgId), inArray(tickets.id, ids)))
       .orderBy(
         sql`${tickets.dueDate} ASC NULLS LAST`,
-        sql`CASE ${tickets.priority} WHEN 'URGENT' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'MEDIUM' THEN 3 WHEN 'LOW' THEN 4 ELSE 5 END ASC`,
+        MY_WORK_PRIORITY_ORDER,
+        asc(tickets.id),
       )
-      .limit(100);
+      .limit(MY_WORK_LIMIT);
   }
 
   async getAllWork(u: CurrentUserContext, query: AllWorkQuery) {
@@ -139,28 +194,15 @@ export class ProjectsWorkQueryService {
     } = query;
     const offset = (page - 1) * limit;
 
-    const scopeQuery: Promise<{ ticketId: number }[]> =
-      scope === "mine"
-        ? this.db
-            .select({ ticketId: ticketAssignees.ticketId })
-            .from(ticketAssignees)
-            .where(eq(ticketAssignees.userId, u.userId))
-            .limit(1000)
-        : scope === "subscribed"
-          ? this.db
-              .select({ ticketId: ticketWatchers.ticketId })
-              .from(ticketWatchers)
-              .where(eq(ticketWatchers.userId, u.userId))
-              .limit(1000)
-          : Promise.resolve([]);
-
-    const [memberRows, scopeRows] = await Promise.all([
-      this.db
-        .select({ projectId: projectMembers.projectId })
-        .from(projectMembers)
-        .where(eq(projectMembers.userId, u.userId)),
-      scopeQuery,
-    ]);
+    const memberRows = await this.db
+      .select({ projectId: projectMembers.projectId })
+      .from(projectMembers)
+      .where(
+        and(
+          eq(projectMembers.orgId, u.orgId),
+          eq(projectMembers.userId, u.userId),
+        ),
+      );
 
     const memberProjectIds = memberRows.map((r) => r.projectId);
     if (memberProjectIds.length === 0) {
@@ -187,28 +229,12 @@ export class ProjectsWorkQueryService {
       conditions.push(eq(projects.pmWorkspaceId, pmWorkspaceId));
     }
 
-    if (scope === "mine") {
-      const assigneeTicketIds = scopeRows.map((r) => r.ticketId);
-      const mineCondition =
-        assigneeTicketIds.length > 0
-          ? or(eq(tickets.assigneeId, u.userId), inArray(tickets.id, assigneeTicketIds))
-          : eq(tickets.assigneeId, u.userId);
-      if (mineCondition) {
-        conditions.push(mineCondition);
-      }
-    }
-
     if (scope === "created") {
       conditions.push(eq(tickets.reporterId, u.userId));
     }
 
     if (scope === "subscribed") {
-      const watchedTicketIds = scopeRows.map((r) => r.ticketId);
-      if (watchedTicketIds.length > 0) {
-        conditions.push(inArray(tickets.id, watchedTicketIds));
-      } else {
-        return { data: [], total: 0, page, limit, totalPages: 0 };
-      }
+      conditions.push(this.watches(u.orgId, u.userId));
     }
 
     if (search && search.trim()) {
@@ -243,7 +269,10 @@ export class ProjectsWorkQueryService {
 
     if (type && type.length > 0) {
       conditions.push(
-        sql`${tickets.type}::text = ANY(ARRAY[${sql.join(type.map((t) => sql`${t}`), sql`, `)}])`,
+        sql`${tickets.type}::text = ANY(ARRAY[${sql.join(
+          type.map((t) => sql`${t}`),
+          sql`, `,
+        )}])`,
       );
     }
 
@@ -252,7 +281,10 @@ export class ProjectsWorkQueryService {
       const unassigned = resolved.includes("__unassigned__");
       const realIds = resolved.filter((id) => id !== "__unassigned__");
       if (unassigned && realIds.length > 0) {
-        const assigneeCondition = or(isNull(tickets.assigneeId), inArray(tickets.assigneeId, realIds));
+        const assigneeCondition = or(
+          isNull(tickets.assigneeId),
+          inArray(tickets.assigneeId, realIds),
+        );
         if (assigneeCondition) {
           conditions.push(assigneeCondition);
         }
@@ -268,7 +300,10 @@ export class ProjectsWorkQueryService {
         sql`EXISTS (
           SELECT 1 FROM build.ticket_label_mappings tlm
           WHERE tlm.ticket_id = ${tickets.id}
-          AND tlm.label_id = ANY(ARRAY[${sql.join(labelIds.map((id) => sql`${id}`), sql`, `)}]::int[])
+          AND tlm.label_id = ANY(ARRAY[${sql.join(
+            labelIds.map((id) => sql`${id}`),
+            sql`, `,
+          )}]::int[])
         )`,
       );
     }
@@ -295,58 +330,12 @@ export class ProjectsWorkQueryService {
 
     const where = and(...conditions);
 
-    const col = ALL_WORK_ORDERBY_COLUMNS[orderBy];
-    const defaultDir = orderBy === "created" || orderBy === "updated" ? "desc" : "asc";
-    const dir = orderDir ?? defaultDir;
-    const sortExpr =
-      orderBy === "rank"
-        ? [asc(tickets.rank), desc(tickets.createdAt), asc(tickets.id)]
-        : dir === "asc"
-        ? [asc(col), desc(tickets.createdAt)]
-        : [desc(col), desc(tickets.createdAt)];
+    const sort = resolveWorkSort(orderBy, orderDir);
 
-    const [rows, countRows] = await Promise.all([
-      this.db
-        .select({
-          id: tickets.id,
-          title: tickets.title,
-          status: tickets.status,
-          priority: tickets.priority,
-          type: tickets.type,
-          dueDate: tickets.dueDate,
-          startDate: tickets.startDate,
-          ticketNumber: tickets.ticketNumber,
-          points: tickets.points,
-          estimate: tickets.estimate,
-          rank: tickets.rank,
-          createdAt: tickets.createdAt,
-          updatedAt: tickets.updatedAt,
-          assigneeId: tickets.assigneeId,
-          sprintId: tickets.sprintId,
-          cycleId: tickets.cycleId,
-          epicId: tickets.epicId,
-          projectId: projects.id,
-          projectKey: projects.key,
-          projectName: projects.name,
-          assigneeName: users.name,
-          assigneeFirstName: users.firstName,
-          assigneeLastName: users.lastName,
-          assigneeEmail: users.email,
-          assigneeImage: users.image,
-        })
-        .from(tickets)
-        .innerJoin(projects, eq(tickets.projectId, projects.id))
-        .leftJoin(users, eq(tickets.assigneeId, users.id))
-        .where(where)
-        .orderBy(...sortExpr)
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ total: count() })
-        .from(tickets)
-        .innerJoin(projects, eq(tickets.projectId, projects.id))
-        .where(where),
-    ]);
+    const { rows, total } =
+      scope === "mine"
+        ? await this.pageMineWork(u, where, sort, limit, offset)
+        : await this.pageFilteredWork(where, sort.rows, limit, offset);
 
     const ticketIds = rows.map((r) => r.id);
 
@@ -360,14 +349,24 @@ export class ProjectsWorkQueryService {
               labelColor: ticketLabels.color,
             })
             .from(ticketLabelMappings)
-            .innerJoin(ticketLabels, eq(ticketLabelMappings.labelId, ticketLabels.id))
+            .innerJoin(
+              ticketLabels,
+              eq(ticketLabelMappings.labelId, ticketLabels.id),
+            )
             .where(inArray(ticketLabelMappings.ticketId, ticketIds))
         : [];
 
-    const labelsByTicket = new Map<number, { id: number; name: string; color: string }[]>();
+    const labelsByTicket = new Map<
+      number,
+      { id: number; name: string; color: string }[]
+    >();
     for (const row of labelRows) {
       const existing = labelsByTicket.get(row.ticketId) ?? [];
-      existing.push({ id: row.labelId, name: row.labelName, color: row.labelColor });
+      existing.push({
+        id: row.labelId,
+        name: row.labelName,
+        color: row.labelColor,
+      });
       labelsByTicket.set(row.ticketId, existing);
     }
 
@@ -405,7 +404,68 @@ export class ProjectsWorkQueryService {
       labels: labelsByTicket.get(r.id) ?? [],
     }));
 
-    const total = Number(countRows[0]?.total ?? 0);
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+  }
+
+  private async pageFilteredWork(
+    where: SQL<unknown> | undefined,
+    sortExpr: SQL<unknown>[],
+    limit: number,
+    offset: number,
+  ) {
+    const [rows, countRows] = await Promise.all([
+      this.db
+        .select(WORK_ROW_SELECTION)
+        .from(tickets)
+        .innerJoin(projects, eq(tickets.projectId, projects.id))
+        .leftJoin(users, eq(tickets.assigneeId, users.id))
+        .where(where)
+        .orderBy(...sortExpr)
+        .limit(limit)
+        .offset(offset),
+      this.db
+        .select({ total: count() })
+        .from(tickets)
+        .innerJoin(projects, eq(tickets.projectId, projects.id))
+        .where(where),
+    ]);
+    return { rows, total: Number(countRows[0]?.total ?? 0) };
+  }
+
+  private async pageMineWork(
+    u: CurrentUserContext,
+    where: SQL<unknown> | undefined,
+    sort: WorkSort,
+    limit: number,
+    offset: number,
+  ) {
+    const idQuery = (pageLimit: number, pageOffset: number) =>
+      assignedOrParticipatingIds({
+        orgId: u.orgId,
+        userId: u.userId,
+        baseWhere: where,
+        carry: sort.carry,
+        orderBy: sort.unionOrderBy,
+        limit: pageLimit,
+        offset: pageOffset,
+      });
+
+    const { ids, total } = readIdsAndTotal(
+      await this.db.execute(idQuery(limit, offset)),
+    );
+    if (ids.length > 0) {
+      const rows = await this.db
+        .select(WORK_ROW_SELECTION)
+        .from(tickets)
+        .innerJoin(projects, eq(tickets.projectId, projects.id))
+        .leftJoin(users, eq(tickets.assigneeId, users.id))
+        .where(and(eq(tickets.orgId, u.orgId), inArray(tickets.id, ids)))
+        .orderBy(...sort.rows);
+      return { rows, total };
+    }
+
+    if (offset === 0) return { rows: [], total };
+    const overshoot = readIdsAndTotal(await this.db.execute(idQuery(1, 0)));
+    return { rows: [], total: overshoot.total };
   }
 }
