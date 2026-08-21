@@ -358,7 +358,7 @@ export class OnboardingDetailsService {
     documents: number;
     submitted: boolean;
   }> {
-    const [stepsResult, docCountResult, userRow] = await Promise.all([
+    const [stepsResult, docCountResult] = await Promise.all([
       this.db
         .select({
           stepName: onboardingSteps.stepName,
@@ -375,10 +375,6 @@ export class OnboardingDetailsService {
         .select({ count: sql<number>`count(*)::int` })
         .from(documents)
         .where(and(eq(documents.userId, userId), eq(documents.orgId, orgId))),
-      this.db
-        .select({ onboardingCompletedAt: users.onboardingCompletedAt })
-        .from(users)
-        .where(eq(users.id, userId)),
     ]);
 
     const completedSteps = new Set(
@@ -391,7 +387,7 @@ export class OnboardingDetailsService {
       personalDetails: completedSteps.has("Personal Details"),
       bankDetails: completedSteps.has("Bank Details"),
       documents: docCountResult[0]?.count ?? 0,
-      submitted: Boolean(userRow[0]?.onboardingCompletedAt),
+      submitted: completedSteps.has("Final Review"),
     };
   }
 

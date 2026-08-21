@@ -123,34 +123,7 @@ export const crmEmailTemplates = pgTable("crm_email_templates", {
   unique("uniq_crm_email_templates_org_id").on(table.orgId, table.id),
 ]);
 
-export interface SlaConditions {
-  sourceKeys?: string[];
-  priorityKeys?: string[];
-  scoreMin?: number;
-  scoreMax?: number;
-  territoryIds?: number[];
-  segment?: string;
-  appliesToText?: string;
-}
 
-export const crmSla = pgTable("crm_sla_policies", {
-  id: serial("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  name: text("name").notNull(),
-  appliesTo: slaAppliesToEnum("applies_to").notNull(),
-  priority: slaPriorityEnum("priority").notNull(),
-  firstResponseHours: integer("first_response_hours").notNull(),
-  resolutionHours: integer("resolution_hours").notNull(),
-  conditions: jsonb("conditions").$type<SlaConditions>().default({}).notNull(),
-  targetMinutes: integer("target_minutes"),
-  businessHours: boolean("business_hours").default(false).notNull(),
-  appliesToText: text("applies_to_text"),
-  priorityText: text("priority_text"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_crm_sla_org").on(table.orgId),
-  unique("uniq_crm_sla_policies_org_id").on(table.orgId, table.id),
-]);
 
 export const crmPeopleRelations = relations(crmPeople, ({ one, many }) => ({
   organization: one(organizations, { fields: [crmPeople.orgId], references: [organizations.id] }),
@@ -190,6 +163,3 @@ export const crmEmailTemplatesRelations = relations(crmEmailTemplates, ({ one })
   creator: one(users, { fields: [crmEmailTemplates.createdBy], references: [users.id] }),
 }));
 
-export const crmSlaRelations = relations(crmSla, ({ one }) => ({
-  organization: one(organizations, { fields: [crmSla.orgId], references: [organizations.id] }),
-}));

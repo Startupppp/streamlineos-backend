@@ -1,14 +1,21 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { randomBytes } from "crypto";
 
-import type {
-  ListInput,
-  UpdateInput,
-  CreateInput,
+import {
+  encryptSecret,
+  maskSecretHint,
+} from "../../common/security/secret-encryption.util";
+
+import {
+  WEBHOOK_RESPONSE_BODY_LIMIT,
+  type ListInput,
+  type LogsInput,
+  type UpdateInput,
+  type CreateInput,
 } from "./dto/webhook.schemas";
 import { type Db } from "../../db/drizzle.module";
-import { webhookEndpoints } from "../../db/schema";
+import { webhookEndpoints, webhookLogs } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 
 @Injectable()
@@ -48,14 +55,31 @@ export class WebhooksService {
       .values({
         orgId,
         url: input.url,
-        secret,
+        secret: encryptSecret(secret),
         description: input.description,
         events: input.events,
         createdBy: userId,
       })
       .returning();
+    if (!endpoint) throw new NotFoundException("Webhook endpoint could not be created");
 
-    return endpoint;
+    return { ...endpoint, secret, secretHint: maskSecretHint(secret) };
+  }
+
+  /**
+   * Reveal-once rotation. The plaintext is returned exactly here and never
+   * again — every other read strips `secret`, and the column holds ciphertext.
+   */
+  async rotateSecret(orgId: string, id: number) {
+    const secret = randomBytes(32).toString("hex");
+    const [updated] = await this.db
+      .update(webhookEndpoints)
+      .set({ secret: encryptSecret(secret) })
+      .where(and(eq(webhookEndpoints.id, id), eq(webhookEndpoints.orgId, orgId)))
+      .returning();
+    if (!updated) throw new NotFoundException("Webhook endpoint not found");
+
+    return { id: updated.id, secret, secretHint: maskSecretHint(secret) };
   }
 
   async getEndpoint(orgId: string, id: number) {
@@ -96,5 +120,41 @@ export class WebhooksService {
 
     if (!deleted) return null;
     return { success: true };
+  }
+
+  async listLogs(orgId: string, endpointId: number, filters: LogsInput) {
+    const endpoint = await this.getEndpoint(orgId, endpointId);
+    if (!endpoint) return null;
+
+    const where = and(
+      eq(webhookLogs.endpointId, endpointId),
+      eq(webhookLogs.orgId, orgId),
+    );
+    const [logs, [{ total }]] = await Promise.all([
+      this.db
+        .select()
+        .from(webhookLogs)
+        .where(where)
+        .orderBy(desc(webhookLogs.createdAt))
+        .limit(filters.limit)
+        .offset((filters.page - 1) * filters.limit),
+      this.db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(webhookLogs)
+        .where(where),
+    ]);
+
+    return {
+      data: logs.map((log) => ({
+        ...log,
+        responseBody: log.responseBody?.slice(0, WEBHOOK_RESPONSE_BODY_LIMIT) ?? null,
+      })),
+      pagination: {
+        total,
+        page: filters.page,
+        limit: filters.limit,
+        totalPages: Math.ceil(total / filters.limit),
+      },
+    };
   }
 }

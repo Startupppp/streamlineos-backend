@@ -15,10 +15,19 @@ function getKey(): Buffer | null {
   return createHash("sha256").update(raw).digest();
 }
 
+/**
+ * True when a stored value is already ciphertext. Lets a caller migrate a
+ * plaintext column lazily — encrypt on write, fall back on read — without a
+ * backfill migration.
+ */
+export function isEncryptedSecret(storedValue: string): boolean {
+  return storedValue.startsWith(PREFIX);
+}
+
 export function encryptSecret(plaintext: string): string {
   const key = getKey();
   if (!key) {
-    throw new Error("ENCRYPTION_KEY is not configured — cannot store payment provider secrets");
+    throw new Error("ENCRYPTION_KEY is not configured — cannot store secrets at rest");
   }
 
   const iv = randomBytes(IV_LENGTH);

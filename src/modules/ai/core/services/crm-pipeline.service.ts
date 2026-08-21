@@ -32,7 +32,7 @@ export class CrmPipelineService {
     const [totalResult] = await this.db
       .select({ total: count() })
       .from(deals)
-      .where(eq(deals.orgId, orgId));
+      .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt)));
 
     if ((totalResult?.total ?? 0) > 200) {
       const job = await this.aiJobs.enqueue({
@@ -57,7 +57,7 @@ export class CrmPipelineService {
         updatedAt: deals.updatedAt,
       })
       .from(deals)
-      .where(eq(deals.orgId, orgId))
+      .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt)))
       .limit(100);
 
     const dealIds = activeDeals.map((d) => d.id);
@@ -146,7 +146,7 @@ export class CrmPipelineService {
       this.db
         .select({ id: deals.id, name: deals.name, stage: deals.stage })
         .from(deals)
-        .where(eq(deals.orgId, orgId))
+        .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt)))
         .limit(20),
       findDuplicateLeads(this.db, orgId),
     ]);

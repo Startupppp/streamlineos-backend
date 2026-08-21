@@ -1,8 +1,8 @@
-import { pgTable, text, serial, timestamp, decimal, integer, jsonb, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, date, decimal, integer, jsonb, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { invTxnTypeEnum, invAdjReasonEnum, invTransferStatusEnum, invAdjustmentStatusEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
-import { invProductVariants } from "./core";
+import { invProductVariants, invUom } from "./core";
 import { invLocations, invWarehouses } from "./warehouses";
 import { invLots, invSerialNumbers } from "./traceability";
 
@@ -45,6 +45,7 @@ export const invStockTransactions = pgTable("inv_stock_transactions", {
   unitCost: decimal("unit_cost", { precision: 18, scale: 4 }),
   totalCost: decimal("total_cost", { precision: 18, scale: 4 }),
   idempotencyKey: text("idempotency_key"),
+  postingDate: date("posting_date"),
   reason: text("reason"),
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
   referenceType: text("reference_type"),
@@ -60,6 +61,7 @@ export const invStockTransactions = pgTable("inv_stock_transactions", {
   index("idx_inv_txn_created").on(table.createdAt),
   index("idx_inv_txn_org_created").on(table.orgId, table.createdAt),
   index("idx_inv_txn_org_variant_type_created").on(table.orgId, table.productVariantId, table.transactionType, table.createdAt),
+  index("idx_inv_txn_org_posting_date").on(table.orgId, table.postingDate),
   unique("uniq_inv_stock_transactions_org_id").on(table.orgId, table.id),
 ]);
 
@@ -89,6 +91,8 @@ export const invStockAdjustmentLines = pgTable("inv_stock_adjustment_lines", {
   productVariantId: integer("product_variant_id").references(() => invProductVariants.id, { onDelete: "cascade" }).notNull(),
   locationId: integer("location_id").references(() => invLocations.id, { onDelete: "cascade" }).notNull(),
   quantityChange: decimal("quantity_change", { precision: 18, scale: 4 }).notNull(),
+  uomId: integer("uom_id").references(() => invUom.id, { onDelete: "set null" }),
+  quantityEntered: decimal("quantity_entered", { precision: 18, scale: 4 }),
   notes: text("notes"),
 }, (table) => [
   index("idx_inv_adj_lines_adj").on(table.adjustmentId),
@@ -123,6 +127,9 @@ export const invStockTransferLines = pgTable("inv_stock_transfer_lines", {
   productVariantId: integer("product_variant_id").references(() => invProductVariants.id, { onDelete: "cascade" }).notNull(),
   quantity: decimal("quantity", { precision: 18, scale: 4 }).notNull(),
   quantityReceived: decimal("quantity_received", { precision: 18, scale: 4 }).default("0").notNull(),
+  uomId: integer("uom_id").references(() => invUom.id, { onDelete: "set null" }),
+  quantityEntered: decimal("quantity_entered", { precision: 18, scale: 4 }),
+  dispatchedUnitCost: decimal("dispatched_unit_cost", { precision: 18, scale: 4 }),
   lotId: integer("lot_id").references(() => invLots.id, { onDelete: "restrict" }),
   serialId: integer("serial_id").references(() => invSerialNumbers.id, { onDelete: "restrict" }),
   notes: text("notes"),

@@ -13,6 +13,7 @@ import type {
   PreviewTemplateInput,
   TestSendTemplateInput,
   ListTemplatesInput,
+  SetTemplateApprovalInput,
 } from "./dto/template.schemas";
 
 @Injectable()
@@ -179,5 +180,29 @@ export class NotificationTemplatesService {
       const trimmed = key.trim();
       return variables[trimmed] ?? `{{${trimmed}}}`;
     });
+  }
+
+  /**
+   * Records the provider's approval decision. Stamps `approvalCheckedAt` so an operator
+   * can tell a genuinely-approved template from one that has simply never been checked.
+   */
+  async setApproval(
+    orgId: string,
+    templateId: number,
+    dto: SetTemplateApprovalInput,
+  ) {
+    const [updated] = await this.db
+      .update(notificationTemplates)
+      .set({
+        approvalStatus: dto.approvalStatus,
+        providerTemplateName: dto.providerTemplateName ?? null,
+        approvalRejectionReason: dto.approvalRejectionReason ?? null,
+        approvalCheckedAt: new Date(),
+      })
+      .where(and(eq(notificationTemplates.id, templateId), eq(notificationTemplates.orgId, orgId)))
+      .returning();
+    // 404, never 403: a template id from another tenant must not be confirmed to exist.
+    if (!updated) throw new NotFoundException("Template not found");
+    return updated;
   }
 }

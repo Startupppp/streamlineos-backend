@@ -14,6 +14,10 @@ export const listSchema = z.object({
   targetType: z.string().min(1).max(200).optional(),
   dateFrom: z.string().min(1).optional(),
   dateTo: z.string().min(1).optional(),
+  userSearch: z.string().min(1).max(200).optional(),
 });
 
 export type ListInput = z.infer<typeof listSchema>;
+
+export const exportSchema = listSchema.omit({ page: true, pageSize: true });
+export type ExportInput = z.infer<typeof exportSchema>;

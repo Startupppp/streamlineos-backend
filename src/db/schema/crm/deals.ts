@@ -15,7 +15,7 @@ import {
   type AnyPgColumn,
   unique,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   incentiveStatusEnum,
   taskEntityTypeEnum,
@@ -31,7 +31,8 @@ import {
   crmOrganizations,
 } from "./contacts";
 import { crmPipelines } from "./metadata";
-import { crmPeople, crmSla } from "./analytics";
+import { crmPeople } from "./analytics";
+import { crmSla } from "./sla";
 
 export const deals = pgTable(
   "deals",
@@ -76,8 +77,12 @@ export const deals = pgTable(
       .defaultNow()
       .notNull()
       .$onUpdate(() => new Date()),
+    deletedAt: timestamp("deleted_at"),
   },
   (table) => [
+    index("idx_deals_org_live_stage")
+      .on(table.orgId, table.stage)
+      .where(sql`${table.deletedAt} IS NULL`),
     index("idx_deals_org_stage_assignee").on(
       table.orgId,
       table.stage,
@@ -620,10 +625,14 @@ export const territories = pgTable(
       .defaultNow()
       .notNull()
       .$onUpdate(() => new Date()),
+    deletedAt: timestamp("deleted_at"),
   },
   (table) => [
     index("territories_org_id_idx").on(table.orgId),
     unique("uniq_territories_org_id").on(table.orgId, table.id),
+    index("idx_territories_org_live")
+      .on(table.orgId, table.priority)
+      .where(sql`${table.deletedAt} IS NULL`),
   ],
 );
 

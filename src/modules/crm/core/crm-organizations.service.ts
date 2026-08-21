@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, eq, desc, ilike, inArray, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import { crmOrganizations, contacts, deals, leads, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -10,6 +10,10 @@ import type {
   OrganizationListInput,
   OrganizationUpdateInput,
 } from "./dto/organizations.schemas";
+
+const HIERARCHY_MAX_DEPTH = 100;
+const ORG_CONTACTS_LIMIT = 100;
+const DUPLICATE_CANDIDATE_LIMIT = 5;
 
 export interface OrgHierarchyNode {
   id: number;
@@ -63,6 +67,7 @@ export class CrmOrganizationsService {
     const offset = (filters.page - 1) * filters.pageSize;
     const where = and(
       eq(crmOrganizations.orgId, orgId),
+      isNull(crmOrganizations.deletedAt),
       searchTerm ? ilike(crmOrganizations.name, `%${escapeLike(searchTerm)}%`) : undefined,
     );
 
@@ -72,7 +77,7 @@ export class CrmOrganizationsService {
         openCount: count().as("open_count"),
       })
       .from(tickets)
-      .where(and(eq(tickets.orgId, orgId), sql`${tickets.customerId} IS NOT NULL`))
+      .where(and(eq(tickets.orgId, orgId), isNull(tickets.deletedAt), sql`${tickets.customerId} IS NOT NULL`))
       .groupBy(tickets.customerId)
       .as("open_requests_sq");
 
@@ -108,7 +113,50 @@ export class CrmOrganizationsService {
     return { organizations, totalCount, page: filters.page, totalPages };
   }
 
+  /**
+   * Same criteria the duplicate REPORT uses (`getDuplicateOrgs`): exact domain
+   * match, or case-insensitive name match. Surfaced as a WARNING, never a block
+   * — two genuinely distinct customers can share a name, and refusing the write
+   * would be the irreversible choice. Callers decide what to do with it.
+   */
+  async findPotentialDuplicates(
+    orgId: string,
+    input: { name?: string; domain?: string | null },
+  ): Promise<{ id: number; name: string; domain: string | null; matchReason: "domain" | "name" }[]> {
+    const predicates = [];
+    if (input.domain) predicates.push(eq(crmOrganizations.domain, input.domain));
+    if (input.name) predicates.push(ilike(crmOrganizations.name, input.name));
+    if (predicates.length === 0) return [];
+
+    const rows = await this.db
+      .select({
+        id: crmOrganizations.id,
+        name: crmOrganizations.name,
+        domain: crmOrganizations.domain,
+      })
+      .from(crmOrganizations)
+      .where(
+        and(
+          eq(crmOrganizations.orgId, orgId),
+          isNull(crmOrganizations.deletedAt),
+          or(...predicates),
+        ),
+      )
+      .limit(DUPLICATE_CANDIDATE_LIMIT);
+
+    return rows.map((row) => ({
+      ...row,
+      matchReason:
+        input.domain && row.domain === input.domain ? ("domain" as const) : ("name" as const),
+    }));
+  }
+
   async create(orgId: string, input: OrganizationCreateInput) {
+    const possibleDuplicates = await this.findPotentialDuplicates(orgId, {
+      name: input.name,
+      domain: input.domain ?? null,
+    });
+
     const [org] = await this.db
       .insert(crmOrganizations)
       .values({
@@ -132,24 +180,32 @@ export class CrmOrganizationsService {
         description: crmOrganizations.description,
         createdAt: crmOrganizations.createdAt,
       });
-    await this.cache.invalidateNamespace(
-      CACHE_KEYS.crmOrganizationsListNamespace(orgId),
-    );
-    return org;
+    await this.invalidateOrgCaches(orgId);
+    return { ...org, possibleDuplicates };
   }
 
   async getWithContacts(orgId: string, id: number) {
-    const [org] = await this.db
-      .select()
-      .from(crmOrganizations)
-      .where(and(eq(crmOrganizations.id, id), eq(crmOrganizations.orgId, orgId)));
+    const [orgRows, orgContacts] = await Promise.all([
+      this.db
+        .select()
+        .from(crmOrganizations)
+        .where(and(eq(crmOrganizations.id, id), eq(crmOrganizations.orgId, orgId), isNull(crmOrganizations.deletedAt)))
+        .limit(1),
+      this.db
+        .select()
+        .from(contacts)
+        .where(
+          and(
+            eq(contacts.orgId, orgId),
+            eq(contacts.organizationId, id),
+            isNull(contacts.deletedAt),
+          ),
+        )
+        .limit(ORG_CONTACTS_LIMIT),
+    ]);
 
+    const [org] = orgRows;
     if (!org) return null;
-
-    const orgContacts = await this.db
-      .select()
-      .from(contacts)
-      .where(and(eq(contacts.orgId, orgId), eq(contacts.organizationId, id)));
 
     return { ...org, contacts: orgContacts };
   }
@@ -158,12 +214,19 @@ export class CrmOrganizationsService {
     const [row] = await this.db
       .select({ id: crmOrganizations.id })
       .from(crmOrganizations)
-      .where(and(eq(crmOrganizations.id, id), eq(crmOrganizations.orgId, orgId)));
+      .where(and(eq(crmOrganizations.id, id), eq(crmOrganizations.orgId, orgId), isNull(crmOrganizations.deletedAt)));
     return Boolean(row);
   }
 
-  applyUpdate(orgId: string, id: number, input: OrganizationUpdateInput) {
-    return this.db
+  private async invalidateOrgCaches(orgId: string): Promise<void> {
+    await Promise.all([
+      this.cache.invalidateNamespace(CACHE_KEYS.crmOrganizationsListNamespace(orgId)),
+      this.cache.invalidateNamespace(CACHE_KEYS.crmOrganizationDetailNamespace(orgId)),
+    ]);
+  }
+
+  async applyUpdate(orgId: string, id: number, input: OrganizationUpdateInput) {
+    const updated = await this.db
       .update(crmOrganizations)
       .set({
         ...(input.name !== undefined && { name: input.name }),
@@ -181,67 +244,57 @@ export class CrmOrganizationsService {
       .where(and(eq(crmOrganizations.id, id), eq(crmOrganizations.orgId, orgId)))
       .returning()
       .then((rows) => rows[0]);
+    await this.invalidateOrgCaches(orgId);
+    return updated;
   }
 
   async remove(orgId: string, id: number): Promise<boolean> {
-    const [deleted] = await this.db
-      .delete(crmOrganizations)
-      .where(and(eq(crmOrganizations.id, id), eq(crmOrganizations.orgId, orgId)))
+    const [updated] = await this.db
+      .update(crmOrganizations)
+      .set({ deletedAt: new Date(), updatedAt: new Date() })
+      .where(and(eq(crmOrganizations.id, id), eq(crmOrganizations.orgId, orgId), isNull(crmOrganizations.deletedAt)))
       .returning({ id: crmOrganizations.id });
-    return Boolean(deleted);
+    await this.invalidateOrgCaches(orgId);
+    return Boolean(updated);
   }
 
   async wouldCreateCycle(orgId: string, accountId: number, candidateParentId: number): Promise<boolean> {
     if (candidateParentId === accountId) return true;
 
-    const allOrgs = await this.db
-      .select({ id: crmOrganizations.id, parentId: crmOrganizations.parentId })
-      .from(crmOrganizations)
-      .where(eq(crmOrganizations.orgId, orgId));
+    const result = await this.db.execute(sql`
+      WITH RECURSIVE ancestors AS (
+        SELECT id, parent_id, 1 AS depth
+        FROM crm_organizations
+        WHERE org_id = ${orgId} AND id = ${candidateParentId} AND deleted_at IS NULL
+        UNION ALL
+        SELECT o.id, o.parent_id, a.depth + 1
+        FROM crm_organizations o
+        JOIN ancestors a ON o.id = a.parent_id
+        WHERE o.org_id = ${orgId} AND o.deleted_at IS NULL AND a.depth < ${HIERARCHY_MAX_DEPTH}
+      )
+      SELECT 1 FROM ancestors WHERE id = ${accountId} LIMIT 1
+    `);
 
-    const parentMap = new Map(allOrgs.map((o) => [o.id, o.parentId]));
-
-    let currentId: number | null = candidateParentId;
-    const visited = new Set<number>();
-
-    while (currentId !== null) {
-      if (visited.has(currentId)) return false;
-      visited.add(currentId);
-      if (currentId === accountId) return true;
-      currentId = parentMap.get(currentId) ?? null;
-    }
-
-    return false;
+    return result.length > 0;
   }
 
   private async getAllDescendantIds(orgId: string, accountId: number): Promise<number[]> {
-    const allOrgs = await this.db
-      .select({ id: crmOrganizations.id, parentId: crmOrganizations.parentId })
-      .from(crmOrganizations)
-      .where(eq(crmOrganizations.orgId, orgId));
+    const rows = await this.db.execute(sql`
+      WITH RECURSIVE descendants AS (
+        SELECT id, 1 AS depth
+        FROM crm_organizations
+        WHERE org_id = ${orgId} AND id = ${accountId} AND deleted_at IS NULL
+        UNION
+        SELECT o.id, d.depth + 1
+        FROM crm_organizations o
+        JOIN descendants d ON o.parent_id = d.id
+        WHERE o.org_id = ${orgId} AND o.deleted_at IS NULL AND d.depth < ${HIERARCHY_MAX_DEPTH}
+      )
+      SELECT id FROM descendants
+    `);
 
-    const childrenMap = new Map<number, number[]>();
-    for (const o of allOrgs) {
-      if (o.parentId !== null) {
-        const arr = childrenMap.get(o.parentId) ?? [];
-        arr.push(o.id);
-        childrenMap.set(o.parentId, arr);
-      }
-    }
-
-    const allIds: number[] = [accountId];
-    const queue: number[] = [accountId];
-    while (queue.length > 0) {
-      const cur = queue.shift()!;
-      for (const childId of childrenMap.get(cur) ?? []) {
-        if (!allIds.includes(childId)) {
-          allIds.push(childId);
-          queue.push(childId);
-        }
-      }
-    }
-
-    return allIds;
+    const ids = rows.map((row) => Number(row.id)).filter((id) => Number.isInteger(id));
+    return ids.length > 0 ? ids : [accountId];
   }
 
   async getAccountHierarchy(orgId: string, accountId: number): Promise<OrgHierarchyNode | null> {
@@ -256,7 +309,7 @@ export class CrmOrganizationsService {
         parentId: crmOrganizations.parentId,
       })
       .from(crmOrganizations)
-      .where(and(eq(crmOrganizations.orgId, orgId), inArray(crmOrganizations.id, ids)));
+      .where(and(eq(crmOrganizations.orgId, orgId), isNull(crmOrganizations.deletedAt), inArray(crmOrganizations.id, ids)));
 
     const nodeMap = new Map<number, OrgHierarchyNode>();
     for (const row of rows) {
@@ -276,8 +329,9 @@ export class CrmOrganizationsService {
   }
 
   getAccountRollup(orgId: string, accountId: number): Promise<OrgRollup> {
-    return this.cache.cached(
-      `crm:org-rollup:${orgId}:${accountId}`,
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.crmOrganizationDetailNamespace(orgId),
+      `rollup:${accountId}`,
       () => this.queryAccountRollup(orgId, accountId),
       CACHE_TTL.SHORT,
     );
@@ -301,7 +355,7 @@ export class CrmOrganizationsService {
     const orgRows = await this.db
       .select({ name: crmOrganizations.name })
       .from(crmOrganizations)
-      .where(and(eq(crmOrganizations.orgId, orgId), inArray(crmOrganizations.id, ids)));
+      .where(and(eq(crmOrganizations.orgId, orgId), isNull(crmOrganizations.deletedAt), inArray(crmOrganizations.id, ids)));
 
     const orgNames = orgRows.map((r) => r.name);
 
@@ -319,7 +373,7 @@ export class CrmOrganizationsService {
         .from(deals)
         .where(
           and(
-            eq(deals.orgId, orgId),
+            eq(deals.orgId, orgId), isNull(deals.deletedAt),
             or(...orgNames.map((n) => ilike(deals.name, `%${n.replaceAll("%", "\\%")}%`))),
           ),
         );
@@ -335,6 +389,7 @@ export class CrmOrganizationsService {
       .where(
         and(
           eq(leads.orgId, orgId),
+          isNull(leads.deletedAt),
           orgNames.length > 0
             ? or(...orgNames.map((n) => ilike(leads.company, `%${n.replaceAll("%", "\\%")}%`)))
             : sql`false`,
@@ -347,8 +402,9 @@ export class CrmOrganizationsService {
   }
 
   getAccountTimeline(orgId: string, accountId: number, limit = 20): Promise<OrgTimelineEvent[]> {
-    return this.cache.cached(
-      `crm:org-timeline:${orgId}:${accountId}:${limit}`,
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.crmOrganizationDetailNamespace(orgId),
+      `timeline:${accountId}:${limit}`,
       () => this.queryAccountTimeline(orgId, accountId, limit),
       CACHE_TTL.SHORT,
     );
@@ -358,7 +414,7 @@ export class CrmOrganizationsService {
     const orgRow = await this.db
       .select({ name: crmOrganizations.name, notes: crmOrganizations.notes })
       .from(crmOrganizations)
-      .where(and(eq(crmOrganizations.id, accountId), eq(crmOrganizations.orgId, orgId)))
+      .where(and(eq(crmOrganizations.id, accountId), eq(crmOrganizations.orgId, orgId), isNull(crmOrganizations.deletedAt)))
       .limit(1)
       .then((rows) => rows[0] ?? null);
 
@@ -376,13 +432,13 @@ export class CrmOrganizationsService {
       this.db
         .select({ id: deals.id, name: deals.name, stage: deals.stage, createdAt: deals.createdAt })
         .from(deals)
-        .where(and(eq(deals.orgId, orgId), ilike(deals.name, `%${safeName}%`)))
+        .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), ilike(deals.name, `%${safeName}%`)))
         .orderBy(sql`${deals.createdAt} desc`)
         .limit(limit),
       this.db
         .select({ id: leads.id, name: leads.name, createdAt: leads.createdAt })
         .from(leads)
-        .where(and(eq(leads.orgId, orgId), ilike(leads.company, `%${safeName}%`)))
+        .where(and(eq(leads.orgId, orgId), isNull(leads.deletedAt), ilike(leads.company, `%${safeName}%`)))
         .orderBy(sql`${leads.createdAt} desc`)
         .limit(limit),
     ]);
@@ -438,7 +494,7 @@ export class CrmOrganizationsService {
     const [org] = await this.db
       .select({ name: crmOrganizations.name })
       .from(crmOrganizations)
-      .where(and(eq(crmOrganizations.id, id), eq(crmOrganizations.orgId, orgId)));
+      .where(and(eq(crmOrganizations.id, id), eq(crmOrganizations.orgId, orgId), isNull(crmOrganizations.deletedAt)));
 
     if (!org) return null;
 
@@ -468,7 +524,7 @@ export class CrmOrganizationsService {
         createdAt: leads.createdAt,
       })
       .from(leads)
-      .where(and(eq(leads.orgId, orgId), or(...conditions)))
+      .where(and(eq(leads.orgId, orgId), isNull(leads.deletedAt), or(...conditions)))
       .orderBy(leads.createdAt)
       .limit(50);
   }

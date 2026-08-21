@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import {
   clients,
   projectIncidents,
@@ -46,7 +46,7 @@ export async function resolveEntityChannelName(
   switch (entityType) {
     case "project": {
       const row = await db.query.projects.findFirst({
-        where: and(eq(projects.id, parsedId), eq(projects.orgId, orgId)),
+        where: and(eq(projects.id, parsedId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
         columns: { name: true },
       });
       return row?.name ?? null;
@@ -60,14 +60,14 @@ export async function resolveEntityChannelName(
     }
     case "task": {
       const row = await db.query.tickets.findFirst({
-        where: and(eq(tickets.id, parsedId), eq(tickets.orgId, orgId)),
+        where: and(eq(tickets.id, parsedId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)),
         columns: { title: true },
       });
       return row?.title ?? null;
     }
     case "sprint": {
       const row = await db.query.sprints.findFirst({
-        where: and(eq(sprints.id, parsedId), eq(sprints.orgId, orgId)),
+        where: and(eq(sprints.id, parsedId), eq(sprints.orgId, orgId), isNull(sprints.deletedAt)),
         columns: { name: true },
       });
       return row?.name ?? null;

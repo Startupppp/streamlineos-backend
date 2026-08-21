@@ -1,18 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import {
-  eq,
-  and,
-  desc,
-  asc,
-  sql,
-  gte,
-  lte,
-  lt,
-  count,
-  inArray,
-  notInArray,
-  isNotNull,
-} from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, notInArray, sql } from "drizzle-orm";
 import { AccessService } from "../access/access.service";
 import {
   leads,
@@ -49,7 +36,7 @@ export class LeadsReportsService {
     filters: AnalyticsQuery,
     viewScope?: { scope: DataScope; userId: string },
   ) {
-    const f = [eq(leads.orgId, orgId)];
+    const f = [eq(leads.orgId, orgId), isNull(leads.deletedAt)];
     if (viewScope)
       f.push(
         applyScope(viewScope.scope, orgId, viewScope.userId, {
@@ -97,6 +84,7 @@ export class LeadsReportsService {
           .where(
             and(
               eq(leads.orgId, orgId),
+              isNull(leads.deletedAt),
               gte(leads.createdAt, sixtyDaysAgo),
               lte(leads.createdAt, thirtyDaysAgo),
             ),
@@ -156,12 +144,12 @@ export class LeadsReportsService {
           totalRevenue: sql<number>`COALESCE(SUM(${deals.value}::numeric), 0)::float`,
         })
         .from(deals)
-        .where(and(eq(deals.orgId, orgId), inArray(deals.stage, wonStageKeys)))
+        .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), inArray(deals.stage, wonStageKeys)))
         .then((r) => r[0]),
       this.db
         .select({ value: deals.value, createdAt: deals.createdAt })
         .from(deals)
-        .where(and(eq(deals.orgId, orgId), inArray(deals.stage, wonStageKeys))),
+        .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), inArray(deals.stage, wonStageKeys))),
     ]);
 
     const totalRevenue = revenueRow?.totalRevenue ?? 0;
@@ -233,7 +221,7 @@ export class LeadsReportsService {
           this.db
             .select({ status: leads.status, cnt: count() })
             .from(leads)
-            .where(eq(leads.orgId, orgId))
+            .where(and(eq(leads.orgId, orgId), isNull(leads.deletedAt)))
             .groupBy(leads.status),
           this.db
             .select({ type: leadActivities.type, cnt: count() })
@@ -251,6 +239,7 @@ export class LeadsReportsService {
             .where(
               and(
                 eq(leads.orgId, orgId),
+                isNull(leads.deletedAt),
                 notInArray(leads.status, terminalKeys),
                 lt(leads.updatedAt, threeDaysAgo),
               ),
@@ -311,7 +300,7 @@ export class LeadsReportsService {
             totalValue: sql<number>`COALESCE(SUM(${leads.potentialValue}::numeric), 0)::float`,
           })
           .from(leads)
-          .where(eq(leads.orgId, orgId))
+          .where(and(eq(leads.orgId, orgId), isNull(leads.deletedAt)))
           .groupBy(sql`COALESCE(${leads.source}::text, 'other')`)
           .orderBy(sql`count(*) desc`);
 
@@ -347,7 +336,7 @@ export class LeadsReportsService {
   async getFollowUps(orgId: string, query: FollowUpsQuery) {
     const maxResults = Math.min(query.limit ?? 20, 100);
 
-    const conditions = [eq(leads.orgId, orgId), isNotNull(leads.followUpDate)];
+    const conditions = [eq(leads.orgId, orgId), isNull(leads.deletedAt), isNotNull(leads.followUpDate)];
     if (query.overdue === "true") {
       conditions.push(lte(leads.followUpDate, new Date()));
     }
@@ -391,6 +380,7 @@ export class LeadsReportsService {
     return this.db.query.leads.findMany({
       where: and(
         eq(leads.orgId, orgId),
+        isNull(leads.deletedAt),
         inArray(leads.status, activeKeys),
         sql`${leads.verifiedById} IS NULL`,
       ),

@@ -1,3 +1,5 @@
+import { notificationCategoryEnum } from "../../db/schema/common/enums";
+
 export interface NotificationTicketContext {
   ticketId: number;
   ticketKey: string;
@@ -13,25 +15,11 @@ export interface NotificationTicketContext {
   } | null;
 }
 
-export type NotificationCategoryValue =
-  | "SECURITY"
-  | "CRM"
-  | "HRMS"
-  | "BILLING"
-  | "AI"
-  | "PROJECTS"
-  | "WORKFLOW"
-  | "MARKETING"
-  | "SYSTEM"
-  | "CHAT"
-  | "PAYROLL"
-  | "RECRUITMENT"
-  | "KNOWLEDGE"
-  | "SIGN"
-  | "INVENTORY"
-  | "SURVEYS"
-  | "CALENDAR"
-  | "SUPPORT";
+export type NotificationCategoryValue = (typeof notificationCategoryEnum.enumValues)[number];
+
+export function isNotificationCategory(value: string): value is NotificationCategoryValue {
+  return notificationCategoryEnum.enumValues.some((v) => v === value);
+}
 
 export interface AnnounceInput {
   id: number;

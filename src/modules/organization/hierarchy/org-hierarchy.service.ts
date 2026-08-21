@@ -4,7 +4,11 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, isNull, ne } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
+import {
+  OrgHierarchyCacheService,
+  type OrgHierarchyCacheContext,
+} from "../../../common/cache/org-hierarchy-cache.service";
 import {
   orgUnits,
 } from "../../../db/schema/common/organization";
@@ -28,10 +32,7 @@ import type {
 import { OrgHierarchyBusinessUnitsService } from "./org-hierarchy-business-units.service";
 import { OrgHierarchyBranchesService } from "./org-hierarchy-branches.service";
 import { OrgHierarchyDepartmentsService } from "./org-hierarchy-departments.service";
-import {
-  OrgHierarchyTeamsService,
-  toOrgTeam,
-} from "./org-hierarchy-teams.service";
+import { OrgHierarchyTeamsService } from "./org-hierarchy-teams.service";
 import { OrgHierarchyLocationsService } from "./org-hierarchy-locations.service";
 import { OrgHierarchyCostCentersService } from "./org-hierarchy-cost-centers.service";
 import {
@@ -39,22 +40,8 @@ import {
   type DependencyMode,
   type OrgUnitKind,
 } from "./org-hierarchy-dependencies.service";
-
-const ORG_TREE_COLUMNS = {
-  id: orgUnits.id,
-  orgId: orgUnits.orgId,
-  kind: orgUnits.kind,
-  parentId: orgUnits.parentId,
-  name: orgUnits.name,
-  code: orgUnits.code,
-  description: orgUnits.description,
-  headUserId: orgUnits.headUserId,
-  status: orgUnits.status,
-  metadata: orgUnits.metadata,
-  createdAt: orgUnits.createdAt,
-  updatedAt: orgUnits.updatedAt,
-  deletedAt: orgUnits.deletedAt,
-};
+import { OrgHierarchyCommandService } from "./org-hierarchy-command.service";
+import { OrgHierarchyReadService } from "./org-hierarchy-read.service";
 
 @Injectable()
 export class OrgHierarchyService {
@@ -67,7 +54,19 @@ export class OrgHierarchyService {
     private readonly locations: OrgHierarchyLocationsService,
     private readonly costCenters: OrgHierarchyCostCentersService,
     private readonly dependencies: OrgHierarchyDependenciesService,
+    private readonly commands: OrgHierarchyCommandService,
+    private readonly reads: OrgHierarchyReadService,
+    private readonly hierarchyCache: OrgHierarchyCacheService,
   ) {}
+
+  private async mutateHierarchy<T>(
+    orgId: string,
+    mutation: () => Promise<T>,
+  ): Promise<T> {
+    const result = await mutation();
+    await this.hierarchyCache.invalidateAfterMutation(orgId);
+    return result;
+  }
 
   private async assertActiveParent(
     orgId: string,
@@ -109,20 +108,26 @@ export class OrgHierarchyService {
     return this.businessUnits.listBusinessUnits(orgId, query);
   }
 
-  async getBusinessUnit(orgId: string, id: string) {
-    return this.businessUnits.getBusinessUnit(orgId, id);
+  async getBusinessUnit(orgId: string, businessUnitId: string) {
+    return this.businessUnits.getBusinessUnit(orgId, businessUnitId);
   }
 
   async createBusinessUnit(orgId: string, userId: string, body: CreateBusinessUnitInput) {
-    return this.businessUnits.createBusinessUnit(orgId, userId, body);
+    return this.mutateHierarchy(orgId, () =>
+      this.businessUnits.createBusinessUnit(orgId, userId, body),
+    );
   }
 
-  async updateBusinessUnit(orgId: string, userId: string, id: string, body: UpdateBusinessUnitInput) {
+  async updateBusinessUnit(orgId: string, userId: string, businessUnitId: string, body: UpdateBusinessUnitInput) {
     if (body.status === "ARCHIVED") {
-      await this.dependencies.assertCanArchive(orgId, id, "BUSINESS_UNIT");
+      return this.mutateHierarchy(orgId, () =>
+        this.commands.run(orgId, businessUnitId, "BUSINESS_UNIT", "archive", () =>
+          this.businessUnits.updateBusinessUnit(orgId, userId, businessUnitId, body),
+        ),
+      );
     }
     if (body.status === "ACTIVE") {
-      const existing = await this.businessUnits.getBusinessUnit(orgId, id);
+      const existing = await this.businessUnits.getBusinessUnit(orgId, businessUnitId);
       await this.assertActiveParent(
         orgId,
         existing?.parentId,
@@ -130,30 +135,45 @@ export class OrgHierarchyService {
         "business unit",
       );
     }
-    return this.businessUnits.updateBusinessUnit(orgId, userId, id, body);
+    return this.mutateHierarchy(orgId, () =>
+      this.businessUnits.updateBusinessUnit(orgId, userId, businessUnitId, body),
+    );
   }
 
-  async deleteBusinessUnit(orgId: string, userId: string, id: string) {
-    await this.dependencies.assertCanRetire(orgId, id, "BUSINESS_UNIT");
-    return this.businessUnits.deleteBusinessUnit(orgId, userId, id);
+  async deleteBusinessUnit(orgId: string, userId: string, businessUnitId: string) {
+    return this.mutateHierarchy(orgId, () =>
+      this.commands.run(orgId, businessUnitId, "BUSINESS_UNIT", "retire", () =>
+        this.businessUnits.deleteBusinessUnit(orgId, userId, businessUnitId),
+      ),
+    );
   }
 
-  async moveBusinessUnit(orgId: string, buId: string, newParentId: string | null) {
+  async moveBusinessUnit(
+    orgId: string,
+    businessUnitId: string,
+    newParentBusinessUnitId: string | null,
+  ) {
     await this.assertActiveParent(
       orgId,
-      newParentId,
+      newParentBusinessUnitId,
       "BUSINESS_UNIT",
       "business unit",
     );
-    return this.businessUnits.moveBusinessUnit(orgId, buId, newParentId);
+    return this.mutateHierarchy(orgId, () =>
+      this.businessUnits.moveBusinessUnit(
+        orgId,
+        businessUnitId,
+        newParentBusinessUnitId,
+      ),
+    );
   }
 
   async listOrgBranches(orgId: string, query: ListQueryInput) {
     return this.branches.listOrgBranches(orgId, query);
   }
 
-  async getOrgBranch(orgId: string, id: string) {
-    return this.branches.getOrgBranch(orgId, id);
+  async getOrgBranch(orgId: string, branchId: string) {
+    return this.branches.getOrgBranch(orgId, branchId);
   }
 
   async createOrgBranch(orgId: string, userId: string, body: CreateOrgBranchInput) {
@@ -163,17 +183,23 @@ export class OrgHierarchyService {
       "BUSINESS_UNIT",
       "business unit",
     );
-    return this.branches.createOrgBranch(orgId, userId, body);
+    return this.mutateHierarchy(orgId, () =>
+      this.branches.createOrgBranch(orgId, userId, body),
+    );
   }
 
-  async updateOrgBranch(orgId: string, userId: string, id: string, body: UpdateOrgBranchInput) {
+  async updateOrgBranch(orgId: string, userId: string, branchId: string, body: UpdateOrgBranchInput) {
     if (body.status === "ARCHIVED") {
-      await this.dependencies.assertCanArchive(orgId, id, "BRANCH");
+      return this.mutateHierarchy(orgId, () =>
+        this.commands.run(orgId, branchId, "BRANCH", "archive", () =>
+          this.branches.updateOrgBranch(orgId, userId, branchId, body),
+        ),
+      );
     }
     if (body.businessUnitId !== undefined || body.status === "ACTIVE") {
       const existing =
         body.businessUnitId === undefined
-          ? await this.branches.getOrgBranch(orgId, id)
+          ? await this.branches.getOrgBranch(orgId, branchId)
           : null;
       await this.assertActiveParent(
         orgId,
@@ -184,12 +210,17 @@ export class OrgHierarchyService {
         "business unit",
       );
     }
-    return this.branches.updateOrgBranch(orgId, userId, id, body);
+    return this.mutateHierarchy(orgId, () =>
+      this.branches.updateOrgBranch(orgId, userId, branchId, body),
+    );
   }
 
-  async deleteOrgBranch(orgId: string, userId: string, id: string) {
-    await this.dependencies.assertCanRetire(orgId, id, "BRANCH");
-    return this.branches.deleteOrgBranch(orgId, userId, id);
+  async deleteOrgBranch(orgId: string, userId: string, branchId: string) {
+    return this.mutateHierarchy(orgId, () =>
+      this.commands.run(orgId, branchId, "BRANCH", "retire", () =>
+        this.branches.deleteOrgBranch(orgId, userId, branchId),
+      ),
+    );
   }
 
   async moveBranch(orgId: string, branchId: string, newBusinessUnitId: string | null) {
@@ -199,15 +230,17 @@ export class OrgHierarchyService {
       "BUSINESS_UNIT",
       "business unit",
     );
-    return this.branches.moveBranch(orgId, branchId, newBusinessUnitId);
+    return this.mutateHierarchy(orgId, () =>
+      this.branches.moveBranch(orgId, branchId, newBusinessUnitId),
+    );
   }
 
   async listDepartments(orgId: string, query: ListQueryInput) {
     return this.departments.listDepartments(orgId, query);
   }
 
-  async getDepartment(orgId: string, id: string) {
-    return this.departments.getDepartment(orgId, id);
+  async getDepartment(orgId: string, departmentId: string) {
+    return this.departments.getDepartment(orgId, departmentId);
   }
 
   async createDepartment(orgId: string, userId: string, body: CreateOrgDepartmentInput) {
@@ -217,17 +250,23 @@ export class OrgHierarchyService {
       "BRANCH",
       "branch",
     );
-    return this.departments.createDepartment(orgId, userId, body);
+    return this.mutateHierarchy(orgId, () =>
+      this.departments.createDepartment(orgId, userId, body),
+    );
   }
 
-  async updateDepartment(orgId: string, userId: string, id: string, body: UpdateOrgDepartmentInput) {
+  async updateDepartment(orgId: string, userId: string, departmentId: string, body: UpdateOrgDepartmentInput) {
     if (body.status === "ARCHIVED") {
-      await this.dependencies.assertCanArchive(orgId, id, "DEPARTMENT");
+      return this.mutateHierarchy(orgId, () =>
+        this.commands.run(orgId, departmentId, "DEPARTMENT", "archive", () =>
+          this.departments.updateDepartment(orgId, userId, departmentId, body),
+        ),
+      );
     }
     if (body.branchId !== undefined || body.status === "ACTIVE") {
       const existing =
         body.branchId === undefined
-          ? await this.departments.getDepartment(orgId, id)
+          ? await this.departments.getDepartment(orgId, departmentId)
           : null;
       await this.assertActiveParent(
         orgId,
@@ -236,12 +275,17 @@ export class OrgHierarchyService {
         "branch",
       );
     }
-    return this.departments.updateDepartment(orgId, userId, id, body);
+    return this.mutateHierarchy(orgId, () =>
+      this.departments.updateDepartment(orgId, userId, departmentId, body),
+    );
   }
 
-  async deleteDepartment(orgId: string, userId: string, id: string) {
-    await this.dependencies.assertCanRetire(orgId, id, "DEPARTMENT");
-    return this.departments.deleteDepartment(orgId, userId, id);
+  async deleteDepartment(orgId: string, userId: string, departmentId: string) {
+    return this.mutateHierarchy(orgId, () =>
+      this.commands.run(orgId, departmentId, "DEPARTMENT", "retire", () =>
+        this.departments.deleteDepartment(orgId, userId, departmentId),
+      ),
+    );
   }
 
   async moveDepartment(orgId: string, departmentId: string, newBranchId: string | null) {
@@ -251,15 +295,17 @@ export class OrgHierarchyService {
       "BRANCH",
       "branch",
     );
-    return this.departments.moveDepartment(orgId, departmentId, newBranchId);
+    return this.mutateHierarchy(orgId, () =>
+      this.departments.moveDepartment(orgId, departmentId, newBranchId),
+    );
   }
 
   async listTeams(orgId: string, query: ListQueryInput) {
     return this.teams.listTeams(orgId, query);
   }
 
-  async getTeam(orgId: string, id: string) {
-    return this.teams.getTeam(orgId, id);
+  async getTeam(orgId: string, teamId: string) {
+    return this.teams.getTeam(orgId, teamId);
   }
 
   async createTeam(orgId: string, userId: string, body: CreateOrgTeamInput) {
@@ -270,17 +316,23 @@ export class OrgHierarchyService {
       "department",
       true,
     );
-    return this.teams.createTeam(orgId, userId, body);
+    return this.mutateHierarchy(orgId, () =>
+      this.teams.createTeam(orgId, userId, body),
+    );
   }
 
-  async updateTeam(orgId: string, userId: string, id: string, body: UpdateOrgTeamInput) {
+  async updateTeam(orgId: string, userId: string, teamId: string, body: UpdateOrgTeamInput) {
     if (body.status === "ARCHIVED") {
-      await this.dependencies.assertCanArchive(orgId, id, "TEAM");
+      return this.mutateHierarchy(orgId, () =>
+        this.commands.run(orgId, teamId, "TEAM", "archive", () =>
+          this.teams.updateTeam(orgId, userId, teamId, body),
+        ),
+      );
     }
     if (body.departmentId !== undefined || body.status === "ACTIVE") {
       const existing =
         body.departmentId === undefined
-          ? await this.teams.getTeam(orgId, id)
+          ? await this.teams.getTeam(orgId, teamId)
           : null;
       await this.assertActiveParent(
         orgId,
@@ -290,12 +342,17 @@ export class OrgHierarchyService {
         true,
       );
     }
-    return this.teams.updateTeam(orgId, userId, id, body);
+    return this.mutateHierarchy(orgId, () =>
+      this.teams.updateTeam(orgId, userId, teamId, body),
+    );
   }
 
-  async deleteTeam(orgId: string, userId: string, id: string) {
-    await this.dependencies.assertCanRetire(orgId, id, "TEAM");
-    return this.teams.deleteTeam(orgId, userId, id);
+  async deleteTeam(orgId: string, userId: string, teamId: string) {
+    return this.mutateHierarchy(orgId, () =>
+      this.commands.run(orgId, teamId, "TEAM", "retire", () =>
+        this.teams.deleteTeam(orgId, userId, teamId),
+      ),
+    );
   }
 
   async moveTeam(orgId: string, teamId: string, newDepartmentId: string) {
@@ -306,55 +363,79 @@ export class OrgHierarchyService {
       "department",
       true,
     );
-    return this.teams.moveTeam(orgId, teamId, newDepartmentId);
+    return this.mutateHierarchy(orgId, () =>
+      this.teams.moveTeam(orgId, teamId, newDepartmentId),
+    );
   }
 
   listLocations(orgId: string, query: ListQueryInput) {
     return this.locations.listLocations(orgId, query);
   }
 
-  async getLocation(orgId: string, id: string) {
-    return this.locations.getLocation(orgId, id);
+  async getLocation(orgId: string, locationId: string) {
+    return this.locations.getLocation(orgId, locationId);
   }
 
   async createLocation(orgId: string, userId: string, body: CreateOrgLocationInput) {
-    return this.locations.createLocation(orgId, userId, body);
+    return this.mutateHierarchy(orgId, () =>
+      this.locations.createLocation(orgId, userId, body),
+    );
   }
 
-  async updateLocation(orgId: string, userId: string, id: string, body: UpdateOrgLocationInput) {
+  async updateLocation(orgId: string, userId: string, locationId: string, body: UpdateOrgLocationInput) {
     if (body.status === "ARCHIVED") {
-      await this.dependencies.assertCanArchive(orgId, id, "LOCATION");
+      return this.mutateHierarchy(orgId, () =>
+        this.commands.run(orgId, locationId, "LOCATION", "archive", () =>
+          this.locations.updateLocation(orgId, userId, locationId, body),
+        ),
+      );
     }
-    return this.locations.updateLocation(orgId, userId, id, body);
+    return this.mutateHierarchy(orgId, () =>
+      this.locations.updateLocation(orgId, userId, locationId, body),
+    );
   }
 
-  async deleteLocation(orgId: string, userId: string, id: string) {
-    await this.dependencies.assertCanRetire(orgId, id, "LOCATION");
-    return this.locations.deleteLocation(orgId, userId, id);
+  async deleteLocation(orgId: string, userId: string, locationId: string) {
+    return this.mutateHierarchy(orgId, () =>
+      this.commands.run(orgId, locationId, "LOCATION", "retire", () =>
+        this.locations.deleteLocation(orgId, userId, locationId),
+      ),
+    );
   }
 
   listCostCenters(orgId: string, query: ListQueryInput) {
     return this.costCenters.listCostCenters(orgId, query);
   }
 
-  async getCostCenter(orgId: string, id: string) {
-    return this.costCenters.getCostCenter(orgId, id);
+  async getCostCenter(orgId: string, costCenterId: string) {
+    return this.costCenters.getCostCenter(orgId, costCenterId);
   }
 
   async createCostCenter(orgId: string, userId: string, body: CreateCostCenterInput) {
-    return this.costCenters.createCostCenter(orgId, userId, body);
+    return this.mutateHierarchy(orgId, () =>
+      this.costCenters.createCostCenter(orgId, userId, body),
+    );
   }
 
-  async updateCostCenter(orgId: string, userId: string, id: string, body: UpdateCostCenterInput) {
+  async updateCostCenter(orgId: string, userId: string, costCenterId: string, body: UpdateCostCenterInput) {
     if (body.status === "ARCHIVED") {
-      await this.dependencies.assertCanArchive(orgId, id, "COST_CENTER");
+      return this.mutateHierarchy(orgId, () =>
+        this.commands.run(orgId, costCenterId, "COST_CENTER", "archive", () =>
+          this.costCenters.updateCostCenter(orgId, userId, costCenterId, body),
+        ),
+      );
     }
-    return this.costCenters.updateCostCenter(orgId, userId, id, body);
+    return this.mutateHierarchy(orgId, () =>
+      this.costCenters.updateCostCenter(orgId, userId, costCenterId, body),
+    );
   }
 
-  async deleteCostCenter(orgId: string, userId: string, id: string) {
-    await this.dependencies.assertCanRetire(orgId, id, "COST_CENTER");
-    return this.costCenters.deleteCostCenter(orgId, userId, id);
+  async deleteCostCenter(orgId: string, userId: string, costCenterId: string) {
+    return this.mutateHierarchy(orgId, () =>
+      this.commands.run(orgId, costCenterId, "COST_CENTER", "retire", () =>
+        this.costCenters.deleteCostCenter(orgId, userId, costCenterId),
+      ),
+    );
   }
 
   async getDependencyPreview(
@@ -404,172 +485,11 @@ export class OrgHierarchyService {
     }
   }
 
-  async getHierarchy(orgId: string) {
-    const rows = await this.db
-      .select({ kind: orgUnits.kind })
-      .from(orgUnits)
-      .where(
-        and(
-          eq(orgUnits.orgId, orgId),
-          ne(orgUnits.status, "ARCHIVED"),
-          isNull(orgUnits.deletedAt),
-        ),
-      );
-
-    const counts: Record<string, number> = {};
-    for (const row of rows) {
-      counts[row.kind] = (counts[row.kind] ?? 0) + 1;
-    }
-
-    return {
-      businessUnits: counts["BUSINESS_UNIT"] ?? 0,
-      branches: counts["BRANCH"] ?? 0,
-      departments: counts["DEPARTMENT"] ?? 0,
-      teams: counts["TEAM"] ?? 0,
-      locations: counts["LOCATION"] ?? 0,
-      costCenters: counts["COST_CENTER"] ?? 0,
-    };
+  getHierarchy(orgId: string, context: OrgHierarchyCacheContext) {
+    return this.reads.getHierarchy(orgId, context);
   }
 
-  async getTree(orgId: string) {
-    const allUnits = await this.db
-      .select(ORG_TREE_COLUMNS)
-      .from(orgUnits)
-      .where(
-        and(
-          eq(orgUnits.orgId, orgId),
-          ne(orgUnits.status, "ARCHIVED"),
-          isNull(orgUnits.deletedAt),
-        ),
-      );
-
-    const byName = (a: { name: string }, b: { name: string }) =>
-      a.name.localeCompare(b.name);
-
-    type Row = (typeof allUnits)[number];
-
-    const buIds = new Set(
-      allUnits.filter((u) => u.kind === "BUSINESS_UNIT").map((u) => u.id),
-    );
-    const branchIds = new Set(
-      allUnits.filter((u) => u.kind === "BRANCH").map((u) => u.id),
-    );
-    const deptIds = new Set(
-      allUnits.filter((u) => u.kind === "DEPARTMENT").map((u) => u.id),
-    );
-
-    const branchesByBu = new Map<string | null, Row[]>();
-    const deptsByBranch = new Map<string | null, Row[]>();
-    const teamsByDept = new Map<string | null, Row[]>();
-
-    for (const u of allUnits) {
-      if (u.kind === "BRANCH") {
-        const key =
-          u.parentId !== null && buIds.has(u.parentId) ? u.parentId : null;
-        const bucket = branchesByBu.get(key) ?? [];
-        bucket.push(u);
-        branchesByBu.set(key, bucket);
-      } else if (u.kind === "DEPARTMENT") {
-        const key =
-          u.parentId !== null && branchIds.has(u.parentId)
-            ? u.parentId
-            : null;
-        const bucket = deptsByBranch.get(key) ?? [];
-        bucket.push(u);
-        deptsByBranch.set(key, bucket);
-      } else if (u.kind === "TEAM") {
-        const key =
-          u.parentId !== null && deptIds.has(u.parentId) ? u.parentId : null;
-        const bucket = teamsByDept.get(key) ?? [];
-        bucket.push(u);
-        teamsByDept.set(key, bucket);
-      }
-    }
-
-    const buildTeam = (team: Row) => ({
-      ...toOrgTeam(team),
-      type: "team" as const,
-      children: [],
-    });
-
-    const buildDept = (dept: Row) => {
-      const {
-        kind: _deptKind,
-        parentId: branchId,
-        metadata: _deptMetadata,
-        ...department
-      } = dept;
-      return {
-        ...department,
-        branchId,
-        type: "department" as const,
-        children: (teamsByDept.get(dept.id) ?? []).sort(byName).map(buildTeam),
-      };
-    };
-
-    const buildBranch = (branch: Row) => {
-      const {
-        kind: _branchKind,
-        parentId: businessUnitId,
-        headUserId: managerUserId,
-        metadata: branchMetadata,
-        ...branchFields
-      } = branch;
-      return {
-        ...branchFields,
-        businessUnitId,
-        managerUserId,
-        address: branchMetadata?.address ?? null,
-        city: branchMetadata?.city ?? null,
-        state: branchMetadata?.state ?? null,
-        country: branchMetadata?.country ?? null,
-        postalCode: branchMetadata?.postalCode ?? null,
-        phone: branchMetadata?.phone ?? null,
-        email: branchMetadata?.email ?? null,
-        type: "branch" as const,
-        children: (deptsByBranch.get(branch.id) ?? [])
-          .sort(byName)
-          .map(buildDept),
-      };
-    };
-
-    const buildBu = (bu: Row) => {
-      const {
-        kind: _buKind,
-        parentId: _buParentId,
-        headUserId: _buHeadUserId,
-        metadata: _buMetadata,
-        ...businessUnit
-      } = bu;
-      return {
-        ...businessUnit,
-        type: "business_unit" as const,
-        children: (branchesByBu.get(bu.id) ?? [])
-          .sort(byName)
-          .map(buildBranch),
-      };
-    };
-
-    const buRoots = allUnits
-      .filter((u) => u.kind === "BUSINESS_UNIT")
-      .sort(byName)
-      .map(buildBu);
-
-    const orphanBranchRoots = (branchesByBu.get(null) ?? [])
-      .sort(byName)
-      .map(buildBranch);
-    const orphanDeptRoots = (deptsByBranch.get(null) ?? [])
-      .sort(byName)
-      .map(buildDept);
-    const orphanTeamRoots = (teamsByDept.get(null) ?? [])
-      .sort(byName)
-      .map(buildTeam);
-
-    return [
-      ...buRoots,
-      ...orphanBranchRoots,
-      ...orphanDeptRoots,
-      ...orphanTeamRoots,
-    ];
+  getTree(orgId: string, context: OrgHierarchyCacheContext) {
+    return this.reads.getTree(orgId, context);
   }
 }

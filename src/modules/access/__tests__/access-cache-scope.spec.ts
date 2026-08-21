@@ -3,9 +3,47 @@ import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import type { Db } from "../../../db/drizzle.module";
 import type { CacheService } from "../../../common/cache/cache.service";
 import type { EntitlementsService } from "../entitlements.service";
+import type { DataScope } from "../access.types";
+import {
+  ROLE_DEFAULT_PERMISSIONS,
+  UNIVERSAL_MEMBER_PERMISSIONS,
+} from "../../rbac/permissions";
 import { makeMfaPolicyStub } from "../../../../test/helpers/mfa-policy-stub";
 
-describe("CACHE_KEYS.accessPerms — org-scoping", () => {
+const ACTIVE_MEMBER_BASELINE_PERMISSIONS = new Set([
+  ...UNIVERSAL_MEMBER_PERMISSIONS,
+  ...(ROLE_DEFAULT_PERMISSIONS["MEMBER"] ?? []),
+]);
+
+function expectActiveMemberBaseline(
+  resolvedPermissions: Map<string, DataScope>,
+): void {
+  for (const permissionKey of ACTIVE_MEMBER_BASELINE_PERMISSIONS) {
+    expect(resolvedPermissions.has(permissionKey)).toBe(true);
+  }
+  expect(new Set(resolvedPermissions.keys()).size).toBe(
+    resolvedPermissions.size,
+  );
+}
+
+function withTenantTransactionMock<T extends object>(database: T): T {
+  const mutableDatabase = database as T & {
+    execute?: jest.Mock;
+    transaction?: jest.Mock;
+  };
+  if (typeof mutableDatabase.transaction !== "function") {
+    mutableDatabase.execute = jest.fn().mockResolvedValue(undefined);
+    mutableDatabase.transaction = jest
+      .fn()
+      .mockImplementation(
+        async (transactionWork: (transactionDatabase: T) => Promise<unknown>) =>
+          transactionWork(database),
+      );
+  }
+  return database;
+}
+
+describe("CACHE_KEYS.accessPerms - org-scoping", () => {
   it("includes orgId so that keys for different orgs are distinct", () => {
     const keyA = CACHE_KEYS.accessPerms("org-a", "user-1", 1);
     const keyB = CACHE_KEYS.accessPerms("org-b", "user-1", 1);
@@ -83,14 +121,14 @@ function buildService(
   } as unknown as EntitlementsService;
 
   return new AccessService(
-    defaultDb as unknown as Db,
+    withTenantTransactionMock(defaultDb) as unknown as Db,
     cache,
     entitlements,
     makeMfaPolicyStub(),
   );
 }
 
-describe("AccessService.resolveUserPermissions — org-scoped Redis cache key", () => {
+describe("AccessService.resolveUserPermissions - org-scoped Redis cache key", () => {
   it("calls cache.cached with a key that embeds the orgId", async () => {
     const capturedKeys: string[] = [];
     const cache = {
@@ -124,7 +162,7 @@ describe("AccessService.resolveUserPermissions — org-scoped Redis cache key", 
     } as unknown as EntitlementsService;
 
     const svc = new AccessService(
-      db as unknown as Db,
+      withTenantTransactionMock(db) as unknown as Db,
       cache as unknown as CacheService,
       entitlements,
       makeMfaPolicyStub(),
@@ -136,15 +174,19 @@ describe("AccessService.resolveUserPermissions — org-scoped Redis cache key", 
     expect(capturedKeys.some((k) => k.includes("user-1"))).toBe(true);
   });
 
-  it("org A and org B produce distinct cache keys — no cross-tenant bleed", async () => {
+  it("org A and org B produce distinct cache keys - no cross-tenant bleed", async () => {
     const capturedKeys: string[] = [];
 
-    function buildDbForOrg(memberId: number) {
-      return {
+    function buildDbForOrg(organizationMemberId: number) {
+      return withTenantTransactionMock({
         query: {
           accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
           organizationMembers: {
-            findFirst: jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: memberId }),
+            findFirst: jest.fn().mockResolvedValue({
+              isOwner: false,
+              status: "ACTIVE",
+              id: organizationMemberId,
+            }),
           },
             },
         select: jest.fn()
@@ -152,7 +194,7 @@ describe("AccessService.resolveUserPermissions — org-scoped Redis cache key", 
           .mockReturnValueOnce(makeSelectChain([]))
           .mockReturnValueOnce(makeSelectChain([]))
           .mockReturnValue(makeSelectChain([])),
-      };
+      });
     }
 
     const cache = {
@@ -196,8 +238,8 @@ describe("AccessService.resolveUserPermissions — org-scoped Redis cache key", 
   });
 });
 
-describe("AccessService.resolveUserPermissions — revoked/expired roles grant nothing", () => {
-  it("no active role assignments → returns empty permission map", async () => {
+describe("AccessService.resolveUserPermissions - revoked/expired roles grant nothing", () => {
+  it("no active role assignments preserve the active-member baseline", async () => {
     const db = {
       query: {
         accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
@@ -215,10 +257,10 @@ describe("AccessService.resolveUserPermissions — revoked/expired roles grant n
     const svc = buildService({ query: db.query, select: db.select });
     const result = await svc.resolveUserPermissions("org-1", "user-no-roles");
 
-    expect(result.size).toBe(0);
+    expectActiveMemberBaseline(result);
   });
 
-  it("DB filters expired assignments (expiresAt in the past) — they do not appear in results", async () => {
+  it("DB filters expired assignments while preserving the active-member baseline", async () => {
     const db = {
       query: {
         accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
@@ -236,7 +278,7 @@ describe("AccessService.resolveUserPermissions — revoked/expired roles grant n
     const svc = buildService({ query: db.query, select: db.select });
     const result = await svc.resolveUserPermissions("org-1", "user-expired-role");
 
-    expect(result.size).toBe(0);
+    expectActiveMemberBaseline(result);
   });
 
   it("suspended member returns empty permissions regardless of role assignments", async () => {
@@ -257,8 +299,8 @@ describe("AccessService.resolveUserPermissions — revoked/expired roles grant n
   });
 });
 
-describe("AccessService.resolveUserPermissions — group-derived role resolution", () => {
-  it("group membership → group_role_assignments → role grants appear in the permission map", async () => {
+describe("AccessService.resolveUserPermissions - group-derived role resolution", () => {
+  it("group membership resolves group role grants into the permission map", async () => {
     const db = {
       query: {
         accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
@@ -284,7 +326,7 @@ describe("AccessService.resolveUserPermissions — group-derived role resolution
     expect(result.get("hr:employees:view")).toBe("own");
   });
 
-  it("group with no group_role_assignments contributes no permissions", async () => {
+  it("group with no role assignments contributes only the active-member baseline", async () => {
     const db = {
       query: {
         accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
@@ -302,7 +344,7 @@ describe("AccessService.resolveUserPermissions — group-derived role resolution
     const svc = buildService({ query: db.query, select: db.select });
     const result = await svc.resolveUserPermissions("org-1", "user-in-empty-group");
 
-    expect(result.size).toBe(0);
+    expectActiveMemberBaseline(result);
   });
 
   it("broadest scope wins when direct role and group role overlap on the same permission", async () => {

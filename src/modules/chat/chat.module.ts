@@ -12,6 +12,7 @@ import { ChatLinkPreviewController } from "./chat-link-preview.controller";
 import { ChatInviteLinksController } from "./chat-invite-links.controller";
 import { ChatOrgSettingsController } from "./chat-org-settings.controller";
 import { ChatSummarizeController } from "./chat-summarize.controller";
+import { ChatRealtimeController } from "./chat-realtime.controller";
 import { ChatChannelsService } from "./chat-channels.service";
 import { ChatChannelMembersService } from "./chat-channel-members.service";
 import { ChatMessagesService } from "./chat-messages.service";
@@ -30,7 +31,7 @@ import { RealtimeModule } from "../realtime/realtime.module";
 
 @Module({
   imports: [BillingModule, RealtimeModule],
-  controllers: [ChatActionsController, ChatChannelsController, ChatMessagesController, ChatPresenceController, ChatPinsController, ChatHuddlesController, ChatSearchController, ChatSavedController, ChatLinkPreviewController, ChatInviteLinksController, ChatOrgSettingsController, ChatSummarizeController],
+  controllers: [ChatActionsController, ChatChannelsController, ChatMessagesController, ChatPresenceController, ChatPinsController, ChatHuddlesController, ChatSearchController, ChatSavedController, ChatLinkPreviewController, ChatInviteLinksController, ChatOrgSettingsController, ChatSummarizeController, ChatRealtimeController],
   providers: [
     ChatChannelsService,
     ChatChannelMembersService,

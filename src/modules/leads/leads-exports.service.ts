@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, and, or, ilike, sql, type SQL } from "drizzle-orm";
+import { eq, and, or, ilike, isNull, sql, type SQL } from "drizzle-orm";
 import { leads, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -56,7 +56,7 @@ export class LeadsExportsService {
   }
 
   async exportCsv(orgId: string, filters: ExportQuery) {
-    const conditions = [eq(leads.orgId, orgId)];
+    const conditions = [eq(leads.orgId, orgId), isNull(leads.deletedAt)];
     if (filters.status) conditions.push(eq(leads.status, filters.status));
     if (filters.priority) conditions.push(eq(leads.priority, filters.priority));
     if (filters.assigneeId) conditions.push(eq(leads.assignedToId, filters.assigneeId));

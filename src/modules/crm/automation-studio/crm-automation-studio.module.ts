@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { NotificationsModule } from "../../notifications/notifications.module";
 import { AutomationModule } from "../../automation/automation.module";
+import { CrmConsentModule } from "../consent/crm-consent.module";
 import { CrmAutomationBusService } from "./crm-automation-bus.service";
 import { CrmAutomationRunnerService } from "./crm-automation-runner.service";
 import { CrmSequencesRunnerService } from "./crm-sequences-runner.service";
@@ -8,7 +9,7 @@ import { CrmSequencesService } from "./crm-sequences.service";
 import { CrmAutomationStudioController } from "./crm-automation-studio.controller";
 
 @Module({
-  imports: [NotificationsModule, AutomationModule],
+  imports: [NotificationsModule, AutomationModule, CrmConsentModule],
   controllers: [CrmAutomationStudioController],
   providers: [
     CrmAutomationBusService,

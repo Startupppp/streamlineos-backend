@@ -11,6 +11,7 @@ import { NotificationEventService } from "./notification-event.service";
 import { WebPushService } from "../realtime/web-push.service";
 import { NotificationsReadService } from "./notifications-read.service";
 import { NotificationsLifecycleService } from "./notifications-lifecycle.service";
+import { isNotificationCategory } from "./notifications.types";
 import type {
   AnnounceInput,
   CreateNotificationInput,
@@ -109,10 +110,12 @@ export class NotificationsService {
   private pushToDevice(input: AnnounceInput): void {
     if (input.priority === "LOW") return;
     if (input.sourceModule === "chat") return;
+    // RT-001: id + category only. The title and message stay server-side; the
+    // client fetches them through the authenticated API.
     void this.webPush
       .sendToUser(input.userId, {
-        title: input.title,
-        body: input.message.slice(0, 140),
+        notificationId: input.id,
+        category: isNotificationCategory(input.category) ? input.category : undefined,
         url: input.link ?? "/notifications",
       })
       .catch(() => undefined);

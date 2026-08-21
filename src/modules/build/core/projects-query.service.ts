@@ -3,7 +3,7 @@ import {
   ProjectsForbiddenProjectException,
   ProjectsNotFoundException,
 } from "../../../common/http/api-exceptions";
-import { and, asc, count, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   projectMembers,
   projectStatuses,
@@ -38,7 +38,7 @@ export class ProjectsQueryService {
     const scope = await resolveProjectsScope(this.access, u);
     const orgId = u.orgId;
     const userId = u.userId;
-    const key = `${userId}:${scope}:${input.status}:${input.search ?? ""}:${input.page}:${input.limit}`;
+    const key = `${userId}:${scope}:${input.status}:${input.search ?? ""}:${input.page}:${input.limit}:${input.pmWorkspaceId ?? ""}`;
     return this.cache.cachedVersioned(
       `projects:list:${orgId}`,
       key,
@@ -53,10 +53,14 @@ export class ProjectsQueryService {
     scope: DataScope,
     input: ListProjectsInput,
   ) {
-    const { search, status, page, limit } = input;
+    const { search, status, page, limit, pmWorkspaceId } = input;
     const offset = (page - 1) * limit;
 
-    const conditions = [eq(projects.orgId, orgId)];
+    const conditions = [eq(projects.orgId, orgId), isNull(projects.deletedAt)];
+
+    if (pmWorkspaceId) {
+      conditions.push(eq(projects.pmWorkspaceId, pmWorkspaceId));
+    }
 
     if (scope !== "all") {
       const [memberOf, teamProjectsOf] = await Promise.all([
@@ -156,7 +160,7 @@ export class ProjectsQueryService {
           ),
         })
         .from(tickets)
-        .where(inArray(tickets.projectId, projectIds))
+        .where(and(inArray(tickets.projectId, projectIds), isNull(tickets.deletedAt)))
         .groupBy(tickets.projectId),
       this.db
         .select({
@@ -278,7 +282,7 @@ export class ProjectsQueryService {
     const [perms, project] = await Promise.all([
       this.access.resolveUserPermissions(u.orgId, u.userId),
       this.db.query.projects.findFirst({
-        where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
+        where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
         with: {
           statuses: { orderBy: [asc(projectStatuses.order)] },
           members: {

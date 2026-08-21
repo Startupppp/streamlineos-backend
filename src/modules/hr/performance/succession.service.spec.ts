@@ -27,7 +27,10 @@ function plan(id: number, createdAt: Date) {
 
 describe("SuccessionService cursor pagination", () => {
   it("applies tenant/keyset predicates, limit+1, and a deterministic next cursor", async () => {
-    const boundary = { createdAt: new Date("2026-07-01T00:00:00.000Z"), id: 90 };
+    const boundary = {
+      createdAt: new Date("2026-07-01T00:00:00.000Z"),
+      recordId: 90,
+    };
     const rows = Array.from({ length: 31 }, (_, index) => {
       const createdAt = new Date("2026-06-30T00:00:00.000Z");
       createdAt.setUTCDate(createdAt.getUTCDate() - index);
@@ -48,12 +51,14 @@ describe("SuccessionService cursor pagination", () => {
     expect(limit).toHaveBeenCalledWith(31);
     expect(orderBy.mock.calls[0]).toHaveLength(2);
     const predicateValues = primitiveValues(where.mock.calls[0][0]);
-    expect(predicateValues).toEqual(expect.arrayContaining(["org-1", boundary.createdAt, boundary.id]));
+    expect(predicateValues).toEqual(
+      expect.arrayContaining(["org-1", boundary.createdAt, boundary.recordId]),
+    );
     expect(result.items).toHaveLength(30);
     expect(result.items).not.toContain(rows[30]);
     expect(decodeTimestampCursor(result.nextCursor!)).toEqual({
       createdAt: rows[29].createdAt,
-      id: rows[29].id,
+      recordId: rows[29].id,
     });
   });
 

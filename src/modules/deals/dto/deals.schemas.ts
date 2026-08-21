@@ -181,3 +181,33 @@ export type ForecastSnapshotsQueryInput = z.infer<typeof forecastSnapshotsQueryS
 export type CreateStakeholderInput = z.infer<typeof createStakeholderSchema>;
 export type UpdateStakeholderInput = z.infer<typeof updateStakeholderSchema>;
 export type OverrideForecastSnapshotInput = z.infer<typeof overrideForecastSnapshotSchema>;
+
+/**
+ * Bulk ids are capped: an uncapped `IN (...)` lets one request rewrite the
+ * whole tenant and blows past the statement size limit (§20 A04).
+ */
+export const BULK_DEAL_ID_LIMIT = 200;
+
+export const dealBulkUpdateSchema = z
+  .object({
+    dealIds: z.array(z.number().int().positive()).min(1).max(BULK_DEAL_ID_LIMIT),
+    update: z
+      .object({
+        stage: z.string().min(1).max(100).optional(),
+        assignedToId: z.string().min(1).optional(),
+      })
+      .strict()
+      .refine((v) => v.stage !== undefined || v.assignedToId !== undefined, {
+        message: "Provide at least one field to update",
+      }),
+  })
+  .strict();
+
+export const dealBulkDeleteSchema = z
+  .object({
+    dealIds: z.array(z.number().int().positive()).min(1).max(BULK_DEAL_ID_LIMIT),
+  })
+  .strict();
+
+export type DealBulkUpdateInput = z.infer<typeof dealBulkUpdateSchema>;
+export type DealBulkDeleteInput = z.infer<typeof dealBulkDeleteSchema>;

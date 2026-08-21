@@ -394,7 +394,7 @@ export class TeamsService {
     const [project] = await this.db
       .select({ id: projects.id })
       .from(projects)
-      .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId)))
+      .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)))
       .limit(1);
     if (!project) throw new NotFoundException("Project not found");
 

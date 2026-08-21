@@ -4,11 +4,17 @@ import {
   hrJobRoles,
   hrJobLevels,
 } from "../../../db/schema/hr/core-org";
-import { orgUnits, type OrgUnitMetadata } from "../../../db/schema/common/organization";
+import { orgUnits } from "../../../db/schema/common/organization";
 import { hrEmployments } from "../../../db/schema/hr/core-people";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import { randomUUID } from "node:crypto";
+import { OrgHierarchyService } from "../../organization/hierarchy/org-hierarchy.service";
+import type {
+  CreateOrgLocationInput,
+  CreateOrgTeamInput,
+  UpdateOrgLocationInput,
+  UpdateOrgTeamInput,
+} from "../../organization/hierarchy/dto/org-hierarchy.schemas";
 
 type CatalogInput = {
   name: string;
@@ -16,124 +22,36 @@ type CatalogInput = {
   description?: string;
 };
 
-type LocationInput = CatalogInput & {
-  type?: string;
-  address?: {
-    line1?: string;
-    line2?: string;
-    city?: string;
-    state?: string;
-    country?: string;
-    postalCode?: string;
-    timezone?: string;
-  };
-};
-
-type ValidLocationType = OrgUnitMetadata["locationType"];
-
-function toLocationType(raw: string | undefined): ValidLocationType {
-  const allowed: ValidLocationType[] = ["OFFICE", "WAREHOUSE", "STORE", "FACTORY", "REMOTE"];
-  const upper = (raw ?? "OFFICE").toUpperCase() as ValidLocationType;
-  return allowed.includes(upper) ? upper : "OFFICE";
-}
-
-function buildLocationMetadata(input: LocationInput): OrgUnitMetadata {
-  return {
-    locationType: toLocationType(input.type),
-    address: input.address?.line1,
-    city: input.address?.city,
-    state: input.address?.state,
-    country: input.address?.country,
-    postalCode: input.address?.postalCode,
-  };
-}
-
 @Injectable()
 export class HrOrgCatalogService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly hierarchy: OrgHierarchyService,
+  ) {}
 
-  listLocations(orgId: string) {
-    return this.db.query.orgUnits.findMany({
-      where: and(
-        eq(orgUnits.orgId, orgId),
-        eq(orgUnits.kind, "LOCATION"),
-        isNull(orgUnits.deletedAt),
-      ),
-      orderBy: orgUnits.name,
-      limit: 500,
+  async listLocations(orgId: string) {
+    const result = await this.hierarchy.listLocations(orgId, {
+      limit: 100,
+      status: "CURRENT",
     });
+    return result.data;
   }
 
-  async createLocation(orgId: string, input: LocationInput) {
-    const code = input.code
-      ? input.code.toUpperCase()
-      : input.name
-          .toUpperCase()
-          .replace(/[^A-Z0-9]/g, "")
-          .substring(0, 6) || "LOC";
-    try {
-      const [row] = await this.db
-        .insert(orgUnits)
-        .values({
-          id: randomUUID(),
-          orgId,
-          kind: "LOCATION",
-          name: input.name,
-          code,
-          description: input.description ?? null,
-          metadata: buildLocationMetadata(input),
-        })
-        .returning();
-      return row;
-    } catch (err: unknown) {
-      if (typeof err === "object" && err !== null && "code" in err && (err as { code: string }).code === "23505") {
-        throw new ConflictException("A location with this code already exists in the organization");
-      }
-      throw err;
-    }
+  createLocation(orgId: string, userId: string, input: CreateOrgLocationInput) {
+    return this.hierarchy.createLocation(orgId, userId, input);
   }
 
-  async updateLocation(orgId: string, id: string, input: Partial<LocationInput>) {
-    const current = await this.db
-      .select({ metadata: orgUnits.metadata })
-      .from(orgUnits)
-      .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "LOCATION"), isNull(orgUnits.deletedAt)))
-      .limit(1)
-      .then((r) => r[0] ?? null);
-    if (!current) throw new NotFoundException("Location not found");
-
-    const existing = (current.metadata ?? {}) as OrgUnitMetadata;
-    const updatedMeta: OrgUnitMetadata = {
-      ...existing,
-      ...(input.type !== undefined ? { locationType: toLocationType(input.type) } : {}),
-      ...(input.address?.line1 !== undefined ? { address: input.address.line1 } : {}),
-      ...(input.address?.city !== undefined ? { city: input.address.city } : {}),
-      ...(input.address?.state !== undefined ? { state: input.address.state } : {}),
-      ...(input.address?.country !== undefined ? { country: input.address.country } : {}),
-      ...(input.address?.postalCode !== undefined ? { postalCode: input.address.postalCode } : {}),
-    };
-
-    const [row] = await this.db
-      .update(orgUnits)
-      .set({
-        ...(input.name !== undefined ? { name: input.name } : {}),
-        ...(input.code !== undefined ? { code: input.code.toUpperCase() } : {}),
-        metadata: updatedMeta,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "LOCATION"), isNull(orgUnits.deletedAt)))
-      .returning();
-    if (!row) throw new NotFoundException("Location not found");
-    return row;
+  updateLocation(
+    orgId: string,
+    userId: string,
+    locationId: string,
+    input: UpdateOrgLocationInput,
+  ) {
+    return this.hierarchy.updateLocation(orgId, userId, locationId, input);
   }
 
-  async deleteLocation(orgId: string, id: string) {
-    const [row] = await this.db
-      .update(orgUnits)
-      .set({ deletedAt: new Date() })
-      .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "LOCATION"), isNull(orgUnits.deletedAt)))
-      .returning({ id: orgUnits.id });
-    if (!row) throw new NotFoundException("Location not found");
+  async deleteLocation(orgId: string, userId: string, locationId: string) {
+    await this.hierarchy.deleteLocation(orgId, userId, locationId);
     return { success: true };
   }
 
@@ -160,18 +78,18 @@ export class HrOrgCatalogService {
     }
   }
 
-  async updateJobRole(orgId: string, id: number, input: Partial<CatalogInput>) {
-    const [row] = await this.db
+  async updateJobRole(orgId: string, jobRoleId: number, input: Partial<CatalogInput>) {
+    const [jobRole] = await this.db
       .update(hrJobRoles)
       .set({
         ...(input.name !== undefined && { name: input.name }),
         ...(input.code !== undefined && { code: input.code }),
         ...(input.description !== undefined && { description: input.description }),
       })
-      .where(and(eq(hrJobRoles.id, id), eq(hrJobRoles.orgId, orgId)))
+      .where(and(eq(hrJobRoles.id, jobRoleId), eq(hrJobRoles.orgId, orgId)))
       .returning();
-    if (!row) throw new NotFoundException("Job role not found");
-    return row;
+    if (!jobRole) throw new NotFoundException("Job role not found");
+    return jobRole;
   }
 
   listJobLevels(orgId: string) {
@@ -197,91 +115,63 @@ export class HrOrgCatalogService {
     }
   }
 
-  async updateJobLevel(orgId: string, id: number, input: Partial<CatalogInput>) {
-    const [row] = await this.db
+  async updateJobLevel(orgId: string, jobLevelId: number, input: Partial<CatalogInput>) {
+    const [jobLevel] = await this.db
       .update(hrJobLevels)
       .set({
         ...(input.name !== undefined && { name: input.name }),
         ...(input.code !== undefined && { code: input.code }),
         ...(input.description !== undefined && { description: input.description }),
       })
-      .where(and(eq(hrJobLevels.id, id), eq(hrJobLevels.orgId, orgId)))
+      .where(and(eq(hrJobLevels.id, jobLevelId), eq(hrJobLevels.orgId, orgId)))
       .returning();
-    if (!row) throw new NotFoundException("Job level not found");
-    return row;
+    if (!jobLevel) throw new NotFoundException("Job level not found");
+    return jobLevel;
   }
 
-  listTeams(orgId: string) {
-    return this.db.query.orgUnits.findMany({
-      where: and(eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "TEAM"), isNull(orgUnits.deletedAt)),
-      orderBy: orgUnits.name,
-      limit: 500,
+  async listTeams(orgId: string) {
+    const result = await this.hierarchy.listTeams(orgId, {
+      limit: 100,
+      status: "CURRENT",
     });
+    return result.data;
   }
 
-  async createTeam(orgId: string, input: CatalogInput) {
-    const code = input.code ?? input.name.substring(0, 8).toUpperCase().replace(/\s/g, "");
-    const existing = await this.db.query.orgUnits.findFirst({
-      where: and(eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "TEAM"), eq(orgUnits.name, input.name)),
-    });
-    if (existing) {
-      throw new ConflictException("A team with this name already exists");
-    }
-    const [row] = await this.db
-      .insert(orgUnits)
-      .values({
-        id: randomUUID(),
-        orgId,
-        kind: "TEAM",
-        name: input.name,
-        code,
-        description: input.description ?? null,
-      })
-      .returning();
-    return row;
+  createTeam(orgId: string, userId: string, input: CreateOrgTeamInput) {
+    return this.hierarchy.createTeam(orgId, userId, input);
   }
 
-  async deleteJobRole(orgId: string, id: number) {
-    const [row] = await this.db
+  async deleteJobRole(orgId: string, jobRoleId: number) {
+    const [jobRole] = await this.db
       .update(hrJobRoles)
       .set({ isActive: false })
-      .where(and(eq(hrJobRoles.id, id), eq(hrJobRoles.orgId, orgId)))
+      .where(and(eq(hrJobRoles.id, jobRoleId), eq(hrJobRoles.orgId, orgId)))
       .returning({ id: hrJobRoles.id });
-    if (!row) throw new NotFoundException("Job role not found");
+    if (!jobRole) throw new NotFoundException("Job role not found");
     return { success: true };
   }
 
-  async deleteJobLevel(orgId: string, id: number) {
-    const [row] = await this.db
+  async deleteJobLevel(orgId: string, jobLevelId: number) {
+    const [jobLevel] = await this.db
       .update(hrJobLevels)
       .set({ isActive: false })
-      .where(and(eq(hrJobLevels.id, id), eq(hrJobLevels.orgId, orgId)))
+      .where(and(eq(hrJobLevels.id, jobLevelId), eq(hrJobLevels.orgId, orgId)))
       .returning({ id: hrJobLevels.id });
-    if (!row) throw new NotFoundException("Job level not found");
+    if (!jobLevel) throw new NotFoundException("Job level not found");
     return { success: true };
   }
 
-  async updateTeam(orgId: string, id: string, input: Partial<CatalogInput>) {
-    const [row] = await this.db
-      .update(orgUnits)
-      .set({
-        ...(input.name !== undefined && { name: input.name }),
-        ...(input.code !== undefined && { code: input.code }),
-        ...(input.description !== undefined && { description: input.description }),
-      })
-      .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "TEAM"), isNull(orgUnits.deletedAt)))
-      .returning();
-    if (!row) throw new NotFoundException("Team not found");
-    return row;
+  updateTeam(
+    orgId: string,
+    userId: string,
+    teamId: string,
+    input: UpdateOrgTeamInput,
+  ) {
+    return this.hierarchy.updateTeam(orgId, userId, teamId, input);
   }
 
-  async deleteTeam(orgId: string, id: string) {
-    const [row] = await this.db
-      .update(orgUnits)
-      .set({ deletedAt: new Date() })
-      .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "TEAM")))
-      .returning({ id: orgUnits.id });
-    if (!row) throw new NotFoundException("Team not found");
+  async deleteTeam(orgId: string, userId: string, teamId: string) {
+    await this.hierarchy.deleteTeam(orgId, userId, teamId);
     return { success: true };
   }
 

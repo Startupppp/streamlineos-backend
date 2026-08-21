@@ -40,6 +40,9 @@ export class CrmAutomationsService {
         conditions: input.conditions,
         actions: input.actions,
         isActive: input.isActive,
+        graph: input.graph ?? null,
+        isDraft: input.isDraft ?? false,
+        cooldownMinutes: input.cooldownMinutes ?? 0,
       })
       .returning();
     return { rule };

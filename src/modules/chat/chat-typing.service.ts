@@ -39,14 +39,23 @@ export class ChatTypingService {
     };
 
     const key = this.key(channelId);
-    await this.redis.hset(key, { [userId]: entry });
-    await this.redis.expire(key, KEY_TTL_SECONDS);
+    try {
+      await this.redis.hset(key, { [userId]: entry });
+      await this.redis.expire(key, KEY_TTL_SECONDS);
+    } catch {
+      return;
+    }
   }
 
   async getTyping(channelId: number, currentUserId: string) {
     if (!this.redis) return [];
 
-    const state = await this.redis.hgetall<Record<string, TypingEntry>>(this.key(channelId));
+    let state: Record<string, TypingEntry> | null;
+    try {
+      state = await this.redis.hgetall<Record<string, TypingEntry>>(this.key(channelId));
+    } catch {
+      return [];
+    }
     if (!state) return [];
 
     const now = Date.now();

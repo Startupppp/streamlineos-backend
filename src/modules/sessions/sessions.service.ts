@@ -202,6 +202,16 @@ export class SessionsService {
     await this.tombstone(ids);
   }
 
+  /**
+   * Publishes the Redis tombstones `JwtAuthGuard` actually checks. Setting
+   * `userSessions.isRevoked` alone does NOT log anyone out — the guard reads
+   * only `revoked:session:<id>` (jwt-auth.guard.ts:122-131) and never consults
+   * the column. Any code path that revokes a session must call this.
+   */
+  async publishRevocations(sessionIds: string[]): Promise<void> {
+    await this.tombstone(sessionIds);
+  }
+
   private async tombstone(sessionIds: string[]): Promise<void> {
     if (!this.redis || sessionIds.length === 0) return;
     await Promise.allSettled(

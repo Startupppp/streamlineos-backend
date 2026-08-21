@@ -18,7 +18,6 @@ const mockOrgSettings = {
 
 const baseMessage = {
   id: 1,
-  content: "hello",
   senderId: "sender1",
   senderName: "Sender One",
 };
@@ -88,6 +87,22 @@ describe("ChatNotificationsService", () => {
         expect(mockAbly.publishToUser).not.toHaveBeenCalled();
       },
     );
+
+    // RT-007: an Ably capability is granted at connect time, so a subscriber removed
+    // from a channel keeps receiving on it. Anything in this payload is disclosed
+    // without passing the read endpoint's authorization — so the body must not be here.
+    it("publishes a signal, never the message body", async () => {
+      mockDb.where.mockResolvedValueOnce([
+        { userId: "user2", mutedUntil: null, notificationPreference: "ALL" },
+      ]);
+
+      await service.publishNewMessageNotification("org1", 1, baseMessage, "GROUP");
+
+      const payload = mockAbly.publishToUser.mock.calls[0]?.[3] as Record<string, unknown>;
+      expect(payload).not.toHaveProperty("content");
+      expect(Object.values(payload)).not.toContain("hello");
+      expect(payload).toMatchObject({ channelId: 1, messageId: 1, senderId: "sender1" });
+    });
 
     it("delivers to a member with DEFAULT or ALL preference", async () => {
       mockDb.where.mockResolvedValueOnce([

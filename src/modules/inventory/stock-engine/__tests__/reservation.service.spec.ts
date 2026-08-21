@@ -46,9 +46,16 @@ describe("ReservationService.expireStale", () => {
     const count = await service.expireStale("org1");
 
     expect(count).toBe(2);
-    // one bulk EXPIRED update + exactly one committed decrement (the null-location reservation is skipped)
-    expect(tx.update).toHaveBeenCalledTimes(2);
+    // One bulk EXPIRED update via the query builder; the committed decrement now
+    // goes through raw SQL so it can match lot and serial with IS NOT DISTINCT
+    // FROM — matching on (org, variant, location) alone decremented every lot
+    // row at that location.
+    expect(tx.update).toHaveBeenCalledTimes(1);
     expect(chains[0].set).toHaveBeenCalledWith({ status: "EXPIRED" });
-    expect(chains[1].set).toHaveBeenCalledTimes(1);
+    // exactly one committed decrement — the null-location reservation is skipped
+    const decrements = (tx.execute.mock.calls as unknown[][]).filter(([q]) =>
+      JSON.stringify((q as { queryChunks?: unknown[] }).queryChunks ?? q).includes("committed"),
+    );
+    expect(decrements).toHaveLength(1);
   });
 });

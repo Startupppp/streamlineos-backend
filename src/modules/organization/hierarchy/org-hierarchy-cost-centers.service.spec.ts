@@ -35,7 +35,7 @@ describe("OrgHierarchyCostCentersService", () => {
       invalidate: jest.fn().mockResolvedValue(undefined),
     } as unknown as CacheService;
     const audit = {
-      log: jest.fn().mockResolvedValue(undefined),
+      logCritical: jest.fn().mockResolvedValue(undefined),
     } as unknown as AuditService;
     const service = new OrgHierarchyCostCentersService(db, cache, audit);
 
@@ -45,7 +45,7 @@ describe("OrgHierarchyCostCentersService", () => {
     expect(set).toHaveBeenCalledWith({ deletedAt: expect.any(Date) });
     expect(hardDelete).not.toHaveBeenCalled();
     expect(cache.invalidate).toHaveBeenCalled();
-    expect(audit.log).toHaveBeenCalledWith(
+    expect(audit.logCritical).toHaveBeenCalledWith(
       expect.objectContaining({ action: "org.costCenter.deleted" }),
     );
   });

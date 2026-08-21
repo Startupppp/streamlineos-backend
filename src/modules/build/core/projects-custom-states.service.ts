@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, ne, sql } from "drizzle-orm";
+import { and, eq, isNull, ne, sql } from "drizzle-orm";
 import {
   projectMembers,
   projects,
@@ -41,7 +41,7 @@ export class ProjectsCustomStatesService {
     const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
     if (perms.has("build:manage")) return;
     const project = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, u.orgId)),
+      where: and(eq(projects.id, projectId), eq(projects.orgId, u.orgId), isNull(projects.deletedAt)),
       columns: { managerId: true },
     });
     if (!project) throw new NotFoundException("Project not found");

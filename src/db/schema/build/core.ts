@@ -1,10 +1,7 @@
 import {
-  pgTable,
   bigint,
   text,
-  serial,
   timestamp,
-  boolean,
   jsonb,
   decimal,
   date,
@@ -14,6 +11,7 @@ import {
   uniqueIndex,
   check,
 } from "drizzle-orm/pg-core";
+import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
 import {
   projectStatusEnum,
@@ -26,10 +24,10 @@ import { deals } from "../crm/deals";
 import { managedProducts } from "./managed-products";
 import { pmWorkspaces } from "./pm-workspaces";
 
-export const projects = pgTable(
+export const projects = build.table(
   "projects",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -46,7 +44,7 @@ export const projects = pgTable(
       onDelete: "set null",
     }),
     managedProductId: integer("managed_product_id").references(
-      () => managedProducts.managedProductId,
+      () => managedProducts.id,
       { onDelete: "set null" },
     ),
     pmWorkspaceId: text("pm_workspace_id").references(() => pmWorkspaces.pmWorkspaceId, { onDelete: "set null" }),
@@ -64,6 +62,7 @@ export const projects = pgTable(
       workflow?: string;
       features?: Record<string, boolean>;
     }>(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -71,20 +70,20 @@ export const projects = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
-    uniqueIndex("uniq_projects_org_key").on(table.orgId, table.key),
-    index("idx_projects_org_status").on(table.orgId, table.status),
+    uniqueIndex("uniq_projects_org_key").on(table.orgId, table.key).where(sql`deleted_at IS NULL`),
+    index("idx_projects_org_status").on(table.orgId, table.status).where(sql`deleted_at IS NULL`),
     index("idx_projects_manager").on(table.managerId),
     index("idx_projects_deal").on(table.dealId),
     index("idx_projects_managed_product").on(table.managedProductId),
-    index("idx_projects_name_trgm").using("gin", table.name.op("gin_trgm_ops")),
+    index("idx_projects_name_trgm").using("gin", table.name.op("gin_trgm_ops")).where(sql`deleted_at IS NULL`),
     unique("uniq_projects_org_id").on(table.orgId, table.id),
   ],
 );
 
-export const sprints = pgTable(
+export const sprints = build.table(
   "sprints",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -96,6 +95,7 @@ export const sprints = pgTable(
     endDate: timestamp("end_date").notNull(),
     goal: text("goal"),
     status: text("status").default("PLANNED").notNull(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -103,7 +103,7 @@ export const sprints = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
-    index("idx_sprints_project_status").on(table.projectId, table.status),
+    index("idx_sprints_project_status").on(table.projectId, table.status).where(sql`deleted_at IS NULL`),
     unique("uniq_sprints_org_id").on(table.orgId, table.id),
     check(
       "chk_sprints_status",
@@ -112,34 +112,31 @@ export const sprints = pgTable(
   ],
 );
 
-export const customStates = pgTable(
-  "custom_states",
+export const projectStatuses = build.table(
+  "project_statuses",
   {
-    id: serial("id").primaryKey(),
-    projectId: integer("project_id")
-      .references(() => projects.id, { onDelete: "cascade" })
-      .notNull(),
-    orgId: text("org_id")
-      .references(() => organizations.id, { onDelete: "cascade" })
-      .notNull(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+    projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
     name: text("name").notNull(),
-    color: text("color").notNull().default("#3B82F6"),
-    group: stateGroupEnum("group").notNull(),
-    sequence: integer("sequence").notNull().default(0),
-    isDefault: boolean("is_default").default(false).notNull(),
+    order: integer("order").notNull().default(0),
+    color: text("color"),
+    type: stateGroupEnum("type").default("unstarted"),
+    wipLimit: integer("wip_limit"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
-    index("idx_custom_states_project").on(table.projectId),
-    index("idx_custom_states_org").on(table.orgId),
-    unique("uniq_custom_states_org_id").on(table.orgId, table.id),
+    index("idx_project_statuses_project").on(table.projectId),
+    unique("uniq_project_statuses_org_id").on(table.orgId, table.id),
+    unique("uniq_project_statuses_org_project_name").on(table.orgId, table.projectId, table.name),
   ],
 );
 
-export const cycles = pgTable(
+export const cycles = build.table(
   "cycles",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     projectId: integer("project_id")
       .references(() => projects.id, { onDelete: "cascade" })
       .notNull(),
@@ -167,10 +164,10 @@ export const cycles = pgTable(
   ],
 );
 
-export const modules = pgTable(
+export const modules = build.table(
   "modules",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     projectId: integer("project_id")
       .references(() => projects.id, { onDelete: "cascade" })
       .notNull(),
@@ -199,10 +196,10 @@ export const modules = pgTable(
   ],
 );
 
-export const projectTemplates = pgTable(
+export const projectTemplates = build.table(
   "project_templates",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -212,18 +209,19 @@ export const projectTemplates = pgTable(
     createdBy: text("created_by").references(() => users.id, {
       onDelete: "set null",
     }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
-    index("idx_project_templates_org").on(table.orgId),
+    index("idx_project_templates_org").on(table.orgId).where(sql`deleted_at IS NULL`),
     unique("uniq_project_templates_org_id").on(table.orgId, table.id),
   ],
 );
 
-export const projectTemplateTickets = pgTable(
+export const projectTemplateTickets = build.table(
   "project_template_tickets",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),

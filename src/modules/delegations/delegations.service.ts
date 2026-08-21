@@ -33,6 +33,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { AccessService } from "../access/access.service";
+import { AuditService } from "../../common/audit/audit.service";
 import type {
   CreateDelegationInput,
   ListDelegationsQuery,
@@ -66,6 +67,7 @@ export class DelegationsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly access: AccessService,
+    private readonly audit: AuditService,
   ) {}
 
   private async invalidateDelegateeSession(userId: string): Promise<void> {
@@ -278,6 +280,20 @@ export class DelegationsService {
           })),
         );
         await bumpPermissionsVersion(tx, actor.orgId);
+        await this.audit.logCritical({
+          action: "delegation.created",
+          userId: actor.userId,
+          orgId: actor.orgId,
+          targetId: created.id,
+          targetType: "user_delegation",
+          metadata: {
+            delegateeId: body.delegateeId,
+            permissions: body.permissions,
+            startsAt: startsAt.toISOString(),
+            endsAt: endsAt.toISOString(),
+            reason: body.reason ?? null,
+          },
+        });
         return { ...created, permissions: body.permissions };
       },
       { orgId: actor.orgId },
@@ -332,6 +348,18 @@ export class DelegationsService {
           )
           .returning();
         await bumpPermissionsVersion(tx, orgId);
+        await this.audit.logCritical({
+          action: "delegation.revoked",
+          userId: actor.userId,
+          orgId,
+          targetId: id,
+          targetType: "user_delegation",
+          metadata: {
+            delegatorId: delegation.delegatorId,
+            delegateeId: delegation.delegateeId,
+            permissions: permissionRows.map((row) => row.permissionKey),
+          },
+        });
         return {
           updated: {
             ...updated,

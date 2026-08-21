@@ -2,7 +2,7 @@ import { Injectable, Inject } from "@nestjs/common";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { eq, and } from "drizzle-orm";
-import { invWebhooks, invWebhookEvents } from "../../../db/schema";
+import { invWebhooks, invWebhookEvents, invWebhookEventSubscriptions } from "../../../db/schema";
 import { createHmac } from "crypto";
 import type { WebhookEventType } from "./dto/webhooks.schemas";
 import { assertSafeWebhookUrl } from "./webhooks.service";
@@ -13,12 +13,26 @@ export class InventoryWebhookEmitter {
 
   async emit(orgId: string, eventType: WebhookEventType, payload: Record<string, unknown>): Promise<void> {
     try {
-      const webhooks = await this.db
-        .select()
-        .from(invWebhooks)
-        .where(and(eq(invWebhooks.orgId, orgId), eq(invWebhooks.isActive, true)));
-
-      const matching = webhooks.filter((w) => (w.events as string[]).includes(eventType));
+      // Indexed dispatch. This previously loaded every active webhook for the
+      // org and filtered a jsonb array in application memory, which cannot use
+      // an index and grows linearly with webhook count.
+      const matching = await this.db
+        .select({ id: invWebhooks.id, url: invWebhooks.url, secret: invWebhooks.secret })
+        .from(invWebhookEventSubscriptions)
+        .innerJoin(
+          invWebhooks,
+          and(
+            eq(invWebhooks.id, invWebhookEventSubscriptions.webhookId),
+            eq(invWebhooks.orgId, invWebhookEventSubscriptions.orgId),
+          ),
+        )
+        .where(
+          and(
+            eq(invWebhookEventSubscriptions.orgId, orgId),
+            eq(invWebhookEventSubscriptions.eventType, eventType),
+            eq(invWebhooks.isActive, true),
+          ),
+        );
       if (matching.length === 0) return;
 
       for (const webhook of matching) {

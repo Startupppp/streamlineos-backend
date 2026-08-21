@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, exists, ilike, or, sql } from "drizzle-orm";
+import { and, eq, exists, ilike, isNull, or, sql } from "drizzle-orm";
 import { leads, deals, contacts, clients, projects, tickets } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -131,7 +131,7 @@ export class SearchService {
                   .from(deals)
                   .where(
                     and(
-                      eq(deals.orgId, orgId),
+                      eq(deals.orgId, orgId), isNull(deals.deletedAt),
                       eq(deals.id, contacts.dealId),
                       applyScope(contactAccess, orgId, userId, {
                         ownerColumn: deals.assignedToId,
@@ -170,7 +170,7 @@ export class SearchService {
         .from(deals)
         .where(
           and(
-            eq(deals.orgId, orgId),
+            eq(deals.orgId, orgId), isNull(deals.deletedAt),
             applyScope(access.deals, orgId, userId, {
               ownerColumn: deals.assignedToId,
             }),
@@ -226,6 +226,7 @@ export class SearchService {
           and(
             eq(tickets.orgId, orgId),
             eq(projects.orgId, orgId),
+            isNull(tickets.deletedAt),
             applyScope(access.build, orgId, userId, {
               ownerColumn: tickets.assigneeId,
             }),

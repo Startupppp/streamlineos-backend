@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, or } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 import {
   ticketAssignees,
   ticketAttachments,
@@ -32,7 +32,7 @@ import type {
   BulkUpdateInput,
   CreateTicketInput,
   ImportTicketsInput,
-  ReorderInput,
+  RankTicketInput,
   TicketsListQuery,
   UpdateTicketInput,
 } from "./dto/projects.schemas";
@@ -95,7 +95,7 @@ export class ProjectsTicketsService {
     force: boolean,
   ) {
     const existing = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)),
+      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)),
       columns: { id: true, projectId: true, title: true },
     });
     if (!existing || !existing.projectId)
@@ -159,7 +159,10 @@ export class ProjectsTicketsService {
           ),
         );
 
-      await tx.delete(tickets).where(eq(tickets.id, ticketId));
+      await tx
+        .update(tickets)
+        .set({ deletedAt: new Date() })
+        .where(eq(tickets.id, ticketId));
     });
 
     this.webhooksDispatch.dispatch(
@@ -190,8 +193,8 @@ export class ProjectsTicketsService {
     return this.query.bulkUpdate(u, projectId, body);
   }
 
-  async reorder(u: CurrentUserContext, projectId: number, body: ReorderInput) {
-    return this.query.reorder(u.orgId, projectId, body, {
+  async rankTicket(u: CurrentUserContext, projectId: number, ticketId: number, body: RankTicketInput) {
+    return this.query.rankTicket(u.orgId, projectId, ticketId, body, {
       userId: u.userId,
       isOrgOwner: u.isOrgOwner,
     });

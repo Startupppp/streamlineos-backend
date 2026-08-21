@@ -143,7 +143,7 @@ export class CrmCustomer360Service {
       this.db
         .select({ id: deals.id, name: deals.name, stage: deals.stage, createdAt: deals.createdAt })
         .from(deals)
-        .where(and(eq(deals.orgId, orgId), sql`${deals.name} ILIKE ${"%" + safeName + "%"}`, sql`${deals.createdAt} < ${cursorDate.toISOString()}`))
+        .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), sql`${deals.name} ILIKE ${"%" + safeName + "%"}`, sql`${deals.createdAt} < ${cursorDate.toISOString()}`))
         .orderBy(desc(deals.createdAt))
         .limit(limit),
       this.db

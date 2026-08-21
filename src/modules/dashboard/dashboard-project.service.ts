@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, inArray, or, type SQL } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or, type SQL } from "drizzle-orm";
 import { projectMembers, projects, sprints, tickets } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -21,7 +21,7 @@ export class DashboardProjectService {
   ): Promise<number[]> {
     if (isAll) {
       const allProjects = await this.db.query.projects.findMany({
-        where: eq(projects.orgId, orgId),
+        where: and(eq(projects.orgId, orgId), isNull(projects.deletedAt)),
         columns: { id: true },
       });
       return allProjects.map((p) => p.id);
@@ -38,7 +38,7 @@ export class DashboardProjectService {
 
     if (scope === "all") {
       return this.db.query.projects.findMany({
-        where: eq(projects.orgId, orgId),
+        where: and(eq(projects.orgId, orgId), isNull(projects.deletedAt)),
         orderBy: [desc(projects.id)],
         limit: 5,
         with: {
@@ -59,6 +59,7 @@ export class DashboardProjectService {
     return this.db.query.projects.findMany({
       where: and(
         eq(projects.orgId, orgId),
+        isNull(projects.deletedAt),
         or(
           eq(projects.managerId, u.userId),
           projectIds.length > 0 ? inArray(projects.id, projectIds) : undefined,
@@ -76,7 +77,7 @@ export class DashboardProjectService {
 
   async getMyIssues(orgId: string, userId: string) {
     const issues = await this.db.query.tickets.findMany({
-      where: and(eq(tickets.orgId, orgId), eq(tickets.assigneeId, userId)),
+      where: and(eq(tickets.orgId, orgId), eq(tickets.assigneeId, userId), isNull(tickets.deletedAt)),
       orderBy: [desc(tickets.updatedAt)],
       limit: 10,
       with: {
@@ -117,10 +118,11 @@ export class DashboardProjectService {
         eq(sprints.orgId, orgId),
         eq(sprints.status, "ACTIVE"),
         inArray(sprints.projectId, projectIds),
+        isNull(sprints.deletedAt),
       ),
       with: {
         project: { columns: { id: true, name: true } },
-        tickets: { columns: { id: true, status: true, points: true } },
+        tickets: { where: isNull(tickets.deletedAt), columns: { id: true, status: true, points: true } },
       },
     });
 
@@ -174,6 +176,7 @@ export class DashboardProjectService {
     const ticketFilters: SQL[] = [
       eq(tickets.orgId, orgId),
       inArray(tickets.projectId, projectIds),
+      isNull(tickets.deletedAt),
     ];
 
     if (scope !== "all") {

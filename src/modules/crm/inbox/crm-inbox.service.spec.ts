@@ -63,12 +63,28 @@ describe("CrmInboxService", () => {
   it("snoozeTask throws NotFoundException for unknown task", async () => {
     mockDb.limit = jest.fn().mockResolvedValue([]);
     await expect(
-      service.snoozeTask("org1", 9999, "user1", { until: new Date().toISOString() }),
+      service.snoozeTask("org1", 9999, "user1", { until: new Date().toISOString() }, "all"),
     ).rejects.toThrow(NotFoundException);
   });
 
   it("completeTask throws NotFoundException for unknown task", async () => {
     mockDb.limit = jest.fn().mockResolvedValue([]);
-    await expect(service.completeTask("org1", 9999)).rejects.toThrow(NotFoundException);
+    await expect(service.completeTask("org1", 9999, "user1", "all")).rejects.toThrow(
+      NotFoundException,
+    );
+  });
+
+  it("snoozeTask under own scope cannot reach a task assigned to someone else", async () => {
+    mockDb.limit = jest.fn().mockResolvedValue([]);
+    await expect(
+      service.snoozeTask("org1", 4242, "user1", { until: new Date().toISOString() }, "own"),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it("completeTask under own scope cannot reach a task assigned to someone else", async () => {
+    mockDb.limit = jest.fn().mockResolvedValue([]);
+    await expect(service.completeTask("org1", 4242, "user1", "own")).rejects.toThrow(
+      NotFoundException,
+    );
   });
 });

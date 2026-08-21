@@ -1,8 +1,6 @@
 import {
-  pgTable,
   pgEnum,
   text,
-  serial,
   timestamp,
   jsonb,
   integer,
@@ -11,7 +9,8 @@ import {
   unique,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { build } from "./namespaces";
+import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
 
@@ -31,10 +30,10 @@ export const whiteboardVisibilityEnum = pgEnum("whiteboard_visibility", [
 ]);
 export const whiteboardShareRoleEnum = pgEnum("whiteboard_share_role", ["viewer", "editor"]);
 
-export const projectWhiteboards = pgTable(
+export const projectWhiteboards = build.table(
   "project_whiteboards",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -49,6 +48,7 @@ export const projectWhiteboards = pgTable(
     linkExpiresAt: timestamp("link_expires_at"),
     allowExport: boolean("allow_export").default(true).notNull(),
     createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -56,16 +56,16 @@ export const projectWhiteboards = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
-    index("idx_project_whiteboards_org_project").on(table.orgId, table.projectId),
+    index("idx_project_whiteboards_org_project").on(table.orgId, table.projectId).where(sql`deleted_at IS NULL`),
     uniqueIndex("uniq_project_whiteboards_share_token").on(table.shareToken),
     unique("uniq_project_whiteboards_org_id").on(table.orgId, table.id),
   ],
 );
 
-export const projectWhiteboardShares = pgTable(
+export const projectWhiteboardShares = build.table(
   "project_whiteboard_shares",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),

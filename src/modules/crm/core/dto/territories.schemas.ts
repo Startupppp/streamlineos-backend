@@ -24,7 +24,7 @@ export const territoryCreateSchema = z.object({
   isActive: z.boolean().optional().default(true),
   criteria: criteriaSchema,
   priority: z.number().int().min(0).optional().default(0),
-});
+}).strict();
 
 export const territoryUpdateSchema = z.object({
   name: z.string().min(1).optional(),
@@ -44,7 +44,7 @@ export const territoryUpdateSchema = z.object({
     accountTypes: z.array(z.string()).optional(),
   }).optional(),
   priority: z.number().int().min(0).optional(),
-});
+}).strict();
 
 const sampleLeadSchema = z.object({
   city: z.string().optional(),

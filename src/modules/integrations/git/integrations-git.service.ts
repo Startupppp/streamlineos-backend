@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { asc, and, eq, inArray, sql } from "drizzle-orm";
+import { asc, and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { gitConnections, gitTicketLinks, projectStatuses, projects, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -113,7 +113,7 @@ export class IntegrationsGitService {
     const ticketRows = await this.db
       .select({ id: tickets.id, projectId: tickets.projectId, status: tickets.status })
       .from(tickets)
-      .where(and(eq(tickets.orgId, orgId), inArray(tickets.id, ticketIds)));
+      .where(and(eq(tickets.orgId, orgId), isNull(tickets.deletedAt), inArray(tickets.id, ticketIds)));
 
     const projectIds = Array.from(new Set(ticketRows.map((t) => t.projectId).filter((p): p is number => p !== null)));
     if (projectIds.length === 0) return;
@@ -174,7 +174,7 @@ export class IntegrationsGitService {
       const projectRows = await this.db
         .select({ id: projects.id, key: projects.key })
         .from(projects)
-        .where(and(eq(projects.orgId, orgId), inArray(projects.key, projectKeys)));
+        .where(and(eq(projects.orgId, orgId), inArray(projects.key, projectKeys), isNull(projects.deletedAt)));
 
       const keyToProjectId = new Map(projectRows.map((p) => [p.key, p.id]));
       const projectIds = projectRows.map((p) => p.id);
@@ -183,7 +183,7 @@ export class IntegrationsGitService {
         const ticketRows = await this.db
           .select({ id: tickets.id, projectId: tickets.projectId, ticketNumber: tickets.ticketNumber })
           .from(tickets)
-          .where(and(eq(tickets.orgId, orgId), inArray(tickets.projectId, projectIds)));
+          .where(and(eq(tickets.orgId, orgId), isNull(tickets.deletedAt), inArray(tickets.projectId, projectIds)));
 
         const ticketLookup = new Map<string, number>();
         for (const t of ticketRows) {
@@ -206,7 +206,7 @@ export class IntegrationsGitService {
       const ticketRows = await this.db
         .select({ id: tickets.id, ticketNumber: tickets.ticketNumber })
         .from(tickets)
-        .where(and(eq(tickets.orgId, orgId), inArray(tickets.ticketNumber, numbers)));
+        .where(and(eq(tickets.orgId, orgId), isNull(tickets.deletedAt), inArray(tickets.ticketNumber, numbers)));
 
       const numberToTicketIds = new Map<number, number[]>();
       for (const t of ticketRows) {

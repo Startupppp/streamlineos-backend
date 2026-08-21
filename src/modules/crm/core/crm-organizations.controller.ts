@@ -33,8 +33,10 @@ import {
 import {
   mergeOrgsSchema,
   orgDuplicatesQuerySchema,
+  orgDuplicateCheckSchema,
   type MergeOrgsInput,
   type OrgDuplicatesQueryInput,
+  type OrgDuplicateCheckInput,
 } from "./dto/org-merge.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 
@@ -74,6 +76,20 @@ export class CrmOrganizationsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.orgMerge.getDuplicateOrgs(u.orgId, query);
+  }
+
+  /**
+   * Pre-submit check so the form can warn before creating. Same criteria the
+   * create path applies, exposed separately so the UI does not have to create
+   * a record to discover it is a probable duplicate.
+   */
+  @Get("duplicate-check")
+  @RequirePermission("crm:organizations:view")
+  checkDuplicate(
+    @Query(new ZodValidationPipe(orgDuplicateCheckSchema)) query: OrgDuplicateCheckInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.orgs.findPotentialDuplicates(u.orgId, query);
   }
 
   @Post("merge")

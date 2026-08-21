@@ -175,7 +175,7 @@ export class CrmDataQualityService {
       .where(and(eq(crmPipelineStages.orgId, orgId), eq(crmPipelineStages.isTerminal, true), eq(crmPipelineStages.isActive, true)));
     const terminalKeys = terminalStages.map((s) => s.key);
     const cutoff = thirtyDaysAgo();
-    const baseWhere = and(eq(deals.orgId, orgId), lt(deals.updatedAt, cutoff));
+    const baseWhere = and(eq(deals.orgId, orgId), isNull(deals.deletedAt), lt(deals.updatedAt, cutoff));
     const whereClause = terminalKeys.length > 0
       ? and(baseWhere, sql`${deals.stage} NOT IN (${sql.join(terminalKeys.map((k) => sql`${k}`), sql`, `)})`)
       : baseWhere;
@@ -211,7 +211,7 @@ export class CrmDataQualityService {
     const openDeals = await this.db
       .select({ id: deals.id, name: deals.name, stage: deals.stage })
       .from(deals)
-      .where(eq(deals.orgId, orgId));
+      .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt)));
     const stale = openDeals.filter(
       (d) => !terminalKeys.includes(d.stage) && !activeIds.has(d.id),
     );
@@ -252,7 +252,7 @@ export class CrmDataQualityService {
     const openDeals = await this.db
       .select({ id: deals.id, name: deals.name, stage: deals.stage, customData: deals.customData })
       .from(deals)
-      .where(eq(deals.orgId, orgId))
+      .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt)))
       .limit(200);
     const offenders: DataQualityOffender[] = [];
     for (const deal of openDeals) {

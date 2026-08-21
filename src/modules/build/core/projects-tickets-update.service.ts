@@ -1,12 +1,13 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { ticketAssignees, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -40,36 +41,59 @@ export class ProjectsTicketsUpdateService {
     private readonly cache: CacheService,
   ) {}
 
-  private async assertValidParent(
+  private async assertSelfRefChain(
     orgId: string,
-    childTicketId: number,
-    parentTicketId: number,
+    ticketId: number,
+    refId: number,
+    field: "parentTicketId" | "epicId",
     projectId: number,
   ): Promise<void> {
-    if (parentTicketId === childTicketId) {
-      throw new BadRequestException("A ticket cannot be its own parent");
-    }
-    let current: number | null = parentTicketId;
+    if (refId === ticketId)
+      throw new BadRequestException(
+        field === "parentTicketId"
+          ? "A ticket cannot be its own parent"
+          : "A ticket cannot be its own epic",
+      );
+    let current: number | null = refId;
     let hops = 0;
-    while (current != null && hops < 100) {
-      if (current === childTicketId) {
+    while (current !== null && hops < 100) {
+      if (current === ticketId)
         throw new BadRequestException(
-          "Cannot set parent: this would create a cycle",
+          field === "parentTicketId"
+            ? "Cannot set parent: this would create a cycle"
+            : "Cannot set epic: this would create a cycle",
         );
-      }
       const row:
-        | { parentTicketId: number | null; projectId: number | null }
+        | {
+            parentTicketId: number | null;
+            epicId: number | null;
+            projectId: number | null;
+          }
         | undefined = await this.db.query.tickets.findFirst({
         where: and(eq(tickets.id, current), eq(tickets.orgId, orgId)),
-        columns: { parentTicketId: true, projectId: true },
+        columns: { parentTicketId: true, epicId: true, projectId: true },
       });
-      if (!row) throw new BadRequestException("Parent ticket not found");
-      if (hops === 0 && row.projectId !== projectId) {
-        throw new BadRequestException("Parent must be in the same project");
-      }
-      current = row.parentTicketId;
+      if (!row)
+        throw new BadRequestException(
+          field === "parentTicketId"
+            ? "Parent ticket not found"
+            : "Epic ticket not found",
+        );
+      if (hops === 0 && row.projectId !== projectId)
+        throw new BadRequestException(
+          field === "parentTicketId"
+            ? "Parent must be in the same project"
+            : "Epic must be in the same project",
+        );
+      current = field === "parentTicketId" ? row.parentTicketId : row.epicId;
       hops += 1;
     }
+    if (current !== null)
+      throw new BadRequestException(
+        field === "parentTicketId"
+          ? "Parent chain exceeds maximum depth"
+          : "Epic chain exceeds maximum depth",
+      );
   }
 
   async updateTicket(
@@ -116,7 +140,7 @@ export class ProjectsTicketsUpdateService {
     }
 
     const before = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)),
+      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)),
       columns: {
         title: true,
         status: true,
@@ -129,6 +153,7 @@ export class ProjectsTicketsUpdateService {
         points: true,
         type: true,
         cycleId: true,
+        version: true,
       },
     });
     if (!before || !before.projectId)
@@ -152,14 +177,23 @@ export class ProjectsTicketsUpdateService {
     if (!accessResult.hasAccess)
       throw new ForbiddenException("Not authorized to update this ticket");
 
-    if (input.parentTicketId != null) {
-      await this.assertValidParent(
+    if (input.parentTicketId != null)
+      await this.assertSelfRefChain(
         orgId,
         ticketId,
         input.parentTicketId,
+        "parentTicketId",
         before.projectId,
       );
-    }
+
+    if (input.epicId != null)
+      await this.assertSelfRefChain(
+        orgId,
+        ticketId,
+        input.epicId,
+        "epicId",
+        before.projectId,
+      );
 
     if (input.status !== undefined) {
       const statusChanged = input.status !== before.status;
@@ -199,10 +233,17 @@ export class ProjectsTicketsUpdateService {
     }
 
     await this.db.transaction(async (tx) => {
-      await tx
+      const versionCondition =
+        input.version !== undefined
+          ? and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt), eq(tickets.version, input.version))
+          : and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt));
+      const affected = await tx
         .update(tickets)
-        .set(updateData)
-        .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)));
+        .set({ ...updateData, version: sql`${tickets.version} + 1` })
+        .where(versionCondition)
+        .returning({ id: tickets.id });
+      if (affected.length === 0)
+        throw new ConflictException("Ticket was modified by another request — refresh and retry");
 
       if (input.status && input.status !== before.status) {
         await OutboxWriter.emit(tx, {

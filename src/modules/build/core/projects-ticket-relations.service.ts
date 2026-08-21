@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, or } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 import { projectMembers, tickets, workItemRelations } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -40,10 +40,43 @@ export class ProjectsTicketRelationsService {
         eq(tickets.id, ticketId),
         eq(tickets.orgId, orgId),
         eq(tickets.projectId, projectId),
+        isNull(tickets.deletedAt),
       ),
       columns: { id: true },
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
+  }
+
+  private detectBlockingCycle(
+    edges: { workItemId: number; relatedWorkItemId: number; relationType: string }[],
+    fromId: number,
+    toId: number,
+  ): boolean {
+    const adj = new Map<number, number[]>();
+    for (const edge of edges) {
+      const f =
+        edge.relationType === "blocks" ? edge.workItemId : edge.relatedWorkItemId;
+      const t =
+        edge.relationType === "blocks" ? edge.relatedWorkItemId : edge.workItemId;
+      const neighbors = adj.get(f) ?? [];
+      neighbors.push(t);
+      adj.set(f, neighbors);
+    }
+    const proposed = adj.get(fromId) ?? [];
+    proposed.push(toId);
+    adj.set(fromId, proposed);
+    const visited = new Set<number>();
+    const stack = [toId];
+    while (stack.length > 0) {
+      const node = stack.pop();
+      if (node === undefined) continue;
+      if (node === fromId) return true;
+      if (visited.has(node)) continue;
+      visited.add(node);
+      for (const neighbor of adj.get(node) ?? [])
+        stack.push(neighbor);
+    }
+    return false;
   }
 
   async listRelations(
@@ -127,11 +160,58 @@ export class ProjectsTicketRelationsService {
         eq(tickets.id, body.relatedTicketId),
         eq(tickets.projectId, projectId),
         eq(tickets.orgId, u.orgId),
+        isNull(tickets.deletedAt),
       ),
       columns: { id: true },
     });
     if (!relatedTicket)
       throw new NotFoundException("Related ticket not found in this project.");
+
+    if (
+      body.relationType === "blocks" ||
+      body.relationType === "blocked_by"
+    ) {
+      const existingEdges = await this.db
+        .select({
+          workItemId: workItemRelations.workItemId,
+          relatedWorkItemId: workItemRelations.relatedWorkItemId,
+          relationType: workItemRelations.relationType,
+        })
+        .from(workItemRelations)
+        .innerJoin(
+          tickets,
+          and(
+            eq(tickets.id, workItemRelations.workItemId),
+            eq(tickets.projectId, projectId),
+            eq(tickets.orgId, u.orgId),
+          ),
+        )
+        .where(
+          and(
+            eq(workItemRelations.orgId, u.orgId),
+            or(
+              eq(workItemRelations.relationType, "blocks"),
+              eq(workItemRelations.relationType, "blocked_by"),
+            ),
+          ),
+        )
+        .limit(1001);
+
+      if (existingEdges.length > 1000)
+        throw new BadRequestException(
+          "Project dependency graph is too large to validate for cycles",
+        );
+
+      const fromId =
+        body.relationType === "blocks" ? ticketId : body.relatedTicketId;
+      const toId =
+        body.relationType === "blocks" ? body.relatedTicketId : ticketId;
+
+      if (this.detectBlockingCycle(existingEdges, fromId, toId))
+        throw new BadRequestException(
+          "Cannot add this relation: it would create a circular blocking dependency",
+        );
+    }
 
     const [created] = await this.db
       .insert(workItemRelations)

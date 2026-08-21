@@ -125,13 +125,13 @@ export class CrmCustomer360SectionsService {
       this.db
         .select({ id: deals.id, name: deals.name, stage: deals.stage, value: deals.value, createdAt: deals.createdAt })
         .from(deals)
-        .where(and(eq(deals.orgId, orgId), sql`${deals.name} ILIKE ${"%" + safe + "%"}`))
+        .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), sql`${deals.name} ILIKE ${"%" + safe + "%"}`))
         .orderBy(desc(deals.createdAt))
         .limit(SECTION_LIMIT),
       this.db
         .select({ count: sql<number>`count(*)::int` })
         .from(deals)
-        .where(and(eq(deals.orgId, orgId), sql`${deals.name} ILIKE ${"%" + safe + "%"}`))
+        .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), sql`${deals.name} ILIKE ${"%" + safe + "%"}`))
         .then((rows) => rows[0]),
     ]);
     return { items, total: Number(countRow?.count ?? 0) };
@@ -142,13 +142,13 @@ export class CrmCustomer360SectionsService {
       this.db
         .select({ id: deals.id, name: deals.name, stage: deals.stage, value: deals.value, createdAt: deals.createdAt })
         .from(deals)
-        .where(and(eq(deals.orgId, orgId), eq(deals.clientId, clientId)))
+        .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), eq(deals.clientId, clientId)))
         .orderBy(desc(deals.createdAt))
         .limit(SECTION_LIMIT),
       this.db
         .select({ count: sql<number>`count(*)::int` })
         .from(deals)
-        .where(and(eq(deals.orgId, orgId), eq(deals.clientId, clientId)))
+        .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), eq(deals.clientId, clientId)))
         .then((rows) => rows[0]),
     ]);
     return { items, total: Number(countRow?.count ?? 0) };
@@ -156,7 +156,7 @@ export class CrmCustomer360SectionsService {
 
   async fetchQuotesForOrg(orgId: string, orgName: string): Promise<Customer360Section<unknown>> {
     const safe = orgName.replaceAll("%", "\\%").replaceAll("_", "\\_");
-    const where = and(eq(quotes.orgId, orgId), sql`${quotes.subject} ILIKE ${"%" + safe + "%"}`);
+    const where = and(eq(quotes.orgId, orgId), isNull(quotes.deletedAt), sql`${quotes.subject} ILIKE ${"%" + safe + "%"}`);
     const [items, countRow] = await Promise.all([
       this.db
         .select({ id: quotes.id, quoteNumber: quotes.quoteNumber, subject: quotes.subject, status: quotes.status, createdAt: quotes.createdAt })
@@ -174,7 +174,7 @@ export class CrmCustomer360SectionsService {
   }
 
   async fetchQuotesForClient(orgId: string, clientId: number): Promise<Customer360Section<unknown>> {
-    const where = and(eq(quotes.orgId, orgId), eq(quotes.clientId, clientId));
+    const where = and(eq(quotes.orgId, orgId), isNull(quotes.deletedAt), eq(quotes.clientId, clientId));
     const [items, countRow] = await Promise.all([
       this.db
         .select({ id: quotes.id, quoteNumber: quotes.quoteNumber, subject: quotes.subject, status: quotes.status, createdAt: quotes.createdAt })
@@ -348,14 +348,14 @@ export class CrmCustomer360SectionsService {
         .select({ id: projects.id, name: projects.name, status: projects.status, startDate: projects.startDate, endDate: projects.endDate, createdAt: projects.createdAt })
         .from(projects)
         .innerJoin(deals, and(eq(deals.id, projects.dealId), sql`${deals.name} ILIKE ${"%" + safe + "%"}`))
-        .where(and(eq(projects.orgId, orgId)))
+        .where(and(eq(projects.orgId, orgId), isNull(projects.deletedAt)))
         .orderBy(desc(projects.createdAt))
         .limit(SECTION_LIMIT),
       this.db
         .select({ count: sql<number>`count(*)::int` })
         .from(projects)
         .innerJoin(deals, and(eq(deals.id, projects.dealId), sql`${deals.name} ILIKE ${"%" + safe + "%"}`))
-        .where(and(eq(projects.orgId, orgId)))
+        .where(and(eq(projects.orgId, orgId), isNull(projects.deletedAt)))
         .then((rows) => rows[0]),
     ]);
     return { items, total: Number(countRow?.count ?? 0) };
@@ -367,14 +367,14 @@ export class CrmCustomer360SectionsService {
         .select({ id: projects.id, name: projects.name, status: projects.status, startDate: projects.startDate, endDate: projects.endDate, createdAt: projects.createdAt })
         .from(projects)
         .innerJoin(deals, and(eq(deals.id, projects.dealId), eq(deals.clientId, clientId)))
-        .where(and(eq(projects.orgId, orgId)))
+        .where(and(eq(projects.orgId, orgId), isNull(projects.deletedAt)))
         .orderBy(desc(projects.createdAt))
         .limit(SECTION_LIMIT),
       this.db
         .select({ count: sql<number>`count(*)::int` })
         .from(projects)
         .innerJoin(deals, and(eq(deals.id, projects.dealId), eq(deals.clientId, clientId)))
-        .where(and(eq(projects.orgId, orgId)))
+        .where(and(eq(projects.orgId, orgId), isNull(projects.deletedAt)))
         .then((rows) => rows[0]),
     ]);
     return { items, total: Number(countRow?.count ?? 0) };
@@ -386,13 +386,13 @@ export class CrmCustomer360SectionsService {
       this.db
         .select({ id: quotes.id, quoteNumber: quotes.quoteNumber, subject: quotes.subject, status: quotes.status, signedAt: quotes.signedAt, signedDocumentRef: quotes.signedDocumentRef, createdAt: quotes.createdAt })
         .from(quotes)
-        .where(and(eq(quotes.orgId, orgId), isNotNull(quotes.signedAt), sql`${quotes.subject} ILIKE ${"%" + safe + "%"}`))
+        .where(and(eq(quotes.orgId, orgId), isNull(quotes.deletedAt), isNotNull(quotes.signedAt), sql`${quotes.subject} ILIKE ${"%" + safe + "%"}`))
         .orderBy(desc(quotes.signedAt))
         .limit(SECTION_LIMIT),
       this.db
         .select({ count: sql<number>`count(*)::int` })
         .from(quotes)
-        .where(and(eq(quotes.orgId, orgId), isNotNull(quotes.signedAt), sql`${quotes.subject} ILIKE ${"%" + safe + "%"}`))
+        .where(and(eq(quotes.orgId, orgId), isNull(quotes.deletedAt), isNotNull(quotes.signedAt), sql`${quotes.subject} ILIKE ${"%" + safe + "%"}`))
         .then((rows) => rows[0]),
     ]);
     return { items, total: Number(countRow?.count ?? 0) };
@@ -403,13 +403,13 @@ export class CrmCustomer360SectionsService {
       this.db
         .select({ id: quotes.id, quoteNumber: quotes.quoteNumber, subject: quotes.subject, status: quotes.status, signedAt: quotes.signedAt, signedDocumentRef: quotes.signedDocumentRef, createdAt: quotes.createdAt })
         .from(quotes)
-        .where(and(eq(quotes.orgId, orgId), eq(quotes.clientId, clientId), isNotNull(quotes.signedAt)))
+        .where(and(eq(quotes.orgId, orgId), isNull(quotes.deletedAt), eq(quotes.clientId, clientId), isNotNull(quotes.signedAt)))
         .orderBy(desc(quotes.signedAt))
         .limit(SECTION_LIMIT),
       this.db
         .select({ count: sql<number>`count(*)::int` })
         .from(quotes)
-        .where(and(eq(quotes.orgId, orgId), eq(quotes.clientId, clientId), isNotNull(quotes.signedAt)))
+        .where(and(eq(quotes.orgId, orgId), isNull(quotes.deletedAt), eq(quotes.clientId, clientId), isNotNull(quotes.signedAt)))
         .then((rows) => rows[0]),
     ]);
     return { items, total: Number(countRow?.count ?? 0) };

@@ -12,7 +12,9 @@ import type {
   ListRunsInput,
 } from "./dto/hr-automation.schemas";
 import type { HrAutomationEvent } from "./hr-automation-events";
-import type { HrWebhooksService } from "./hr-webhooks.service";
+// NOT `import type`: erasure makes this @Optional dependency resolve to null forever,
+// so HR automation webhooks silently never dispatch.
+import { HrWebhooksService } from "./hr-webhooks.service";
 import { evaluateNormalizedCondition, evaluateNormalizedConditions, type NormalizedCondition } from "../../automation/shared-condition-evaluator";
 
 const MAX_DEPTH = 3;

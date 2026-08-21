@@ -1,0 +1,1 @@
+ALTER TABLE "quotes" ADD COLUMN "exchange_rate" numeric(18, 8) DEFAULT '1' NOT NULL;

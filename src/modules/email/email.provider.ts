@@ -42,6 +42,12 @@ export interface EmailOptions {
   cc?: string | string[];
   bcc?: string | string[];
   organizationId?: string | null;
+  /**
+   * COMP-002. Extra RFC headers, currently `List-Unsubscribe` and
+   * `List-Unsubscribe-Post`. Set only on non-mandatory mail — a payslip or a security
+   * alert must not advertise an opt-out it will not honour.
+   */
+  headers?: Record<string, string>;
 }
 
 class EmailSendError extends Error {
@@ -148,6 +154,7 @@ async function sendViaResend(options: EmailOptions): Promise<void> {
     ...(cc?.length ? { cc } : {}),
     ...(bcc?.length ? { bcc } : {}),
     ...(attachments?.length ? { attachments } : {}),
+    ...(options.headers ? { headers: options.headers } : {}),
   });
 
   if (error) {

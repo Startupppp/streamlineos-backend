@@ -13,6 +13,9 @@ import { OnboardingTemplateService } from "./onboarding-template.service";
 import { OnboardingDetailsService } from "./onboarding-details.service";
 import { OnboardingTaskService } from "./onboarding-task.service";
 import { OnboardingAdminService } from "./onboarding-admin.service";
+import { OnboardingInitiationService } from "./onboarding-initiation.service";
+import { OnboardingInitiationDispatchService } from "./onboarding-initiation-dispatch.service";
+import { OnboardingSubmissionService } from "./onboarding-submission.service";
 
 @Module({
   imports: [
@@ -31,6 +34,9 @@ import { OnboardingAdminService } from "./onboarding-admin.service";
     OnboardingDetailsService,
     OnboardingTaskService,
     OnboardingAdminService,
+    OnboardingInitiationService,
+    OnboardingInitiationDispatchService,
+    OnboardingSubmissionService,
   ],
   controllers: [OnboardingController],
 })

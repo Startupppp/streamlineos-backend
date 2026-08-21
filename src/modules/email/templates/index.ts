@@ -71,7 +71,7 @@ export {
 } from "./platform";
 
 export {
-  getWeeklyAttendanceReportTemplate,
+  getAttendanceReportTemplate,
   getMonthlyExpenseReportTemplate,
   getWeeklyRecapEmailTemplate,
 } from "./reports";

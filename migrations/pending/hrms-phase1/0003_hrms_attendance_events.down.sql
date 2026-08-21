@@ -1,0 +1,135 @@
+SET statement_timeout = '5min';
+SET lock_timeout = '5s';
+SET search_path = public, pg_catalog;
+
+DO $ledger_preflight$
+DECLARE
+  target_operation_id text := nullif(btrim(current_setting('app.hrms_bundle_operation_id', true)), '');
+  target_bundle_id text := nullif(btrim(current_setting('app.hrms_bundle_id', true)), '');
+  target_file_name text := nullif(btrim(current_setting('app.hrms_bundle_file_name', true)), '');
+  target_sql_hash text := nullif(btrim(current_setting('app.hrms_bundle_sql_hash', true)), '');
+  target_manifest_hash text := nullif(btrim(current_setting('app.hrms_bundle_manifest_hash', true)), '');
+  target_root_hash text := nullif(btrim(current_setting('app.hrms_bundle_root_migration_hash', true)), '');
+  matched_rows integer;
+BEGIN
+  IF target_operation_id IS NULL OR target_bundle_id IS NULL OR target_file_name IS NULL
+    OR target_sql_hash IS NULL OR target_manifest_hash IS NULL OR target_root_hash IS NULL THEN
+    RAISE EXCEPTION 'HRMS_BUNDLE_ROLLBACK_METADATA_MISSING' USING ERRCODE = '22023';
+  END IF;
+  IF target_file_name <> '0003_hrms_attendance_events.sql' THEN
+    RAISE EXCEPTION 'HRMS_BUNDLE_ROLLBACK_FILE_MISMATCH' USING ERRCODE = '22023';
+  END IF;
+  IF to_regclass('app.hrms_sql_bundle_operations') IS NULL THEN
+    RAISE EXCEPTION 'HRMS_BUNDLE_ROLLBACK_LEDGER_MISSING' USING ERRCODE = '42P01';
+  END IF;
+  PERFORM 1
+  FROM app.hrms_sql_bundle_operations operation
+  WHERE operation.operation_id = target_operation_id
+    AND operation.bundle_id = target_bundle_id
+    AND operation.file_name = target_file_name
+    AND operation.sql_hash = target_sql_hash
+    AND operation.manifest_hash = target_manifest_hash
+    AND operation.root_migration_hash = target_root_hash
+    AND operation.database_name = current_database()
+    AND operation.database_role = current_user
+    AND operation.server_version_num = current_setting('server_version_num')::integer
+    AND operation.state = 'COMPLETE'
+  FOR UPDATE;
+  GET DIAGNOSTICS matched_rows = ROW_COUNT;
+  IF matched_rows <> 1 THEN
+    RAISE EXCEPTION 'HRMS_BUNDLE_ROLLBACK_COMPLETE_TARGET_INVALID' USING ERRCODE = '55000';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM app.hrms_sql_bundle_operations operation
+    WHERE operation.operation_id <> target_operation_id
+      AND operation.file_name = target_file_name
+      AND operation.database_name = current_database()
+      AND operation.state IN ('RUNNING', 'VERIFYING', 'COMPLETE')
+  ) THEN
+    RAISE EXCEPTION 'HRMS_BUNDLE_ROLLBACK_COMPLETE_TARGET_AMBIGUOUS' USING ERRCODE = '55000';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM app.hrms_sql_bundle_operations operation
+    WHERE operation.database_name = current_database()
+      AND operation.file_name = '0004_hrms_hierarchy_audit.sql'
+      AND operation.state IN ('RUNNING', 'VERIFYING', 'COMPLETE')
+  ) THEN
+    RAISE EXCEPTION 'HRMS_BUNDLE_ROLLBACK_ACTIVE_LATER_DEPENDENCY' USING ERRCODE = '55000';
+  END IF;
+END
+$ledger_preflight$;
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM attendance_event_locators LIMIT 1)
+    OR EXISTS (SELECT 1 FROM attendance_events LIMIT 1)
+    OR EXISTS (SELECT 1 FROM attendance_correction_links LIMIT 1)
+    OR EXISTS (SELECT 1 FROM attendance_event_evidence LIMIT 1)
+    OR EXISTS (SELECT 1 FROM attendance_evidence_legal_holds LIMIT 1)
+    OR EXISTS (SELECT 1 FROM attendance_session_projections LIMIT 1)
+    OR EXISTS (SELECT 1 FROM attendance_daily_projections LIMIT 1) THEN
+    RAISE EXCEPTION 'HRMS_ATTENDANCE_DOWN_REFUSED: canonical data exists'
+      USING ERRCODE = '55000';
+  END IF;
+  IF EXISTS (
+    SELECT 1
+    FROM attendance
+    WHERE worker_id IS NOT NULL OR worker_engagement_id IS NOT NULL
+    LIMIT 1
+  ) THEN
+    RAISE EXCEPTION 'HRMS_ATTENDANCE_DOWN_REFUSED: canonical subject links exist'
+      USING ERRCODE = '55000';
+  END IF;
+END $$;
+--> statement-breakpoint
+
+ALTER TABLE attendance_event_locators
+  DROP CONSTRAINT fk_attendance_event_locators_fact;
+DROP TABLE attendance_daily_projections;
+DROP TABLE attendance_session_projections;
+DROP TABLE attendance_evidence_legal_holds;
+DROP TABLE attendance_event_evidence;
+DROP TABLE attendance_correction_links;
+DROP TABLE attendance_events;
+DROP TABLE attendance_event_locators;
+--> statement-breakpoint
+
+DROP FUNCTION app.reject_attendance_evidence_mutation();
+DROP FUNCTION app.verify_attendance_projection_events();
+DROP FUNCTION app.verify_attendance_correction_link();
+DROP FUNCTION app.verify_attendance_correction();
+DROP FUNCTION app.verify_attendance_locator_fact();
+--> statement-breakpoint
+
+DROP TYPE attendance_session_state;
+DROP TYPE attendance_distance_bucket;
+DROP TYPE attendance_accuracy_bucket;
+DROP TYPE attendance_correction_replacement_kind;
+DROP TYPE attendance_correction_action;
+DROP TYPE attendance_event_source;
+DROP TYPE attendance_event_kind;
+
+DO $ledger_complete$
+DECLARE
+  matched_rows integer;
+BEGIN
+  UPDATE app.hrms_sql_bundle_operations operation
+  SET state = 'ROLLED_BACK',
+    completed_at = greatest(clock_timestamp(), operation.completed_at + interval '1 microsecond'),
+    last_error = NULL
+  WHERE operation.operation_id = btrim(current_setting('app.hrms_bundle_operation_id'))
+    AND operation.bundle_id = btrim(current_setting('app.hrms_bundle_id'))
+    AND operation.file_name = '0003_hrms_attendance_events.sql'
+    AND operation.sql_hash = btrim(current_setting('app.hrms_bundle_sql_hash'))
+    AND operation.manifest_hash = btrim(current_setting('app.hrms_bundle_manifest_hash'))
+    AND operation.root_migration_hash = btrim(current_setting('app.hrms_bundle_root_migration_hash'))
+    AND operation.database_name = current_database()
+    AND operation.database_role = current_user
+    AND operation.server_version_num = current_setting('server_version_num')::integer
+    AND operation.state = 'COMPLETE';
+  GET DIAGNOSTICS matched_rows = ROW_COUNT;
+  IF matched_rows <> 1 THEN
+    RAISE EXCEPTION 'HRMS_BUNDLE_ROLLBACK_MARK_FAILED' USING ERRCODE = '55000';
+  END IF;
+END
+$ledger_complete$;

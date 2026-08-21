@@ -1,12 +1,39 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { invStockReservations, invStockLevels, invStockTransactions } from "../../../db/schema";
+import { invStockReservations, invStockLevels } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { InventorySettingsService } from "./inventory-settings.service";
+import { availableQty, cmpDec } from "./decimal";
 import { INV_ERRORS, type ReservationInput } from "./stock-engine.types";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+interface CommittedKey {
+  productVariantId: number;
+  locationId: number;
+  lotId: number | null;
+  serialId: number | null;
+  reservedQty: string;
+}
+
+/**
+ * Releases committed on the SAME natural key the reservation incremented.
+ * Matching on (org, variant, location) alone decremented every lot row at that
+ * location, and GREATEST(0, ...) silently absorbed the over-subtraction — so
+ * reserved stock read as available and could be sold twice.
+ */
+async function releaseCommitted(tx: Tx, orgId: string, key: CommittedKey): Promise<void> {
+  await tx.execute(sql`
+    UPDATE inv_stock_levels
+    SET committed = GREATEST(0, committed - ${key.reservedQty}::numeric)
+    WHERE org_id = ${orgId}
+      AND product_variant_id = ${key.productVariantId}
+      AND location_id = ${key.locationId}
+      AND (lot_id IS NOT DISTINCT FROM ${key.lotId})
+      AND (serial_id IS NOT DISTINCT FROM ${key.serialId})
+  `);
+}
 
 @Injectable()
 export class ReservationService {
@@ -22,52 +49,43 @@ export class ReservationService {
   async createReservationInTx(tx: Tx, orgId: string, userId: string, input: ReservationInput): Promise<typeof invStockReservations.$inferSelect> {
     const settings = await this.settingsService.get(orgId);
 
-    if (input.locationId) {
-      await tx.insert(invStockLevels).values({
-        orgId, productVariantId: input.productVariantId,
-        locationId: input.locationId, lotId: input.lotId ?? null,
-        serialId: input.serialId ?? null,
-        onHand: "0", committed: "0", onOrder: "0",
-        blockedQty: "0", qualityHoldQty: "0", outgoingQty: "0",
-      }).onConflictDoNothing();
+    // A reservation without a location cannot lock a stock row, cannot be checked
+    // for availability and cannot decrement committed anywhere — it is a promise
+    // with nothing behind it. Every internal caller already resolves a location.
+    if (!input.locationId) throw new BadRequestException({ code: INV_ERRORS.LOCATION_NOT_FOUND });
 
-      const [level] = await tx.execute<{
-        id: number; on_hand: string; committed: string; blocked_qty: string; quality_hold_qty: string;
-      }>(sql`
-        SELECT id, on_hand, committed, blocked_qty, quality_hold_qty
-        FROM inv_stock_levels
-        WHERE org_id = ${orgId} AND product_variant_id = ${input.productVariantId}
-          AND location_id = ${input.locationId}
-          AND (lot_id IS NOT DISTINCT FROM ${input.lotId ?? null})
-          AND (serial_id IS NOT DISTINCT FROM ${input.serialId ?? null})
-        FOR UPDATE
-      `);
+    await tx.insert(invStockLevels).values({
+      orgId, productVariantId: input.productVariantId,
+      locationId: input.locationId, lotId: input.lotId ?? null,
+      serialId: input.serialId ?? null,
+      onHand: "0", committed: "0", onOrder: "0",
+      blockedQty: "0", qualityHoldQty: "0", outgoingQty: "0",
+    }).onConflictDoNothing();
 
-      if (!level) throw new BadRequestException({ code: INV_ERRORS.LOCATION_NOT_FOUND });
+    const [level] = await tx.execute<{
+      id: number; on_hand: string; committed: string; blocked_qty: string;
+      quality_hold_qty: string; outgoing_qty: string;
+    }>(sql`
+      SELECT id, on_hand, committed, blocked_qty, quality_hold_qty, outgoing_qty
+      FROM inv_stock_levels
+      WHERE org_id = ${orgId} AND product_variant_id = ${input.productVariantId}
+        AND location_id = ${input.locationId}
+        AND (lot_id IS NOT DISTINCT FROM ${input.lotId ?? null})
+        AND (serial_id IS NOT DISTINCT FROM ${input.serialId ?? null})
+      FOR UPDATE
+    `);
 
-      const available = parseFloat(level.on_hand) - parseFloat(level.committed) - parseFloat(level.blocked_qty ?? "0") - parseFloat(level.quality_hold_qty ?? "0");
+    if (!level) throw new BadRequestException({ code: INV_ERRORS.LOCATION_NOT_FOUND });
 
-      if (!settings.allowBackorders && available < parseFloat(input.qty)) {
-        throw new BadRequestException({ code: INV_ERRORS.INSUFFICIENT_STOCK });
-      }
+    const available = availableQty(level);
 
-      await tx.update(invStockLevels)
-        .set({ committed: sql`committed + ${input.qty}::numeric` })
-        .where(eq(invStockLevels.id, level.id));
+    if (!settings.allowBackorders && cmpDec(available, input.qty) < 0) {
+      throw new BadRequestException({ code: INV_ERRORS.INSUFFICIENT_STOCK });
     }
 
-    await tx.insert(invStockTransactions).values({
-      orgId, productVariantId: input.productVariantId,
-      locationId: input.locationId ?? null,
-      lotId: input.lotId ?? null, serialId: input.serialId ?? null,
-      transactionType: "RESERVATION_CREATE",
-      quantityChange: "0",
-      quantityBefore: "0", quantityAfter: "0",
-      referenceType: input.sourceType, referenceId: input.sourceId,
-      metadata: { reservedQty: input.qty } as Record<string, unknown>,
-      reason: "reservation",
-      createdBy: userId,
-    });
+    await tx.update(invStockLevels)
+      .set({ committed: sql`committed + ${input.qty}::numeric` })
+      .where(eq(invStockLevels.id, level.id));
 
     const [reservation] = await tx.insert(invStockReservations).values({
       orgId,
@@ -102,23 +120,14 @@ export class ReservationService {
       .where(eq(invStockReservations.id, reservationId));
 
     if (reservation.location_id) {
-      await tx.update(invStockLevels)
-        .set({ committed: sql`GREATEST(0, committed - ${reservation.reserved_qty}::numeric)` })
-        .where(and(
-          eq(invStockLevels.orgId, orgId),
-          eq(invStockLevels.productVariantId, reservation.product_variant_id),
-          eq(invStockLevels.locationId, reservation.location_id),
-        ));
+      await releaseCommitted(tx, orgId, {
+        productVariantId: reservation.product_variant_id,
+        locationId: reservation.location_id,
+        lotId: reservation.lot_id,
+        serialId: reservation.serial_id,
+        reservedQty: reservation.reserved_qty,
+      });
     }
-
-    await tx.insert(invStockTransactions).values({
-      orgId, productVariantId: reservation.product_variant_id,
-      locationId: reservation.location_id,
-      transactionType: "RESERVATION_RELEASE",
-      quantityChange: "0", quantityBefore: "0", quantityAfter: "0",
-      reason: "reservation_release", createdBy: userId,
-      metadata: { reservationId } as Record<string, unknown>,
-    });
   }
 
   async releaseReservation(orgId: string, userId: string, reservationId: number): Promise<void> {
@@ -128,9 +137,10 @@ export class ReservationService {
   async consumeReservation(orgId: string, userId: string, reservationId: number): Promise<void> {
     return this.db.transaction(async (tx) => {
       const [reservation] = await tx.execute<{
-        id: number; location_id: number | null; product_variant_id: number; reserved_qty: string; status: string;
+        id: number; location_id: number | null; product_variant_id: number;
+        lot_id: number | null; serial_id: number | null; reserved_qty: string; status: string;
       }>(sql`
-        SELECT id, location_id, product_variant_id, reserved_qty, status
+        SELECT id, location_id, product_variant_id, lot_id, serial_id, reserved_qty, status
         FROM inv_stock_reservations WHERE id = ${reservationId} AND org_id = ${orgId}
         FOR UPDATE
       `);
@@ -140,18 +150,14 @@ export class ReservationService {
       await tx.update(invStockReservations).set({ status: "CONSUMED" }).where(eq(invStockReservations.id, reservationId));
 
       if (reservation.location_id) {
-        await tx.update(invStockLevels)
-          .set({ committed: sql`GREATEST(0, committed - ${reservation.reserved_qty}::numeric)` })
-          .where(and(eq(invStockLevels.orgId, orgId), eq(invStockLevels.productVariantId, reservation.product_variant_id), eq(invStockLevels.locationId, reservation.location_id)));
+        await releaseCommitted(tx, orgId, {
+          productVariantId: reservation.product_variant_id,
+          locationId: reservation.location_id,
+          lotId: reservation.lot_id,
+          serialId: reservation.serial_id,
+          reservedQty: reservation.reserved_qty,
+        });
       }
-
-      await tx.insert(invStockTransactions).values({
-        orgId, productVariantId: reservation.product_variant_id,
-        locationId: reservation.location_id, transactionType: "RESERVATION_CONSUME",
-        quantityChange: "0", quantityBefore: "0", quantityAfter: "0",
-        reason: "reservation_consume", createdBy: userId,
-        metadata: { reservationId } as Record<string, unknown>,
-      });
     });
   }
 
@@ -163,6 +169,8 @@ export class ReservationService {
       id: number;
       locationId: number | null;
       productVariantId: number;
+      lotId?: number | null;
+      serialId?: number | null;
       reservedQty: string;
     }>,
   ): Promise<void> {
@@ -180,45 +188,31 @@ export class ReservationService {
 
     const withLocation = reservations.filter((r) => r.locationId !== null);
     for (const r of withLocation) {
-      await tx.update(invStockLevels)
-        .set({ committed: sql`GREATEST(0, committed - ${r.reservedQty}::numeric)` })
-        .where(and(
-          eq(invStockLevels.orgId, orgId),
-          eq(invStockLevels.productVariantId, r.productVariantId),
-          eq(invStockLevels.locationId, r.locationId!),
-        ));
-    }
-
-    if (withLocation.length > 0) {
-      await tx.insert(invStockTransactions).values(
-        withLocation.map((r) => ({
-          orgId,
-          productVariantId: r.productVariantId,
-          locationId: r.locationId,
-          transactionType: "RESERVATION_CONSUME" as const,
-          quantityChange: "0",
-          quantityBefore: "0",
-          quantityAfter: "0",
-          reason: "reservation_consume",
-          createdBy: userId,
-          metadata: { reservationId: r.id },
-        })),
-      );
+      await releaseCommitted(tx, orgId, {
+        productVariantId: r.productVariantId,
+        locationId: r.locationId!,
+        lotId: r.lotId ?? null,
+        serialId: r.serialId ?? null,
+        reservedQty: r.reservedQty,
+      });
     }
   }
 
   async expireStale(orgId: string): Promise<number> {
     return this.db.transaction(async (tx) => {
       const stale = await tx.execute<{
-        id: number; location_id: number | null; product_variant_id: number; reserved_qty: string;
+        id: number; location_id: number | null; product_variant_id: number;
+        lot_id: number | null; serial_id: number | null; reserved_qty: string;
       }>(sql`
-        SELECT id, location_id, product_variant_id, reserved_qty
+        SELECT id, location_id, product_variant_id, lot_id, serial_id, reserved_qty
         FROM inv_stock_reservations
         WHERE org_id = ${orgId}
           AND status = 'ACTIVE'
           AND expires_at IS NOT NULL
           AND expires_at < NOW()
+        ORDER BY id
         FOR UPDATE
+        LIMIT 500
       `);
 
       if (stale.length === 0) return 0;
@@ -230,13 +224,13 @@ export class ReservationService {
 
       for (const r of stale) {
         if (r.location_id === null) continue;
-        await tx.update(invStockLevels)
-          .set({ committed: sql`GREATEST(0, committed - ${r.reserved_qty}::numeric)` })
-          .where(and(
-            eq(invStockLevels.orgId, orgId),
-            eq(invStockLevels.productVariantId, Number(r.product_variant_id)),
-            eq(invStockLevels.locationId, r.location_id),
-          ));
+        await releaseCommitted(tx, orgId, {
+          productVariantId: Number(r.product_variant_id),
+          locationId: r.location_id,
+          lotId: r.lot_id,
+          serialId: r.serial_id,
+          reservedQty: r.reserved_qty,
+        });
       }
 
       return stale.length;

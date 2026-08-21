@@ -10,7 +10,7 @@ import {
   uniqueIndex,
   unique,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { kbAudienceEnum, kbSpaceRoleEnum } from "../common/enums";
 
@@ -38,6 +38,7 @@ export const kbSpaces = pgTable(
   },
   (table) => [
     index("idx_kb_spaces_org").on(table.orgId),
+    index("idx_kb_spaces_org_live").on(table.orgId).where(sql`${table.deletedAt} IS NULL`),
     uniqueIndex("uniq_kb_spaces_org_slug").on(table.orgId, table.slug),
     unique("uniq_kb_spaces_org_id").on(table.orgId, table.id),
   ],

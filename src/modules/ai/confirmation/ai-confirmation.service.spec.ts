@@ -495,8 +495,8 @@ describe("AiConfirmationService — isolated unit tests", () => {
     const execDb = buildSimpleSelectDb(confirmedRow, store, proposed.proposalId);
     const svc3 = new AiConfirmationService(execDb, { log: jest.fn() } as never);
 
-    await svc3.markExecuted(proposed.proposalId, { exportedRows: 42 });
-    await expect(svc3.markExecuted(proposed.proposalId, { exportedRows: 42 })).resolves.toBeUndefined();
+    await svc3.markExecuted(proposed.proposalId, { exportedRows: 42 }, "org1");
+    await expect(svc3.markExecuted(proposed.proposalId, { exportedRows: 42 }, "org1")).resolves.toBeUndefined();
     expect(store.rows.get(proposed.proposalId)?.status).toBe("EXECUTED");
   });
 

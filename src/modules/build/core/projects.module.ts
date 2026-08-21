@@ -4,6 +4,9 @@ import { NotificationsModule } from "../../notifications/notifications.module";
 import { UsersModule } from "../../users/users.module";
 import { ProjectsController } from "./projects.controller";
 import { ProjectsTicketsController } from "./projects-tickets.controller";
+import { ProjectsTicketCommentsController } from "./projects-ticket-comments.controller";
+import { ProjectsTicketChecklistsController } from "./projects-ticket-checklists.controller";
+import { ProjectsTicketAssociationsController } from "./projects-ticket-associations.controller";
 import { ProjectsReportsController } from "./projects-reports.controller";
 import { ProjectsBudgetController } from "./projects-budget.controller";
 import { ProjectsTemplatesController } from "./projects-templates.controller";
@@ -22,6 +25,8 @@ import { ProjectsWriteService } from "./projects-write.service";
 import { ProjectsProvisionService } from "./projects-provision.service";
 import { ProjectsEmailService } from "./projects-email.service";
 import { ProjectsMembersService } from "./projects-members.service";
+import { BuildDueSweepService } from "./build-due-sweep.service";
+import { BuildNotificationVisibility } from "./build-notification-visibility";
 import { ProjectsTicketsService } from "./projects-tickets.service";
 import { ProjectsTicketsCreateService } from "./projects-tickets-create.service";
 import { ProjectsTicketsUpdateService } from "./projects-tickets-update.service";
@@ -48,15 +53,19 @@ import { ProjectsTicketChecklistsService } from "./projects-ticket-checklists.se
 import { ProjectsTicketLinksService } from "./projects-ticket-links.service";
 import { ProjectsTicketRelationsService } from "./projects-ticket-relations.service";
 import { BuildAutomationRunnerService } from "./build-automation-runner.service";
+import { PmWorkspacesModule } from "../pm-workspaces/pm-workspaces.module";
 
 @Module({
-  imports: [BillingModule, NotificationsModule, UsersModule],
+  imports: [BillingModule, NotificationsModule, UsersModule, PmWorkspacesModule],
   controllers: [
     ProjectsRoadmapController,
     ProjectsTemplatesController,
     ProjectsReportsController,
     ProjectsBudgetController,
     ProjectsTicketsController,
+    ProjectsTicketCommentsController,
+    ProjectsTicketChecklistsController,
+    ProjectsTicketAssociationsController,
     ProjectsCustomFieldsController,
     ProjectsReleasesController,
     ProjectsWebhooksController,
@@ -66,6 +75,8 @@ import { BuildAutomationRunnerService } from "./build-automation-runner.service"
     ProjectsController,
   ],
   providers: [
+    BuildDueSweepService,
+    BuildNotificationVisibility,
     ProjectsService,
     ProjectsQueryService,
     ProjectsWriteService,
@@ -102,11 +113,13 @@ import { BuildAutomationRunnerService } from "./build-automation-runner.service"
     BuildAutomationRunnerService,
   ],
   exports: [
+    BuildDueSweepService,
     ProjectsTicketsService,
     ProjectsWebhooksDispatchService,
     ProjectsService,
     ProjectsWorkQueryService,
     ProjectsTicketSubresourcesService,
+    ProjectsReportsService,
   ],
 })
 export class ProjectsModule {}

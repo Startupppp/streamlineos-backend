@@ -3,6 +3,7 @@ import { aiUsageLogs } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import { logger } from "../../../../common/logger/logger.service";
+import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import { computeTokenCharge } from "../billing/ai-model-pricing.constants";
 
 export interface TrackAiUsageParams {
@@ -33,7 +34,7 @@ export class AiUsageService {
     const creditsMilli = params.creditsMilli ?? 0;
 
     try {
-      await this.db.insert(aiUsageLogs).values({
+      await runInTenantTransaction(this.db, (tx) => tx.insert(aiUsageLogs).values({
         orgId,
         userId: userId ?? null,
         feature,
@@ -47,7 +48,7 @@ export class AiUsageService {
         latencyMs: latencyMs ?? null,
         correlationId: correlationId ?? null,
         outcome: outcome ?? null,
-      });
+      }), { orgId });
     } catch (error) {
       logger.error("Failed to track AI usage", { error, orgId, feature });
     }

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -14,7 +14,7 @@ import {
 import type { CrmAutomationCondition, AutomationGraphNode } from "../../../db/schema/crm/automation-rules";
 import { logger } from "../../../common/logger/logger.service";
 import { NotificationsService } from "../../notifications/notifications.service";
-import { AutomationEmailService } from "../../automation/automation-email.service";
+import { CrmOutboundEmailService } from "../consent/crm-outbound-email.service";
 import type { StudioEventPayload, RunStepLog } from "./types";
 import { evaluateConditions, type StudioCondition } from "./crm-automation-condition-evaluator";
 
@@ -26,7 +26,7 @@ export class CrmAutomationRunnerService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly notifications: NotificationsService,
-    private readonly email: AutomationEmailService,
+    private readonly email: CrmOutboundEmailService,
   ) {}
 
   async executeRule(
@@ -215,7 +215,7 @@ export class CrmAutomationRunnerService {
           return { nodeId, type: actionKey, status: "ok", at };
         }
         case "send_email": {
-          await this.email.send({
+          await this.email.send(orgId, {
             to: String(config["to"] ?? ""),
             subject: String(config["subject"] ?? ""),
             html: String(config["body"] ?? ""),
@@ -274,7 +274,7 @@ export class CrmAutomationRunnerService {
               .where(and(eq(leads.orgId, orgId), eq(leads.id, parseInt(payload.entityId, 10))));
           } else if (payload.entityType === "deal") {
             await this.db.update(deals).set({ assignedToId: targetUserId })
-              .where(and(eq(deals.orgId, orgId), eq(deals.id, parseInt(payload.entityId, 10))));
+              .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), eq(deals.id, parseInt(payload.entityId, 10))));
           } else {
             return { nodeId, type: actionKey, status: "skipped", message: "unsupported_entity", at };
           }
@@ -295,7 +295,7 @@ export class CrmAutomationRunnerService {
               return { nodeId, type: actionKey, status: "error", message: "field_not_allowed", at };
             }
             await this.db.update(deals).set({ [field]: value })
-              .where(and(eq(deals.orgId, orgId), eq(deals.id, parseInt(payload.entityId, 10))));
+              .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), eq(deals.id, parseInt(payload.entityId, 10))));
           } else {
             return { nodeId, type: actionKey, status: "skipped", message: "unsupported_entity", at };
           }

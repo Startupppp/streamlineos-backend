@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { deals, organizationMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -101,7 +101,7 @@ export class DealsImportExportService {
       })
       .from(deals)
       .leftJoin(users, eq(deals.assignedToId, users.id))
-      .where(eq(deals.orgId, orgId))
+      .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt)))
       .orderBy(desc(deals.updatedAt));
 
     const headers = [

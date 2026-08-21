@@ -1,18 +1,10 @@
-import {
-  pgTable,
-  text,
-  integer,
-  boolean,
-  timestamp,
-  index,
-  unique,
-  uniqueIndex,
-} from "drizzle-orm/pg-core";
+import { text, integer, boolean, timestamp, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
 
-export const projectTeams = pgTable(
+export const projectTeams = build.table(
   "project_teams",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -39,7 +31,7 @@ export const projectTeams = pgTable(
   ],
 );
 
-export const projectTeamMembers = pgTable(
+export const projectTeamMembers = build.table(
   "project_team_members",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -63,7 +55,7 @@ export const projectTeamMembers = pgTable(
   ],
 );
 
-export const projectWorkspaceMembers = pgTable(
+export const projectWorkspaceMembers = build.table(
   "project_workspace_members",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -87,7 +79,7 @@ export const projectWorkspaceMembers = pgTable(
   ],
 );
 
-export const projectTeamAssignments = pgTable(
+export const projectTeamAssignments = build.table(
   "project_team_assignments",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),

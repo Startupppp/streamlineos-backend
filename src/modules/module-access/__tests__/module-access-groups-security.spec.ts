@@ -83,7 +83,12 @@ async function buildSvc(opts: {
   actorOverrides?: Partial<CurrentUserContext>;
   authority?: "module-admin" | "module-owner" | "org-owner";
   selectResultSets?: unknown[][];
-  orgMember?: { id: number; status: "ACTIVE" | "SUSPENDED" } | null;
+  orgMember?: {
+    id: number;
+    status: "ACTIVE" | "SUSPENDED";
+    isOwner?: boolean;
+    role?: "MEMBER" | "ORG_ADMIN";
+  } | null;
   groupRow?: { id: number; orgId: string; moduleKey: string; isSystem: boolean } | null;
   permissionsMap?: Map<string, string>;
 }) {
@@ -107,7 +112,14 @@ async function buildSvc(opts: {
           ...operationSelectResultSets,
         ];
   const orgMember =
-    opts.orgMember !== undefined ? opts.orgMember : { id: 42, status: "ACTIVE" as const };
+    opts.orgMember !== undefined
+      ? opts.orgMember
+      : {
+          id: 42,
+          status: "ACTIVE" as const,
+          isOwner: false,
+          role: "MEMBER" as const,
+        };
   const groupRow =
     opts.groupRow !== undefined
       ? opts.groupRow

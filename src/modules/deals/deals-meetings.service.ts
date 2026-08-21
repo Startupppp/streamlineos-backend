@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { dealMeetings, dealMeetingAttendees, deals } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -11,7 +11,7 @@ export class DealsMeetingsService {
 
   async listMeetings(orgId: string, dealId: number) {
     const deal = await this.db.query.deals.findFirst({
-      where: and(eq(deals.id, dealId), eq(deals.orgId, orgId)),
+      where: and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)),
       columns: { id: true },
     });
     if (!deal) throw new NotFoundException("Deal not found.");
@@ -43,7 +43,7 @@ export class DealsMeetingsService {
 
   async createMeeting(orgId: string, userId: string, dealId: number, input: CreateMeetingInput) {
     const deal = await this.db.query.deals.findFirst({
-      where: and(eq(deals.id, dealId), eq(deals.orgId, orgId)),
+      where: and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)),
       columns: { id: true },
     });
     if (!deal) throw new NotFoundException("Deal not found.");

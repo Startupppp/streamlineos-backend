@@ -28,7 +28,7 @@ export class ManagedProductsService {
       .from(managedProducts)
       .where(
         and(
-          eq(managedProducts.managedProductId, managedProductId),
+          eq(managedProducts.id, managedProductId),
           eq(managedProducts.orgId, orgId),
           isNull(managedProducts.deletedAt),
         ),
@@ -105,8 +105,8 @@ export class ManagedProductsService {
       userId,
       orgId,
       resourceType: "managed_product",
-      resourceId: String(row.managedProductId),
-      metadata: { managedProductId: row.managedProductId, name: row.name, key: row.key },
+      resourceId: String(row.id),
+      metadata: { managedProductId: row.id, name: row.name, key: row.key },
     });
     return row;
   }
@@ -128,7 +128,7 @@ export class ManagedProductsService {
       .set(patch)
       .where(
         and(
-          eq(managedProducts.managedProductId, managedProductId),
+          eq(managedProducts.id, managedProductId),
           eq(managedProducts.orgId, orgId),
         ),
       )
@@ -152,7 +152,7 @@ export class ManagedProductsService {
       .set({ deletedAt: new Date() })
       .where(
         and(
-          eq(managedProducts.managedProductId, managedProductId),
+          eq(managedProducts.id, managedProductId),
           eq(managedProducts.orgId, orgId),
         ),
       );

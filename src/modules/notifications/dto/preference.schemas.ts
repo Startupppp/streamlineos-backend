@@ -17,7 +17,6 @@ export const updatePreferenceSchema = z.object({
   soundEnabled: z.boolean().optional(),
   quietHoursStart: z.string().nullable().optional(),
   quietHoursEnd: z.string().nullable().optional(),
-  quietHoursTimezone: z.string().optional(),
   quietHoursWeekends: z.boolean().optional(),
   allowCriticalOverride: z.boolean().optional(),
   digestMode: z.enum(["disabled", "hourly", "daily", "weekly"]).optional(),

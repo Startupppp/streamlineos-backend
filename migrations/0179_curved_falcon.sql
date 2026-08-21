@@ -1,0 +1,24 @@
+-- SNAP-001 reconciliation. Intentionally a no-op.
+--
+-- Migrations 0429, 0430 and 0431 were written by hand, so drizzle-kit never produced a
+-- snapshot for them and `migrations/meta` still described the schema as it was before.
+-- The next `db:generate` therefore re-proposed work that is already applied — which is
+-- what this file was, verbatim: three CREATE TABLEs, four CREATE TYPEs, six columns and
+-- nine indexes that all exist in the database today.
+--
+-- Every object was verified present before this file was emptied:
+--   broadcast_audience_targets, notification_digest_items, notification_digest_runs,
+--   broadcast_audience_type, email_outbox_scope, template_approval_status,
+--   broadcast_audience_kind, notification_templates.approval_status,
+--   broadcasts.audience_type, email_outbox.scope, and the digest/audience indexes.
+--
+-- The SQL is removed and the accompanying `0179_snapshot.json` is kept. That is the whole
+-- point: the snapshot brings `migrations/meta` level with reality, so the NEXT
+-- `db:generate` diffs against the truth and proposes nothing. Executing the statements
+-- instead would fail on this database (the types already exist) and would fail on a cold
+-- rebuild too, because 0429-0431 create the same objects earlier in the chain.
+--
+-- Do not "restore" this file. If it ever has content again, the schema and the snapshot
+-- have diverged, and the correct fix is a new migration rather than this one.
+
+SELECT 1;

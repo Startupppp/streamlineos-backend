@@ -1,7 +1,6 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { and, gte, lte, eq } from "drizzle-orm";
 import {
-  holidays,
   leaveRequests,
   leaveTypes,
   reviewCycles,
@@ -11,6 +10,7 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
+import { listCompatibleHolidays } from "../../../db/compat/organization-holidays";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { HrCalendarInput } from "./dto/hr-calendar.schemas";
 import { CelebrationsService } from "../directory/celebrations.service";
@@ -77,16 +77,7 @@ export class HrCalendarService {
 
     if (types.includes("HOLIDAY")) {
       fetches.push(
-        this.db
-          .select({ id: holidays.id, name: holidays.name, date: holidays.date })
-          .from(holidays)
-          .where(
-            and(
-              eq(holidays.orgId, user.orgId),
-              gte(holidays.date, fromStr),
-              lte(holidays.date, toStr),
-            ),
-          )
+        listCompatibleHolidays(this.db, user.orgId, fromStr, toStr)
           .then((rows) => {
             for (const r of rows) {
               events.push({ id: `holiday-${r.id}`, type: "HOLIDAY", title: r.name, date: r.date });
@@ -135,7 +126,9 @@ export class HrCalendarService {
 
     if (types.includes("BIRTHDAY") || types.includes("ANNIVERSARY")) {
       fetches.push(
-        this.celebrations.getAnniversaryFeed(user.orgId).then((feed) => {
+        this.celebrations
+          .getAnniversaryFeed(user.orgId, user.userId, "all")
+          .then((feed) => {
           for (const item of feed) {
             if (
               item.type === "BIRTHDAY" &&
@@ -168,7 +161,7 @@ export class HrCalendarService {
               });
             }
           }
-        }),
+          }),
       );
     }
 

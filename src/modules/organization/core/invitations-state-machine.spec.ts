@@ -2,7 +2,7 @@ jest.mock("../../email/app-url", () => ({
   appUrl: "https://test.example.com",
 }));
 
-import { NotFoundException } from "@nestjs/common";
+import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { AccessService } from "../../access/access.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
@@ -19,6 +19,7 @@ describe("InvitationsService state transitions", () => {
   const organizationFindFirst = jest.fn();
   const membershipFindFirst = jest.fn();
   const userFindFirst = jest.fn();
+  const canManageOrganizationMembership = jest.fn().mockResolvedValue(true);
   const invalidate = jest.fn().mockResolvedValue(undefined);
   const invalidatePattern = jest.fn().mockResolvedValue(undefined);
   const invalidateNamespace = jest.fn().mockResolvedValue(undefined);
@@ -76,7 +77,10 @@ describe("InvitationsService state transitions", () => {
           },
         },
         { provide: PlanLimitsService, useValue: {} },
-        { provide: AccessService, useValue: {} },
+        {
+          provide: AccessService,
+          useValue: { canManageOrganizationMembership },
+        },
         { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
@@ -91,8 +95,16 @@ describe("InvitationsService state transitions", () => {
 
       const run =
         operation === "resend"
-          ? () => service.resend("org-a", "invite-from-org-b", "actor-1")
-          : () => lifecycle.cancel("org-a", "invite-from-org-b", "actor-1");
+          ? () =>
+              service.resend("org-a", "invite-from-org-b", {
+                userId: "actor-1",
+                isOrgOwner: false,
+              })
+          : () =>
+              lifecycle.cancel("org-a", "invite-from-org-b", {
+                userId: "actor-1",
+                isOrgOwner: false,
+              });
 
       await expect(run()).rejects.toBeInstanceOf(NotFoundException);
       expect(db.transaction).not.toHaveBeenCalled();
@@ -109,7 +121,10 @@ describe("InvitationsService state transitions", () => {
     });
 
     await expect(
-      lifecycle.cancel("org-a", "invite-1", "actor-1"),
+      lifecycle.cancel("org-a", "invite-1", {
+        userId: "actor-1",
+        isOrgOwner: false,
+      }),
     ).resolves.toEqual({ success: true });
 
     expect(db.transaction).toHaveBeenCalledTimes(1);
@@ -137,8 +152,16 @@ describe("InvitationsService state transitions", () => {
 
       const run =
         operation === "resend"
-          ? () => service.resend("org-a", "invite-1", "actor-1")
-          : () => lifecycle.cancel("org-a", "invite-1", "actor-1");
+          ? () =>
+              service.resend("org-a", "invite-1", {
+                userId: "actor-1",
+                isOrgOwner: false,
+              })
+          : () =>
+              lifecycle.cancel("org-a", "invite-1", {
+                userId: "actor-1",
+                isOrgOwner: false,
+              });
 
       await expect(run()).rejects.toBeInstanceOf(NotFoundException);
 
@@ -168,4 +191,65 @@ describe("InvitationsService state transitions", () => {
 
     expect(eventValues).not.toHaveBeenCalled();
   });
+
+  it.each(["resend", "cancel", "change-role"] as const)(
+    "rejects %s when a custom settings grant lacks structural membership authority",
+    async (operation) => {
+      invitationFindFirst.mockResolvedValue({
+        id: "invite-1",
+        orgId: "org-a",
+        email: "member@example.com",
+        role: "MEMBER",
+        status: "PENDING",
+        acceptedAt: null,
+      });
+      canManageOrganizationMembership.mockResolvedValueOnce(false);
+      const actor = { userId: "custom-manager", isOrgOwner: false };
+
+      const run =
+        operation === "resend"
+          ? () => service.resend("org-a", "invite-1", actor)
+          : operation === "cancel"
+            ? () => lifecycle.cancel("org-a", "invite-1", actor)
+            : () =>
+                lifecycle.changeRole(
+                  "org-a",
+                  "invite-1",
+                  actor,
+                  "ORG_ADMIN",
+                );
+
+      await expect(run()).rejects.toBeInstanceOf(ForbiddenException);
+      expect(db.transaction).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["invite", "bulk-invite"] as const)(
+    "rejects %s before reading organization data when structural authority is absent",
+    async (operation) => {
+      canManageOrganizationMembership.mockResolvedValueOnce(false);
+      const actor = { userId: "custom-manager", isOrgOwner: false };
+
+      const run =
+        operation === "invite"
+          ? () =>
+              service.invite(
+                "org-a",
+                actor,
+                "member@example.com",
+                "MEMBER",
+              )
+          : () =>
+              service.bulkInvite(
+                "org-a",
+                actor,
+                ["member@example.com"],
+                "MEMBER",
+              );
+
+      await expect(run()).rejects.toBeInstanceOf(ForbiddenException);
+      expect(organizationFindFirst).not.toHaveBeenCalled();
+      expect(db.transaction).not.toHaveBeenCalled();
+    },
+  );
 });

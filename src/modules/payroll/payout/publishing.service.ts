@@ -251,11 +251,11 @@ export class PublishingService {
         if (!wasAlreadyPublished && emailPayslips && payee.email && renderedPdfBuffer) {
           try {
             const monthLabel = fmtMonthYear(run.month);
-            const netAmount = parseFloat(snapshot.totals.net).toLocaleString("en-IN", { minimumFractionDigits: 2 });
+            // SEC-007: the net figure stays in the attached PDF. It is no longer
+            // rendered into the body, which email_outbox retains.
             const emailTemplate = getPayslipEmailTemplate({
               employeeName: payee.displayName,
               month: monthLabel,
-              netSalary: netAmount,
               orgName,
             });
             void this.email.sendEmail({

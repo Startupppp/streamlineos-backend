@@ -25,10 +25,10 @@ import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transa
 import {
   assertPermissionsGrantable,
   buildPermissionModuleMap,
-  grantsOrgAdmin,
   isImmutableSystemRole,
   toGrantableSet,
 } from "../../common/rbac/grantability";
+import { isStructuralOrgAdmin } from "../../common/rbac/is-structural-org-admin";
 import { moduleAccessDenied } from "./module-access-errors";
 import {
   assertModuleAccessPolicy,
@@ -312,11 +312,12 @@ export class ModuleAccessService {
     }
 
     if (!actor.isOrgOwner) {
-      const [resolved, { bestRank, allowedModules }] = await Promise.all([
-        this.access.resolveUserPermissions(actor.orgId, actor.userId),
-        resolveActorRankContext(this.db, actor.orgId, actor.userId),
-      ]);
-      const isOrgAdmin = grantsOrgAdmin(resolved);
+      const [resolved, { bestRank, allowedModules }, isOrgAdmin] =
+        await Promise.all([
+          this.access.resolveUserPermissions(actor.orgId, actor.userId),
+          resolveActorRankContext(this.db, actor.orgId, actor.userId),
+          isStructuralOrgAdmin(this.db, actor),
+        ]);
       if (!isOrgAdmin) {
         const permMeta = buildPermissionModuleMap(Array.from(deduped.keys()));
         assertPermissionsGrantable(
@@ -515,9 +516,10 @@ export class ModuleAccessService {
     if (!membership)
       throw new ForbiddenException("Not an active member of this organization");
 
-    const [resolved, moduleAuthority] = await Promise.all([
+    const [resolved, moduleAuthority, isOrgAdmin] = await Promise.all([
       this.access.resolveUserPermissions(actor.orgId, actor.userId),
       resolveModuleAuthorityFacts(this.db, actor, moduleKey),
+      isStructuralOrgAdmin(this.db, actor),
     ]);
 
     const permissions = Array.from(resolved.entries())
@@ -527,7 +529,7 @@ export class ModuleAccessService {
     return {
       permissions,
       isOrgOwner: actor.isOrgOwner,
-      isOrgAdmin: grantsOrgAdmin(resolved),
+      isOrgAdmin,
       ...moduleAuthority,
     };
   }

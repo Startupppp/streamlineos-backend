@@ -5,6 +5,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
+import { WarehouseScopeService, type WarehouseScope } from "../stock-engine/warehouse-scope.service";
 import type { CreateWarehouseInput, UpdateWarehouseInput, CreateLocationInput, UpdateLocationInput, ListWarehousesInput } from "./dto/inv-warehouses.schemas";
 
 function escapeLike(value: string): string {
@@ -18,21 +19,27 @@ export class InvWarehousesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly warehouseScope: WarehouseScopeService,
   ) {}
 
-  async listWarehouses(orgId: string, filters?: ListWarehousesInput) {
+  async listWarehouses(orgId: string, userId: string, filters?: ListWarehousesInput) {
+    const scope = await this.warehouseScope.resolve(orgId, userId);
+    // The unfiltered list is cached per org, so the caller's scope has to be part
+    // of the key or one operator's warehouses would be served to the next.
+    const scopeKey = scope === null ? "all" : ([...scope].sort((a, b) => a - b).join(".") || "none");
     const hasFilters = filters && (filters.q || filters.status || filters.isDefault !== undefined || filters.country || filters.city);
     if (!hasFilters) {
-      return this.cache.cached(CACHE_KEYS.invWarehousesList(orgId), () =>
-        this.queryWarehouses(orgId, {}),
+      return this.cache.cached(`${CACHE_KEYS.invWarehousesList(orgId)}:${scopeKey}`, () =>
+        this.queryWarehouses(orgId, {}, scope),
         CACHE_TTL.MEDIUM
       );
     }
-    return this.queryWarehouses(orgId, filters ?? {});
+    return this.queryWarehouses(orgId, filters ?? {}, scope);
   }
 
-  private async queryWarehouses(orgId: string, filters: Partial<ListWarehousesInput>) {
+  private async queryWarehouses(orgId: string, filters: Partial<ListWarehousesInput>, scope: WarehouseScope = null) {
     const conds = [eq(invWarehouses.orgId, orgId)];
+    conds.push(this.warehouseScope.warehousePredicate(scope, sql`${invWarehouses.id}`));
 
     if (filters.q) {
       const term = `%${escapeLike(filters.q)}%`;

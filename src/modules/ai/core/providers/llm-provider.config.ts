@@ -6,26 +6,44 @@ export interface LlmProviderConfig {
   baseURL: string | undefined;
   fastModel: string;
   standardModel: string;
+  /** Ordered attempt chain per tier: the primary model first, then fallbacks. */
+  fastChain: string[];
+  standardChain: string[];
 }
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
-export function resolveLlmProvider(): LlmProviderConfig {
-  if (process.env.AI_LLM_PROVIDER === "openrouter") {
-    return {
-      provider: "openrouter",
-      apiKey: process.env.OPENROUTER_API_KEY,
-      baseURL: OPENROUTER_BASE_URL,
-      fastModel: "openai/gpt-4o-mini",
-      standardModel: "openai/gpt-4o",
-    };
-  }
+function parseModelList(raw: string | undefined): string[] {
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
+/**
+ * Defaults fall back to the other tier's configured model rather than a guessed
+ * id, so the chain only ever contains models this deployment is known to have.
+ */
+function buildChain(primary: string, override: string | undefined, lastResort: string): string[] {
+  const configured = parseModelList(override);
+  const candidates = configured.length > 0 ? [primary, ...configured] : [primary, lastResort];
+  return [...new Set(candidates)];
+}
+
+export function resolveLlmProvider(env: NodeJS.ProcessEnv = process.env): LlmProviderConfig {
+  const isOpenRouter = env.AI_LLM_PROVIDER === "openrouter";
+
+  const fastModel = isOpenRouter ? "openai/gpt-4o-mini" : "gpt-4o-mini";
+  const standardModel = isOpenRouter ? "openai/gpt-4o" : "gpt-4o";
 
   return {
-    provider: "openai",
-    apiKey: process.env.OPENAI_API_KEY,
-    baseURL: undefined,
-    fastModel: "gpt-4o-mini",
-    standardModel: "gpt-4o",
+    provider: isOpenRouter ? "openrouter" : "openai",
+    apiKey: isOpenRouter ? env.OPENROUTER_API_KEY : env.OPENAI_API_KEY,
+    baseURL: isOpenRouter ? OPENROUTER_BASE_URL : undefined,
+    fastModel,
+    standardModel,
+    fastChain: buildChain(fastModel, env.AI_FAST_FALLBACK_MODELS, standardModel),
+    standardChain: buildChain(standardModel, env.AI_STANDARD_FALLBACK_MODELS, fastModel),
   };
 }

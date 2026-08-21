@@ -9,6 +9,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
+import { OrgHierarchyCacheService } from "../../common/cache/org-hierarchy-cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { syncOrgUnitPlacement } from "../../common/org/sync-org-unit-placement";
 import type {
@@ -26,6 +27,7 @@ export class BranchesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly hierarchyCache: OrgHierarchyCacheService,
   ) {}
 
   list(orgId: string) {
@@ -44,8 +46,10 @@ export class BranchesService {
         });
 
         const hrContactIds = rows
-          .map((r) => readBranchMeta(r.metadata).hrContactUserId)
-          .filter((id): id is string => typeof id === "string");
+          .map((branchRow) =>
+            readBranchMeta(branchRow.metadata).hrContactUserId,
+          )
+          .filter((userId): userId is string => typeof userId === "string");
 
         const hrUsers =
           hrContactIds.length > 0
@@ -54,15 +58,17 @@ export class BranchesService {
                 .from(users)
                 .where(inArray(users.id, hrContactIds))
             : [];
-        const hrMap = new Map(hrUsers.map((u) => [u.id, u]));
+        const hrMap = new Map(
+          hrUsers.map((hrUser) => [hrUser.id, hrUser]),
+        );
 
-        return rows.map((r) => {
-          const meta = readBranchMeta(r.metadata);
+        return rows.map((branchRow) => {
+          const meta = readBranchMeta(branchRow.metadata);
           return {
-            id: r.id,
-            orgId: r.orgId,
-            name: r.name,
-            code: r.code,
+            id: branchRow.id,
+            orgId: branchRow.orgId,
+            name: branchRow.name,
+            code: branchRow.code,
             city: meta.city ?? null,
             state: meta.state ?? null,
             country: meta.country ?? null,
@@ -70,10 +76,11 @@ export class BranchesService {
             address: meta.address ?? null,
             phone: meta.phone ?? null,
             email: meta.email ?? null,
-            status: r.status === "ACTIVE" ? "ACTIVE" : "INACTIVE",
-            createdAt: r.createdAt,
-            updatedAt: r.updatedAt,
-            branchManager: r.head ?? null,
+            status:
+              branchRow.status === "ACTIVE" ? "ACTIVE" : "INACTIVE",
+            createdAt: branchRow.createdAt,
+            updatedAt: branchRow.updatedAt,
+            branchManager: branchRow.head ?? null,
             branchHr: meta.hrContactUserId
               ? (hrMap.get(meta.hrContactUserId) ?? null)
               : null,
@@ -84,10 +91,10 @@ export class BranchesService {
     );
   }
 
-  async getOne(orgId: string, id: string) {
+  async getOne(orgId: string, branchId: string) {
     const branch = await this.db.query.orgUnits.findFirst({
       where: and(
-        eq(orgUnits.id, id),
+        eq(orgUnits.id, branchId),
         eq(orgUnits.orgId, orgId),
         eq(orgUnits.kind, "BRANCH"),
         isNull(orgUnits.deletedAt),
@@ -111,7 +118,7 @@ export class BranchesService {
           .from(users)
           .where(eq(users.id, meta.hrContactUserId))
           .limit(1)
-          .then((r) => r[0] ?? null)
+          .then((userRows) => userRows[0] ?? null)
       : null;
 
     const employees = await this.db
@@ -130,7 +137,7 @@ export class BranchesService {
           eq(organizationMembers.orgId, orgId),
         ),
       )
-      .where(eq(users.branchId, id));
+      .where(eq(users.branchId, branchId));
 
     return {
       id: branch.id,
@@ -187,25 +194,28 @@ export class BranchesService {
       return created;
     });
 
-    await this.cache.invalidate(CACHE_KEYS.branchesList(orgId));
-    await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "BRANCH"));
+    await Promise.all([
+      this.cache.invalidate(CACHE_KEYS.branchesList(orgId)),
+      this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "BRANCH")),
+      this.hierarchyCache.invalidateAfterMutation(orgId),
+    ]);
     return branch;
   }
 
-  async update(orgId: string, id: string, input: UpdateBranchInput) {
+  async update(orgId: string, branchId: string, input: UpdateBranchInput) {
     const current = await this.db
       .select({ metadata: orgUnits.metadata })
       .from(orgUnits)
       .where(
         and(
-          eq(orgUnits.id, id),
+          eq(orgUnits.id, branchId),
           eq(orgUnits.orgId, orgId),
           eq(orgUnits.kind, "BRANCH"),
           isNull(orgUnits.deletedAt),
         ),
       )
       .limit(1)
-      .then((r) => r[0] ?? null);
+      .then((branchRows) => branchRows[0] ?? null);
     if (!current) return null;
 
     const existingMeta = readBranchMeta(current.metadata);
@@ -224,7 +234,7 @@ export class BranchesService {
     };
 
     const updated = await this.db.transaction(async (tx) => {
-      const [row] = await tx
+      const [updatedBranch] = await tx
         .update(orgUnits)
         .set({
           ...(input.name !== undefined ? { name: input.name } : {}),
@@ -240,22 +250,22 @@ export class BranchesService {
         })
         .where(
           and(
-            eq(orgUnits.id, id),
+            eq(orgUnits.id, branchId),
             eq(orgUnits.orgId, orgId),
             eq(orgUnits.kind, "BRANCH"),
             isNull(orgUnits.deletedAt),
           ),
         )
         .returning();
-      if (!row) return null;
+      if (!updatedBranch) return null;
 
       if (input.branchManagerId !== undefined) {
         await tx
           .update(users)
-          .set({ branchId: row.id })
+          .set({ branchId: updatedBranch.id })
           .where(eq(users.id, input.branchManagerId));
         await syncOrgUnitPlacement(tx, orgId, input.branchManagerId, {
-          BRANCH: row.id,
+          BRANCH: updatedBranch.id,
         });
       }
 
@@ -263,13 +273,17 @@ export class BranchesService {
         if (input.branchHrId) {
           await tx
             .update(users)
-            .set({ branchId: row.id })
+            .set({ branchId: updatedBranch.id })
             .where(eq(users.id, input.branchHrId));
           await syncOrgUnitPlacement(tx, orgId, input.branchHrId, {
-            BRANCH: row.id,
+            BRANCH: updatedBranch.id,
           });
         }
-        if (oldHrId && oldHrId !== input.branchHrId && oldHrId !== row.headUserId) {
+        if (
+          oldHrId &&
+          oldHrId !== input.branchHrId &&
+          oldHrId !== updatedBranch.headUserId
+        ) {
           await tx
             .update(users)
             .set({ branchId: null })
@@ -278,29 +292,32 @@ export class BranchesService {
         }
       }
 
-      return row;
+      return updatedBranch;
     });
 
     if (!updated) return null;
-    await this.cache.invalidate(CACHE_KEYS.branchesList(orgId));
-    await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "BRANCH"));
+    await Promise.all([
+      this.cache.invalidate(CACHE_KEYS.branchesList(orgId)),
+      this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "BRANCH")),
+      this.hierarchyCache.invalidateAfterMutation(orgId),
+    ]);
     return updated;
   }
 
-  async remove(orgId: string, id: string) {
+  async remove(orgId: string, branchId: string) {
     const current = await this.db
       .select({ headUserId: orgUnits.headUserId, metadata: orgUnits.metadata })
       .from(orgUnits)
       .where(
         and(
-          eq(orgUnits.id, id),
+          eq(orgUnits.id, branchId),
           eq(orgUnits.orgId, orgId),
           eq(orgUnits.kind, "BRANCH"),
           isNull(orgUnits.deletedAt),
         ),
       )
       .limit(1)
-      .then((r) => r[0] ?? null);
+      .then((branchRows) => branchRows[0] ?? null);
     if (!current) return null;
 
     const meta = readBranchMeta(current.metadata);
@@ -327,7 +344,7 @@ export class BranchesService {
         .set({ deletedAt: new Date() })
         .where(
           and(
-            eq(orgUnits.id, id),
+            eq(orgUnits.id, branchId),
             eq(orgUnits.orgId, orgId),
             eq(orgUnits.kind, "BRANCH"),
             isNull(orgUnits.deletedAt),
@@ -335,8 +352,11 @@ export class BranchesService {
         );
     });
 
-    await this.cache.invalidate(CACHE_KEYS.branchesList(orgId));
-    await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "BRANCH"));
+    await Promise.all([
+      this.cache.invalidate(CACHE_KEYS.branchesList(orgId)),
+      this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "BRANCH")),
+      this.hierarchyCache.invalidateAfterMutation(orgId),
+    ]);
     return { success: true };
   }
 }

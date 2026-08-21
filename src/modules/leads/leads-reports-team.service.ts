@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, and, inArray, notInArray, sql, lte, isNotNull } from "drizzle-orm";
+import { eq, and, inArray, isNull, notInArray, sql, lte, isNotNull } from "drizzle-orm";
 import { AccessService } from "../access/access.service";
 import {
   leads,
@@ -60,6 +60,7 @@ export class LeadsReportsTeamService {
             .where(
               and(
                 eq(leads.orgId, orgId),
+                isNull(leads.deletedAt),
                 isNotNull(leads.assignedToId),
               ),
             )
@@ -193,6 +194,7 @@ export class LeadsReportsTeamService {
                 .where(
                   and(
                     eq(leads.orgId, orgId),
+                    isNull(leads.deletedAt),
                     notInArray(leads.status, terminalKeys),
                     isNotNull(leads.assignedToId),
                   ),
@@ -233,6 +235,7 @@ export class LeadsReportsTeamService {
 
     const slaFilters = [
       eq(leads.orgId, orgId),
+      isNull(leads.deletedAt),
       inArray(leads.status, semantics.slaOpenKeys),
       lte(leads.updatedAt, twentyFourHoursAgo),
     ];

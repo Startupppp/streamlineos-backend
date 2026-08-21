@@ -60,7 +60,12 @@ export const crmCampaignStatusEnum = pgEnum("crm_campaign_status", ["active", "p
 export const crmLeadStatusEnum = pgEnum("crm_lead_status", ["visitor", "lead", "mql", "sql", "opportunity"]);
 export const crmSupportTicketStatusEnum = pgEnum("crm_support_ticket_status", ["new", "in_progress", "resolved", "closed"]);
 export const crmSupportTicketPriorityEnum = pgEnum("crm_support_ticket_priority", ["critical", "high", "medium", "low"]);
-export const crmActivityTypeEnum = pgEnum("crm_activity_type", ["deal_won", "meeting", "proposal", "call", "email", "ticket", "escalation"]);
+export const crmActivityTypeEnum = pgEnum("crm_activity_type", ["deal_won", "meeting", "proposal", "call", "email", "ticket", "escalation", "task_completed"]);
+
+export const crmConsentChannelEnum = pgEnum("crm_consent_channel", ["EMAIL", "SMS", "WHATSAPP", "PHONE", "POST"]);
+export const crmConsentStatusEnum = pgEnum("crm_consent_status", ["OPTED_IN", "OPTED_OUT", "UNKNOWN"]);
+export const crmConsentSourceEnum = pgEnum("crm_consent_source", ["USER_ENTRY", "IMPORT", "WEB_FORM", "UNSUBSCRIBE_LINK", "API", "ENRICHMENT"]);
+export const crmLegalBasisEnum = pgEnum("crm_legal_basis", ["CONSENT", "CONTRACT", "LEGITIMATE_INTEREST", "LEGAL_OBLIGATION"]);
 
 export const jobPostingStatusEnum = pgEnum("job_posting_status", ["DRAFT", "OPEN", "PAUSED", "CLOSED", "FILLED"]);
 export const candidateStatusEnum = pgEnum("candidate_status", ["NEW", "SCREENING", "INTERVIEW", "OFFER", "HIRED", "REJECTED"]);
@@ -75,6 +80,7 @@ export const notificationPriorityEnum = pgEnum("notification_priority", ["LOW", 
 export const notificationCategoryEnum = pgEnum("notification_category", [
   "SECURITY", "CRM", "HRMS", "BILLING", "AI", "PROJECTS", "WORKFLOW", "MARKETING", "SYSTEM",
   "CHAT", "PAYROLL", "RECRUITMENT", "KNOWLEDGE", "SIGN", "INVENTORY", "SURVEYS", "CALENDAR", "SUPPORT",
+  "ACCOUNTING",
 ]);
 export const broadcastStatusEnum = pgEnum("broadcast_status", [
   "DRAFT", "SCHEDULED", "QUEUED", "SENDING", "SENT", "CANCELLED", "FAILED",
@@ -102,7 +108,7 @@ export const notificationQuietHoursBehaviorEnum = pgEnum("notification_quiet_hou
 ]);
 export const notificationSuppressionReasonEnum = pgEnum("notification_suppression_reason", [
   "DEDUPE", "MUTE", "UNSUBSCRIBE", "INVALID_RECIPIENT", "RATE_LIMIT", "QUIET_HOURS",
-  "NO_PROVIDER", "CONSENT_MISSING", "CHANNEL_DISABLED", "COST_LIMIT",
+  "NO_PROVIDER", "CONSENT_MISSING", "CHANNEL_DISABLED", "COST_LIMIT", "NO_ACCESS",
 ]);
 
 export const invoiceStatusEnum = pgEnum("invoice_status", ["DRAFT", "ISSUED", "SENT", "PARTIALLY_PAID", "OVERDUE", "PAID", "FAILED", "VOIDED"]);
@@ -338,6 +344,8 @@ export const invCostingMethodEnum = pgEnum("inv_costing_method", ["STANDARD", "W
 export const invReservationStatusEnum = pgEnum("inv_reservation_status", ["ACTIVE", "CONSUMED", "RELEASED", "EXPIRED"]);
 export const invLotStatusEnum = pgEnum("inv_lot_status", ["ACTIVE", "EXPIRED", "BLOCKED", "CONSUMED", "RECALLED"]);
 export const invSerialStatusEnum = pgEnum("inv_serial_status", ["IN_STOCK", "RESERVED", "SHIPPED", "RETURNED", "SCRAPPED", "QUARANTINE"]);
+export const invBarcodeTypeEnum = pgEnum("inv_barcode_type", ["GTIN", "EAN13", "UPC", "CODE128", "QR", "OTHER"]);
+export const invReasonCategoryEnum = pgEnum("inv_reason_category", ["ADJUSTMENT", "COUNT", "SCRAP", "RETURN", "TRANSFER", "OTHER"]);
 export const invVendorReturnReasonEnum = pgEnum("inv_vendor_return_reason", ["DAMAGED", "WRONG_ITEM", "EXCESS", "EXPIRED", "QUALITY_REJECTED"]);
 export const invCustomerReturnDispositionEnum = pgEnum("inv_customer_return_disposition", ["RESTOCK", "QUARANTINE", "SCRAP"]);
 export const invPickListStatusEnum = pgEnum("inv_pick_list_status", ["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"]);
@@ -369,4 +377,6 @@ export const portalGrantStatusEnum = pgEnum("portal_grant_status", ["ACTIVE", "S
 export const commandFenceStatusEnum = pgEnum("command_fence_status", ["IN_FLIGHT", "COMPLETED", "FAILED"]);
 export const organizationStatusEnum = pgEnum("organization_status", ["ACTIVE", "ARCHIVED", "PURGE_SCHEDULED", "PURGED"]);
 export const invitationStatusEnum = pgEnum("invitation_status", ["PENDING", "ACCEPTED", "DECLINED", "EXPIRED", "REVOKED"]);
-
+export const broadcastAudienceTypeEnum = pgEnum("broadcast_audience_type", ["all", "roles", "departments", "users"]);
+export const templateApprovalStatusEnum = pgEnum("template_approval_status", ["NOT_REQUIRED", "PENDING", "APPROVED", "REJECTED"]);
+export const emailOutboxScopeEnum = pgEnum("email_outbox_scope", ["PLATFORM", "TENANT"]);

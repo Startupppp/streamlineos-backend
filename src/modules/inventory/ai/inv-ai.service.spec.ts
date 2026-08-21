@@ -9,8 +9,15 @@ function buildAiService(db: object) {
   return new InvAiService(db as never, mockCache as never);
 }
 
+const mockWarehouseScope = {
+  resolve: jest.fn(async () => null),
+  locationPredicate: jest.fn(() => ({}) as never),
+  warehousePredicate: jest.fn(() => ({}) as never),
+  warehouseIdList: jest.fn(() => null),
+};
+
 function _buildValuationService(db: object) {
-  return new InvValuationService(db as never, mockCache as never);
+  return new InvValuationService(db as never, mockCache as never, mockWarehouseScope as never);
 }
 
 function _buildReplenishmentService(db: object) {

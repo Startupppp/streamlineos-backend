@@ -8,7 +8,7 @@ describe("inventory count line bulk updates", () => {
   ] as const)("updates all submitted lines with one database call", async (Service, guard, getter) => {
     const execute = jest.fn().mockResolvedValue(undefined);
     const cache = { invalidate: jest.fn().mockResolvedValue(undefined) };
-    const service = new Service({ execute } as never, cache as never, {} as never, {} as never);
+    const service = new Service({ execute } as never, cache as never, {} as never, {} as never, {} as never);
     Object.assign(service, {
       [guard]: jest.fn().mockResolvedValue({ status: "COUNTING" }),
       [getter]: jest.fn().mockResolvedValue({ id: 7 }),

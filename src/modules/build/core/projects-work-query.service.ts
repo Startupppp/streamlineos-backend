@@ -20,7 +20,7 @@ const ALL_WORK_ORDERBY_COLUMNS = {
   updated: tickets.updatedAt,
   priority: tickets.priority,
   dueDate: tickets.dueDate,
-  order: tickets.order,
+  rank: tickets.rank,
 } as const;
 
 @Injectable()
@@ -55,6 +55,7 @@ export class ProjectsWorkQueryService {
         and(
           eq(tickets.orgId, orgId),
           inArray(tickets.projectId, ids),
+          isNull(tickets.deletedAt),
           q.length > 0
             ? or(
                 sql`${tickets.title} ILIKE ${"%" + q + "%"}`,
@@ -103,6 +104,7 @@ export class ProjectsWorkQueryService {
         and(
           eq(tickets.orgId, orgId),
           ne(projects.status, "ARCHIVED"),
+          isNull(tickets.deletedAt),
           assigneeCondition,
         ),
       )
@@ -133,6 +135,7 @@ export class ProjectsWorkQueryService {
       projectIds: filterProjectIds,
       excludeStatus,
       scope,
+      pmWorkspaceId,
     } = query;
     const offset = (page - 1) * limit;
 
@@ -177,7 +180,12 @@ export class ProjectsWorkQueryService {
       eq(tickets.orgId, u.orgId),
       inArray(tickets.projectId, allowedProjectIds),
       ne(projects.status, "ARCHIVED"),
+      isNull(tickets.deletedAt),
     ];
+
+    if (pmWorkspaceId) {
+      conditions.push(eq(projects.pmWorkspaceId, pmWorkspaceId));
+    }
 
     if (scope === "mine") {
       const assigneeTicketIds = scopeRows.map((r) => r.ticketId);
@@ -258,7 +266,7 @@ export class ProjectsWorkQueryService {
     if (labelIds && labelIds.length > 0) {
       conditions.push(
         sql`EXISTS (
-          SELECT 1 FROM ticket_label_mappings tlm
+          SELECT 1 FROM build.ticket_label_mappings tlm
           WHERE tlm.ticket_id = ${tickets.id}
           AND tlm.label_id = ANY(ARRAY[${sql.join(labelIds.map((id) => sql`${id}`), sql`, `)}]::int[])
         )`,
@@ -291,8 +299,8 @@ export class ProjectsWorkQueryService {
     const defaultDir = orderBy === "created" || orderBy === "updated" ? "desc" : "asc";
     const dir = orderDir ?? defaultDir;
     const sortExpr =
-      orderBy === "order"
-        ? [asc(tickets.order), desc(tickets.createdAt)]
+      orderBy === "rank"
+        ? [asc(tickets.rank), desc(tickets.createdAt), asc(tickets.id)]
         : dir === "asc"
         ? [asc(col), desc(tickets.createdAt)]
         : [desc(col), desc(tickets.createdAt)];
@@ -310,7 +318,7 @@ export class ProjectsWorkQueryService {
           ticketNumber: tickets.ticketNumber,
           points: tickets.points,
           estimate: tickets.estimate,
-          order: tickets.order,
+          rank: tickets.rank,
           createdAt: tickets.createdAt,
           updatedAt: tickets.updatedAt,
           assigneeId: tickets.assigneeId,
@@ -374,7 +382,7 @@ export class ProjectsWorkQueryService {
       ticketNumber: r.ticketNumber,
       points: r.points,
       estimate: r.estimate,
-      order: r.order,
+      rank: r.rank,
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
       assigneeId: r.assigneeId,

@@ -273,7 +273,7 @@ export class PortalAccessService {
     const [project] = await this.db
       .select({ id: projects.id, pmWorkspaceId: projects.pmWorkspaceId })
       .from(projects)
-      .where(and(eq(projects.id, input.projectId), eq(projects.orgId, organizationId)))
+      .where(and(eq(projects.id, input.projectId), eq(projects.orgId, organizationId), isNull(projects.deletedAt)))
       .limit(1);
     if (!project) throw new NotFoundException("Project not found");
 

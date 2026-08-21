@@ -7,6 +7,7 @@ export interface AiCreditReserveInput {
 }
 
 export interface AiCreditSettleInput {
+  orgId: string;
   actualMilli?: number;
   model?: string;
   metadata?: Record<string, unknown>;
@@ -21,7 +22,7 @@ export interface AiCreditLedger {
 
   settle(reservationId: number, input: AiCreditSettleInput): Promise<void>;
 
-  release(reservationId: number, reason: string): Promise<void>;
+  release(reservationId: number, reason: string, orgId: string): Promise<void>;
 }
 
 export const AI_CREDIT_LEDGER = "AI_CREDIT_LEDGER";

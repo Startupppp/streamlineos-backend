@@ -540,15 +540,44 @@ export class BillingService {
     };
   }
 
+  /**
+   * Must agree with what actually blocks an invite. `PlanLimitsService`'s
+   * "members" counter is `organization_members + unexpired PENDING invitations`
+   * and its limit honours `negotiated_seats` for ENTERPRISE — this used to read
+   * the raw `PLAN_LIMITS.members[plan]` and count members only, so an
+   * enterprise org saw its base plan limit instead of the seats it bought, and
+   * the panel's own copy ("seats are reserved when you send invitations")
+   * contradicted the number beside it. The breakdown is returned so the UI can
+   * show WHERE the seats went rather than a single opaque total.
+   */
   async getSeatInfo(orgId: string) {
-    const { plan } = await this.planLimits.resolveTier(orgId);
-    const total = PLAN_LIMITS.members[plan];
-    const [usedResult] = await this.db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(organizationMembers)
-      .where(eq(organizationMembers.orgId, orgId));
-    const used = Number(usedResult?.count ?? 0);
-    return { total, used, available: total === null ? null : Math.max(0, total - used) };
+    const [{ seatLimit }, memberRows, invitationRows] = await Promise.all([
+      this.planLimits.getEntitlements(orgId),
+      this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(organizationMembers)
+        .where(eq(organizationMembers.orgId, orgId)),
+      this.db.execute(sql`
+        SELECT COUNT(*)::int AS count FROM invitations
+        WHERE org_id = ${orgId}
+          AND status = 'PENDING'
+          AND accepted_at IS NULL
+          AND expires_at > NOW()
+      `),
+    ]);
+
+    const activeMembers = Number(memberRows[0]?.count ?? 0);
+    const pendingInvitations = Number(invitationRows[0]?.["count"] ?? 0);
+    const used = activeMembers + pendingInvitations;
+    const total = seatLimit;
+
+    return {
+      total,
+      used,
+      available: total === null ? null : Math.max(0, total - used),
+      activeMembers,
+      pendingInvitations,
+    };
   }
 
   async requestAffiliatePayoutRequest(orgId: string) {

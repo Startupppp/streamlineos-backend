@@ -15,7 +15,7 @@ describe("EmployeeMutationsService canonical employment reads", () => {
         orgDepartmentId: "old-dept",
         joiningDate: "2020-01-01",
         reportingTo: null,
-        monthlySalary: null,
+        monthlySalary: "100000.00",
         image: null,
         isActive: true,
         bio: null,
@@ -61,9 +61,17 @@ describe("EmployeeMutationsService canonical employment reads", () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
     );
 
-    await expect(service.getEmployeeDetail("org-1", "user-1")).resolves.toEqual(
+    const result = await service.getEmployeeDetail(
+      "org-1",
+      "actor-1",
+      "user-1",
+      "all",
+    );
+
+    expect(result).toEqual(
       expect.objectContaining({
         designation: "Canonical Role",
         employeeId: "CAN-9",
@@ -71,5 +79,6 @@ describe("EmployeeMutationsService canonical employment reads", () => {
         joiningDate: "2026-01-01",
       }),
     );
+    expect(result).not.toHaveProperty("monthlySalary");
   });
 });

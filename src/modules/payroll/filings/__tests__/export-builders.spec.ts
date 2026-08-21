@@ -11,7 +11,9 @@ const bundle = IN_STATUTORY_2025_04;
 
 const employees: EmployeeStatutorySourceRow[] = [
   {
+    subjectKey: "u1",
     userId: "u1",
+    workerId: null,
     employeeNumber: "E001",
     employeeName: "Ada Lovelace",
     email: "ada@example.com",
@@ -31,7 +33,9 @@ const employees: EmployeeStatutorySourceRow[] = [
     },
   },
   {
+    subjectKey: "u2",
     userId: "u2",
+    workerId: null,
     employeeNumber: null,
     employeeName: "No Number",
     email: null,

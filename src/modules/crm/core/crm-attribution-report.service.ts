@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, sql, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { crmLeadTouchpoints, crmCampaigns, crmPipelineStages, leads, deals } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -40,7 +40,7 @@ export class CrmAttributionReportService {
       ))
       .leftJoin(deals, and(
         eq(deals.leadId, leads.id),
-        eq(deals.orgId, orgId),
+        eq(deals.orgId, orgId), isNull(deals.deletedAt),
         inArray(deals.stage, wonStageKeys),
       ))
       .where(and(
@@ -89,7 +89,7 @@ export class CrmAttributionReportService {
       ))
       .leftJoin(deals, and(
         eq(deals.leadId, leads.id),
-        eq(deals.orgId, orgId),
+        eq(deals.orgId, orgId), isNull(deals.deletedAt),
         inArray(deals.stage, wonStageKeys),
       ))
       .where(eq(crmLeadTouchpoints.orgId, orgId))

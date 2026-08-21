@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import {
   supportTickets,
   supportTicketExternalLinks,
@@ -32,7 +32,7 @@ export class SupportIntegrationsService {
     switch (entityType) {
       case "project": {
         const row = await this.db.query.projects.findFirst({
-          where: and(eq(projects.id, entityId), eq(projects.orgId, orgId)),
+          where: and(eq(projects.id, entityId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
           columns: { name: true },
         });
         if (!row) throw new NotFoundException("Project not found");

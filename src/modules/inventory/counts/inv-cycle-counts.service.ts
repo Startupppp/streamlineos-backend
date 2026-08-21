@@ -8,23 +8,28 @@ import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import type { ListCountsInput, CreateCycleCountInput, UpdateCountLinesInput } from "./dto/inv-counts.schemas";
+import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 
 @Injectable()
 export class InvCycleCountsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly warehouseScope: WarehouseScopeService,
     private readonly engine: StockEngineService,
     private readonly numSeq: NumberSequenceService,
   ) {}
 
-  async listCycleCounts(orgId: string, filters: ListCountsInput) {
+  async listCycleCounts(orgId: string, userId: string, filters: ListCountsInput) {
     const { status, warehouseId, page, limit } = filters;
     const offset = (page - 1) * limit;
-    const hash = `${status ?? ""}:${warehouseId ?? ""}:${limit}:${offset}`;
+    const scope = await this.warehouseScope.resolve(orgId, userId);
+    const scopeKey = scope === null ? "all" : ([...scope].sort((a, b) => a - b).join(".") || "none");
+    const hash = `${scopeKey}:${status ?? ""}:${warehouseId ?? ""}:${limit}:${offset}`;
 
     return this.cache.cachedVersioned(CACHE_KEYS.invCycleCountsNamespace(orgId), hash, async () => {
       const conditions = [eq(invCycleCounts.orgId, orgId)];
+      conditions.push(this.warehouseScope.warehousePredicate(scope, sql`${invCycleCounts.warehouseId}`));
       if (status) conditions.push(eq(invCycleCounts.status, status));
       if (warehouseId) conditions.push(eq(invCycleCounts.warehouseId, warehouseId));
       const where = and(...conditions);

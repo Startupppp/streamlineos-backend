@@ -31,8 +31,8 @@ export class InvProductsService {
     return this.crud.listProducts(orgId, filters, scope, userId);
   }
 
-  getProduct(orgId: string, productId: number) {
-    return this.crud.getProduct(orgId, productId);
+  getProduct(orgId: string, productId: number, userId?: string) {
+    return this.crud.getProduct(orgId, productId, userId);
   }
 
   createProduct(orgId: string, userId: string, data: CreateProductInput) {

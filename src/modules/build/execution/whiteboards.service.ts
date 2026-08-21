@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, isNotNull, ne, or } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, ne, or } from "drizzle-orm";
 import {
   projectWhiteboardShares,
   projectWhiteboards,
@@ -23,7 +23,7 @@ import type {
 
 async function assertProject(db: Db, orgId: string, projectId: number): Promise<void> {
   const project = await db.query.projects.findFirst({
-    where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
+    where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
     columns: { id: true },
   });
   if (!project) throw new NotFoundException("Project not found");
@@ -116,6 +116,7 @@ export class WhiteboardsService {
           eq(projectWhiteboards.id, whiteboardId),
           eq(projectWhiteboards.projectId, projectId),
           eq(projectWhiteboards.orgId, u.orgId),
+          isNull(projectWhiteboards.deletedAt),
         ),
       )
       .limit(1);
@@ -167,6 +168,7 @@ export class WhiteboardsService {
         and(
           eq(projectWhiteboards.orgId, u.orgId),
           eq(projectWhiteboards.projectId, projectId),
+          isNull(projectWhiteboards.deletedAt),
           visibilityFilter,
         ),
       )
@@ -212,7 +214,7 @@ export class WhiteboardsService {
           eq(projectWhiteboardShares.userId, u.userId),
         ),
       )
-      .where(and(eq(projectWhiteboards.orgId, u.orgId), visibilityFilter))
+      .where(and(eq(projectWhiteboards.orgId, u.orgId), isNull(projectWhiteboards.deletedAt), visibilityFilter))
       .orderBy(desc(projectWhiteboards.updatedAt))
       .limit(100);
 
@@ -301,12 +303,14 @@ export class WhiteboardsService {
     }
 
     await this.db
-      .delete(projectWhiteboards)
+      .update(projectWhiteboards)
+      .set({ deletedAt: new Date() })
       .where(
         and(
           eq(projectWhiteboards.id, whiteboardId),
           eq(projectWhiteboards.projectId, projectId),
           eq(projectWhiteboards.orgId, u.orgId),
+          isNull(projectWhiteboards.deletedAt),
         ),
       );
     return { success: true };

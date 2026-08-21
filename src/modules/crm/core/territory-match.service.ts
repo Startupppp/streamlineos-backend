@@ -1,9 +1,12 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { territories, territoryReps } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { TerritoryCriteria } from "../../../db/schema/crm/deals";
+
+const TERRITORY_LIMIT = 200;
+const TERRITORY_REP_LIMIT = 2000;
 
 interface MatchInput {
   city?: string;
@@ -39,13 +42,20 @@ export class TerritoryMatchService {
           criteria: territories.criteria,
         })
         .from(territories)
-        .where(and(eq(territories.orgId, orgId), eq(territories.isActive, true)))
+        .where(
+          and(
+            eq(territories.orgId, orgId),
+            eq(territories.isActive, true),
+            isNull(territories.deletedAt),
+          ),
+        )
         .orderBy(desc(territories.priority))
-        .limit(200),
+        .limit(TERRITORY_LIMIT),
       this.db
         .select({ territoryId: territoryReps.territoryId, crmPersonId: territoryReps.crmPersonId })
         .from(territoryReps)
-        .where(eq(territoryReps.orgId, orgId)),
+        .where(eq(territoryReps.orgId, orgId))
+        .limit(TERRITORY_REP_LIMIT),
     ]);
 
     const repsByTerritory = new Map<number, number[]>();

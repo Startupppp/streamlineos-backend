@@ -9,6 +9,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CreateActionItemInput, UpdateActionItemInput } from "./dto/meetings.schemas";
+import { allocateTicketNumbers } from "../core/lib/allocate-ticket-number";
 
 type ActionItemPatch = Partial<
   Pick<
@@ -157,12 +158,7 @@ export class ActionItemsService {
       if (!item) throw new NotFoundException("Action item not found");
       if (item.convertedTicketId !== null) throw new ConflictException("Action item already converted to a task");
 
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
-      const [maxRow] = await tx
-        .select({ maxNum: sql<number>`COALESCE(MAX(${tickets.ticketNumber}), 0)` })
-        .from(tickets)
-        .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)));
-      const nextNumber = (maxRow?.maxNum ?? 0) + 1;
+      const nextNumber = await allocateTicketNumbers(tx, orgId, projectId);
 
       const [ticket] = await tx
         .insert(tickets)

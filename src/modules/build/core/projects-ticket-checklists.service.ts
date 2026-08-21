@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import {
   ticketChecklistItems,
   ticketChecklists,
@@ -18,6 +18,7 @@ export class ProjectsTicketChecklistsService {
         eq(tickets.id, ticketId),
         eq(tickets.projectId, projectId),
         eq(tickets.orgId, orgId),
+        isNull(tickets.deletedAt),
       ),
       columns: { id: true },
     });
@@ -45,6 +46,7 @@ export class ProjectsTicketChecklistsService {
         eq(tickets.id, ticketId),
         eq(tickets.projectId, projectId),
         eq(tickets.orgId, orgId),
+        isNull(tickets.deletedAt),
       ),
       columns: { id: true },
     });

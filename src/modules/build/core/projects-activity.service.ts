@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, ilike, inArray, or } from "drizzle-orm";
+import { and, eq, ilike, inArray, isNull, or } from "drizzle-orm";
 import {
   cycles,
   organizationMembers,
@@ -12,6 +12,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
 import { NotificationsService } from "../../notifications/notifications.service";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 
 type TicketActivityAction = (typeof ticketActivityLog.action.enumValues)[number];
 
@@ -108,6 +109,7 @@ export class ProjectsActivityService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly notifications: NotificationsService,
+    private readonly dispatch: NotificationDispatchService,
   ) {}
 
   async logTicketActivity(
@@ -283,7 +285,7 @@ export class ProjectsActivityService {
       const [projectRow] = await this.db
         .select({ key: projects.key })
         .from(projects)
-        .where(and(eq(projects.id, input.projectId), eq(projects.orgId, input.orgId)))
+        .where(and(eq(projects.id, input.projectId), eq(projects.orgId, input.orgId), isNull(projects.deletedAt)))
         .limit(1);
 
       ticketKey = projectRow?.key
@@ -293,29 +295,23 @@ export class ProjectsActivityService {
       ticketLink = `${base}?comment=${input.commentId}`;
     }
 
-    await Promise.all(
-      mentioned.map((user) =>
-        this.notifications
-          .create({
-            orgId: input.orgId,
-            userId: user.id,
-            type: "INFO",
-            category: "PROJECTS",
-            sourceModule: "build",
-            eventKey: "build:comment:mention",
-            entityType: "ticket",
-            entityId: String(input.ticketId),
-            title: "You were mentioned",
-            message: `${input.authorName} mentioned you in a comment on "${input.ticketTitle}".`,
-            link: ticketLink,
-            metadata: {
-              ticketId: input.ticketId,
-              commentId: input.commentId,
-              ticketKey: ticketKey ?? null,
-            },
-          })
-          .catch((error) => logger.error("Failed to notify mentioned user", { error })),
-      ),
-    );
+    // REG-004: see projects-tickets-create.service.ts.
+    await this.dispatch
+      .emit({
+        eventKey: "build.comment.mention",
+        orgId: input.orgId,
+        targetUserIds: mentioned.map((user) => user.id),
+        entityType: "ticket",
+        entityId: String(input.ticketId),
+        title: "You were mentioned",
+        message: `${input.authorName} mentioned you in a comment on "${input.ticketTitle}".`,
+        link: ticketLink,
+        metadata: {
+          ticketId: input.ticketId,
+          commentId: input.commentId,
+          ticketKey: ticketKey ?? null,
+        },
+      })
+      .catch((error: unknown) => logger.error("Failed to notify mentioned users", { error }));
   }
 }

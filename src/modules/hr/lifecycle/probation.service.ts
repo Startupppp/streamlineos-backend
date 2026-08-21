@@ -1,20 +1,35 @@
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, inArray, lte, or } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { hrEmployments, hrPeople } from "../../../db/schema/hr/core-people";
 import { hrProbationReviews } from "../../../db/schema/hr/probation";
-import { HrWorkflowEngineService } from "../workflows/hr-workflow-engine.service";
-import { HrTemplateRenderService } from "../templates/hr-template-render.service";
+import { HrAuditService } from "../core/hr-audit.service";
+import { HrEmploymentsService } from "../core/hr-employments.service";
 import { HrAutomationEngineService } from "../automations/hr-automation-engine.service";
 import { HrPolicyEvaluationService } from "../policies/hr-policy-evaluation.service";
-import { HrEmploymentsService } from "../core/hr-employments.service";
-import type { StartReviewInput, ExtendProbationInput, ConfirmProbationInput } from "./dto/probation.schemas";
+import { HrTemplateRenderService } from "../templates/hr-template-render.service";
+import { HrWorkflowEngineService } from "../workflows/hr-workflow-engine.service";
+import type {
+  ConfirmProbationInput,
+  ExtendProbationInput,
+  ListProbationReviewsInput,
+  StartReviewInput,
+} from "./dto/probation.schemas";
+import { ProbationReviewReaderService } from "./probation-review-reader.service";
+
+function configuredMaxExtensions(rules: unknown): number {
+  if (!rules || typeof rules !== "object" || Array.isArray(rules)) return 1;
+  if (!("maxExtensions" in rules)) return 1;
+  const value = rules.maxExtensions;
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : 1;
+}
 
 @Injectable()
 export class ProbationService {
@@ -25,43 +40,12 @@ export class ProbationService {
     private readonly automation: HrAutomationEngineService,
     private readonly policyEvaluation: HrPolicyEvaluationService,
     private readonly employments: HrEmploymentsService,
+    private readonly audit: HrAuditService,
+    private readonly reader: ProbationReviewReaderService,
   ) {}
 
-  async listDueForReview(orgId: string) {
-    const sevenDaysFromNow = new Date();
-    sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
-    const cutoff = sevenDaysFromNow.toISOString().slice(0, 10);
-
-    return this.db
-      .select({
-        id: hrProbationReviews.id,
-        orgId: hrProbationReviews.orgId,
-        employmentId: hrProbationReviews.employmentId,
-        personId: hrProbationReviews.personId,
-        probationEndDate: hrProbationReviews.probationEndDate,
-        status: hrProbationReviews.status,
-        extensionCount: hrProbationReviews.extensionCount,
-        extendedUntil: hrProbationReviews.extendedUntil,
-        confirmedAt: hrProbationReviews.confirmedAt,
-        createdAt: hrProbationReviews.createdAt,
-        firstName: hrPeople.firstName,
-        lastName: hrPeople.lastName,
-        workEmail: hrPeople.workEmail,
-      })
-      .from(hrProbationReviews)
-      .innerJoin(hrPeople, eq(hrProbationReviews.personId, hrPeople.id))
-      .where(
-        and(
-          eq(hrProbationReviews.orgId, orgId),
-          or(
-            eq(hrProbationReviews.status, "review_due"),
-            and(
-              eq(hrProbationReviews.status, "in_probation"),
-              lte(hrProbationReviews.probationEndDate, cutoff),
-            ),
-          ),
-        ),
-      );
+  async listDueForReview(orgId: string, query: ListProbationReviewsInput) {
+    return this.reader.listDueForReview(orgId, query);
   }
 
   async startReview(
@@ -70,192 +54,307 @@ export class ProbationService {
     employmentId: number,
     input: StartReviewInput,
   ) {
-    const [employment] = await this.db
-      .select({
-        id: hrEmployments.id,
-        personId: hrEmployments.personId,
-        probationEndDate: hrEmployments.probationEndDate,
-      })
-      .from(hrEmployments)
-      .where(and(eq(hrEmployments.orgId, orgId), eq(hrEmployments.id, employmentId)));
-
-    if (!employment) {
-      throw new NotFoundException("Employment not found");
-    }
-
-    const [person] = await this.db
-      .select({ id: hrPeople.id, userId: hrPeople.userId })
-      .from(hrPeople)
-      .where(and(eq(hrPeople.orgId, orgId), eq(hrPeople.id, employment.personId)));
-
-    if (!person) {
-      throw new NotFoundException("Person not found");
-    }
-
-    const endDate = employment.probationEndDate ?? new Date().toISOString().slice(0, 10);
-
-    const [existing] = await this.db
-      .select({ id: hrProbationReviews.id })
-      .from(hrProbationReviews)
-      .where(
-        and(
-          eq(hrProbationReviews.orgId, orgId),
-          eq(hrProbationReviews.employmentId, employmentId),
-        ),
+    const result = await this.db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${orgId}:${employmentId}:probation`}, 0))`,
       );
+      const [employment] = await tx
+        .select({
+          id: hrEmployments.id,
+          personId: hrEmployments.personId,
+          probationEndDate: hrEmployments.probationEndDate,
+          userId: hrPeople.userId,
+        })
+        .from(hrEmployments)
+        .innerJoin(
+          hrPeople,
+          and(eq(hrPeople.orgId, hrEmployments.orgId), eq(hrPeople.id, hrEmployments.personId)),
+        )
+        .where(
+          and(
+            eq(hrEmployments.orgId, orgId),
+            eq(hrEmployments.id, employmentId),
+            isNull(hrEmployments.deletedAt),
+            isNull(hrPeople.deletedAt),
+          ),
+        )
+        .limit(1)
+        .for("update");
+      if (!employment) throw new NotFoundException("Employment not found.");
 
-    let reviewId: number;
-    if (existing) {
-      reviewId = existing.id;
-      if (input.reviewNotes) {
-        await this.db
-          .update(hrProbationReviews)
-          .set({ reviewNotes: input.reviewNotes, reviewTemplateId: input.templateId ?? null, updatedAt: new Date() })
-          .where(eq(hrProbationReviews.id, existing.id));
+      const [existing] = await tx
+        .select({ id: hrProbationReviews.id, status: hrProbationReviews.status })
+        .from(hrProbationReviews)
+        .where(
+          and(
+            eq(hrProbationReviews.orgId, orgId),
+            eq(hrProbationReviews.employmentId, employmentId),
+          ),
+        )
+        .limit(1)
+        .for("update");
+      if (existing) {
+        if (existing.status === "confirmed" || existing.status === "terminated") {
+          throw new ConflictException(`This probation review is already ${existing.status}.`);
+        }
+        if (input.reviewNotes || input.templateId) {
+          await tx
+            .update(hrProbationReviews)
+            .set({
+              reviewNotes: input.reviewNotes,
+              reviewTemplateId: input.templateId,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(hrProbationReviews.id, existing.id),
+                eq(hrProbationReviews.orgId, orgId),
+                eq(hrProbationReviews.status, existing.status),
+              ),
+            );
+        }
+        return { reviewId: existing.id, userId: employment.userId ?? actorId, created: false };
       }
-    } else {
-      const [inserted] = await this.db
+
+      const [inserted] = await tx
         .insert(hrProbationReviews)
         .values({
           orgId,
           employmentId,
           personId: employment.personId,
-          probationEndDate: endDate,
+          probationEndDate: employment.probationEndDate ?? new Date().toISOString().slice(0, 10),
           reviewNotes: input.reviewNotes,
-          reviewTemplateId: input.templateId ?? null,
+          reviewTemplateId: input.templateId,
         })
         .returning({ id: hrProbationReviews.id });
-      reviewId = inserted.id;
-    }
-
-    const subjectUserId = person.userId ?? actorId;
-
-    await this.workflowEngine.startWorkflow({
-      orgId,
-      objectType: "probation_confirmation",
-      objectId: String(reviewId),
-      requestedByUserId: actorId,
-      subjectEmployeeId: subjectUserId,
+      if (!inserted) throw new ConflictException("Failed to start probation review.");
+      const subjectUserId = employment.userId ?? actorId;
+      await this.workflowEngine.startWorkflow({
+        orgId,
+        objectType: "probation_confirmation",
+        objectId: String(inserted.id),
+        requestedByUserId: actorId,
+        subjectEmployeeId: subjectUserId,
+        tx,
+      });
+      await this.audit.log(
+        {
+          orgId,
+          actorId,
+          entityType: "hr_probation_reviews",
+          entityId: String(inserted.id),
+          action: "started",
+          after: { employmentId },
+        },
+        tx,
+      );
+      return { reviewId: inserted.id, userId: subjectUserId, created: true };
     });
 
     if (input.templateId) {
-      await this.templateRender.buildContext(orgId, subjectUserId, employmentId, undefined, false);
+      await this.templateRender.buildContext(
+        orgId,
+        result.userId,
+        employmentId,
+        undefined,
+        false,
+      );
     }
-
-    return { reviewId };
+    return { reviewId: result.reviewId, created: result.created };
   }
 
   async extend(
     orgId: string,
-    _: string,
-    reviewId: number,
+    actorId: string,
+    probationReviewId: number,
     input: ExtendProbationInput,
   ) {
-    const [review] = await this.db
-      .select({
-        id: hrProbationReviews.id,
-        personId: hrProbationReviews.personId,
-        extensionCount: hrProbationReviews.extensionCount,
-        employmentId: hrProbationReviews.employmentId,
-      })
-      .from(hrProbationReviews)
-      .where(and(eq(hrProbationReviews.orgId, orgId), eq(hrProbationReviews.id, reviewId)));
-
-    if (!review) {
-      throw new NotFoundException("Probation review not found");
-    }
-
-    const [person] = await this.db
-      .select({ userId: hrPeople.userId })
-      .from(hrPeople)
-      .where(and(eq(hrPeople.orgId, orgId), eq(hrPeople.id, review.personId)));
-
-    const userId = person?.userId;
-    const today = new Date().toISOString().slice(0, 10);
-
-    if (userId) {
-      const policy = await this.policyEvaluation.evaluatePolicy(orgId, userId, "probation", today);
-      if (policy) {
-        const rules = policy.rules as { maxExtensions?: number };
-        const maxExtensions = rules.maxExtensions ?? 1;
-        if (review.extensionCount >= maxExtensions) {
-          throw new BadRequestException(
-            `Maximum extensions (${maxExtensions}) already reached for this probation review`,
-          );
-        }
+    return this.db.transaction(async (tx) => {
+      const [review] = await tx
+        .select({
+          id: hrProbationReviews.id,
+          personId: hrProbationReviews.personId,
+          extensionCount: hrProbationReviews.extensionCount,
+          employmentId: hrProbationReviews.employmentId,
+          probationEndDate: hrProbationReviews.probationEndDate,
+          extendedUntil: hrProbationReviews.extendedUntil,
+          status: hrProbationReviews.status,
+          userId: hrPeople.userId,
+        })
+        .from(hrProbationReviews)
+        .innerJoin(
+          hrPeople,
+          and(eq(hrPeople.orgId, hrProbationReviews.orgId), eq(hrPeople.id, hrProbationReviews.personId)),
+        )
+        .where(
+          and(
+            eq(hrProbationReviews.orgId, orgId),
+            eq(hrProbationReviews.id, probationReviewId),
+          ),
+        )
+        .limit(1)
+        .for("update");
+      if (!review) throw new NotFoundException("Probation review not found.");
+      if (review.status === "confirmed" || review.status === "terminated") {
+        throw new ConflictException(`This probation review is already ${review.status}.`);
       }
-    }
 
-    const [updated] = await this.db
-      .update(hrProbationReviews)
-      .set({
-        status: "extended",
-        extensionCount: review.extensionCount + 1,
-        extendedUntil: input.extendedUntil,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(hrProbationReviews.orgId, orgId), eq(hrProbationReviews.id, reviewId)))
-      .returning();
+      const currentEnd = review.extendedUntil ?? review.probationEndDate;
+      if (input.extendedUntil <= currentEnd) {
+        throw new BadRequestException("The extension date must be after the current probation end date.");
+      }
+      const today = new Date().toISOString().slice(0, 10);
+      const policy = review.userId
+        ? await this.policyEvaluation.evaluatePolicy(orgId, review.userId, "probation", today)
+        : null;
+      const maxExtensions = configuredMaxExtensions(policy?.rules);
+      if (review.extensionCount >= maxExtensions) {
+        throw new ConflictException(`Maximum extensions (${maxExtensions}) already reached.`);
+      }
 
-    return updated;
+      const [updated] = await tx
+        .update(hrProbationReviews)
+        .set({
+          status: "extended",
+          extensionCount: review.extensionCount + 1,
+          extendedUntil: input.extendedUntil,
+          reviewNotes: sql`coalesce(${hrProbationReviews.reviewNotes}, '{}'::jsonb) || ${JSON.stringify({ extensionReason: input.reason })}::jsonb`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(hrProbationReviews.orgId, orgId),
+            eq(hrProbationReviews.id, probationReviewId),
+            eq(hrProbationReviews.status, review.status),
+            eq(hrProbationReviews.extensionCount, review.extensionCount),
+          ),
+        )
+        .returning();
+      if (!updated) throw new ConflictException("The probation review was updated by another request.");
+
+      const [employment] = await tx
+        .update(hrEmployments)
+        .set({
+          probationEndDate: input.extendedUntil,
+          rowVersion: sql`${hrEmployments.rowVersion} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(hrEmployments.id, review.employmentId),
+            eq(hrEmployments.orgId, orgId),
+            isNull(hrEmployments.deletedAt),
+          ),
+        )
+        .returning({ id: hrEmployments.id });
+      if (!employment) throw new ConflictException("The employment is no longer active.");
+      await this.audit.log(
+        {
+          orgId,
+          actorId,
+          entityType: "hr_probation_reviews",
+          entityId: String(probationReviewId),
+          action: "extended",
+          before: { endDate: currentEnd, extensionCount: review.extensionCount },
+          after: { endDate: input.extendedUntil, reason: input.reason },
+        },
+        tx,
+      );
+      return updated;
+    });
   }
 
   async confirm(
     orgId: string,
     actorId: string,
-    reviewId: number,
+    probationReviewId: number,
     input: ConfirmProbationInput,
   ) {
-    const [review] = await this.db
-      .select({
-        id: hrProbationReviews.id,
-        personId: hrProbationReviews.personId,
-        employmentId: hrProbationReviews.employmentId,
-        reviewNotes: hrProbationReviews.reviewNotes,
-        status: hrProbationReviews.status,
-      })
-      .from(hrProbationReviews)
-      .where(and(eq(hrProbationReviews.orgId, orgId), eq(hrProbationReviews.id, reviewId)));
+    const result = await this.db.transaction(async (tx) => {
+      const [review] = await tx
+        .select({
+          personId: hrProbationReviews.personId,
+          employmentId: hrProbationReviews.employmentId,
+          reviewNotes: hrProbationReviews.reviewNotes,
+          status: hrProbationReviews.status,
+          userId: hrPeople.userId,
+        })
+        .from(hrProbationReviews)
+        .innerJoin(
+          hrPeople,
+          and(eq(hrPeople.orgId, hrProbationReviews.orgId), eq(hrPeople.id, hrProbationReviews.personId)),
+        )
+        .where(
+          and(
+            eq(hrProbationReviews.orgId, orgId),
+            eq(hrProbationReviews.id, probationReviewId),
+          ),
+        )
+        .limit(1)
+        .for("update");
+      if (!review) throw new NotFoundException("Probation review not found.");
+      if (review.status === "confirmed" || review.status === "terminated") {
+        throw new ConflictException(`This probation review is already ${review.status}.`);
+      }
 
-    if (!review) {
-      throw new NotFoundException("Probation review not found");
-    }
+      const confirmedAt = input.confirmedAt
+        ? new Date(`${input.confirmedAt}T00:00:00.000Z`)
+        : new Date();
+      const confirmedDate = confirmedAt.toISOString().slice(0, 10);
+      const reviewNotes = input.notes
+        ? { ...(review.reviewNotes ?? {}), confirmationNotes: input.notes }
+        : review.reviewNotes;
+      const [updated] = await tx
+        .update(hrProbationReviews)
+        .set({ status: "confirmed", confirmedAt, reviewNotes, updatedAt: new Date() })
+        .where(
+          and(
+            eq(hrProbationReviews.orgId, orgId),
+            eq(hrProbationReviews.id, probationReviewId),
+            eq(hrProbationReviews.status, review.status),
+          ),
+        )
+        .returning();
+      if (!updated) throw new ConflictException("The probation review was updated by another request.");
 
-    if (review.status === "confirmed") {
-      throw new BadRequestException("This probation review has already been confirmed.");
-    }
-
-    const confirmedAt = input.confirmedAt ? new Date(input.confirmedAt) : new Date();
-    const confirmedDate = confirmedAt.toISOString().slice(0, 10);
-    const mergedNotes = input.notes
-      ? { ...(review.reviewNotes ?? {}), confirmationNotes: input.notes }
-      : review.reviewNotes;
-
-    const [updated] = await this.db
-      .update(hrProbationReviews)
-      .set({ status: "confirmed", confirmedAt, reviewNotes: mergedNotes, updatedAt: new Date() })
-      .where(and(eq(hrProbationReviews.orgId, orgId), eq(hrProbationReviews.id, reviewId)))
-      .returning();
-
-    await this.employments.transition(orgId, review.employmentId, actorId, {
-      toStatus: "CONFIRMED",
-      reason: "Probation confirmed",
-      notes: input.notes,
-      effectiveDate: confirmedDate,
+      await this.employments.transition(
+        orgId,
+        review.employmentId,
+        actorId,
+        {
+          toStatus: "CONFIRMED",
+          reason: "Probation confirmed",
+          notes: input.notes,
+          effectiveDate: confirmedDate,
+        },
+        tx,
+      );
+      await this.audit.log(
+        {
+          orgId,
+          actorId,
+          entityType: "hr_probation_reviews",
+          entityId: String(probationReviewId),
+          action: "confirmed",
+          before: { status: review.status },
+          after: { status: "confirmed", confirmedDate },
+        },
+        tx,
+      );
+      return {
+        updated,
+        confirmedDate,
+        employeeId: review.userId ?? String(review.personId),
+        employmentId: review.employmentId,
+      };
     });
-
-    const [person] = await this.db
-      .select({ userId: hrPeople.userId })
-      .from(hrPeople)
-      .where(and(eq(hrPeople.orgId, orgId), eq(hrPeople.id, review.personId)));
 
     await this.automation.emit(orgId, "employee.confirmed", {
-      employeeId: person?.userId ?? String(review.personId),
-      employmentId: review.employmentId,
-      confirmedAt: confirmedDate,
+      employeeId: result.employeeId,
+      employmentId: result.employmentId,
+      confirmedAt: result.confirmedDate,
     });
-
-    return updated;
+    return result.updated;
   }
 
   async setupProbation(
@@ -265,72 +364,45 @@ export class ProbationService {
     probationEndDate: Date,
   ) {
     const endDate = probationEndDate.toISOString().slice(0, 10);
-
-    const [existing] = await this.db
-      .select({ id: hrProbationReviews.id })
-      .from(hrProbationReviews)
-      .where(
-        and(
-          eq(hrProbationReviews.orgId, orgId),
-          eq(hrProbationReviews.employmentId, employmentId),
-        ),
+    await this.db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${orgId}:${employmentId}:probation`}, 0))`,
       );
-
-    if (!existing) {
-      await this.db
-        .insert(hrProbationReviews)
-        .values({ orgId, employmentId, personId, probationEndDate: endDate });
-    }
-
+      const [existing] = await tx
+        .select({ id: hrProbationReviews.id })
+        .from(hrProbationReviews)
+        .where(
+          and(
+            eq(hrProbationReviews.orgId, orgId),
+            eq(hrProbationReviews.employmentId, employmentId),
+          ),
+        )
+        .limit(1);
+      if (!existing) {
+        await tx
+          .insert(hrProbationReviews)
+          .values({ orgId, employmentId, personId, probationEndDate: endDate });
+      }
+    });
     return { orgId, employmentId, personId, probationEndDate: endDate };
   }
 
   async sweepDue(orgId: string) {
-    const today = new Date().toISOString().slice(0, 10);
+    const due = await this.reader.listDueForSweep(orgId);
 
-    const due = await this.db
-      .select({
-        id: hrProbationReviews.id,
-        personId: hrProbationReviews.personId,
-      })
-      .from(hrProbationReviews)
-      .where(
-        and(
-          eq(hrProbationReviews.orgId, orgId),
-          eq(hrProbationReviews.status, "in_probation"),
-          lte(hrProbationReviews.probationEndDate, today),
-        ),
-      );
-
-    if (due.length === 0) return { updated: 0 };
-
-    const ids = due.map((r) => r.id);
-
-    await this.db
-      .update(hrProbationReviews)
-      .set({ status: "review_due", updatedAt: new Date() })
-      .where(
-        and(
-          eq(hrProbationReviews.orgId, orgId),
-          inArray(hrProbationReviews.id, ids),
-        ),
-      );
-
-    const personIds = [...new Set(due.map((r) => r.personId))];
-    const people = await this.db
-      .select({ id: hrPeople.id, userId: hrPeople.userId })
-      .from(hrPeople)
-      .where(and(eq(hrPeople.orgId, orgId), inArray(hrPeople.id, personIds)));
-
-    const userIdMap = new Map(people.map((p) => [p.id, p.userId]));
-
-    for (const row of due) {
-      await this.automation.emit(orgId, "employee.probation_due", {
-        employeeId: userIdMap.get(row.personId) ?? String(row.personId),
-        daysUntilEnd: 0,
-      });
-    }
-
-    return { updated: ids.length };
+    if (due.length === 0) return { updated: 0, hasMore: false };
+    const userIds = await this.reader.resolveUserIds(
+      orgId,
+      due.map((review) => review.personId),
+    );
+    await Promise.all(
+      due.map((review) =>
+        this.automation.emit(orgId, "employee.probation_due", {
+          employeeId: userIds.get(review.personId) ?? String(review.personId),
+          daysUntilEnd: 0,
+        }),
+      ),
+    );
+    return { updated: due.length, hasMore: due.length === 100 };
   }
 }

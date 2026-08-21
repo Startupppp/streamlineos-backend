@@ -1,6 +1,6 @@
 import { Injectable, Inject, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
@@ -35,7 +35,7 @@ export class ProjectsReleasesService {
           AS INT)`,
       })
       .from(projectReleases)
-      .where(and(eq(projectReleases.projectId, projectId), eq(projectReleases.orgId, orgId)))
+      .where(and(eq(projectReleases.projectId, projectId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt)))
       .orderBy(sql`${projectReleases.createdAt} DESC`)
       .limit(100);
 
@@ -44,7 +44,7 @@ export class ProjectsReleasesService {
 
   async createRelease(orgId: string, projectId: number, userId: string, data: CreateReleaseInput) {
     const project = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
+      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
       columns: { id: true },
     });
     if (!project) throw new NotFoundException("Project not found");
@@ -63,7 +63,7 @@ export class ProjectsReleasesService {
       const result = await tx
         .update(projectReleases)
         .set(data)
-        .where(and(eq(projectReleases.id, releaseId), eq(projectReleases.orgId, orgId)))
+        .where(and(eq(projectReleases.id, releaseId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt)))
         .returning();
       const row = result[0];
       if (row && data.status === "released") {
@@ -92,22 +92,24 @@ export class ProjectsReleasesService {
   }
 
   async deleteRelease(orgId: string, releaseId: number) {
-    const [deleted] = await this.db.delete(projectReleases)
-      .where(and(eq(projectReleases.id, releaseId), eq(projectReleases.orgId, orgId)))
-      .returning();
-    if (!deleted) throw new NotFoundException("Release not found");
+    const [stamped] = await this.db
+      .update(projectReleases)
+      .set({ deletedAt: new Date() })
+      .where(and(eq(projectReleases.id, releaseId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt)))
+      .returning({ id: projectReleases.id });
+    if (!stamped) throw new NotFoundException("Release not found");
     return { success: true };
   }
 
   async addTicketToRelease(orgId: string, releaseId: number, ticketId: number) {
     const release = await this.db.query.projectReleases.findFirst({
-      where: and(eq(projectReleases.id, releaseId), eq(projectReleases.orgId, orgId)),
+      where: and(eq(projectReleases.id, releaseId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt)),
       columns: { id: true },
     });
     if (!release) throw new NotFoundException("Release not found");
 
     const ticket = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)),
+      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)),
       columns: { id: true },
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
@@ -118,7 +120,7 @@ export class ProjectsReleasesService {
 
   async removeTicketFromRelease(orgId: string, releaseId: number, ticketId: number) {
     const release = await this.db.query.projectReleases.findFirst({
-      where: and(eq(projectReleases.id, releaseId), eq(projectReleases.orgId, orgId)),
+      where: and(eq(projectReleases.id, releaseId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt)),
       columns: { id: true },
     });
     if (!release) throw new NotFoundException("Release not found");

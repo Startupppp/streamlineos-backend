@@ -1,4 +1,19 @@
-import { pgTable, text, serial, bigint, timestamp, boolean, jsonb, decimal, date, integer, foreignKey, index, unique, uniqueIndex, check } from "drizzle-orm/pg-core";
+import {
+  text,
+  bigint,
+  timestamp,
+  boolean,
+  jsonb,
+  decimal,
+  date,
+  integer,
+  foreignKey,
+  index,
+  unique,
+  uniqueIndex,
+  check,
+} from "drizzle-orm/pg-core";
+import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
 import {
   intakeStatusEnum,
@@ -9,24 +24,8 @@ import { organizations, users } from "../common/auth";
 import { projects } from "./core";
 import { tickets } from "./tasks";
 
-export const projectStatuses = pgTable("project_statuses", {
-  id: serial("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
-  name: text("name").notNull(),
-  order: integer("order").notNull().default(0),
-  color: text("color"),
-  type: text("type").default("unstarted"),
-  wipLimit: integer("wip_limit"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
-}, (table) => [
-  index("idx_project_statuses_project").on(table.projectId),
-  unique("uniq_project_statuses_org_id").on(table.orgId, table.id),
-]);
-
-export const projectMembers = pgTable("project_members", {
-  id: serial("id").primaryKey(),
+export const projectMembers = build.table("project_members", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
@@ -42,8 +41,8 @@ export const projectMembers = pgTable("project_members", {
   unique("uniq_project_members_org_id").on(table.orgId, table.id),
 ]);
 
-export const projectViews = pgTable("project_views", {
-  id: serial("id").primaryKey(),
+export const projectViews = build.table("project_views", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   createdBy: text("created_by").references(() => users.id).notNull(),
@@ -65,8 +64,8 @@ export const projectViews = pgTable("project_views", {
   unique("uniq_project_views_org_id").on(table.orgId, table.id),
 ]);
 
-export const intakeItems = pgTable("intake_items", {
-  id: serial("id").primaryKey(),
+export const intakeItems = build.table("intake_items", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   title: text("title").notNull(),
@@ -87,8 +86,8 @@ export const intakeItems = pgTable("intake_items", {
   unique("uniq_intake_items_org_id").on(table.orgId, table.id),
 ]);
 
-export const pages = pgTable("pages", {
-  id: serial("id").primaryKey(),
+export const pages = build.table("pages", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   title: text("title").notNull(),
@@ -109,8 +108,8 @@ export const pages = pgTable("pages", {
   unique("uniq_pages_org_id").on(table.orgId, table.id),
 ]);
 
-export const projectMilestones = pgTable("project_milestones", {
-  id: serial("id").primaryKey(),
+export const projectMilestones = build.table("project_milestones", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),
@@ -119,11 +118,12 @@ export const projectMilestones = pgTable("project_milestones", {
   status: text("status").notNull().default("PENDING"),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   clientVisible: boolean("client_visible").notNull().default(false),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  index("idx_project_milestones_project").on(table.projectId),
-  index("idx_project_milestones_org").on(table.orgId),
+  index("idx_project_milestones_project").on(table.projectId).where(sql`deleted_at IS NULL`),
+  index("idx_project_milestones_org").on(table.orgId).where(sql`deleted_at IS NULL`),
   unique("uniq_project_milestones_org_id").on(table.orgId, table.id),
   check("chk_project_milestones_status", sql`${table.status} IN ('PENDING','ACHIEVED','MISSED')`),
 ]);

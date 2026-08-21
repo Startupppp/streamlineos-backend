@@ -15,6 +15,7 @@ import {
   roles,
   users,
 } from "../../db/schema";
+import { AccessService } from "../access/access.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -26,6 +27,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { RoleLockoutService } from "./role-lockout.service";
 import type { RoleMemberInput } from "./dto/rbac.schemas";
+import { assertMayAssignRole } from "./assert-role-assignment";
 
 @Injectable()
 export class RoleMemberService {
@@ -35,6 +37,7 @@ export class RoleMemberService {
     private readonly audit: AuditService,
     private readonly dispatch: NotificationDispatchService,
     private readonly lockout: RoleLockoutService,
+    private readonly access: AccessService,
   ) {}
 
   private async invalidateRoleHolderSessions(orgId: string, roleId: number): Promise<void> {
@@ -186,7 +189,7 @@ export class RoleMemberService {
     roleId: number,
     input: RoleMemberInput,
   ): Promise<{ success: true }> {
-    await this.getRole(actor.orgId, roleId);
+    const role = await this.getRole(actor.orgId, roleId);
 
     if (
       !actor.isOrgOwner &&
@@ -195,6 +198,8 @@ export class RoleMemberService {
     ) {
       throw new ForbiddenException("You cannot assign a role to yourself");
     }
+
+    await assertMayAssignRole(this.db, this.access, actor, role);
 
     if (input.principalType === "user") {
       const member = await this.db.query.organizationMembers.findFirst({

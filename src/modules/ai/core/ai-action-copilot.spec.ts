@@ -1,5 +1,4 @@
 import { ForbiddenException } from "@nestjs/common";
-import type { ToolCallOptions } from "ai";
 import { ProjectsCopilotTools } from "./projects-copilot-tools";
 import { ToolAccessService } from "./tool-access.service";
 import { AiConfirmationService } from "../confirmation/ai-confirmation.service";
@@ -15,7 +14,10 @@ const mockActor: CurrentUserContext = {
   tokenScopes: null,
 };
 
-const toolOpts: ToolCallOptions = { toolCallId: "test-call", messages: [] };
+type BuiltTools = ReturnType<ProjectsCopilotTools["buildTools"]>;
+type ToolCallOptions = Parameters<NonNullable<BuiltTools["readTicket"]["execute"]>>[1];
+
+const toolOpts: ToolCallOptions = { toolCallId: "test-call", messages: [], context: {} };
 
 function buildMocks() {
   const db = { select: jest.fn(), update: jest.fn(), insert: jest.fn() } as unknown as import("../../../db/drizzle.module").Db;

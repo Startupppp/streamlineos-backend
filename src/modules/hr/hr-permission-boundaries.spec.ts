@@ -5,6 +5,7 @@ import { DelegationsController } from "./governance/delegations/delegations.cont
 import { RecruitmentPipelineController } from "./recruitment/recruitment-pipeline.controller";
 import { EmployeesController } from "./directory/employees.controller";
 import { OnboardingController } from "./onboarding/core/onboarding.controller";
+import { LeavesController } from "./time/leaves.controller";
 
 function permissionFor(handler: object): string | undefined {
   return Reflect.getMetadata(REQUIRE_PERMISSION, handler);
@@ -78,6 +79,15 @@ describe("HR least-privilege controller boundaries", () => {
     );
     expect(permissionFor(OnboardingController.prototype.sendReminders)).toBe(
       "hr:onboarding:manage",
+    );
+  });
+
+  it("separates leave self-service from approval and comp-off authority", () => {
+    expect(permissionFor(LeavesController.prototype.update)).toBe(
+      "hr:leaves:approve",
+    );
+    expect(permissionFor(LeavesController.prototype.compOff)).toBe(
+      "hr:leaves:manage",
     );
   });
 });

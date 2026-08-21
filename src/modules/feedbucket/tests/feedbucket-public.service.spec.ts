@@ -22,6 +22,7 @@ const activeWidget = {
   name: "Test Widget",
   publicKey: "fb_valid_key",
   projectId: 10,
+  managedProductId: null,
   allowedDomains: [],
   autoCreateTicket: false,
   aiAssistEnabled: false,

@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
-import { territories, territoryReps, territoryLocations } from "../../../db/schema";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { crmPeople, territories, territoryReps, territoryLocations } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -23,7 +23,7 @@ export class CrmTerritoriesService {
       String(limit),
       () =>
         this.db.query.territories.findMany({
-          where: eq(territories.orgId, orgId),
+          where: and(eq(territories.orgId, orgId), isNull(territories.deletedAt)),
           with: {
             reps: { columns: { id: true, crmPersonId: true, assignedAt: true } },
             locations: { columns: { id: true, kind: true, value: true } },
@@ -77,7 +77,11 @@ export class CrmTerritoriesService {
 
   getOne(orgId: string, id: number) {
     return this.db.query.territories.findFirst({
-      where: and(eq(territories.id, id), eq(territories.orgId, orgId)),
+      where: and(
+        eq(territories.id, id),
+        eq(territories.orgId, orgId),
+        isNull(territories.deletedAt),
+      ),
       with: {
         reps: { columns: { id: true, crmPersonId: true, assignedAt: true } },
         locations: { columns: { id: true, kind: true, value: true } },
@@ -89,7 +93,13 @@ export class CrmTerritoriesService {
     const [row] = await this.db
       .select({ id: territories.id })
       .from(territories)
-      .where(and(eq(territories.id, id), eq(territories.orgId, orgId)));
+      .where(
+        and(
+          eq(territories.id, id),
+          eq(territories.orgId, orgId),
+          isNull(territories.deletedAt),
+        ),
+      );
     return Boolean(row);
   }
 
@@ -159,16 +169,46 @@ export class CrmTerritoriesService {
   }
 
   async remove(orgId: string, id: number) {
-    await this.db.delete(territories).where(and(eq(territories.id, id), eq(territories.orgId, orgId)));
+    await this.db
+      .update(territories)
+      .set({ deletedAt: new Date() })
+      .where(
+        and(
+          eq(territories.id, id),
+          eq(territories.orgId, orgId),
+          isNull(territories.deletedAt),
+        ),
+      );
     await this.cache.invalidateNamespace(`crm:territories:${orgId}`);
     return { success: true };
   }
 
   async preview(orgId: string, sample: SampleLead) {
     const result = await this.territoryMatch.match(orgId, sample);
+    const repIds = result?.assignedReps ?? [];
+
     return {
       matchedTerritory: result?.territory ?? null,
-      assignedReps: result?.assignedReps ?? [],
+      assignedReps: repIds,
+      assignedRepNames: await this.resolveRepNames(orgId, repIds),
     };
+  }
+
+  /**
+   * The preview surface must render names, never the raw `crmPersonId` (§15).
+   * Kept here rather than in TerritoryMatchService because assignment consumes
+   * that service and needs the ids.
+   */
+  private async resolveRepNames(orgId: string, repIds: number[]): Promise<string[]> {
+    if (repIds.length === 0) return [];
+
+    const people = await this.db
+      .select({ id: crmPeople.id, name: crmPeople.name })
+      .from(crmPeople)
+      .where(and(eq(crmPeople.orgId, orgId), inArray(crmPeople.id, repIds)))
+      .limit(repIds.length);
+
+    const nameById = new Map(people.map((person) => [person.id, person.name]));
+    return repIds.map((id) => nameById.get(id) ?? `Unknown rep #${id}`);
   }
 }

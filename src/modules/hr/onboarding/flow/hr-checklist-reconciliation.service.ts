@@ -2,10 +2,10 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, count, eq, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
+import { hasCompatibleHolidays } from "../../../../db/compat/organization-holidays";
 import {
   documentTypes,
   hiringFlows,
-  holidays,
   hrJobRoles,
   orgUnits,
   hrPositions,
@@ -91,7 +91,7 @@ export class HrChecklistReconciliationService {
       jobRolesCount,
       positionsCount,
       leavePoliciesCount,
-      holidaysCount,
+      hasHolidays,
       shiftsCount,
       onboardingTemplatesCount,
       documentTypesCount,
@@ -137,7 +137,7 @@ export class HrChecklistReconciliationService {
           .from(leavePolicies)
           .where(and(eq(leavePolicies.orgId, orgId), eq(leavePolicies.isActive, true))),
       ),
-      this.countRows(this.db.select({ value: count() }).from(holidays).where(eq(holidays.orgId, orgId))),
+      hasCompatibleHolidays(this.db, orgId),
       this.countRows(
         this.db
           .select({ value: count() })
@@ -203,7 +203,7 @@ export class HrChecklistReconciliationService {
       locations_departments: departmentsCount > 0 && locationsCount > 0,
       roles_positions: jobRolesCount > 0 && positionsCount > 0,
       leave_policies: leavePoliciesCount > 0,
-      holiday_calendar: holidaysCount > 0,
+      holiday_calendar: hasHolidays,
       attendance_schedule: shiftsCount > 0,
       onboarding_template: onboardingTemplatesCount > 0,
       document_types: documentTypesCount > 0,

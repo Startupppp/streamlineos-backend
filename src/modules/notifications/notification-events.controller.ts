@@ -1,4 +1,5 @@
-import { Body, Controller, Get, HttpCode, Param, Patch, Post, UseGuards } from "@nestjs/common";
+import {
+  BadRequestException, Body, Controller, Get, HttpCode, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -8,6 +9,7 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { NotificationEventRegistryService } from "./notification-event-registry.service";
 import { NotificationDispatchService } from "./notification-dispatch.service";
 import { updateEventPolicySchema, emitEventSchema, type UpdateEventPolicyInput, type EmitEventInput } from "./dto/event.schemas";
+import { isNotificationEventKey } from "./notification-events.catalog";
 
 @Controller("notifications/admin/events")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -40,6 +42,9 @@ export class NotificationEventsController {
     @Body(new ZodValidationPipe(emitEventSchema)) body: EmitEventInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    if (!isNotificationEventKey(body.eventKey))
+      throw new BadRequestException(`Unknown notification event: ${body.eventKey}`);
+
     return this.dispatch.emitNow({
       eventKey: body.eventKey,
       orgId: u.orgId,

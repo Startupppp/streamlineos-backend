@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
-import { customStates, projectDailySnapshots, projects, sprints, tickets, workItemRelations } from "../../../db/schema";
+import { and, asc, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
+import { projectDailySnapshots, projectStatuses, projects, sprintScopeEvents, sprints, tickets, workItemRelations } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { addDays, differenceInCalendarDays, formatDateOnly } from "../../../common/date";
@@ -38,7 +38,7 @@ export class ProjectsReportsService {
 
   private async requireProject(orgId: string, projectId: number): Promise<void> {
     const project = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
+      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
       columns: { id: true },
     });
     if (!project) throw new NotFoundException("Project not found");
@@ -53,6 +53,7 @@ export class ProjectsReportsService {
             eq(sprints.id, Number(query.sprintId)),
             eq(sprints.projectId, projectId),
             eq(sprints.orgId, orgId),
+            isNull(sprints.deletedAt),
           ),
           columns: { id: true, startDate: true, endDate: true },
         })
@@ -61,6 +62,7 @@ export class ProjectsReportsService {
             eq(sprints.projectId, projectId),
             eq(sprints.orgId, orgId),
             inArray(sprints.status, ["ACTIVE", "COMPLETED"]),
+            isNull(sprints.deletedAt),
           ),
           orderBy: [desc(sprints.startDate)],
           columns: { id: true, startDate: true, endDate: true },
@@ -72,52 +74,138 @@ export class ProjectsReportsService {
     return this.cache.cached(
       cacheKey,
       async () => {
-        const [scopeRow] = await this.db
-          .select({
-            totalScope: sql<number>`COALESCE(SUM(${tickets.storyPoints}), 0)::int`,
-          })
-          .from(tickets)
-          .leftJoin(customStates, eq(tickets.stateId, customStates.id))
-          .where(and(eq(tickets.orgId, orgId), eq(tickets.sprintId, sprint.id)));
-
-        const totalScope = scopeRow?.totalScope ?? 0;
-
-        const completedDayRows = await this.db
-          .select({
-            day: sql<string>`to_char(date_trunc('day', ${tickets.updatedAt}), 'YYYY-MM-DD')`,
-            pts: sql<number>`COALESCE(SUM(${tickets.storyPoints}), 0)::int`,
-          })
-          .from(tickets)
-          .leftJoin(customStates, eq(tickets.stateId, customStates.id))
-          .where(
-            and(
-              eq(tickets.orgId, orgId),
-              eq(tickets.sprintId, sprint.id),
-              sql`(${customStates.group} = 'completed' OR (${customStates.id} IS NULL AND ${tickets.status} = 'DONE'))`,
-            ),
-          )
-          .groupBy(sql`date_trunc('day', ${tickets.updatedAt})`)
-          .orderBy(sql`date_trunc('day', ${tickets.updatedAt})`);
-
-        const completedByDate = new Map<string, number>();
-        for (const row of completedDayRows) {
-          completedByDate.set(row.day, row.pts);
-        }
-
         const startDate = new Date(sprint.startDate);
         const endDate = new Date(sprint.endDate);
         const days = Math.max(differenceInCalendarDays(endDate, startDate) + 1, 1);
 
-        let cumulativeCompleted = 0;
-        return Array.from({ length: days }).map((_, i) => {
-          const day = addDays(startDate, i);
-          const dateKey = formatDateOnly(day);
-          cumulativeCompleted += completedByDate.get(dateKey) ?? 0;
-          return { date: dateKey, scope: totalScope, completed: Math.min(cumulativeCompleted, totalScope) };
-        });
+        const events = await this.db
+          .select({
+            ticketId: sprintScopeEvents.ticketId,
+            eventType: sprintScopeEvents.eventType,
+            newPoints: sprintScopeEvents.newPoints,
+            createdAt: sprintScopeEvents.createdAt,
+          })
+          .from(sprintScopeEvents)
+          .where(
+            and(
+              eq(sprintScopeEvents.orgId, orgId),
+              eq(sprintScopeEvents.sprintId, sprint.id),
+            ),
+          )
+          .orderBy(asc(sprintScopeEvents.createdAt));
+
+        if (events.length > 0)
+          return this.burnupFromEvents(events, startDate, days);
+
+        return this.burnupFromCurrentMembership(orgId, projectId, sprint.id, startDate, days);
       },
       CACHE_TTL.SHORT,
     );
+  }
+
+  private burnupFromEvents(
+    events: { ticketId: number; eventType: string; newPoints: number | null; createdAt: Date }[],
+    startDate: Date,
+    days: number,
+  ): BurnupPoint[] {
+    type TicketState = { points: number; inSprint: boolean; completed: boolean };
+    const state = new Map<number, TicketState>();
+    let eventIdx = 0;
+
+    return Array.from({ length: days }).map((_, i) => {
+      const day = addDays(startDate, i);
+      const dayEnd = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 23, 59, 59, 999);
+
+      while (eventIdx < events.length) {
+        const ev = events[eventIdx];
+        if (!ev || ev.createdAt > dayEnd) break;
+        const s = state.get(ev.ticketId) ?? { points: 0, inSprint: false, completed: false };
+        switch (ev.eventType) {
+          case "added":
+            s.inSprint = true;
+            if (ev.newPoints !== null) s.points = ev.newPoints;
+            break;
+          case "removed":
+            s.inSprint = false;
+            break;
+          case "estimate_changed":
+            if (ev.newPoints !== null) s.points = ev.newPoints;
+            break;
+          case "completed":
+            s.completed = true;
+            break;
+          case "reopened":
+            s.completed = false;
+            break;
+        }
+        state.set(ev.ticketId, s);
+        eventIdx++;
+      }
+
+      let scope = 0;
+      let completed = 0;
+      for (const [, s] of state) {
+        if (!s.inSprint) continue;
+        scope += s.points;
+        if (s.completed) completed += s.points;
+      }
+
+      return { date: formatDateOnly(day), scope, completed: Math.min(completed, scope) };
+    });
+  }
+
+  private async burnupFromCurrentMembership(
+    orgId: string,
+    projectId: number,
+    sprintId: number,
+    startDate: Date,
+    days: number,
+  ): Promise<BurnupPoint[]> {
+    const [scopeRow] = await this.db
+      .select({
+        totalScope: sql<number>`COALESCE(SUM(${tickets.storyPoints}), 0)::int`,
+      })
+      .from(tickets)
+      .where(and(eq(tickets.orgId, orgId), eq(tickets.sprintId, sprintId), isNull(tickets.deletedAt)));
+
+    const totalScope = scopeRow?.totalScope ?? 0;
+
+    const completedDayRows = await this.db
+      .select({
+        day: sql<string>`to_char(date_trunc('day', ${tickets.updatedAt}), 'YYYY-MM-DD')`,
+        pts: sql<number>`COALESCE(SUM(${tickets.storyPoints}), 0)::int`,
+      })
+      .from(tickets)
+      .leftJoin(
+        projectStatuses,
+        and(
+          eq(tickets.orgId, projectStatuses.orgId),
+          eq(tickets.projectId, projectStatuses.projectId),
+          eq(tickets.status, projectStatuses.name),
+        ),
+      )
+      .where(
+        and(
+          eq(tickets.orgId, orgId),
+          eq(tickets.sprintId, sprintId),
+          isNull(tickets.deletedAt),
+          eq(projectStatuses.type, "completed"),
+        ),
+      )
+      .groupBy(sql`date_trunc('day', ${tickets.updatedAt})`)
+      .orderBy(sql`date_trunc('day', ${tickets.updatedAt})`);
+
+    const completedByDate = new Map<string, number>();
+    for (const row of completedDayRows)
+      completedByDate.set(row.day, row.pts);
+
+    let cumulativeCompleted = 0;
+    return Array.from({ length: days }).map((_, i) => {
+      const day = addDays(startDate, i);
+      const dateKey = formatDateOnly(day);
+      cumulativeCompleted += completedByDate.get(dateKey) ?? 0;
+      return { date: dateKey, scope: totalScope, completed: Math.min(cumulativeCompleted, totalScope) };
+    });
   }
 
   async cfd(orgId: string, projectId: number, query: CfdQuery) {
@@ -184,6 +272,7 @@ export class ProjectsReportsService {
               eq(sprints.projectId, projectId),
               eq(sprints.orgId, orgId),
               inArray(sprints.status, ["ACTIVE", "COMPLETED"]),
+              isNull(sprints.deletedAt),
             ),
           )
           .orderBy(asc(sprints.startDate));
@@ -197,12 +286,19 @@ export class ProjectsReportsService {
             sprintId: tickets.sprintId,
             committedCount: sql<number>`COUNT(*)::int`,
             committedPoints: sql<number>`COALESCE(SUM(${tickets.storyPoints}), 0)::int`,
-            completedCount: sql<number>`COUNT(*) FILTER (WHERE ${customStates.group} = 'completed' OR (${customStates.id} IS NULL AND ${tickets.status} = 'DONE'))::int`,
-            completedPoints: sql<number>`COALESCE(SUM(CASE WHEN ${customStates.group} = 'completed' OR (${customStates.id} IS NULL AND ${tickets.status} = 'DONE') THEN ${tickets.storyPoints} ELSE 0 END), 0)::int`,
+            completedCount: sql<number>`COUNT(*) FILTER (WHERE ${projectStatuses.type} = 'completed')::int`,
+            completedPoints: sql<number>`COALESCE(SUM(CASE WHEN ${projectStatuses.type} = 'completed' THEN ${tickets.storyPoints} ELSE 0 END), 0)::int`,
           })
           .from(tickets)
-          .leftJoin(customStates, eq(tickets.stateId, customStates.id))
-          .where(and(eq(tickets.orgId, orgId), inArray(tickets.sprintId, sprintIds)))
+          .leftJoin(
+            projectStatuses,
+            and(
+              eq(tickets.orgId, projectStatuses.orgId),
+              eq(tickets.projectId, projectStatuses.projectId),
+              eq(tickets.status, projectStatuses.name),
+            ),
+          )
+          .where(and(eq(tickets.orgId, orgId), inArray(tickets.sprintId, sprintIds), isNull(tickets.deletedAt)))
           .groupBy(tickets.sprintId);
 
         const statsMap = new Map(statsRows.map((r) => [r.sprintId, r]));
@@ -230,14 +326,21 @@ export class ProjectsReportsService {
 
     const statsRows = await this.db
       .select({
-        group: sql<string>`COALESCE(${customStates.group}, CASE WHEN ${tickets.status} = 'DONE' THEN 'completed' ELSE 'backlog' END)`,
+        group: sql<StateGroup>`${projectStatuses.type}`,
         count: sql<number>`COUNT(*)::int`,
         points: sql<number>`COALESCE(SUM(${tickets.storyPoints}), 0)::int`,
       })
       .from(tickets)
-      .leftJoin(customStates, eq(tickets.stateId, customStates.id))
-      .where(and(eq(tickets.orgId, orgId), eq(tickets.projectId, projectId)))
-      .groupBy(sql`COALESCE(${customStates.group}, CASE WHEN ${tickets.status} = 'DONE' THEN 'completed' ELSE 'backlog' END)`);
+      .innerJoin(
+        projectStatuses,
+        and(
+          eq(tickets.orgId, projectStatuses.orgId),
+          eq(tickets.projectId, projectStatuses.projectId),
+          eq(tickets.status, projectStatuses.name),
+        ),
+      )
+      .where(and(eq(tickets.orgId, orgId), eq(tickets.projectId, projectId), isNull(tickets.deletedAt)))
+      .groupBy(projectStatuses.type);
 
     const totals = new Map<StateGroup, { count: number; points: number }>();
     for (const group of STATE_GROUPS) {
@@ -294,6 +397,7 @@ export class ProjectsReportsService {
             and(
               eq(tickets.orgId, orgId),
               eq(tickets.projectId, projectId),
+              isNull(tickets.deletedAt),
               eq(tickets.status, "DONE"),
               gte(tickets.updatedAt, sql`NOW() - INTERVAL '12 weeks'`),
             ),
@@ -324,6 +428,7 @@ export class ProjectsReportsService {
             and(
               eq(tickets.orgId, orgId),
               eq(tickets.projectId, projectId),
+              isNull(tickets.deletedAt),
               eq(tickets.status, "DONE"),
               gte(tickets.updatedAt, sql`NOW() - INTERVAL '12 weeks'`),
             ),
@@ -344,7 +449,7 @@ export class ProjectsReportsService {
         const ticketRows = await this.db
           .select({ id: tickets.id, title: tickets.title, storyPoints: tickets.storyPoints })
           .from(tickets)
-          .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)));
+          .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)));
 
         const ticketIds = ticketRows.map((t) => t.id);
         const validIds = new Set(ticketIds);

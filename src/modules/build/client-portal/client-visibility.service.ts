@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { projectMilestones, projects, ticketAttachments, ticketComments, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -14,7 +14,7 @@ export class ClientVisibilityService {
 
   private async assertProject(orgId: string, projectId: number) {
     const p = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
+      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
       columns: { id: true },
     });
     if (!p) throw new NotFoundException("Project not found");
@@ -32,8 +32,9 @@ export class ClientVisibilityService {
           clientVisible: tickets.clientVisible,
         })
         .from(tickets)
-        .where(and(eq(tickets.orgId, orgId), eq(tickets.projectId, projectId)))
-        .orderBy(tickets.ticketNumber),
+        .where(and(eq(tickets.orgId, orgId), eq(tickets.projectId, projectId), isNull(tickets.deletedAt)))
+        .orderBy(tickets.ticketNumber)
+        .limit(500),
 
       this.db
         .select({
@@ -42,15 +43,16 @@ export class ClientVisibilityService {
           clientVisible: projectMilestones.clientVisible,
         })
         .from(projectMilestones)
-        .where(and(eq(projectMilestones.orgId, orgId), eq(projectMilestones.projectId, projectId)))
-        .orderBy(projectMilestones.id),
+        .where(and(eq(projectMilestones.orgId, orgId), eq(projectMilestones.projectId, projectId), isNull(projectMilestones.deletedAt)))
+        .orderBy(projectMilestones.id)
+        .limit(200),
     ]);
     return { tickets: ticketList, milestones: milestoneList };
   }
 
   async toggleTicketVisibility(orgId: string, userId: string, projectId: number, ticketId: number, clientVisible: boolean) {
     const existing = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), eq(tickets.projectId, projectId)),
+      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), eq(tickets.projectId, projectId), isNull(tickets.deletedAt)),
       columns: { id: true },
     });
     if (!existing) throw new NotFoundException("Ticket not found");
@@ -75,6 +77,7 @@ export class ClientVisibilityService {
         eq(projectMilestones.id, milestoneId),
         eq(projectMilestones.orgId, orgId),
         eq(projectMilestones.projectId, projectId),
+        isNull(projectMilestones.deletedAt),
       ),
       columns: { id: true },
     });
@@ -102,8 +105,9 @@ export class ClientVisibilityService {
         eq(tickets.id, ticketComments.ticketId),
         eq(tickets.projectId, projectId),
         eq(tickets.orgId, orgId),
+        isNull(tickets.deletedAt),
       ))
-      .where(and(eq(ticketComments.id, commentId), eq(ticketComments.orgId, orgId)))
+      .where(and(eq(ticketComments.id, commentId), eq(ticketComments.orgId, orgId), isNull(ticketComments.deletedAt)))
       .limit(1);
     if (!row) throw new NotFoundException("Comment not found");
     await this.db
@@ -129,6 +133,7 @@ export class ClientVisibilityService {
         eq(tickets.id, ticketAttachments.ticketId),
         eq(tickets.projectId, projectId),
         eq(tickets.orgId, orgId),
+        isNull(tickets.deletedAt),
       ))
       .where(and(eq(ticketAttachments.id, attachmentId), eq(ticketAttachments.orgId, orgId)))
       .limit(1);

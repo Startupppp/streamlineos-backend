@@ -82,7 +82,14 @@ describe("ModuleAccessService", () => {
       update: jest.fn(),
       delete: jest.fn(),
       transaction: jest.fn(),
-      query: { roles: { findFirst: jest.fn() } },
+      query: {
+        roles: { findFirst: jest.fn() },
+        organizationMembers: {
+          findFirst: jest
+            .fn()
+            .mockResolvedValue({ isOwner: false, role: "MEMBER" }),
+        },
+      },
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -117,14 +124,31 @@ describe("ModuleAccessService", () => {
       expect(resolveUserPermissions).not.toHaveBeenCalled();
     });
 
-    it("allows an org admin through the canonical reserved-key policy", async () => {
-      resolveUserPermissions.mockResolvedValue(
-        new Map([["settings:rbac:manage", "all"]]),
-      );
+    it("allows a STRUCTURAL org admin, read from the membership row", async () => {
+      (
+        mockDb.query as { organizationMembers: { findFirst: jest.Mock } }
+      ).organizationMembers.findFirst.mockResolvedValue({
+        isOwner: false,
+        role: "ORG_ADMIN",
+      });
+
       await expect(
         svc.assertModuleAccess(actor(), "hr", "manage"),
       ).resolves.toBeUndefined();
-      expect(resolveUserPermissions).toHaveBeenCalledWith("org-1", "u1");
+      expect(resolveUserPermissions).not.toHaveBeenCalled();
+    });
+
+    it("AC-04: a reserved permission key alone no longer confers org-admin authority", async () => {
+      resolveUserPermissions.mockResolvedValue(
+        new Map([
+          ["settings:manage", "all"],
+          ["settings:rbac:manage", "all"],
+        ]),
+      );
+
+      await expect(
+        svc.assertModuleAccess(actor(), "hr", "manage"),
+      ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
     it("allows the actual module owner", async () => {
@@ -159,7 +183,6 @@ describe("ModuleAccessService", () => {
       await expect(
         svc.assertModuleAccess(actor(), "hr", "manage"),
       ).rejects.toBeInstanceOf(ForbiddenException);
-      expect(resolveUserPermissions).toHaveBeenCalledWith("org-1", "u1");
     });
 
     it("forbids a Module Admin assigned only to another module", async () => {

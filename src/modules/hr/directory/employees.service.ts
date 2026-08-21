@@ -1,5 +1,21 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { SQL, and, avg, count, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
+import {
+  SQL,
+  and,
+  asc,
+  avg,
+  count,
+  desc,
+  eq,
+  gt,
+  gte,
+  ilike,
+  inArray,
+  isNull,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
 import {
   attendance,
   leaveRequests,
@@ -18,6 +34,10 @@ import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { formatDateOnly, subDays } from "../../../common/date";
 import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
+import {
+  decodeEmployeeListCursor,
+  encodeEmployeeListCursor,
+} from "./employee-list-cursor";
 
 @Injectable()
 export class EmployeesService {
@@ -30,7 +50,7 @@ export class EmployeesService {
     orgId: string,
     userId: string,
     opts: {
-      page?: number;
+      cursor?: string;
       limit?: number;
       search?: string;
       departmentId?: string;
@@ -40,19 +60,18 @@ export class EmployeesService {
     scope: DataScope,
   ) {
     const search = opts.search;
-    const pageN = opts.page ?? 1;
     const limitN = opts.limit ?? 20;
     const isActive = opts.isActive ?? "true";
     const departmentId = opts.departmentId;
     const role = opts.role?.trim() || undefined;
 
-    const key = `hr:employees:paginated:${orgId}:${userId}:${scope}:${pageN}:${limitN}:${search ?? ""}:${departmentId ?? ""}:${isActive}:${role ?? ""}`;
+    const key = `hr:employees:cursor:${orgId}:${userId}:${scope}:${opts.cursor ?? ""}:${limitN}:${search ?? ""}:${departmentId ?? ""}:${isActive}:${role ?? ""}`;
     return this.cache.cached(
       key,
       () =>
         this.getEmployeesPaginated(
           orgId,
-          pageN,
+          opts.cursor,
           limitN,
           search,
           userId,
@@ -65,9 +84,32 @@ export class EmployeesService {
     );
   }
 
+  async assertEmployeeVisible(
+    orgId: string,
+    actorUserId: string,
+    targetUserId: string,
+    scope: DataScope,
+  ): Promise<void> {
+    const [visible] = await this.db
+      .select({ userId: organizationMembers.userId })
+      .from(organizationMembers)
+      .where(
+        and(
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.userId, targetUserId),
+          applyScope(scope, orgId, actorUserId, {
+            ownerColumn: organizationMembers.userId,
+          }),
+        ),
+      )
+      .limit(1);
+
+    if (!visible) throw new NotFoundException("Employee not found");
+  }
+
   private async getEmployeesPaginated(
     orgId: string,
-    page: number,
+    encodedCursor: string | undefined,
     limit: number,
     search: string | undefined,
     userId: string,
@@ -76,7 +118,8 @@ export class EmployeesService {
     isActive: "true" | "false" | "all" = "true",
     role?: string,
   ) {
-    const offset = (page - 1) * limit;
+    const cursor = encodedCursor ? decodeEmployeeListCursor(encodedCursor) : undefined;
+    const normalizedName = sql<string>`lower(coalesce(${users.name}, ''))`;
 
     const baseConditions: SQL[] = [
       eq(organizationMembers.orgId, orgId),
@@ -86,6 +129,17 @@ export class EmployeesService {
     else if (isActive === "false") baseConditions.push(eq(users.isActive, false));
     if (departmentId != null) baseConditions.push(eq(users.orgDepartmentId, departmentId));
     if (role) baseConditions.push(eq(organizationMembers.role, role));
+    if (cursor) {
+      baseConditions.push(
+        or(
+          gt(normalizedName, cursor.name),
+          and(
+            eq(normalizedName, cursor.name),
+            gt(users.id, cursor.employeeUserId),
+          ),
+        )!,
+      );
+    }
 
     const searchCondition = search
       ? or(
@@ -100,10 +154,10 @@ export class EmployeesService {
 
     const where = searchCondition ? and(...baseConditions, searchCondition) : and(...baseConditions);
 
-    const [dataResult, countResult] = await Promise.all([
-      this.db
-        .select({
+    const dataResult = await this.db
+      .select({
           id: users.id,
+          cursorName: normalizedName,
           name: users.name,
           firstName: users.firstName,
           lastName: users.lastName,
@@ -117,26 +171,27 @@ export class EmployeesService {
           isActive: users.isActive,
           joiningDate: users.joiningDate,
           reportingTo: users.reportingTo,
-          monthlySalary: users.monthlySalary,
-        })
-        .from(organizationMembers)
-        .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .leftJoin(orgUnits, and(eq(users.orgDepartmentId, orgUnits.id), eq(orgUnits.kind, "DEPARTMENT")))
-        .where(where)
-        .orderBy(users.name)
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ total: count() })
-        .from(organizationMembers)
-        .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .where(where),
-    ]);
+      })
+      .from(organizationMembers)
+      .innerJoin(users, eq(organizationMembers.userId, users.id))
+      .leftJoin(
+        orgUnits,
+        and(
+          eq(users.orgDepartmentId, orgUnits.id),
+          eq(orgUnits.orgId, orgId),
+          eq(orgUnits.kind, "DEPARTMENT"),
+        ),
+      )
+      .where(where)
+      .orderBy(asc(normalizedName), asc(users.id))
+      .limit(limit + 1);
 
-    const total = countResult[0]?.total ?? 0;
+    const hasMore = dataResult.length > limit;
+    const pageRows = dataResult.slice(0, limit);
+    const lastRow = pageRows.at(-1);
 
     return {
-      data: dataResult.map((row) => ({
+      data: pageRows.map((row) => ({
         id: row.id,
         name: row.name,
         firstName: row.firstName,
@@ -153,13 +208,17 @@ export class EmployeesService {
         isActive: row.isActive,
         joiningDate: row.joiningDate,
         reportingTo: row.reportingTo,
-        monthlySalary: row.monthlySalary,
       })),
-      pagination: {
-        page,
+      pageInfo: {
         limit,
-        total,
-        totalPages: Math.ceil(total / limit),
+        hasMore,
+        nextCursor:
+          hasMore && lastRow
+            ? encodeEmployeeListCursor({
+                name: lastRow.cursorName,
+                employeeUserId: lastRow.id,
+              })
+            : null,
       },
     };
   }
@@ -278,7 +337,7 @@ export class EmployeesService {
         ticketNumber: tickets.ticketNumber,
       })
       .from(tickets)
-      .where(and(eq(tickets.assigneeId, userId), eq(tickets.orgId, orgId)))
+      .where(and(eq(tickets.assigneeId, userId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
       .orderBy(desc(tickets.id))
       .limit(50);
 

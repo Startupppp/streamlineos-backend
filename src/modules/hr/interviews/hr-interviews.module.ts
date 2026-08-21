@@ -44,5 +44,6 @@ import { HrInterviewBookingService } from "./hr-interview-booking.service";
     HrInterviewResultsService,
     HrInterviewBookingService,
   ],
+  exports: [HrInterviewsService, HrRecruitmentReportsService],
 })
 export class HrInterviewsModule {}

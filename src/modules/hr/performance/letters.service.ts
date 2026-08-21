@@ -1,21 +1,79 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
-import { hrTemplateRenders, hrTemplates, users } from "../../../db/schema";
+import { and, desc, eq, isNull } from "drizzle-orm";
+import {
+  hrEmployments,
+  hrPeople,
+  hrTemplateRenders,
+  hrTemplates,
+  users,
+} from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { RenderLetterInput, SaveLetterInput } from "./dto/documents.schemas";
+import { z } from "zod";
+
+const letterTemplateContentSchema = z.object({
+  bodyHtml: z.string().optional(),
+  subject: z.string().optional(),
+});
 
 @Injectable()
 export class LettersService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  listLetters(orgId: string, employeeId?: string) {
+  private async resolveEmploymentId(
+    orgId: string,
+    target: { employmentId?: number; employeeUserId?: string },
+  ): Promise<number | null> {
+    let employment: { employmentId: number } | undefined;
+    if (target.employmentId) {
+      [employment] = await this.db
+        .select({ employmentId: hrEmployments.id })
+        .from(hrEmployments)
+        .where(
+          and(
+            eq(hrEmployments.orgId, orgId),
+            eq(hrEmployments.id, target.employmentId),
+            isNull(hrEmployments.deletedAt),
+          ),
+        )
+        .limit(1);
+    } else if (target.employeeUserId) {
+      [employment] = await this.db
+        .select({ employmentId: hrEmployments.id })
+        .from(hrEmployments)
+        .innerJoin(
+          hrPeople,
+          and(
+            eq(hrEmployments.orgId, hrPeople.orgId),
+            eq(hrEmployments.personId, hrPeople.id),
+          ),
+        )
+        .where(
+          and(
+            eq(hrEmployments.orgId, orgId),
+            eq(hrPeople.userId, target.employeeUserId),
+            isNull(hrEmployments.deletedAt),
+            isNull(hrPeople.deletedAt),
+          ),
+        )
+        .orderBy(desc(hrEmployments.isPrimary), desc(hrEmployments.createdAt))
+        .limit(1);
+    } else {
+      return null;
+    }
+
+    if (!employment) throw new NotFoundException("Employee not found.");
+    return employment.employmentId;
+  }
+
+  listLetters(orgId: string, employmentId?: string) {
     return this.db
       .select({
         id: hrTemplateRenders.id,
         templateId: hrTemplateRenders.templateId,
         templateVersion: hrTemplateRenders.templateVersion,
-        renderedForEmployeeId: hrTemplateRenders.renderedForEmployeeId,
+        renderedForEmploymentId: hrTemplateRenders.renderedForEmployeeId,
         renderedBy: hrTemplateRenders.renderedBy,
         createdAt: hrTemplateRenders.createdAt,
         templateName: hrTemplates.name,
@@ -28,8 +86,8 @@ export class LettersService {
       .where(
         and(
           eq(hrTemplateRenders.orgId, orgId),
-          employeeId
-            ? eq(hrTemplateRenders.renderedForEmployeeId, parseInt(employeeId, 10))
+          employmentId
+            ? eq(hrTemplateRenders.renderedForEmployeeId, parseInt(employmentId, 10))
             : undefined,
         ),
       )
@@ -37,7 +95,7 @@ export class LettersService {
       .limit(100);
   }
 
-  async renderLetter(orgId: string, userId: string, input: RenderLetterInput) {
+  async renderLetter(orgId: string, input: RenderLetterInput) {
     const template = await this.db.query.hrTemplates.findFirst({
       where: and(
         eq(hrTemplates.id, input.templateId),
@@ -46,16 +104,24 @@ export class LettersService {
     });
     if (!template) throw new NotFoundException("Template not found.");
 
-    const content = template.content as { bodyHtml?: string; subject?: string };
-    const bodyHtml = content.bodyHtml ?? "";
+    const parsedContent = letterTemplateContentSchema.safeParse(template.content);
+    const bodyHtml = parsedContent.success ? (parsedContent.data.bodyHtml ?? "") : "";
     const variables = template.variablesUsed ?? [];
-    const ctx: Record<string, string> = { ...((input.extraContext as Record<string, string>) ?? {}) };
+    const context: Record<string, string> = { ...(input.extraContext ?? {}) };
 
-    for (const v of variables) {
-      if (!(v in ctx)) ctx[v] = `{{${v}}}`;
+    for (const variableName of variables) {
+      if (!(variableName in context)) {
+        context[variableName] = `{{${variableName}}}`;
+      }
     }
 
-    const outputHtml = bodyHtml.replace(/\{\{([^}]+)\}\}/g, (_, key: string) => ctx[key.trim()] ?? `{{${key.trim()}}}`);
+    const outputHtml = bodyHtml.replace(
+      /\{\{([^}]+)\}\}/g,
+      (_, variableName: string) =>
+        context[variableName.trim()] ?? `{{${variableName.trim()}}}`,
+    );
+
+    const employmentId = await this.resolveEmploymentId(orgId, input);
 
     return {
       templateId: template.id,
@@ -64,8 +130,8 @@ export class LettersService {
       letterType: template.letterType,
       outputHtml,
       variables,
-      contextSnapshot: ctx,
-      employeeId: input.employeeId,
+      contextSnapshot: context,
+      employmentId: employmentId ?? undefined,
     };
   }
 
@@ -79,15 +145,16 @@ export class LettersService {
     });
     if (!template) throw new NotFoundException("Template not found.");
 
+    const employmentId = await this.resolveEmploymentId(orgId, input);
     const [record] = await this.db
       .insert(hrTemplateRenders)
       .values({
         orgId,
         templateId: input.templateId,
         templateVersion: input.templateVersion,
-        renderedForEmployeeId: input.employeeId ?? null,
+        renderedForEmployeeId: employmentId,
         renderedBy: userId,
-        contextSnapshot: (input.contextSnapshot as Record<string, unknown>) ?? {},
+        contextSnapshot: input.contextSnapshot ?? {},
         outputHtml: input.outputHtml,
       })
       .returning();

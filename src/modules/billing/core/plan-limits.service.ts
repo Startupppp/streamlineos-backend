@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, Optional } from "@nestjs/common";
 import { sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import type { Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import {
@@ -89,8 +90,13 @@ export class PlanLimitsService {
   }
 
   private async queryTier(orgId: string): Promise<{ tier: PlanTier; plan: EffectivePlan }> {
-    const rows = await this.db.execute(
-      sql`SELECT plan, status, trial_ends_at, created_at FROM subscriptions WHERE org_id = ${orgId} ORDER BY created_at DESC LIMIT 1`,
+    const rows = await runInTenantTransaction(
+      this.db,
+      (tx) =>
+        tx.execute(
+          sql`SELECT plan, status, trial_ends_at, created_at FROM subscriptions WHERE org_id = ${orgId} ORDER BY created_at DESC LIMIT 1`,
+        ),
+      { orgId },
     );
     const row = rows[0];
     if (!row) {
@@ -167,7 +173,7 @@ export class PlanLimitsService {
       const rows = await this.db.execute(sql`
         SELECT
           (SELECT COUNT(*)::int FROM organization_members WHERE org_id = ${orgId})                                                         AS members,
-          (SELECT COUNT(*)::int FROM projects WHERE org_id = ${orgId})                                                                    AS projects,
+          (SELECT COUNT(*)::int FROM build.projects WHERE org_id = ${orgId})                                                              AS projects,
           (SELECT COUNT(*)::int FROM kb_pages WHERE org_id = ${orgId} AND deleted_at IS NULL)                                             AS "kbPages",
           (SELECT COUNT(*)::int FROM chat_channels WHERE org_id = ${orgId})                                                               AS "chatChannels",
           (SELECT COUNT(*)::int FROM leads WHERE org_id = ${orgId} AND deleted_at IS NULL)                                                AS "crmLeads",
@@ -294,7 +300,7 @@ export class PlanLimitsService {
       }
       case "projects": {
         const rows = await this.db.execute(
-          sql`SELECT COUNT(*)::int AS count FROM projects WHERE org_id = ${orgId}`,
+          sql`SELECT COUNT(*)::int AS count FROM build.projects WHERE org_id = ${orgId}`,
         );
         return Number(rows[0]?.["count"] ?? 0);
       }

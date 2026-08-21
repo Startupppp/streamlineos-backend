@@ -131,7 +131,7 @@ export class InvProductsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:read")
   get(@Param("productId", ParseIntPipe) productId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.products.getProduct(u.orgId, productId);
+    return this.products.getProduct(u.orgId, productId, u.userId);
   }
 
   @Post()

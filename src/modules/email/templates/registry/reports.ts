@@ -1,5 +1,5 @@
 import {
-  getWeeklyAttendanceReportTemplate,
+  getAttendanceReportTemplate,
   getMonthlyExpenseReportTemplate,
   getWeeklyRecapEmailTemplate,
 } from "../index";
@@ -11,7 +11,7 @@ export const reportsTemplates: Record<string, TemplateEntry> = {
     name: "Weekly Attendance Report",
     subject: "Attendance report — week of 30 Jun 2026",
     generateHtml: () =>
-      getWeeklyAttendanceReportTemplate("30 Jun – 4 Jul 2026", "Acme Corp", [
+      getAttendanceReportTemplate("30 Jun – 4 Jul 2026", "Acme Corp", [
         {
           department: "Engineering",
           name: "Priya Sharma",

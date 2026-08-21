@@ -1,4 +1,14 @@
-import { pgTable, pgEnum, text, serial, integer, boolean, timestamp, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import {
+  pgEnum,
+  text,
+  integer,
+  boolean,
+  timestamp,
+  index,
+  unique,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
+import { build } from "./namespaces";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
@@ -7,8 +17,8 @@ import { tickets } from "./tasks";
 export const gitProviderEnum = pgEnum("git_provider", ["github", "gitlab", "bitbucket"]);
 export const gitRefTypeEnum = pgEnum("git_ref_type", ["commit", "pull_request", "branch"]);
 
-export const gitConnections = pgTable("git_connections", {
-  id: serial("id").primaryKey(),
+export const gitConnections = build.table("git_connections", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
   provider: gitProviderEnum("provider").notNull(),
@@ -25,8 +35,8 @@ export const gitConnections = pgTable("git_connections", {
   unique("uniq_git_connections_org_id").on(table.orgId, table.id),
 ]);
 
-export const gitTicketLinks = pgTable("git_ticket_links", {
-  id: serial("id").primaryKey(),
+export const gitTicketLinks = build.table("git_ticket_links", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   ticketId: integer("ticket_id").references(() => tickets.id, { onDelete: "cascade" }).notNull(),
   connectionId: integer("connection_id").references(() => gitConnections.id, { onDelete: "set null" }),

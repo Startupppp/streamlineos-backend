@@ -1,6 +1,6 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, desc, eq, ilike, or } from "drizzle-orm";
-import { changelogEntries, feedbackPosts, roadmapItems } from "../../../db/schema";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, asc, count, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import { changelogEntries, feedbackPosts, feedbackVotes, roadmapItems } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type {
@@ -9,6 +9,7 @@ import type {
   CreateFeedbackInput,
   CreateRoadmapInput,
   FeedbackListQuery,
+  MergeFeedbackInput,
   RoadmapListQuery,
   UpdateChangelogInput,
   UpdateFeedbackInput,
@@ -19,23 +20,37 @@ import type {
 export class ProjectsRoadmapService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  listRoadmap(orgId: string, query: RoadmapListQuery) {
+  async listRoadmap(orgId: string, query: RoadmapListQuery) {
     const { page, limit } = query;
     const effectiveLimit = Math.min(limit, 100);
     const offset = (page - 1) * effectiveLimit;
-    const conditions = [eq(roadmapItems.orgId, orgId)];
+    const conditions = [eq(roadmapItems.orgId, orgId), isNull(roadmapItems.deletedAt)];
     if (query.status) conditions.push(eq(roadmapItems.status, query.status));
     if (query.search) {
       const term = `%${query.search}%`;
       const match = or(ilike(roadmapItems.title, term), ilike(roadmapItems.description, term));
       if (match) conditions.push(match);
     }
-    return this.db.query.roadmapItems.findMany({
-      where: and(...conditions),
-      orderBy: [asc(roadmapItems.sortOrder), asc(roadmapItems.id)],
-      limit: effectiveLimit,
-      offset,
-    });
+    const where = and(...conditions);
+    const [data, [countRow]] = await Promise.all([
+      this.db.query.roadmapItems.findMany({
+        where,
+        orderBy: [asc(roadmapItems.sortOrder), asc(roadmapItems.id)],
+        limit: effectiveLimit,
+        offset,
+      }),
+      this.db.select({ total: count() }).from(roadmapItems).where(where),
+    ]);
+    const total = Number(countRow?.total ?? 0);
+    return {
+      data,
+      pagination: {
+        page,
+        limit: effectiveLimit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / effectiveLimit)),
+      },
+    };
   }
 
   async createRoadmap(orgId: string, userId: string, input: CreateRoadmapInput) {
@@ -60,7 +75,7 @@ export class ProjectsRoadmapService {
 
   async getRoadmap(orgId: string, itemId: number) {
     const item = await this.db.query.roadmapItems.findFirst({
-      where: and(eq(roadmapItems.id, itemId), eq(roadmapItems.orgId, orgId)),
+      where: and(eq(roadmapItems.id, itemId), eq(roadmapItems.orgId, orgId), isNull(roadmapItems.deletedAt)),
     });
     if (!item) throw new NotFoundException("Roadmap item not found");
     return item;
@@ -70,7 +85,7 @@ export class ProjectsRoadmapService {
     const [updated] = await this.db
       .update(roadmapItems)
       .set({ ...input, updatedAt: new Date() })
-      .where(and(eq(roadmapItems.id, itemId), eq(roadmapItems.orgId, orgId)))
+      .where(and(eq(roadmapItems.id, itemId), eq(roadmapItems.orgId, orgId), isNull(roadmapItems.deletedAt)))
       .returning();
     if (!updated) throw new NotFoundException("Roadmap item not found");
     return updated;
@@ -78,30 +93,46 @@ export class ProjectsRoadmapService {
 
   async deleteRoadmap(orgId: string, itemId: number) {
     const [deleted] = await this.db
-      .delete(roadmapItems)
-      .where(and(eq(roadmapItems.id, itemId), eq(roadmapItems.orgId, orgId)))
-      .returning();
+      .update(roadmapItems)
+      .set({ deletedAt: new Date() })
+      .where(and(eq(roadmapItems.id, itemId), eq(roadmapItems.orgId, orgId), isNull(roadmapItems.deletedAt)))
+      .returning({ id: roadmapItems.id });
     if (!deleted) throw new NotFoundException("Roadmap item not found");
     return { success: true };
   }
 
-  listFeedback(orgId: string, query: FeedbackListQuery) {
+  async listFeedback(orgId: string, query: FeedbackListQuery) {
     const { page, limit } = query;
     const effectiveLimit = Math.min(limit, 100);
     const offset = (page - 1) * effectiveLimit;
-    const conditions = [eq(feedbackPosts.orgId, orgId)];
+    const conditions = [eq(feedbackPosts.orgId, orgId), isNull(feedbackPosts.deletedAt)];
+    if (!query.includeMerged) conditions.push(isNull(feedbackPosts.duplicateOfId));
     if (query.status) conditions.push(eq(feedbackPosts.status, query.status));
     if (query.search) {
       const term = `%${query.search}%`;
       const match = or(ilike(feedbackPosts.title, term), ilike(feedbackPosts.description, term));
       if (match) conditions.push(match);
     }
-    return this.db.query.feedbackPosts.findMany({
-      where: and(...conditions),
-      orderBy: [desc(feedbackPosts.votes), asc(feedbackPosts.id)],
-      limit: effectiveLimit,
-      offset,
-    });
+    const where = and(...conditions);
+    const [data, [countRow]] = await Promise.all([
+      this.db.query.feedbackPosts.findMany({
+        where,
+        orderBy: [desc(feedbackPosts.votes), asc(feedbackPosts.id)],
+        limit: effectiveLimit,
+        offset,
+      }),
+      this.db.select({ total: count() }).from(feedbackPosts).where(where),
+    ]);
+    const total = Number(countRow?.total ?? 0);
+    return {
+      data,
+      pagination: {
+        page,
+        limit: effectiveLimit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / effectiveLimit)),
+      },
+    };
   }
 
   async createFeedback(orgId: string, userId: string, input: CreateFeedbackInput) {
@@ -124,7 +155,7 @@ export class ProjectsRoadmapService {
 
   async getFeedback(orgId: string, postId: number) {
     const post = await this.db.query.feedbackPosts.findFirst({
-      where: and(eq(feedbackPosts.id, postId), eq(feedbackPosts.orgId, orgId)),
+      where: and(eq(feedbackPosts.id, postId), eq(feedbackPosts.orgId, orgId), isNull(feedbackPosts.deletedAt)),
     });
     if (!post) throw new NotFoundException("Feedback post not found");
     return post;
@@ -134,33 +165,125 @@ export class ProjectsRoadmapService {
     const [updated] = await this.db
       .update(feedbackPosts)
       .set({ ...input, updatedAt: new Date() })
-      .where(and(eq(feedbackPosts.id, postId), eq(feedbackPosts.orgId, orgId)))
+      .where(and(eq(feedbackPosts.id, postId), eq(feedbackPosts.orgId, orgId), isNull(feedbackPosts.deletedAt)))
       .returning();
     if (!updated) throw new NotFoundException("Feedback post not found");
     return updated;
   }
 
+  async mergeFeedback(orgId: string, postId: number, input: MergeFeedbackInput) {
+    const targetId = input.targetPostId;
+    if (targetId === postId)
+      throw new BadRequestException("A feedback post cannot be merged into itself");
+
+    return this.db.transaction(async (tx) => {
+      const [source, target] = await Promise.all([
+        tx.query.feedbackPosts.findFirst({
+          where: and(
+            eq(feedbackPosts.id, postId),
+            eq(feedbackPosts.orgId, orgId),
+            isNull(feedbackPosts.deletedAt),
+          ),
+        }),
+        tx.query.feedbackPosts.findFirst({
+          where: and(
+            eq(feedbackPosts.id, targetId),
+            eq(feedbackPosts.orgId, orgId),
+            isNull(feedbackPosts.deletedAt),
+          ),
+        }),
+      ]);
+      if (!source || !target) throw new NotFoundException("Feedback post not found");
+      if (source.duplicateOfId !== null)
+        throw new BadRequestException("This post has already been merged");
+      if (target.duplicateOfId !== null)
+        throw new BadRequestException(
+          "The selected post is itself a duplicate — merge into the original instead",
+        );
+
+      await tx.execute(sql`
+        UPDATE build.feedback_votes v
+        SET feedback_post_id = ${targetId}
+        WHERE v.feedback_post_id = ${postId}
+          AND v.org_id = ${orgId}
+          AND NOT EXISTS (
+            SELECT 1 FROM build.feedback_votes k
+            WHERE k.feedback_post_id = ${targetId} AND k.voter_key = v.voter_key
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM build.feedback_votes h
+            WHERE h.feedback_post_id = ${targetId}
+              AND h.voter_ip_hash IS NOT NULL
+              AND h.voter_ip_hash = v.voter_ip_hash
+          )
+      `);
+
+      await tx
+        .delete(feedbackVotes)
+        .where(and(eq(feedbackVotes.feedbackPostId, postId), eq(feedbackVotes.orgId, orgId)));
+
+      await tx
+        .update(feedbackPosts)
+        .set({ duplicateOfId: targetId })
+        .where(and(eq(feedbackPosts.duplicateOfId, postId), eq(feedbackPosts.orgId, orgId)));
+
+      const now = new Date();
+      await tx
+        .update(feedbackPosts)
+        .set({ duplicateOfId: targetId, mergedAt: now, updatedAt: now })
+        .where(and(eq(feedbackPosts.id, postId), eq(feedbackPosts.orgId, orgId)));
+
+      await tx.execute(sql`
+        UPDATE build.feedback_posts p
+        SET votes = (SELECT count(*) FROM build.feedback_votes v WHERE v.feedback_post_id = p.id)
+        WHERE p.org_id = ${orgId} AND p.id IN (${postId}, ${targetId})
+      `);
+
+      const [canonical] = await tx
+        .select()
+        .from(feedbackPosts)
+        .where(and(eq(feedbackPosts.id, targetId), eq(feedbackPosts.orgId, orgId)))
+        .limit(1);
+      return canonical;
+    });
+  }
+
   async deleteFeedback(orgId: string, postId: number) {
     const [deleted] = await this.db
-      .delete(feedbackPosts)
-      .where(and(eq(feedbackPosts.id, postId), eq(feedbackPosts.orgId, orgId)))
-      .returning();
+      .update(feedbackPosts)
+      .set({ deletedAt: new Date() })
+      .where(and(eq(feedbackPosts.id, postId), eq(feedbackPosts.orgId, orgId), isNull(feedbackPosts.deletedAt)))
+      .returning({ id: feedbackPosts.id });
     if (!deleted) throw new NotFoundException("Feedback post not found");
     return { success: true };
   }
 
-  listChangelog(orgId: string, query: ChangelogListQuery) {
+  async listChangelog(orgId: string, query: ChangelogListQuery) {
     const { page, limit } = query;
     const effectiveLimit = Math.min(limit, 100);
     const offset = (page - 1) * effectiveLimit;
     const conditions = [eq(changelogEntries.orgId, orgId)];
     if (query.type) conditions.push(eq(changelogEntries.type, query.type));
-    return this.db.query.changelogEntries.findMany({
-      where: and(...conditions),
-      orderBy: [desc(changelogEntries.createdAt), desc(changelogEntries.id)],
-      limit: effectiveLimit,
-      offset,
-    });
+    const where = and(...conditions);
+    const [data, [countRow]] = await Promise.all([
+      this.db.query.changelogEntries.findMany({
+        where,
+        orderBy: [desc(changelogEntries.createdAt), desc(changelogEntries.id)],
+        limit: effectiveLimit,
+        offset,
+      }),
+      this.db.select({ total: count() }).from(changelogEntries).where(where),
+    ]);
+    const total = Number(countRow?.total ?? 0);
+    return {
+      data,
+      pagination: {
+        page,
+        limit: effectiveLimit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / effectiveLimit)),
+      },
+    };
   }
 
   async createChangelog(orgId: string, userId: string, input: CreateChangelogInput) {

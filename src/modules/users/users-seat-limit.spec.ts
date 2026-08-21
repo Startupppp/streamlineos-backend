@@ -11,11 +11,18 @@ import { UsersService } from "./users.service";
 describe("UsersService direct member creation", () => {
   it("checks the member seat limit before writing a direct-created member", async () => {
     const assertWithinLimit = jest.fn().mockRejectedValue(new Error("seat limit"));
-    const transaction = jest.fn();
+    const db = {
+      query: { users: { findFirst: jest.fn() } },
+      execute: jest.fn().mockResolvedValue(undefined),
+      transaction: jest.fn(),
+    };
+    db.transaction.mockImplementation(
+      async (work: (tx: typeof db) => Promise<unknown>) => work(db),
+    );
     const moduleRef = await Test.createTestingModule({
       providers: [
         UsersService,
-        { provide: DRIZZLE, useValue: { query: { users: { findFirst: jest.fn() } }, transaction } },
+        { provide: DRIZZLE, useValue: db },
         { provide: AuditService, useValue: { log: jest.fn() } },
         { provide: CacheService, useValue: { invalidate: jest.fn() } },
         { provide: InvitationsService, useValue: { invite: jest.fn() } },
@@ -38,7 +45,12 @@ describe("UsersService direct member creation", () => {
       ),
     ).rejects.toThrow("seat limit");
 
-    expect(assertWithinLimit).toHaveBeenCalledWith("org-1", "members");
-    expect(transaction).not.toHaveBeenCalled();
+    expect(assertWithinLimit).toHaveBeenCalledWith(
+      "org-1",
+      "members",
+      1,
+      db,
+    );
+    expect(db.transaction).toHaveBeenCalledTimes(1);
   });
 });

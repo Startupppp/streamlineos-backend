@@ -1,8 +1,9 @@
-import { pgTable, text, serial, timestamp, decimal, integer, boolean, jsonb, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, decimal, integer, boolean, jsonb, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
   invReservationStrategyEnum, invCostingMethodEnum, invExpiryPolicyEnum,
   invIdempotencyStatusEnum, invJobStatusEnum, invWebhookEventStatusEnum,
+  invReasonCategoryEnum,
 } from "../common/enums";
 import { organizations, users } from "../common/auth";
 
@@ -19,6 +20,7 @@ export const invSettings = pgTable("inv_settings", {
   overReceiptTolerancePct: decimal("over_receipt_tolerance_pct", { precision: 5, scale: 2 }).default("0").notNull(),
   requirePoApproval: boolean("require_po_approval").default(false).notNull(),
   adjustmentApprovalThreshold: decimal("adjustment_approval_threshold", { precision: 18, scale: 4 }),
+  adjustmentApprovalValueThreshold: decimal("adjustment_approval_value_threshold", { precision: 18, scale: 4 }),
   autoReserveOnConfirm: boolean("auto_reserve_on_confirm").default(true).notNull(),
   allowPartialShipment: boolean("allow_partial_shipment").default(true).notNull(),
   packageRequiredForShipping: boolean("package_required_for_shipping").default(false).notNull(),
@@ -29,6 +31,26 @@ export const invSettings = pgTable("inv_settings", {
   unique("uniq_inv_settings_org_id").on(table.orgId, table.id),
   index("idx_inv_settings_org").on(table.orgId),
 ]);
+
+export const invReasonCodes = pgTable("inv_reason_codes", {
+  id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  code: text("code").notNull(),
+  label: text("label").notNull(),
+  category: invReasonCategoryEnum("category").default("ADJUSTMENT").notNull(),
+  requiresApproval: boolean("requires_approval").default(false).notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+}, (table) => [
+  uniqueIndex("uniq_inv_reason_codes_org_code").on(table.orgId, table.code),
+  unique("uniq_inv_reason_codes_org_id").on(table.orgId, table.id),
+  index("idx_inv_reason_codes_org_category").on(table.orgId, table.category),
+]);
+
+export const invReasonCodesRelations = relations(invReasonCodes, ({ one }) => ({
+  organization: one(organizations, { fields: [invReasonCodes.orgId], references: [organizations.id] }),
+}));
 
 export const invNumberSequences = pgTable("inv_number_sequences", {
   id: serial("id").primaryKey(),
@@ -167,6 +189,28 @@ export const invImportJobsRelations = relations(invImportJobs, ({ one }) => ({
 export const invExportJobsRelations = relations(invExportJobs, ({ one }) => ({
   organization: one(organizations, { fields: [invExportJobs.orgId], references: [organizations.id] }),
   creator: one(users, { fields: [invExportJobs.createdBy], references: [users.id] }),
+}));
+
+export const invWebhookEventSubscriptions = pgTable("inv_webhook_event_subscriptions", {
+  id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  webhookId: integer("webhook_id").notNull(),
+  eventType: text("event_type").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uniq_inv_webhook_event_subs_key").on(table.orgId, table.webhookId, table.eventType),
+  unique("uniq_inv_webhook_event_subs_org_id").on(table.orgId, table.id),
+  index("idx_inv_webhook_event_subs_dispatch").on(table.orgId, table.eventType),
+  foreignKey({
+    columns: [table.orgId, table.webhookId],
+    foreignColumns: [invWebhooks.orgId, invWebhooks.id],
+    name: "fk_inv_webhook_event_subs_org_webhook",
+  }).onDelete("cascade"),
+]);
+
+export const invWebhookEventSubscriptionsRelations = relations(invWebhookEventSubscriptions, ({ one }) => ({
+  organization: one(organizations, { fields: [invWebhookEventSubscriptions.orgId], references: [organizations.id] }),
+  webhook: one(invWebhooks, { fields: [invWebhookEventSubscriptions.webhookId], references: [invWebhooks.id] }),
 }));
 
 export const invWebhooksRelations = relations(invWebhooks, ({ one, many }) => ({

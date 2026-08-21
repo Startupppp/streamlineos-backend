@@ -45,7 +45,7 @@ import {
 } from "../dto/output.schemas";
 import type { GenerateJdInput } from "../dto/request.schemas";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
-
+import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import { unwrapAiResult } from "./gateway-result.util";
 import { redactSensitiveData } from "../redaction.util";
 import {
@@ -66,92 +66,103 @@ export class HrAiService {
     orgId: string,
     userId: string,
   ): Promise<AttritionRiskResult | null> {
-    const [employee] = await this.db
-      .select({
-        name: users.name,
-        role: organizationMembers.role,
-        createdAt: users.createdAt,
-      })
-      .from(users)
-      .innerJoin(
-        organizationMembers,
-        and(
-          eq(organizationMembers.userId, users.id),
-          eq(organizationMembers.orgId, orgId),
-        ),
-      )
-      .where(eq(users.id, userId));
-    if (!employee) return null;
-
-    const tenureMonths = employee.createdAt
-      ? Math.floor(
-          (Date.now() - new Date(employee.createdAt).getTime()) /
-            (1000 * 60 * 60 * 24 * 30),
-        )
-      : 0;
-
-    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
-    const ninetyDaysAgoStr = ninetyDaysAgo.toISOString().slice(0, 10);
-
-    const [attRate, leaveCount, openTickets, lastReview, activeGoals] =
-      await Promise.all([
-        this.db
+    const ctx = await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const [employee] = await tx
           .select({
-            total: count(),
-            present: sql<number>`SUM(CASE WHEN status = 'PRESENT' THEN 1 ELSE 0 END)::int`,
+            name: users.name,
+            role: organizationMembers.role,
+            createdAt: users.createdAt,
           })
-          .from(attendance)
-          .where(
+          .from(users)
+          .innerJoin(
+            organizationMembers,
             and(
-              eq(attendance.orgId, orgId),
-              eq(attendance.userId, userId),
-              gte(attendance.date, ninetyDaysAgoStr),
-            ),
-          ),
-        this.db
-          .select({
-            total: sql<number>`COALESCE(SUM(GREATEST(${leaveRequests.endDate}::date - ${leaveRequests.startDate}::date + 1, 0)), 0)::int`,
-          })
-          .from(leaveRequests)
-          .where(
-            and(
-              eq(leaveRequests.orgId, orgId),
-              eq(leaveRequests.userId, userId),
-              gte(leaveRequests.startDate, ninetyDaysAgoStr),
-            ),
-          ),
-        this.db
-          .select({ count: count() })
-          .from(helpdeskTickets)
-          .where(
-            and(
-              eq(helpdeskTickets.orgId, orgId),
-              eq(helpdeskTickets.userId, userId),
-              sql`${helpdeskTickets.status} != 'DONE'`,
-            ),
-          ),
-        this.db
-          .select({ rating: performanceReviews.overallRating })
-          .from(performanceReviews)
-          .where(
-            and(
-              eq(performanceReviews.orgId, orgId),
-              eq(performanceReviews.userId, userId),
+              eq(organizationMembers.userId, users.id),
+              eq(organizationMembers.orgId, orgId),
             ),
           )
-          .orderBy(desc(performanceReviews.createdAt))
-          .limit(1),
-        this.db
-          .select({ count: count() })
-          .from(goals)
-          .where(
-            and(
-              eq(goals.orgId, orgId),
-              eq(goals.userId, userId),
-              sql`${goals.status} IN ('IN_PROGRESS', 'NOT_STARTED')`,
-            ),
-          ),
-      ]);
+          .where(eq(users.id, userId));
+        if (!employee) return null;
+
+        const tenureMonths = employee.createdAt
+          ? Math.floor(
+              (Date.now() - new Date(employee.createdAt).getTime()) /
+                (1000 * 60 * 60 * 24 * 30),
+            )
+          : 0;
+
+        const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+        const ninetyDaysAgoStr = ninetyDaysAgo.toISOString().slice(0, 10);
+
+        const [attRate, leaveCount, openTickets, lastReview, activeGoals] =
+          await Promise.all([
+            tx
+              .select({
+                total: count(),
+                present: sql<number>`SUM(CASE WHEN status = 'PRESENT' THEN 1 ELSE 0 END)::int`,
+              })
+              .from(attendance)
+              .where(
+                and(
+                  eq(attendance.orgId, orgId),
+                  eq(attendance.userId, userId),
+                  gte(attendance.date, ninetyDaysAgoStr),
+                ),
+              ),
+            tx
+              .select({
+                total: sql<number>`COALESCE(SUM(GREATEST(${leaveRequests.endDate}::date - ${leaveRequests.startDate}::date + 1, 0)), 0)::int`,
+              })
+              .from(leaveRequests)
+              .where(
+                and(
+                  eq(leaveRequests.orgId, orgId),
+                  eq(leaveRequests.userId, userId),
+                  gte(leaveRequests.startDate, ninetyDaysAgoStr),
+                ),
+              ),
+            tx
+              .select({ count: count() })
+              .from(helpdeskTickets)
+              .where(
+                and(
+                  eq(helpdeskTickets.orgId, orgId),
+                  eq(helpdeskTickets.userId, userId),
+                  sql`${helpdeskTickets.status} != 'DONE'`,
+                ),
+              ),
+            tx
+              .select({ rating: performanceReviews.overallRating })
+              .from(performanceReviews)
+              .where(
+                and(
+                  eq(performanceReviews.orgId, orgId),
+                  eq(performanceReviews.userId, userId),
+                ),
+              )
+              .orderBy(desc(performanceReviews.createdAt))
+              .limit(1),
+            tx
+              .select({ count: count() })
+              .from(goals)
+              .where(
+                and(
+                  eq(goals.orgId, orgId),
+                  eq(goals.userId, userId),
+                  sql`${goals.status} IN ('IN_PROGRESS', 'NOT_STARTED')`,
+                ),
+              ),
+          ]);
+
+        return { employee, tenureMonths, attRate, leaveCount, openTickets, lastReview, activeGoals };
+      },
+      { orgId },
+    );
+    if (!ctx) return null;
+
+    const { employee, tenureMonths, attRate, leaveCount, openTickets, lastReview, activeGoals } = ctx;
 
     const attendanceRate =
       attRate[0] && attRate[0].total > 0
@@ -202,51 +213,60 @@ export class HrAiService {
     periodStart: string,
     periodEnd: string,
   ): Promise<ReviewDraftResult | null> {
-    const [employee] = await this.db
-      .select({ name: users.name, role: organizationMembers.role })
-      .from(users)
-      .innerJoin(
-        organizationMembers,
-        and(
-          eq(organizationMembers.userId, users.id),
-          eq(organizationMembers.orgId, orgId),
-        ),
-      )
-      .where(eq(users.id, userId));
-    if (!employee) return null;
+    const ctx = await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const [[employee], employeeGoals, attendanceData] = await Promise.all([
+          tx
+            .select({ name: users.name, role: organizationMembers.role })
+            .from(users)
+            .innerJoin(
+              organizationMembers,
+              and(
+                eq(organizationMembers.userId, users.id),
+                eq(organizationMembers.orgId, orgId),
+              ),
+            )
+            .where(eq(users.id, userId)),
+          tx
+            .select({
+              goal: goals.title,
+              achieved: goals.status,
+              progress: goals.progress,
+            })
+            .from(goals)
+            .where(
+              and(
+                eq(goals.orgId, orgId),
+                eq(goals.userId, userId),
+                gte(goals.createdAt, new Date(periodStart)),
+                lte(goals.createdAt, new Date(periodEnd)),
+              ),
+            )
+            .limit(20),
+          tx
+            .select({
+              total: count(),
+              present: sql<number>`SUM(CASE WHEN status = 'PRESENT' THEN 1 ELSE 0 END)::int`,
+            })
+            .from(attendance)
+            .where(
+              and(
+                eq(attendance.orgId, orgId),
+                eq(attendance.userId, userId),
+                gte(attendance.date, periodStart),
+                lte(attendance.date, periodEnd),
+              ),
+            ),
+        ]);
+        if (!employee) return null;
+        return { employee, employeeGoals, attendanceData };
+      },
+      { orgId },
+    );
+    if (!ctx) return null;
 
-    const [employeeGoals, attendanceData] = await Promise.all([
-      this.db
-        .select({
-          goal: goals.title,
-          achieved: goals.status,
-          progress: goals.progress,
-        })
-        .from(goals)
-        .where(
-          and(
-            eq(goals.orgId, orgId),
-            eq(goals.userId, userId),
-            gte(goals.createdAt, new Date(periodStart)),
-            lte(goals.createdAt, new Date(periodEnd)),
-          ),
-        )
-        .limit(20),
-      this.db
-        .select({
-          total: count(),
-          present: sql<number>`SUM(CASE WHEN status = 'PRESENT' THEN 1 ELSE 0 END)::int`,
-        })
-        .from(attendance)
-        .where(
-          and(
-            eq(attendance.orgId, orgId),
-            eq(attendance.userId, userId),
-            gte(attendance.date, periodStart),
-            lte(attendance.date, periodEnd),
-          ),
-        ),
-    ]);
+    const { employee, employeeGoals, attendanceData } = ctx;
 
     const attendanceRate =
       attendanceData[0] && attendanceData[0].total > 0
@@ -299,20 +319,27 @@ export class HrAiService {
     orgId: string,
     ticketId: number,
   ): Promise<HelpdeskReplyResult | null> {
-    const [ticket] = await this.db
-      .select({
-        title: helpdeskTickets.title,
-        description: helpdeskTickets.description,
-        category: helpdeskTickets.category,
-        priority: helpdeskTickets.priority,
-        userId: helpdeskTickets.userId,
-        employeeName: users.name,
-      })
-      .from(helpdeskTickets)
-      .leftJoin(users, eq(helpdeskTickets.userId, users.id))
-      .where(
-        and(eq(helpdeskTickets.id, ticketId), eq(helpdeskTickets.orgId, orgId)),
-      );
+    const ticket = await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const [row] = await tx
+          .select({
+            title: helpdeskTickets.title,
+            description: helpdeskTickets.description,
+            category: helpdeskTickets.category,
+            priority: helpdeskTickets.priority,
+            userId: helpdeskTickets.userId,
+            employeeName: users.name,
+          })
+          .from(helpdeskTickets)
+          .leftJoin(users, eq(helpdeskTickets.userId, users.id))
+          .where(
+            and(eq(helpdeskTickets.id, ticketId), eq(helpdeskTickets.orgId, orgId)),
+          );
+        return row ?? null;
+      },
+      { orgId },
+    );
     if (!ticket) return null;
 
     const prompt = helpdeskReplyPrompt({
@@ -346,28 +373,39 @@ export class HrAiService {
     candidateId: number,
     jobId?: number,
   ): Promise<CandidateScoreResult | null> {
-    const [candidate] = await this.db
-      .select()
-      .from(candidates)
-      .where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)));
-    if (!candidate) return null;
+    const ctx = await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const [candidate] = await tx
+          .select()
+          .from(candidates)
+          .where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)));
+        if (!candidate) return null;
 
-    let job: {
-      title: string;
-      description: string | null;
-      requirements: string | null;
-    } | null = null;
-    if (jobId) {
-      const [jobRecord] = await this.db
-        .select({
-          title: jobPostings.title,
-          description: jobPostings.description,
-          requirements: jobPostings.requirements,
-        })
-        .from(jobPostings)
-        .where(and(eq(jobPostings.id, jobId), eq(jobPostings.orgId, orgId)));
-      if (jobRecord) job = jobRecord;
-    }
+        let job: {
+          title: string;
+          description: string | null;
+          requirements: string | null;
+        } | null = null;
+        if (jobId) {
+          const [jobRecord] = await tx
+            .select({
+              title: jobPostings.title,
+              description: jobPostings.description,
+              requirements: jobPostings.requirements,
+            })
+            .from(jobPostings)
+            .where(and(eq(jobPostings.id, jobId), eq(jobPostings.orgId, orgId)));
+          if (jobRecord) job = jobRecord;
+        }
+
+        return { candidate, job };
+      },
+      { orgId },
+    );
+    if (!ctx) return null;
+
+    const { candidate, job } = ctx;
 
     const prompt = candidateScoringPrompt({
       firstName: candidate.firstName,
@@ -411,15 +449,21 @@ export class HrAiService {
     aiScore: number,
   ): Promise<{ accepted: boolean }> {
     const ratingFiveScale = Math.round((aiScore / 100) * 5);
-    await this.db
-      .update(candidates)
-      .set({
-        rating: ratingFiveScale,
-        aiScore,
-        aiScoreGeneratedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)));
+    await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        await tx
+          .update(candidates)
+          .set({
+            rating: ratingFiveScale,
+            aiScore,
+            aiScoreGeneratedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)));
+      },
+      { orgId },
+    );
     return { accepted: true };
   }
 
@@ -439,22 +483,27 @@ export class HrAiService {
   > {
     const safeQuestion = redactSensitiveData(question);
 
-    const rows = await this.db.execute(sql`
-      SELECT id, policy_type, name
-      FROM hr_policies
-      WHERE org_id = ${orgId}
-        AND status = 'active'
-        AND deleted_at IS NULL
-      ORDER BY priority DESC, created_at DESC
-      LIMIT 20
-    `);
-
-    const policies = (rows as Array<Record<string, unknown>>).map((p) => ({
-      id: Number(p.id),
-      policyType: String(p.policy_type),
-      scopeType: null as string | null,
-      name: p.name ? String(p.name) : null,
-    }));
+    const policies = await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const rows = await tx.execute(sql`
+          SELECT id, policy_type, name
+          FROM hr_policies
+          WHERE org_id = ${orgId}
+            AND status = 'active'
+            AND deleted_at IS NULL
+          ORDER BY priority DESC, created_at DESC
+          LIMIT 20
+        `);
+        return (rows as Array<Record<string, unknown>>).map((p) => ({
+          id: Number(p.id),
+          policyType: String(p.policy_type),
+          scopeType: null as string | null,
+          name: p.name ? String(p.name) : null,
+        }));
+      },
+      { orgId },
+    );
 
     const prompt = policyQaPrompt({ question: safeQuestion, policies });
 
@@ -474,7 +523,6 @@ export class HrAiService {
     });
 
     const data = unwrapAiResult(result);
-    // Only keep citations that match policies loaded as evidence (anti-hallucination).
     const citations = sanitizePolicyCitations(data.citations ?? [], policies);
     const suggestTicket =
       data.confidence === "not_found" || data.shouldEscalate;
@@ -507,30 +555,39 @@ export class HrAiService {
     orgId: string,
     jobPostingId: number,
   ): Promise<InterviewKitResult | null> {
-    const [job] = await this.db
-      .select({
-        title: jobPostings.title,
-        description: jobPostings.description,
-        requirements: jobPostings.requirements,
-        hiringFlowId: jobPostings.hiringFlowId,
-      })
-      .from(jobPostings)
-      .where(
-        and(eq(jobPostings.id, jobPostingId), eq(jobPostings.orgId, orgId)),
-      );
-    if (!job) return null;
+    const ctx = await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const [job] = await tx
+          .select({
+            title: jobPostings.title,
+            description: jobPostings.description,
+            requirements: jobPostings.requirements,
+            hiringFlowId: jobPostings.hiringFlowId,
+          })
+          .from(jobPostings)
+          .where(
+            and(eq(jobPostings.id, jobPostingId), eq(jobPostings.orgId, orgId)),
+          );
+        if (!job) return null;
 
-    let roundTypes: string[] | null = null;
-    if (job.hiringFlowId) {
-      const roundRows = await this.db
-        .select({ roundType: hiringFlowRounds.roundType })
-        .from(hiringFlowRounds)
-        .where(eq(hiringFlowRounds.flowId, job.hiringFlowId))
-        .orderBy(hiringFlowRounds.orderIndex);
-      if (roundRows.length > 0) {
-        roundTypes = roundRows.map((r) => r.roundType);
-      }
-    }
+        let roundTypes: string[] | null = null;
+        if (job.hiringFlowId) {
+          const roundRows = await tx
+            .select({ roundType: hiringFlowRounds.roundType })
+            .from(hiringFlowRounds)
+            .where(eq(hiringFlowRounds.flowId, job.hiringFlowId))
+            .orderBy(hiringFlowRounds.orderIndex);
+          if (roundRows.length > 0) roundTypes = roundRows.map((r) => r.roundType);
+        }
+
+        return { job, roundTypes };
+      },
+      { orgId },
+    );
+    if (!ctx) return null;
+
+    const { job, roundTypes } = ctx;
 
     const prompt = interviewKitPrompt({
       jobTitle: job.title,
@@ -564,31 +621,42 @@ export class HrAiService {
     letterType: string,
     details: string | null,
   ): Promise<LetterDraftResult | null> {
-    const empRows = await this.db.execute(sql`
-      SELECT p.first_name, p.last_name, e.designation
-      FROM hr_employments e
-      JOIN hr_people p ON p.id = e.person_id
-      WHERE e.org_id = ${orgId}
-        AND p.user_id = ${targetUserId}
-        AND e.deleted_at IS NULL
-      LIMIT 1
-    `);
+    const ctx = await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const empRows = await tx.execute(sql`
+          SELECT p.first_name, p.last_name, e.designation
+          FROM hr_employments e
+          JOIN hr_people p ON p.id = e.person_id
+          WHERE e.org_id = ${orgId}
+            AND p.user_id = ${targetUserId}
+            AND e.deleted_at IS NULL
+          LIMIT 1
+        `);
 
-    let employeeName: string;
-    let currentTitle: string | null = null;
+        if (empRows.length > 0) {
+          const emp = empRows[0] as Record<string, unknown>;
+          return {
+            employeeName: `${emp.first_name ?? ""} ${emp.last_name ?? ""}`.trim(),
+            currentTitle: emp.designation ? String(emp.designation) : null,
+          };
+        }
 
-    if (empRows.length > 0) {
-      const emp = empRows[0] as Record<string, unknown>;
-      employeeName = `${emp.first_name ?? ""} ${emp.last_name ?? ""}`.trim();
-      currentTitle = emp.designation ? String(emp.designation) : null;
-    } else {
-      const [userRow] = await this.db
-        .select({ name: users.name })
-        .from(users)
-        .where(eq(users.id, targetUserId));
-      if (!userRow) return null;
-      employeeName = userRow.name ?? targetUserId;
-    }
+        const [userRow] = await tx
+          .select({ name: users.name })
+          .from(users)
+          .where(eq(users.id, targetUserId));
+        if (!userRow) return null;
+        return {
+          employeeName: userRow.name ?? targetUserId,
+          currentTitle: null,
+        };
+      },
+      { orgId },
+    );
+    if (!ctx) return null;
+
+    const { employeeName, currentTitle } = ctx;
 
     const safeDetails = details ? redactSensitiveData(details) : null;
     const prompt = letterDraftPrompt({
@@ -621,47 +689,56 @@ export class HrAiService {
     candidateId: number,
     jobPostingId?: number,
   ): Promise<InterviewNotesSummaryResult | null> {
-    const [candidate] = await this.db
-      .select({
-        firstName: candidates.firstName,
-        lastName: candidates.lastName,
-      })
-      .from(candidates)
-      .where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)));
-    if (!candidate) return null;
+    const ctx = await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const [candidate] = await tx
+          .select({
+            firstName: candidates.firstName,
+            lastName: candidates.lastName,
+          })
+          .from(candidates)
+          .where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)));
+        if (!candidate) return null;
 
-    const conditions = [
-      eq(interviews.orgId, orgId),
-      eq(interviews.candidateId, candidateId),
-    ];
-    if (jobPostingId)
-      conditions.push(eq(interviews.jobPostingId, jobPostingId));
+        const conditions = [
+          eq(interviews.orgId, orgId),
+          eq(interviews.candidateId, candidateId),
+        ];
+        if (jobPostingId)
+          conditions.push(eq(interviews.jobPostingId, jobPostingId));
 
-    const interviewRows = await this.db
-      .select({
-        type: interviews.type,
-        feedback: interviews.feedback,
-        notes: interviews.notes,
-        rating: interviews.rating,
-        result: interviews.result,
-      })
-      .from(interviews)
-      .where(and(...conditions))
-      .orderBy(desc(interviews.scheduledAt))
-      .limit(10);
+        const interviewRows = await tx
+          .select({
+            type: interviews.type,
+            feedback: interviews.feedback,
+            notes: interviews.notes,
+            rating: interviews.rating,
+            result: interviews.result,
+          })
+          .from(interviews)
+          .where(and(...conditions))
+          .orderBy(desc(interviews.scheduledAt))
+          .limit(10);
 
-    if (interviewRows.length === 0) return null;
+        let jobTitle: string | null = null;
+        if (interviewRows.length > 0 && jobPostingId) {
+          const [job] = await tx
+            .select({ title: jobPostings.title })
+            .from(jobPostings)
+            .where(
+              and(eq(jobPostings.id, jobPostingId), eq(jobPostings.orgId, orgId)),
+            );
+          if (job) jobTitle = job.title;
+        }
 
-    let jobTitle: string | null = null;
-    if (jobPostingId) {
-      const [job] = await this.db
-        .select({ title: jobPostings.title })
-        .from(jobPostings)
-        .where(
-          and(eq(jobPostings.id, jobPostingId), eq(jobPostings.orgId, orgId)),
-        );
-      if (job) jobTitle = job.title;
-    }
+        return { candidate, interviewRows, jobTitle };
+      },
+      { orgId },
+    );
+    if (!ctx || ctx.interviewRows.length === 0) return null;
+
+    const { candidate, interviewRows, jobTitle } = ctx;
 
     const rounds = interviewRows.map((r) => ({
       roundType: r.type,

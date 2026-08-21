@@ -26,6 +26,9 @@ import {
   type CreateEffectiveDateChangeInput,
   type ListEffectiveDateChangesInput,
 } from "./dto/hr-core.schemas";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
+import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 
 @RequireModule("hr")
 @Controller("hr/effective-changes")
@@ -67,11 +70,14 @@ export class HrEffectiveChangesController {
   @Post("apply-due")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
+  @Idempotent("hr.effective-changes.apply-due")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("hr:effective-changes-apply")
   @HttpCode(200)
   applyDue(
     @Body(new ZodValidationPipe(applyDueChangesSchema)) body: ApplyDueChangesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.applyDueChanges(u.orgId, body.asOfDate);
+    return this.service.applyDueChanges(u.orgId, u.userId, body);
   }
 }

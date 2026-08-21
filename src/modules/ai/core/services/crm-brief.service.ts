@@ -9,6 +9,7 @@ import {
 } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
+import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
 
 import { NlSearchFilterSchema } from "../dto/output.schemas";
@@ -48,27 +49,34 @@ export class CrmBriefService {
   ) {}
 
   async accountSummary(orgId: string, input: AccountSummaryInput, userId?: string) {
-    const account = await this.db.query.clientAccounts.findFirst({
-      where: and(eq(clientAccounts.id, input.clientId), eq(clientAccounts.orgId, orgId)),
-    });
+    const ctx = await runInTenantTransaction(this.db, async (tx) => {
+      const account = await tx.query.clientAccounts.findFirst({
+        where: and(eq(clientAccounts.id, input.clientId), eq(clientAccounts.orgId, orgId)),
+      });
 
-    if (!account) throw new NotFoundException("Client account not found");
+      if (!account) return null;
 
-    const [resolvedLead, activities] = await Promise.all([
-      account.leadId
-        ? this.db.query.leads.findFirst({ where: eq(leads.id, account.leadId) })
-        : Promise.resolve(null),
-      this.db
-        .select({
-          activityType: clientAccountActivities.activityType,
-          description: clientAccountActivities.description,
-          createdAt: clientAccountActivities.createdAt,
-        })
-        .from(clientAccountActivities)
-        .where(eq(clientAccountActivities.clientAccountId, input.clientId))
-        .orderBy(desc(clientAccountActivities.createdAt))
-        .limit(20),
-    ]);
+      const [resolvedLead, activities] = await Promise.all([
+        account.leadId
+          ? tx.query.leads.findFirst({ where: eq(leads.id, account.leadId) })
+          : Promise.resolve(null),
+        tx
+          .select({
+            activityType: clientAccountActivities.activityType,
+            description: clientAccountActivities.description,
+            createdAt: clientAccountActivities.createdAt,
+          })
+          .from(clientAccountActivities)
+          .where(eq(clientAccountActivities.clientAccountId, input.clientId))
+          .orderBy(desc(clientAccountActivities.createdAt))
+          .limit(20),
+      ]);
+
+      return { account, resolvedLead: resolvedLead ?? null, activities };
+    }, { orgId });
+
+    if (!ctx) throw new NotFoundException("Client account not found");
+    const { account, resolvedLead, activities } = ctx;
 
     const investmentAmount = account.investmentAmount
       ? `₹${Number(account.investmentAmount).toLocaleString("en-IN")}`
@@ -138,41 +146,65 @@ Please generate a comprehensive account summary with:
 
   async meetingPrep(orgId: string, input: MeetingPrepInput, userId?: string) {
     const { meetingTitle, attendeeType, attendeeId, scheduledAt, notes } = input;
+
+    const ctx = await runInTenantTransaction(this.db, async (tx) => {
+      if (attendeeType === "lead") {
+        const [lead, activities] = await Promise.all([
+          tx.query.leads.findFirst({
+            where: and(eq(leads.id, attendeeId), eq(leads.orgId, orgId)),
+          }),
+          tx
+            .select({
+              type: leadActivities.type,
+              date: leadActivities.date,
+              subject: leadActivities.subject,
+              notes: leadActivities.notes,
+              outcome: leadActivities.outcome,
+            })
+            .from(leadActivities)
+            .where(eq(leadActivities.leadId, attendeeId))
+            .orderBy(desc(leadActivities.date))
+            .limit(5),
+        ]);
+        return { kind: "lead" as const, lead: lead ?? null, activities };
+      } else {
+        const [account, activities] = await Promise.all([
+          tx.query.clientAccounts.findFirst({
+            where: and(eq(clientAccounts.id, attendeeId), eq(clientAccounts.orgId, orgId)),
+          }),
+          tx
+            .select({
+              activityType: clientAccountActivities.activityType,
+              description: clientAccountActivities.description,
+              createdAt: clientAccountActivities.createdAt,
+            })
+            .from(clientAccountActivities)
+            .where(eq(clientAccountActivities.clientAccountId, attendeeId))
+            .orderBy(desc(clientAccountActivities.createdAt))
+            .limit(5),
+        ]);
+        return { kind: "client" as const, account: account ?? null, activities };
+      }
+    }, { orgId });
+
     let attendeeName: string;
     let contextString: string;
 
-    if (attendeeType === "lead") {
-      const [lead, activities] = await Promise.all([
-        this.db.query.leads.findFirst({
-          where: and(eq(leads.id, attendeeId), eq(leads.orgId, orgId)),
-        }),
-        this.db
-          .select({
-            type: leadActivities.type,
-            date: leadActivities.date,
-            subject: leadActivities.subject,
-            notes: leadActivities.notes,
-            outcome: leadActivities.outcome,
-          })
-          .from(leadActivities)
-          .where(eq(leadActivities.leadId, attendeeId))
-          .orderBy(desc(leadActivities.date))
-          .limit(5),
-      ]);
-
-      if (!lead) throw new NotFoundException("Lead not found");
-      attendeeName = lead.name;
+    if (ctx.kind === "lead") {
+      if (!ctx.lead) throw new NotFoundException("Lead not found");
+      attendeeName = ctx.lead.name;
 
       const activitiesText =
-        activities.length === 0
+        ctx.activities.length === 0
           ? "No previous interactions recorded."
-          : activities
+          : ctx.activities
               .map((a) => {
                 const date = a.date ? new Date(a.date).toLocaleDateString("en-IN") : "Unknown";
                 return `- [${date}] ${a.type}${a.subject ? `: ${a.subject}` : ""} — ${trunc(a.notes)}${a.outcome ? ` | Outcome: ${a.outcome}` : ""}`;
               })
               .join("\n");
 
+      const lead = ctx.lead;
       contextString = `ATTENDEE TYPE: Lead (Prospective Client)
 
 LEAD PROFILE:
@@ -195,35 +227,20 @@ LEAD PROFILE:
 PREVIOUS INTERACTIONS:
 ${activitiesText}`;
     } else {
-      const [account, activities] = await Promise.all([
-        this.db.query.clientAccounts.findFirst({
-          where: and(eq(clientAccounts.id, attendeeId), eq(clientAccounts.orgId, orgId)),
-        }),
-        this.db
-          .select({
-            activityType: clientAccountActivities.activityType,
-            description: clientAccountActivities.description,
-            createdAt: clientAccountActivities.createdAt,
-          })
-          .from(clientAccountActivities)
-          .where(eq(clientAccountActivities.clientAccountId, attendeeId))
-          .orderBy(desc(clientAccountActivities.createdAt))
-          .limit(5),
-      ]);
-
-      if (!account) throw new NotFoundException("Client account not found");
-      attendeeName = account.clientName;
+      if (!ctx.account) throw new NotFoundException("Client account not found");
+      attendeeName = ctx.account.clientName;
 
       const activitiesText =
-        activities.length === 0
+        ctx.activities.length === 0
           ? "No recent activities recorded."
-          : activities
+          : ctx.activities
               .map((a) => {
                 const date = a.createdAt ? new Date(a.createdAt).toLocaleDateString("en-IN") : "Unknown";
                 return `- [${date}] ${a.activityType}: ${trunc(a.description)}`;
               })
               .join("\n");
 
+      const account = ctx.account;
       contextString = `ATTENDEE TYPE: Existing Client
 
 CLIENT PROFILE:
@@ -299,64 +316,66 @@ Please generate a structured pre-meeting brief with:
     if (!result.ok) throwOnAiFailure(result);
     const parsedFilters = result.data;
 
-    const conditions = [eq(leads.orgId, orgId)];
-    if (parsedFilters.status?.length) conditions.push(inArray(leads.status, parsedFilters.status));
-    if (parsedFilters.priority?.length) conditions.push(inArray(leads.priority, parsedFilters.priority));
-    if (parsedFilters.source) conditions.push(ilike(leads.source, `%${parsedFilters.source}%`));
-    if (parsedFilters.city) conditions.push(ilike(leads.city, `%${parsedFilters.city}%`));
-    if (parsedFilters.company) conditions.push(ilike(leads.company, `%${parsedFilters.company}%`));
-    if (parsedFilters.nameSearch) conditions.push(ilike(leads.name, `%${parsedFilters.nameSearch}%`));
-    if (parsedFilters.minValue !== undefined) {
-      conditions.push(gte(leads.potentialValue, String(parsedFilters.minValue)));
-    }
-    if (parsedFilters.maxValue !== undefined) {
-      conditions.push(lte(leads.potentialValue, String(parsedFilters.maxValue)));
-    }
+    const leadsResult = await runInTenantTransaction(this.db, async (tx) => {
+      const conditions = [eq(leads.orgId, orgId)];
+      if (parsedFilters.status?.length) conditions.push(inArray(leads.status, parsedFilters.status));
+      if (parsedFilters.priority?.length) conditions.push(inArray(leads.priority, parsedFilters.priority));
+      if (parsedFilters.source) conditions.push(ilike(leads.source, `%${parsedFilters.source}%`));
+      if (parsedFilters.city) conditions.push(ilike(leads.city, `%${parsedFilters.city}%`));
+      if (parsedFilters.company) conditions.push(ilike(leads.company, `%${parsedFilters.company}%`));
+      if (parsedFilters.nameSearch) conditions.push(ilike(leads.name, `%${parsedFilters.nameSearch}%`));
+      if (parsedFilters.minValue !== undefined) {
+        conditions.push(gte(leads.potentialValue, String(parsedFilters.minValue)));
+      }
+      if (parsedFilters.maxValue !== undefined) {
+        conditions.push(lte(leads.potentialValue, String(parsedFilters.maxValue)));
+      }
 
-    const rows = await this.db
-      .select({
-        id: leads.id,
-        name: leads.name,
-        email: leads.email,
-        company: leads.company,
-        status: leads.status,
-        priority: leads.priority,
-        source: leads.source,
-        value: leads.potentialValue,
-        city: leads.city,
-        assignedToId: leads.assignedToId,
-        assigneeName: users.name,
-        assigneeFirstName: users.firstName,
-        assigneeLastName: users.lastName,
-      })
-      .from(leads)
-      .leftJoin(users, eq(leads.assignedToId, users.id))
-      .where(and(...conditions))
-      .limit(50);
+      const rows = await tx
+        .select({
+          id: leads.id,
+          name: leads.name,
+          email: leads.email,
+          company: leads.company,
+          status: leads.status,
+          priority: leads.priority,
+          source: leads.source,
+          value: leads.potentialValue,
+          city: leads.city,
+          assignedToId: leads.assignedToId,
+          assigneeName: users.name,
+          assigneeFirstName: users.firstName,
+          assigneeLastName: users.lastName,
+        })
+        .from(leads)
+        .leftJoin(users, eq(leads.assignedToId, users.id))
+        .where(and(...conditions))
+        .limit(50);
 
-    let filteredRows = rows;
-    if (parsedFilters.assignedToName) {
-      const search = parsedFilters.assignedToName.toLowerCase();
-      filteredRows = rows.filter((r) => {
-        const fullName =
-          `${r.assigneeFirstName ?? ""} ${r.assigneeLastName ?? ""}`.trim() || r.assigneeName || "";
-        return fullName.toLowerCase().includes(search);
-      });
-    }
+      let filteredRows = rows;
+      if (parsedFilters.assignedToName) {
+        const search = parsedFilters.assignedToName.toLowerCase();
+        filteredRows = rows.filter((r) => {
+          const fullName =
+            `${r.assigneeFirstName ?? ""} ${r.assigneeLastName ?? ""}`.trim() || r.assigneeName || "";
+          return fullName.toLowerCase().includes(search);
+        });
+      }
 
-    const leadsResult = filteredRows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      email: r.email,
-      company: r.company,
-      status: r.status,
-      priority: r.priority,
-      source: r.source,
-      value: r.value !== null ? Number(r.value) : null,
-      city: r.city,
-      assignedTo:
-        `${r.assigneeFirstName ?? ""} ${r.assigneeLastName ?? ""}`.trim() || r.assigneeName || null,
-    }));
+      return filteredRows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        email: r.email,
+        company: r.company,
+        status: r.status,
+        priority: r.priority,
+        source: r.source,
+        value: r.value !== null ? Number(r.value) : null,
+        city: r.city,
+        assignedTo:
+          `${r.assigneeFirstName ?? ""} ${r.assigneeLastName ?? ""}`.trim() || r.assigneeName || null,
+      }));
+    }, { orgId });
 
     return { query: input.query, parsedFilters, leads: leadsResult, total: leadsResult.length };
   }
@@ -365,21 +384,21 @@ Please generate a structured pre-meeting brief with:
     const flags = await this.orgFeatures.getFlags(orgId);
     if (!flags.aiLeadScoring) throw new ForbiddenException("AI features are disabled for this organization");
 
-    let attendeeName: string;
-
-    if (input.attendeeType === "lead") {
-      const lead = await this.db.query.leads.findFirst({
-        where: and(eq(leads.id, input.attendeeId), eq(leads.orgId, orgId)),
-      });
-      if (!lead) throw new NotFoundException("Lead not found");
-      attendeeName = lead.name;
-    } else {
-      const account = await this.db.query.clientAccounts.findFirst({
-        where: and(eq(clientAccounts.id, input.attendeeId), eq(clientAccounts.orgId, orgId)),
-      });
-      if (!account) throw new NotFoundException("Client account not found");
-      attendeeName = account.clientName;
-    }
+    const attendeeName = await runInTenantTransaction(this.db, async (tx) => {
+      if (input.attendeeType === "lead") {
+        const lead = await tx.query.leads.findFirst({
+          where: and(eq(leads.id, input.attendeeId), eq(leads.orgId, orgId)),
+        });
+        if (!lead) throw new NotFoundException("Lead not found");
+        return lead.name;
+      } else {
+        const account = await tx.query.clientAccounts.findFirst({
+          where: and(eq(clientAccounts.id, input.attendeeId), eq(clientAccounts.orgId, orgId)),
+        });
+        if (!account) throw new NotFoundException("Client account not found");
+        return account.clientName;
+      }
+    }, { orgId });
 
     const actionItemsText = (input.actionItems ?? []).length > 0
       ? input.actionItems!.map((item, i) => `${i + 1}. ${item}`).join("\n")
@@ -420,56 +439,61 @@ Keep the tone professional but warm. Max 200 words for the body.`;
   }
 
   async accountSummaryWithCitations(orgId: string, input: AccountSummaryInput, userId?: string) {
-    const account = await this.db.query.clientAccounts.findFirst({
-      where: and(eq(clientAccounts.id, input.clientId), eq(clientAccounts.orgId, orgId)),
-    });
-
-    if (!account) throw new NotFoundException("Client account not found");
-
-    const [resolvedLead, activities] = await Promise.all([
-      account.leadId
-        ? this.db.query.leads.findFirst({ where: eq(leads.id, account.leadId) })
-        : Promise.resolve(null),
-      this.db
-        .select({
-          activityType: clientAccountActivities.activityType,
-          description: clientAccountActivities.description,
-          createdAt: clientAccountActivities.createdAt,
-        })
-        .from(clientAccountActivities)
-        .where(eq(clientAccountActivities.clientAccountId, input.clientId))
-        .orderBy(desc(clientAccountActivities.createdAt))
-        .limit(20),
-    ]);
-
-    const citations: CitationItem[] = [
-      {
-        id: `account-${account.id}`,
-        title: "Account Profile",
-        snippet: `${account.clientName} — Plan: ${account.planName ?? "N/A"}, Status: ${account.status}, Renewal Stage: ${account.renewalStage}`,
-      },
-    ];
-    if (account.investmentAmount) {
-      citations.push({
-        id: `account-investment-${account.id}`,
-        title: "Investment Details",
-        snippet: `Investment: ₹${Number(account.investmentAmount).toLocaleString("en-IN")}, Date: ${account.investmentDate ? new Date(account.investmentDate).toLocaleDateString("en-IN") : "N/A"}`,
+    const citations = await runInTenantTransaction(this.db, async (tx) => {
+      const account = await tx.query.clientAccounts.findFirst({
+        where: and(eq(clientAccounts.id, input.clientId), eq(clientAccounts.orgId, orgId)),
       });
-    }
-    if (activities.length > 0) {
-      citations.push({
-        id: `account-activities-${account.id}`,
-        title: "Recent Activity Summary",
-        snippet: `${activities.length} activities recorded. Latest: ${activities[0]?.activityType ?? "N/A"} on ${activities[0]?.createdAt ? new Date(activities[0].createdAt).toLocaleDateString("en-IN") : "N/A"}`,
-      });
-    }
-    if (resolvedLead) {
-      citations.push({
-        id: `lead-${resolvedLead.id}`,
-        title: "Lead Context",
-        snippet: `Source: ${resolvedLead.source ?? "N/A"}, Priority: ${resolvedLead.priority ?? "N/A"}, City: ${resolvedLead.city ?? "N/A"}`,
-      });
-    }
+
+      if (!account) return null;
+
+      const [resolvedLead, activities] = await Promise.all([
+        account.leadId
+          ? tx.query.leads.findFirst({ where: eq(leads.id, account.leadId) })
+          : Promise.resolve(null),
+        tx
+          .select({
+            activityType: clientAccountActivities.activityType,
+            description: clientAccountActivities.description,
+            createdAt: clientAccountActivities.createdAt,
+          })
+          .from(clientAccountActivities)
+          .where(eq(clientAccountActivities.clientAccountId, input.clientId))
+          .orderBy(desc(clientAccountActivities.createdAt))
+          .limit(20),
+      ]);
+
+      const built: CitationItem[] = [
+        {
+          id: `account-${account.id}`,
+          title: "Account Profile",
+          snippet: `${account.clientName} — Plan: ${account.planName ?? "N/A"}, Status: ${account.status}, Renewal Stage: ${account.renewalStage}`,
+        },
+      ];
+      if (account.investmentAmount) {
+        built.push({
+          id: `account-investment-${account.id}`,
+          title: "Investment Details",
+          snippet: `Investment: ₹${Number(account.investmentAmount).toLocaleString("en-IN")}, Date: ${account.investmentDate ? new Date(account.investmentDate).toLocaleDateString("en-IN") : "N/A"}`,
+        });
+      }
+      if (activities.length > 0) {
+        built.push({
+          id: `account-activities-${account.id}`,
+          title: "Recent Activity Summary",
+          snippet: `${activities.length} activities recorded. Latest: ${activities[0]?.activityType ?? "N/A"} on ${activities[0]?.createdAt ? new Date(activities[0].createdAt).toLocaleDateString("en-IN") : "N/A"}`,
+        });
+      }
+      if (resolvedLead) {
+        built.push({
+          id: `lead-${resolvedLead.id}`,
+          title: "Lead Context",
+          snippet: `Source: ${resolvedLead.source ?? "N/A"}, Priority: ${resolvedLead.priority ?? "N/A"}, City: ${resolvedLead.city ?? "N/A"}`,
+        });
+      }
+      return built;
+    }, { orgId });
+
+    if (!citations) throw new NotFoundException("Client account not found");
 
     const base = await this.accountSummary(orgId, input, userId);
     return { ...base, citations };

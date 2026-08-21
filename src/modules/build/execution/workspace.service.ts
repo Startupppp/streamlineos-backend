@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, count, desc, eq, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, isNull, or, sql } from "drizzle-orm";
 import {
   intakeItems,
   projectMilestones,
@@ -9,6 +9,7 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { allocateTicketNumbers } from "../core/lib/allocate-ticket-number";
 import type {
   CreateIntakeInput,
   CreateMilestoneInput,
@@ -21,7 +22,7 @@ import type {
 
 async function assertProject(db: Db, orgId: string, projectId: number): Promise<void> {
   const project = await db.query.projects.findFirst({
-    where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
+    where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
     columns: { id: true },
   });
   if (!project) throw new NotFoundException("Project not found");
@@ -34,8 +35,9 @@ export class MilestonesService {
   async listMilestones(orgId: string, projectId: number) {
     await assertProject(this.db, orgId, projectId);
     return this.db.query.projectMilestones.findMany({
-      where: and(eq(projectMilestones.projectId, projectId), eq(projectMilestones.orgId, orgId)),
+      where: and(eq(projectMilestones.projectId, projectId), eq(projectMilestones.orgId, orgId), isNull(projectMilestones.deletedAt)),
       orderBy: [asc(projectMilestones.targetDate)],
+      limit: 100,
     });
   }
 
@@ -60,18 +62,19 @@ export class MilestonesService {
     const [updated] = await this.db
       .update(projectMilestones)
       .set({ ...input, updatedAt: new Date() })
-      .where(and(eq(projectMilestones.id, milestoneId), eq(projectMilestones.orgId, orgId)))
+      .where(and(eq(projectMilestones.id, milestoneId), eq(projectMilestones.orgId, orgId), isNull(projectMilestones.deletedAt)))
       .returning();
     if (!updated) throw new NotFoundException("Milestone not found");
     return updated;
   }
 
   async deleteMilestone(orgId: string, milestoneId: number) {
-    const [deleted] = await this.db
-      .delete(projectMilestones)
-      .where(and(eq(projectMilestones.id, milestoneId), eq(projectMilestones.orgId, orgId)))
-      .returning();
-    if (!deleted) throw new NotFoundException("Milestone not found");
+    const [stamped] = await this.db
+      .update(projectMilestones)
+      .set({ deletedAt: new Date() })
+      .where(and(eq(projectMilestones.id, milestoneId), eq(projectMilestones.orgId, orgId), isNull(projectMilestones.deletedAt)))
+      .returning({ id: projectMilestones.id });
+    if (!stamped) throw new NotFoundException("Milestone not found");
     return { success: true };
   }
 }
@@ -134,10 +137,7 @@ export class IntakeService {
 
     if (input.status === "accepted") {
       return this.db.transaction(async (tx) => {
-        const [maxTicket] = await tx
-          .select({ max: sql<number>`COALESCE(MAX(${tickets.ticketNumber}), 0)` })
-          .from(tickets)
-          .where(eq(tickets.projectId, item.projectId));
+        const ticketNumber = await allocateTicketNumbers(tx, orgId, item.projectId);
 
         const description =
           typeof item.description === "object"
@@ -153,7 +153,7 @@ export class IntakeService {
             projectId: item.projectId,
             title: item.title,
             description,
-            ticketNumber: (maxTicket?.max ?? 0) + 1,
+            ticketNumber,
             reporterId: userId,
           })
           .returning();
@@ -161,7 +161,7 @@ export class IntakeService {
         const [updated] = await tx
           .update(intakeItems)
           .set({ status: "accepted", linkedWorkItemId: ticket.id, updatedAt: new Date() })
-          .where(eq(intakeItems.id, requestId))
+          .where(and(eq(intakeItems.id, requestId), eq(intakeItems.orgId, orgId)))
           .returning();
 
         return { ...updated, linkedTicket: ticket };
@@ -175,7 +175,7 @@ export class IntakeService {
       const [updated] = await this.db
         .update(intakeItems)
         .set({ status: "declined", declineReason: input.declineReason, updatedAt: new Date() })
-        .where(eq(intakeItems.id, requestId))
+        .where(and(eq(intakeItems.id, requestId), eq(intakeItems.orgId, orgId)))
         .returning();
       return updated;
     }
@@ -187,7 +187,7 @@ export class IntakeService {
       const [updated] = await this.db
         .update(intakeItems)
         .set({ status: "duplicate", linkedWorkItemId: input.linkedWorkItemId, updatedAt: new Date() })
-        .where(eq(intakeItems.id, requestId))
+        .where(and(eq(intakeItems.id, requestId), eq(intakeItems.orgId, orgId)))
         .returning();
       return updated;
     }

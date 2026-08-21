@@ -46,6 +46,24 @@ export const INVENTORY_PERMISSIONS: Permission[] = [
     description: "Transfer stock between warehouses",
   },
   {
+    name: "inventory:warehouses:scope-all",
+    resource: "inventory:warehouses",
+    action: "scope-all",
+    description: "See and transact in every warehouse, bypassing warehouse assignment",
+  },
+  {
+    name: "inventory:adjustments:approve",
+    resource: "inventory:adjustments",
+    action: "approve",
+    description: "Approve a stock adjustment raised by someone else",
+  },
+  {
+    name: "inventory:adjustments:post",
+    resource: "inventory:adjustments",
+    action: "post",
+    description: "Post an approved stock adjustment to the ledger",
+  },
+  {
     name: "inventory:warehouses:read",
     resource: "inventory:warehouses",
     action: "read",

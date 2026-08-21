@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   changeRequests,
   projectClientGrants,
@@ -73,7 +73,7 @@ export class PortalClientService {
         targetEndDate: projects.endDate,
       })
       .from(projects)
-      .where(and(eq(projects.orgId, orgId), inArray(projects.id, projectIds)))
+      .where(and(eq(projects.orgId, orgId), inArray(projects.id, projectIds), isNull(projects.deletedAt)))
       .limit(100);
   }
 
@@ -90,7 +90,7 @@ export class PortalClientService {
         targetEndDate: projects.endDate,
       })
       .from(projects)
-      .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId)))
+      .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)))
       .limit(1);
 
     if (!project) throw new NotFoundException("Project not found");
@@ -110,6 +110,7 @@ export class PortalClientService {
                 eq(projectMilestones.orgId, orgId),
                 eq(projectMilestones.projectId, projectId),
                 eq(projectMilestones.clientVisible, true),
+                isNull(projectMilestones.deletedAt),
               ),
             )
             .limit(100)
@@ -130,6 +131,7 @@ export class PortalClientService {
                 eq(tickets.orgId, orgId),
                 eq(tickets.projectId, projectId),
                 eq(tickets.clientVisible, true),
+                isNull(tickets.deletedAt),
               ),
             )
             .limit(100)
@@ -149,6 +151,7 @@ export class PortalClientService {
                 eq(tickets.id, ticketAttachments.ticketId),
                 eq(tickets.projectId, projectId),
                 eq(tickets.orgId, orgId),
+                isNull(tickets.deletedAt),
               ),
             )
             .where(
@@ -175,6 +178,7 @@ export class PortalClientService {
                 eq(tickets.id, ticketComments.ticketId),
                 eq(tickets.projectId, projectId),
                 eq(tickets.orgId, orgId),
+                isNull(tickets.deletedAt),
               ),
             )
             .leftJoin(users, eq(users.id, ticketComments.userId))
@@ -182,6 +186,7 @@ export class PortalClientService {
               and(
                 eq(ticketComments.orgId, orgId),
                 eq(ticketComments.clientVisible, true),
+                isNull(ticketComments.deletedAt),
               ),
             )
             .limit(100)

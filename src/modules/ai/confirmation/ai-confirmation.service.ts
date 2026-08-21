@@ -7,6 +7,7 @@
 } from "@nestjs/common";
 import { and, eq, lt } from "drizzle-orm";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { aiActionProposals } from "../../../db/schema/ai/ai-confirmation";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -75,18 +76,24 @@ export class AiConfirmationService {
     const payloadHash = stableHash(input.payload);
     const expiresAt = new Date(Date.now() + ttl * 1000);
 
-    if (input.idempotencyKey) {
-      const existing = await this.db
-        .select()
-        .from(aiActionProposals)
-        .where(
-          and(
-            eq(aiActionProposals.orgId, input.orgId),
-            eq(aiActionProposals.idempotencyKey, input.idempotencyKey),
-            eq(aiActionProposals.status, "PROPOSED"),
-          ),
-        )
-        .limit(1);
+    const idempotencyKey = input.idempotencyKey;
+    if (idempotencyKey) {
+      const existing = await runInTenantTransaction(
+        this.db,
+        (tx) =>
+          tx
+            .select()
+            .from(aiActionProposals)
+            .where(
+              and(
+                eq(aiActionProposals.orgId, input.orgId),
+                eq(aiActionProposals.idempotencyKey, idempotencyKey),
+                eq(aiActionProposals.status, "PROPOSED"),
+              ),
+            )
+            .limit(1),
+        { orgId: input.orgId },
+      );
 
       const row = existing[0];
       if (row && row.expiresAt > new Date()) {
@@ -98,18 +105,23 @@ export class AiConfirmationService {
       }
     }
 
-    const [inserted] = await this.db
-      .insert(aiActionProposals)
-      .values({
-        orgId: input.orgId,
-        userId: input.userId,
-        action: input.action,
-        payload: input.payload,
-        payloadHash,
-        idempotencyKey: input.idempotencyKey ?? null,
-        expiresAt,
-      })
-      .returning();
+    const [inserted] = await runInTenantTransaction(
+      this.db,
+      (tx) =>
+        tx
+          .insert(aiActionProposals)
+          .values({
+            orgId: input.orgId,
+            userId: input.userId,
+            action: input.action,
+            payload: input.payload,
+            payloadHash,
+            idempotencyKey: input.idempotencyKey ?? null,
+            expiresAt,
+          })
+          .returning(),
+      { orgId: input.orgId },
+    );
 
     if (!inserted) throw new BadRequestException("Failed to create proposal");
 
@@ -142,7 +154,7 @@ export class AiConfirmationService {
       throw new ForbiddenException("Invalid token format");
     }
 
-    return this.db.transaction(async (tx) => {
+    return runInTenantTransaction(this.db, async (tx) => {
       const rows = await tx
         .select()
         .from(aiActionProposals)
@@ -205,15 +217,24 @@ export class AiConfirmationService {
         action: row.action,
         payload: (row.payload ?? {}) as Record<string, unknown>,
       };
-    });
+    }, { orgId: input.actor.orgId });
   }
 
-  async markExecuted(proposalId: number, result: Record<string, unknown>): Promise<void> {
-    const rows = await this.db
-      .select()
-      .from(aiActionProposals)
-      .where(eq(aiActionProposals.id, proposalId))
-      .limit(1);
+  async markExecuted(
+    proposalId: number,
+    result: Record<string, unknown>,
+    orgId: string,
+  ): Promise<void> {
+    const rows = await runInTenantTransaction(
+      this.db,
+      (tx) =>
+        tx
+          .select()
+          .from(aiActionProposals)
+          .where(and(eq(aiActionProposals.id, proposalId), eq(aiActionProposals.orgId, orgId)))
+          .limit(1),
+      { orgId },
+    );
 
     const row = rows[0];
     if (!row) throw new BadRequestException("Proposal not found");
@@ -225,10 +246,15 @@ export class AiConfirmationService {
     }
 
     const now = new Date();
-    await this.db
-      .update(aiActionProposals)
-      .set({ status: "EXECUTED", executedAt: now, result, updatedAt: now })
-      .where(eq(aiActionProposals.id, proposalId));
+    await runInTenantTransaction(
+      this.db,
+      (tx) =>
+        tx
+          .update(aiActionProposals)
+          .set({ status: "EXECUTED", executedAt: now, result, updatedAt: now })
+          .where(eq(aiActionProposals.id, proposalId)),
+      { orgId },
+    );
 
     this.audit.log({
       action: "ai.proposal.executed",
@@ -240,12 +266,20 @@ export class AiConfirmationService {
     });
   }
 
-  async getExecutedResult(proposalId: number): Promise<Record<string, unknown> | null> {
-    const rows = await this.db
-      .select()
-      .from(aiActionProposals)
-      .where(eq(aiActionProposals.id, proposalId))
-      .limit(1);
+  async getExecutedResult(
+    proposalId: number,
+    orgId: string,
+  ): Promise<Record<string, unknown> | null> {
+    const rows = await runInTenantTransaction(
+      this.db,
+      (tx) =>
+        tx
+          .select()
+          .from(aiActionProposals)
+          .where(and(eq(aiActionProposals.id, proposalId), eq(aiActionProposals.orgId, orgId)))
+          .limit(1),
+      { orgId },
+    );
 
     const row = rows[0];
     if (!row || row.status !== "EXECUTED") return null;
@@ -253,11 +287,16 @@ export class AiConfirmationService {
   }
 
   async cancel(proposalId: number, actor: { orgId: string; userId: string }): Promise<void> {
-    const rows = await this.db
-      .select()
-      .from(aiActionProposals)
-      .where(eq(aiActionProposals.id, proposalId))
-      .limit(1);
+    const rows = await runInTenantTransaction(
+      this.db,
+      (tx) =>
+        tx
+          .select()
+          .from(aiActionProposals)
+          .where(and(eq(aiActionProposals.id, proposalId), eq(aiActionProposals.orgId, actor.orgId)))
+          .limit(1),
+      { orgId: actor.orgId },
+    );
 
     const row = rows[0];
     if (!row) throw new BadRequestException("Proposal not found");
@@ -270,10 +309,15 @@ export class AiConfirmationService {
       throw new BadRequestException("Only PROPOSED proposals can be cancelled");
     }
 
-    await this.db
-      .update(aiActionProposals)
-      .set({ status: "CANCELLED", updatedAt: new Date() })
-      .where(eq(aiActionProposals.id, proposalId));
+    await runInTenantTransaction(
+      this.db,
+      (tx) =>
+        tx
+          .update(aiActionProposals)
+          .set({ status: "CANCELLED", updatedAt: new Date() })
+          .where(eq(aiActionProposals.id, proposalId)),
+      { orgId: actor.orgId },
+    );
 
     this.audit.log({
       action: "ai.proposal.cancelled",

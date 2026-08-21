@@ -1,7 +1,7 @@
 import { Inject, Injectable, BadRequestException, Logger } from "@nestjs/common";
 import { randomUUID } from "crypto";
 import { inArray, eq, and } from "drizzle-orm";
-import { notifications, notificationDeliveries, notificationQueue, notificationTemplates, users } from "../../db/schema";
+import { notifications, notificationDeliveries, notificationQueue, notificationOutbox, notificationPreferences, notificationTemplates, userPreferences, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -9,18 +9,29 @@ import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { NOTIF_CACHE } from "./notification-cache-keys";
 import { NotificationEventRegistryService } from "./notification-event-registry.service";
 import { NotificationRoutingService } from "./notification-routing.service";
-import { NotificationsService, type NotificationCategoryValue, type AnnounceInput } from "./notifications.service";
-import type { DispatchEventInput, NotificationChannel, NotificationEventDefinition } from "./notification.types";
+import { NotificationsService, type AnnounceInput } from "./notifications.service";
+import { NotificationVisibilityRegistry } from "./notification-visibility.registry";
+import { NotificationTemplateRenderer, type TemplateMap } from "./notification-template-renderer.service";
+import { NotificationDigestService } from "./notification-digest.service";
+import type {
+  DispatchEventInput,
+  NotificationChannel,
+  NotificationEventDefinition,
+  NotificationPriority,
+} from "./notification.types";
 import { filterOrgMemberIds } from "../../common/tenant/org-membership";
 import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import { type DbOrTx } from "../../common/rbac/access-invalidate";
 
 type ProviderName = "INTERNAL" | "SMTP" | "WEB_PUSH" | "TWILIO" | "WEBHOOK";
 
-type RenderedTemplate = { subject: string | null; body: string };
-type TemplateMap = Map<NotificationChannel, RenderedTemplate>;
-type RawTemplate = { channel: NotificationChannel; subject: string | null; body: string; locale: string };
-type OrgTemplateMap = Record<string, RawTemplate[]>;
+
+/**
+ * PIPE-006. How many recipients are persisted at once. Sized against the Postgres
+ * pool rather than the recipient count — higher only queues work inside the driver.
+ */
+const FANOUT_CONCURRENCY = 10;
 
 const CHANNEL_TO_PROVIDER: Record<NotificationChannel, ProviderName> = {
   IN_APP: "INTERNAL",
@@ -50,7 +61,53 @@ export class NotificationDispatchService {
     private readonly routing: NotificationRoutingService,
     private readonly notificationsService: NotificationsService,
     private readonly cache: CacheService,
+    private readonly visibility: NotificationVisibilityRegistry,
+    private readonly templates: NotificationTemplateRenderer,
+    private readonly digest: NotificationDigestService,
   ) {}
+
+  /**
+   * PIPE-001. Durable overload: writes the intent inside the caller's transaction, so
+   * the domain change and the notification commit together or not at all. Prefer this
+   * wherever a transaction is already open — `emit(input)` defers with an in-memory
+   * hook and loses the notification if the process dies before it drains.
+   *
+   * The relay (`NotificationOutboxRelayService`) picks the row up and runs the same
+   * `emitNow` pipeline, so routing, preferences and the PIPE-003 visibility check are
+   * unchanged. Only the trigger becomes durable.
+   */
+  async emitDurable(tx: DbOrTx, input: DispatchEventInput): Promise<void> {
+    await tx
+      .insert(notificationOutbox)
+      .values({
+        orgId: input.orgId,
+        eventKey: input.eventKey,
+        dedupeKey: this.buildOutboxDedupeKey(input),
+        actorUserId: input.actorUserId ?? null,
+        notifySelf: input.notifySelf ?? false,
+        targetUserIds: input.targetUserIds,
+        entityType: input.entityType ?? null,
+        entityId: input.entityId ?? null,
+        title: input.title ?? null,
+        message: input.message ?? null,
+        link: input.link ?? null,
+        variables: (input.variables ?? {}) as Record<string, unknown>,
+        metadata: input.metadata ?? null,
+      })
+      // Same intent from a retried request is a no-op, not a second notification.
+      .onConflictDoNothing({
+        target: [notificationOutbox.orgId, notificationOutbox.dedupeKey],
+      });
+  }
+
+  /**
+   * Stable across retries of the same logical request: same event, same recipients,
+   * same entity → same key. Deliberately excludes the timestamp.
+   */
+  private buildOutboxDedupeKey(input: DispatchEventInput): string {
+    const targets = [...input.targetUserIds].sort().join(",");
+    return `${input.eventKey}:${input.entityType ?? ""}:${input.entityId ?? ""}:${targets}`;
+  }
 
   emit(input: DispatchEventInput): Promise<DispatchResult> {
     const queued = registerAfterCommit(() =>
@@ -86,7 +143,18 @@ export class NotificationDispatchService {
     const result: DispatchResult = { eventKey: input.eventKey, notified: 0, deliveriesQueued: 0, suppressed: 0, deduped: 0, deferred: false };
     if (!enabled && !definition.mandatory) return result;
 
-    const targets = await filterOrgMemberIds(this.db, input.orgId, input.targetUserIds);
+    // PIPE-011: never notify someone about their own action. This was a per-caller
+    // convention that most callers implemented by hand and some forgot; making it a
+    // pipeline rule means it cannot be forgotten. `notifySelf: true` on the input is
+    // the explicit opt-out, for the rare event (a security alert about your own
+    // session) where self-notification is the point.
+    const requested =
+      input.actorUserId && input.notifySelf !== true
+        ? input.targetUserIds.filter((id) => id !== input.actorUserId)
+        : input.targetUserIds;
+    if (requested.length === 0) return result;
+
+    const targets = await filterOrgMemberIds(this.db, input.orgId, requested);
     if (targets.length === 0) return result;
 
     const priority = input.priority ?? definition.defaultPriority;
@@ -96,19 +164,94 @@ export class NotificationDispatchService {
       .where(inArray(users.id, targets));
     const emailMap = new Map(emailRows.map((r) => [r.id, r.email]));
 
-    const templateMap = await this.loadTemplates(input.orgId, definition, input.variables ?? {});
+    // PIPE-014: render in each recipient's own language. One template map per
+    // distinct locale in the target set — usually one, never more than a handful.
+    const localeRows = await this.db
+      .select({ userId: userPreferences.userId, language: userPreferences.language })
+      .from(userPreferences)
+      .where(inArray(userPreferences.userId, targets));
+    const localeByUser = new Map(localeRows.map((r) => [r.userId, r.language]));
+    const digestRows = await this.db
+      .select({ userId: notificationPreferences.userId, digestMode: notificationPreferences.digestMode })
+      .from(notificationPreferences)
+      .where(and(eq(notificationPreferences.orgId, input.orgId), inArray(notificationPreferences.userId, targets)));
+    const digestModeByUser = new Map(digestRows.map((r) => [r.userId, r.digestMode]));
+    const templatesByLocale = new Map<string, TemplateMap>();
+    for (const locale of new Set([...targets].map((u) => localeByUser.get(u) ?? "en"))) {
+      templatesByLocale.set(
+        locale,
+        await this.templates.loadTemplates(input.orgId, definition, input.variables ?? {}, locale),
+      );
+    }
 
     const routingResults = await this.routing.routeMany(input.orgId, targets, definition, priority);
     const announcements: Array<{ input: AnnounceInput; pushToDevices: boolean }> = [];
-    for (const userId of targets) {
+
+    // PIPE-006: this used to be a strictly sequential loop, one transaction per
+    // recipient — 50,000 recipients meant 50,000 round trips end to end, and the
+    // wall-clock was the sum of every one of them. Recipients are independent (each
+    // has its own idempotency key), so they run in bounded waves instead. Bounded,
+    // not unbounded: the pool has a finite connection count and an unbounded
+    // Promise.all over 50,000 transactions would exhaust it.
+    const perRecipient = async (userId: string): Promise<void> => {
       const routingResult = routingResults.get(userId);
-      if (!routingResult) continue;
-      const perUser = await this.persistForUser(input, definition, userId, routingResult, emailMap.get(userId) ?? null, templateMap);
+      if (!routingResult) return;
+
+      // PIPE-003: re-check object-level visibility immediately before render, per
+      // recipient. Membership was checked at enqueue; access can be revoked between
+      // enqueue and here, and under queue lag that window widens exactly when the
+      // system is busiest. Events with no declared resource kind cost nothing.
+      if (definition.visibilityResourceKind) {
+        const visible = await this.visibility.canSee(
+          definition.visibilityResourceKind,
+          input.orgId,
+          userId,
+          input.entityId,
+        );
+        if (!visible) {
+          result.suppressed += await this.recordAccessSuppression(input, definition, userId, routingResult.priority);
+          return;
+        }
+      }
+
+      // PIPE-008: a channel the user set to DIGEST is accumulated rather than sent.
+      // Mandatory events bypass it — a security alert held for a daily digest is not a
+      // digest, it is a missed alert.
+      const digestWindowMs = definition.mandatory
+        ? null
+        : NotificationDigestService.windowMsFor(digestModeByUser.get(userId));
+      if (digestWindowMs !== null) {
+        await this.digest.enqueue({
+          orgId: input.orgId,
+          userId,
+          channel: "EMAIL",
+          eventKey: input.eventKey,
+          entityType: input.entityType ?? null,
+          entityId: input.entityId ?? null,
+          title: input.title ?? definition.displayName,
+          message: input.message ?? definition.description,
+          link: input.link ?? null,
+          windowMs: digestWindowMs,
+        });
+      }
+
+      const perUser = await this.persistForUser(
+        input,
+        definition,
+        userId,
+        routingResult,
+        emailMap.get(userId) ?? null,
+        templatesByLocale.get(localeByUser.get(userId) ?? "en") ?? new Map(),
+      );
       result.notified += perUser.createdInApp ? 1 : 0;
       result.deliveriesQueued += perUser.queued;
       result.suppressed += perUser.suppressed;
       result.deduped += perUser.deduped ? 1 : 0;
       if (perUser.announce) announcements.push({ input: perUser.announce, pushToDevices: !perUser.pushHandledByEngine });
+    };
+
+    for (let i = 0; i < targets.length; i += FANOUT_CONCURRENCY) {
+      await Promise.all(targets.slice(i, i + FANOUT_CONCURRENCY).map(perRecipient));
     }
 
     await Promise.all(
@@ -117,72 +260,40 @@ export class NotificationDispatchService {
     return result;
   }
 
-  private loadOrgTemplateMap(orgId: string): Promise<OrgTemplateMap> {
-    return this.cache.cached(
-      NOTIF_CACHE.templates(orgId),
-      async () => {
-        const rows = await this.db
-          .select({
-            templateKey: notificationTemplates.templateKey,
-            channel: notificationTemplates.channel,
-            subject: notificationTemplates.subject,
-            body: notificationTemplates.body,
-            locale: notificationTemplates.locale,
-          })
-          .from(notificationTemplates)
-          .where(and(eq(notificationTemplates.orgId, orgId), eq(notificationTemplates.isActive, true)));
-        const map: OrgTemplateMap = {};
-        for (const row of rows) {
-          (map[row.templateKey] ??= []).push({
-            channel: row.channel,
-            subject: row.subject,
-            body: row.body,
-            locale: row.locale,
-          });
-        }
-        return map;
-      },
-      CACHE_TTL.MEDIUM,
-    );
-  }
-
-  private async loadTemplates(orgId: string, definition: NotificationEventDefinition, variables: Record<string, unknown>): Promise<TemplateMap> {
-    if (!definition.templateKey) return new Map();
-
-    const orgTemplates = await this.loadOrgTemplateMap(orgId);
-    const rows = orgTemplates[definition.templateKey];
-    if (!rows || rows.length === 0) return new Map();
-
-    const stringVars: Record<string, string> = Object.fromEntries(
-      Object.entries(variables).map(([k, v]) => [k, v == null ? "" : String(v)]),
-    );
-
-    const byChannel = new Map<NotificationChannel, RawTemplate[]>();
-    for (const row of rows) {
-      const ch = row.channel;
-      const existing = byChannel.get(ch);
-      if (!existing) {
-        byChannel.set(ch, [row]);
-      } else {
-        existing.push(row);
-      }
-    }
-
-    const map: TemplateMap = new Map();
-    for (const [channel, channelRows] of byChannel) {
-      const preferred = channelRows.find((r) => r.locale === "en") ?? channelRows[0];
-      if (!preferred) continue;
-      map.set(channel, {
-        subject: preferred.subject != null ? this.renderPlaceholders(preferred.subject, stringVars) : null,
-        body: this.renderPlaceholders(preferred.body, stringVars),
-      });
-    }
-
-    return map;
-  }
-
-  private renderPlaceholders(template: string, variables: Record<string, string>): string {
-    return template.replace(/\{\{([^}]+)\}\}/g, (_, key: string) => variables[key.trim()] ?? "");
+  /**
+   * Records that a recipient was withheld for lack of access. Written as a real
+   * delivery row so the suppression is auditable and distinguishable from a mute —
+   * "we never sent it" and "we sent it and they lost access" are different answers
+   * when a customer asks. Uses the same idempotency key as a normal IN_APP delivery,
+   * so a replayed dispatch does not double-record.
+   */
+  private async recordAccessSuppression(
+    input: DispatchEventInput,
+    definition: NotificationEventDefinition,
+    userId: string,
+    priority: NotificationPriority,
+  ): Promise<number> {
+    const [row] = await this.db
+      .insert(notificationDeliveries)
+      .values({
+        orgId: input.orgId,
+        userId,
+        eventKey: input.eventKey,
+        channel: "IN_APP",
+        provider: "INTERNAL",
+        status: "SUPPRESSED",
+        priority,
+        suppressionReason: "NO_ACCESS",
+        idempotencyKey: this.buildIdempotencyKey(input, userId, "IN_APP", definition.dedupeWindowSeconds),
+        metadata: {
+          resourceKind: definition.visibilityResourceKind ?? null,
+          entityType: input.entityType ?? null,
+          entityId: input.entityId ?? null,
+        },
+      })
+      .onConflictDoNothing({ target: notificationDeliveries.idempotencyKey })
+      .returning({ id: notificationDeliveries.id });
+    return row ? 1 : 0;
   }
 
   private buildIdempotencyKey(input: DispatchEventInput, userId: string, channel: NotificationChannel, dedupeWindowSeconds: number): string {
@@ -241,7 +352,7 @@ export class NotificationDispatchService {
             userId,
             type: definition.defaultType,
             priority: routingResult.priority,
-            category: definition.category as NotificationCategoryValue,
+            category: definition.category,
             sourceModule: definition.sourceModule,
             eventKey: input.eventKey,
             entityType: input.entityType,
@@ -287,6 +398,15 @@ export class NotificationDispatchService {
             nextAttemptAt: isSend ? (routingResult.deferredUntil ?? now) : null,
             idempotencyKey: key,
             metadata: { title: deliveryTitle, message: deliveryMessage, link: input.link ?? null },
+            // REG-008: the snapshot of what was actually sent. metadata above is the
+            // display payload; these two are the audit record, and survive a later
+            // edit to the template they came from.
+            renderedSubject: deliveryTitle,
+            renderedBody: deliveryMessage,
+            // PIPE-012: past this the worker drops rather than delivers stale.
+            expiresAt: definition.ttlSeconds
+              ? new Date(now.getTime() + definition.ttlSeconds * 1000)
+              : null,
           })
           .onConflictDoNothing({ target: notificationDeliveries.idempotencyKey })
           .returning({ id: notificationDeliveries.id });

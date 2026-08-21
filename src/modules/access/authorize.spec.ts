@@ -103,6 +103,43 @@ describe("authorize", () => {
     expect(result).toEqual({ allow: false, scope: "none", reason: "NO_MODULE" });
   });
 
+  it("AC-04: holding settings:manage alone does NOT grant an unrelated permission", async () => {
+    const resolver = makeResolver(new Map([["settings:manage", "all"]]), ["hr"]);
+    const result = await authorize(resolver, makeCtx(), "hr:payroll:view");
+    expect(result).toEqual({ allow: false, scope: "none", reason: "FORBIDDEN" });
+  });
+
+  it("AC-04: holding settings:rbac:manage alone does NOT grant an unrelated permission", async () => {
+    const resolver = makeResolver(new Map([["settings:rbac:manage", "all"]]), ["hr"]);
+    const result = await authorize(resolver, makeCtx(), "hr:employees:manage");
+    expect(result).toEqual({ allow: false, scope: "none", reason: "FORBIDDEN" });
+  });
+
+  it("AC-04: a structural org admin is unaffected, because computeUserPermissions already resolves every key to all", async () => {
+    const resolver = makeResolver(
+      new Map<string, DataScope>([
+        ["settings:manage", "all"],
+        ["hr:employees:manage", "all"],
+      ]),
+      ["hr"],
+    );
+    const result = await authorize(resolver, makeCtx(), "hr:employees:manage");
+    expect(result.allow).toBe(true);
+    expect(result.scope).toBe("all");
+  });
+
+  it("AC-04: a scoped grant keeps its own scope instead of being widened to all", async () => {
+    const resolver = makeResolver(
+      new Map<string, DataScope>([
+        ["settings:manage", "all"],
+        ["hr:employees:view", "own"],
+      ]),
+      ["hr"],
+    );
+    const result = await authorize(resolver, makeCtx(), "hr:employees:view");
+    expect(result.scope).toBe("own");
+  });
+
   it("still denies a plain member whose module access was revoked", async () => {
     const resolver = makeResolver(new Map(), ["hr"]);
     const result = await authorize(resolver, makeCtx(), "hr:employees:manage");

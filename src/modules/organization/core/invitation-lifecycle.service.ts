@@ -8,7 +8,10 @@ import { and, eq, inArray, isNull } from "drizzle-orm";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AccessService } from "../../access/access.service";
-import { assertMayGrantRole } from "../../../common/rbac/assert-may-grant-role";
+import {
+  assertMayGrantRole,
+  assertMayManageOrganizationMembership,
+} from "../../../common/rbac/assert-may-grant-role";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -77,8 +80,6 @@ export class InvitationLifecycleService {
     actor: InviteActor,
     role: string,
   ): Promise<{ success: true }> {
-    await assertMayGrantRole(this.access, orgId, actor, role);
-
     const invitation = await this.db.query.invitations.findFirst({
       where: and(
         eq(invitations.id, invitationId),
@@ -90,6 +91,7 @@ export class InvitationLifecycleService {
     if (!invitation) {
       throw new NotFoundException("Invitation not found or already accepted");
     }
+    await assertMayGrantRole(this.access, orgId, actor, role);
     if (invitation.role === role) return { success: true };
 
     const actorMembership = await findActorMembershipId(
@@ -142,8 +144,9 @@ export class InvitationLifecycleService {
   async cancel(
     orgId: string,
     invitationId: string,
-    actorUserId: string,
+    actor: InviteActor,
   ): Promise<{ success: true }> {
+    const actorUserId = actor.userId;
     const invitation = await this.db.query.invitations.findFirst({
       where: and(
         eq(invitations.id, invitationId),
@@ -154,6 +157,8 @@ export class InvitationLifecycleService {
     });
     if (!invitation)
       throw new NotFoundException("Invitation not found or already accepted");
+
+    await assertMayManageOrganizationMembership(this.access, orgId, actor);
 
     const org = await requireActiveOrg(this.db, orgId);
     const actorMembership = await findActorMembershipId(

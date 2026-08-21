@@ -1,0 +1,81 @@
+import { ForbiddenException } from "@nestjs/common";
+import { TimesheetsService } from "./timesheets.service";
+import type { AccessService } from "../../access/access.service";
+import type { CacheService } from "../../../common/cache/cache.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import type { Db } from "../../../db/drizzle.module";
+import type { EntriesPeriodService } from "../../timesheets/core/entries-period.service";
+
+const ORG_ID = "org-1";
+
+const makeUser = (overrides: Partial<CurrentUserContext> = {}): CurrentUserContext => ({
+  userId: "approver-1",
+  orgId: ORG_ID,
+  role: "EMPLOYEE",
+  permissions: [],
+  isOrgOwner: false,
+  sessionId: "session-1",
+  tokenScopes: null,
+  ...overrides,
+});
+
+describe("TimesheetsService — approver cannot action their own entry", () => {
+  let svc: TimesheetsService;
+  let findFirst: jest.Mock;
+  let updateWhere: jest.Mock;
+
+  beforeEach(() => {
+    findFirst = jest.fn();
+    updateWhere = jest.fn().mockResolvedValue(undefined);
+    const db = {
+      query: { timesheets: { findFirst } },
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({ where: updateWhere }),
+      }),
+    } as unknown as Db;
+    const access = {
+      resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:timesheets:manage"])),
+    } as unknown as AccessService;
+    const cache = { del: jest.fn(), get: jest.fn(), set: jest.fn() } as unknown as CacheService;
+    const periods = {} as unknown as EntriesPeriodService;
+    svc = new TimesheetsService(db, cache, access, periods);
+  });
+
+  it("rejects approving an entry the actor logged themselves", async () => {
+    findFirst.mockResolvedValueOnce({
+      id: 1,
+      orgId: ORG_ID,
+      userId: "approver-1",
+      status: "PENDING",
+      payrollStatus: null,
+    });
+    await expect(svc.approveEntry(makeUser(), 1)).rejects.toThrow(ForbiddenException);
+    expect(updateWhere).not.toHaveBeenCalled();
+  });
+
+  it("rejects rejecting an entry the actor logged themselves", async () => {
+    findFirst.mockResolvedValueOnce({
+      id: 1,
+      orgId: ORG_ID,
+      userId: "approver-1",
+      status: "PENDING",
+      payrollStatus: null,
+    });
+    await expect(
+      svc.rejectEntry(makeUser(), 1, { reason: "no" } as never),
+    ).rejects.toThrow(ForbiddenException);
+    expect(updateWhere).not.toHaveBeenCalled();
+  });
+
+  it("allows approving another person's entry", async () => {
+    findFirst.mockResolvedValueOnce({
+      id: 2,
+      orgId: ORG_ID,
+      userId: "someone-else",
+      status: "PENDING",
+      payrollStatus: null,
+    });
+    await expect(svc.approveEntry(makeUser(), 2)).resolves.toEqual({ success: true });
+    expect(updateWhere).toHaveBeenCalledTimes(1);
+  });
+});

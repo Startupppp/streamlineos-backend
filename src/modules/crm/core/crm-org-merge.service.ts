@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { contacts, crmOrganizations } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -73,9 +73,6 @@ export class CrmOrgMergeService {
 
     if (!primary) throw new NotFoundException("Primary organization not found in this org");
     if (!duplicate) throw new NotFoundException("Duplicate organization not found in this org");
-    if (primary.orgId !== orgId || duplicate.orgId !== orgId) {
-      throw new ForbiddenException("Cross-org merge not allowed");
-    }
 
     await this.db.transaction(async (tx) => {
       const scalarPatch: Record<string, unknown> = {};

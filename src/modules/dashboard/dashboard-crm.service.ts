@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, eq, gte, lt, ne, sum } from "drizzle-orm";
+import { and, count, eq, gte, isNull, lt, ne, sum } from "drizzle-orm";
 import {
   crmActivities,
   deals,
@@ -63,7 +63,7 @@ export class DashboardCrmService {
             .from(deals)
             .where(
               and(
-                eq(deals.orgId, orgId),
+                eq(deals.orgId, orgId), isNull(deals.deletedAt),
                 eq(deals.stage, "WON"),
                 gte(deals.updatedAt, monthStart),
               ),
@@ -73,7 +73,7 @@ export class DashboardCrmService {
             .from(deals)
             .where(
               and(
-                eq(deals.orgId, orgId),
+                eq(deals.orgId, orgId), isNull(deals.deletedAt),
                 ne(deals.stage, "WON"),
                 ne(deals.stage, "LOST"),
               ),
@@ -82,20 +82,38 @@ export class DashboardCrmService {
             .select({ cnt: count() })
             .from(organizationMembers)
             .innerJoin(users, eq(organizationMembers.userId, users.id))
-            .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true))),
+            .where(
+              and(
+                eq(organizationMembers.orgId, orgId),
+                eq(users.isActive, true),
+              ),
+            ),
           this.db
             .select({ cnt: count() })
             .from(jobPostings)
-            .where(and(eq(jobPostings.orgId, orgId), eq(jobPostings.status, "OPEN"))),
+            .where(
+              and(eq(jobPostings.orgId, orgId), eq(jobPostings.status, "OPEN")),
+            ),
           this.db
             .select({ cnt: count() })
             .from(leads)
-            .where(and(eq(leads.orgId, orgId), gte(leads.createdAt, weekStart))),
+            .where(
+              and(eq(leads.orgId, orgId), gte(leads.createdAt, weekStart)),
+            ),
           this.db
             .select({ cnt: count() })
             .from(projects)
-            .where(and(eq(projects.orgId, orgId), eq(projects.status, "ACTIVE"))),
-          this.db.select({ cnt: count() }).from(leads).where(eq(leads.orgId, orgId)),
+            .where(
+              and(
+                eq(projects.orgId, orgId),
+                eq(projects.status, "ACTIVE"),
+                isNull(projects.deletedAt),
+              ),
+            ),
+          this.db
+            .select({ cnt: count() })
+            .from(leads)
+            .where(eq(leads.orgId, orgId)),
           this.db
             .select({ cnt: count() })
             .from(leads)

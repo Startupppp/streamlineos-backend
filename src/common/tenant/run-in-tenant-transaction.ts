@@ -1,11 +1,11 @@
 import type { Db } from "../../db/drizzle.module";
 import {
   getTenantContext,
-  runOutsideTenantContext,
   runWithTenantContext,
+  runOutsideTenantContext,
 } from "./tenant-context";
+import { runOutsidePoolBorrow } from "../../db/pool-telemetry";
 import { withTenant, type TenantTx } from "./with-tenant";
-
 
 export async function runInTenantTransaction<T>(
   db: Db,
@@ -21,11 +21,10 @@ export async function runInTenantTransaction<T>(
     );
   }
 
-  if (ambient && ambient.orgId !== explicit.orgId) {
+  if (ambient && ambient.orgId !== explicit.orgId)
     throw new Error(
       `runInTenantTransaction: refusing to open a transaction for org ${explicit.orgId} inside an active transaction for org ${ambient.orgId}.`,
     );
-  }
 
   if (ambient) return fn(ambient.tx);
 
@@ -35,19 +34,21 @@ export async function runInTenantTransaction<T>(
   );
 }
 
-
 export async function runInNewTenantTransaction<T>(
   db: Db,
   orgId: string,
   fn: (tx: TenantTx) => Promise<T>,
 ): Promise<T> {
-  if (!orgId) {
-    throw new Error("runInNewTenantTransaction: orgId must be a non-empty string");
-  }
+  if (!orgId)
+    throw new Error(
+      "runInNewTenantTransaction: orgId must be a non-empty string",
+    );
 
-  return runOutsideTenantContext(() =>
-    withTenant(db, { orgId, audience: "INTERNAL" }, (tx) =>
-      runWithTenantContext({ orgId, audience: "INTERNAL", tx }, () => fn(tx)),
+  return runOutsidePoolBorrow(() =>
+    runOutsideTenantContext(() =>
+      withTenant(db, { orgId, audience: "INTERNAL" }, (tx) =>
+        runWithTenantContext({ orgId, audience: "INTERNAL", tx }, () => fn(tx)),
+      ),
     ),
   );
 }

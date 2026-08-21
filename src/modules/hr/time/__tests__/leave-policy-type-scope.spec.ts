@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException } from "@nestjs/common";
-import { LeavesService } from "../leaves.service";
 import { LeavePoliciesService } from "../leave-policies.service";
+import { LeaveTypesService } from "../leave-types.service";
 
 function createDb(typeRows: { id: number }[]) {
   const insert = jest.fn();
@@ -51,7 +51,7 @@ describe("LeavePoliciesService leave-type org scoping", () => {
   });
 });
 
-describe("LeavesService.createLeaveType", () => {
+describe("LeaveTypesService.create", () => {
   function createTypeDb(existing: { id: number } | undefined) {
     const returning = jest.fn().mockResolvedValue([
       { id: 5, name: "Sick Leave", daysPerYear: 12, carryForward: false },
@@ -66,17 +66,17 @@ describe("LeavesService.createLeaveType", () => {
 
   it("rejects a duplicate name within the organization", async () => {
     const db = createTypeDb({ id: 3 });
-    const service = new LeavesService(db as never, {} as never, {} as never, {} as never, {} as never);
+    const service = new LeaveTypesService(db as never);
     await expect(
-      service.createLeaveType("org-1", { name: "Sick Leave", daysPerYear: 12 }),
+      service.create("org-1", { name: "Sick Leave", daysPerYear: 12 }),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(db.insert).not.toHaveBeenCalled();
   });
 
   it("creates an org-scoped leave type and trims the name", async () => {
     const db = createTypeDb(undefined);
-    const service = new LeavesService(db as never, {} as never, {} as never, {} as never, {} as never);
-    const created = await service.createLeaveType("org-1", {
+    const service = new LeaveTypesService(db as never);
+    const created = await service.create("org-1", {
       name: "  Sick Leave  ",
       daysPerYear: 12,
     });
@@ -84,8 +84,7 @@ describe("LeavesService.createLeaveType", () => {
   });
 });
 
-describe("LeavesService leave type management", () => {
-  const ctorRest = [{} as never, {} as never, {} as never, {} as never] as const;
+describe("LeaveTypesService management", () => {
 
   it("seeds the standard set idempotently via onConflictDoNothing", async () => {
     const returning = jest.fn().mockResolvedValue([
@@ -101,9 +100,9 @@ describe("LeavesService leave type management", () => {
         (callback: (transaction: typeof tx) => unknown) => callback(tx),
       ),
     };
-    const service = new LeavesService(db as never, ...ctorRest);
+    const service = new LeaveTypesService(db as never);
 
-    const result = await service.seedDefaultLeaveTypes("org-1");
+    const result = await service.seedDefaults("org-1");
     expect(result).toEqual({ seeded: 2, skipped: 3 });
     const seededRows = values.mock.calls[0][0] as { orgId: string; name: string }[];
     expect(seededRows).toHaveLength(5);
@@ -123,9 +122,9 @@ describe("LeavesService leave type management", () => {
         }),
       }),
     };
-    const service = new LeavesService(db as never, ...ctorRest);
+    const service = new LeaveTypesService(db as never);
 
-    const updated = await service.updateLeaveType("org-1", 2, { daysPerYear: 6 });
+    const updated = await service.update("org-1", 2, { daysPerYear: 6 });
     expect(updated.daysPerYear).toBe(6);
   });
 
@@ -144,9 +143,9 @@ describe("LeavesService leave type management", () => {
       },
       delete: jest.fn(),
     };
-    const service = new LeavesService(db as never, ...ctorRest);
+    const service = new LeaveTypesService(db as never);
 
-    await expect(service.deleteLeaveType("org-1", 2)).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.delete("org-1", 2)).rejects.toBeInstanceOf(ConflictException);
     expect(db.delete).not.toHaveBeenCalled();
   });
 });

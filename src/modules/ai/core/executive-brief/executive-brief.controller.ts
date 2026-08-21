@@ -6,10 +6,12 @@ import { RateLimitGuard } from "../../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../../common/ratelimit/use-rate-limit.decorator";
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { NoTenantTransaction } from "../../../../common/tenant/no-tenant-transaction.decorator";
 import { ExecutiveBriefService } from "./executive-brief.service";
 
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller("ai/executive-brief")
+@NoTenantTransaction()
 export class ExecutiveBriefController {
   constructor(private readonly service: ExecutiveBriefService) {}
 

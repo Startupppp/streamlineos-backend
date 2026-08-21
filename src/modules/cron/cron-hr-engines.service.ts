@@ -47,7 +47,7 @@ export class CronHrEnginesService {
   }
 
   async sweepEffectiveDatedChanges(orgId: string): Promise<{ applied: number }> {
-    return this.effectiveChanges.applyDueChanges(orgId);
+    return this.effectiveChanges.applyDueChanges(orgId, null, { limit: 50 });
   }
 
   async sweepOverdueGoals(orgId: string): Promise<{ swept: number }> {

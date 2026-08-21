@@ -1,12 +1,5 @@
-import {
-  pgTable,
-  text,
-  integer,
-  timestamp,
-  index,
-  unique,
-  foreignKey,
-} from "drizzle-orm/pg-core";
+import { text, integer, timestamp, index, unique, foreignKey } from "drizzle-orm/pg-core";
+import { build } from "./namespaces";
 import { randomUUID } from "node:crypto";
 import { organizations, organizationMembers } from "../common/auth";
 import { pmWorkspaces } from "./pm-workspaces";
@@ -16,7 +9,7 @@ import { pmWorkspaces } from "./pm-workspaces";
  * Account). Product Management module permission + an active PM Workspace Membership is the
  * mandatory entry boundary for all PM Workspace / Managed Product / Delivery Team / Project work.
  */
-export const pmWorkspaceMemberships = pgTable(
+export const pmWorkspaceMemberships = build.table(
   "pm_workspace_memberships",
   {
     pmWorkspaceMembershipId: text("pm_workspace_membership_id")

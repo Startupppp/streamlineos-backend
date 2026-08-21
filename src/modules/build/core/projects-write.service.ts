@@ -55,7 +55,7 @@ export class ProjectsWriteService {
 
       if (!hasManage) {
         const project = await this.db.query.projects.findFirst({
-          where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
+          where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
           columns: { managerId: true },
         });
         if (!project) {
@@ -162,6 +162,7 @@ export class ProjectsWriteService {
                   eq(tickets.orgId, orgId),
                   eq(tickets.projectId, projectId),
                   inArray(tickets.assigneeId, removedMembers),
+                  isNull(tickets.deletedAt),
                   ne(tickets.status, "DONE"),
                   ne(tickets.status, "CANCELLED"),
                 ),
@@ -225,21 +226,23 @@ export class ProjectsWriteService {
     const orgId = u.orgId;
 
     const project = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
+      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
     });
     if (!project) throw new NotFoundException("Project not found");
 
+    const now = new Date();
     await this.db.transaction(async (tx) => {
       const subTickets = tx
         .select({ id: tickets.id })
         .from(tickets)
         .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)));
       await tx
+        .update(ticketComments)
+        .set({ deletedAt: now })
+        .where(sql`${ticketComments.ticketId} IN (${subTickets})`);
+      await tx
         .delete(ticketAssignees)
         .where(sql`${ticketAssignees.ticketId} IN (${subTickets})`);
-      await tx
-        .delete(ticketComments)
-        .where(sql`${ticketComments.ticketId} IN (${subTickets})`);
       await tx
         .delete(ticketAttachments)
         .where(sql`${ticketAttachments.ticketId} IN (${subTickets})`);
@@ -250,10 +253,12 @@ export class ProjectsWriteService {
         .delete(timesheets)
         .where(sql`${timesheets.ticketId} IN (${subTickets})`);
       await tx
-        .delete(tickets)
+        .update(tickets)
+        .set({ deletedAt: now })
         .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)));
       await tx
-        .delete(sprints)
+        .update(sprints)
+        .set({ deletedAt: now })
         .where(and(eq(sprints.projectId, projectId), eq(sprints.orgId, orgId)));
       await tx
         .delete(projectMembers)
@@ -267,7 +272,8 @@ export class ProjectsWriteService {
           ),
         );
       await tx
-        .delete(projects)
+        .update(projects)
+        .set({ deletedAt: now })
         .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId)));
     });
 
@@ -293,18 +299,18 @@ export class ProjectsWriteService {
     const orgId = u.orgId;
 
     const project = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
+      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
       columns: { id: true },
     });
     if (!project) throw new ProjectsNotFoundException();
 
     if (input.managedProductId !== null) {
       const [product] = await this.db
-        .select({ managedProductId: managedProducts.managedProductId })
+        .select({ managedProductId: managedProducts.id })
         .from(managedProducts)
         .where(
           and(
-            eq(managedProducts.managedProductId, input.managedProductId),
+            eq(managedProducts.id, input.managedProductId),
             eq(managedProducts.orgId, orgId),
             isNull(managedProducts.deletedAt),
           ),

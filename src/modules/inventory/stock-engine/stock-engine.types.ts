@@ -33,6 +33,8 @@ export interface StockEngineCommand {
   sourceType: string;
   sourceId: string;
   reason?: string;
+  /** Business date the movement belongs to (YYYY-MM-DD). Defaults to today. */
+  postingDate?: string;
   movements: StockMovement[];
 }
 

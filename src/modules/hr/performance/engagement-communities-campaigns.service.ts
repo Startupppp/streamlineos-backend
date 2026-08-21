@@ -34,7 +34,10 @@ export class EngagementCommunitiesCampaignsService {
         cursor
           ? or(
               lt(hrCommunities.createdAt, cursor.createdAt),
-              and(eq(hrCommunities.createdAt, cursor.createdAt), lt(hrCommunities.id, cursor.id)),
+              and(
+                eq(hrCommunities.createdAt, cursor.createdAt),
+                lt(hrCommunities.id, cursor.recordId),
+              ),
             )
           : undefined,
       ))
@@ -70,7 +73,7 @@ export class EngagementCommunitiesCampaignsService {
     return {
       items,
       nextCursor: hasMore
-        ? encodeTimestampCursor({ createdAt: last.createdAt, id: last.id })
+        ? encodeTimestampCursor({ createdAt: last.createdAt, recordId: last.id })
         : null,
     };
   }

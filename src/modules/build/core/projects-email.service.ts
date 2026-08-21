@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { tickets, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -60,7 +60,7 @@ export class ProjectsEmailService {
     if (targets.length === 0) return;
 
     const ticketData = await this.db.query.tickets.findFirst({
-      where: eq(tickets.id, ticketId),
+      where: and(eq(tickets.id, ticketId), isNull(tickets.deletedAt)),
       columns: { title: true, projectId: true, type: true, priority: true },
       with: { project: { columns: { name: true } } },
     });
@@ -98,7 +98,7 @@ export class ProjectsEmailService {
     status: "IN_REVIEW" | "CHANGES_REQUESTED",
   ): Promise<void> {
     const ticketData = await this.db.query.tickets.findFirst({
-      where: eq(tickets.id, ticketId),
+      where: and(eq(tickets.id, ticketId), isNull(tickets.deletedAt)),
       columns: { title: true, projectId: true, type: true, assigneeId: true, reporterId: true },
       with: { project: { columns: { name: true } } },
     });

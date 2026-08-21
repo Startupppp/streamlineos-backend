@@ -53,7 +53,7 @@ describe("Projects auth/RBAC (e2e)", () => {
     ["get", "/projects/1/tickets"],
     ["post", "/projects/1/tickets"],
     ["post", "/projects/1/tickets/bulk"],
-    ["patch", "/projects/1/tickets/reorder"],
+    ["patch", "/projects/1/tickets/2/rank"],
     ["get", "/projects/1/tickets/2"],
     ["patch", "/projects/1/tickets/2"],
     ["delete", "/projects/1/tickets/2"],

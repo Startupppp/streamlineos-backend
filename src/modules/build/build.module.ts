@@ -18,7 +18,6 @@ import { BuildWorkflowModule } from "./workflow/build-workflow.module";
 
 const BUILD_MODULES = [
   ProjectsModule,
-  ProjectsByIdModule,
   BuildApprovalsModule,
   BuildClientPortalModule,
   BuildCommentDraftsModule,
@@ -33,6 +32,9 @@ const BUILD_MODULES = [
   BuildQaModule,
   BuildTeamsModule,
   BuildWorkflowModule,
+  // Must stay last: its bare `build/:projectId` route shadows every literal
+  // sibling registered after it. Guarded by build-route-order.spec.ts.
+  ProjectsByIdModule,
 ];
 
 /**

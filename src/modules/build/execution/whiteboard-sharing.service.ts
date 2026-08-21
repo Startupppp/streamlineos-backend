@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, or } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import {
   organizationMembers,
@@ -29,7 +29,7 @@ import type {
 
 async function assertProject(db: Db, orgId: string, projectId: number): Promise<void> {
   const project = await db.query.projects.findFirst({
-    where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
+    where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
     columns: { id: true },
   });
   if (!project) throw new NotFoundException("Project not found");
@@ -67,6 +67,7 @@ export class WhiteboardSharingService {
           eq(projectWhiteboards.id, whiteboardId),
           eq(projectWhiteboards.projectId, projectId),
           eq(projectWhiteboards.orgId, u.orgId),
+          isNull(projectWhiteboards.deletedAt),
         ),
       )
       .limit(1);
@@ -116,7 +117,7 @@ export class WhiteboardSharingService {
     const [updated] = await this.db
       .update(projectWhiteboards)
       .set(setValues)
-      .where(and(eq(projectWhiteboards.id, whiteboardId), eq(projectWhiteboards.orgId, u.orgId)))
+      .where(and(eq(projectWhiteboards.id, whiteboardId), eq(projectWhiteboards.orgId, u.orgId), isNull(projectWhiteboards.deletedAt)))
       .returning();
 
     return {
@@ -139,7 +140,7 @@ export class WhiteboardSharingService {
     const [updated] = await this.db
       .update(projectWhiteboards)
       .set({ shareToken: newToken, updatedAt: new Date() })
-      .where(and(eq(projectWhiteboards.id, whiteboardId), eq(projectWhiteboards.orgId, u.orgId)))
+      .where(and(eq(projectWhiteboards.id, whiteboardId), eq(projectWhiteboards.orgId, u.orgId), isNull(projectWhiteboards.deletedAt)))
       .returning();
 
     return {
@@ -233,7 +234,16 @@ export class WhiteboardSharingService {
   async getPublicByToken(token: string) {
     const board = await withPublicToken(this.db, token, (tx) =>
       tx.query.projectWhiteboards.findFirst({
-        where: eq(projectWhiteboards.shareToken, token),
+        where: and(eq(projectWhiteboards.shareToken, token), isNull(projectWhiteboards.deletedAt)),
+        columns: {
+          name: true,
+          data: true,
+          visibility: true,
+          publicAccess: true,
+          linkExpiresAt: true,
+          allowExport: true,
+          updatedAt: true,
+        },
       }),
     );
 
@@ -257,7 +267,7 @@ export class WhiteboardSharingService {
   async updatePublicByToken(token: string, data: ExcalidrawSceneInput) {
     const board = await withPublicToken(this.db, token, (tx) =>
       tx.query.projectWhiteboards.findFirst({
-        where: eq(projectWhiteboards.shareToken, token),
+        where: and(eq(projectWhiteboards.shareToken, token), isNull(projectWhiteboards.deletedAt)),
         columns: { id: true, orgId: true, visibility: true, publicAccess: true, linkExpiresAt: true },
       }),
     );
@@ -281,13 +291,25 @@ export class WhiteboardSharingService {
         const [row] = await tx
           .update(projectWhiteboards)
           .set({ data, updatedAt: now })
-          .where(eq(projectWhiteboards.id, board.id))
+          .where(
+            and(
+              eq(projectWhiteboards.id, board.id),
+              eq(projectWhiteboards.shareToken, token),
+              eq(projectWhiteboards.visibility, "public"),
+              eq(projectWhiteboards.publicAccess, "editor"),
+              or(
+                isNull(projectWhiteboards.linkExpiresAt),
+                gt(projectWhiteboards.linkExpiresAt, now),
+              ),
+            ),
+          )
           .returning({ updatedAt: projectWhiteboards.updatedAt });
         return row;
       },
       { orgId: board.orgId },
     );
 
-    return { success: true, updatedAt: updated?.updatedAt ?? now };
+    if (!updated) throw new NotFoundException("Not found");
+    return { success: true, updatedAt: updated.updatedAt };
   }
 }

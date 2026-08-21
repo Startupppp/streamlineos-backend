@@ -16,6 +16,7 @@ export type RateQuery = RateMatchQuery;
 
 export interface ResolvedRate {
   billRate: number | null;
+  costRate: number | null;
   currency: string;
   source: "RATE_CARD" | "PROJECT_MEMBER" | null;
 }
@@ -38,6 +39,7 @@ export class RateResolverService {
 
     return {
       billRate: parseFloat(best.billRate),
+      costRate: best.costRate ? parseFloat(best.costRate) : null,
       currency: best.currency,
       source: "RATE_CARD",
     };
@@ -59,6 +61,7 @@ export class RateResolverService {
       return best
         ? {
             billRate: parseFloat(best.billRate),
+            costRate: best.costRate ? parseFloat(best.costRate) : null,
             currency: best.currency,
             source: "RATE_CARD" as ResolvedRate["source"],
           }
@@ -118,11 +121,12 @@ export class RateResolverService {
       if (memberRate !== undefined) {
         return {
           billRate: memberRate,
+          costRate: null,
           currency: defaultCurrency,
           source: "PROJECT_MEMBER",
         };
       }
-      return { billRate: null, currency: defaultCurrency, source: null };
+      return { billRate: null, costRate: null, currency: defaultCurrency, source: null };
     });
   }
 
@@ -176,12 +180,13 @@ export class RateResolverService {
       if (member && parseFloat(member.hourlyRate) > 0) {
         return {
           billRate: parseFloat(member.hourlyRate),
+          costRate: null,
           currency: defaultCurrency,
           source: "PROJECT_MEMBER",
         };
       }
     }
 
-    return { billRate: null, currency: defaultCurrency, source: null };
+    return { billRate: null, costRate: null, currency: defaultCurrency, source: null };
   }
 }

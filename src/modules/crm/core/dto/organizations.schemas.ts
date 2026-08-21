@@ -17,7 +17,7 @@ export const organizationCreateSchema = z.object({
   website: z.string().url().optional().or(z.literal("")),
   linkedinUrl: z.string().url().optional().or(z.literal("")),
   description: z.string().optional(),
-});
+}).strict();
 
 export const organizationUpdateSchema = z.object({
   name: z.string().min(1).max(200).optional(),
@@ -30,7 +30,7 @@ export const organizationUpdateSchema = z.object({
   healthScore: z.number().int().min(0).max(100).optional().nullable(),
   parentId: z.number().int().positive().optional().nullable(),
   notes: z.string().optional().nullable(),
-});
+}).strict();
 
 export type OrganizationListInput = z.infer<typeof organizationListSchema>;
 export type OrganizationCreateInput = z.infer<typeof organizationCreateSchema>;

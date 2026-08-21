@@ -5,7 +5,8 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, ilike, isNull, or } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
 import { organizationMembers, orgUnits } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -18,7 +19,12 @@ import type {
   UpdateOrgTeamInput,
   ListQueryInput,
 } from "./dto/org-hierarchy.schemas";
-import { getOrgUnitStatusFilter } from "./org-hierarchy-list-filters";
+import {
+  getOrgUnitCursorFilter,
+  getOrgUnitStatusFilter,
+  orgUnitNormalizedName,
+  toOrgUnitCursorPage,
+} from "./org-hierarchy-list-filters";
 
 const ORG_TEAM_COLUMNS = {
   id: orgUnits.id,
@@ -33,6 +39,12 @@ const ORG_TEAM_COLUMNS = {
   createdAt: orgUnits.createdAt,
   updatedAt: orgUnits.updatedAt,
   deletedAt: orgUnits.deletedAt,
+};
+
+const teamDepartments = alias(orgUnits, "team_departments");
+const ORG_TEAM_LIST_COLUMNS = {
+  ...ORG_TEAM_COLUMNS,
+  departmentName: teamDepartments.name,
 };
 
 type OrgTeamRow = Pick<
@@ -68,6 +80,15 @@ export function toOrgTeam(row: OrgTeamRow) {
   };
 }
 
+function toOrgTeamList(
+  row: OrgTeamRow & { departmentName: string | null },
+) {
+  return {
+    ...toOrgTeam(row),
+    departmentName: row.departmentName,
+  };
+}
+
 @Injectable()
 export class OrgHierarchyTeamsService {
   constructor(
@@ -77,9 +98,9 @@ export class OrgHierarchyTeamsService {
   ) {}
 
   async listTeams(orgId: string, query: ListQueryInput) {
-    const { page, limit, search, status } = query;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, search, status } = query;
     const statusFilter = getOrgUnitStatusFilter(status);
+    const cursorFilter = getOrgUnitCursorFilter(cursor);
     const filters = and(
       eq(orgUnits.orgId, orgId),
       eq(orgUnits.kind, "TEAM"),
@@ -93,21 +114,23 @@ export class OrgHierarchyTeamsService {
           ]
         : []),
       ...(statusFilter ? [statusFilter] : []),
+      ...(cursorFilter ? [cursorFilter] : []),
     );
-    const [rows, [{ count }]] = await Promise.all([
-      this.db
-        .select(ORG_TEAM_COLUMNS)
-        .from(orgUnits)
-        .where(filters)
-        .orderBy(asc(orgUnits.name), asc(orgUnits.id))
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(orgUnits)
-        .where(filters),
-    ]);
-    return { data: rows.map(toOrgTeam), total: count, page, limit };
+    const rows = await this.db
+      .select(ORG_TEAM_LIST_COLUMNS)
+      .from(orgUnits)
+      .leftJoin(
+        teamDepartments,
+        and(
+          eq(teamDepartments.id, orgUnits.parentId),
+          eq(teamDepartments.orgId, orgUnits.orgId),
+          eq(teamDepartments.kind, "DEPARTMENT"),
+        ),
+      )
+      .where(filters)
+      .orderBy(asc(orgUnitNormalizedName), asc(orgUnits.id))
+      .limit(limit + 1);
+    return toOrgUnitCursorPage(rows, limit, toOrgTeamList);
   }
 
   private async getTeamRow(
@@ -206,7 +229,7 @@ export class OrgHierarchyTeamsService {
     if (!row) throw new Error("Failed to create team");
 
     await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "TEAM"));
-    await this.audit.log({
+    await this.audit.logCritical({
       action: "org.team.created",
       userId,
       orgId,
@@ -269,7 +292,7 @@ export class OrgHierarchyTeamsService {
     if (!row) throw new NotFoundException("Team not found");
 
     await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "TEAM"));
-    await this.audit.log({
+    await this.audit.logCritical({
       action: "org.team.updated",
       userId,
       orgId,
@@ -296,7 +319,7 @@ export class OrgHierarchyTeamsService {
       );
 
     await this.cache.invalidate(CACHE_KEYS.orgUnits(orgId, "TEAM"));
-    await this.audit.log({
+    await this.audit.logCritical({
       action: "org.team.deleted",
       userId,
       orgId,

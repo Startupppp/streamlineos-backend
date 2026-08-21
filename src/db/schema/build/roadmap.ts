@@ -1,47 +1,67 @@
-import { pgTable, pgEnum, text, serial, timestamp, boolean, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import {
+  pgEnum,
+  text,
+  timestamp,
+  boolean,
+  integer,
+  decimal,
+  index,
+  unique,
+  uniqueIndex,
+  type AnyPgColumn,
+} from "drizzle-orm/pg-core";
+import { build } from "./namespaces";
+import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
 import { tickets } from "./tasks";
+import { contacts, crmOrganizations } from "../crm/contacts";
 
 export const roadmapStatusEnum = pgEnum("roadmap_status", ["planned", "in_progress", "completed", "cancelled"]);
 export const feedbackStatusEnum = pgEnum("feedback_status", ["open", "planned", "in_progress", "completed", "declined"]);
 export const changelogTypeEnum = pgEnum("changelog_type", ["feature", "improvement", "fix"]);
 
-export const roadmapItems = pgTable("roadmap_items", {
-  id: serial("id").primaryKey(),
+export const roadmapItems = build.table("roadmap_items", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   title: text("title").notNull(),
   description: text("description"),
   status: roadmapStatusEnum("status").default("planned").notNull(),
   category: text("category"),
-  isPublic: boolean("is_public").default(true).notNull(),
+  isPublic: boolean("is_public").default(false).notNull(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
   epicTicketId: integer("epic_ticket_id").references(() => tickets.id, { onDelete: "set null" }),
   targetQuarter: text("target_quarter"),
   sortOrder: integer("sort_order").default(0).notNull(),
   votes: integer("votes").default(0).notNull(),
+  reach: integer("reach"),
+  impact: integer("impact"),
+  confidence: integer("confidence"),
+  effort: integer("effort"),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
 }, (table) => [
-  index("idx_roadmap_items_org_status").on(table.orgId, table.status),
+  index("idx_roadmap_items_org_status").on(table.orgId, table.status).where(sql`deleted_at IS NULL`),
   unique("uniq_roadmap_items_org_id").on(table.orgId, table.id),
 ]);
 
-export const roadmapVotes = pgTable("roadmap_votes", {
-  id: serial("id").primaryKey(),
+export const roadmapVotes = build.table("roadmap_votes", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   roadmapItemId: integer("roadmap_item_id").references(() => roadmapItems.id, { onDelete: "cascade" }).notNull(),
   voterKey: text("voter_key").notNull(),
+  voterIpHash: text("voter_ip_hash"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uniq_roadmap_votes_item_voter").on(table.roadmapItemId, table.voterKey),
+  uniqueIndex("uniq_roadmap_votes_item_ip").on(table.roadmapItemId, table.voterIpHash).where(sql`voter_ip_hash IS NOT NULL`),
   unique("uniq_roadmap_votes_org_id").on(table.orgId, table.id),
 ]);
 
-export const feedbackPosts = pgTable("feedback_posts", {
-  id: serial("id").primaryKey(),
+export const feedbackPosts = build.table("feedback_posts", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   title: text("title").notNull(),
   description: text("description"),
@@ -50,28 +70,39 @@ export const feedbackPosts = pgTable("feedback_posts", {
   votes: integer("votes").default(0).notNull(),
   submittedByName: text("submitted_by_name"),
   submittedByEmail: text("submitted_by_email"),
+  crmContactId: integer("crm_contact_id").references(() => contacts.id, { onDelete: "set null" }),
+  crmOrganizationId: integer("crm_organization_id").references(() => crmOrganizations.id, { onDelete: "set null" }),
+  accountValueSnapshot: decimal("account_value_snapshot", { precision: 15, scale: 2 }),
   linkedRoadmapItemId: integer("linked_roadmap_item_id").references(() => roadmapItems.id, { onDelete: "set null" }),
+  duplicateOfId: integer("duplicate_of_id").references((): AnyPgColumn => feedbackPosts.id, { onDelete: "set null" }),
+  mergedAt: timestamp("merged_at", { withTimezone: true }),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
 }, (table) => [
-  index("idx_feedback_posts_org_status").on(table.orgId, table.status),
+  index("idx_feedback_posts_org_status").on(table.orgId, table.status).where(sql`deleted_at IS NULL`),
+  index("idx_feedback_posts_crm_contact").on(table.orgId, table.crmContactId).where(sql`deleted_at IS NULL`),
+  index("idx_feedback_posts_crm_org").on(table.orgId, table.crmOrganizationId).where(sql`deleted_at IS NULL`),
+  index("idx_feedback_posts_duplicate_of").on(table.orgId, table.duplicateOfId).where(sql`duplicate_of_id IS NOT NULL`),
   unique("uniq_feedback_posts_org_id").on(table.orgId, table.id),
 ]);
 
-export const feedbackVotes = pgTable("feedback_votes", {
-  id: serial("id").primaryKey(),
+export const feedbackVotes = build.table("feedback_votes", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   feedbackPostId: integer("feedback_post_id").references(() => feedbackPosts.id, { onDelete: "cascade" }).notNull(),
   voterKey: text("voter_key").notNull(),
+  voterIpHash: text("voter_ip_hash"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uniq_feedback_votes_post_voter").on(table.feedbackPostId, table.voterKey),
+  uniqueIndex("uniq_feedback_votes_post_ip").on(table.feedbackPostId, table.voterIpHash).where(sql`voter_ip_hash IS NOT NULL`),
   unique("uniq_feedback_votes_org_id").on(table.orgId, table.id),
 ]);
 
-export const changelogEntries = pgTable("changelog_entries", {
-  id: serial("id").primaryKey(),
+export const changelogEntries = build.table("changelog_entries", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   title: text("title").notNull(),
   content: text("content").default("").notNull(),
@@ -121,6 +152,14 @@ export const feedbackPostsRelations = relations(feedbackPosts, ({ one, many }) =
   linkedRoadmapItem: one(roadmapItems, {
     fields: [feedbackPosts.linkedRoadmapItemId],
     references: [roadmapItems.id],
+  }),
+  crmContact: one(contacts, {
+    fields: [feedbackPosts.crmContactId],
+    references: [contacts.id],
+  }),
+  crmOrganization: one(crmOrganizations, {
+    fields: [feedbackPosts.crmOrganizationId],
+    references: [crmOrganizations.id],
   }),
   postVotes: many(feedbackVotes),
 }));

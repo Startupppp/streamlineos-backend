@@ -7,6 +7,8 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
+import { WarehouseScopeService, type WarehouseScope } from "../stock-engine/warehouse-scope.service";
+import { CostVisibilityService, stripCostFields } from "../stock-engine/cost-visibility";
 import type {
   ListStockLevelsInput, ListTransactionsInput, AvailabilityQueryInput,
 } from "./dto/inv-stock.schemas";
@@ -16,12 +18,31 @@ export class InvStockService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly warehouseScope: WarehouseScopeService,
+    private readonly costVisibility: CostVisibilityService,
   ) {}
 
-  async listStockLevels(orgId: string, filters: ListStockLevelsInput) {
+  /**
+   * Warehouse scope as a SQL fragment plus a cache discriminator. The
+   * discriminator is mandatory: this list is cached per org, so a per-user
+   * predicate without it would serve one operator's warehouses to the next.
+   */
+  private scopeFragment(scope: WarehouseScope, orgId: string): { sql: SQL; key: string } {
+    if (scope === null) return { sql: sql``, key: "all" };
+    if (scope.length === 0) return { sql: sql`AND FALSE`, key: "none" };
+    const ids = sql.join(scope.map((id) => sql`${id}`), sql`, `);
+    return {
+      sql: sql`AND sl.location_id IN (SELECT id FROM inv_locations WHERE org_id = ${orgId} AND warehouse_id IN (${ids}))`,
+      key: [...scope].sort((a, b) => a - b).join("."),
+    };
+  }
+
+  async listStockLevels(orgId: string, userId: string, filters: ListStockLevelsInput) {
     const { warehouseId, locationId, productId, variantId, lotId, serialId, lowStock, negative, search, page, limit } = filters;
     const offset = (page - 1) * limit;
-    const hash = `${warehouseId ?? ""}:${locationId ?? ""}:${productId ?? ""}:${variantId ?? ""}:${lotId ?? ""}:${serialId ?? ""}:${lowStock ?? ""}:${negative ?? ""}:${search ?? ""}:${limit}:${offset}`;
+    const scope = this.scopeFragment(await this.warehouseScope.resolve(orgId, userId), orgId);
+    const showCost = await this.costVisibility.canSeeCost(orgId, userId);
+    const hash = `${showCost ? "cost" : "nocost"}:${scope.key}:${warehouseId ?? ""}:${locationId ?? ""}:${productId ?? ""}:${variantId ?? ""}:${lotId ?? ""}:${serialId ?? ""}:${lowStock ?? ""}:${negative ?? ""}:${search ?? ""}:${limit}:${offset}`;
 
     return this.cache.cachedVersioned(`inv:stock:levels:${orgId}`, hash, async () => {
 
@@ -48,6 +69,7 @@ export class InvStockService {
             (sl.on_hand::numeric - sl.committed::numeric - COALESCE(sl.blocked_qty, 0)::numeric - COALESCE(sl.quality_hold_qty, 0)::numeric) AS available
           FROM inv_stock_levels sl
           WHERE sl.org_id = ${orgId}
+            ${scope.sql}
             ${locationId ? sql`AND sl.location_id = ${locationId}` : sql``}
             ${variantId ? sql`AND sl.product_variant_id = ${variantId}` : sql``}
             ${lotId ? sql`AND sl.lot_id = ${lotId}` : sql``}
@@ -63,6 +85,7 @@ export class InvStockService {
         this.db.execute(sql`
           SELECT count(*)::int AS count FROM inv_stock_levels sl
           WHERE sl.org_id = ${orgId}
+            ${scope.sql}
             ${locationId ? sql`AND sl.location_id = ${locationId}` : sql``}
             ${variantId ? sql`AND sl.product_variant_id = ${variantId}` : sql``}
             ${lotId ? sql`AND sl.lot_id = ${lotId}` : sql``}
@@ -77,14 +100,20 @@ export class InvStockService {
 
       const countRow = countRows[0];
       const total = Number(countRow?.["count"] ?? 0);
-      return { items: rows, total, page, totalPages: Math.ceil(total / limit) };
+      const items = showCost ? rows : stripCostFields(rows);
+      return { items, total, page, totalPages: Math.ceil(total / limit) };
     }, CACHE_TTL.SHORT);
   }
 
-  async listTransactions(orgId: string, filters: ListTransactionsInput) {
+  async listTransactions(orgId: string, userId: string, filters: ListTransactionsInput) {
     const { productVariantId, warehouseId, locationId, transactionType, direction, search, fromDate, toDate, page, limit } = filters;
     const offset = (page - 1) * limit;
     const conditions: SQL[] = [eq(invStockTransactions.orgId, orgId)];
+    const scoped = this.warehouseScope.locationPredicate(
+      await this.warehouseScope.resolve(orgId, userId),
+      sql`${invStockTransactions.locationId}`,
+    );
+    conditions.push(scoped);
     if (productVariantId) conditions.push(eq(invStockTransactions.productVariantId, productVariantId));
     if (locationId) conditions.push(eq(invStockTransactions.locationId, locationId));
     if (transactionType) conditions.push(eq(invStockTransactions.transactionType, transactionType));
@@ -99,6 +128,7 @@ export class InvStockService {
       sql`${invStockTransactions.productVariantId} IN (SELECT v.id FROM inv_product_variants v JOIN inv_products p ON p.id = v.product_id WHERE p.org_id = ${orgId} AND (p.name ILIKE ${"%" + search + "%"} OR p.sku ILIKE ${"%" + search + "%"} OR v.sku ILIKE ${"%" + search + "%"} OR v.barcode ILIKE ${"%" + search + "%"}))`,
     );
 
+    const showCost = await this.costVisibility.canSeeCost(orgId, userId);
     const where = and(...conditions);
     const [items, countResult] = await Promise.all([
       this.db.query.invStockTransactions.findMany({
@@ -118,11 +148,17 @@ export class InvStockService {
       this.db.select({ count: sql<number>`count(*)::int` }).from(invStockTransactions).where(where),
     ]);
 
-    return { items, total: countResult[0]?.count ?? 0, page, totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit) };
+    return {
+      items: showCost ? items : stripCostFields(items),
+      total: countResult[0]?.count ?? 0,
+      page,
+      totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit),
+    };
   }
 
-  async getAvailability(orgId: string, filters: AvailabilityQueryInput) {
+  async getAvailability(orgId: string, userId: string, filters: AvailabilityQueryInput) {
     const { variantId, warehouseId } = filters;
+    const scope = this.scopeFragment(await this.warehouseScope.resolve(orgId, userId), orgId);
 
     // [B1-09] stockRow, incomingRow, outgoingRow are fully independent — run in parallel.
     // [B1-23] No typed generic on db.execute; fields read via String()/Number() converters below.
@@ -135,6 +171,7 @@ export class InvStockService {
           COALESCE(SUM(COALESCE(quality_hold_qty, 0)::numeric), 0)::text AS quality_hold_qty
         FROM inv_stock_levels sl
         WHERE sl.org_id = ${orgId} AND sl.product_variant_id = ${variantId}
+        ${scope.sql}
         ${warehouseId ? sql`AND sl.location_id IN (SELECT id FROM inv_locations WHERE warehouse_id = ${warehouseId})` : sql``}
       `),
       this.db.execute(sql`

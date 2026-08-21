@@ -26,12 +26,17 @@ import type {
 } from "./dto/users.schemas";
 import { withClientInfo } from "../../common/http/parse-user-agent";
 import { syncOrgUnitPlacement } from "../../common/org/sync-org-unit-placement";
+import { SessionsService } from "../sessions/sessions.service";
+
+/** Caps the history arrays so one export cannot pull an unbounded audit trail. */
+const EXPORT_HISTORY_LIMIT = 500;
 
 @Injectable()
 export class UserProfileService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly sessions: SessionsService,
   ) {}
 
   private async assertMember(orgId: string, userId: string): Promise<void> {
@@ -71,6 +76,7 @@ export class UserProfileService {
       .where(
         and(eq(userSessions.id, sessionId), eq(userSessions.userId, userId)),
       );
+    await this.sessions.publishRevocations([sessionId]);
     this.audit.log({
       action: "user.session.revoked",
       userId: actorUserId,
@@ -84,10 +90,17 @@ export class UserProfileService {
 
   async revokeAllSessions(orgId: string, userId: string, actorUserId: string) {
     await this.assertMember(orgId, userId);
+    const active = await this.db
+      .select({ id: userSessions.id })
+      .from(userSessions)
+      .where(
+        and(eq(userSessions.userId, userId), eq(userSessions.isRevoked, false)),
+      );
     await this.db
       .update(userSessions)
       .set({ isRevoked: true })
       .where(eq(userSessions.userId, userId));
+    await this.sessions.publishRevocations(active.map((session) => session.id));
     this.audit.log({
       action: "user.sessions.revoked_all",
       userId: actorUserId,
@@ -357,6 +370,69 @@ export class UserProfileService {
     });
 
     return { success: true };
+  }
+
+  /**
+   * DPDP/GDPR subject access export for ONE person, composed from the existing
+   * per-user readers rather than new queries — each already re-asserts
+   * membership and tenant scope, so coverage cannot drift between the UI and
+   * the export.
+   *
+   * `coverage` is returned deliberately: a subject access request must state
+   * what it covers. This is identity, membership, preferences, sessions, login
+   * history and audit trail. It does NOT sweep module-owned records (HR
+   * documents, payroll, CRM ownership); those live in their own modules and
+   * must be appended by their owners before this is presented as a complete
+   * SAR response.
+   */
+  async exportUserData(orgId: string, userId: string) {
+    await this.assertMember(orgId, userId);
+
+    const [identity] = await this.db
+      .select({
+        id: users.id,
+        email: users.email,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        phone: users.phone,
+        designation: users.designation,
+        image: users.image,
+        emailVerified: users.emailVerified,
+        createdAt: users.createdAt,
+      })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    if (!identity) throw new NotFoundException("User not found");
+
+    const [membership, preferences, sessions, loginHistory, auditLog] = await Promise.all([
+      this.getMembership(orgId, userId),
+      this.getPreferences(orgId, userId),
+      this.getUserSessions(orgId, userId),
+      this.getLoginHistory(orgId, userId, { page: 1, limit: EXPORT_HISTORY_LIMIT, success: undefined }),
+      this.getUserAuditLog(orgId, userId, { page: 1, limit: EXPORT_HISTORY_LIMIT }),
+    ]);
+
+    return {
+      subject: identity,
+      membership,
+      preferences,
+      sessions,
+      loginHistory,
+      auditLog,
+      coverage: {
+        includes: [
+          "identity",
+          "membership",
+          "preferences",
+          "sessions",
+          "loginHistory",
+          "auditLog",
+        ],
+        excludes: ["hr", "payroll", "crm-owned records"],
+        historyRowCap: EXPORT_HISTORY_LIMIT,
+      },
+    };
   }
 
   async getAuditLog(orgId: string, params: ListAuditInput) {

@@ -17,8 +17,23 @@ const TIERS: Record<string, Tier> = {
   "auth:magic-link-verify": { limit: 60, windowSecs: 60 },
   "auth:email-otp": { limit: 3, windowSecs: 600 },
   "auth:email-otp-verify": { limit: 10, windowSecs: 600 },
+  // Provider bounce/complaint callbacks. Generous — a real provider can burst — but
+  // bounded so an attacker who obtains the signing secret cannot flood the write path.
+  "webhook:email": { limit: 600, windowSecs: 60 },
+  // SEC-004. These three were called with no TIERS entry, so check() returned
+  // allowed for an unknown key and the guard was a no-op while looking protected.
+  // Both hr-form routes are @Public() and one of them writes.
+  "hr-form:public-view": { limit: 60, windowSecs: 60 },
+  "hr-form:public-submit": { limit: 5, windowSecs: 3600 },
+  "platform-visit": { limit: 120, windowSecs: 60 },
+  // COMP-002. @Public() one-click unsubscribe; generous enough for a mail client
+  // prefetching the link, bounded against enumeration.
+  "notifications:unsubscribe": { limit: 30, windowSecs: 60 },
   "public:contact": { limit: 5, windowSecs: 3600 },
   "public:waitlist": { limit: 5, windowSecs: 3600 },
+  "public:roadmap": { limit: 60, windowSecs: 60 },
+  "public:roadmap-vote": { limit: 10, windowSecs: 3600 },
+  "public:roadmap-feedback": { limit: 5, windowSecs: 3600 },
   "chat:send-message": { limit: 30, windowSecs: 60 },
   "chat:huddle": { limit: 20, windowSecs: 60 },
   "chat:huddle-signal": { limit: 240, windowSecs: 60 },
@@ -48,6 +63,12 @@ const TIERS: Record<string, Tier> = {
   "sign:bulk-send-create": { limit: 5, windowSecs: 3600 },
   "mail:send": { limit: 30, windowSecs: 60 },
   "mail:reply": { limit: 30, windowSecs: 60 },
+  "hr:attendance-report": { limit: 5, windowSecs: 3600 },
+  "hr:employee-backfill": { limit: 3, windowSecs: 3600 },
+  "hr:employee-bulk-onboard": { limit: 10, windowSecs: 3600 },
+  "hr:employee-export": { limit: 5, windowSecs: 3600 },
+  "hr:effective-changes-apply": { limit: 10, windowSecs: 3600 },
+  "hr:onboarding-reminders": { limit: 3, windowSecs: 3600 },
   "ai:invoke": { limit: 30, windowSecs: 60 },
   "ai:chat": { limit: 20, windowSecs: 60 },
   "ai:vision": { limit: 10, windowSecs: 60 },
@@ -57,6 +78,7 @@ const TIERS: Record<string, Tier> = {
   "module-access:group-mutate": { limit: 30, windowSecs: 60 },
   "ownership:transfer": { limit: 5, windowSecs: 3600 },
   "ownership:force-set": { limit: 10, windowSecs: 3600 },
+  "crm:public-unsubscribe": { limit: 20, windowSecs: 3600 },
 };
 
 const DEV_LIMIT_MULTIPLIER = process.env.NODE_ENV === "production" ? 1 : 10;
@@ -74,7 +96,18 @@ export class RateLimitService {
 
   async check(tier: string, identifier: string): Promise<RateLimitResult> {
     const t = TIERS[tier];
-    if (!t) return { allowed: true, retryAfterSecs: 0 };
+    // SEC-004. This used to `return { allowed: true }`, so a decorator or a call
+    // with a typo'd or unregistered tier looked protected in review and silently
+    // was not — which is how hr-form:public-view, hr-form:public-submit and
+    // platform-visit ran unlimited. Deny-by-default (§20): every tier reaching this
+    // method has been enumerated and declared, so an unknown one is a bug, and a
+    // 429 is trivially reversible by adding the entry. Silent exposure is not.
+    if (!t) {
+      this.logger.error(
+        `Unknown rate-limit tier "${tier}" — denying. Add it to TIERS in rate-limit.service.ts.`,
+      );
+      return { allowed: false, retryAfterSecs: 60 };
+    }
     const effectiveLimit = t.limit * DEV_LIMIT_MULTIPLIER;
     const now = Date.now();
     const windowMs = t.windowSecs * 1000;

@@ -217,7 +217,7 @@ export class NotificationsReadService {
       .from(tickets)
       .leftJoin(projects, eq(projects.id, tickets.projectId))
       .leftJoin(users, eq(users.id, tickets.assigneeId))
-      .where(and(eq(tickets.orgId, orgId), inArray(tickets.id, ticketIds)));
+      .where(and(eq(tickets.orgId, orgId), isNull(tickets.deletedAt), inArray(tickets.id, ticketIds)));
 
     const byId = new Map<number, NotificationTicketContext>();
     for (const ticket of ticketRows) {

@@ -75,7 +75,7 @@ export class PayrollRunLockService {
           sql`${payrollRuns.id} <> ${runId}`,
           sql`${payrollRuns.generationLockToken} IS NOT NULL`,
           sql`${payrollRuns.generationLockedAt} IS NOT NULL`,
-          sql`${payrollRuns.generationLockedAt} >= ${staleBefore}`,
+          sql`${payrollRuns.generationLockedAt} >= ${staleBefore.toISOString()}::timestamptz`,
         ),
       )
       .limit(1);

@@ -182,7 +182,10 @@ export class UsersController {
   @Post("invitations/:invitationId/resend")
   @HttpCode(200)
   resendInvite(@Param("invitationId") invitationId: string, @CurrentUser() u: CurrentUserContext) {
-    return this.invitations.resend(u.orgId, invitationId, u.userId);
+    return this.invitations.resend(u.orgId, invitationId, {
+      userId: u.userId,
+      isOrgOwner: u.isOrgOwner,
+    });
   }
 
   @RequirePermission("settings:organization:manage")
@@ -204,7 +207,10 @@ export class UsersController {
   @RequirePermission("settings:organization:manage")
   @Delete("invitations/:invitationId")
   cancelInvite(@Param("invitationId") invitationId: string, @CurrentUser() u: CurrentUserContext) {
-    return this.invitationsLifecycle.cancel(u.orgId, invitationId, u.userId);
+    return this.invitationsLifecycle.cancel(u.orgId, invitationId, {
+      userId: u.userId,
+      isOrgOwner: u.isOrgOwner,
+    });
   }
 
   // ── Parameterized :userId routes (must come after all static routes) ──
@@ -261,6 +267,12 @@ export class UsersController {
   @Delete(":userId/sessions")
   revokeAllSessions(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
     return this.userProfile.revokeAllSessions(u.orgId, userId, u.userId);
+  }
+
+  @RequirePermission("settings:organization:manage")
+  @Get(":userId/data-export")
+  exportUserData(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
+    return this.userProfile.exportUserData(u.orgId, userId);
   }
 
   @RequirePermission("settings:organization:manage")

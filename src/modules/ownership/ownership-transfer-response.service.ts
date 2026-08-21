@@ -18,6 +18,7 @@ import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { logger } from "../../common/logger/logger.service";
 import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
 import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
 import { syncStructuralRoleAssignment } from "../../common/rbac/sync-structural-role";
@@ -31,6 +32,7 @@ import {
   resolveMembershipUserIds,
 } from "./ownership-members.helper";
 import type { DeclineTransferInput } from "./dto/ownership.schemas";
+import type { NotificationEventKey } from "../notifications/notification-events.catalog";
 
 @Injectable()
 export class OwnershipTransferResponseService {
@@ -181,7 +183,12 @@ export class OwnershipTransferResponseService {
         message: `Your ownership of ${subject} has been transferred and is now held by the person you nominated. Your own permissions have changed.`,
         link: "/settings/organization",
       })
-      .catch(() => undefined);
+      .catch((error: unknown) => {
+        logger.error("ownership transfer accepted notification failed", {
+          error,
+          transferId,
+        });
+      });
 
     return { success: true as const };
   }
@@ -441,7 +448,12 @@ export class OwnershipTransferResponseService {
           ? `Your ownership transfer request was declined. Reason: ${input.reason}`
           : "Your ownership transfer request was declined. Ownership is unchanged.",
       },
-    ).catch(() => undefined);
+    ).catch((error: unknown) => {
+      logger.error("ownership transfer declined notification failed", {
+        error,
+        transferId,
+      });
+    });
 
     return { success: true as const };
   }
@@ -527,7 +539,12 @@ export class OwnershipTransferResponseService {
         message:
           "The ownership transfer nominating you was withdrawn. No action is needed.",
       },
-    ).catch(() => undefined);
+    ).catch((error: unknown) => {
+      logger.error("ownership transfer withdrawn notification failed", {
+        error,
+        transferId,
+      });
+    });
 
     return { success: true as const };
   }
@@ -537,7 +554,7 @@ export class OwnershipTransferResponseService {
     actorUserId: string,
     transferId: string,
     membershipId: number,
-    payload: { eventKey: string; title: string; message: string },
+    payload: { eventKey: NotificationEventKey; title: string; message: string },
   ): Promise<void> {
     const targetUserIds = await resolveMembershipUserIds(this.db, orgId, [
       membershipId,

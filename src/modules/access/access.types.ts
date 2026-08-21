@@ -19,6 +19,7 @@ export interface AccessSnapshot {
   scopes: Record<string, DataScope>;
   modules: Record<string, boolean>;
   isOrgOwner: boolean;
+  canManageOrganizationMembership: boolean;
   mfa: MfaState;
   version: number;
 }

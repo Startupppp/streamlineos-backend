@@ -2,7 +2,12 @@ import { Inject, Injectable } from "@nestjs/common";
 import { auditLogs } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { getTenantContext, withTenant } from "../tenant";
+import {
+  getTenantContext,
+  registerAfterCommit,
+  runOutsideTenantContext,
+  withTenant,
+} from "../tenant";
 import { logger } from "../logger/logger.service";
 
 export interface AuditEntry {
@@ -27,12 +32,17 @@ export interface AuditEntry {
 export class AuditService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
+  /** Best-effort telemetry only. Transactional/security audit must use logCritical. */
   log(entry: AuditEntry): void {
-    void this.write(entry).catch((error: unknown) =>
-      logger.error("audit.log failed", { error, action: entry.action }),
-    );
+    const dispatch = () =>
+      runOutsideTenantContext(() => this.write(entry)).catch(
+        (error: unknown) =>
+          logger.error("audit.log failed", { error, action: entry.action }),
+      );
+    if (!registerAfterCommit(dispatch)) void dispatch();
   }
 
+  /** Awaited and transaction-aware; failures prevent the enclosing mutation from committing. */
   async logCritical(entry: AuditEntry): Promise<void> {
     await this.write(entry);
   }

@@ -1,10 +1,11 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { eq, and, isNull, desc } from "drizzle-orm";
-import { notificationPreferences, notificationPolicyDefaults, notificationAuditLogs, notificationSuppressionRules } from "../../db/schema";
+import { notificationPreferences, notificationPolicyDefaults, notificationAuditLogs, notificationPreferenceRules, notificationSuppressionRules } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { UpdatePreferenceInput, EventPreferenceInput, CreateSuppressionInput } from "./dto/preference.schemas";
 import { NotificationEventRegistryService } from "./notification-event-registry.service";
+import { ALL_CHANNELS, type NotificationChannel } from "./notification.types";
 
 type EventPrefMap = Record<string, { channels?: Record<string, boolean>; muted?: boolean; mode?: string }>;
 
@@ -17,7 +18,6 @@ const DEFAULT_PREFERENCES = {
   soundEnabled: true,
   quietHoursStart: null as string | null,
   quietHoursEnd: null as string | null,
-  quietHoursTimezone: "UTC",
   quietHoursWeekends: true,
   allowCriticalOverride: true,
   digestMode: "disabled" as "disabled" | "hourly" | "daily" | "weekly",
@@ -26,6 +26,10 @@ const DEFAULT_PREFERENCES = {
   eventPreferences: {} as EventPrefMap,
   modulePreferences: {} as Record<string, { mode?: string; muted?: boolean }>,
 };
+
+function isNotificationChannel(value: string): value is NotificationChannel {
+  return (ALL_CHANNELS as readonly string[]).includes(value);
+}
 
 @Injectable()
 export class NotificationPreferencesService {
@@ -80,8 +84,113 @@ export class NotificationPreferencesService {
       .values(insertValues)
       .onConflictDoUpdate({ target: notificationPreferences.userId, set: updateSet })
       .returning();
+
+    // SCH-003 write cutover. Routing resolves mutes and category switches from
+    // `notification_preference_rules` ONLY — the JSONB columns below are no longer read.
+    // Without this projection the preference centre would still write, still show the
+    // toggle as saved, and change nothing about what actually gets sent.
+    await this.projectToRules(orgId, userId, dto);
+
     await this.audit(orgId, userId, "preference.updated", { fields: Object.keys(dto) });
     return result;
+  }
+
+  /**
+   * Translates the JSONB preference shapes the UI submits into rule rows.
+   *
+   * A rule row means "the user has an opinion"; absence means "fall through to the
+   * defaults", which is why an ON state deletes rather than storing a row — persisting
+   * the default would make a later change to that default silently not apply.
+   *
+   * The JSONB columns are still written by the caller above: this is the expand half of
+   * expand-contract, so a rollback of the read path still finds its data intact.
+   */
+  private async projectToRules(
+    orgId: string,
+    userId: string,
+    dto: UpdatePreferenceInput,
+  ): Promise<void> {
+    const writes: Array<{
+      scopeType: "EVENT" | "MODULE" | "CATEGORY";
+      scopeKey: string;
+      channel: NotificationChannel;
+      on: boolean;
+    }> = [];
+
+    if (dto.categories) {
+      for (const [category, on] of Object.entries(dto.categories))
+        for (const channel of ALL_CHANNELS)
+          writes.push({ scopeType: "CATEGORY", scopeKey: category, channel, on: on !== false });
+    }
+
+    if (dto.modulePreferences) {
+      for (const [module, pref] of Object.entries(dto.modulePreferences))
+        for (const channel of ALL_CHANNELS)
+          writes.push({ scopeType: "MODULE", scopeKey: module, channel, on: pref?.muted !== true });
+    }
+
+    if (dto.eventPreferences) {
+      for (const [eventKey, pref] of Object.entries(dto.eventPreferences)) {
+        // An explicit per-channel map wins; a bare `muted` applies to every channel.
+        const channels = pref?.channels;
+        if (channels && Object.keys(channels).length > 0) {
+          for (const [channel, on] of Object.entries(channels)) {
+            // The JSONB map is free-form, so a stale or misspelled channel key must not
+            // become a rule row the routing layer will never match.
+            if (!isNotificationChannel(channel)) continue;
+            writes.push({ scopeType: "EVENT", scopeKey: eventKey, channel, on: on !== false });
+          }
+        } else {
+          for (const channel of ALL_CHANNELS)
+            writes.push({ scopeType: "EVENT", scopeKey: eventKey, channel, on: pref?.muted !== true });
+        }
+      }
+    }
+
+    if (writes.length === 0) return;
+
+    const off = writes.filter((w) => !w.on);
+    const on = writes.filter((w) => w.on);
+
+    for (const w of on) {
+      await this.db
+        .delete(notificationPreferenceRules)
+        .where(
+          and(
+            eq(notificationPreferenceRules.orgId, orgId),
+            eq(notificationPreferenceRules.userId, userId),
+            eq(notificationPreferenceRules.scopeType, w.scopeType),
+            eq(notificationPreferenceRules.scopeKey, w.scopeKey),
+            eq(notificationPreferenceRules.channel, w.channel),
+          ),
+        );
+    }
+
+    if (off.length > 0) {
+      await this.db
+        .insert(notificationPreferenceRules)
+        .values(
+          off.map((w) => ({
+            orgId,
+            userId,
+            scopeType: w.scopeType,
+            scopeKey: w.scopeKey,
+            channel: w.channel,
+            mode: "OFF" as const,
+            updatedAt: new Date(),
+          })),
+        )
+        .onConflictDoUpdate({
+          target: [
+            notificationPreferenceRules.orgId,
+            notificationPreferenceRules.userId,
+            notificationPreferenceRules.scopeType,
+            notificationPreferenceRules.scopeKey,
+            notificationPreferenceRules.channel,
+          ],
+          set: { mode: "OFF", updatedAt: new Date() },
+        });
+    }
   }
 
   async getEventCatalog(orgId: string, userId: string) {

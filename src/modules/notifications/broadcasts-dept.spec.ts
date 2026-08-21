@@ -19,7 +19,7 @@ const mockCache = {
 };
 const mockAudit = { log: jest.fn() };
 
-function makeBroadcast(audienceOverride: { type: string; departmentIds?: string[] }) {
+function makeBroadcast() {
   return {
     id: 1,
     orgId: ORG_ID,
@@ -29,7 +29,11 @@ function makeBroadcast(audienceOverride: { type: string; departmentIds?: string[
     priority: "NORMAL" as const,
     category: "HRMS" as const,
     channels: ["IN_APP"] as string[],
-    audience: audienceOverride,
+    // SCH-017: the JSONB is still written, but resolution reads audienceType plus the
+    // junction table. Left populated here precisely so a regression back onto the JSONB
+    // path would still fail these tests rather than quietly pass.
+    audience: { type: "departments", departmentIds: [DEPT_ID_1, DEPT_ID_2] },
+    audienceType: "departments" as const,
     status: "DRAFT" as const,
     scheduledAt: null,
     sentAt: null,
@@ -48,6 +52,44 @@ describe("BroadcastsService — department audience recipient resolution", () =>
     select: jest.Mock;
     transaction: jest.Mock;
   };
+  let memberWhere: jest.Mock;
+
+  /**
+   * Two reads now happen: the audience targets, then the members those targets expand
+   * to. The member query is the one with the join, so asserting on it distinguishes
+   * "resolved nobody" from "never asked".
+   */
+  function mockReads(targetIds: string[], members: Array<{ userId: string }>) {
+    memberWhere = jest.fn().mockResolvedValue(members);
+    const junctionWhere = jest.fn().mockResolvedValue(targetIds.map((targetId) => ({ targetId })));
+    mockDb.select.mockReturnValue({
+      from: jest.fn().mockReturnValue({
+        where: junctionWhere,
+        innerJoin: jest.fn().mockReturnValue({ where: memberWhere }),
+      }),
+    });
+    return { junctionWhere };
+  }
+
+  function mockPublishTransaction(recipientCount: number) {
+    const updated = {
+      ...makeBroadcast(),
+      status: "SENT" as const,
+      sentAt: new Date(),
+      recipientCount,
+      deliveredCount: recipientCount,
+    };
+    mockDb.transaction.mockImplementation((fn: (tx: unknown) => Promise<unknown>) =>
+      fn({
+        insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue([]) }),
+        update: jest.fn().mockReturnValue({
+          set: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([updated]) }),
+          }),
+        }),
+      }),
+    );
+  }
 
   beforeEach(async () => {
     jest.resetAllMocks();
@@ -71,84 +113,36 @@ describe("BroadcastsService — department audience recipient resolution", () =>
   });
 
   it("resolves department members via orgDepartmentId and reports the correct recipient count", async () => {
-    const broadcast = makeBroadcast({ type: "departments", departmentIds: [DEPT_ID_1, DEPT_ID_2] });
-    mockDb.query.broadcasts.findFirst.mockResolvedValue(broadcast);
-
-    const whereChain = { where: jest.fn().mockResolvedValue([{ userId: USER_ID_A }, { userId: USER_ID_B }]) };
-    const innerJoinChain = { innerJoin: jest.fn().mockReturnValue(whereChain) };
-    const fromChain = { from: jest.fn().mockReturnValue(innerJoinChain) };
-    mockDb.select.mockReturnValue(fromChain);
-
-    const updatedBroadcast = { ...broadcast, status: "SENT" as const, sentAt: new Date(), recipientCount: 2, deliveredCount: 2 };
-    mockDb.transaction.mockImplementation((fn: (tx: unknown) => Promise<unknown>) => {
-      const tx = {
-        insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue([]) }),
-        update: jest.fn().mockReturnValue({
-          set: jest.fn().mockReturnValue({
-            where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([updatedBroadcast]) }),
-          }),
-        }),
-      };
-      return fn(tx);
-    });
+    mockDb.query.broadcasts.findFirst.mockResolvedValue(makeBroadcast());
+    mockReads([DEPT_ID_1, DEPT_ID_2], [{ userId: USER_ID_A }, { userId: USER_ID_B }]);
+    mockPublishTransaction(2);
 
     const result = await svc.publish(ORG_ID, ACTOR_ID, 1);
 
     expect(result.status).toBe("SENT");
     expect(result.recipientCount).toBe(2);
-    expect(mockDb.select).toHaveBeenCalledTimes(1);
-    expect(fromChain.from).toHaveBeenCalledTimes(1);
-    expect(innerJoinChain.innerJoin).toHaveBeenCalledTimes(1);
-    expect(whereChain.where).toHaveBeenCalledTimes(1);
+    expect(memberWhere).toHaveBeenCalledTimes(1);
   });
 
-  it("returns zero recipients and skips the DB query when departmentIds is empty (deliberate no-op guard)", async () => {
-    const broadcast = makeBroadcast({ type: "departments", departmentIds: [] });
-    mockDb.query.broadcasts.findFirst.mockResolvedValue(broadcast);
-
-    const updatedBroadcast = { ...broadcast, status: "SENT" as const, sentAt: new Date(), recipientCount: 0, deliveredCount: 0 };
-    mockDb.transaction.mockImplementation((fn: (tx: unknown) => Promise<unknown>) => {
-      const tx = {
-        insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue([]) }),
-        update: jest.fn().mockReturnValue({
-          set: jest.fn().mockReturnValue({
-            where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([updatedBroadcast]) }),
-          }),
-        }),
-      };
-      return fn(tx);
-    });
+  it("returns zero recipients and skips the member query when the audience has no targets", async () => {
+    mockDb.query.broadcasts.findFirst.mockResolvedValue(makeBroadcast());
+    mockReads([], []);
+    mockPublishTransaction(0);
 
     const result = await svc.publish(ORG_ID, ACTOR_ID, 1);
 
     expect(result.recipientCount).toBe(0);
-    expect(mockDb.select).not.toHaveBeenCalled();
+    // The junction is still read; the expensive members join is not reached.
+    expect(memberWhere).not.toHaveBeenCalled();
   });
 
   it("deduplicates repeated department ids before querying", async () => {
-    const broadcast = makeBroadcast({ type: "departments", departmentIds: [DEPT_ID_1, DEPT_ID_1, DEPT_ID_2] });
-    mockDb.query.broadcasts.findFirst.mockResolvedValue(broadcast);
-
-    const whereChain = { where: jest.fn().mockResolvedValue([{ userId: USER_ID_A }]) };
-    const innerJoinChain = { innerJoin: jest.fn().mockReturnValue(whereChain) };
-    const fromChain = { from: jest.fn().mockReturnValue(innerJoinChain) };
-    mockDb.select.mockReturnValue(fromChain);
-
-    const updatedBroadcast = { ...broadcast, status: "SENT" as const, sentAt: new Date(), recipientCount: 1, deliveredCount: 1 };
-    mockDb.transaction.mockImplementation((fn: (tx: unknown) => Promise<unknown>) => {
-      const tx = {
-        insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue([]) }),
-        update: jest.fn().mockReturnValue({
-          set: jest.fn().mockReturnValue({
-            where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([updatedBroadcast]) }),
-          }),
-        }),
-      };
-      return fn(tx);
-    });
+    mockDb.query.broadcasts.findFirst.mockResolvedValue(makeBroadcast());
+    mockReads([DEPT_ID_1, DEPT_ID_1, DEPT_ID_2], [{ userId: USER_ID_A }]);
+    mockPublishTransaction(1);
 
     await svc.publish(ORG_ID, ACTOR_ID, 1);
 
-    expect(mockDb.select).toHaveBeenCalledTimes(1);
+    expect(memberWhere).toHaveBeenCalledTimes(1);
   });
 });

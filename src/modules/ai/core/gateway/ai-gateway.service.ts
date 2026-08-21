@@ -4,6 +4,7 @@ import { z, ZodError } from "zod";
 import { LlmService } from "../providers/llm.service";
 import { AiUsageService } from "../services/ai-usage.service";
 import { AuditService } from "../../../../common/audit/audit.service";
+import { logger } from "../../../../common/logger/logger.service";
 import { redactSensitiveData } from "../redaction.util";
 import { AI_CREDIT_LEDGER, type AiCreditLedger } from "./credit-ledger.interface";
 import { computeTokenCharge, milliToCredits } from "../billing/ai-model-pricing.constants";
@@ -362,32 +363,41 @@ export class AiGatewayService {
     costUsd = 0,
   ): Promise<void> {
     if (charge && reservationId !== 0) {
-      void this.ledger
-        .settle(reservationId, {
+      // Awaited: this is the debit. Swallowing it silently loses revenue and, once the
+      // caller opts out of the request transaction, would run with no tenant context at all.
+      try {
+        await this.ledger.settle(reservationId, {
+          orgId: actor.orgId,
           actualMilli,
           model,
           promptTokens: usage.promptTokens ?? undefined,
           completionTokens: usage.completionTokens ?? undefined,
           totalTokens: usage.totalTokens ?? undefined,
           costUsd,
-        })
-        .catch(() => undefined);
+        });
+      } catch (error: unknown) {
+        logger.error("AI credit settlement failed", {
+          error: error instanceof Error ? (error.stack ?? error.message) : String(error),
+          reservationId,
+          orgId: actor.orgId,
+          feature,
+          correlationId,
+        });
+      }
     }
 
-    void this.usageSvc
-      .track({
-        orgId: actor.orgId,
-        userId: actor.userId,
-        feature,
-        model,
-        promptTokens: usage.promptTokens ?? undefined,
-        completionTokens: usage.completionTokens ?? undefined,
-        latencyMs,
-        correlationId,
-        outcome,
-        creditsMilli: actualMilli,
-      })
-      .catch(() => undefined);
+    await this.usageSvc.track({
+      orgId: actor.orgId,
+      userId: actor.userId,
+      feature,
+      model,
+      promptTokens: usage.promptTokens ?? undefined,
+      completionTokens: usage.completionTokens ?? undefined,
+      latencyMs,
+      correlationId,
+      outcome,
+      creditsMilli: actualMilli,
+    });
 
     this.audit.log({
       action: "ai.invoke",
@@ -408,6 +418,26 @@ export class AiGatewayService {
     });
   }
 
+  private async releaseReservation(
+    reservationId: number,
+    reason: string,
+    orgId: string,
+    correlationId: string,
+  ): Promise<void> {
+    if (reservationId === 0) return;
+    try {
+      await this.ledger.release(reservationId, reason, orgId);
+    } catch (error: unknown) {
+      logger.error("AI credit release failed — reserved credits stay held until the sweep", {
+        error: error instanceof Error ? (error.stack ?? error.message) : String(error),
+        reservationId,
+        orgId,
+        reason,
+        correlationId,
+      });
+    }
+  }
+
   private async handleProviderError(
     error: unknown,
     reservationId: number,
@@ -418,16 +448,12 @@ export class AiGatewayService {
     latencyMs: number,
   ): Promise<AiInvokeResult<never>> {
     if (error instanceof ZodError) {
-      if (reservationId !== 0) {
-        void this.ledger.release(reservationId, "invalid_output").catch(() => undefined);
-      }
+      await this.releaseReservation(reservationId, "invalid_output", actor.orgId, correlationId);
       await this.settleAndTrack(0, undefined, "unknown", { promptTokens: null, completionTokens: null, totalTokens: null }, actor, feature, prompt, correlationId, latencyMs, "error");
       return { ok: false, kind: "invalid_output", message: "AI response did not match expected format", correlationId };
     }
 
-    if (reservationId !== 0) {
-      void this.ledger.release(reservationId, "provider_error").catch(() => undefined);
-    }
+    await this.releaseReservation(reservationId, "provider_error", actor.orgId, correlationId);
 
     const message = error instanceof ServiceUnavailableException ? error.message : "AI provider is temporarily unavailable";
     const kind = message.toLowerCase().includes("not configured") ? "not_configured" : "provider_unavailable";

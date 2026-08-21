@@ -1,9 +1,24 @@
 import { z } from "zod";
+import { notificationCategoryEnum } from "../../../db/schema/common/enums";
 
+/**
+ * RT-001. A web push payload transits a third-party push service and renders on
+ * lock screens and in OS notification history. It therefore carries NO record
+ * content — no title, no body, no names, no amounts.
+ *
+ * There is deliberately no free-text field on this schema. `category` is the
+ * pgEnum, so the only thing that can cross this boundary is a fixed label the
+ * service worker maps to generic copy. Making the unsafe state unrepresentable
+ * beats documenting a convention (§20) — a `body` field with a comment saying
+ * "nothing sensitive here" is the version that eventually leaks.
+ *
+ * The client fetches the notification itself through the authenticated API, which
+ * is where authorization already lives.
+ */
 export const pushPayloadSchema = z.object({
-  title: z.string(),
-  body: z.string(),
+  category: z.enum(notificationCategoryEnum.enumValues).optional(),
   url: z.string().optional(),
+  notificationId: z.number().int().positive().optional(),
 });
 
 export type PushPayload = z.infer<typeof pushPayloadSchema>;

@@ -11,12 +11,18 @@ import { logger } from "../../common/logger/logger.service";
 import { assertCronSecret } from "./cron-secret";
 import { CronEmailOutboxService } from "./cron-email-outbox.service";
 import { CronNotificationDeliveryService } from "./cron-notification-delivery.service";
+import { CronNotificationRetentionService } from "./cron-notification-retention.service";
+import { NotificationOutboxRelayService } from "../notifications/notification-outbox-relay.service";
+import { NotificationDigestService } from "../notifications/notification-digest.service";
 import { CronOrganizationService } from "./cron-organization.service";
 import { OwnershipTransfersService } from "../ownership/ownership-transfers.service";
 import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
 import { CronIdempotencyService } from "./cron-idempotency.service";
 import { ChatReplyRemindersService } from "../chat/chat-reply-reminders.service";
 import { ExceptionsDetectorService } from "../timesheets/core/exceptions-detector.service";
+import { BuildDueSweepService } from "../build/core/build-due-sweep.service";
+import { CrmFollowupSweepService } from "../crm/core/crm-followup-sweep.service";
+import { NotificationTimeSweepsService } from "../notifications/time-sweeps/notification-time-sweeps.service";
 
 @Public()
 @Controller("cron")
@@ -30,7 +36,157 @@ export class CronPlatformController {
     private readonly orgPurgeWorker: CronOrgPurgeWorkerService,
     private readonly timesheetExceptionsDetector: ExceptionsDetectorService,
     private readonly idempotency: CronIdempotencyService,
+    private readonly notificationRetention: CronNotificationRetentionService,
+    private readonly outboxRelay: NotificationOutboxRelayService,
+    private readonly digest: NotificationDigestService,
+    private readonly buildDueSweep: BuildDueSweepService,
+    private readonly crmFollowupSweep: CrmFollowupSweepService,
+    private readonly timeSweeps: NotificationTimeSweepsService,
   ) {}
+
+  @Get("notification-time-sweeps")
+  getNotificationTimeSweeps(@Headers("authorization") authorization?: string) {
+    return this.runNotificationTimeSweeps(authorization);
+  }
+
+  @Post("notification-time-sweeps")
+  @HttpCode(200)
+  postNotificationTimeSweeps(@Headers("authorization") authorization?: string) {
+    return this.runNotificationTimeSweeps(authorization);
+  }
+
+  /**
+   * REG-003. Every event behind this endpoint is time-derived — no user action can fire
+   * it — so without a scheduler pointed here they simply never happen. Must run at least
+   * hourly: the SLA-breach window is one hour wide.
+   */
+  private async runNotificationTimeSweeps(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const [crm, general] = await Promise.all([
+        this.crmFollowupSweep.sweep(),
+        this.timeSweeps.sweep(),
+      ]);
+      return {
+        success: true,
+        message:
+          `Follow-ups ${crm.due} due / ${crm.overdue} overdue; ` +
+          `${general.slaBreached} SLA, ${general.invoicesDueSoon} invoice, ` +
+          `${general.envelopesExpiring} envelope, ${general.eventsStartingSoon} calendar`,
+        ...crm,
+        ...general,
+      };
+    } catch (error) {
+      logger.error("Notification time sweeps cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  @Get("build-due-sweep")
+  getBuildDueSweep(@Headers("authorization") authorization?: string) {
+    return this.runBuildDueSweep(authorization);
+  }
+
+  @Post("build-due-sweep")
+  @HttpCode(200)
+  postBuildDueSweep(@Headers("authorization") authorization?: string) {
+    return this.runBuildDueSweep(authorization);
+  }
+
+  private async runBuildDueSweep(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.buildDueSweep.sweep();
+      return {
+        success: true,
+        message: `Build due sweep: ${result.dueSoon} due-soon, ${result.overdue} overdue`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Build due sweep cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  @Get("notification-digest-flush")
+  getNotificationDigestFlush(@Headers("authorization") authorization?: string) {
+    return this.runNotificationDigestFlush(authorization);
+  }
+
+  @Post("notification-digest-flush")
+  @HttpCode(200)
+  postNotificationDigestFlush(@Headers("authorization") authorization?: string) {
+    return this.runNotificationDigestFlush(authorization);
+  }
+
+  private async runNotificationDigestFlush(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.digest.flushDue();
+      return {
+        success: true,
+        message: `Flushed ${result.windows} digest window(s): ${result.itemsFlushed} item(s), ${result.notificationsCreated} notification(s)`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Notification digest flush cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  @Get("notification-outbox-flush")
+  getNotificationOutboxFlush(@Headers("authorization") authorization?: string) {
+    return this.runNotificationOutboxFlush(authorization);
+  }
+
+  @Post("notification-outbox-flush")
+  @HttpCode(200)
+  postNotificationOutboxFlush(@Headers("authorization") authorization?: string) {
+    return this.runNotificationOutboxFlush(authorization);
+  }
+
+  private async runNotificationOutboxFlush(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.outboxRelay.flush();
+      return {
+        success: true,
+        message: `Claimed ${result.claimed}: ${result.processed} processed, ${result.retried} retrying, ${result.dead} dead`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Notification outbox flush cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  @Get("notifications-retention-sweep")
+  getNotificationsRetentionSweep(@Headers("authorization") authorization?: string) {
+    return this.runNotificationsRetentionSweep(authorization);
+  }
+
+  @Post("notifications-retention-sweep")
+  @HttpCode(200)
+  postNotificationsRetentionSweep(@Headers("authorization") authorization?: string) {
+    return this.runNotificationsRetentionSweep(authorization);
+  }
+
+  private async runNotificationsRetentionSweep(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.notificationRetention.sweep();
+      return {
+        success: true,
+        message:
+          `Purged ${result.emailBodiesPurged} email bodies and ${result.deliveryBodiesPurged} delivery bodies; ` +
+          `deleted ${result.emailRecordsDeleted} email rows and ${result.deliveryRecordsDeleted} delivery rows`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Notification retention sweep cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
 
   @Get("chat-reply-reminders")
   getChatReplyReminders(@Headers("authorization") authorization?: string) {

@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { crmDealCompetitors, deals } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -73,7 +73,7 @@ export class DealsCompetitorsService {
     const row = await this.db
       .select({ id: deals.id })
       .from(deals)
-      .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId)))
+      .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)))
       .limit(1);
     if (!row[0]) throw new NotFoundException("Deal not found");
   }

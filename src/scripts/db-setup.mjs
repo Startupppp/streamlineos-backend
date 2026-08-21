@@ -117,7 +117,7 @@ async function tableCount(url) {
     const rows = await sql`
       SELECT count(*)::int AS n FROM pg_class c
       JOIN pg_namespace n ON n.oid = c.relnamespace
-      WHERE n.nspname = 'public' AND c.relkind = 'r'`;
+      WHERE n.nspname IN ('public', 'build', 'build_events') AND c.relkind = 'r'`;
     return rows[0]?.n ?? 0;
   } finally {
     await sql.end({ timeout: 5 }).catch(() => {});

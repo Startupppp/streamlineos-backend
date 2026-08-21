@@ -1,5 +1,5 @@
-import { pgTable, text, serial, timestamp, decimal, integer, index, unique } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { pgTable, text, serial, timestamp, decimal, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
+import { relations, sql } from "drizzle-orm";
 import { invReservationStatusEnum } from "../common/enums";
 import { organizations } from "../common/auth";
 import { invProductVariants } from "./core";
@@ -19,6 +19,7 @@ export const invStockReservations = pgTable("inv_stock_reservations", {
   serialId: integer("serial_id").references(() => invSerialNumbers.id, { onDelete: "set null" }),
   reservedQty: decimal("reserved_qty", { precision: 18, scale: 4 }).notNull(),
   status: invReservationStatusEnum("status").default("ACTIVE").notNull(),
+  idempotencyKey: text("idempotency_key"),
   expiresAt: timestamp("expires_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
@@ -27,6 +28,10 @@ export const invStockReservations = pgTable("inv_stock_reservations", {
   index("idx_inv_res_org_source").on(table.orgId, table.sourceType, table.sourceId),
   index("idx_inv_res_org_variant_status").on(table.orgId, table.productVariantId, table.status),
   index("idx_inv_res_org_status").on(table.orgId, table.status),
+  uniqueIndex("uniq_inv_reservations_org_idem").on(table.orgId, table.idempotencyKey).where(sql`idempotency_key IS NOT NULL`),
+  uniqueIndex("uniq_inv_reservations_org_source_active")
+    .on(table.orgId, table.sourceType, table.sourceId, sql`coalesce(${table.sourceLineId}, '')`)
+    .where(sql`status = 'ACTIVE'`),
 ]);
 
 export const invStockReservationsRelations = relations(invStockReservations, ({ one }) => ({

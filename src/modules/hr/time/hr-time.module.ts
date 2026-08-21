@@ -24,10 +24,12 @@ import { EmployeeTimeOffController } from "./employee-time-off.controller";
 import { LeavesService } from "./leaves.service";
 import { LeavesWriteService } from "./leaves-write.service";
 import { LeavesApprovalService } from "./leaves-approval.service";
+import { LeaveDecisionEffectsService } from "./leave-decision-effects.service";
 import { LeavesPageService } from "./leaves-page.service";
 import { AttendanceService } from "./attendance.service";
 import { AttendanceClockService } from "./attendance-clock.service";
 import { AttendanceReadService } from "./attendance-read.service";
+import { AttendanceEventWriterService } from "./attendance-event-writer.service";
 import { HrTimeLedgerModule } from "./hr-time-ledger.module";
 import { AttendanceRegularizationService } from "./attendance-regularization.service";
 import { WfhService } from "./wfh.service";
@@ -38,6 +40,10 @@ import { OvertimeService } from "./overtime.service";
 import { GeofencingService } from "./geofencing.service";
 import { BiometricService } from "./biometric.service";
 import { LeavePoliciesService } from "./leave-policies.service";
+import { CompOffGrantService } from "./comp-off-grant.service";
+import { LeaveApproverService } from "./leave-approver.service";
+import { LeaveTypesService } from "./leave-types.service";
+import { RateLimitModule } from "../../../common/ratelimit/rate-limit.module";
 
 @Module({
   imports: [
@@ -49,6 +55,7 @@ import { LeavePoliciesService } from "./leave-policies.service";
     HrTimeLedgerModule,
     HrWorkflowsModule,
     HrPayrollInputsModule,
+    RateLimitModule,
   ],
   controllers: [
     EmployeeAttendanceController,
@@ -72,8 +79,10 @@ import { LeavePoliciesService } from "./leave-policies.service";
     LeavesService,
     LeavesWriteService,
     LeavesApprovalService,
+    LeaveDecisionEffectsService,
     LeavesPageService,
     AttendanceClockService,
+    AttendanceEventWriterService,
     AttendanceReadService,
     AttendanceService,
     AttendanceRegularizationService,
@@ -85,7 +94,10 @@ import { LeavePoliciesService } from "./leave-policies.service";
     GeofencingService,
     BiometricService,
     LeavePoliciesService,
+    CompOffGrantService,
+    LeaveApproverService,
+    LeaveTypesService,
   ],
-  exports: [HrTimeLedgerModule],
+  exports: [AttendanceService, HrTimeLedgerModule, LeavesService, WfhService],
 })
 export class HrTimeModule {}

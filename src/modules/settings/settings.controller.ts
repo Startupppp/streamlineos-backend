@@ -41,12 +41,23 @@ import {
   type UpdateCustomFieldInput,
   type UpdateGitConnectionInput,
   type UpdateUserRoleInput,
+  settingsProvenanceQuerySchema,
+  type SettingsProvenanceQuery,
 } from "./dto/settings.schemas";
 
 @Controller("settings")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class SettingsController {
   constructor(private readonly settings: SettingsService) {}
+
+  @RequirePermission("settings:view")
+  @Get("provenance")
+  getProvenance(
+    @Query(new ZodValidationPipe(settingsProvenanceQuerySchema)) query: SettingsProvenanceQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.settings.getSectionProvenance(u.orgId, query.sections);
+  }
 
   @RequirePermission("settings:view")
   @Get("permissions")

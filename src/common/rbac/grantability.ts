@@ -14,16 +14,13 @@ export const RESERVED_PROPAGATION_KEYS: ReadonlySet<string> = new Set([
   "settings:rbac:manage",
 ]);
 
+/**
+ * The reserved key itself, for PROPAGATION checks only — "may this actor grant
+ * this key to someone else". It must never be used to decide whether the actor
+ * IS an org admin; that is structural, via `isStructuralOrgAdmin`. The former
+ * `grantsOrgAdmin()` helper did exactly that and was removed (AC-04, §21).
+ */
 export const ORG_ADMIN_PERMISSION_KEY = "settings:manage";
-
-/** Org-wide administrator: holds either reserved key. One definition for every gate. */
-export function grantsOrgAdmin(resolved: ReadonlyMap<string, string>): boolean {
-  for (const key of RESERVED_PROPAGATION_KEYS) {
-    const scope = resolved.get(key);
-    if (scope !== undefined && scope !== "none") return true;
-  }
-  return false;
-}
 
 export interface GrantabilityActor {
   isOrgOwner: boolean;

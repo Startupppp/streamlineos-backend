@@ -1,7 +1,8 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { deals, projectMembers, projects, projectStatuses } from "../../../db/schema";
+import { DEFAULT_PROJECT_STATUSES } from "./lib/default-statuses";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -10,13 +11,8 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { ProjectsEmailService } from "./projects-email.service";
 import type { CreateProjectInput, FromDealInput } from "./dto/projects.schemas";
+import { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
 
-const DEFAULT_STATUSES = [
-  { name: "TODO", order: 0, color: "#e2e8f0", type: "unstarted" as const },
-  { name: "IN_PROGRESS", order: 1, color: "#3b82f6", type: "started" as const },
-  { name: "IN_REVIEW", order: 2, color: "#eab308", type: "started" as const },
-  { name: "DONE", order: 3, color: "#22c55e", type: "completed" as const },
-];
 
 function generateProjectKey(name: string): string {
   const namePart = name.replace(/[^a-zA-Z]/g, "").substring(0, 3).toUpperCase();
@@ -36,6 +32,7 @@ export class ProjectsProvisionService {
     private readonly audit: AuditService,
     private readonly planLimits: PlanLimitsService,
     private readonly projectsEmail: ProjectsEmailService,
+    private readonly pmWorkspaces: PmWorkspacesService,
   ) {}
 
   async createProject(orgId: string, creatorUserId: string, input: CreateProjectInput) {
@@ -43,11 +40,14 @@ export class ProjectsProvisionService {
 
     await this.planLimits.assertWithinLimit(orgId, "projects");
 
+    const pmWorkspaceId = await this.pmWorkspaces.resolveDefaultWorkspaceId(orgId);
+
     const project = await this.db.transaction(async (tx) => {
       const [created] = await tx
         .insert(projects)
         .values({
           orgId,
+          pmWorkspaceId,
           key: projectKey,
           name: input.name,
           description: input.description,
@@ -67,7 +67,7 @@ export class ProjectsProvisionService {
         .returning();
 
       await tx.insert(projectStatuses).values(
-        DEFAULT_STATUSES.map((s) => ({
+        DEFAULT_PROJECT_STATUSES.map((s) => ({
           orgId,
           projectId: created.id,
           name: s.name,
@@ -137,11 +137,13 @@ export class ProjectsProvisionService {
 
   async createFromDeal(orgId: string, userId: string, input: FromDealInput) {
     const deal = await this.db.query.deals.findFirst({
-      where: and(eq(deals.id, input.dealId), eq(deals.orgId, orgId)),
+      where: and(eq(deals.id, input.dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)),
     });
     if (!deal) throw new NotFoundException("Deal not found");
 
     await this.planLimits.assertWithinLimit(orgId, "projects");
+
+    const pmWorkspaceId = await this.pmWorkspaces.resolveDefaultWorkspaceId(orgId);
 
     const namePart = input.name.replace(/[^a-zA-Z]/g, "").substring(0, 3).toUpperCase();
     const randomPart = Math.floor(Math.random() * 1000).toString().padStart(3, "0");
@@ -152,6 +154,7 @@ export class ProjectsProvisionService {
         .insert(projects)
         .values({
           orgId,
+          pmWorkspaceId,
           key: projectKey,
           name: input.name,
           description: input.description ?? deal.notes ?? null,
@@ -171,7 +174,7 @@ export class ProjectsProvisionService {
         .returning();
 
       await tx.insert(projectStatuses).values(
-        DEFAULT_STATUSES.map((s) => ({
+        DEFAULT_PROJECT_STATUSES.map((s) => ({
           orgId,
           projectId: created.id,
           name: s.name,

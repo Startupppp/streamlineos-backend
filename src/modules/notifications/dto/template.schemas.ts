@@ -41,3 +41,27 @@ export type UpdateTemplateInput = z.infer<typeof updateTemplateSchema>;
 export type PreviewTemplateInput = z.infer<typeof previewTemplateSchema>;
 export type TestSendTemplateInput = z.infer<typeof testSendTemplateSchema>;
 export type ListTemplatesInput = z.infer<typeof listTemplatesSchema>;
+
+/**
+ * COMP-004 / COMP-005. WhatsApp and SMS refuse to send a template the provider has not
+ * approved. Approval happens out-of-band (Meta for WhatsApp, an Indian operator for DLT),
+ * so this records the outcome — it does not perform the approval.
+ *
+ * `providerTemplateName` is the provider's own identifier (the DLT template id, or the
+ * registered WhatsApp template name). APPROVED without one is rejected here rather than
+ * at send time, because an approved template with nothing to send under is a
+ * misconfiguration that would otherwise surface per message.
+ */
+export const setTemplateApprovalSchema = z
+  .object({
+    approvalStatus: z.enum(["NOT_REQUIRED", "PENDING", "APPROVED", "REJECTED"]),
+    providerTemplateName: z.string().min(1).max(200).nullish(),
+    approvalRejectionReason: z.string().max(1000).nullish(),
+  })
+  .strict()
+  .refine((v) => v.approvalStatus !== "APPROVED" || Boolean(v.providerTemplateName), {
+    message: "An APPROVED template must carry the provider template name it sends under",
+    path: ["providerTemplateName"],
+  });
+
+export type SetTemplateApprovalInput = z.infer<typeof setTemplateApprovalSchema>;

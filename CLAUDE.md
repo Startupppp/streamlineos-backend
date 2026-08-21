@@ -1,0 +1,128 @@
+# backend/CLAUDE.md — StreamlineOS API rules
+
+> In force for every change under `backend/`. The root `CLAUDE.md` (cardinal rules, boundary, TS quality, product rules, DoD) still applies — this file adds the backend half and wins on backend matters.
+> Stack: NestJS 11 · Drizzle ORM · Neon Postgres · Redis · Zod 4. **This repo owns all business logic, APIs and schema.**
+
+---
+
+## 1. Module & Schema Layout
+
+- **Thin controllers; services own business logic**, one controller per resource/domain. **Data access is centralized in services:** verify session, verify object-level + tenant authz, explicit `select` (never `select *`), return minimal DTOs (never raw ORM rows).
+- **Module folders nest by domain.** A sub-module lives inside its parent (`modules/build/qa/`), never `modules/build-qa/`; the parent's own controllers/services sit in `<module>/core/`, so the parent folder reads as a table of contents. Each sub-folder is a real `@Module` with its own `*.module.ts`/`*.controller.ts`/`*.service.ts`/`dto/`, registered in `app.module.ts` by nested path.
+- **Cross-module access goes through the other module's service**, never its repository or schema.
+- **Schema folders:** `db/schema/` = `common/` (enums, auth, organization, access, shared, notifications, workflow, integrations, idempotency, outbox) + one folder per business module, each with an `index.ts`. Consumers import only from the root barrel `db/schema`. Folder names match the real domain, never codenames; remove dead schema files in any reorg.
+- **A new module is not wired until it is registered in `app.module.ts`** — an unregistered module compiles green and does not exist at runtime.
+
+## 2. Validation, Guards, Serialization
+
+- **Validation stays Zod — do NOT introduce `class-validator`** (thousands of Zod call sites, zero decorator DTOs, neither `class-validator` nor `class-transformer` installed). Keep the NestJS *principles*: one schema file per payload, applied at the boundary, strict on unknown keys (`z.object().strict()`), type from `z.infer`.
+- **Validation is registered GLOBALLY:** `ZodValidationInterceptor` (`common/validation/zod-validation.interceptor.ts`) as `APP_INTERCEPTOR`; handlers declare `@Validate({ body, query, params })`. It is an interceptor because only an interceptor gets the `ExecutionContext` needed for per-route metadata, and a pass-through without `@Validate`, so it composes with existing per-parameter pipes. A thrown `ZodError` maps to 400 in `AllExceptionsFilter` — never catch and re-shape it at the call site.
+- **Guards deny by default** (metadata via decorators + `Reflector`); one global exception filter returns a single JSON envelope — log fully, return generic.
+- **Global `APP_GUARD`s are `JwtAuthGuard`, `MfaGuard`, `ModuleGuard`. `PermissionGuard` is NOT global** — an endpoint without `@UseGuards(JwtAuthGuard, PermissionGuard)` is authenticated and module-gated but **not permission-checked**. Never assume the decorator alone gates it.
+- **Serialization:** `ClassSerializerInterceptor` + class-level `@Exclude()`, `@Expose()` only on returned fields, `@Exclude({ toPlainOnly: true })` for secrets. Never leak sensitive columns.
+- **Config:** `@nestjs/config` global + startup `validationSchema` (required vars `.required()`, `NODE_ENV` enum), fail fast. `.env` out of git; commit `.env.example`.
+- **HTTP:** no writes in a GET; API versioning; cursor pagination for live data; consistent filter/sort conventions.
+- **Idempotency:** mutating endpoints accept a client `Idempotency-Key`, store the first result keyed by (key + tenant), replay on retry, 409 while in-flight, error on param mismatch, expire after a TTL.
+- **`@UseRateLimit("key")` needs a matching `TIERS` entry** — an unknown key silently disables the limit.
+
+## 3. Database (Drizzle + Neon)
+
+- **Normalize lifecycle entities** — invitations, members, approvals, comments, notifications, audit logs, tasks, events, documents each get a table with PK, `org_id` FK, `status`, `created_at`, indexes. **Never JSONB arrays** (can't be indexed, paginated, atomically updated or soft-deleted).
+- Every table: UUID or `generatedAlwaysAsIdentity()` PK (never `serial`). Every tenant table: non-nullable indexed `org_id` FK. Money as integer cents.
+- **Tenant-scoped uniqueness is composite** — `uniqueIndex(org_id, <col>)` for any per-org business key (project key, SKU, code, slug); a bare global `.unique()` lets one tenant's value block every other org (cross-tenant DoS + info leak). Catch `23505` → `ConflictException` (409), never an unhandled 500.
+- **Never a dual-purpose polymorphic FK.** `entity_type` + `entity_id` across tables is banned for new tables — no FK, no referential integrity, no `ON DELETE`, and it defeats the composite tenant FK. Use an **exclusive arc** (nullable FK per type + a `CHECK` that exactly one is set) or a **link table per relationship**, each carrying its own `org_id` leading its composite index. Existing pairs (`notifications`, calendar events) are grandfathered as display/dedupe pointers only — never the sole path to resolve, join or cascade a record.
+- **Composite indexes most-selective-first, leading with `org_id`** (e.g. `(org_id, status, created_at DESC)`). Index every FK. No full-table scans. Re-measure after indexing: an inequality + `ORDER BY` on another column needs `(tenant, eq cols, sort col) WHERE <inequality>`.
+- Select only needed columns. **No N+1** — joins or relational `with`. Multi-step writes in **one transaction** (`db.transaction`, pass `tx` down). Atomic upserts for counters/idempotent creates (unique `(org, resource, actor)` + upsert).
+- **Never use an unprojected relation to global `users`** (`user: true`, `creator: true`, `approver: true`) — those rows still hold authentication secrets and legacy payroll/HR fields. Every users relation declares an explicit minimal `columns` projection; response DTOs never rely on raw ORM user rows.
+- **Free-text search:** `to_tsvector` + GIN (or `pg_trgm`) — never leading-wildcard `ILIKE`.
+- **A text index is unusable under RLS, and `LEAKPROOF` cannot fix it.** Search operators (`ts_match_vq`, `similarity_op`, `textlike`) are `proleakproof = false`, so the user qual may not run before the RLS qual and the index is skipped (203k `tickets`: 16 buffers as owner vs a 12,036-buffer seq scan as `streamline_app`). **`ALTER FUNCTION … LEAKPROOF` is impossible on Neon** — no true superuser (`neondb_owner`/`neon_superuser` are `rolsuper = false`), it fails `42501` even in the console. Never propose it. The one escape is a **`SECURITY DEFINER` function owned by the BYPASSRLS owner** (never inlined, so it runs outside the security barrier): canonical `app.search_ticket_ids` (migrations `0424`/`0425`), valid only with all five — org from `app.current_org_id()`, **never a parameter** (fails closed `42501` with no GUC) · returns **ids only** · the caller's query still runs under RLS with its DataScope · `REVOKE ALL … FROM PUBLIC` + `GRANT EXECUTE` to the app role · a `LIMIT` arg, caller requesting `cap + 1` and falling back to `ILIKE` at the cap (an unbounded SRF is materialised in full — 434ms vs 1ms).
+- **Benchmark as `streamline_app` with the tenant GUC, never as the owner** — the owner has `BYPASSRLS`, so its plans hide every problem above. **`VACUUM ANALYZE` after any table rewrite** — stale stats and an empty visibility map cost 53 → 201,875 blocks on one list.
+- **All list endpoints paginated**, hard cap **100/page** (public included).
+- **Soft delete is the default; hard delete is the exception.** Every business entity (contacts, deals, leads, quotes, products, employees, tickets, invoices, projects, documents, roles, org units) sets `deleted_at`, and **every read filters it** (`isNull(x.deletedAt)`) — a `deleted_at` column reads ignore silently resurrects deleted rows. Indexes on those tables are **partial**, excluding deleted rows. Physical `DELETE` only for: join/link rows, unsent drafts, unaccepted or terminal invitations with no retention duty, session/token revocation, DPDP/GDPR erasure. Organization hierarchy is archive/restore only (root §8). Watch the cascade boundary — a soft-deleted parent never fires a child's `onDelete: "cascade"`, leaving children orphaned-but-visible.
+- **Partition high-volume append-only tables by time** (`ai_usage_logs`, audit logs, notifications, chat messages, event/outbox streams): RANGE on `created_at`, monthly or weekly, partitions pre-created, archived by `DETACH PARTITION CONCURRENTLY` + `DROP TABLE` — never a bulk `DELETE`. Decide BEFORE partitioning: the partition key must be in every PK/UNIQUE, so the PK becomes `(id, created_at)` and bare `id` is no longer globally unique — keep the `(org_id, id)` tenant key. Don't partition a table that isn't demonstrably large; record the triggering row count in the migration.
+
+### Migrations
+
+- `generate` + `migrate` in CI; `push` for local dev only. Never hand-edit generated SQL — regenerate. Additive: add nullable → backfill in batches → add NOT NULL; build indexes concurrently on large tables; one purpose per migration; name constraints/indexes explicitly.
+- `generate --custom` copies the previous snapshot instead of diffing — reconcile `migrations/meta` afterwards, or the next `db:generate` re-proposes applied work.
+- **Adding an FK or NOT NULL takes ACCESS EXCLUSIVE — split it in two.** `ADD CONSTRAINT … FOREIGN KEY` locks BOTH tables while installing triggers, so one long SELECT on `organizations` stalls every write to both: always `ADD CONSTRAINT … NOT VALID` → `VALIDATE CONSTRAINT`. For NOT NULL: `CHECK (col IS NOT NULL) NOT VALID` → `VALIDATE` → `SET NOT NULL` → drop the CHECK separately. Every migration sets `lock_timeout` (~5s) so it fails fast instead of queueing and blocking the table behind it.
+- **Reproducibility:** "applied to the Neon branch" ≠ migrated — it counts only when it is in the Drizzle journal AND `db:migrate` reproduces it on an EMPTY DB. Cold-DB rules: (1) a fresh DB must `CREATE EXTENSION` `vector`/`pg_trgm`/`btree_gist`/`pgcrypto`/`uuid-ossp` BEFORE `db:migrate` — never fold this into `0000` (editing an applied migration changes its hash); (2) heavy catalog PL/pgSQL `DO`-block migrations prepend `SET statement_timeout = 0;` or Neon cancels them on a cold build; (3) to turn a unique index into a unique constraint an FK already targets, use `ADD CONSTRAINT … UNIQUE USING INDEX` — never `DROP INDEX` + re-`ADD` (the dependent FK blocks the drop); (4) author reconciliation as discrete dependency-ordered migrations — a ~2000-op monolith ECONNRESETs on Neon.
+- **`prepare: false` is set on the Neon driver**, so `sql.placeholder` prepared statements are inert — optimize via indexes, projection and N+1 removal instead.
+
+## 4. Security
+
+- **BOLA is the #1 risk:** every endpoint taking a resource id re-asserts the caller's access to **that specific object** (org + record) on **reads AND writes** — role/module ability alone is insufficient. Centralize in an access service, call it in every mutating method, test with two accounts.
+- **Cross-tenant misses return 404, never 403** — a 403 on another org's id confirms the record exists, turning a probe into an existence oracle. Reserve `ForbiddenException` for a caller inside the **correct** tenant who lacks the permission.
+- **Guards on every privileged route, deny by default** (§5). Allowlist input and output; reject client-sent protected fields (`role`, `isAdmin`, `orgId`). Integrate the existing auth path, never a parallel one — account lockout + rate limiting on login, generic auth-failure messages. Rate-limit abusable flows (signup, purchase). Helmet, strict CORS, no verbose errors or docs in prod. Retire old API versions and zombie endpoints. Validate and sanitize upstream/third-party responses.
+- **Resource consumption:** rate limits, quotas, timeouts, payload caps, pagination caps. **AI/LLM: reserve/consume credits atomically BEFORE the paid call**, refund only on provider failure — never check-then-spend. Anonymous traffic must never spend the shared LLM budget (**denial-of-wallet**); short-circuit before embedding when the org has no eligible content.
+- **SSRF:** never fetch user-supplied URLs without an allowlist; block internal/metadata endpoints; reuse `common/security/ssrf-guard.ts` — never write a second guard (a fresh one misses the packed `::ffff:7f00:1` form `new URL()` actually produces).
+- **AI retrieval filters by the asker's access in the SQL predicate, never in the prompt.** Every RAG/vector search binds tenant scope AND the same object-level visibility the direct read endpoint enforces (space membership, page visibility, `own`/`team` scope, draft vs published) **before** candidates reach the model — a chunk is disclosed the moment it enters the context window, and prompt-level filtering fails under adversarial input. Capture the ACL alongside the chunk at index time so the filter stays a cheap indexed predicate. **Make the unsafe state unrepresentable** — delete the "safe usage" flag rather than documenting a convention.
+- **AI is barred from the authorization decision path.** Runtime decisions come only from the deterministic resolver; AI may never write to a permission table; AI explanations render a deterministically computed resolution trace, not model reasoning about policy; permission data (role names, group membership, org hierarchy, grant history) must not egress to a model provider. Tenant free-text (custom role names, grant justifications) is data, never instruction.
+- **Tenant isolation (selective RLS):** every tenant-owned table needs an explicit tenant path, tenant-correlated queries and an appropriate leading composite index. Enable Postgres RLS only for tables approved in the RLS matrix, after every service path uses `runInTenantTransaction` and missing/cross-tenant GUC tests pass — never blanket-enable or FORCE. Global identity (`users`, `accounts`, `sessions`), global catalogs, platform administration and public-token/bootstrap flows need their documented compensating controls, because ordinary tenant RLS breaks authentication and cross-organization workflows. Where RLS is on, `app.current_org_id()` fails closed with `42501` when the GUC is absent. **A tenant table with no policy is readable org-wide** — grants arrive via `ALTER DEFAULT PRIVILEGES`, so a missing policy is silent.
+- **A side-effect fired after the request must not borrow the request's transaction.** `TenantContextInterceptor` wraps each request in one transaction held in AsyncLocalStorage; a `void something(...)` keeps that context after the handler returns, but the transaction has committed and the GUC is gone, so every read/write dies `42501` — this produced zero `notifications` rows platform-wide across ~50 swallowed call sites. (1) Defer with `registerAfterCommit` — hooks drain only on success. (2) Deferred work opens its own `runInNewTenantTransaction`. (3) Resolve recipients/ids while the request transaction is live, or inside the deferred one — never on the dead handle. (4) Background sweeps have no ambient context — iterate with `forEachOrg`. (5) **Never swallow a deferred failure**, or the next outage is invisible too.
+- **Input/output:** Zod-validate all input; parameterized ORM queries only; sanitize rendered HTML; secure cookies (`httpOnly`, `Secure`, `SameSite`).
+- **Passwords: Argon2id** (m≥19456 KiB, t=2, p=1); scrypt/bcrypt (≥10, 72-byte limit) as fallback, unique salt. Never fast hashes.
+- **Secrets:** no hard-coded secrets, validated env vars only. Validate uploads. Log sensitive actions without exposing data.
+- **Session revocation needs the Redis tombstone** (`revoked:session:<id>`) — `JwtAuthGuard` reads only that, so a DB `isRevoked` flag alone logs nobody out.
+
+## 5. RBAC Engine — server-resolved
+
+Permissions resolve from the DB on **every request** via `AccessService`. **CASL is fully removed from both repos.**
+
+**Keys** are `"module:resource:action"`, three lowercase segments (`"hr:employees:view"`); `action` ∈ view · create · update · delete · manage · assign · export · approve · reject · import. Served by `GET /me/access` — **never** from JWT claims.
+
+**Key files (do not delete)**
+
+| Path | Role |
+|---|---|
+| `src/modules/rbac/permissions/` | catalog folder, one file per module + `role-defaults.ts` (`ROLE_DEFAULT_PERMISSIONS`) + `index.ts` |
+| `src/modules/rbac/role-templates.constants.ts` | `ROLE_TEMPLATES` |
+| `src/common/rbac/access-invalidate.ts` | `bumpPermissionsVersion(tx, orgId)` |
+| `src/db/schema/common/access.ts` | RBAC schema (source of truth) |
+| `src/modules/access/access.service.ts` | `resolveUserPermissions`, cached per `(userId, orgId)` |
+| `src/modules/access/permission.guard.ts` · `require-permission.decorator.ts` · `apply-scope.ts` | reads `@RequirePermission`, sets `req.rbacScope` · the decorator · `applyScope(scope, userId, cols)` |
+
+**Add a protected endpoint**
+1. Add the key to the module's file in `permissions/` (+ `role-defaults.ts` if it's a role default) — and to the frontend catalog, or `useCan` fails forever.
+2. `@UseGuards(JwtAuthGuard, PermissionGuard)` + `@RequirePermission("newmodule:resource:view")`.
+3. List endpoints apply DataScope from `req.rbacScope` (`own` → `assignedToId = actor.userId`; `none` → deny).
+4. Every role/permission mutation calls `bumpPermissionsVersion(tx, orgId)` **in the same transaction**, and busts the `(userId, orgId)` access cache.
+
+**Runtime**
+- Canonical grant tables: `role_assignments`, `role_permission_grants`, `principal_group_members`, `group_role_assignments`, `module_ownerships`, `user_delegations` + `user_delegation_permissions`, `access_versions`. A delegation stores lifecycle once + one child row per permission — never arrays on the header, never a parallel grant source. Never reintroduce `user_roles`/`group_roles`.
+- Structural org roles are exactly `OWNER`, `ORG_ADMIN`, `MEMBER`; `OWNER` and active `ORG_ADMIN` share the product catalog, but ownership transfer, org deletion and other ownership-lifecycle ops still check `isOrgOwner` explicitly. Effective access = union of direct roles, permission-group roles, unexpired delegations and canonical module ownership, constrained by active membership and module entitlement.
+- **Org admin implies module admin; per-user module denies never override an org-level grant.** Test org-admin structurally via `organizationMembers.role` / `isOwner` — never by checking `settings:manage` or `settings:rbac:manage`, which creates an accidental parallel superuser bypass.
+- One lifecycle owner per module in `module_ownerships`. Assignable roles must not create a second meaning of owner: synchronize `*_MODULE_OWNER` only through the ownership service, or name broad assignable roles `*_MODULE_ADMIN`. A custom or delegated `<module>:access:manage` grant is **view-only** and never creates management authority.
+- Resolution is cached per `(userId, orgId)` in Redis and busted by `bumpPermissionsVersion`; TTL must not outlive the nearest role/delegation expiry, and cross-node revocation needs distributed invalidation (process-local callbacks are only a latency optimization).
+- `DataScope`: `all` · `team` (same dept) · `own` · `none`. `team` ships only once materialised — eliminate the correlated `org_unit_members` subquery in `apply-scope.ts` first.
+- Guards run **before** interceptors, so a guard's own DB queries have no tenant GUC — wrap them explicitly (§4).
+- Role slugs are `UPPERCASE_SNAKE` matching `/^[A-Z0-9_]+$/` — **digits allowed** (`TIER_2_SUPPORT`), enforced by `createRoleSchema`; template **ids** stay lowercase.
+
+**Membership & invitations**
+- Canonicalize email once (trim + lowercase) at every invite, import, direct-create and HR-onboarding boundary; enforce case-insensitive uniqueness in Postgres. Pending uniqueness is on canonical email where `status = 'PENDING'` — never delete historical invitations to free it; retain terminal invitation/event history.
+- Seat enforcement is a serialized write invariant: acquire the per-org `quota:${orgId}:members` transaction advisory lock and call `PlanLimitsService.assertWithinLimit(..., tx)` immediately before every membership insert. A check outside the transaction is insufficient.
+- Accept/resend/cancel/role transitions lock or conditionally update the invitation on current status, acceptance and expiry predicates, and check the affected-row count. Never revive an accepted or revoked invitation via an ID-only update.
+- Invitation tokens are hash-only at rest; delivery is asynchronous and durable through outbox/retry, and delivery failure is observable without rolling back the invitation.
+- Global `users` stores identity only — employee number, org placement, manager, designation, lifecycle, compensation, tax and bank data belong to org-scoped employment tables. Every RBAC edge with `org_id` has composite tenant FKs for membership, role and principal group; application predicates and RLS do not replace relational integrity.
+- Bulk membership/invitation flows authorize and load policy once, deduplicate emails, batch reads/writes, reserve quota once, enqueue delivery and invalidate once — never N complete single-row workflows.
+
+**NEVER** — `@CheckAbility`/`AbilityGuard`/`@casl/*`/`requireAuthorize`/`hasRoleOrPrivileged` (all deleted) · permission checks in JWT claims or `req.user.permissions` (JWT is stale, DB is authoritative) · skipping `@RequirePermission`, a catalog entry, or `bumpPermissionsVersion`.
+
+## 6. Caching
+
+- Redis for read-heavy data with **explicit invalidation on every mutation**; public read-only GETs set `Cache-Control` (`s-maxage` + `stale-while-revalidate`).
+- **Never cache user/permission-scoped data in a shared cache.**
+- Fills for the same key are single-flight in-process; hot shared keys also need a short distributed fill lease, TTL jitter and stale-while-revalidate where safe. Never let an expired popular key stampede the database.
+- **The cache key must include every filter that changes the result** — caching a filtered query under an unfiltered key serves one caller's scoped rows to the next and defeats the filter in both directions. Put every discriminator in the key beneath an explicit tenant/resource namespace, read with `cachedVersioned`, and make every writer bump that namespace with `invalidateNamespace`. Add no new request-path `invalidatePattern`/wildcard `SCAN` calls — that path is a compatibility fallback only.
+
+## 7. Performance
+
+- **AI endpoints must be efficient end-to-end:** assemble prompt context in the fewest queries (`Promise.all`, explicit projection, hard caps on rows and text length — never dump whole entities into prompts); default to the fast/cheap model tier with a per-feature output cap and use the standard tier only where quality demands it; short-circuit BEFORE any provider call when there is no eligible context; never re-embed unchanged content (hash the **source text**, not the rejoined chunks); dedupe in-flight AI requests; cache derived context tenant-scoped with explicit invalidation; vector queries always hit an ANN (HNSW) index; every call records latency/tokens/cost through the AI gateway.
+- Stateless handlers, structured logging, graceful shutdown. Health is hand-rolled in `src/health/health.controller.ts` (`/health`, `/health/ready`, `/health/db`) — `@nestjs/terminus` is **not** installed; don't import it.
+
+## 8. Testing & Verification
+
+- Unit-test services with mocked providers; e2e-test controllers (auth + RBAC + scope allow/deny, credit exhaustion, cross-tenant isolation). `*e2e-spec` runs only under `pnpm test:e2e`.
+- A `db.transaction` mock must invoke its callback — a bare `jest.fn()` silently voids every assertion inside the transaction.
+- `tsc --noEmit` needs a raised heap here: `NODE_OPTIONS=--max-old-space-size=8192`.
+- **Typecheck and mocked tests are not proof the feature works.** For anything touching notifications, background sweeps, RLS or post-commit hooks, boot the API and exercise the real request — a swallowed `42501` passes every static check.

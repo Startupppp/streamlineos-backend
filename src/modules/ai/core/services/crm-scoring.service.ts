@@ -1,9 +1,10 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, desc, eq, max } from "drizzle-orm";
+import { and, count, desc, eq, isNull, max } from "drizzle-orm";
 import { dealActivities, deals, leadActivities, leads, clients } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import { logger } from "../../../../common/logger/logger.service";
+import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
 
 import {
@@ -48,34 +49,38 @@ export class CrmScoringService {
   ) {}
 
   async scoreLead(orgId: string, leadId: number, userId?: string): Promise<LeadScoreResult | null> {
-    const [[lead], [activityResult]] = await Promise.all([
-      this.db
-        .select({
-          id: leads.id,
-          name: leads.name,
-          email: leads.email,
-          phone: leads.phone,
-          company: leads.company,
-          designation: leads.designation,
-          city: leads.city,
-          source: leads.source,
-          priority: leads.priority,
-          potentialValue: leads.potentialValue,
-          investmentInterest: leads.investmentInterest,
-          notes: leads.notes,
-          tags: leads.tags,
-          createdAt: leads.createdAt,
-          assignedToId: leads.assignedToId,
-        })
-        .from(leads)
-        .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId))),
-      this.db
-        .select({ count: count() })
-        .from(leadActivities)
-        .where(eq(leadActivities.leadId, leadId)),
-    ]);
+    const ctx = await runInTenantTransaction(this.db, async (tx) => {
+      const [[lead], [activityResult]] = await Promise.all([
+        tx
+          .select({
+            id: leads.id,
+            name: leads.name,
+            email: leads.email,
+            phone: leads.phone,
+            company: leads.company,
+            designation: leads.designation,
+            city: leads.city,
+            source: leads.source,
+            priority: leads.priority,
+            potentialValue: leads.potentialValue,
+            investmentInterest: leads.investmentInterest,
+            notes: leads.notes,
+            tags: leads.tags,
+            createdAt: leads.createdAt,
+            assignedToId: leads.assignedToId,
+          })
+          .from(leads)
+          .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId))),
+        tx
+          .select({ count: count() })
+          .from(leadActivities)
+          .where(eq(leadActivities.leadId, leadId)),
+      ]);
+      return { lead: lead ?? null, activityCount: activityResult?.count ?? 0 };
+    }, { orgId });
 
-    if (!lead) return null;
+    if (!ctx.lead) return null;
+    const { lead, activityCount } = ctx;
 
     const daysSinceCreated = lead.createdAt
       ? Math.floor((Date.now() - new Date(lead.createdAt).getTime()) / (1000 * 60 * 60 * 24))
@@ -95,7 +100,7 @@ export class CrmScoringService {
       notes: trunc(lead.notes),
       tags: lead.tags,
       daysSinceCreated,
-      activityCount: activityResult?.count ?? 0,
+      activityCount,
       hasAssignee: Boolean(lead.assignedToId),
     });
 
@@ -113,10 +118,12 @@ export class CrmScoringService {
     const data = result.data;
     data.score = Math.max(0, Math.min(100, Math.round(data.score)));
 
-    await this.db
-      .update(leads)
-      .set({ score: data.score, updatedAt: new Date() })
-      .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId)));
+    await runInTenantTransaction(this.db, async (tx) => {
+      await tx
+        .update(leads)
+        .set({ score: data.score, updatedAt: new Date() })
+        .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId)));
+    }, { orgId });
 
     return data;
   }
@@ -136,30 +143,34 @@ export class CrmScoringService {
   }
 
   async predictDeal(orgId: string, dealId: number, userId?: string): Promise<DealPredictionResult | null> {
-    const [[deal], [activityStats]] = await Promise.all([
-      this.db
-        .select({
-          id: deals.id,
-          name: deals.name,
-          value: deals.value,
-          stage: deals.stage,
-          probability: deals.probability,
-          createdAt: deals.createdAt,
-          updatedAt: deals.updatedAt,
-          expectedCloseDate: deals.expectedCloseDate,
-          contactPerson: deals.contactPerson,
-          assignedToId: deals.assignedToId,
-          notes: deals.notes,
-        })
-        .from(deals)
-        .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId))),
-      this.db
-        .select({ count: count(), lastDate: max(dealActivities.createdAt) })
-        .from(dealActivities)
-        .where(eq(dealActivities.dealId, dealId)),
-    ]);
+    const ctx = await runInTenantTransaction(this.db, async (tx) => {
+      const [[deal], [activityStats]] = await Promise.all([
+        tx
+          .select({
+            id: deals.id,
+            name: deals.name,
+            value: deals.value,
+            stage: deals.stage,
+            probability: deals.probability,
+            createdAt: deals.createdAt,
+            updatedAt: deals.updatedAt,
+            expectedCloseDate: deals.expectedCloseDate,
+            contactPerson: deals.contactPerson,
+            assignedToId: deals.assignedToId,
+            notes: deals.notes,
+          })
+          .from(deals)
+          .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt))),
+        tx
+          .select({ count: count(), lastDate: max(dealActivities.createdAt) })
+          .from(dealActivities)
+          .where(eq(dealActivities.dealId, dealId)),
+      ]);
+      return { deal: deal ?? null, activityStats: activityStats ?? null };
+    }, { orgId });
 
-    if (!deal) return null;
+    if (!ctx.deal) return null;
+    const { deal, activityStats } = ctx;
 
     const now = new Date();
     const createdAt = deal.createdAt ? new Date(deal.createdAt) : now;
@@ -207,10 +218,12 @@ export class CrmScoringService {
     const data = result.data;
     data.winProbability = Math.max(0, Math.min(100, Math.round(data.winProbability)));
 
-    await this.db
-      .update(deals)
-      .set({ probability: data.winProbability, updatedAt: new Date() })
-      .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId)));
+    await runInTenantTransaction(this.db, async (tx) => {
+      await tx
+        .update(deals)
+        .set({ probability: data.winProbability, updatedAt: new Date() })
+        .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)));
+    }, { orgId });
 
     return data;
   }
@@ -221,19 +234,22 @@ export class CrmScoringService {
     context?: ChurnContext,
     userId?: string,
   ): Promise<ChurnRiskResult | null> {
-    const [client] = await this.db
-      .select({
-        id: clients.id,
-        name: clients.name,
-        company: clients.company,
-        healthScore: clients.healthScore,
-        investmentValue: clients.investmentValue,
-        convertedAt: clients.convertedAt,
-        createdAt: clients.createdAt,
-        status: clients.status,
-      })
-      .from(clients)
-      .where(and(eq(clients.id, clientId), eq(clients.orgId, orgId)));
+    const client = await runInTenantTransaction(this.db, async (tx) => {
+      const [row] = await tx
+        .select({
+          id: clients.id,
+          name: clients.name,
+          company: clients.company,
+          healthScore: clients.healthScore,
+          investmentValue: clients.investmentValue,
+          convertedAt: clients.convertedAt,
+          createdAt: clients.createdAt,
+          status: clients.status,
+        })
+        .from(clients)
+        .where(and(eq(clients.id, clientId), eq(clients.orgId, orgId)));
+      return row ?? null;
+    }, { orgId });
 
     if (!client) return null;
 
@@ -276,45 +292,51 @@ export class CrmScoringService {
       data.churnRiskScore >= 70 ? "critical" : data.churnRiskScore >= 40 ? "at_risk" : "healthy";
     const healthScore = Math.max(0, 100 - data.churnRiskScore);
 
-    await this.db
-      .update(clients)
-      .set({
-        healthScore,
-        healthStatus,
-        churnRiskScore: data.churnRiskScore,
-        churnRiskReasoning: data.reasoning,
-        lastHealthCheck: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(and(eq(clients.id, clientId), eq(clients.orgId, orgId)));
+    await runInTenantTransaction(this.db, async (tx) => {
+      await tx
+        .update(clients)
+        .set({
+          healthScore,
+          healthStatus,
+          churnRiskScore: data.churnRiskScore,
+          churnRiskReasoning: data.reasoning,
+          lastHealthCheck: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(and(eq(clients.id, clientId), eq(clients.orgId, orgId)));
+    }, { orgId });
 
     return data;
   }
 
   async nextBestAction(orgId: string, leadId: number, userId?: string): Promise<NextActionResult | null> {
-    const [[lead], [lastActivity]] = await Promise.all([
-      this.db
-        .select({
-          id: leads.id,
-          name: leads.name,
-          status: leads.status,
-          priority: leads.priority,
-          potentialValue: leads.potentialValue,
-          assignedToId: leads.assignedToId,
-          followUpDate: leads.followUpDate,
-          notes: leads.notes,
-        })
-        .from(leads)
-        .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId))),
-      this.db
-        .select({ type: leadActivities.type, date: leadActivities.date })
-        .from(leadActivities)
-        .where(eq(leadActivities.leadId, leadId))
-        .orderBy(desc(leadActivities.date))
-        .limit(1),
-    ]);
+    const ctx = await runInTenantTransaction(this.db, async (tx) => {
+      const [[lead], [lastActivity]] = await Promise.all([
+        tx
+          .select({
+            id: leads.id,
+            name: leads.name,
+            status: leads.status,
+            priority: leads.priority,
+            potentialValue: leads.potentialValue,
+            assignedToId: leads.assignedToId,
+            followUpDate: leads.followUpDate,
+            notes: leads.notes,
+          })
+          .from(leads)
+          .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId))),
+        tx
+          .select({ type: leadActivities.type, date: leadActivities.date })
+          .from(leadActivities)
+          .where(eq(leadActivities.leadId, leadId))
+          .orderBy(desc(leadActivities.date))
+          .limit(1),
+      ]);
+      return { lead: lead ?? null, lastActivity: lastActivity ?? null };
+    }, { orgId });
 
-    if (!lead) return null;
+    if (!ctx.lead) return null;
+    const { lead, lastActivity } = ctx;
 
     const now = new Date();
     const lastActivityDate = lastActivity?.date ? new Date(lastActivity.date) : null;
@@ -355,39 +377,43 @@ export class CrmScoringService {
   }
 
   async nextBestActionWithEvidence(orgId: string, leadId: number, userId?: string): Promise<NextActionWithEvidenceResult | null> {
-    const [[lead], [lastActivity], recentActivities] = await Promise.all([
-      this.db
-        .select({
-          id: leads.id,
-          name: leads.name,
-          status: leads.status,
-          priority: leads.priority,
-          potentialValue: leads.potentialValue,
-          assignedToId: leads.assignedToId,
-          followUpDate: leads.followUpDate,
-          notes: leads.notes,
-          source: leads.source,
-          company: leads.company,
-          email: leads.email,
-          score: leads.score,
-        })
-        .from(leads)
-        .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId))),
-      this.db
-        .select({ type: leadActivities.type, date: leadActivities.date, outcome: leadActivities.outcome })
-        .from(leadActivities)
-        .where(eq(leadActivities.leadId, leadId))
-        .orderBy(desc(leadActivities.date))
-        .limit(1),
-      this.db
-        .select({ type: leadActivities.type, date: leadActivities.date, outcome: leadActivities.outcome })
-        .from(leadActivities)
-        .where(eq(leadActivities.leadId, leadId))
-        .orderBy(desc(leadActivities.date))
-        .limit(3),
-    ]);
+    const ctx = await runInTenantTransaction(this.db, async (tx) => {
+      const [[lead], [lastActivity], recentActivities] = await Promise.all([
+        tx
+          .select({
+            id: leads.id,
+            name: leads.name,
+            status: leads.status,
+            priority: leads.priority,
+            potentialValue: leads.potentialValue,
+            assignedToId: leads.assignedToId,
+            followUpDate: leads.followUpDate,
+            notes: leads.notes,
+            source: leads.source,
+            company: leads.company,
+            email: leads.email,
+            score: leads.score,
+          })
+          .from(leads)
+          .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId))),
+        tx
+          .select({ type: leadActivities.type, date: leadActivities.date, outcome: leadActivities.outcome })
+          .from(leadActivities)
+          .where(eq(leadActivities.leadId, leadId))
+          .orderBy(desc(leadActivities.date))
+          .limit(1),
+        tx
+          .select({ type: leadActivities.type, date: leadActivities.date, outcome: leadActivities.outcome })
+          .from(leadActivities)
+          .where(eq(leadActivities.leadId, leadId))
+          .orderBy(desc(leadActivities.date))
+          .limit(3),
+      ]);
+      return { lead: lead ?? null, lastActivity: lastActivity ?? null, recentActivities };
+    }, { orgId });
 
-    if (!lead) return null;
+    if (!ctx.lead) return null;
+    const { lead, lastActivity, recentActivities } = ctx;
 
     const now = new Date();
     const lastActivityDate = lastActivity?.date ? new Date(lastActivity.date) : null;

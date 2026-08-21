@@ -6,7 +6,11 @@ jest.mock("../../rbac/permissions", () => ({
   isScopable: jest.fn(),
 }));
 
-import { resolvePerformanceScope, resolveDocumentsScope } from "./performance-scope";
+import {
+  resolveDocumentsManageScope,
+  resolveDocumentsScope,
+  resolvePerformanceScope,
+} from "./performance-scope";
 
 const mockAccess = { resolveUserPermissions: jest.fn() } as unknown as AccessService;
 
@@ -88,7 +92,7 @@ describe("resolveDocumentsScope", () => {
   it("returns all when scope map contains all for the permission key", async () => {
     jest.spyOn(permissionsConstants, "isScopable").mockReturnValue(true);
     (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(
-      new Map([["hr:documents:manage", "all"]]),
+      new Map([["hr:documents:view", "all"]]),
     );
     const result = await resolveDocumentsScope(mockAccess, makeUser());
     expect(result).toBe("all");
@@ -97,7 +101,7 @@ describe("resolveDocumentsScope", () => {
   it("returns own when scope map contains own for the permission key", async () => {
     jest.spyOn(permissionsConstants, "isScopable").mockReturnValue(true);
     (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(
-      new Map([["hr:documents:manage", "own"]]),
+      new Map([["hr:documents:view", "own"]]),
     );
     const result = await resolveDocumentsScope(mockAccess, makeUser());
     expect(result).toBe("own");
@@ -108,5 +112,19 @@ describe("resolveDocumentsScope", () => {
     (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Map());
     const result = await resolveDocumentsScope(mockAccess, makeUser());
     expect(result).toBe("none");
+  });
+});
+
+describe("resolveDocumentsManageScope", () => {
+  it("uses the manage permission rather than widening a view grant", async () => {
+    jest.spyOn(permissionsConstants, "isScopable").mockReturnValue(true);
+    (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(
+      new Map([
+        ["hr:documents:view", "all"],
+        ["hr:documents:manage", "own"],
+      ]),
+    );
+
+    await expect(resolveDocumentsManageScope(mockAccess, makeUser())).resolves.toBe("own");
   });
 });

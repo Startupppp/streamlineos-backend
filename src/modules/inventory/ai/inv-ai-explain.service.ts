@@ -341,7 +341,7 @@ export class InvAiExplainService {
       ],
     });
 
-    await this.confirmation.markExecuted(confirmed.proposalId, { poId: po.id });
+    await this.confirmation.markExecuted(confirmed.proposalId, { poId: po.id }, orgId);
     return po;
   }
 

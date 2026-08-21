@@ -18,6 +18,8 @@ import { RequirePermission } from "../../../access/require-permission.decorator"
 import { RateLimitGuard } from "../../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../../common/ratelimit/use-rate-limit.decorator";
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
+import { NoTenantTransaction } from "../../../../common/tenant/no-tenant-transaction.decorator";
+import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
 import { LlmService } from "../providers/llm.service";
@@ -69,6 +71,7 @@ function hasLeadIds(body: unknown): body is { leadIds: unknown } {
 @UseGuards(JwtAuthGuard, PermissionGuard, RateLimitGuard)
 @RequirePermission("crm:ai:use")
 @UseRateLimit("ai:invoke")
+@NoTenantTransaction()
 export class CrmAiController {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
@@ -93,14 +96,16 @@ export class CrmAiController {
   }
 
   private auditAiAction(orgId: string, userId: string, action: string, targetType: string, targetId: string): Promise<void> {
-    return this.db.insert(auditLogs).values({
-      action,
-      userId,
-      orgId,
-      targetId,
-      targetType,
-      metadata: { source: "crm-ai" },
-    }).then(() => undefined);
+    return runInTenantTransaction(this.db, async (tx) => {
+      await tx.insert(auditLogs).values({
+        action,
+        userId,
+        orgId,
+        targetId,
+        targetType,
+        metadata: { source: "crm-ai" },
+      });
+    }, { orgId });
   }
 
   @Post("score-lead")
@@ -217,7 +222,7 @@ export class CrmAiController {
     await this.requireAiFlag(u.orgId, "aiEmailDraft");
     await this.planLimits.assertFeature(u.orgId, "ai.email-drafting");
     this.ensureLlm("AI email generation is not configured. Set OPENAI_API_KEY.");
-    return this.content.generateEmail(u.userId, body);
+    return this.content.generateEmail(u.userId, body, { orgId: u.orgId, userId: u.userId });
   }
 
   @Post("objection-handler")

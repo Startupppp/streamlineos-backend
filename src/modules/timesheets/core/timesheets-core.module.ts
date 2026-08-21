@@ -69,6 +69,6 @@ import { AiModule } from "../../ai/core/ai.module";
     ExceptionsDetectorService,
     TimesheetsAiService,
   ],
-  exports: [EntriesService, SettingsService, ExceptionsDetectorService],
+  exports: [EntriesService, SettingsService, ExceptionsDetectorService, EntriesPeriodService],
 })
 export class TimesheetsCoreModule {}

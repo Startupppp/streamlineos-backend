@@ -1,6 +1,13 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { InvStockAdjustmentsService } from "../inv-stock-adjustments.service";
 
+const mockWarehouseScope = {
+  resolve: jest.fn(async () => null),
+  warehouseIdList: jest.fn(() => null),
+  assertLocationsInScope: jest.fn(async () => undefined),
+};
+
+
 function makeDb(adjRow?: Partial<{ id: number; status: string; referenceNumber: string; reason: string; notes: string | null; lines: unknown[] }>) {
   const returning = jest.fn().mockResolvedValue([{ id: 1, referenceNumber: "ADJ-00001" }]);
   const insert = jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning }) });
@@ -63,6 +70,7 @@ function buildService(threshold: string | null, adjRowOverride?: Partial<{ id: n
     engine as never,
     numSeq as never,
     settings as never,
+    mockWarehouseScope as never,
   );
   return { svc, db, engine, settings };
 }
@@ -135,7 +143,8 @@ describe("InvStockAdjustmentsService — threshold routing", () => {
         makeEngine() as never,
         makeNumSeq() as never,
         makeSettings(null) as never,
-      );
+        mockWarehouseScope as never,
+  );
       await expect(svc.getAdjustment("org1", 999)).rejects.toThrow(NotFoundException);
     });
   });

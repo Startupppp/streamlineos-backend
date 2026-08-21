@@ -1,30 +1,31 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, isNull } from "drizzle-orm";
-import { attendance, geofences } from "../../../db/schema";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { formatInTimeZone } from "date-fns-tz";
+import { attendance, geofences, organizations } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { getTodayString } from "../../../common/date";
+import type { TenantTx } from "../../../db/drizzle.types";
 import type { CheckInInput } from "./dto/attendance.schemas";
 import { HrAutomationEngineService } from "../automations/hr-automation-engine.service";
 import { AttendancePolicyService } from "./attendance-policy.service";
+import {
+  AttendanceEventWriterService,
+  type AttendanceEventEffect,
+  type PreparedAttendanceCommand,
+} from "./attendance-event-writer.service";
+import { calculateDistanceMeters } from "./attendance-clock-location";
 
-function haversineMeters(
-  lat1: number,
-  lng1: number,
-  lat2: number,
-  lng2: number,
-): number {
-  const R = 6371000;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLng = ((lng2 - lng1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLng / 2) *
-      Math.sin(dLng / 2);
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+interface BusinessClockContext {
+  businessDate: string;
+  organizationTimezone: string;
 }
+
+type CanonicalSubjectValues = Partial<
+  Pick<
+    typeof attendance.$inferInsert,
+    "workerId" | "workerEngagementId"
+  >
+>;
 
 @Injectable()
 export class AttendanceClockService {
@@ -32,133 +33,193 @@ export class AttendanceClockService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly automations: HrAutomationEngineService,
     private readonly policyService: AttendancePolicyService,
+    private readonly eventWriter: AttendanceEventWriterService,
   ) {}
 
-  async checkIn(orgId: string, userId: string, body: CheckInInput) {
-    const today = body.localDate ?? getTodayString();
+  private async getBusinessClockContext(
+    organizationId: string,
+  ): Promise<BusinessClockContext> {
+    const [organization] = await this.db
+      .select({ timezone: organizations.timezone })
+      .from(organizations)
+      .where(eq(organizations.id, organizationId))
+      .limit(1);
+    if (!organization?.timezone) {
+      throw new BadRequestException(
+        "Configure the organization timezone before recording attendance.",
+      );
+    }
+    try {
+      return {
+        businessDate: formatInTimeZone(
+          new Date(),
+          organization.timezone,
+          "yyyy-MM-dd",
+        ),
+        organizationTimezone: organization.timezone,
+      };
+    } catch {
+      throw new BadRequestException(
+        "Configure a valid organization timezone before recording attendance.",
+      );
+    }
+  }
 
+  private attendanceLockKey(
+    organizationId: string,
+    userId: string,
+    businessDate: string,
+  ) {
+    return `${organizationId}:${userId}:${businessDate}`;
+  }
+
+  async checkIn(
+    organizationId: string,
+    userId: string,
+    input: CheckInInput,
+    idempotencyKey: string,
+  ) {
+    const clockContext = await this.getBusinessClockContext(organizationId);
     const policy = await this.policyService.getAttendanceRules(
-      orgId,
+      organizationId,
       userId,
-      today,
+      clockContext.businessDate,
     );
     const shiftInfo =
       await this.policyService.getEffectiveShiftStartWithGrace(
-        orgId,
+        organizationId,
         userId,
-        today,
+        clockContext.businessDate,
       );
 
     let locationVerified = false;
+    let matchedGeofenceId: number | undefined;
 
-    if (policy.enforceGeofence && body.location) {
-      const fences = await this.db
+    if (input.location) {
+      const geofenceRows = await this.db
         .select()
         .from(geofences)
-        .where(and(eq(geofences.orgId, orgId), eq(geofences.isActive, true)));
-
-      if (fences.length > 0) {
-        const within = fences.some(
-          (f) =>
-            haversineMeters(
-              body.location!.lat,
-              body.location!.lng,
-              Number(f.lat),
-              Number(f.lng),
-            ) <= f.radiusMeters,
+        .where(
+          and(
+            eq(geofences.orgId, organizationId),
+            eq(geofences.isActive, true),
+          ),
         );
-        if (!within) {
-          throw new BadRequestException(
-            "Check-in location is outside allowed geofences.",
-          );
-        }
-        locationVerified = true;
-      }
-    } else if (body.location) {
-      const fences = await this.db
-        .select()
-        .from(geofences)
-        .where(and(eq(geofences.orgId, orgId), eq(geofences.isActive, true)));
+      const matchedGeofence = geofenceRows.find(
+        (geofence) =>
+          calculateDistanceMeters(
+            input.location!.lat,
+            input.location!.lng,
+            Number(geofence.lat),
+            Number(geofence.lng),
+          ) <= geofence.radiusMeters,
+      );
 
-      if (fences.length > 0) {
-        locationVerified = fences.some(
-          (f) =>
-            haversineMeters(
-              body.location!.lat,
-              body.location!.lng,
-              Number(f.lat),
-              Number(f.lng),
-            ) <= f.radiusMeters,
+      if (policy.enforceGeofence && geofenceRows.length > 0 && !matchedGeofence) {
+        throw new BadRequestException(
+          "Check-in location is outside allowed geofences.",
         );
       }
+      locationVerified = matchedGeofence !== undefined;
+      matchedGeofenceId = matchedGeofence?.id;
     }
 
-    await this.db.transaction(async (tx) => {
-      const openSessions = await tx
-        .select()
+    const checkInResult = await this.db.transaction(async (transaction) => {
+      await transaction.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${this.attendanceLockKey(organizationId, userId, clockContext.businessDate)}, 0))`,
+      );
+      const preparedCommand = await this.eventWriter.prepareCommand(
+        transaction,
+        {
+          organizationId,
+          actorUserId: userId,
+          businessDate: clockContext.businessDate,
+          organizationTimezone: clockContext.organizationTimezone,
+          commandScope: "hr.attendance.check-in",
+          commandId: idempotencyKey,
+        },
+      );
+      if (preparedCommand?.state === "REPLAY") {
+        return { replayed: true as const, occurredAt: null };
+      }
+
+      const openSessions = await transaction
+        .select({ attendanceId: attendance.id })
         .from(attendance)
         .where(
           and(
             eq(attendance.userId, userId),
-            eq(attendance.date, today),
-            eq(attendance.orgId, orgId),
+            eq(attendance.date, clockContext.businessDate),
+            eq(attendance.orgId, organizationId),
             isNull(attendance.checkOut),
           ),
         )
         .limit(1)
         .for("update");
-
       if (openSessions[0]) {
         throw new BadRequestException("Already checked in");
       }
 
-      const latestClosed = await tx
-        .select()
+      const latestClosedSessions = await transaction
+        .select({ checkOut: attendance.checkOut })
         .from(attendance)
         .where(
           and(
             eq(attendance.userId, userId),
-            eq(attendance.date, today),
-            eq(attendance.orgId, orgId),
+            eq(attendance.date, clockContext.businessDate),
+            eq(attendance.orgId, organizationId),
           ),
         )
         .orderBy(desc(attendance.createdAt))
         .limit(1)
         .for("update");
-
-      const existing = latestClosed[0];
-      if (existing?.checkOut) {
-        const lastCheckOut = new Date(existing.checkOut);
-        const cooldownDiff = new Date().getTime() - lastCheckOut.getTime();
-        const diffMinutes = cooldownDiff / (1000 * 60);
-        if (diffMinutes < policy.minReclockInMinutes) {
+      const latestClosedSession = latestClosedSessions[0];
+      if (latestClosedSession?.checkOut) {
+        const lastCheckOut = new Date(latestClosedSession.checkOut);
+        const cooldownMilliseconds = Date.now() - lastCheckOut.getTime();
+        const cooldownMinutes = cooldownMilliseconds / (1000 * 60);
+        if (cooldownMinutes < policy.minReclockInMinutes) {
           throw new BadRequestException(
             `Please wait ${policy.minReclockInMinutes} minute${policy.minReclockInMinutes !== 1 ? "s" : ""} before clocking in again.`,
           );
         }
       }
 
-      await tx.insert(attendance).values({
-        orgId,
+      const occurredAt = new Date();
+      await transaction.insert(attendance).values({
+        orgId: organizationId,
         userId,
-        date: today,
-        checkIn: new Date(),
+        date: clockContext.businessDate,
+        checkIn: occurredAt,
         status: "PRESENT",
-        locationData: body.location ?? null,
+        locationData: input.location ?? null,
         locationVerified,
+        ...this.canonicalSubjectValues(preparedCommand),
       });
+      await this.appendCanonicalEffects(transaction, preparedCommand, [
+        {
+          eventKind: "CHECK_IN",
+          occurredAt,
+          ...(matchedGeofenceId === undefined
+            ? {}
+            : { geofenceId: matchedGeofenceId, geofencePassed: true }),
+        },
+      ]);
+      return { replayed: false as const, occurredAt };
     });
 
-    const checkInTime = new Date();
-    const checkInMinutes =
-      checkInTime.getHours() * 60 + checkInTime.getMinutes();
-    const lateThreshold =
-      shiftInfo.shiftStartMinutes + shiftInfo.graceMinutes;
+    if (checkInResult.replayed || !checkInResult.occurredAt) {
+      return { success: true };
+    }
 
+    const checkInMinutes =
+      checkInResult.occurredAt.getHours() * 60 +
+      checkInResult.occurredAt.getMinutes();
+    const lateThreshold = shiftInfo.shiftStartMinutes + shiftInfo.graceMinutes;
     if (checkInMinutes > lateThreshold) {
       const minutesLate = checkInMinutes - shiftInfo.shiftStartMinutes;
       this.automations
-        .emit(orgId, "attendance.late", {
+        .emit(organizationId, "attendance.late", {
           employeeId: userId,
           minutesLate,
           attendanceStatus: "late",
@@ -169,25 +230,49 @@ export class AttendanceClockService {
     return { success: true };
   }
 
-  async checkOut(orgId: string, userId: string, localDate?: string) {
-    const today = localDate ?? getTodayString();
-
+  async checkOut(
+    organizationId: string,
+    userId: string,
+    idempotencyKey: string,
+  ) {
+    const clockContext = await this.getBusinessClockContext(organizationId);
     const overtimeRules = await this.policyService.getOvertimeRules(
-      orgId,
+      organizationId,
       userId,
-      today,
+      clockContext.businessDate,
     );
     const dailyThresholdHours = overtimeRules.dailyThresholdMinutes / 60;
 
-    await this.db.transaction(async (tx) => {
-      const result = await tx
-        .select()
+    await this.db.transaction(async (transaction) => {
+      await transaction.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${this.attendanceLockKey(organizationId, userId, clockContext.businessDate)}, 0))`,
+      );
+      const preparedCommand = await this.eventWriter.prepareCommand(
+        transaction,
+        {
+          organizationId,
+          actorUserId: userId,
+          businessDate: clockContext.businessDate,
+          organizationTimezone: clockContext.organizationTimezone,
+          commandScope: "hr.attendance.check-out",
+          commandId: idempotencyKey,
+        },
+      );
+      if (preparedCommand?.state === "REPLAY") return;
+
+      const [attendanceSession] = await transaction
+        .select({
+          attendanceId: attendance.id,
+          checkIn: attendance.checkIn,
+          breakHours: attendance.breakHours,
+          breaks: attendance.breaks,
+        })
         .from(attendance)
         .where(
           and(
             eq(attendance.userId, userId),
-            eq(attendance.date, today),
-            eq(attendance.orgId, orgId),
+            eq(attendance.date, clockContext.businessDate),
+            eq(attendance.orgId, organizationId),
             isNull(attendance.checkOut),
           ),
         )
@@ -195,105 +280,204 @@ export class AttendanceClockService {
         .limit(1)
         .for("update");
 
-      const log = result[0];
-      if (!log) throw new BadRequestException("Cannot check out");
-      if (!log.checkIn) throw new BadRequestException("Missing check-in time");
-
-      const now = new Date();
-      let totalBreakHours = Number(log.breakHours) || 0;
-      const breaks = log.breaks ?? [];
-      const updatedBreaks = [...breaks];
-
-      const lastBreak = updatedBreaks[updatedBreaks.length - 1];
-      if (lastBreak && !lastBreak.end) {
-        lastBreak.end = now.toISOString();
-        const start = new Date(lastBreak.start);
-        const duration = (now.getTime() - start.getTime()) / (1000 * 60 * 60);
-        totalBreakHours += Math.max(0, duration);
+      if (!attendanceSession) {
+        throw new BadRequestException("Cannot check out");
+      }
+      if (!attendanceSession.checkIn) {
+        throw new BadRequestException("Missing check-in time");
       }
 
-      const checkInTime = new Date(log.checkIn);
-      const durationMs = Math.max(0, now.getTime() - checkInTime.getTime());
+      const occurredAt = new Date();
+      let totalBreakHours = Number(attendanceSession.breakHours) || 0;
+      const currentBreaks = attendanceSession.breaks ?? [];
+      let updatedBreaks = currentBreaks;
+      const canonicalEffects: AttendanceEventEffect[] = [];
+      const activeBreak = currentBreaks[currentBreaks.length - 1];
+      if (activeBreak && !activeBreak.end) {
+        updatedBreaks = currentBreaks.map((breakPeriod, breakIndex) =>
+          breakIndex === currentBreaks.length - 1
+            ? { ...breakPeriod, end: occurredAt.toISOString() }
+            : breakPeriod,
+        );
+        const breakStartedAt = new Date(activeBreak.start);
+        const breakDurationHours =
+          (occurredAt.getTime() - breakStartedAt.getTime()) / 3_600_000;
+        totalBreakHours += Math.max(0, breakDurationHours);
+        canonicalEffects.push({ eventKind: "BREAK_END", occurredAt });
+      }
+
+      const checkInTime = new Date(attendanceSession.checkIn);
+      const durationMilliseconds = Math.max(
+        0,
+        occurredAt.getTime() - checkInTime.getTime(),
+      );
       const sessionWorkHours = Math.max(
         0,
-        durationMs / (1000 * 60 * 60) - totalBreakHours,
+        durationMilliseconds / 3_600_000 - totalBreakHours,
       );
 
-      const todayLogs = await tx.query.attendance.findMany({
-        where: and(
-          eq(attendance.userId, userId),
-          eq(attendance.date, today),
-          eq(attendance.orgId, orgId),
-        ),
-      });
+      const dailyAttendanceRows = await transaction
+        .select({
+          attendanceId: attendance.id,
+          workHours: attendance.workHours,
+        })
+        .from(attendance)
+        .where(
+          and(
+            eq(attendance.userId, userId),
+            eq(attendance.date, clockContext.businessDate),
+            eq(attendance.orgId, organizationId),
+          ),
+        );
 
       let previousWorkHours = 0;
-      for (const l of todayLogs) {
-        if (l.id !== log.id) {
-          previousWorkHours += Number(l.workHours || 0);
+      for (const dailyAttendanceRow of dailyAttendanceRows) {
+        if (
+          dailyAttendanceRow.attendanceId !== attendanceSession.attendanceId
+        ) {
+          previousWorkHours += Number(dailyAttendanceRow.workHours || 0);
         }
       }
 
       const totalDailyWork = previousWorkHours + sessionWorkHours;
       const isOvertime = totalDailyWork > dailyThresholdHours;
 
-      await tx
+      await transaction
         .update(attendance)
         .set({
-          checkOut: now,
+          checkOut: occurredAt,
           status: "CHECKED_OUT",
           workHours: sessionWorkHours.toFixed(2),
           breakHours: totalBreakHours.toFixed(2),
           breaks: updatedBreaks,
           isOvertime,
+          ...this.canonicalSubjectValues(preparedCommand),
         })
-        .where(eq(attendance.id, log.id));
+        .where(eq(attendance.id, attendanceSession.attendanceId));
+      canonicalEffects.push({ eventKind: "CHECK_OUT", occurredAt });
+      await this.appendCanonicalEffects(
+        transaction,
+        preparedCommand,
+        canonicalEffects,
+      );
     });
 
     return { success: true };
   }
 
-  async toggleBreak(orgId: string, userId: string) {
-    const today = getTodayString();
+  async toggleBreak(
+    organizationId: string,
+    userId: string,
+    idempotencyKey: string,
+  ) {
+    const clockContext = await this.getBusinessClockContext(organizationId);
 
-    const log = await this.db.query.attendance.findFirst({
-      where: and(
-        eq(attendance.userId, userId),
-        eq(attendance.date, today),
-        eq(attendance.orgId, orgId),
-        isNull(attendance.checkOut),
-      ),
-    });
+    await this.db.transaction(async (transaction) => {
+      await transaction.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${this.attendanceLockKey(organizationId, userId, clockContext.businessDate)}, 0))`,
+      );
+      const preparedCommand = await this.eventWriter.prepareCommand(
+        transaction,
+        {
+          organizationId,
+          actorUserId: userId,
+          businessDate: clockContext.businessDate,
+          organizationTimezone: clockContext.organizationTimezone,
+          commandScope: "hr.attendance.toggle-break",
+          commandId: idempotencyKey,
+        },
+      );
+      if (preparedCommand?.state === "REPLAY") return;
 
-    if (!log) throw new BadRequestException("Invalid action");
+      const [attendanceSession] = await transaction
+        .select({
+          attendanceId: attendance.id,
+          status: attendance.status,
+          breaks: attendance.breaks,
+          breakHours: attendance.breakHours,
+        })
+        .from(attendance)
+        .where(
+          and(
+            eq(attendance.userId, userId),
+            eq(attendance.date, clockContext.businessDate),
+            eq(attendance.orgId, organizationId),
+            isNull(attendance.checkOut),
+          ),
+        )
+        .orderBy(desc(attendance.createdAt))
+        .limit(1)
+        .for("update");
 
-    const now = new Date();
-    const breaks = log.breaks ?? [];
+      if (!attendanceSession) {
+        throw new BadRequestException("Invalid action");
+      }
 
-    if (log.status === "PRESENT") {
-      const newBreaks = [...breaks, { start: now.toISOString() }];
-      await this.db
-        .update(attendance)
-        .set({ status: "ON_BREAK", breaks: newBreaks })
-        .where(eq(attendance.id, log.id));
-    } else {
-      const lastBreak = breaks[breaks.length - 1];
-      if (lastBreak && !lastBreak.end) {
-        lastBreak.end = now.toISOString();
-        const start = new Date(lastBreak.start);
-        const duration = (now.getTime() - start.getTime()) / (1000 * 60 * 60);
-        const totalBreak = (Number(log.breakHours) || 0) + duration;
-        await this.db
+      const occurredAt = new Date();
+      const currentBreaks = attendanceSession.breaks ?? [];
+
+      if (attendanceSession.status === "PRESENT") {
+        await transaction
           .update(attendance)
           .set({
-            status: "PRESENT",
-            breaks,
-            breakHours: totalBreak.toFixed(2),
+            status: "ON_BREAK",
+            breaks: [...currentBreaks, { start: occurredAt.toISOString() }],
+            ...this.canonicalSubjectValues(preparedCommand),
           })
-          .where(eq(attendance.id, log.id));
+          .where(eq(attendance.id, attendanceSession.attendanceId));
+        await this.appendCanonicalEffects(transaction, preparedCommand, [
+          { eventKind: "BREAK_START", occurredAt },
+        ]);
+        return;
       }
-    }
+
+      const activeBreak = currentBreaks[currentBreaks.length - 1];
+      if (!activeBreak || activeBreak.end) {
+        throw new BadRequestException("Invalid action");
+      }
+      const updatedBreaks = currentBreaks.map((breakPeriod, breakIndex) =>
+        breakIndex === currentBreaks.length - 1
+          ? { ...breakPeriod, end: occurredAt.toISOString() }
+          : breakPeriod,
+      );
+      const breakStartedAt = new Date(activeBreak.start);
+      const breakDurationHours =
+        (occurredAt.getTime() - breakStartedAt.getTime()) / 3_600_000;
+      const totalBreakHours =
+        (Number(attendanceSession.breakHours) || 0) + breakDurationHours;
+      await transaction
+        .update(attendance)
+        .set({
+          status: "PRESENT",
+          breaks: updatedBreaks,
+          breakHours: totalBreakHours.toFixed(2),
+          ...this.canonicalSubjectValues(preparedCommand),
+        })
+        .where(eq(attendance.id, attendanceSession.attendanceId));
+      await this.appendCanonicalEffects(transaction, preparedCommand, [
+        { eventKind: "BREAK_END", occurredAt },
+      ]);
+    });
 
     return { success: true };
+  }
+
+  private canonicalSubjectValues(
+    command: PreparedAttendanceCommand | null,
+  ): CanonicalSubjectValues {
+    if (command?.state !== "CANONICAL") return {};
+    return {
+      workerId: command.workerId,
+      workerEngagementId: command.workerEngagementId,
+    };
+  }
+
+  private async appendCanonicalEffects(
+    transaction: TenantTx,
+    command: PreparedAttendanceCommand | null,
+    effects: readonly AttendanceEventEffect[],
+  ): Promise<void> {
+    if (command?.state !== "CANONICAL") return;
+    await this.eventWriter.appendEvents(transaction, command, effects);
   }
 }

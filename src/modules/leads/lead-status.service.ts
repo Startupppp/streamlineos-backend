@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { eq, and, count, sql, inArray } from "drizzle-orm";
+import { and, count, eq, inArray, isNull, sql } from "drizzle-orm";
 import { AccessService } from "../access/access.service";
 import {
   leads,
@@ -95,7 +95,7 @@ export class LeadStatusService {
 
   private async ensureDealForLead(orgId: string, lead: LeadRow): Promise<void> {
     const existingDeal = await this.db.query.deals.findFirst({
-      where: and(eq(deals.leadId, lead.id), eq(deals.orgId, orgId)),
+      where: and(eq(deals.leadId, lead.id), eq(deals.orgId, orgId), isNull(deals.deletedAt)),
     });
     if (existingDeal) return;
     await this.planLimits.assertWithinLimit(orgId, "crmDeals");
@@ -190,7 +190,7 @@ export class LeadStatusService {
   ): Promise<void> {
     try {
       const firstProject = await this.db.query.projects.findFirst({
-        where: eq(projects.orgId, orgId),
+        where: and(eq(projects.orgId, orgId), isNull(projects.deletedAt)),
       });
       if (firstProject) {
         const ticketCountResult = await this.db
@@ -286,7 +286,7 @@ export class LeadStatusService {
     const isLost = semantics.lostKeys.includes(input.status);
 
     const existing = await this.db.query.leads.findFirst({
-      where: and(eq(leads.id, leadId), eq(leads.orgId, orgId)),
+      where: and(eq(leads.id, leadId), eq(leads.orgId, orgId), isNull(leads.deletedAt)),
     });
 
     if (isConverted && existing && semantics.convertedKeys.includes(existing.status)) {
@@ -334,7 +334,7 @@ export class LeadStatusService {
     if (isConverted) updateData.convertedAt = new Date();
     if (isLost && input.lostReason) updateData.lostReason = input.lostReason;
 
-    const conditions = [eq(leads.id, leadId), eq(leads.orgId, orgId)];
+    const conditions = [eq(leads.id, leadId), eq(leads.orgId, orgId), isNull(leads.deletedAt)];
     if (input.expectedStatus)
       conditions.push(eq(leads.status, input.expectedStatus));
 

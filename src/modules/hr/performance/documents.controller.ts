@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   HttpCode,
+  NotFoundException,
   Param,
   ParseIntPipe,
   Patch,
@@ -18,7 +19,10 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { AccessService } from "../../access/access.service";
-import { resolveDocumentsScope } from "./performance-scope";
+import {
+  resolveDocumentsManageScope,
+  resolveDocumentsScope,
+} from "./performance-scope";
 import { DocumentsService } from "./documents.service";
 import { ComplianceService } from "./compliance.service";
 import { RichDocumentsService } from "./rich-documents.service";
@@ -46,6 +50,8 @@ import {
   type UpdateRichDocumentInput,
 } from "./dto/documents.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { AuditService } from "../../../common/audit/audit.service";
+import { StorageService } from "../../storage/storage.service";
 
 @RequireModule("hr")
 @Controller("hr")
@@ -57,48 +63,81 @@ export class DocumentsController {
     private readonly richDocuments: RichDocumentsService,
     private readonly letters: LettersService,
     private readonly access: AccessService,
+    private readonly storage: StorageService,
+    private readonly audit: AuditService,
   ) {}
 
   @Get("documents")
   @RequirePermission("hr:documents:view")
   async listDocuments(
     @Query(new ZodValidationPipe(listDocumentsSchema)) filters: ListDocumentsInput,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    const scope = await resolveDocumentsScope(this.access, u);
-    return this.documents.listDocuments(u.orgId, u.userId, scope, filters);
+    const scope = await resolveDocumentsScope(this.access, currentUser);
+    return this.documents.listDocuments(currentUser.orgId, currentUser.userId, scope, filters);
   }
 
   @Post("documents")
   @HttpCode(201)
-  @RequirePermission("hr:documents:view")
-  createDocument(
+  @RequirePermission("hr:documents:manage")
+  async createDocument(
     @Body(new ZodValidationPipe(createDocumentSchema)) body: CreateDocumentInput,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    const isAdmin = u.isOrgOwner;
-    return this.documents.createDocument(u.orgId, u.userId, isAdmin, body);
+    const scope = await resolveDocumentsManageScope(this.access, currentUser);
+    return this.documents.createDocument(currentUser.orgId, currentUser.userId, scope, body);
+  }
+
+  @Get("documents/:documentId/file")
+  @RequirePermission("hr:documents:view")
+  async getDocumentFile(
+    @Param("documentId", ParseIntPipe) documentId: number,
+    @CurrentUser() currentUser: CurrentUserContext,
+  ): Promise<{ url: string; fileName: string; expiresIn: number }> {
+    const scope = await resolveDocumentsScope(this.access, currentUser);
+    const document = await this.documents.getFileReference(
+      currentUser.orgId,
+      currentUser.userId,
+      scope,
+      documentId,
+    );
+    const fileKey = this.storage.getFileKeyFromUrl(document.fileUrl);
+    if (!this.storage.isValidFileKey(fileKey)) {
+      throw new NotFoundException("Document file is unavailable.");
+    }
+
+    const expiresIn = 300;
+    const url = await this.storage.getFileUrl(fileKey, expiresIn);
+    await this.audit.logCritical({
+      action: "hr.document_viewed",
+      userId: currentUser.userId,
+      orgId: currentUser.orgId,
+      targetId: String(document.documentId),
+      targetType: "document",
+      metadata: { fileName: document.fileName },
+    });
+    return { url, fileName: document.fileName, expiresIn };
   }
 
   @Get("documents/stats")
   @RequirePermission("hr:documents:view")
-  async documentStats(@CurrentUser() u: CurrentUserContext) {
-    const scope = await resolveDocumentsScope(this.access, u);
-    return this.documents.stats(u.orgId, u.userId, scope);
+  async documentStats(@CurrentUser() currentUser: CurrentUserContext) {
+    const scope = await resolveDocumentsScope(this.access, currentUser);
+    return this.documents.stats(currentUser.orgId, currentUser.userId, scope);
   }
 
   @Patch("documents/:documentId")
-  @RequirePermission("hr:documents:view")
-  updateDocument(
+  @RequirePermission("hr:documents:manage")
+  async updateDocument(
     @Param("documentId", ParseIntPipe) documentId: number,
     @Body(new ZodValidationPipe(updateDocumentSchema)) body: UpdateDocumentInput,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    const isAdmin = u.isOrgOwner;
+    const scope = await resolveDocumentsManageScope(this.access, currentUser);
     return this.documents.updateDocument(
-      u.orgId,
-      u.userId,
-      isAdmin,
+      currentUser.orgId,
+      currentUser.userId,
+      scope,
       documentId,
       body,
     );
@@ -109,28 +148,28 @@ export class DocumentsController {
   @RequirePermission("hr:documents:manage")
   async deleteDocument(
     @Param("documentId", ParseIntPipe) documentId: number,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    const isAdmin = u.isOrgOwner;
-    await this.documents.deleteDocument(u.orgId, u.userId, isAdmin, documentId);
+    const scope = await resolveDocumentsManageScope(this.access, currentUser);
+    await this.documents.deleteDocument(currentUser.orgId, currentUser.userId, scope, documentId);
   }
 
   @Get("document-expiry")
   @RequirePermission("hr:documents:view")
   async documentExpiry(
     @Query("days") days: string | undefined,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
     const daysAhead = Math.min(Math.max(Number(days) || 30, 1), 365);
-    const scope = await resolveDocumentsScope(this.access, u);
-    return this.documents.expiry(u.orgId, u.userId, scope, daysAhead);
+    const scope = await resolveDocumentsScope(this.access, currentUser);
+    return this.documents.expiry(currentUser.orgId, currentUser.userId, scope, daysAhead);
   }
 
   @Get("compliance")
   @RequirePermission("hr:documents:view")
-  async listCompliance(@CurrentUser() u: CurrentUserContext) {
-    const scope = await resolveDocumentsScope(this.access, u);
-    return this.compliance.listAcknowledgments(u.orgId, u.userId, scope);
+  async listCompliance(@CurrentUser() currentUser: CurrentUserContext) {
+    const scope = await resolveDocumentsScope(this.access, currentUser);
+    return this.compliance.listAcknowledgments(currentUser.orgId, currentUser.userId, scope);
   }
 
   @Post("compliance")
@@ -138,33 +177,33 @@ export class DocumentsController {
   @RequirePermission("hr:compliance:manage")
   sendCompliance(
     @Body(new ZodValidationPipe(sendAckSchema)) body: SendAckInput,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.compliance.sendAcknowledgments(u.orgId, body);
+    return this.compliance.sendAcknowledgments(currentUser.orgId, body);
   }
 
   @Patch("compliance")
   @RequirePermission("hr:documents:view")
   acknowledgeCompliance(
     @Body(new ZodValidationPipe(ackSchema)) body: AckInput,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.compliance.acknowledge(u.orgId, u.userId, body);
+    return this.compliance.acknowledge(currentUser.orgId, currentUser.userId, body);
   }
 
   @Get("compliance/statutory")
   @RequirePermission("hr:compliance:manage")
-  statutory(@CurrentUser() u: CurrentUserContext) {
-    return this.compliance.statutory(u.orgId);
+  statutory(@CurrentUser() currentUser: CurrentUserContext) {
+    return this.compliance.statutory(currentUser.orgId);
   }
 
   @Get("rich-documents")
   @RequirePermission("hr:documents:view")
   listRichDocuments(
     @Query(new ZodValidationPipe(listRichDocumentsSchema)) query: ListRichDocumentsInput,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.richDocuments.list(u.orgId, query);
+    return this.richDocuments.list(currentUser.orgId, query);
   }
 
   @Post("rich-documents")
@@ -172,27 +211,27 @@ export class DocumentsController {
   @RequirePermission("hr:documents:manage")
   createRichDocument(
     @Body(new ZodValidationPipe(createRichDocumentSchema)) body: CreateRichDocumentInput,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.richDocuments.create(u.orgId, u.userId, body);
+    return this.richDocuments.create(currentUser.orgId, currentUser.userId, body);
   }
 
   @Get("rich-documents/:documentId")
   @RequirePermission("hr:documents:view")
   getRichDocument(
     @Param("documentId", ParseIntPipe) documentId: number,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.richDocuments.get(u.orgId, documentId);
+    return this.richDocuments.get(currentUser.orgId, documentId);
   }
 
   @Patch("rich-documents/:documentId/publish")
   @RequirePermission("hr:documents:manage")
   publishRichDocument(
     @Param("documentId", ParseIntPipe) documentId: number,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.richDocuments.togglePublish(u.orgId, documentId);
+    return this.richDocuments.togglePublish(currentUser.orgId, documentId);
   }
 
   @Patch("rich-documents/:documentId")
@@ -200,9 +239,9 @@ export class DocumentsController {
   updateRichDocument(
     @Param("documentId", ParseIntPipe) documentId: number,
     @Body(new ZodValidationPipe(updateRichDocumentSchema)) body: UpdateRichDocumentInput,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.richDocuments.update(u.orgId, u.userId, documentId, body);
+    return this.richDocuments.update(currentUser.orgId, currentUser.userId, documentId, body);
   }
 
   @Delete("rich-documents/:documentId")
@@ -210,18 +249,18 @@ export class DocumentsController {
   @RequirePermission("hr:documents:manage")
   async deleteRichDocument(
     @Param("documentId", ParseIntPipe) documentId: number,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    await this.richDocuments.remove(u.orgId, documentId);
+    await this.richDocuments.remove(currentUser.orgId, documentId);
   }
 
   @Get("documents/letters")
   @RequirePermission("hr:documents:view")
   listLetters(
-    @Query("employeeId") employeeId: string | undefined,
-    @CurrentUser() u: CurrentUserContext,
+    @Query("employmentId") employmentId: string | undefined,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.letters.listLetters(u.orgId, employeeId);
+    return this.letters.listLetters(currentUser.orgId, employmentId);
   }
 
   @Post("documents/letters/render")
@@ -229,9 +268,9 @@ export class DocumentsController {
   @HttpCode(200)
   renderLetter(
     @Body(new ZodValidationPipe(renderLetterSchema)) body: RenderLetterInput,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.letters.renderLetter(u.orgId, u.userId, body);
+    return this.letters.renderLetter(currentUser.orgId, body);
   }
 
   @Post("documents/letters")
@@ -239,9 +278,9 @@ export class DocumentsController {
   @HttpCode(201)
   saveLetter(
     @Body(new ZodValidationPipe(saveLetterSchema)) body: SaveLetterInput,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.letters.saveLetter(u.orgId, u.userId, body);
+    return this.letters.saveLetter(currentUser.orgId, currentUser.userId, body);
   }
 
   @Get("compliance/calendar")
@@ -249,10 +288,10 @@ export class DocumentsController {
   complianceCalendar(
     @Query("year") year: string | undefined,
     @Query("month") month: string | undefined,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
     const y = parseInt(year ?? String(new Date().getFullYear()), 10);
     const m = parseInt(month ?? String(new Date().getMonth() + 1), 10);
-    return this.compliance.calendar(u.orgId, y, m);
+    return this.compliance.calendar(currentUser.orgId, y, m);
   }
 }

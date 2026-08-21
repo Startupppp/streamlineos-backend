@@ -3,6 +3,7 @@ import {
   ConflictException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
@@ -13,6 +14,8 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { AccessService } from "../../access/access.service";
 import { ChatChannelsService } from "../../chat/chat-channels.service";
 import { ChatMessagesService } from "../../chat/chat-messages.service";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
+import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import type {
   CreateApprovalInput,
   DecideApprovalInput,
@@ -28,6 +31,8 @@ const DECIDABLE = new Set<string>(["pending", "escalated", "changes_requested"])
 
 @Injectable()
 export class ApprovalsService {
+  private readonly logger = new Logger(ApprovalsService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
@@ -59,7 +64,7 @@ export class ApprovalsService {
 
   private async assertProject(orgId: string, projectId: number): Promise<void> {
     const p = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
+      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
       columns: { id: true },
     });
     if (!p) throw new NotFoundException("Project not found");
@@ -188,7 +193,15 @@ export class ApprovalsService {
       resourceId: String(approval.id),
       metadata: { projectId, approvalId: approval.id, title: approval.title, approverId: input.approverId },
     });
-    void this.notifyProjectChannel(orgId, projectId, userId, approval.title).catch(() => undefined);
+    registerAfterCommit(() =>
+      runInNewTenantTransaction(this.db, orgId, () =>
+        this.notifyProjectChannel(orgId, projectId, userId, approval.title),
+      ).catch((error: unknown) => {
+        this.logger.error(
+          `approval notification failed for project ${projectId} in org ${orgId}: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+        );
+      }),
+    );
     return approval;
   }
 

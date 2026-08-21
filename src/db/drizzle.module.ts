@@ -9,60 +9,65 @@ import {
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { createTenantAwareDb } from "../common/tenant/tenant-db";
-import type { Db } from "./drizzle.types";
-import { DRIZZLE } from "./drizzle.constants";
+import { createTenantAwareDb, type DbWithClient } from "../common/tenant/tenant-db";
+import { DB_POOL_CONFIG, DRIZZLE } from "./drizzle.constants";
+import { poolTelemetry } from "./pool-telemetry";
+import { resolvePoolConfig, type ResolvedPoolConfig } from "./pool.config";
 import * as schema from "./schema";
 
 export type { Db } from "./drizzle.types";
-
-function normalizeDatabaseUrl(url: string): string {
-  if (!/\.neon\.tech/i.test(url)) return url;
-  try {
-    const parsed = new URL(url);
-    parsed.searchParams.delete("channel_binding");
-    return parsed.toString();
-  } catch {
-    return url.replace(/[&?]channel_binding=[^&]*/g, "").replace(/\?&/, "?");
-  }
-}
 
 @Global()
 @Module({
   providers: [
     {
+      provide: DB_POOL_CONFIG,
+      useFactory: (): ResolvedPoolConfig => resolvePoolConfig(process.env),
+    },
+    {
       provide: DRIZZLE,
-      useFactory: (): Db & { __client: ReturnType<typeof postgres> } => {
-        // APP_DATABASE_URL is the non-owner, non-BYPASSRLS role. Unsetting it rolls RLS back instantly.
-        const raw = process.env.APP_DATABASE_URL || process.env.DATABASE_URL;
-        if (!raw) throw new Error("DATABASE_URL is required");
-        if (process.env.APP_DATABASE_URL) {
-          new Logger("Drizzle").log("Connecting as the RLS-enforced application role");
-        }
-        const connectionString = normalizeDatabaseUrl(raw);
-        const isNeon = /\.neon\.tech/i.test(connectionString);
-        const isDev = process.env.NODE_ENV === "development";
-        const client = postgres(connectionString, {
-          prepare: false,
-          max: isDev ? 5 : 20,
-          idle_timeout: isNeon ? 15 : (isDev ? 20 : 60),
-          connect_timeout: isNeon ? 30 : 15,
-          max_lifetime: isNeon ? 60 * 4 : 60 * 30,
-          ...(isNeon ? { ssl: "require" as const } : {}),
-        });
-        const db = Object.assign(drizzle(client, { schema }) as Db, { __client: client });
-        return createTenantAwareDb(db) as Db & { __client: ReturnType<typeof postgres> };
+      inject: [DB_POOL_CONFIG],
+      useFactory: (config: ResolvedPoolConfig): DbWithClient => {
+        poolTelemetry.configure({ max: config.max, slowAcquireMs: config.slowAcquireMs });
+        const client = postgres(config.connectionString, config.options);
+        return createTenantAwareDb(Object.assign(drizzle(client, { schema }), { __client: client }));
       },
     },
   ],
-  exports: [DRIZZLE],
+  exports: [DRIZZLE, DB_POOL_CONFIG],
 })
 export class DrizzleModule implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger("Drizzle");
 
   constructor(
-    @Inject(DRIZZLE) private readonly db: Db & { __client: ReturnType<typeof postgres> },
+    @Inject(DRIZZLE) private readonly db: DbWithClient,
+    @Inject(DB_POOL_CONFIG) private readonly config: ResolvedPoolConfig,
   ) {}
+
+  async onApplicationBootstrap(): Promise<void> {
+    this.reportPool();
+    await this.assertRlsIsEnforced();
+  }
+
+  private reportPool(): void {
+    const config = this.config;
+    const options = config.options;
+    this.logger.log(
+      `Pool ready — ${config.max} connections to ${config.host || "configured host"} as the ${config.role} role` +
+        `${config.isPooled ? " via a transaction-mode pooler" : ""}`,
+    );
+    const guard = (ms: number) => (ms > 0 ? `${String(ms)}ms` : "off");
+    this.logger.log(
+      `Pool limits — idle ${String(options.idle_timeout)}s · connect ${String(options.connect_timeout)}s · ` +
+        `lifetime ${String(options.max_lifetime)}s · drain ${String(config.shutdownTimeoutSeconds)}s`,
+    );
+    this.logger.log(
+      `Transaction guards — statement ${guard(config.guards.statementTimeoutMs)} · ` +
+        `idle-in-transaction ${guard(config.guards.idleInTransactionMs)} · ` +
+        `lock ${guard(config.guards.lockTimeoutMs)}`,
+    );
+    for (const warning of config.warnings) this.logger.warn(warning);
+  }
 
   /**
    * Refuses to serve traffic with RLS silently disabled.
@@ -72,14 +77,14 @@ export class DrizzleModule implements OnApplicationBootstrap, OnApplicationShutd
    * every policy stops applying, with nothing in the logs to say so. That is the
    * one failure mode of this design that is invisible, so it fails loudly.
    */
-  async onApplicationBootstrap(): Promise<void> {
+  private async assertRlsIsEnforced(): Promise<void> {
     const rows = await this.db.execute(sql`
       SELECT current_user AS role_name,
         (SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user) AS bypasses_rls,
         EXISTS (
           SELECT 1 FROM pg_class c
           JOIN pg_namespace n ON n.oid = c.relnamespace
-          WHERE n.nspname = 'public' AND c.relrowsecurity
+          WHERE n.nspname IN ('public', 'build', 'build_events') AND c.relrowsecurity
         ) AS policies_exist
     `);
 
@@ -109,6 +114,9 @@ export class DrizzleModule implements OnApplicationBootstrap, OnApplicationShutd
   }
 
   async onApplicationShutdown(): Promise<void> {
-    await this.db.__client.end({ timeout: 5 });
+    const { inFlight, waiting } = poolTelemetry.snapshot();
+    if (inFlight > 0 || waiting > 0)
+      this.logger.log(`Draining pool — ${inFlight} in flight, ${waiting} queued`);
+    await this.db.__client.end({ timeout: this.config.shutdownTimeoutSeconds });
   }
 }

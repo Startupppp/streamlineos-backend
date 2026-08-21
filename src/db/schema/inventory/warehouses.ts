@@ -51,6 +51,31 @@ export const invLocations = pgTable("inv_locations", {
   foreignKey({ columns: [table.parentLocationId], foreignColumns: [table.id], name: "fk_inv_locations_parent" }).onDelete("set null"),
 ]);
 
+export const invUserWarehouses = pgTable("inv_user_warehouses", {
+  id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  warehouseId: integer("warehouse_id").notNull(),
+  grantedBy: text("granted_by").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uniq_inv_user_warehouses_key").on(table.orgId, table.userId, table.warehouseId),
+  unique("uniq_inv_user_warehouses_org_id").on(table.orgId, table.id),
+  index("idx_inv_user_warehouses_org_user").on(table.orgId, table.userId),
+  foreignKey({
+    columns: [table.orgId, table.warehouseId],
+    foreignColumns: [invWarehouses.orgId, invWarehouses.id],
+    name: "fk_inv_user_warehouses_org_warehouse",
+  }).onDelete("cascade"),
+]);
+
+export const invUserWarehousesRelations = relations(invUserWarehouses, ({ one }) => ({
+  organization: one(organizations, { fields: [invUserWarehouses.orgId], references: [organizations.id] }),
+  user: one(users, { fields: [invUserWarehouses.userId], references: [users.id], relationName: "userWarehouseMember" }),
+  warehouse: one(invWarehouses, { fields: [invUserWarehouses.warehouseId], references: [invWarehouses.id] }),
+  granter: one(users, { fields: [invUserWarehouses.grantedBy], references: [users.id], relationName: "userWarehouseGranter" }),
+}));
+
 export const invWarehousesRelations = relations(invWarehouses, ({ one, many }) => ({
   organization: one(organizations, { fields: [invWarehouses.orgId], references: [organizations.id] }),
   branch: one(orgUnits, { fields: [invWarehouses.branchId], references: [orgUnits.id] }),

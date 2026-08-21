@@ -279,14 +279,15 @@ export class ApprovalsService {
         })),
       );
 
-      type RateGroup = { billRate: string; currency: string; rateSource: typeof resolvedRates[number]["source"]; ids: number[] };
+      type RateGroup = { billRate: string; costRate: string | null; currency: string; rateSource: typeof resolvedRates[number]["source"]; ids: number[] };
       const rateGroups = new Map<string, RateGroup>();
       for (const [i, entry] of billableEntries.entries()) {
         const resolved = resolvedRates[i];
         if (!resolved || resolved.billRate === null) continue;
-        const groupKey = `${resolved.billRate}:${resolved.currency}:${resolved.source ?? ""}`;
+        const groupKey = `${resolved.billRate}:${resolved.costRate ?? ""}:${resolved.currency}:${resolved.source ?? ""}`;
         const group = rateGroups.get(groupKey) ?? {
           billRate: resolved.billRate.toString(),
+          costRate: resolved.costRate !== null ? resolved.costRate.toString() : null,
           currency: resolved.currency,
           rateSource: resolved.source,
           ids: [],
@@ -300,6 +301,7 @@ export class ApprovalsService {
           .update(timesheets)
           .set({
             billRate: group.billRate,
+            costRate: group.costRate,
             currency: group.currency,
             rateSource: group.rateSource,
             updatedAt: now,

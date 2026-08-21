@@ -1,10 +1,10 @@
 import { z } from "zod";
 
 export const listPeopleQuerySchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
+  cursor: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   search: z.string().optional(),
-});
+}).strict();
 
 export const createPersonSchema = z.object({
   firstName: z.string().min(1).max(255),
@@ -55,12 +55,12 @@ const workerTypeValues = [
 ] as const;
 
 export const listWorkersQuerySchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
+  cursor: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   status: z.enum(workerStatusValues).optional(),
   search: z.string().optional(),
   organizationPersonId: z.string().uuid().optional(),
-});
+}).strict();
 
 export const createWorkerSchema = z
   .object({
@@ -90,6 +90,7 @@ export const createEngagementSchema = z
     isPrimary: z.boolean().optional(),
     designation: z.string().max(255).optional(),
   })
+  .strict()
   .superRefine((value, context) => {
     if (value.endsOn && value.endsOn <= value.startsOn) {
       context.addIssue({
@@ -101,29 +102,31 @@ export const createEngagementSchema = z
   });
 
 export const updateEngagementSchema = z.object({
+  expectedVersion: z.coerce.number().int().positive(),
   startsOn: z.string().date().optional(),
   endsOn: z.string().date().nullish(),
   workerType: z.enum(workerTypeValues).optional(),
   isPrimary: z.boolean().optional(),
   designation: z.string().max(255).nullish(),
-  departmentId: z.string().nullish(),
-  businessUnitId: z.string().nullish(),
-  branchId: z.string().nullish(),
-  locationId: z.string().nullish(),
-  teamId: z.string().nullish(),
-  managerEngagementId: z.string().nullish(),
+  departmentId: z.string().uuid().nullish(),
+  businessUnitId: z.string().uuid().nullish(),
+  branchId: z.string().uuid().nullish(),
+  locationId: z.string().uuid().nullish(),
+  teamId: z.string().uuid().nullish(),
+  managerEngagementId: z.string().uuid().nullish(),
   jobRoleId: z.coerce.number().int().positive().nullish(),
   jobLevelId: z.coerce.number().int().positive().nullish(),
   employmentTypeId: z.coerce.number().int().positive().nullish(),
   probationEndsOn: z.string().date().nullish(),
   noticePeriodDays: z.coerce.number().int().min(0).nullish(),
-});
+}).strict();
 
 export const terminateEngagementSchema = z.object({
+  expectedVersion: z.coerce.number().int().positive(),
   terminationReason: z.string().max(500).optional(),
   terminationNotes: z.string().optional(),
   endsOn: z.string().date().optional(),
-});
+}).strict();
 
 export type ListWorkersQuery = z.infer<typeof listWorkersQuerySchema>;
 export type CreateWorkerInput = z.infer<typeof createWorkerSchema>;

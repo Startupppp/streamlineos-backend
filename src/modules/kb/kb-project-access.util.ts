@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { projectMembers, projects } from "../../db/schema";
 import type { Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -16,6 +16,7 @@ export async function getAccessibleProjectIds(
       and(
         eq(projects.orgId, user.orgId),
         eq(projectMembers.userId, user.userId),
+        isNull(projects.deletedAt),
       ),
     );
   return rows.map((r) => r.id);

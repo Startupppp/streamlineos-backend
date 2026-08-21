@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, lt, lte, gte, sql, desc, isNull, not, inArray } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lt, lte, not, sql } from "drizzle-orm";
 import { tasks, leads, leadEmails, deals, dealMeetings } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -224,7 +224,7 @@ export class CrmInboxService {
             .from(deals)
             .where(
               and(
-                eq(deals.orgId, orgId),
+                eq(deals.orgId, orgId), isNull(deals.deletedAt),
                 inArray(deals.stage, openStageKeys),
                 not(
                   sql`EXISTS (
@@ -446,7 +446,7 @@ export class CrmInboxService {
         ? this.db
             .select({ n: sql<number>`count(*)` })
             .from(deals)
-            .where(and(eq(deals.orgId, orgId), inArray(deals.stage, openStageKeys), not(sql`EXISTS (SELECT 1 FROM deal_activities da WHERE da.deal_id = ${deals.id} AND da.created_at >= ${fourteenDaysAgo.toISOString()})`)))
+            .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), inArray(deals.stage, openStageKeys), not(sql`EXISTS (SELECT 1 FROM deal_activities da WHERE da.deal_id = ${deals.id} AND da.created_at >= ${fourteenDaysAgo.toISOString()})`)))
             .then((r) => Number(r[0]?.n ?? 0))
         : Promise.resolve(0),
       this.db
@@ -468,11 +468,20 @@ export class CrmInboxService {
     };
   }
 
-  async snoozeTask(orgId: string, taskId: number, userId: string, input: SnoozeTaskInput): Promise<void> {
+  async snoozeTask(
+    orgId: string,
+    taskId: number,
+    userId: string,
+    input: SnoozeTaskInput,
+    scope: DataScope,
+  ): Promise<void> {
+    const scopeFilter = applyScope(scope, orgId, userId, { ownerColumn: tasks.assigneeId });
+    const where = and(eq(tasks.id, taskId), eq(tasks.orgId, orgId), scopeFilter);
+
     const [task] = await this.db
-      .select({ id: tasks.id, orgId: tasks.orgId, assigneeId: tasks.assigneeId })
+      .select({ id: tasks.id })
       .from(tasks)
-      .where(and(eq(tasks.id, taskId), eq(tasks.orgId, orgId)))
+      .where(where)
       .limit(1);
 
     if (!task) throw new NotFoundException("Task not found");
@@ -480,14 +489,22 @@ export class CrmInboxService {
     await this.db
       .update(tasks)
       .set({ snoozedUntil: new Date(input.until), updatedAt: new Date() })
-      .where(and(eq(tasks.id, taskId), eq(tasks.orgId, orgId)));
+      .where(where);
   }
 
-  async completeTask(orgId: string, taskId: number): Promise<void> {
+  async completeTask(
+    orgId: string,
+    taskId: number,
+    userId: string,
+    scope: DataScope,
+  ): Promise<void> {
+    const scopeFilter = applyScope(scope, orgId, userId, { ownerColumn: tasks.assigneeId });
+    const where = and(eq(tasks.id, taskId), eq(tasks.orgId, orgId), scopeFilter);
+
     const [task] = await this.db
-      .select({ id: tasks.id, orgId: tasks.orgId })
+      .select({ id: tasks.id })
       .from(tasks)
-      .where(and(eq(tasks.id, taskId), eq(tasks.orgId, orgId)))
+      .where(where)
       .limit(1);
 
     if (!task) throw new NotFoundException("Task not found");
@@ -495,6 +512,6 @@ export class CrmInboxService {
     await this.db
       .update(tasks)
       .set({ status: "completed", completedAt: new Date(), updatedAt: new Date() })
-      .where(and(eq(tasks.id, taskId), eq(tasks.orgId, orgId)));
+      .where(where);
   }
 }

@@ -24,7 +24,7 @@ export const slaPolicyCreateSchema = z.object({
   businessHours: z.boolean().optional().default(false),
   appliesToText: z.string().optional(),
   priorityText: z.string().optional(),
-});
+}).strict();
 
 export const slaPolicyUpdateSchema = z.object({
   name: z.string().min(1).optional(),
@@ -45,7 +45,7 @@ export const slaPolicyUpdateSchema = z.object({
   businessHours: z.boolean().optional(),
   appliesToText: z.string().optional(),
   priorityText: z.string().optional(),
-});
+}).strict();
 
 export type SlaPolicyCreateInput = z.infer<typeof slaPolicyCreateSchema>;
 export type SlaPolicyUpdateInput = z.infer<typeof slaPolicyUpdateSchema>;

@@ -25,6 +25,7 @@ import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
+import { CostVisibilityService, stripCostFields } from "../stock-engine/cost-visibility";
 import type {
   CreateProductInput,
   UpdateProductInput,
@@ -46,6 +47,7 @@ export class InvProductCrudService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly audit: InventoryAuditService,
+    private readonly costVisibility: CostVisibilityService,
   ) {}
 
   private async assertNoStockForVariants(
@@ -114,8 +116,11 @@ export class InvProductCrudService {
 
     const { status, productType, categoryId, search, page, limit } = filters;
     const offset = (page - 1) * limit;
+    // Cost visibility is part of the key: this list is cached per org, so a
+    // masked payload must not be served to a cost-permitted caller or vice versa.
+    const showCost = userId ? await this.costVisibility.canSeeCost(orgId, userId) : false;
     const scopeSuffix = scope !== "all" ? `:${scope}:${userId ?? ""}` : "";
-    const hash = `${status ?? ""}:${productType ?? ""}:${categoryId ?? ""}:${search ?? ""}:${limit}:${offset}${scopeSuffix}`;
+    const hash = `${showCost ? "cost" : "nocost"}:${status ?? ""}:${productType ?? ""}:${categoryId ?? ""}:${search ?? ""}:${limit}:${offset}${scopeSuffix}`;
     return this.cache.cachedVersioned(
       CACHE_KEYS.invProductsNamespace(orgId),
       hash,
@@ -161,7 +166,7 @@ export class InvProductCrudService {
         ]);
 
         return {
-          items,
+          items: showCost ? items : stripCostFields(items),
           total: countResult[0]?.count ?? 0,
           page,
           totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit),
@@ -171,7 +176,8 @@ export class InvProductCrudService {
     );
   }
 
-  async getProduct(orgId: string, productId: number) {
+  async getProduct(orgId: string, productId: number, userId?: string) {
+    const showCost = userId ? await this.costVisibility.canSeeCost(orgId, userId) : false;
     const product = await this.db.query.invProducts.findFirst({
       where: and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)),
       with: {
@@ -182,7 +188,7 @@ export class InvProductCrudService {
       },
     });
     if (!product) throw new NotFoundException("Product not found");
-    return product;
+    return showCost ? product : stripCostFields(product);
   }
 
   private async generateNextSku(orgId: string): Promise<string> {

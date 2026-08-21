@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { poolEnvShape } from "../db/pool.config";
 
 const deploymentSecret = z.string().min(32).optional();
 const emptyToUndefined = (value: unknown) =>
@@ -24,12 +25,15 @@ const schema = z
     APP_DATABASE_URL: z.preprocess(emptyToUndefined, z.string().optional()),
     /** Session-mode connection for migrations and db:verify-rls; only Neon can be derived automatically. */
     DIRECT_DATABASE_URL: z.preprocess(emptyToUndefined, z.string().optional()),
+    ...poolEnvShape,
     BACKEND_JWT_SECRET: z
       .string()
       .min(
         44,
         "BACKEND_JWT_SECRET must be at least 44 characters (256-bit base64)",
       ),
+    /** Optional HMAC key for pseudonymising public-roadmap voter IPs; falls back to BACKEND_JWT_SECRET. */
+    VOTE_IP_SALT: z.preprocess(emptyToUndefined, deploymentSecret),
     PORTAL_JWT_SECRET: z
       .string()
       .min(

@@ -1,0 +1,21 @@
+-- SNAP-001 reconciliation, second occurrence. Intentionally a no-op.
+--
+-- `db:generate` re-proposed two things that are both already applied:
+--   * `inv_webhook_event_subscriptions` — created by the Inventory programme's own
+--     migration `0420_inv_webhook_event_subscriptions`, which is in the journal.
+--   * dropping `notification_preferences.quiet_hours_timezone` — done by `0432`
+--     (SCH-012's contract step).
+--
+-- Both were verified against the live database before this file was emptied: the table
+-- exists, and the column does not. Executing these statements would fail on this database
+-- and on a cold rebuild alike, because the real migrations create/drop them earlier in the
+-- chain.
+--
+-- The generated `0183_snapshot.json` is kept — that is what brings `migrations/meta` level
+-- with reality so the next `db:generate` proposes nothing.
+--
+-- This recurs because several programmes share this tree and hand-write migrations without
+-- snapshots. If you see it again, verify each proposed object against the database first;
+-- do not assume.
+
+SELECT 1;

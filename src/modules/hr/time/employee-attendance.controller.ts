@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
   Post,
   Query,
@@ -31,6 +32,7 @@ import {
 } from "./dto/attendance.schemas";
 import { AttendanceService } from "./attendance.service";
 import { AttendanceRegularizationService } from "./attendance-regularization.service";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 @Controller("me/attendance")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -48,26 +50,47 @@ export class EmployeeAttendanceController {
 
   @Post("check-in")
   @HttpCode(200)
+  @Idempotent("hr.attendance.check-in")
   checkIn(
-    @Body(new ZodValidationPipe(checkInSchema)) body: CheckInInput,
-    @CurrentUser() user: CurrentUserContext,
+    @Body(new ZodValidationPipe(checkInSchema)) input: CheckInInput,
+    @CurrentUser() currentUser: CurrentUserContext,
+    @Headers("idempotency-key") idempotencyKey: string,
   ) {
-    return this.attendance.checkIn(user.orgId, user.userId, body);
+    return this.attendance.checkIn(
+      currentUser.orgId,
+      currentUser.userId,
+      input,
+      idempotencyKey,
+    );
   }
 
   @Post("check-out")
   @HttpCode(200)
+  @Idempotent("hr.attendance.check-out")
   checkOut(
-    @Body(new ZodValidationPipe(checkOutSchema)) body: CheckOutInput,
-    @CurrentUser() user: CurrentUserContext,
+    @Body(new ZodValidationPipe(checkOutSchema)) _validatedInput: CheckOutInput,
+    @CurrentUser() currentUser: CurrentUserContext,
+    @Headers("idempotency-key") idempotencyKey: string,
   ) {
-    return this.attendance.checkOut(user.orgId, user.userId, body.localDate);
+    return this.attendance.checkOut(
+      currentUser.orgId,
+      currentUser.userId,
+      idempotencyKey,
+    );
   }
 
   @Post("break")
   @HttpCode(200)
-  toggleBreak(@CurrentUser() user: CurrentUserContext) {
-    return this.attendance.toggleBreak(user.orgId, user.userId);
+  @Idempotent("hr.attendance.toggle-break")
+  toggleBreak(
+    @CurrentUser() currentUser: CurrentUserContext,
+    @Headers("idempotency-key") idempotencyKey: string,
+  ) {
+    return this.attendance.toggleBreak(
+      currentUser.orgId,
+      currentUser.userId,
+      idempotencyKey,
+    );
   }
 
   @Get("logs")

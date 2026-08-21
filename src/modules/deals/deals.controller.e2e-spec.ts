@@ -36,6 +36,8 @@ describe("Deals auth/RBAC (e2e)", () => {
   const protectedRoutes: ReadonlyArray<[Method, string]> = [
     ["get", "/deals"],
     ["post", "/deals"],
+    ["patch", "/deals/bulk"],
+    ["delete", "/deals/bulk"],
     ["get", "/deals/stats"],
     ["get", "/deals/aging"],
     ["get", "/deals/forecast"],

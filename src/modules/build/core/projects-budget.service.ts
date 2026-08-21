@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, inArray, sum } from "drizzle-orm";
+import { and, eq, inArray, isNull, sum } from "drizzle-orm";
 import { projectMembers, projects, tickets, timesheets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -41,7 +41,7 @@ export class ProjectsBudgetService {
     const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
     const isOwnerOrAdmin = perms.has("build:manage");
     const project = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, u.orgId)),
+      where: and(eq(projects.id, projectId), eq(projects.orgId, u.orgId), isNull(projects.deletedAt)),
       columns: {
         id: true,
         budgetMinor: true,

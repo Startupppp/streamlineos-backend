@@ -98,7 +98,7 @@ describe("SubmissionsService.createSubmission", () => {
         returning: jest.fn().mockResolvedValue([createdSubmission]),
       }),
     });
-    const mockExecute = jest.fn().mockResolvedValue(undefined);
+    const mockExecute = jest.fn().mockResolvedValue([{ start: 1 }]);
 
     let insertCallCount = 0;
     const mockInsert = jest.fn().mockImplementation(() => {
@@ -172,7 +172,7 @@ describe("SubmissionsService.createSubmission", () => {
         }),
       };
     });
-    const mockExecute = jest.fn().mockResolvedValue(undefined);
+    const mockExecute = jest.fn().mockResolvedValue([{ start: 1 }]);
 
     (mockDb as Record<string, unknown>)["select"] = mockSelect;
     (mockDb as Record<string, unknown>)["insert"] = mockInsert;
@@ -212,7 +212,7 @@ describe("SubmissionsService.createSubmission", () => {
         returning: jest.fn().mockResolvedValue([createdSubmission]),
       }),
     });
-    const mockExecute = jest.fn().mockResolvedValue(undefined);
+    const mockExecute = jest.fn().mockResolvedValue([{ start: 1 }]);
 
     (mockDb as Record<string, unknown>)["insert"] = mockInsert;
     (mockDb as Record<string, unknown>)["execute"] = mockExecute;
@@ -250,7 +250,7 @@ describe("SubmissionsService.createSubmission", () => {
         returning: jest.fn().mockResolvedValue([createdSubmission]),
       }),
     });
-    const mockExecute = jest.fn().mockResolvedValue(undefined);
+    const mockExecute = jest.fn().mockResolvedValue([{ start: 1 }]);
 
     (mockDb as Record<string, unknown>)["insert"] = mockInsert;
     (mockDb as Record<string, unknown>)["execute"] = mockExecute;
@@ -269,7 +269,7 @@ describe("SubmissionsService.createSubmission", () => {
     expect(result.convertedTicketId).toBeNull();
   });
 
-  it("uses advisory lock when form has create_task or create_bug action", async () => {
+  it("allocates the ticket number through the project counter for create_task/create_bug", async () => {
     const form = makeForm({ actions: [{ type: "create_task", config: {} }] });
     (mockDb.query as { projectForms: { findFirst: jest.Mock } }).projectForms.findFirst.mockResolvedValueOnce(form);
 
@@ -284,7 +284,7 @@ describe("SubmissionsService.createSubmission", () => {
       convertedTicketId: 77,
     };
 
-    const executeSpy = jest.fn().mockResolvedValue(undefined);
+    const executeSpy = jest.fn().mockResolvedValue([{ start: 1 }]);
     const mockSelect = jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue({
         where: jest.fn().mockResolvedValue([{ maxNum: 0 }]),

@@ -2,13 +2,17 @@ import {
   pgTable,
   text,
   timestamp,
+  integer,
   index,
+  unique,
   uniqueIndex,
+  foreignKey,
+  check,
   jsonb,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
-import { organizations, users } from "./auth";
+import { relations, sql } from "drizzle-orm";
+import { organizationMembers, organizations, users } from "./auth";
 
 type NodeStatus = "ACTIVE" | "DISABLED" | "ARCHIVED";
 
@@ -56,6 +60,10 @@ export const orgUnits = pgTable(
     }),
     status: text("status").$type<NodeStatus>().default("ACTIVE").notNull(),
     metadata: jsonb("metadata").$type<OrgUnitMetadata>(),
+    rowVersion: integer("row_version").default(1).notNull(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    archivedByMembershipId: integer("archived_by_membership_id"),
+    updatedByMembershipId: integer("updated_by_membership_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -64,6 +72,35 @@ export const orgUnits = pgTable(
     deletedAt: timestamp("deleted_at"),
   },
   (table) => [
+    unique("uniq_org_units_org_id").on(table.orgId, table.id),
+    foreignKey({
+      name: "fk_org_units_parent_tenant",
+      columns: [table.orgId, table.parentId],
+      foreignColumns: [table.orgId, table.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "fk_org_units_archived_by_membership",
+      columns: [table.orgId, table.archivedByMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "fk_org_units_updated_by_membership",
+      columns: [table.orgId, table.updatedByMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    }).onDelete("restrict"),
+    check("chk_org_units_row_version_positive", sql`${table.rowVersion} > 0`),
+    check(
+      "chk_org_units_kind",
+      sql`${table.kind} IN ('BUSINESS_UNIT', 'BRANCH', 'DEPARTMENT', 'TEAM', 'LOCATION', 'COST_CENTER')`,
+    ),
+    check(
+      "chk_org_units_status",
+      sql`${table.status} IN ('ACTIVE', 'DISABLED', 'ARCHIVED')`,
+    ),
+    check(
+      "chk_org_units_parent_not_self",
+      sql`${table.parentId} IS NULL OR ${table.parentId} <> ${table.id}`,
+    ),
     index("idx_org_units_org_kind").on(table.orgId, table.kind),
     index("idx_org_units_parent").on(table.parentId),
     uniqueIndex("uniq_org_units_org_kind_code").on(

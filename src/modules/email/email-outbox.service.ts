@@ -9,24 +9,131 @@ import {
   isTransientError,
   sendEmailOnceDirect,
 } from "./email.provider";
+import { EmailSuppressionService, canonicalEmail } from "./email-suppression.service";
+import { getTenantContext } from "../../common/tenant/tenant-context";
 
 const MAX_ATTEMPTS = 8;
 const BATCH_SIZE = 20;
+
+/**
+ * SCH-014. Callers almost never passed `organizationId`, so every one of the 34 rows in
+ * the table was NULL — and the old RLS policy treated a NULL organization as visible to
+ * every tenant. Rather than edit 75 call sites (and rely on the 76th remembering), the
+ * organization is taken from the ambient tenant context, which every authenticated
+ * request already establishes. An explicit argument still wins.
+ *
+ * What is left NULL after this is genuinely tenant-less: verification and password-reset
+ * mail, sent before the user belongs to anywhere. Those are marked PLATFORM.
+ */
+function resolveScope(explicitOrgId: string | null | undefined): {
+  organizationId: string | null;
+  scope: "PLATFORM" | "TENANT";
+} {
+  const orgId = explicitOrgId ?? getTenantContext()?.orgId ?? null;
+  return orgId ? { organizationId: orgId, scope: "TENANT" } : { organizationId: null, scope: "PLATFORM" };
+}
+
+type DurableEmailOptions = Pick<
+  EmailOptions,
+  "to" | "subject" | "html" | "text" | "organizationId"
+>;
 
 @Injectable()
 export class EmailOutboxService {
   private readonly logger = new Logger(EmailOutboxService.name);
 
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly suppression: EmailSuppressionService,
+  ) {}
+
+  /**
+   * Drops suppressed recipients. Returns null when nothing is left to send, in
+   * which case a SUPPRESSED outbox row records that the send was withheld — callers
+   * must not be able to tell the difference, since many `void` this method and a
+   * throw would surface as an unhandled rejection on an unrelated request.
+   */
+  private async applySuppression(options: EmailOptions): Promise<EmailOptions | null> {
+    const recipients = Array.isArray(options.to) ? options.to : [options.to];
+    const { organizationId: orgId, scope } = resolveScope(options.organizationId);
+    const suppressed = await this.suppression.findSuppressed(recipients, orgId);
+    if (suppressed.size === 0) return options;
+
+    const remaining = recipients.filter((r) => !suppressed.has(canonicalEmail(r)));
+
+    await this.db.insert(emailOutbox).values({
+      organizationId: orgId,
+      scope,
+      toEmail: [...suppressed].join(","),
+      subject: options.subject,
+      // The body is deliberately not stored for a withheld send: there is no
+      // delivery to reconstruct, and email_outbox has no retention sweep (SEC-009).
+      html: "",
+      status: "SUPPRESSED",
+      attempts: 0,
+      lastError: "Recipient is on the email suppression list",
+    });
+
+    this.logger.warn(
+      `EMAIL_OUTBOX: ${suppressed.size} recipient(s) suppressed, ${remaining.length} remaining`,
+      { subject: options.subject },
+    );
+
+    if (remaining.length === 0) return null;
+    return { ...options, to: Array.isArray(options.to) ? remaining : remaining[0] };
+  }
+
+  async enqueueForDelivery(
+    options: readonly DurableEmailOptions[],
+  ): Promise<number> {
+    if (options.length === 0) return 0;
+
+    const now = new Date();
+    const inserted = await this.db
+      .insert(emailOutbox)
+      .values(
+        options.map((item) => {
+          const { organizationId, scope } = resolveScope(item.organizationId);
+          return {
+            organizationId,
+            scope,
+            toEmail: Array.isArray(item.to) ? item.to.join(",") : item.to,
+            subject: item.subject,
+            html: item.html,
+            text: item.text ?? null,
+            status: "PENDING" as const,
+            attempts: 0,
+            nextAttemptAt: now,
+            createdAt: now,
+          };
+        }),
+      )
+      .returning({ id: emailOutbox.id });
+
+    if (inserted.length !== options.length)
+      throw new Error("Failed to enqueue all emails");
+    return inserted.length;
+  }
 
   async enqueueAndTry(options: EmailOptions): Promise<void> {
+    // SEC-002/SEC-003: the suppression gate. Every named sender on EmailService
+    // routes through here, so this one check covers all 75 direct-send call sites.
+    // It applies to mandatory notification types too — a hard-bounced address is
+    // not deliverable regardless of policy, and continuing to send to it degrades
+    // delivery for every other recipient on the domain.
+    const filtered = await this.applySuppression(options);
+    if (!filtered) return;
+    options = filtered;
+
     const toEmail = Array.isArray(options.to) ? options.to.join(",") : options.to;
     const now = new Date();
+    const { organizationId, scope } = resolveScope(options.organizationId);
 
     const inserted = await this.db
       .insert(emailOutbox)
       .values({
-        organizationId: options.organizationId ?? null,
+        organizationId,
+        scope,
         toEmail,
         subject: options.subject,
         html: options.html,

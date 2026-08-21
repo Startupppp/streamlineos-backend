@@ -5,6 +5,31 @@ export const paginationSchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
 
+const cursorListFields = {
+  cursor: z.string().trim().min(1).max(2048).optional(),
+  page: z.coerce.number().int().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+};
+
+export const listPeopleSchema = z
+  .object({
+    ...cursorListFields,
+    search: z.string().trim().min(1).max(200).optional(),
+  })
+  .strict()
+  .refine((query) => query.cursor === undefined || query.page === undefined, {
+    path: ["cursor"],
+    message: "Cursor and page pagination cannot be combined.",
+  });
+
+export const listEmploymentsSchema = z
+  .object(cursorListFields)
+  .strict()
+  .refine((query) => query.cursor === undefined || query.page === undefined, {
+    path: ["cursor"],
+    message: "Cursor and page pagination cannot be combined.",
+  });
+
 export const createPersonSchema = z.object({
   firstName: z.string().min(1).max(100),
   lastName: z.string().max(100).default(""),
@@ -65,18 +90,51 @@ export const transitionStatusSchema = z.object({
   effectiveDate: z.string().optional(),
 });
 
-export const createEffectiveDateChangeSchema = z.object({
+const businessDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+const effectiveChangeBaseSchema = z.object({
   employmentId: z.number().int().positive(),
-  changeType: z.enum([
-    "department", "manager", "location", "designation", "job_level",
-    "employment_type", "compensation", "work_schedule", "policy_assignment",
-  ]),
-  oldValue: z.record(z.string(), z.unknown()).optional(),
-  newValue: z.record(z.string(), z.unknown()),
-  effectiveFrom: z.string(),
-  effectiveTo: z.string().optional(),
+  effectiveFrom: businessDateSchema,
+  effectiveTo: businessDateSchema.optional(),
   notes: z.string().max(2000).optional(),
 });
+
+export const createEffectiveDateChangeSchema = z
+  .discriminatedUnion("changeType", [
+    effectiveChangeBaseSchema.extend({
+      changeType: z.literal("department"),
+      newValue: z.object({ departmentId: z.string().uuid() }).strict(),
+    }),
+    effectiveChangeBaseSchema.extend({
+      changeType: z.literal("manager"),
+      newValue: z.object({ managerEmploymentId: z.number().int().positive() }).strict(),
+    }),
+    effectiveChangeBaseSchema.extend({
+      changeType: z.literal("location"),
+      newValue: z.object({ locationId: z.string().uuid() }).strict(),
+    }),
+    effectiveChangeBaseSchema.extend({
+      changeType: z.literal("designation"),
+      newValue: z.object({ designation: z.string().trim().min(1).max(200) }).strict(),
+    }),
+    effectiveChangeBaseSchema.extend({
+      changeType: z.literal("job_level"),
+      newValue: z.object({ jobLevelId: z.number().int().positive() }).strict(),
+    }),
+    effectiveChangeBaseSchema.extend({
+      changeType: z.literal("compensation"),
+      newValue: z.object({ salaryCents: z.number().int().min(0) }).strict(),
+    }),
+  ])
+  .superRefine((value, context) => {
+    if (value.effectiveTo && value.effectiveTo <= value.effectiveFrom) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["effectiveTo"],
+        message: "Effective end date must be after the start date",
+      });
+    }
+  });
 
 export const listEffectiveDateChangesSchema = z.object({
   employmentId: z.coerce.number().int().positive().optional(),
@@ -89,14 +147,19 @@ export const listEffectiveDateChangesSchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
 
-export const applyDueChangesSchema = z.object({
-  asOfDate: z.string().optional(),
-});
+export const applyDueChangesSchema = z
+  .object({
+    asOfDate: businessDateSchema.optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(50),
+  })
+  .strict();
 
-export const listTimelineSchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
-});
+export const listTimelineSchema = z
+  .object({
+    cursor: z.string().trim().min(1).max(2048).optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+  })
+  .strict();
 
 export const updateSensitiveSchema = z.object({
   salaryAmountCents: z.number().int().min(0).optional(),
@@ -137,7 +200,7 @@ export const listAuditLogsSchema = z.object({
   action: z.string().optional(),
   fromDate: z.string().optional(),
   toDate: z.string().optional(),
-  page: z.coerce.number().int().min(1).default(1),
+  cursor: z.string().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
 
@@ -149,8 +212,10 @@ export const historyTypeSchema = z.object({
 
 export type CreatePersonInput = z.infer<typeof createPersonSchema>;
 export type UpdatePersonInput = z.infer<typeof updatePersonSchema>;
+export type ListPeopleInput = z.infer<typeof listPeopleSchema>;
 export type CreateEmploymentInput = z.infer<typeof createEmploymentSchema>;
 export type UpdateEmploymentInput = z.infer<typeof updateEmploymentSchema>;
+export type ListEmploymentsInput = z.infer<typeof listEmploymentsSchema>;
 export type TransitionStatusInput = z.infer<typeof transitionStatusSchema>;
 export type CreateEffectiveDateChangeInput = z.infer<typeof createEffectiveDateChangeSchema>;
 export type ListEffectiveDateChangesInput = z.infer<typeof listEffectiveDateChangesSchema>;

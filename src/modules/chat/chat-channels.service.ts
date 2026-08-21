@@ -56,6 +56,21 @@ export class ChatChannelsService {
     return { ...channel, name: resolved };
   }
 
+  async listMemberChannelIds(orgId: string, userId: string): Promise<number[]> {
+    const rows = await this.db
+      .select({ channelId: chatChannels.id })
+      .from(chatChannelMembers)
+      .innerJoin(chatChannels, eq(chatChannels.id, chatChannelMembers.channelId))
+      .where(
+        and(
+          eq(chatChannels.orgId, orgId),
+          eq(chatChannelMembers.userId, userId),
+          eq(chatChannels.isArchived, false),
+        ),
+      );
+    return rows.map((row) => row.channelId);
+  }
+
   async getMyChannels(userId: string, orgId: string) {
     return this.listMemberChannels(userId, orgId, false);
   }

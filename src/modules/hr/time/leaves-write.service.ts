@@ -1,11 +1,12 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
   InternalServerErrorException,
 } from "@nestjs/common";
-import { and, eq, gte, inArray, lte, or } from "drizzle-orm";
+import { and, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
 import {
   leaveBalances,
   leaveBlackoutDates,
@@ -20,10 +21,13 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { EmailService } from "../../email/email.service";
 import { AutomationService } from "../../automation/automation.service";
 import { formatDateOnly } from "../../../common/date";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
+import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { HrWorkflowEngineService } from "../workflows/hr-workflow-engine.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { AccessService } from "../../access/access.service";
 import type { CreateLeaveInput } from "./dto/leaves.schemas";
+import { LeaveApproverService } from "./leave-approver.service";
 
 interface LeaveRow {
   userId: string;
@@ -42,13 +46,21 @@ export class LeavesWriteService {
     private readonly workflowEngine: HrWorkflowEngineService,
     private readonly cache: CacheService,
     private readonly access: AccessService,
+    private readonly approvers: LeaveApproverService,
   ) {}
 
   private async invalidateLeaveAnalytics(orgId: string): Promise<void> {
     await this.cache.invalidateNamespace(`hr:leave-analytics:${orgId}`);
   }
 
-  async create(u: CurrentUserContext, body: CreateLeaveInput) {
+  async create(currentUser: CurrentUserContext, body: CreateLeaveInput) {
+    const approver = await this.approvers.resolve(currentUser.orgId, currentUser.userId);
+    if (!approver) {
+      throw new ConflictException(
+        "No authorized leave approver is configured. Ask an organization administrator to assign one.",
+      );
+    }
+
     const requestedDays = body.isHalfDay
       ? 0.5
       : Math.round(
@@ -59,16 +71,19 @@ export class LeavesWriteService {
     const startStr = formatDateOnly(new Date(body.startDate));
     const endStr = formatDateOnly(new Date(body.endDate));
 
-    const teamConflicts = await this.detectTeamConflicts(u.orgId, u.userId, startStr, endStr);
+    const teamConflicts = await this.detectTeamConflicts(currentUser.orgId, currentUser.userId, startStr, endStr);
 
     const { leaveRequest, leaveTypeName } = await this.db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${currentUser.orgId}:${currentUser.userId}:leave-request`}, 0))`,
+      );
       const balanceRows = await tx
         .select()
         .from(leaveBalances)
         .where(
           and(
-            eq(leaveBalances.userId, u.userId),
-            eq(leaveBalances.orgId, u.orgId),
+            eq(leaveBalances.userId, currentUser.userId),
+            eq(leaveBalances.orgId, currentUser.orgId),
             eq(leaveBalances.leaveTypeId, body.leaveTypeId),
             eq(leaveBalances.year, new Date().getFullYear()),
           ),
@@ -78,7 +93,7 @@ export class LeavesWriteService {
       const balance = balanceRows[0];
 
       const leaveTypeRow = await tx.query.leaveTypes.findFirst({
-        where: and(eq(leaveTypes.id, body.leaveTypeId), eq(leaveTypes.orgId, u.orgId)),
+        where: and(eq(leaveTypes.id, body.leaveTypeId), eq(leaveTypes.orgId, currentUser.orgId)),
         columns: { name: true, daysPerYear: true },
       });
 
@@ -92,20 +107,20 @@ export class LeavesWriteService {
       const [overlapping, blackout] = await Promise.all([
         tx.query.leaveRequests.findFirst({
           where: and(
-            eq(leaveRequests.userId, u.userId),
-            eq(leaveRequests.orgId, u.orgId),
+            eq(leaveRequests.userId, currentUser.userId),
+            eq(leaveRequests.orgId, currentUser.orgId),
             lte(leaveRequests.startDate, endStr),
             gte(leaveRequests.endDate, startStr),
           ),
         }),
         tx.query.leaveBlackoutDates.findFirst({
           where: and(
-            eq(leaveBlackoutDates.orgId, u.orgId),
+            eq(leaveBlackoutDates.orgId, currentUser.orgId),
             lte(leaveBlackoutDates.startDate, endStr),
             gte(leaveBlackoutDates.endDate, startStr),
             or(
               eq(leaveBlackoutDates.appliesTo, "ALL"),
-              eq(leaveBlackoutDates.appliesTo, u.userId),
+              eq(leaveBlackoutDates.appliesTo, currentUser.userId),
             ),
           ),
         }),
@@ -121,17 +136,31 @@ export class LeavesWriteService {
         );
       }
 
+      const serializedOverlap = await tx.query.leaveRequests.findFirst({
+        where: and(
+          eq(leaveRequests.userId, currentUser.userId),
+          eq(leaveRequests.orgId, currentUser.orgId),
+          lte(leaveRequests.startDate, endStr),
+          gte(leaveRequests.endDate, startStr),
+          inArray(leaveRequests.status, ["PENDING", "APPROVED"]),
+        ),
+        columns: { id: true },
+      });
+      if (serializedOverlap) {
+        throw new ConflictException("You already have a leave request for overlapping dates.");
+      }
+
       const [inserted] = await tx
         .insert(leaveRequests)
         .values({
-          orgId: u.orgId,
-          userId: u.userId,
+          orgId: currentUser.orgId,
+          userId: currentUser.userId,
           leaveTypeId: body.leaveTypeId,
           startDate: startStr,
           endDate: endStr,
           reason: body.reason,
           priority: body.priority,
-          approverId: body.approverId ?? null,
+          approverId: approver.id,
           attachmentUrl: body.attachmentUrl ?? null,
           isHalfDay: body.isHalfDay,
           halfDayPeriod: body.halfDayPeriod ?? null,
@@ -146,16 +175,16 @@ export class LeavesWriteService {
       return { leaveRequest: inserted, leaveTypeName: leaveTypeRow?.name ?? "Leave" };
     });
 
-    void this.startLeaveWorkflow(u, leaveRequest.id, body.approverId);
-    void this.dispatchLeaveRequested(
-      u,
+    this.scheduleLeaveRequested(
+      currentUser,
       leaveRequest.id,
+      approver.id,
       body,
       leaveTypeName,
       requestedDays,
     );
 
-    await this.invalidateLeaveAnalytics(u.orgId);
+    await this.invalidateLeaveAnalytics(currentUser.orgId);
 
     return {
       success: true,
@@ -166,35 +195,81 @@ export class LeavesWriteService {
     };
   }
 
-  async cancel(u: CurrentUserContext, leaveId: number) {
-    const existing = await this.db.query.leaveRequests.findFirst({
-      where: and(eq(leaveRequests.id, leaveId), eq(leaveRequests.orgId, u.orgId)),
+  private scheduleLeaveRequested(
+    currentUser: CurrentUserContext,
+    leaveRequestId: number,
+    approverId: string,
+    body: CreateLeaveInput,
+    leaveTypeName: string,
+    requestedDays: number,
+  ): void {
+    const dispatch = () =>
+      runInNewTenantTransaction(this.db, currentUser.orgId, async () => {
+        await this.startLeaveWorkflow(currentUser, leaveRequestId, approverId);
+        await this.dispatchLeaveRequested(
+          currentUser,
+          leaveRequestId,
+          body,
+          leaveTypeName,
+          requestedDays,
+        );
+      }).catch(() => undefined);
+    if (!registerAfterCommit(dispatch)) void dispatch();
+  }
+
+  async cancel(currentUser: CurrentUserContext, leaveId: number) {
+    const existing = await this.db.transaction(async (tx) => {
+      const current = await tx.query.leaveRequests.findFirst({
+        where: and(eq(leaveRequests.id, leaveId), eq(leaveRequests.orgId, currentUser.orgId)),
+      });
+
+      if (!current) return null;
+      if (current.userId !== currentUser.userId) {
+        throw new ForbiddenException("You can only cancel your own leave requests.");
+      }
+
+      if (current.status !== "PENDING") {
+        throw new ConflictException("Only pending leave requests can be cancelled.");
+      }
+
+      const changed = await tx
+        .update(leaveRequests)
+        .set({
+          status: "CANCELLED",
+          rowVersion: current.rowVersion + 1,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(leaveRequests.id, leaveId),
+            eq(leaveRequests.orgId, currentUser.orgId),
+            eq(leaveRequests.userId, currentUser.userId),
+            eq(leaveRequests.status, "PENDING"),
+            eq(leaveRequests.rowVersion, current.rowVersion),
+          ),
+        )
+        .returning({ id: leaveRequests.id });
+
+      if (changed.length !== 1) {
+        throw new ConflictException("This leave request was already updated. Refresh and try again.");
+      }
+
+      await this.audit.logCritical({
+        action: "hr.leave_cancelled",
+        userId: currentUser.userId,
+        orgId: currentUser.orgId,
+        targetId: String(leaveId),
+        targetType: "leave_request",
+      });
+      return current;
     });
 
     if (!existing) return { ok: false as const, reason: "not_found" as const };
-    if (existing.userId !== u.userId) {
-      throw new ForbiddenException("You can only cancel your own leave requests.");
-    }
-    if (existing.status !== "PENDING") {
-      throw new BadRequestException("Only pending leave requests can be cancelled.");
-    }
 
-    await this.db
-      .update(leaveRequests)
-      .set({ status: "CANCELLED" })
-      .where(eq(leaveRequests.id, leaveId));
+    const dispatch = () => this.dispatchLeaveCancellation(currentUser, existing);
+    if (!registerAfterCommit(dispatch)) void dispatch();
 
-    this.audit.log({
-      action: "hr.leave_cancelled",
-      userId: u.userId,
-      orgId: u.orgId,
-      targetId: String(leaveId),
-      targetType: "leave_request",
-    });
-
-    void this.dispatchLeaveCancellation(u, existing);
-
-    await this.invalidateLeaveAnalytics(u.orgId);
+    await this.invalidateLeaveAnalytics(currentUser.orgId);
 
     return { ok: true as const };
   }
@@ -217,7 +292,9 @@ export class LeavesWriteService {
         })
       : [];
 
-    const peerIds = sameMgrUsers.map((u) => u.id).filter((id) => id !== userId);
+    const peerIds = sameMgrUsers
+      .map((peerUser) => peerUser.id)
+      .filter((peerUserId) => peerUserId !== userId);
     if (peerIds.length === 0) return [];
 
     const conflicts = await this.db.query.leaveRequests.findMany({
@@ -236,17 +313,17 @@ export class LeavesWriteService {
   }
 
   private async startLeaveWorkflow(
-    u: CurrentUserContext,
+    currentUser: CurrentUserContext,
     leaveRequestId: number,
     approverId?: string | null,
   ): Promise<void> {
     try {
       await this.workflowEngine.startWorkflow({
-        orgId: u.orgId,
+        orgId: currentUser.orgId,
         objectType: "leave_request",
         objectId: String(leaveRequestId),
-        requestedByUserId: u.userId,
-        subjectEmployeeId: u.userId,
+        requestedByUserId: currentUser.userId,
+        subjectEmployeeId: currentUser.userId,
         context: { leaveRequestId, approverId },
       });
     } catch {
@@ -255,7 +332,7 @@ export class LeavesWriteService {
   }
 
   private async dispatchLeaveRequested(
-    u: CurrentUserContext,
+    currentUser: CurrentUserContext,
     leaveRequestId: number,
     body: CreateLeaveInput,
     leaveTypeName: string,
@@ -263,14 +340,14 @@ export class LeavesWriteService {
   ): Promise<void> {
     try {
       const actor = await this.db.query.users.findFirst({
-        where: eq(users.id, u.userId),
+        where: eq(users.id, currentUser.userId),
         columns: { name: true },
       });
       const actorName = actor?.name ?? null;
 
-      await this.automation.runAutomationsForEvent(u.orgId, "leave.requested", {
+      await this.automation.runAutomationsForEvent(currentUser.orgId, "leave.requested", {
         leaveRequestId,
-        userId: u.userId,
+        userId: currentUser.userId,
         employeeName: actorName ?? "",
         leaveType: leaveTypeName,
         startDate: body.startDate,
@@ -280,7 +357,7 @@ export class LeavesWriteService {
         priority: body.priority,
       });
 
-      const recipients = await this.hrRecipients(u.orgId);
+      const recipients = await this.hrRecipients(currentUser.orgId);
       await Promise.all(
         recipients.map((hr) =>
           this.email.sendLeaveRequestEmail(
@@ -299,7 +376,7 @@ export class LeavesWriteService {
     }
   }
 
-  private async dispatchLeaveCancellation(u: CurrentUserContext, existing: LeaveRow): Promise<void> {
+  private async dispatchLeaveCancellation(currentUser: CurrentUserContext, existing: LeaveRow): Promise<void> {
     try {
       const [leaveTypeRow, actor] = await Promise.all([
         existing.leaveTypeId
@@ -309,7 +386,7 @@ export class LeavesWriteService {
             })
           : Promise.resolve(null),
         this.db.query.users.findFirst({
-          where: eq(users.id, u.userId),
+          where: eq(users.id, currentUser.userId),
           columns: { name: true },
         }),
       ]);
@@ -317,7 +394,7 @@ export class LeavesWriteService {
       const leaveTypeName = leaveTypeRow?.name ?? "Leave";
       const employeeName = actor?.name ?? "Employee";
 
-      const recipients = await this.hrRecipients(u.orgId);
+      const recipients = await this.hrRecipients(currentUser.orgId);
       await Promise.all(
         recipients.map((hr) =>
           this.email.sendLeaveCancellationEmail(

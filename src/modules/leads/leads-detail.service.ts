@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, and, desc, inArray } from "drizzle-orm";
+import { eq, and, desc, inArray, isNull } from "drizzle-orm";
 import {
   leads,
   leadActivities,
@@ -118,7 +118,7 @@ export class LeadsDetailService {
     const [lead] = await this.db
       .select()
       .from(leads)
-      .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId)));
+      .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId), isNull(leads.deletedAt)));
 
     if (!lead) return null;
 
@@ -202,7 +202,7 @@ export class LeadsDetailService {
     const [existing] = await this.db
       .select({ id: leads.id })
       .from(leads)
-      .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId)))
+      .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId), isNull(leads.deletedAt)))
       .limit(1);
 
     if (!existing) return null;
@@ -356,14 +356,14 @@ export class LeadsDetailService {
     const [keepLead] = await this.db
       .select({ id: leads.id })
       .from(leads)
-      .where(and(eq(leads.id, keepLeadId), eq(leads.orgId, orgId)));
+      .where(and(eq(leads.id, keepLeadId), eq(leads.orgId, orgId), isNull(leads.deletedAt)));
 
     if (!keepLead) return { ok: false, reason: "keep_not_found" };
 
     const [mergeLead] = await this.db
       .select({ id: leads.id })
       .from(leads)
-      .where(and(eq(leads.id, mergeLeadId), eq(leads.orgId, orgId)));
+      .where(and(eq(leads.id, mergeLeadId), eq(leads.orgId, orgId), isNull(leads.deletedAt)));
 
     if (!mergeLead) return { ok: false, reason: "merge_not_found" };
 

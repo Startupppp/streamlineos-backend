@@ -11,9 +11,12 @@ import {
   sql,
 } from "drizzle-orm";
 import { tasks, taskSequences, taskSequenceSteps, crmActivities, users } from "../../db/schema";
+import { crmActivityTypeEnum } from "../../db/schema/common/enums";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { TaskNotificationsService } from "./task-notifications.service";
+import { AccessService } from "../access/access.service";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type {
   ListInput,
   CreateInput,
@@ -25,14 +28,13 @@ import type {
   SequenceApplyInput,
 } from "./dto/task.schemas";
 
-type CrmActivityType =
-  | "deal_won"
-  | "meeting"
-  | "proposal"
-  | "call"
-  | "email"
-  | "ticket"
-  | "escalation";
+/**
+ * Derived from the pgEnum, not hand-listed (§7: never maintain a parallel
+ * union). The hand-written copy had already drifted — it omitted the value this
+ * file needs, and a stale literal union fails silently at the call site rather
+ * than at the schema.
+ */
+type CrmActivityType = (typeof crmActivityTypeEnum.enumValues)[number];
 
 type TaskBucket = "OVERDUE" | "TODAY" | "THIS_WEEK" | "UPCOMING" | "NO_DATE";
 
@@ -61,14 +63,32 @@ export class TasksService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly notifications: TaskNotificationsService,
+    private readonly access: AccessService,
   ) {}
 
-  async list(orgId: string, userId: string, filters: ListInput) {
+  /**
+   * `tasks:read` is a universal employee grant, so it only ever exposes the
+   * caller's own tasks. Seeing the whole org queue requires `crm:tasks:view`.
+   */
+  private async canViewAllTasks(actor: CurrentUserContext): Promise<boolean> {
+    if (actor.isOrgOwner) return true;
+    const resolved = await this.access.resolveUserPermissions(
+      actor.orgId,
+      actor.userId,
+    );
+    return (resolved.get("crm:tasks:view") ?? "none") !== "none";
+  }
+
+  async list(actor: CurrentUserContext, filters: ListInput) {
+    const { orgId, userId } = actor;
     const offset = (filters.page - 1) * filters.limit;
+    const canViewAll = await this.canViewAllTasks(actor);
     const resolvedAssigneeId = filters.assigneeId === "me" ? userId : filters.assigneeId;
 
     const conditions = [eq(tasks.orgId, orgId)];
-    if (resolvedAssigneeId) conditions.push(eq(tasks.assigneeId, resolvedAssigneeId));
+    if (!canViewAll) conditions.push(eq(tasks.assigneeId, userId));
+    else if (resolvedAssigneeId)
+      conditions.push(eq(tasks.assigneeId, resolvedAssigneeId));
     if (filters.status) conditions.push(eq(tasks.status, filters.status));
     if (filters.type) conditions.push(eq(tasks.type, filters.type));
     if (filters.entityType) conditions.push(eq(tasks.entityType, filters.entityType));
@@ -211,7 +231,11 @@ export class TasksService {
         EMAIL: "email",
         MEETING: "meeting",
       };
-      const activityType: CrmActivityType = typeToActivity[existing.type] ?? "deal_won";
+      // Anything that is not a call/email/meeting is a plain task completion.
+      // The old fallback was "deal_won", which fabricated a won-deal activity in
+      // the sales feed (`crm-sales-dashboard.service.ts` filters category
+      // "sales") every time someone ticked off an ordinary TODO.
+      const activityType: CrmActivityType = typeToActivity[existing.type] ?? "task_completed";
 
       await tx.insert(crmActivities).values({
         orgId,

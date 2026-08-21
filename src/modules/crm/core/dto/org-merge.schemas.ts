@@ -3,7 +3,7 @@ import { z } from "zod";
 export const mergeOrgsSchema = z.object({
   primaryId: z.number().int().positive(),
   duplicateId: z.number().int().positive(),
-}).refine((v) => v.primaryId !== v.duplicateId, {
+}).strict().refine((v) => v.primaryId !== v.duplicateId, {
   message: "primaryId and duplicateId must differ",
 });
 
@@ -13,4 +13,16 @@ export const orgDuplicatesQuerySchema = z.object({
 });
 
 export type MergeOrgsInput = z.infer<typeof mergeOrgsSchema>;
+/** At least one discriminator is required — an empty check would match every org. */
+export const orgDuplicateCheckSchema = z
+  .object({
+    name: z.string().trim().min(1).max(200).optional(),
+    domain: z.string().trim().min(1).max(255).optional(),
+  })
+  .strict()
+  .refine((v) => Boolean(v.name || v.domain), {
+    message: "Provide a name or a domain to check",
+  });
+
 export type OrgDuplicatesQueryInput = z.infer<typeof orgDuplicatesQuerySchema>;
+export type OrgDuplicateCheckInput = z.infer<typeof orgDuplicateCheckSchema>;

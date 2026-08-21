@@ -1,5 +1,8 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import { ModuleRef } from "@nestjs/core";
+import { DRIZZLE } from "../../../../db/drizzle.constants";
+import { type Db } from "../../../../db/drizzle.module";
+import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
 import { AiSummariesService } from "../../summaries/ai-summaries.service";
 import { ProjectsAnalyticsService } from "../../../build/core/projects-analytics.service";
@@ -46,6 +49,7 @@ export class ExecutiveBriefService {
   private readonly logger = new Logger(ExecutiveBriefService.name);
 
   constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
     private readonly moduleRef: ModuleRef,
     private readonly summaries: AiSummariesService,
   ) {}
@@ -87,11 +91,16 @@ export class ExecutiveBriefService {
   }
 
   async generate(orgId: string, userId: string): Promise<ExecutiveBriefResult> {
-    const [projectsResult, crmResult, supportResult] = await Promise.allSettled([
-      this.getSvc(ProjectsAnalyticsService).getOrgProjectHealthSummary(orgId),
-      this.getSvc(CrmSalesDashboardService).getSalesDashboard(orgId),
-      this.getSvc(SupportReportsService).getOverview(orgId, {}),
-    ]);
+    const [projectsResult, crmResult, supportResult] = await runInTenantTransaction(
+      this.db,
+      () =>
+        Promise.allSettled([
+          this.getSvc(ProjectsAnalyticsService).getOrgProjectHealthSummary(orgId),
+          this.getSvc(CrmSalesDashboardService).getSalesDashboard(orgId),
+          this.getSvc(SupportReportsService).getOverview(orgId, {}),
+        ]),
+      { orgId },
+    );
 
     const sources: Record<string, unknown> = {};
     const uncertaintyNotes: string[] = [];

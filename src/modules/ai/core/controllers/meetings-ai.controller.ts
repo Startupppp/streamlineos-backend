@@ -13,6 +13,7 @@ import { RateLimitGuard } from "../../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../../common/ratelimit/use-rate-limit.decorator";
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { NoTenantTransaction } from "../../../../common/tenant/no-tenant-transaction.decorator";
 import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
 import { LlmService } from "../providers/llm.service";
 import { OrgFeaturesService } from "../services/org-features.service";
@@ -32,6 +33,7 @@ import {
 @UseGuards(JwtAuthGuard, PermissionGuard, RateLimitGuard)
 @RequirePermission("calendar:ai:use")
 @UseRateLimit("ai:invoke")
+@NoTenantTransaction()
 export class MeetingsAiController {
   constructor(
     private readonly meetingsPrep: MeetingsPrepService,

@@ -4,7 +4,7 @@ import { ModuleRef } from "@nestjs/core";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { google } from "@ai-sdk/google";
 import { stepCountIs, streamText, tool, type LanguageModel, type ModelMessage } from "ai";
-import { and, count, desc, eq, ilike, ne, sql } from "drizzle-orm";
+import { and, count, desc, eq, ilike, isNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   attendance,
@@ -17,6 +17,9 @@ import {
   tickets,
 } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
+import { runInNewTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
+import { resolveLlmRetryPolicy } from "../providers/llm-retry";
+import { withTenantScopedTools } from "../tenant-scoped-tools";
 import { type Db } from "../../../../db/drizzle.module";
 import { getTodayString } from "../../../../common/date";
 import { logger } from "../../../../common/logger/logger.service";
@@ -108,8 +111,8 @@ export class ChatAssistantService {
       myOpenDealsResult,
       topLeads,
     ] = await Promise.all([
-      this.db.select({ count: sql<number>`count(*)` }).from(projects).where(eq(projects.orgId, orgId)),
-      this.db.select({ count: sql<number>`count(*)` }).from(tickets).where(eq(tickets.orgId, orgId)),
+      this.db.select({ count: sql<number>`count(*)` }).from(projects).where(and(eq(projects.orgId, orgId), isNull(projects.deletedAt))),
+      this.db.select({ count: sql<number>`count(*)` }).from(tickets).where(and(eq(tickets.orgId, orgId), isNull(tickets.deletedAt))),
       this.db.query.attendance.findFirst({
         where: and(eq(attendance.userId, userId), eq(attendance.date, today), eq(attendance.orgId, orgId)),
       }),
@@ -139,7 +142,7 @@ export class ChatAssistantService {
         .from(deals)
         .where(
           and(
-            eq(deals.orgId, orgId),
+            eq(deals.orgId, orgId), isNull(deals.deletedAt),
             eq(deals.assignedToId, userId),
             sql`${deals.stage} NOT IN ('WON', 'LOST')`,
           ),
@@ -344,7 +347,7 @@ Tone: Professional, concise, actionable.`;
           const results = await this.db
             .select({ id: projects.id, name: projects.name, key: projects.key, status: projects.status })
             .from(projects)
-            .where(and(eq(projects.orgId, orgId), ne(projects.status, "ARCHIVED"), ilike(projects.name, `%${query}%`)))
+            .where(and(eq(projects.orgId, orgId), ne(projects.status, "ARCHIVED"), ilike(projects.name, `%${query}%`), isNull(projects.deletedAt)))
             .limit(10);
           if (results.length === 0) return { results: [], message: `No projects found matching "${query}".` };
           return { results, message: `Found ${results.length} project(s).` };
@@ -419,43 +422,58 @@ Tone: Professional, concise, actionable.`;
       ...inlineTools,
     };
 
-    const effectiveTools = persona ? filterToolsByPersona(allBuiltTools, persona) : allBuiltTools;
+    const effectiveTools = withTenantScopedTools(
+      persona ? filterToolsByPersona(allBuiltTools, persona) : allBuiltTools,
+      this.db,
+      orgId,
+    );
 
     const buildStream = () => streamText({
       model: resolveChatModel(),
       messages: modelMessages,
       system: contextPrompt,
       temperature: 0.7,
+      // Retry only; a model swap cannot be applied once tokens have reached the client.
+      maxRetries: resolveLlmRetryPolicy().maxRetriesPerModel,
       stopWhen: stepCountIs(10),
       onFinish: async ({ text, usage }) => {
         const promptTokens = usage?.inputTokens ?? 0;
         const completionTokens = usage?.outputTokens ?? 0;
         const { costUsd, milliCredits } = computeTokenCharge(modelId, promptTokens, completionTokens);
-        void this.ledger.settle(reservationId, {
-          actualMilli: milliCredits,
-          model: modelId,
-          promptTokens,
-          completionTokens,
-          totalTokens: promptTokens + completionTokens,
-          costUsd,
-        }).catch(() => undefined);
-        void this.usageSvc.track({
-          orgId,
-          userId,
-          feature: CHAT_FEATURE,
-          model: modelId,
-          promptTokens,
-          completionTokens,
-          creditsMilli: milliCredits,
-        }).catch(() => undefined);
+        // Runs once the response has streamed, so the request transaction has committed and
+        // its tenant GUC is gone; without a fresh one every write here dies 42501, unlogged.
         try {
-          if (conversationId !== undefined) {
-            await this.history.appendToConversation(orgId, userId, conversationId, "assistant", text);
-          } else {
-            await this.history.append(orgId, userId, "assistant", text);
-          }
+          await runInNewTenantTransaction(this.db, orgId, async () => {
+            await this.ledger.settle(reservationId, {
+              orgId,
+              actualMilli: milliCredits,
+              model: modelId,
+              promptTokens,
+              completionTokens,
+              totalTokens: promptTokens + completionTokens,
+              costUsd,
+            });
+            await this.usageSvc.track({
+              orgId,
+              userId,
+              feature: CHAT_FEATURE,
+              model: modelId,
+              promptTokens,
+              completionTokens,
+              creditsMilli: milliCredits,
+            });
+            if (conversationId !== undefined) {
+              await this.history.appendToConversation(orgId, userId, conversationId, "assistant", text);
+            } else {
+              await this.history.append(orgId, userId, "assistant", text);
+            }
+          });
         } catch (error) {
-          logger.error("Failed to persist assistant chat message", { error });
+          logger.error("Failed to finalise assistant chat turn", {
+            error: error instanceof Error ? (error.stack ?? error.message) : String(error),
+            orgId,
+            reservationId,
+          });
         }
       },
       tools: effectiveTools,
@@ -464,7 +482,7 @@ Tone: Professional, concise, actionable.`;
     try {
       return buildStream();
     } catch (error) {
-      void this.ledger.release(reservationId, "stream_setup_error").catch(() => undefined);
+      void this.ledger.release(reservationId, "stream_setup_error", orgId).catch(() => undefined);
       throw error;
     }
   }

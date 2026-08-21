@@ -8,7 +8,6 @@ export class HrDepartmentsService {
 
   async list(orgId: string) {
     const { data } = await this.orgHierarchy.listDepartments(orgId, {
-      page: 1,
       limit: 100,
       status: "ACTIVE",
     });

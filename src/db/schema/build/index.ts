@@ -1,5 +1,7 @@
+export * from "./namespaces";
 export * from "./core";
 export * from "./tasks";
+export * from "./ticket-counters";
 export * from "./members";
 export * from "./reporting";
 export * from "./relations";
@@ -23,3 +25,4 @@ export * from "./pm-workspace-memberships";
 export * from "./teams";
 export * from "./feedback";
 export * from "./comment-drafts";
+export * from "./sprint-events";

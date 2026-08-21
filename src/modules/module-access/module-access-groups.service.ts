@@ -40,10 +40,10 @@ import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import {
   assertPermissionsGrantable,
-  grantsOrgAdmin,
   ROLE_RANK,
   toGrantableSet,
 } from "../../common/rbac/grantability";
+import { isStructuralOrgAdmin } from "../../common/rbac/is-structural-org-admin";
 import {
   moduleAccessDenied,
   moduleOwnershipDenied,
@@ -337,11 +337,10 @@ export class ModuleAccessGroupsService {
     await this.assertAccess(actor, moduleKey, "manage");
 
     if (!actor.isOrgOwner) {
-      const resolved = await this.access.resolveUserPermissions(
-        actor.orgId,
-        actor.userId,
-      );
-      const isOrgAdmin = grantsOrgAdmin(resolved);
+      const [resolved, isOrgAdmin] = await Promise.all([
+        this.access.resolveUserPermissions(actor.orgId, actor.userId),
+        isStructuralOrgAdmin(this.db, actor),
+      ]);
       if (!isOrgAdmin) {
         const { bestRank, allowedModules } = await resolveActorRankContext(
           this.db,

@@ -26,7 +26,7 @@ export class InvCycleCountsController {
     @Query(new ZodValidationPipe(listCountsSchema)) filters: ListCountsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.counts.listCycleCounts(u.orgId, filters);
+    return this.counts.listCycleCounts(u.orgId, u.userId, filters);
   }
 
   @Get(":countId")

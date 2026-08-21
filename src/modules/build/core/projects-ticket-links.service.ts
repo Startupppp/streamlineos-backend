@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import {
   gitTicketLinks,
   projects,
@@ -36,14 +36,14 @@ export class ProjectsTicketLinksService {
         orgId: tickets.orgId,
       })
       .from(tickets)
-      .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, u.orgId)));
+      .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, u.orgId), isNull(tickets.deletedAt)));
     if (!ticket || ticket.projectId !== projectId)
       throw new NotFoundException("Ticket not found");
   }
 
   async getGitLinks(orgId: string, projectId: number, ticketId: number) {
     const project = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
+      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
       columns: { id: true },
     });
     if (!project) throw new NotFoundException("Project not found");
@@ -53,6 +53,7 @@ export class ProjectsTicketLinksService {
         eq(tickets.id, ticketId),
         eq(tickets.projectId, projectId),
         eq(tickets.orgId, orgId),
+        isNull(tickets.deletedAt),
       ),
       columns: { id: true },
     });

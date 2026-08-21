@@ -39,14 +39,24 @@ function loadDatabaseUrl() {
 
 const sql = postgres(loadDatabaseUrl(), { prepare: false, max: 1, onnotice: () => {} });
 
+const APP_SCHEMAS = ["public", "build", "build_events"];
+
+function qualifiedIdentifier(name) {
+  const [schema, table] = name.split(".");
+  return `"${schema}"."${table}"`;
+}
+
 async function fkEdges() {
   return sql`
-    SELECT c.relname AS child, p.relname AS parent
+    SELECT n.nspname || '.' || c.relname AS child, pn.nspname || '.' || p.relname AS parent
     FROM pg_constraint k
     JOIN pg_class c ON c.oid = k.conrelid
     JOIN pg_class p ON p.oid = k.confrelid
     JOIN pg_namespace n ON n.oid = c.relnamespace
-    WHERE k.contype = 'f' AND n.nspname = 'public' AND c.relname <> p.relname`;
+    JOIN pg_namespace pn ON pn.oid = p.relnamespace
+    WHERE k.contype = 'f'
+      AND n.nspname = ANY(${APP_SCHEMAS}) AND pn.nspname = ANY(${APP_SCHEMAS})
+      AND c.oid <> p.oid`;
 }
 
 /**
@@ -78,25 +88,27 @@ function deletionOrder(tables, edges) {
 
 async function tablesWithColumn(column) {
   const rows = await sql`
-    SELECT c.table_name AS name
-    FROM information_schema.columns c
-    JOIN pg_class pc ON pc.relname = c.table_name
-    JOIN pg_namespace pn ON pn.oid = pc.relnamespace AND pn.nspname = 'public'
-    WHERE c.table_schema = 'public' AND c.column_name = ${column} AND pc.relkind = 'r'`;
+    SELECT n.nspname || '.' || c.relname AS name
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+    WHERE n.nspname = ANY(${APP_SCHEMAS}) AND c.relkind = 'r' AND a.attname = ${column}`;
   return rows.map((r) => r.name);
 }
 
 async function userReferencingColumns() {
   return sql`
-    SELECT c.relname AS table_name, a.attname AS column_name
+    SELECT n.nspname || '.' || c.relname AS table_name, a.attname AS column_name
     FROM pg_constraint k
     JOIN pg_class c ON c.oid = k.conrelid
     JOIN pg_class p ON p.oid = k.confrelid
     JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_namespace pn ON pn.oid = p.relnamespace
     JOIN LATERAL unnest(k.conkey) AS ck(attnum) ON true
     JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = ck.attnum
-    WHERE k.contype = 'f' AND n.nspname = 'public'
-      AND p.relname = 'users' AND array_length(k.conkey, 1) = 1`;
+    WHERE k.contype = 'f' AND n.nspname = ANY(${APP_SCHEMAS})
+      AND pn.nspname = 'public' AND p.relname = 'users'
+      AND array_length(k.conkey, 1) = 1`;
 }
 
 /**
@@ -202,11 +214,11 @@ async function main() {
         await tx`UPDATE organizations SET owner_membership_id = NULL WHERE id = ANY(${orgIds})`;
 
         const jobs = orgTableOrder
-          .filter((t) => t !== "organizations")
+          .filter((t) => t !== "public.organizations")
           .map((table) => ({
             label: table,
             statement: {
-              text: `DELETE FROM "${table}" WHERE org_id = ANY($1)`,
+              text: `DELETE FROM ${qualifiedIdentifier(table)} WHERE org_id = ANY($1)`,
               values: [orgIds],
             },
           }));
@@ -219,18 +231,18 @@ async function main() {
       const userJobs = userCols.map(({ table_name, column_name }) => ({
         label: `${table_name}.${column_name}`,
         statement: {
-          text: `DELETE FROM "${table_name}" WHERE "${column_name}" = $1`,
+          text: `DELETE FROM ${qualifiedIdentifier(table_name)} WHERE "${column_name}" = $1`,
           values: [user.id],
         },
       }));
       await deleteWithRetries(tx, userJobs, tally);
 
       const emailJobs = emailScoped
-        .filter((t) => t !== "users")
+        .filter((t) => t !== "public.users")
         .map((table) => ({
           label: `${table}.email`,
           statement: {
-            text: `DELETE FROM "${table}" WHERE lower(email) = $1`,
+            text: `DELETE FROM ${qualifiedIdentifier(table)} WHERE lower(email) = $1`,
             values: [email],
           },
         }));

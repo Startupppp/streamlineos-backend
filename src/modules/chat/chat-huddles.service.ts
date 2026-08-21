@@ -179,8 +179,7 @@ export class ChatHuddlesService {
     for (const member of channelMembers) {
       if (member.userId !== userId) {
         void this.webPush.sendToUser(member.userId, {
-          title: "Huddle started",
-          body: `Someone started a huddle in the channel. Join now!`,
+          category: "CHAT",
           url: `/chat?channel=${channelId}&joinHuddle=1`,
         }).catch(() => {});
       }

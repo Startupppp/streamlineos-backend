@@ -23,7 +23,7 @@ export class ClientPortalService {
 
   private async assertClientProject(orgId: string, userId: string, projectId: number) {
     const project = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), eq(projects.clientId, userId)),
+      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), eq(projects.clientId, userId), isNull(projects.deletedAt)),
       columns: { id: true },
     });
     if (!project) throw new NotFoundException("Project not found");
@@ -40,7 +40,7 @@ export class ClientPortalService {
         targetEndDate: projects.endDate,
       })
       .from(projects)
-      .where(and(eq(projects.orgId, orgId), eq(projects.clientId, userId)))
+      .where(and(eq(projects.orgId, orgId), eq(projects.clientId, userId), isNull(projects.deletedAt)))
       .limit(100);
   }
 
@@ -55,7 +55,7 @@ export class ClientPortalService {
         targetEndDate: projects.endDate,
       })
       .from(projects)
-      .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId), eq(projects.clientId, userId)))
+      .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId), eq(projects.clientId, userId), isNull(projects.deletedAt)))
       .limit(1);
     if (!project) throw new NotFoundException("Project not found");
 
@@ -72,6 +72,7 @@ export class ClientPortalService {
           eq(projectMilestones.orgId, orgId),
           eq(projectMilestones.projectId, projectId),
           eq(projectMilestones.clientVisible, true),
+          isNull(projectMilestones.deletedAt),
         ))
         .limit(100),
 
@@ -88,6 +89,7 @@ export class ClientPortalService {
           eq(tickets.orgId, orgId),
           eq(tickets.projectId, projectId),
           eq(tickets.clientVisible, true),
+          isNull(tickets.deletedAt),
         ))
         .limit(100),
 
@@ -102,6 +104,7 @@ export class ClientPortalService {
           eq(tickets.id, ticketAttachments.ticketId),
           eq(tickets.projectId, projectId),
           eq(tickets.orgId, orgId),
+          isNull(tickets.deletedAt),
         ))
         .where(and(
           eq(ticketAttachments.orgId, orgId),
@@ -121,11 +124,13 @@ export class ClientPortalService {
           eq(tickets.id, ticketComments.ticketId),
           eq(tickets.projectId, projectId),
           eq(tickets.orgId, orgId),
+          isNull(tickets.deletedAt),
         ))
         .leftJoin(users, eq(users.id, ticketComments.userId))
         .where(and(
           eq(ticketComments.orgId, orgId),
           eq(ticketComments.clientVisible, true),
+          isNull(ticketComments.deletedAt),
         ))
         .limit(100),
     ]);

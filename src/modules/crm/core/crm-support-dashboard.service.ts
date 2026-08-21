@@ -1,6 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import {
   and,
+  asc,
   count,
   desc,
   eq,
@@ -34,6 +35,10 @@ function computeTrend(current: number, previous: number) {
     isPositive: change >= 0,
   };
 }
+
+const KEY_ACCOUNTS_LIMIT = 5;
+const UPCOMING_RENEWALS_LIMIT = 6;
+const NEW_CLIENT_YEARS = ["2025", "2026"];
 
 @Injectable()
 export class CrmSupportDashboardService {
@@ -75,7 +80,7 @@ export class CrmSupportDashboardService {
     const [
       statusAggs,
       priorityAggs,
-      resolvedTickets,
+      resolvedAvgMs,
       prevMonthResolved,
       recentMessages,
       assigneeAggs,
@@ -95,8 +100,7 @@ export class CrmSupportDashboardService {
 
       this.db
         .select({
-          resolvedAt: supportTickets.resolvedAt,
-          createdAt: supportTickets.createdAt,
+          avgMs: sql<string>`EXTRACT(EPOCH FROM AVG(${supportTickets.resolvedAt} - ${supportTickets.createdAt})) * 1000`,
         })
         .from(supportTickets)
         .where(
@@ -105,8 +109,7 @@ export class CrmSupportDashboardService {
             isNotNull(supportTickets.resolvedAt),
             gte(supportTickets.createdAt, monthStart),
           ),
-        )
-        .limit(500),
+        ),
 
       this.db
         .select({ cnt: count() })
@@ -180,13 +183,7 @@ export class CrmSupportDashboardService {
         ? Math.round((closedOrResolved / totalTickets) * 1000) / 10
         : 0;
 
-    const avgResolveMs =
-      resolvedTickets.length > 0
-        ? resolvedTickets.reduce((s, t) => {
-            if (!t.resolvedAt || !t.createdAt) return s;
-            return s + (t.resolvedAt.getTime() - t.createdAt.getTime());
-          }, 0) / resolvedTickets.length
-        : 0;
+    const avgResolveMs = Number(resolvedAvgMs[0]?.avgMs ?? 0);
     const avgResolveH = Math.floor(avgResolveMs / (1000 * 60 * 60));
     const avgResolveM = Math.round((avgResolveMs / (1000 * 60)) % 60);
     const avgResolutionStr =
@@ -333,11 +330,13 @@ export class CrmSupportDashboardService {
   private async buildCe(orgId: string) {
     const [
       healthAggs,
-      companies,
+      newClientAggs,
+      keyAccountCompanies,
+      renewalCompanies,
       ceMetrics,
       ceActivities,
       supportTicketStats,
-      resolvedCeTickets,
+      ceResolvedAvg,
     ] = await Promise.all([
       this.db
         .select({ health: crmCompanies.health, cnt: count() })
@@ -345,10 +344,42 @@ export class CrmSupportDashboardService {
         .where(eq(crmCompanies.orgId, orgId))
         .groupBy(crmCompanies.health),
 
+      this.db
+        .select({ cnt: count() })
+        .from(crmCompanies)
+        .where(
+          and(
+            eq(crmCompanies.orgId, orgId),
+            inArray(crmCompanies.customerSince, NEW_CLIENT_YEARS),
+          ),
+        ),
+
       this.db.query.crmCompanies.findMany({
         where: eq(crmCompanies.orgId, orgId),
-        with: { csm: true },
+        columns: {
+          name: true,
+          revenue: true,
+          health: true,
+          customerSince: true,
+        },
+        with: { csm: { columns: { name: true } } },
         orderBy: [desc(crmCompanies.revenue)],
+        limit: KEY_ACCOUNTS_LIMIT,
+      }),
+
+      this.db.query.crmCompanies.findMany({
+        where: and(
+          eq(crmCompanies.orgId, orgId),
+          isNotNull(crmCompanies.renewalDate),
+        ),
+        columns: {
+          name: true,
+          health: true,
+          renewalDate: true,
+          renewalValue: true,
+        },
+        orderBy: [asc(crmCompanies.renewalDate)],
+        limit: UPCOMING_RENEWALS_LIMIT,
       }),
 
       this.db.query.crmMonthlyMetrics.findMany({
@@ -371,23 +402,24 @@ export class CrmSupportDashboardService {
         .where(eq(crmSupportTickets.orgId, orgId))
         .groupBy(crmSupportTickets.status),
 
-      this.db.query.crmSupportTickets.findMany({
-        where: and(
-          eq(crmSupportTickets.orgId, orgId),
-          isNotNull(crmSupportTickets.resolvedAt),
+      this.db
+        .select({
+          avgMs: sql<string>`EXTRACT(EPOCH FROM AVG(${crmSupportTickets.resolvedAt} - ${crmSupportTickets.createdAt})) * 1000`,
+        })
+        .from(crmSupportTickets)
+        .where(
+          and(
+            eq(crmSupportTickets.orgId, orgId),
+            isNotNull(crmSupportTickets.resolvedAt),
+          ),
         ),
-        columns: { resolvedAt: true, createdAt: true },
-        limit: 500,
-      }),
     ]);
 
-    const totalClients = companies.length;
+    const totalClients = healthAggs.reduce((sum, r) => sum + r.cnt, 0);
     const healthMap = new Map(
       healthAggs.map((r) => [r.health ?? "healthy", r.cnt]),
     );
-    const newClients = companies.filter(
-      (c) => c.customerSince === "2025" || c.customerSince === "2026",
-    ).length;
+    const newClients = newClientAggs[0]?.cnt ?? 0;
 
     const ceCurr = ceMetrics[0];
     const cePrev = ceMetrics[1];
@@ -442,18 +474,20 @@ export class CrmSupportDashboardService {
       { label: "New", value: newClients, color: "#3B82F6" },
     ];
 
-    const upcomingRenewals = companies
-      .filter((c) => c.renewalDate)
-      .sort((a, b) => (a.renewalDate! > b.renewalDate! ? 1 : -1))
-      .slice(0, 6)
-      .map((c) => ({
-        client: c.name,
-        value: Number(c.renewalValue),
-        date: c.renewalDate!,
-        health: c.health as "healthy" | "at_risk" | "critical",
-      }));
+    const upcomingRenewals = renewalCompanies.flatMap((c) =>
+      c.renewalDate
+        ? [
+            {
+              client: c.name,
+              value: Number(c.renewalValue),
+              date: c.renewalDate,
+              health: c.health as "healthy" | "at_risk" | "critical",
+            },
+          ]
+        : [],
+    );
 
-    const keyAccounts = companies.slice(0, 5).map((c) => ({
+    const keyAccounts = keyAccountCompanies.map((c) => ({
       name: c.name,
       revenue: Number(c.revenue),
       health: c.health as "healthy" | "at_risk" | "critical",
@@ -476,13 +510,7 @@ export class CrmSupportDashboardService {
     const openTickets =
       (ticketStatusMap.get("new") ?? 0) +
       (ticketStatusMap.get("in_progress") ?? 0);
-    const avgResMs =
-      resolvedCeTickets.length > 0
-        ? resolvedCeTickets.reduce((sum, t) => {
-            if (!t.resolvedAt || !t.createdAt) return sum;
-            return sum + (t.resolvedAt.getTime() - t.createdAt.getTime());
-          }, 0) / resolvedCeTickets.length
-        : 0;
+    const avgResMs = Number(ceResolvedAvg[0]?.avgMs ?? 0);
     const avgResHours = avgResMs / (1000 * 60 * 60);
     const avgResMinutes = Math.round((avgResMs / (1000 * 60)) % 60);
     const ceAvgResolution =

@@ -45,7 +45,7 @@ export class MeetingsService {
 
   private async assertProject(orgId: string, projectId: number): Promise<void> {
     const p = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
+      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
       columns: { id: true },
     });
     if (!p) throw new NotFoundException("Project not found");
@@ -111,6 +111,12 @@ export class MeetingsService {
           dateClause,
           hostMeetingIds !== undefined ? (hostMeetingIds.length > 0 ? inArray(projectMeetings.id, hostMeetingIds) : sql`false`) : undefined,
           attendeeMeetingIds !== undefined ? (attendeeMeetingIds.length > 0 ? inArray(projectMeetings.id, attendeeMeetingIds) : sql`false`) : undefined,
+          query.hasActionItems === true
+            ? sql`EXISTS (SELECT 1 FROM ${meetingActionItems} WHERE ${meetingActionItems.meetingId} = ${projectMeetings.id} AND ${meetingActionItems.orgId} = ${orgId} AND ${meetingActionItems.deletedAt} IS NULL)`
+            : undefined,
+          query.hasUnresolvedActionItems === true
+            ? sql`EXISTS (SELECT 1 FROM ${meetingActionItems} WHERE ${meetingActionItems.meetingId} = ${projectMeetings.id} AND ${meetingActionItems.orgId} = ${orgId} AND ${meetingActionItems.deletedAt} IS NULL AND ${meetingActionItems.status} NOT IN ('done', 'converted', 'cancelled'))`
+            : undefined,
         ),
       )
       .orderBy(sql`${projectMeetings.scheduledAt} DESC NULLS LAST`)
@@ -159,8 +165,6 @@ export class MeetingsService {
       unresolvedActionItemCount: unresolvedAiMap.get(m.id) ?? 0,
     }));
 
-    if (query.hasActionItems === true) return result.filter((m) => m.actionItemCount > 0);
-    if (query.hasUnresolvedActionItems === true) return result.filter((m) => m.unresolvedActionItemCount > 0);
     return result;
   }
 

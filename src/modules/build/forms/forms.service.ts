@@ -19,7 +19,7 @@ export class FormsService {
 
   private async assertProject(orgId: string, projectId: number): Promise<void> {
     const p = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
+      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
       columns: { id: true },
     });
     if (!p) throw new NotFoundException("Project not found");

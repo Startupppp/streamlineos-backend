@@ -24,7 +24,7 @@ export class HoldsController {
     @Query(new ZodValidationPipe(listHoldsQuerySchema)) q: ListHoldsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.list(u.orgId, q);
+    return this.svc.list(u.orgId, u.userId, q);
   }
 
   @Get(":holdId")

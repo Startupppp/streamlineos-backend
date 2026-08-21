@@ -1,3 +1,7 @@
+import { NotificationTemplateRenderer } from "./notification-template-renderer.service";
+import { NotificationDigestService } from "./notification-digest.service";
+import { NotificationVisibilityRegistry } from "./notification-visibility.registry";
+import type { DispatchEventInput } from "./notification.types";
 import { Test } from "@nestjs/testing";
 import { CacheService } from "../../common/cache/cache.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -71,6 +75,24 @@ describe("NotificationDispatchService transaction safety", () => {
         { provide: NotificationRoutingService, useValue: { routeMany: jest.fn() } },
         { provide: NotificationsService, useValue: { announce: jest.fn() } },
         { provide: CacheService, useValue: { cached: jest.fn() } },
+        // PIPE-003 added this dependency. The events under test declare no
+        // visibilityResourceKind, so canSee is never reached; it is here to satisfy DI.
+        {
+          provide: NotificationVisibilityRegistry,
+          useValue: { canSee: jest.fn().mockResolvedValue(true) },
+        },
+        // Added when template rendering was split out of the dispatch service; these
+        // events declare no templateKey, so loadTemplates returns an empty map.
+        {
+          provide: NotificationTemplateRenderer,
+          useValue: { loadTemplates: jest.fn().mockResolvedValue(new Map()) },
+        },
+        // These users hold no digest preference, so dispatch sends immediately and
+        // enqueue is never reached; the stub exists only to satisfy injection.
+        {
+          provide: NotificationDigestService,
+          useValue: { enqueue: jest.fn().mockResolvedValue(undefined) },
+        },
       ],
     }).compile();
 
@@ -90,7 +112,13 @@ describe("NotificationDispatchService transaction safety", () => {
     return runWithTenantContext(context, fn);
   }
 
-  const input = { eventKey: "organization.member.left", orgId: ORG, targetUserIds: [USER] };
+  // REG-005: eventKey is now a union derived from the catalog, so this must be
+  // typed as DispatchEventInput rather than inferred as { eventKey: string }.
+  const input: DispatchEventInput = {
+    eventKey: "organization.member.left",
+    orgId: ORG,
+    targetUserIds: [USER],
+  };
 
   function setsTenantGuc(): boolean {
     return JSON.stringify(db.execute.mock.calls).includes("app.organization_id");

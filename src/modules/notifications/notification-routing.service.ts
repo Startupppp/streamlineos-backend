@@ -2,10 +2,12 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, gte, sql, or, isNull, inArray } from "drizzle-orm";
 import {
   notificationPreferences,
+  notificationPreferenceRules,
   notificationPolicyDefaults,
   notificationProviderAccounts,
   notificationSuppressionRules,
   notificationDeliveries,
+  userPreferences,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -220,7 +222,38 @@ export class NotificationRoutingService {
     return new Set<NotificationChannel>(["IN_APP", "EMAIL", ...enabled]);
   }
 
-  private resolvePrefs(row: typeof notificationPreferences.$inferSelect | undefined): ResolvedPreferences {
+  /**
+   * SCH-003. `computeRouting` is correct and spec-covered, so its input shape is
+   * unchanged; only the source moved. Per-event, per-module and per-category settings
+   * now come from `notification_preference_rules` instead of four JSONB blobs on the
+   * header row. The header still carries the channel toggles, quiet hours and digest
+   * mode, which are genuinely one-per-user and not lifecycle state.
+   */
+  private resolvePrefs(
+    row: typeof notificationPreferences.$inferSelect | undefined,
+    userTimezone: string | undefined,
+    rules: Array<typeof notificationPreferenceRules.$inferSelect>,
+  ): ResolvedPreferences {
+    const eventPreferences: ResolvedPreferences["eventPreferences"] = {};
+    const modulePreferences: ResolvedPreferences["modulePreferences"] = {};
+    const categories: Record<string, boolean> = {};
+
+    for (const rule of rules) {
+      const on = rule.mode !== "OFF";
+      if (rule.scopeType === "EVENT") {
+        const entry = (eventPreferences[rule.scopeKey] ??= { channels: {} });
+        (entry.channels ??= {})[rule.channel] = on;
+        // Muted only when every channel the user has an opinion about is off.
+        entry.muted = Object.values(entry.channels).every((v) => v === false);
+      } else if (rule.scopeType === "MODULE") {
+        const entry = (modulePreferences[rule.scopeKey] ??= {});
+        if (!on) entry.muted = true;
+      } else if (rule.scopeType === "CATEGORY") {
+        // A category is on unless some channel rule turns it off.
+        categories[rule.scopeKey] = (categories[rule.scopeKey] ?? true) && on;
+      }
+    }
+
     const channelEnabled: Record<NotificationChannel, boolean> = {
       IN_APP: row?.inAppEnabled ?? true,
       EMAIL: row?.emailEnabled ?? true,
@@ -234,12 +267,12 @@ export class NotificationRoutingService {
       quietHours: {
         start: row?.quietHoursStart ?? null,
         end: row?.quietHoursEnd ?? null,
-        timezone: row?.quietHoursTimezone ?? "UTC",
+        timezone: userTimezone ?? "UTC",
         includeWeekends: row?.quietHoursWeekends ?? true,
       },
-      categories: (row?.categories as Record<string, boolean> | undefined) ?? {},
-      modulePreferences: (row?.modulePreferences as ResolvedPreferences["modulePreferences"] | undefined) ?? {},
-      eventPreferences: (row?.eventPreferences as ResolvedPreferences["eventPreferences"] | undefined) ?? {},
+      categories,
+      modulePreferences,
+      eventPreferences,
       allowCriticalOverride: row?.allowCriticalOverride ?? true,
     };
   }
@@ -359,15 +392,35 @@ export class NotificationRoutingService {
     const results = new Map<string, RoutingResult>();
     if (userIds.length === 0) return results;
 
-    const [availableChannels, orgPolicy, prefRows] = await Promise.all([
+    const [availableChannels, orgPolicy, prefRows, ruleRows, tzRows] = await Promise.all([
       this.loadOrgAvailability(orgId),
       this.loadOrgPolicy(orgId, definition),
       this.db
         .select()
         .from(notificationPreferences)
         .where(and(eq(notificationPreferences.orgId, orgId), inArray(notificationPreferences.userId, userIds))),
+      // SCH-003: the normalised replacement for the four JSONB preference blobs.
+      this.db
+        .select()
+        .from(notificationPreferenceRules)
+        .where(and(eq(notificationPreferenceRules.orgId, orgId), inArray(notificationPreferenceRules.userId, userIds))),
+      // SCH-012: quiet hours resolve from the canonical per-user timezone.
+      // notification_preferences.quiet_hours_timezone defaulted 'UTC' while this
+      // column defaults 'Asia/Kolkata', so an IST user's 22:00-07:00 window was
+      // applied in UTC — silencing the working day and letting the night through.
+      this.db
+        .select({ userId: userPreferences.userId, timezone: userPreferences.timezone })
+        .from(userPreferences)
+        .where(inArray(userPreferences.userId, userIds)),
     ]);
     const prefsByUser = new Map(prefRows.map((r) => [r.userId, r]));
+    const rulesByUser = new Map<string, typeof ruleRows>();
+    for (const rule of ruleRows) {
+      const bucket = rulesByUser.get(rule.userId);
+      if (bucket) bucket.push(rule);
+      else rulesByUser.set(rule.userId, [rule]);
+    }
+    const tzByUser = new Map(tzRows.map((r) => [r.userId, r.timezone]));
     const suppressionByUser = await this.loadSuppressionBatch(orgId, userIds, definition);
     await this.applyRateLimitsBatch(orgId, userIds, definition, suppressionByUser);
 
@@ -377,7 +430,7 @@ export class NotificationRoutingService {
         definition,
         priority,
         now,
-        prefs: this.resolvePrefs(prefsByUser.get(userId)),
+        prefs: this.resolvePrefs(prefsByUser.get(userId), tzByUser.get(userId), rulesByUser.get(userId) ?? []),
         orgPolicy,
         availableChannels,
         suppressedChannels: suppressionByUser.get(userId) ?? new Map(),

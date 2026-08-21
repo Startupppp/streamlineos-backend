@@ -24,11 +24,13 @@ import {
   previewTemplateSchema,
   testSendTemplateSchema,
   listTemplatesSchema,
+  setTemplateApprovalSchema,
   type CreateTemplateInput,
   type UpdateTemplateInput,
   type PreviewTemplateInput,
   type TestSendTemplateInput,
   type ListTemplatesInput,
+  type SetTemplateApprovalInput,
 } from "./dto/template.schemas";
 
 @Controller("notification-templates")
@@ -63,6 +65,21 @@ export class NotificationTemplatesController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.templates.update(u.orgId, templateId, u.userId, dto);
+  }
+
+  /**
+   * COMP-004 / COMP-005. Without this the approval gates on WhatsApp and SMS could never
+   * be opened: `approval_status` defaults to NOT_REQUIRED and no other endpoint writes it,
+   * so a registered template would still have been refused at send time forever.
+   */
+  @Patch(":templateId/approval")
+  @RequirePermission("notifications:templates:manage")
+  setApproval(
+    @Param("templateId", ParseIntPipe) templateId: number,
+    @Body(new ZodValidationPipe(setTemplateApprovalSchema)) dto: SetTemplateApprovalInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.templates.setApproval(u.orgId, templateId, dto);
   }
 
   @Delete(":templateId")

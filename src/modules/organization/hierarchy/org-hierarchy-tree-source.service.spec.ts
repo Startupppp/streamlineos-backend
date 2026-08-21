@@ -1,0 +1,169 @@
+import type { Db } from "../../../db/drizzle.module";
+import {
+  OrgHierarchyTreeSourceService,
+  type OrgTreeRow,
+} from "./org-hierarchy-tree-source.service";
+
+const orgId = "org-1";
+
+function makeUnit(
+  unitId: string,
+  kind: OrgTreeRow["kind"],
+  parentId: string | null,
+): OrgTreeRow {
+  return {
+    id: unitId,
+    orgId,
+    kind,
+    parentId,
+    name: unitId,
+    code: unitId.toUpperCase(),
+    description: null,
+    headUserId: null,
+    status: "ACTIVE",
+    metadata: null,
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    deletedAt: null,
+  };
+}
+
+function profileQuery(result: unknown) {
+  return {
+    from: jest.fn().mockReturnValue({
+      where: jest.fn().mockReturnValue({
+        limit: jest.fn().mockResolvedValue(result),
+      }),
+    }),
+  };
+}
+
+function profileFailureQuery(error: unknown) {
+  return {
+    from: jest.fn().mockReturnValue({
+      where: jest.fn().mockReturnValue({
+        limit: jest.fn().mockRejectedValue(error),
+      }),
+    }),
+  };
+}
+
+function adjacencyQuery(result: unknown) {
+  return {
+    from: jest.fn().mockReturnValue({
+      where: jest.fn().mockResolvedValue(result),
+    }),
+  };
+}
+
+function closureQuery(result: unknown) {
+  const secondJoin = jest.fn().mockReturnValue({
+    where: jest.fn().mockResolvedValue(result),
+  });
+  return {
+    from: jest.fn().mockReturnValue({
+      leftJoin: jest.fn().mockReturnValue({ leftJoin: secondJoin }),
+    }),
+  };
+}
+
+describe("OrgHierarchyTreeSourceService", () => {
+  let selectQuery: jest.Mock;
+  let service: OrgHierarchyTreeSourceService;
+
+  beforeEach(() => {
+    selectQuery = jest.fn();
+    service = new OrgHierarchyTreeSourceService({
+      select: selectQuery,
+    } as unknown as Db);
+  });
+
+  it("uses the tenant migration profile and revision", async () => {
+    selectQuery.mockReturnValue(
+      profileQuery([{ mode: "CLOSURE", revision: 7 }]),
+    );
+
+    await expect(service.resolveReadProfile(orgId)).resolves.toEqual({
+      mode: "CLOSURE",
+      revision: 7,
+    });
+  });
+
+  it("uses adjacency when the profile relation has not been deployed", async () => {
+    selectQuery.mockReturnValue(profileFailureQuery({ code: "42P01" }));
+
+    await expect(service.resolveReadProfile(orgId)).resolves.toEqual({
+      mode: "ADJACENCY",
+      revision: 0,
+    });
+  });
+
+  it("serves verified closure rows in closure mode", async () => {
+    const businessUnit = makeUnit("business-unit-1", "BUSINESS_UNIT", null);
+    const branch = makeUnit("branch-1", "BRANCH", businessUnit.id);
+    selectQuery.mockReturnValue(
+      closureQuery([
+        {
+          ...businessUnit,
+          closureSelfId: businessUnit.id,
+          closureParentId: null,
+        },
+        {
+          ...branch,
+          closureSelfId: branch.id,
+          closureParentId: businessUnit.id,
+        },
+      ]),
+    );
+
+    await expect(
+      service.loadTreeRows(orgId, { mode: "CLOSURE", revision: 3 }),
+    ).resolves.toEqual([businessUnit, branch]);
+    expect(selectQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to adjacency when the closure projection is incomplete", async () => {
+    const businessUnit = makeUnit("business-unit-1", "BUSINESS_UNIT", null);
+    selectQuery
+      .mockReturnValueOnce(
+        closureQuery([
+          {
+            ...businessUnit,
+            closureSelfId: null,
+            closureParentId: null,
+          },
+        ]),
+      )
+      .mockReturnValueOnce(adjacencyQuery([businessUnit]));
+
+    await expect(
+      service.loadTreeRows(orgId, { mode: "CLOSURE", revision: 3 }),
+    ).resolves.toEqual([businessUnit]);
+    expect(selectQuery).toHaveBeenCalledTimes(2);
+  });
+
+  it("validates closure in shadow mode while serving adjacency", async () => {
+    const adjacencyBusinessUnit = makeUnit(
+      "business-unit-1",
+      "BUSINESS_UNIT",
+      null,
+    );
+    const closureBusinessUnit = {
+      ...adjacencyBusinessUnit,
+      name: "Closure shadow value",
+      closureSelfId: adjacencyBusinessUnit.id,
+      closureParentId: null,
+    };
+    selectQuery
+      .mockReturnValueOnce(adjacencyQuery([adjacencyBusinessUnit]))
+      .mockReturnValueOnce(closureQuery([closureBusinessUnit]));
+
+    await expect(
+      service.loadTreeRows(orgId, {
+        mode: "SHADOW_CLOSURE",
+        revision: 2,
+      }),
+    ).resolves.toEqual([adjacencyBusinessUnit]);
+    expect(selectQuery).toHaveBeenCalledTimes(2);
+  });
+});

@@ -11,11 +11,9 @@ import {
   Patch,
   Post,
   Query,
-  Req,
   Res,
   UseGuards,
 } from "@nestjs/common";
-import type { Request } from "express";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../../access/permission.guard";
@@ -53,6 +51,10 @@ import {
 } from "../flow/guided-tour.service";
 import type { ModuleKey } from "../../../../common/rbac/module-vocabulary";
 import { OnboardingSessionService } from "../flow/onboarding-session.service";
+import { Idempotent } from "../../../../common/idempotency/idempotent.decorator";
+import { UseRateLimit } from "../../../../common/ratelimit/use-rate-limit.decorator";
+import { RateLimitGuard } from "../../../../common/ratelimit/rate-limit.guard";
+import { RequireModule } from "../../../../common/rbac/require-module.decorator";
 import {
   checklistItemSkipSchema,
   sessionPatchSchema,
@@ -289,7 +291,7 @@ export class OnboardingController {
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.onboarding.initiate(u.orgId, body);
+    const result = await this.onboarding.initiate(u.orgId, u.userId, body);
     if (isInitiateUserNotFound(result)) {
       throw new NotFoundException("User not found in this organization");
     }
@@ -329,15 +331,12 @@ export class OnboardingController {
   @Post("reminders")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:onboarding:manage")
+  @Idempotent("hr.onboarding.send-reminders")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("hr:onboarding-reminders")
   @HttpCode(201)
-  sendReminders(@CurrentUser() u: CurrentUserContext, @Req() req: Request) {
-    const protocol =
-      req.headers["x-forwarded-proto"] ?? req.protocol ?? "https";
-    const host = req.headers["x-forwarded-host"] ?? req.headers.host;
-    const appUrl = host
-      ? `${String(protocol)}://${String(host)}`
-      : (process.env.APP_URL ?? "").replace(/\/$/, "");
-    return this.onboarding.sendReminders(u.orgId, appUrl);
+  sendReminders(@CurrentUser() currentUser: CurrentUserContext) {
+    return this.onboarding.sendReminders(currentUser.orgId);
   }
 
   @Patch("personal-details")
@@ -374,7 +373,8 @@ export class OnboardingController {
 
   @Patch("tasks/:taskId")
   @UseGuards(PermissionGuard)
-  @RequirePermission("hr:onboarding:tasks:complete")
+  @RequireModule("hr")
+  @RequirePermission("self:onboarding-tasks")
   updateTask(
     @Param("taskId", ParseIntPipe) taskId: number,
     @Body(new ZodValidationPipe(updateTaskSchema)) body: UpdateTaskInput,
@@ -399,7 +399,8 @@ export class OnboardingController {
 
   @Post("requirements/documents")
   @UseGuards(PermissionGuard)
-  @RequirePermission("hr:onboarding:tasks:complete")
+  @RequireModule("hr")
+  @RequirePermission("hr:onboarding:manage")
   @HttpCode(200)
   ensureRequirementDocuments(
     @Body(new ZodValidationPipe(ensureDocumentsSchema))
@@ -410,6 +411,9 @@ export class OnboardingController {
   }
 
   @Get("me")
+  @UseGuards(PermissionGuard)
+  @RequireModule("hr")
+  @RequirePermission("self:onboarding-tasks")
   getMyTasks(@CurrentUser() u: CurrentUserContext) {
     return this.onboarding.getUserTasks(u, u.userId);
   }

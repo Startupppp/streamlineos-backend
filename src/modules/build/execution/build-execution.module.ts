@@ -1,17 +1,16 @@
 import { Module } from "@nestjs/common";
 import { ProjectsModule } from "../../build/core/projects.module";
+import { TimesheetsCoreModule } from "../../timesheets/core/timesheets-core.module";
 import {
   CyclesController,
   EpicsController,
   ModulesController,
   SprintsController,
 } from "./iterations.controller";
-import {
-  CyclesService,
-  EpicsService,
-  ModulesService,
-  SprintsService,
-} from "./iterations.service";
+import { SprintsService } from "./sprints.service";
+import { CyclesService } from "./cycles.service";
+import { ModulesService } from "./modules.service";
+import { EpicsService } from "./epics.service";
 import {
   IntakeController,
   MilestonesController,
@@ -39,7 +38,7 @@ import {
 import { TimesheetsService } from "./timesheets.service";
 
 @Module({
-  imports: [ProjectsModule],
+  imports: [ProjectsModule, TimesheetsCoreModule],
   controllers: [
     SprintsController,
     CyclesController,

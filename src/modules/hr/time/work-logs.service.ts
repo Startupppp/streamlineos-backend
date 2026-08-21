@@ -250,7 +250,7 @@ export class WorkLogsService {
       .map((row) => row.map((val) => `"${String(val ?? "").replace(/"/g, '""')}"`).join(","))
       .join("\n");
 
-    this.audit.log({
+    await this.audit.logCritical({
       action: "worklog.exported",
       userId: u.userId,
       orgId: u.orgId,

@@ -6,6 +6,7 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
@@ -20,9 +21,11 @@ import {
   startReviewSchema,
   extendProbationSchema,
   confirmProbationSchema,
+  listProbationReviewsSchema,
   type StartReviewInput,
   type ExtendProbationInput,
   type ConfirmProbationInput,
+  type ListProbationReviewsInput,
 } from "./dto/probation.schemas";
 
 @RequireModule("hr")
@@ -33,8 +36,11 @@ export class ProbationController {
 
   @Get()
   @RequirePermission("hr:probation:view")
-  listDueForReview(@CurrentUser() u: CurrentUserContext) {
-    return this.probation.listDueForReview(u.orgId);
+  listDueForReview(
+    @CurrentUser() currentUser: CurrentUserContext,
+    @Query(new ZodValidationPipe(listProbationReviewsSchema)) query: ListProbationReviewsInput,
+  ) {
+    return this.probation.listDueForReview(currentUser.orgId, query);
   }
 
   @Post(":employmentId/start-review")
@@ -43,9 +49,9 @@ export class ProbationController {
   startReview(
     @Param("employmentId", ParseIntPipe) employmentId: number,
     @Body(new ZodValidationPipe(startReviewSchema)) body: StartReviewInput,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.probation.startReview(u.orgId, u.userId, employmentId, body);
+    return this.probation.startReview(currentUser.orgId, currentUser.userId, employmentId, body);
   }
 
   @Post(":reviewId/extend")
@@ -54,9 +60,9 @@ export class ProbationController {
   extend(
     @Param("reviewId", ParseIntPipe) reviewId: number,
     @Body(new ZodValidationPipe(extendProbationSchema)) body: ExtendProbationInput,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.probation.extend(u.orgId, u.userId, reviewId, body);
+    return this.probation.extend(currentUser.orgId, currentUser.userId, reviewId, body);
   }
 
   @Post(":reviewId/confirm")
@@ -65,8 +71,8 @@ export class ProbationController {
   confirm(
     @Param("reviewId", ParseIntPipe) reviewId: number,
     @Body(new ZodValidationPipe(confirmProbationSchema)) body: ConfirmProbationInput,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.probation.confirm(u.orgId, u.userId, reviewId, body);
+    return this.probation.confirm(currentUser.orgId, currentUser.userId, reviewId, body);
   }
 }

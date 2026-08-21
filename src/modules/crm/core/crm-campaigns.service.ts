@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, count, sql, inArray } from "drizzle-orm";
+import { and, count, eq, inArray, isNull, sql } from "drizzle-orm";
 import { crmCampaigns, crmOptions, crmPipelineStages, leads, deals } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -12,7 +12,7 @@ export class CrmCampaignsService {
 
   async list(orgId: string, query: CampaignListQuery) {
     const offset = (query.page - 1) * query.limit;
-    const conditions = [eq(crmCampaigns.orgId, orgId)];
+    const conditions = [eq(crmCampaigns.orgId, orgId), isNull(crmCampaigns.deletedAt)];
     if (query.status) conditions.push(eq(crmCampaigns.status, query.status as never));
 
     const [items, [{ total }]] = await Promise.all([
@@ -35,6 +35,7 @@ export class CrmCampaignsService {
       budgetAllocated: input.budgetAllocated?.toString(),
       description: input.description,
       targetAudience: input.targetAudience,
+      ownerId: input.ownerId ?? null,
     }).returning();
     return campaign;
   }
@@ -46,11 +47,14 @@ export class CrmCampaignsService {
         ...(input.channel !== undefined && { channel: input.channel }),
         ...(input.startDate !== undefined && { startDate: input.startDate }),
         ...(input.endDate !== undefined && { endDate: input.endDate }),
-        ...(input.budgetAllocated !== undefined && { budgetAllocated: input.budgetAllocated.toString() }),
+        ...(input.budgetAllocated !== undefined && {
+          budgetAllocated: input.budgetAllocated === null ? null : input.budgetAllocated.toString(),
+        }),
         ...(input.utmCampaignKey !== undefined && { utmCampaignKey: input.utmCampaignKey }),
         ...(input.status !== undefined && { status: input.status as never }),
         ...(input.description !== undefined && { description: input.description }),
         ...(input.targetAudience !== undefined && { targetAudience: input.targetAudience }),
+        ...(input.ownerId !== undefined && { ownerId: input.ownerId }),
       })
       .where(and(eq(crmCampaigns.id, campaignId), eq(crmCampaigns.orgId, orgId)))
       .returning();
@@ -59,8 +63,15 @@ export class CrmCampaignsService {
   }
 
   async remove(orgId: string, campaignId: number) {
-    const [deleted] = await this.db.delete(crmCampaigns)
-      .where(and(eq(crmCampaigns.id, campaignId), eq(crmCampaigns.orgId, orgId)))
+    const [deleted] = await this.db.update(crmCampaigns)
+      .set({ deletedAt: new Date() })
+      .where(
+        and(
+          eq(crmCampaigns.id, campaignId),
+          eq(crmCampaigns.orgId, orgId),
+          isNull(crmCampaigns.deletedAt),
+        ),
+      )
       .returning({ id: crmCampaigns.id });
     if (!deleted) throw new NotFoundException("Campaign not found");
     return { success: true };
@@ -69,7 +80,11 @@ export class CrmCampaignsService {
   async getCampaignRoi(orgId: string, campaignId: number) {
     const [campaign, statusOptions, wonStagesRows] = await Promise.all([
       this.db.query.crmCampaigns.findFirst({
-        where: and(eq(crmCampaigns.id, campaignId), eq(crmCampaigns.orgId, orgId)),
+        where: and(
+          eq(crmCampaigns.id, campaignId),
+          eq(crmCampaigns.orgId, orgId),
+          isNull(crmCampaigns.deletedAt),
+        ),
       }),
       this.db.select().from(crmOptions)
         .where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, "lead_status"))),
@@ -95,7 +110,7 @@ export class CrmCampaignsService {
           eq(leads.orgId, orgId),
         ))
         .where(and(
-          eq(deals.orgId, orgId),
+          eq(deals.orgId, orgId), isNull(deals.deletedAt),
           inArray(deals.stage, wonStageKeys),
         )),
     ]);

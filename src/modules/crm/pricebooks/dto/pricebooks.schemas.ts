@@ -6,7 +6,7 @@ export const createPricebookSchema = z.object({
   currency: z.string().default("INR"),
   isDefault: z.boolean().default(false),
   isActive: z.boolean().default(true),
-});
+}).strict();
 
 export const updatePricebookSchema = z.object({
   name: z.string().min(1).max(200).optional(),
@@ -14,13 +14,13 @@ export const updatePricebookSchema = z.object({
   currency: z.string().optional(),
   isDefault: z.boolean().optional(),
   isActive: z.boolean().optional(),
-});
+}).strict();
 
 export const upsertEntrySchema = z.object({
   productId: z.number().int().positive(),
   unitPriceCents: z.number().int().min(0),
   minQuantity: z.number().int().min(1).default(1),
-});
+}).strict();
 
 export const resolvePriceQuerySchema = z.object({
   productId: z.coerce.number().int().positive(),
@@ -33,21 +33,21 @@ export const quoteSettingsSchema = z.object({
   requirePricebookPrice: z.boolean().optional(),
   defaultExpiryDays: z.number().int().min(1).max(365).optional(),
   allowPriceOverride: z.boolean().optional(),
-});
+}).strict();
 
 export const createTemplateSchema = z.object({
   name: z.string().min(1).max(200),
   isDefault: z.boolean().default(false),
   branding: z.record(z.string(), z.unknown()).optional(),
   terms: z.string().optional(),
-});
+}).strict();
 
 export const updateTemplateSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   isDefault: z.boolean().optional(),
   branding: z.record(z.string(), z.unknown()).optional(),
   terms: z.string().optional(),
-});
+}).strict();
 
 export type CreatePricebookInput = z.infer<typeof createPricebookSchema>;
 export type UpdatePricebookInput = z.infer<typeof updatePricebookSchema>;

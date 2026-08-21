@@ -885,10 +885,451 @@
       "breakpoints": true
     },
     {
+      "idx": 126,
+      "version": "7",
+      "when": 1786413000269,
+      "tag": "0126_build_ticket_hot_path_indexes",
+      "breakpoints": true
+    },
+    {
       "idx": 127,
       "version": "7",
-      "when": 1785775800000,
-      "tag": "0400_platform_waitlist_signups",
+      "when": 1786413705243,
+      "tag": "0127_roadmap_items_private_by_default",
+      "breakpoints": true
+    },
+    {
+      "idx": 128,
+      "version": "7",
+      "when": 1786415676285,
+      "tag": "0399_inv_uom_conversions",
+      "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "7",
+      "when": 1786415736285,
+      "tag": "0400_inv_valuation_grain",
+      "breakpoints": true
+    },
+    {
+      "idx": 130,
+      "version": "7",
+      "when": 1786415796285,
+      "tag": "0401_inv_cogs_ledger",
+      "breakpoints": true
+    },
+    {
+      "idx": 131,
+      "version": "7",
+      "when": 1786415856285,
+      "tag": "0402_inv_standard_costs",
+      "breakpoints": true
+    },
+    {
+      "idx": 132,
+      "version": "7",
+      "when": 1786415916285,
+      "tag": "0403_inv_location_scoping",
+      "breakpoints": true
+    },
+    {
+      "idx": 133,
+      "version": "7",
+      "when": 1786415976285,
+      "tag": "0404_inv_posting_date",
+      "breakpoints": true
+    },
+    {
+      "idx": 134,
+      "version": "7",
+      "when": 1786416036285,
+      "tag": "0405_inv_reservation_idempotency",
+      "breakpoints": true
+    },
+    {
+      "idx": 135,
+      "version": "7",
+      "when": 1786416096285,
+      "tag": "0406_inv_barcodes",
+      "breakpoints": true
+    },
+    {
+      "idx": 136,
+      "version": "7",
+      "when": 1786416156285,
+      "tag": "0407_inv_stock_policy",
+      "breakpoints": true
+    },
+    {
+      "idx": 137,
+      "version": "7",
+      "when": 1786415616285,
+      "tag": "0137_add_voter_ip_hash",
+      "breakpoints": true
+    },
+    {
+      "idx": 138,
+      "version": "7",
+      "when": 1786416216285,
+      "tag": "0408_notification_category_accounting",
+      "breakpoints": true
+    },
+    {
+      "idx": 139,
+      "version": "7",
+      "when": 1786416276285,
+      "tag": "0409_inv_transfer_cost_carry",
+      "breakpoints": true
+    },
+    {
+      "idx": 140,
+      "version": "7",
+      "when": 1786416336285,
+      "tag": "0410_notification_visibility_resource_kind",
+      "breakpoints": true
+    },
+    {
+      "idx": 141,
+      "version": "7",
+      "when": 1786416396285,
+      "tag": "0411_suppression_reason_no_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 142,
+      "version": "7",
+      "when": 1786422353827,
+      "tag": "0142_tickets_fractional_rank",
+      "breakpoints": true
+    },
+    {
+      "idx": 143,
+      "version": "7",
+      "when": 1786422441612,
+      "tag": "0143_timesheets_text_to_enums",
+      "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "7",
+      "when": 1786422501612,
+      "tag": "0412_email_suppressions",
+      "breakpoints": true
+    },
+    {
+      "idx": 145,
+      "version": "7",
+      "when": 1786422561612,
+      "tag": "0413_notification_retention_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 146,
+      "version": "7",
+      "when": 1786425191097,
+      "tag": "0146_status_model_single_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 147,
+      "version": "7",
+      "when": 1786425251097,
+      "tag": "0414_rename_project_event_keys_to_build",
+      "breakpoints": true
+    },
+    {
+      "idx": 148,
+      "version": "7",
+      "when": 1786425311097,
+      "tag": "0415_notification_preference_and_catalog_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 149,
+      "version": "7",
+      "when": 1786427769241,
+      "tag": "0416_tickets_soft_delete_and_version",
+      "breakpoints": true
+    },
+    {
+      "idx": 150,
+      "version": "7",
+      "when": 1786445112520,
+      "tag": "0150_analyze_after_build_rewrites",
+      "breakpoints": true
+    },
+    {
+      "idx": 151,
+      "version": "7",
+      "when": 1786449411885,
+      "tag": "0151_build_soft_delete_core",
+      "breakpoints": true
+    },
+    {
+      "idx": 152,
+      "version": "7",
+      "when": 1786449471885,
+      "tag": "0417_email_suppressions_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 153,
+      "version": "7",
+      "when": 1786449531885,
+      "tag": "0418_notification_index_hygiene",
+      "breakpoints": true
+    },
+    {
+      "idx": 154,
+      "version": "7",
+      "when": 1786449591885,
+      "tag": "0419_notification_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 155,
+      "version": "7",
+      "when": 1786452331749,
+      "tag": "0155_roadmap_goals_soft_delete",
+      "breakpoints": true
+    },
+    {
+      "idx": 156,
+      "version": "7",
+      "when": 1786452402833,
+      "tag": "0156_sprint_scope_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 157,
+      "version": "7",
+      "when": 1786452462833,
+      "tag": "0420_delivery_snapshot_and_ttl",
+      "breakpoints": true
+    },
+    {
+      "idx": 158,
+      "version": "7",
+      "when": 1786460874736,
+      "tag": "0158_build_temporal_types",
+      "breakpoints": true
+    },
+    {
+      "idx": 159,
+      "version": "7",
+      "when": 1786461078224,
+      "tag": "0159_pm_schema_gaps",
+      "breakpoints": true
+    },
+    {
+      "idx": 160,
+      "version": "7",
+      "when": 1786466358225,
+      "tag": "0160_build_soft_delete_final",
+      "breakpoints": true
+    },
+    {
+      "idx": 161,
+      "version": "7",
+      "when": 1786466418225,
+      "tag": "0421_notification_pk_widening",
+      "breakpoints": true
+    },
+    {
+      "idx": 162,
+      "version": "7",
+      "when": 1786466478225,
+      "tag": "0422_preference_rules_and_consent",
+      "breakpoints": true
+    },
+    {
+      "idx": 163,
+      "version": "7",
+      "when": 1786466538225,
+      "tag": "0379_legal_entities_create",
+      "breakpoints": true
+    },
+    {
+      "idx": 164,
+      "version": "7",
+      "when": 1786466598225,
+      "tag": "0379_payroll_entities_legal_entity_fk",
+      "breakpoints": true
+    },
+    {
+      "idx": 165,
+      "version": "7",
+      "when": 1786466658225,
+      "tag": "0423_repair_schema_drift",
+      "breakpoints": true
+    },
+    {
+      "idx": 166,
+      "version": "7",
+      "when": 1786466718225,
+      "tag": "0379_effective_dating_convention",
+      "breakpoints": true
+    },
+    {
+      "idx": 167,
+      "version": "7",
+      "when": 1786466778225,
+      "tag": "0424_ticket_search_index_function",
+      "breakpoints": true
+    },
+    {
+      "idx": 168,
+      "version": "7",
+      "when": 1786466838225,
+      "tag": "0425_ticket_search_bounded",
+      "breakpoints": true
+    },
+    {
+      "idx": 169,
+      "version": "7",
+      "when": 1786466898225,
+      "tag": "0426_notification_timestamptz",
+      "breakpoints": true
+    },
+    {
+      "idx": 170,
+      "version": "7",
+      "when": 1786475149729,
+      "tag": "0170_crm_soft_delete_and_partial_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 171,
+      "version": "7",
+      "when": 1786476284120,
+      "tag": "0171_drop_dead_crm_leads",
+      "breakpoints": true
+    },
+    {
+      "idx": 172,
+      "version": "7",
+      "when": 1786476599932,
+      "tag": "0172_quotes_fx_rate_snapshot",
+      "breakpoints": true
+    },
+    {
+      "idx": 173,
+      "version": "7",
+      "when": 1786476659932,
+      "tag": "0426_build_identity_pks",
+      "breakpoints": true
+    },
+    {
+      "idx": 174,
+      "version": "7",
+      "when": 1786476719932,
+      "tag": "0427_managed_products_pk_rename",
+      "breakpoints": true
+    },
+    {
+      "idx": 175,
+      "version": "7",
+      "when": 1786476779932,
+      "tag": "0428_feedback_dedup_merge",
+      "breakpoints": true
+    },
+    {
+      "idx": 176,
+      "version": "7",
+      "when": 1786476839932,
+      "tag": "0429_digest_queue_broadcast_audience",
+      "breakpoints": true
+    },
+    {
+      "idx": 177,
+      "version": "7",
+      "when": 1786476840932,
+      "tag": "0430_broadcast_audience_cutover",
+      "breakpoints": true
+    },
+    {
+      "idx": 178,
+      "version": "7",
+      "when": 1786476841932,
+      "tag": "0431_email_outbox_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 179,
+      "version": "7",
+      "when": 1786511219481,
+      "tag": "0179_curved_falcon",
+      "breakpoints": true
+    },
+    {
+      "idx": 180,
+      "version": "7",
+      "when": 1786600571270,
+      "tag": "0180_hr_kb_partial_live_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 181,
+      "version": "7",
+      "when": 1786600631270,
+      "tag": "0420_inv_webhook_event_subscriptions",
+      "breakpoints": true
+    },
+    {
+      "idx": 182,
+      "version": "7",
+      "when": 1786600632270,
+      "tag": "0432_drop_quiet_hours_timezone",
+      "breakpoints": true
+    },
+    {
+      "idx": 183,
+      "version": "7",
+      "when": 1786601995007,
+      "tag": "0183_abandoned_captain_stacy",
+      "breakpoints": true
+    },
+    {
+      "idx": 184,
+      "version": "7",
+      "when": 1786697628726,
+      "tag": "0184_crm_activity_task_completed",
+      "breakpoints": true
+    },
+    {
+      "idx": 185,
+      "version": "7",
+      "when": 1786701346560,
+      "tag": "0185_crm_suppression_hashes",
+      "breakpoints": true
+    },
+    {
+      "idx": 186,
+      "version": "7",
+      "when": 1786701406560,
+      "tag": "0430_project_ticket_counters",
+      "breakpoints": true
+    },
+    {
+      "idx": 187,
+      "version": "7",
+      "when": 1786701466560,
+      "tag": "0431_build_events_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 188,
+      "version": "7",
+      "when": 1786701526560,
+      "tag": "0432_build_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 189,
+      "version": "7",
+      "when": 1786701586560,
+      "tag": "0433_platform_waitlist_signups",
       "breakpoints": true
     }
   ]

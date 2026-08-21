@@ -210,9 +210,12 @@ export class ChatMessagesService {
       attachments: insertedAttachments,
     });
 
+    // RT-001: neither the sender's name nor the message text crosses the push
+    // boundary. The client opens the channel and loads it over an authenticated
+    // request. This costs the lock-screen preview deliberately — a chat message can
+    // contain anything, and the push service is a third party.
     await this.webPush.sendToChannelMembers(channelId, message.senderId, {
-      title: senderName ?? "New message",
-      body: message.content?.slice(0, 80) ?? "Sent an attachment",
+      category: "CHAT",
       url: `/chat?channel=${channelId}`,
     });
 
@@ -224,7 +227,6 @@ export class ChatMessagesService {
     if (channelData?.type === "DIRECT") {
       await this.notifications.publishNewMessageNotification(orgId, channelId, {
         id: message.id,
-        content: message.content,
         senderId: message.senderId,
         senderName,
       }, channelData.type);
@@ -243,7 +245,7 @@ export class ChatMessagesService {
           const memberIds = channelMembers.map(m => m.userId).filter(id => id !== userId);
           if (memberIds.length > 0) {
             await this.notifications.publishMentionNotification(orgId, channelId, {
-              id: message.id, content: body.content!, senderId: userId, senderName: senderName ?? "Someone",
+              id: message.id, senderId: userId, senderName: senderName ?? "Someone",
             }, memberIds);
           }
         }
@@ -258,7 +260,6 @@ export class ChatMessagesService {
         if (individualMentionIds.length > 0) {
           await this.notifications.publishMentionNotification(orgId, channelId, {
             id: message.id,
-            content: body.content!,
             senderId: userId,
             senderName: senderName ?? "Someone",
           }, individualMentionIds);

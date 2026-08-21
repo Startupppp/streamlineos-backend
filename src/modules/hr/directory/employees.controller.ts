@@ -2,7 +2,6 @@ import {
   BadRequestException,
   Body,
   Controller,
-  ForbiddenException,
   Get,
   HttpCode,
   NotFoundException,
@@ -27,7 +26,10 @@ import { EmployeeBulkOnboardingService } from "./employee-bulk-onboarding.servic
 import { CelebrationsService } from "./celebrations.service";
 import { EmployeeSkillsService } from "./employee-skills.service";
 import { AccessService } from "../../access/access.service";
-import { resolveEmployeesScope } from "./employees-scope";
+import {
+  resolveEmployeesManageScope,
+  resolveEmployeesScope,
+} from "./employees-scope";
 import { buildEmployeeProfilePdf } from "./profile-pdf";
 import {
   availabilitySchema,
@@ -35,15 +37,20 @@ import {
   findExpertSchema,
   listEmployeesSchema,
   onboardEmployeeSchema,
+  skillsMatrixQuerySchema,
   updateEmployeeSchema,
   type AvailabilityInput,
   type BulkOnboardEmployeesInput,
   type FindExpertInput,
   type ListEmployeesInput,
   type OnboardEmployeeInput,
+  type SkillsMatrixQueryInput,
   type UpdateEmployeeInput,
 } from "./dto/hr-directory.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
+import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 
 @RequireModule("hr")
 @Controller("hr/employees")
@@ -64,31 +71,34 @@ export class EmployeesController {
   @HttpCode(201)
   onboard(
     @Body(new ZodValidationPipe(onboardEmployeeSchema)) body: OnboardEmployeeInput,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.onboarding.onboardEmployee(u, body);
+    return this.onboarding.onboardEmployee(currentUser, body);
   }
 
   @Post("onboard/bulk")
   @RequirePermission("hr:onboarding:manage")
+  @Idempotent("hr.employees.onboard-bulk")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("hr:employee-bulk-onboard")
   @HttpCode(200)
   onboardBulk(
     @Body(new ZodValidationPipe(bulkOnboardEmployeesSchema)) body: BulkOnboardEmployeesInput,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.bulkOnboarding.onboardEmployeesBulk(u, body.employees);
+    return this.bulkOnboarding.onboardEmployeesBulk(currentUser, body.employees);
   }
 
   @Get()
   @RequirePermission("hr:employees:view")
   async listEmployees(
     @Query(new ZodValidationPipe(listEmployeesSchema)) query: ListEmployeesInput,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    const scope = await resolveEmployeesScope(this.access, u);
+    const scope = await resolveEmployeesScope(this.access, currentUser);
     const search = query.search ?? query.q;
-    return this.employees.listEmployees(u.orgId, u.userId, {
-      page: query.page,
+    return this.employees.listEmployees(currentUser.orgId, currentUser.userId, {
+      cursor: query.cursor,
       limit: query.limit,
       search,
       departmentId: query.departmentId,
@@ -98,105 +108,139 @@ export class EmployeesController {
   }
 
   private async resolveTargetUserId(
-    u: CurrentUserContext,
+    currentUser: CurrentUserContext,
     requested: string | undefined,
   ): Promise<string> {
-    if (!requested || requested === u.userId) return u.userId;
-    const scope = await resolveEmployeesScope(this.access, u);
-    if (scope !== "all") {
-      throw new ForbiddenException("Not allowed to view another employee's records");
-    }
-    return requested;
+    const targetUserId = requested ?? currentUser.userId;
+    const scope = await resolveEmployeesScope(this.access, currentUser);
+    await this.employees.assertEmployeeVisible(
+      currentUser.orgId,
+      currentUser.userId,
+      targetUserId,
+      scope,
+    );
+    return targetUserId;
   }
 
   @Get("stats")
   @RequirePermission("hr:employees:view")
   async stats(
     @Query("userId") userId: string | undefined,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    const targetId = await this.resolveTargetUserId(u, userId);
-    return this.employees.getStats(u.orgId, targetId);
+    const targetId = await this.resolveTargetUserId(currentUser, userId);
+    return this.employees.getStats(currentUser.orgId, targetId);
   }
 
   @Get("anniversary-feed")
   @RequirePermission("hr:employees:view")
-  anniversaryFeed(@CurrentUser() u: CurrentUserContext) {
-    return this.celebrations.getAnniversaryFeed(u.orgId);
+  async anniversaryFeed(@CurrentUser() currentUser: CurrentUserContext) {
+    const scope = await resolveEmployeesScope(this.access, currentUser);
+    return this.celebrations.getAnniversaryFeed(currentUser.orgId, currentUser.userId, scope);
   }
 
   @Get("availability")
   @RequirePermission("hr:employees:view")
-  availability(
+  async availability(
     @Query(new ZodValidationPipe(availabilitySchema)) query: AvailabilityInput,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.celebrations.getAvailability(u.orgId, query.userIds);
+    const scope = await resolveEmployeesScope(this.access, currentUser);
+    return this.celebrations.getAvailability(
+      currentUser.orgId,
+      currentUser.userId,
+      query.userIds,
+      scope,
+    );
   }
 
   @Get("check-email")
   @RequirePermission("hr:onboarding:manage")
   checkEmail(
     @Query("email") email: string | undefined,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
     if (!email) throw new BadRequestException("Email is required");
-    return this.employees.checkEmail(u.orgId, email);
+    return this.employees.checkEmail(currentUser.orgId, email);
   }
 
   @Get("find-expert")
   @RequirePermission("hr:employees:view")
-  findExpert(
+  async findExpert(
     @Query(new ZodValidationPipe(findExpertSchema)) query: FindExpertInput,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.skills.findExpert(u.orgId, query);
+    const scope = await resolveEmployeesScope(this.access, currentUser);
+    return this.skills.findExpert(currentUser.orgId, currentUser.userId, query, scope);
   }
 
   @Get("skills-matrix")
   @RequirePermission("hr:employees:view")
-  skillsMatrix(@CurrentUser() u: CurrentUserContext) {
-    return this.skills.getSkillsMatrix(u.orgId);
+  async skillsMatrix(
+    @Query(new ZodValidationPipe(skillsMatrixQuerySchema))
+    query: SkillsMatrixQueryInput,
+    @CurrentUser() currentUser: CurrentUserContext,
+  ) {
+    const scope = await resolveEmployeesScope(this.access, currentUser);
+    return this.skills.getSkillsMatrix(currentUser.orgId, currentUser.userId, scope, query);
   }
 
   @Get("projects")
   @RequirePermission("hr:employees:view")
   async projects(
     @Query("userId") userId: string | undefined,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.employees.getProjects(u.orgId, await this.resolveTargetUserId(u, userId));
+    return this.employees.getProjects(currentUser.orgId, await this.resolveTargetUserId(currentUser, userId));
   }
 
   @Get("tickets")
   @RequirePermission("hr:employees:view")
   async tickets(
     @Query("userId") userId: string | undefined,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.employees.getTickets(u.orgId, await this.resolveTargetUserId(u, userId));
+    return this.employees.getTickets(currentUser.orgId, await this.resolveTargetUserId(currentUser, userId));
   }
 
   @Get(":employeeId/reports-to-me")
   @RequirePermission("hr:employees:view")
-  reportsToMe(@Param("employeeId") employeeId: string, @CurrentUser() u: CurrentUserContext) {
-    return this.employees.getReportsToMe(u.orgId, employeeId);
+  async reportsToMe(
+    @Param("employeeId") employeeId: string,
+    @CurrentUser() currentUser: CurrentUserContext,
+  ) {
+    return this.employees.getReportsToMe(
+      currentUser.orgId,
+      await this.resolveTargetUserId(currentUser, employeeId),
+    );
   }
 
   @Get(":employeeId/manager-scorecard")
   @RequirePermission("hr:employees:view")
-  managerScorecard(@Param("employeeId") employeeId: string, @CurrentUser() u: CurrentUserContext) {
-    return this.employees.getManagerScorecard(u.orgId, employeeId);
+  async managerScorecard(
+    @Param("employeeId") employeeId: string,
+    @CurrentUser() currentUser: CurrentUserContext,
+  ) {
+    return this.employees.getManagerScorecard(
+      currentUser.orgId,
+      await this.resolveTargetUserId(currentUser, employeeId),
+    );
   }
 
   @Get(":employeeId/profile-pdf")
   @RequirePermission("hr:employees:manage")
   async profilePdf(
     @Param("employeeId") employeeId: string,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
     @Res() res: Response,
   ) {
-    const employee = await this.mutations.getEmployeeDetail(u.orgId, employeeId);
+    const scope = await resolveEmployeesManageScope(this.access, currentUser);
+    const employee = await this.mutations.getEmployeeDetail(
+      currentUser.orgId,
+      currentUser.userId,
+      employeeId,
+      scope,
+    );
     if (!employee) throw new NotFoundException("Employee not found");
 
     const { skills, ...employeeData } = employee;
@@ -213,9 +257,15 @@ export class EmployeesController {
   @RequirePermission("hr:employees:view")
   async getEmployeeDetail(
     @Param("employeeId") employeeId: string,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    const employee = await this.mutations.getEmployeeDetail(u.orgId, employeeId);
+    const scope = await resolveEmployeesScope(this.access, currentUser);
+    const employee = await this.mutations.getEmployeeDetail(
+      currentUser.orgId,
+      currentUser.userId,
+      employeeId,
+      scope,
+    );
     if (!employee) throw new NotFoundException("Employee not found.");
     return employee;
   }
@@ -225,8 +275,8 @@ export class EmployeesController {
   updateEmployee(
     @Param("employeeId") employeeId: string,
     @Body(new ZodValidationPipe(updateEmployeeSchema)) body: UpdateEmployeeInput,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.mutations.updateEmployee(u, employeeId, body);
+    return this.mutations.updateEmployee(currentUser, employeeId, body);
   }
 }

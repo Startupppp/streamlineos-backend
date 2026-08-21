@@ -82,7 +82,7 @@ export class CrmInboxAiActionsService {
             .from(deals)
             .where(
               and(
-                eq(deals.orgId, orgId),
+                eq(deals.orgId, orgId), isNull(deals.deletedAt),
                 inArray(deals.stage, openStageKeys),
                 isNotNull(deals.slaDeadline),
                 lt(deals.slaDeadline, now),
@@ -96,7 +96,7 @@ export class CrmInboxAiActionsService {
         .from(quotes)
         .where(
           and(
-            eq(quotes.orgId, orgId),
+            eq(quotes.orgId, orgId), isNull(quotes.deletedAt),
             inArray(quotes.status, ["SENT", "DRAFT"]),
             lte(quotes.validUntil, threeDaysFromNow),
             gte(quotes.validUntil, todayString),

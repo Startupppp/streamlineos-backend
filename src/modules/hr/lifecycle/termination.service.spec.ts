@@ -1,9 +1,11 @@
 process.env.APP_URL ??= "http://localhost:1000";
 
 import { BadRequestException } from "@nestjs/common";
+import { runWithTenantContext } from "../../../common/tenant/tenant-context";
+import { users } from "../../../db/schema";
 import { TerminationService } from "./termination.service";
 
-describe("TerminationService.create — structural owner block", () => {
+describe("TerminationService.create - structural owner block", () => {
   function buildSelectChain(): Record<string, jest.Mock> {
     const chain: Record<string, jest.Mock> = {
       from: jest.fn(),
@@ -15,14 +17,19 @@ describe("TerminationService.create — structural owner block", () => {
     return chain;
   }
 
-  function buildService(membershipRow: Record<string, unknown>, targetUserRow?: Record<string, unknown>) {
+  function buildService(
+    membershipRow: Record<string, unknown>,
+    targetUserRow?: Record<string, unknown>,
+  ) {
     const db = {
       query: {
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue(membershipRow),
         },
         users: {
-          findFirst: jest.fn().mockResolvedValue(targetUserRow ?? { id: "target-1", isActive: true }),
+          findFirst: jest.fn().mockResolvedValue(
+            targetUserRow ?? { id: "target-1", isActive: true },
+          ),
         },
         terminations: {
           findFirst: jest.fn().mockResolvedValue(null),
@@ -31,13 +38,20 @@ describe("TerminationService.create — structural owner block", () => {
       select: jest.fn().mockReturnValue(buildSelectChain()),
       insert: jest.fn().mockReturnValue({
         values: jest.fn().mockReturnValue({
-          returning: jest.fn().mockResolvedValue([{ id: 1, orgId: "org-1", userId: "target-1" }]),
+          returning: jest
+            .fn()
+            .mockResolvedValue([{ id: 1, orgId: "org-1", userId: "target-1" }]),
         }),
       }),
+      execute: jest.fn().mockResolvedValue([{ relationAvailable: false }]),
+      transaction: jest.fn(),
     };
+    db.transaction.mockImplementation(
+      async (operation: (transaction: typeof db) => Promise<unknown>) => operation(db),
+    );
     return new TerminationService(
       db as never,
-      { log: jest.fn() } as never,
+      { logCritical: jest.fn() } as never,
       { invalidate: jest.fn() } as never,
       undefined as never,
       undefined as never,
@@ -75,7 +89,7 @@ describe("TerminationService.create — structural owner block", () => {
   });
 });
 
-describe("TerminationService.list — paginated envelope + status counts", () => {
+describe("TerminationService.list - paginated envelope and status counts", () => {
   function buildService(rows: unknown[], statusRows: { status: string; count: string }[]) {
     const rowsChain = {
       from: () => rowsChain,
@@ -91,7 +105,10 @@ describe("TerminationService.list — paginated envelope + status counts", () =>
       groupBy: () => Promise.resolve(statusRows),
     };
     let call = 0;
-    const db = { select: jest.fn(() => (call++ === 0 ? rowsChain : statusChain)) };
+    const db = {
+      select: jest.fn(() => (call++ === 0 ? rowsChain : statusChain)),
+      execute: jest.fn().mockResolvedValue([{ relationAvailable: false }]),
+    };
     return new TerminationService(
       db as never,
       undefined as never,
@@ -103,21 +120,26 @@ describe("TerminationService.list — paginated envelope + status counts", () =>
     );
   }
 
-  it("returns data + pagination + statusCounts; caps limit at 100; unfiltered total is org-wide", async () => {
+  it("returns a bounded page and organization-wide status counts", async () => {
     const service = buildService(
-      [{ id: 1 }],
+      [{ id: 1, reasons: [] }],
       [
         { status: "DRAFT", count: "100" },
         { status: "COMPLETED", count: "37" },
       ],
     );
     const result = await service.list("org-1", { page: 2, limit: 500 });
-    expect(result.data).toEqual([{ id: 1 }]);
-    expect(result.pagination).toEqual({ page: 2, limit: 100, total: 137, totalPages: 2 });
+    expect(result.data).toEqual([{ id: 1, reasons: [] }]);
+    expect(result.pagination).toEqual({
+      page: 2,
+      limit: 100,
+      total: 137,
+      totalPages: 2,
+    });
     expect(result.statusCounts).toEqual({ DRAFT: 100, COMPLETED: 37, ALL: 137 });
   });
 
-  it("total reflects the filtered status count when a status is given", async () => {
+  it("uses the selected status count for filtered pagination", async () => {
     const service = buildService(
       [],
       [
@@ -125,8 +147,94 @@ describe("TerminationService.list — paginated envelope + status counts", () =>
         { status: "APPROVED", count: "5" },
       ],
     );
-    const result = await service.list("org-1", { page: 1, limit: 20, status: "DRAFT" });
-    expect(result.pagination).toEqual({ page: 1, limit: 20, total: 45, totalPages: 3 });
+    const result = await service.list("org-1", {
+      page: 1,
+      limit: 20,
+      status: "DRAFT",
+    });
+    expect(result.pagination).toEqual({
+      page: 1,
+      limit: 20,
+      total: 45,
+      totalPages: 3,
+    });
     expect(result.statusCounts).toEqual({ DRAFT: 45, APPROVED: 5, ALL: 50 });
+  });
+});
+
+describe("TerminationService.complete - tenant-scoped account access", () => {
+  it("archives only the affected membership and never deactivates the global user", async () => {
+    const returning = jest.fn().mockResolvedValue([{ rowVersion: 2 }]);
+    const where = jest.fn().mockReturnValue({ returning });
+    const set = jest.fn().mockReturnValue({ where });
+    const update = jest.fn().mockReturnValue({ set });
+    const onConflictDoNothing = jest.fn().mockResolvedValue(undefined);
+    const values = jest.fn().mockReturnValue({ onConflictDoNothing });
+    const insert = jest.fn().mockReturnValue({ values });
+    const tx = {
+      update,
+      insert,
+      query: {
+        assets: {
+          findMany: jest.fn().mockResolvedValue([{ id: 7, name: "Laptop" }]),
+        },
+      },
+    };
+    const db = {
+      query: {
+        terminations: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 41,
+            orgId: "org-1",
+            userId: "member-1",
+            status: "SENT",
+            rowVersion: 1,
+            reasons: ["Policy breach"],
+            noticePeriodWaived: false,
+          }),
+        },
+        users: {
+          findFirst: jest.fn().mockResolvedValue({ name: "Multi Org Member" }),
+        },
+      },
+      execute: jest.fn().mockResolvedValue([{ relationAvailable: false }]),
+    };
+    const memberships = {
+      setMemberLifecycleStatus: jest.fn().mockResolvedValue({ success: true }),
+    };
+    const cache = { invalidate: jest.fn().mockResolvedValue(undefined) };
+    const service = new TerminationService(
+      db as never,
+      { logCritical: jest.fn() } as never,
+      cache as never,
+      undefined as never,
+      { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) } as never,
+      { emit: jest.fn().mockResolvedValue(undefined) } as never,
+      memberships as never,
+    );
+
+    const result = await runWithTenantContext(
+      {
+        orgId: "org-1",
+        audience: "INTERNAL",
+        tx: tx as never,
+        afterCommit: [],
+      },
+      () => service.complete("org-1", "actor-1", 41),
+    );
+
+    expect(result).toEqual({ success: true });
+    expect(memberships.setMemberLifecycleStatus).toHaveBeenCalledWith(
+      "org-1",
+      "actor-1",
+      "member-1",
+      "archived",
+      {
+        reason: "Employment terminated",
+        auditAction: "org.member_archived_after_termination",
+      },
+    );
+    expect(update.mock.calls.some(([table]) => table === users)).toBe(false);
+    expect(cache.invalidate).toHaveBeenCalledTimes(4);
   });
 });
