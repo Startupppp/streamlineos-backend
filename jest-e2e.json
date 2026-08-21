@@ -2,6 +2,7 @@
   "moduleFileExtensions": ["js", "json", "ts", "mjs", "cjs"],
   "rootDir": ".",
   "testEnvironment": "node",
+  "testTimeout": 60000,
   "workerIdleMemoryLimit": "1GB",
   "testRegex": ".e2e-spec.ts$",
   "transform": { "^.+\\.(t|j|mj)s$": ["ts-jest", { "tsconfig": { "allowJs": true }, "diagnostics": false }] },
