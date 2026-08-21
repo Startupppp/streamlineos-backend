@@ -51,10 +51,20 @@ describe("Notification self-service routes: no permission gate", () => {
   });
 });
 
-describe("Directory people routes: correct gates", () => {
+describe("Reading the people directory is universal", () => {
+  const readHandlers: ReadonlyArray<keyof DirectoryController> = [
+    "listPeople",
+    "getPerson",
+  ];
+
+  it.each(readHandlers)("DirectoryController#%s carries no @RequirePermission", (method) => {
+    const handler = DirectoryController.prototype[method];
+    expect(Reflect.getMetadata(REQUIRE_PERMISSION, handler)).toBeUndefined();
+  });
+});
+
+describe("Directory people mutations: correct gates", () => {
   const expectations: ReadonlyArray<[keyof DirectoryController, string]> = [
-    ["listPeople", "directory:people:view"],
-    ["getPerson", "directory:people:view"],
     ["createPerson", "directory:people:create"],
     ["updatePerson", "directory:people:update"],
     ["deletePerson", "directory:people:delete"],
@@ -85,7 +95,7 @@ describe("Directory worker routes: correct gates", () => {
 });
 
 describe("Member role defaults: universal access", () => {
-  it("MEMBER holds directory:people:view by default", () => {
+  it("MEMBER still holds directory:people:view, which gates the org people list elsewhere", () => {
     expect(ROLE_DEFAULT_PERMISSIONS["MEMBER"]).toContain("directory:people:view");
   });
 });

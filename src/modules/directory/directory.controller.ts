@@ -37,12 +37,11 @@ import {
 } from "./dto/directory.schemas";
 
 @Controller("directory")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard)
 export class DirectoryController {
   constructor(private readonly svc: DirectoryService) {}
 
   @Get("people")
-  @RequirePermission("directory:people:view")
   listPeople(
     @Query(new ZodValidationPipe(listPeopleQuerySchema)) query: ListPeopleQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -51,7 +50,6 @@ export class DirectoryController {
   }
 
   @Get("people/:organizationPersonId")
-  @RequirePermission("directory:people:view")
   getPerson(
     @Param("organizationPersonId") organizationPersonId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -61,6 +59,7 @@ export class DirectoryController {
 
   @Post("people")
   @HttpCode(201)
+  @UseGuards(PermissionGuard)
   @RequirePermission("directory:people:create")
   createPerson(
     @Body(new ZodValidationPipe(createPersonSchema)) body: CreatePersonInput,
@@ -70,6 +69,7 @@ export class DirectoryController {
   }
 
   @Patch("people/:organizationPersonId")
+  @UseGuards(PermissionGuard)
   @RequirePermission("directory:people:update")
   updatePerson(
     @Param("organizationPersonId") organizationPersonId: string,
@@ -81,6 +81,7 @@ export class DirectoryController {
 
   @Delete("people/:organizationPersonId")
   @HttpCode(204)
+  @UseGuards(PermissionGuard)
   @RequirePermission("directory:people:delete")
   deletePerson(
     @Param("organizationPersonId") organizationPersonId: string,
@@ -90,6 +91,7 @@ export class DirectoryController {
   }
 
   @Get("workers")
+  @UseGuards(PermissionGuard)
   @RequirePermission("workforce:workers:view")
   listWorkers(
     @Query(new ZodValidationPipe(listWorkersQuerySchema)) query: ListWorkersQuery,
@@ -99,6 +101,7 @@ export class DirectoryController {
   }
 
   @Get("workers/:workerId")
+  @UseGuards(PermissionGuard)
   @RequirePermission("workforce:workers:view")
   getWorker(
     @Param("workerId") workerId: string,
@@ -109,6 +112,7 @@ export class DirectoryController {
 
   @Post("workers")
   @HttpCode(201)
+  @UseGuards(PermissionGuard)
   @RequirePermission("workforce:workers:manage")
   createWorker(
     @Body(new ZodValidationPipe(createWorkerSchema)) body: CreateWorkerInput,
@@ -118,6 +122,7 @@ export class DirectoryController {
   }
 
   @Get("workers/:workerId/engagements")
+  @UseGuards(PermissionGuard)
   @RequirePermission("workforce:workers:view")
   listEngagements(
     @Param("workerId") workerId: string,
@@ -128,6 +133,7 @@ export class DirectoryController {
 
   @Post("workers/:workerId/engagements")
   @HttpCode(201)
+  @UseGuards(PermissionGuard)
   @RequirePermission("workforce:workers:manage")
   createEngagement(
     @Param("workerId") workerId: string,
@@ -138,6 +144,7 @@ export class DirectoryController {
   }
 
   @Patch("engagements/:workerEngagementId")
+  @UseGuards(PermissionGuard)
   @RequirePermission("workforce:workers:manage")
   updateEngagement(
     @Param("workerEngagementId") workerEngagementId: string,
@@ -149,6 +156,7 @@ export class DirectoryController {
 
   @Post("engagements/:workerEngagementId/cancel")
   @HttpCode(200)
+  @UseGuards(PermissionGuard)
   @RequirePermission("workforce:workers:manage")
   cancelEngagement(
     @Param("workerEngagementId") workerEngagementId: string,
@@ -163,6 +171,7 @@ export class DirectoryController {
 
   @Post("engagements/:workerEngagementId/terminate")
   @HttpCode(200)
+  @UseGuards(PermissionGuard)
   @RequirePermission("workforce:workers:terminate")
   terminateEngagement(
     @Param("workerEngagementId") workerEngagementId: string,
