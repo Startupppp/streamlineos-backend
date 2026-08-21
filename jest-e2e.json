@@ -5,7 +5,9 @@
   "workerIdleMemoryLimit": "1GB",
   "testRegex": ".e2e-spec.ts$",
   "transform": { "^.+\\.(t|j|mj)s$": ["ts-jest", { "tsconfig": { "allowJs": true }, "diagnostics": false }] },
-  "transformIgnorePatterns": ["/node_modules/(?!.*(?:@scure|otplib|@otplib|@noble|@composio))"],
-  "moduleNameMapper": { "^src/(.*)$": "<rootDir>/src/$1" },
+  "transformIgnorePatterns": [
+    "/node_modules/(?!(?:\\.pnpm/)?(?:@scure|otplib|@otplib|@noble|@composio|@openrouter|@ai-sdk|@workflow|@standard-schema|eventsource-parser|ai)[@/+])"
+  ],
+  "moduleNameMapper": { "^src/(.*)$": "<rootDir>/src/$1", "^test/(.*)$": "<rootDir>/test/$1" },
   "setupFiles": ["dotenv/config"]
 }

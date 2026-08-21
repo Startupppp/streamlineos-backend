@@ -136,8 +136,20 @@
       "dist"
     ],
     "transform": {
-      "^.+\\.(t|j)s$": "ts-jest"
+      "^.+\\.ts$": "ts-jest",
+      "^.+\\.js$": [
+        "ts-jest",
+        {
+          "tsconfig": {
+            "allowJs": true
+          },
+          "diagnostics": false
+        }
+      ]
     },
+    "transformIgnorePatterns": [
+      "/node_modules/(?!(?:\\.pnpm/)?(?:@scure|otplib|@otplib|@noble|@composio|@openrouter|@ai-sdk|@workflow|@standard-schema|eventsource-parser|ai)[@/+])"
+    ],
     "setupFiles": [
       "<rootDir>/src/test/jest-setup.ts"
     ],

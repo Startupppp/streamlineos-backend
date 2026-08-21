@@ -4,7 +4,8 @@ import type { Request } from "express";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { IS_PUBLIC } from "../../common/auth/public.decorator";
 import { logger } from "../../common/logger/logger.service";
-import { AccessService } from "./access.service";
+import { ModuleDisabledException } from "../../common/http/api-exceptions";
+import { AccessService, moduleOf } from "./access.service";
 import { authorize } from "./authorize";
 import type { AuthResult } from "./access.types";
 import { REQUIRE_PERMISSION } from "./require-permission.decorator";
@@ -45,7 +46,11 @@ export class PermissionGuard implements CanActivate {
 
     if (!result.allow) {
       if (result.reason === "UNAUTHENTICATED") throw new UnauthorizedException("Unauthorized");
-      if (result.reason === "NO_MODULE") throw new ForbiddenException("Module not available on this plan");
+      // Same condition ModuleGuard reports, so it gets the same answer: 402 with
+      // the module named. A 403 here reads as "you lack the permission" and the
+      // frontend's EntitlementGate, which keys the upgrade prompt on 402, shows
+      // an access-denied dead end instead of an offer to enable the module.
+      if (result.reason === "NO_MODULE") throw new ModuleDisabledException(moduleOf(permissionKey));
       throw new ForbiddenException("Permission denied");
     }
 
