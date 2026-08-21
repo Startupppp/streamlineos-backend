@@ -1,7 +1,7 @@
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
-import { signToken } from "../../../test/helpers/sign-token";
+import { ALL_MODULES, signToken } from "../../../test/helpers/sign-token";
 
 describe("Branches auth/RBAC (e2e)", () => {
   let app: INestApplication;
@@ -44,7 +44,7 @@ describe("Branches auth/RBAC (e2e)", () => {
   it.each(permGatedGetRoutes)(
     "403 on GET %s without branch:view permission",
     async (path) => {
-      const token = await signToken({ permissions: [], enabledModules: [] });
+      const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
       const res = await callRoute("get", path).set("Authorization", `Bearer ${token}`);
       expect(res.status).toBe(403);
     },

@@ -1,7 +1,7 @@
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
-import { signToken } from "../../../../test/helpers/sign-token";
+import { ALL_MODULES, signToken } from "../../../../test/helpers/sign-token";
 
 describe("Projects auth/RBAC (e2e)", () => {
   let app: INestApplication;
@@ -99,7 +99,7 @@ describe("Projects auth/RBAC (e2e)", () => {
   });
 
   it("403 on POST /projects without projects create ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/build")
       .set("Authorization", `Bearer ${token}`)
@@ -109,7 +109,7 @@ describe("Projects auth/RBAC (e2e)", () => {
   });
 
   it("403 on GET /projects/roadmap without projects:roadmap view ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get("/build/roadmap")
       .set("Authorization", `Bearer ${token}`);
@@ -118,7 +118,7 @@ describe("Projects auth/RBAC (e2e)", () => {
   });
 
   it("403 on POST /projects/changelog without projects:roadmap manage ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/build/changelog")
       .set("Authorization", `Bearer ${token}`)
@@ -128,7 +128,7 @@ describe("Projects auth/RBAC (e2e)", () => {
   });
 
   it("does NOT enforce an ability gate on GET /projects (auth-only)", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer()).get("/build").set("Authorization", `Bearer ${token}`);
     expect(res.status).not.toBe(401);
     expect(res.status).not.toBe(403);

@@ -1,7 +1,7 @@
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
-import { signToken } from "../../../test/helpers/sign-token";
+import { ALL_MODULES, signToken } from "../../../test/helpers/sign-token";
 
 describe("AuditLog auth/RBAC (e2e)", () => {
   let app: INestApplication;
@@ -23,7 +23,7 @@ describe("AuditLog auth/RBAC (e2e)", () => {
   });
 
   it.each(routes)("403 on GET %s without audit-log read", async (path) => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get(path)
       .set("Authorization", `Bearer ${token}`);

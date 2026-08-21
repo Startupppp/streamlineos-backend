@@ -1,6 +1,6 @@
 import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { signToken } from "test/helpers/sign-token";
+import { ALL_MODULES, signToken } from "test/helpers/sign-token";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { AccessService } from "../../access/access.service";
 import { EntitlementsService } from "../../access/entitlements.service";
@@ -182,7 +182,7 @@ describe("payroll-payout RBAC — 403 when no permissions (e2e)", () => {
   ];
 
   it.each(rbacRoutes)("403 on %s %s with empty permission map", async (method, path) => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())[method](path)
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
@@ -196,7 +196,7 @@ describe("payroll-payout RBAC — specific permission key enforcement (e2e)", ()
   afterAll(async () => app.close());
 
   it("POST /payroll/runs/1/lock → 403 for approve-only caller (requires payroll:runs:manage)", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/payroll/runs/1/lock")
       .set("Authorization", `Bearer ${token}`);
@@ -205,7 +205,7 @@ describe("payroll-payout RBAC — specific permission key enforcement (e2e)", ()
   });
 
   it("POST /payroll/runs/1/reopen → 403 for approve-only caller (requires payroll:runs:manage)", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/payroll/runs/1/reopen")
       .set("Authorization", `Bearer ${token}`)
@@ -215,7 +215,7 @@ describe("payroll-payout RBAC — specific permission key enforcement (e2e)", ()
   });
 
   it("GET /payroll/runs/1/payout/validation → 403 for approve-only (requires payroll:bank:manage)", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get("/payroll/runs/1/payout/validation")
       .set("Authorization", `Bearer ${token}`);
@@ -224,7 +224,7 @@ describe("payroll-payout RBAC — specific permission key enforcement (e2e)", ()
   });
 
   it("POST /payroll/runs/1/payslips/publish → 403 for approve-only (requires payroll:payslips:manage)", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/payroll/runs/1/payslips/publish")
       .set("Authorization", `Bearer ${token}`)
@@ -234,7 +234,7 @@ describe("payroll-payout RBAC — specific permission key enforcement (e2e)", ()
   });
 
   it("GET /payroll/employees/u1/bank → 403 for approve-only (requires payroll:bank:view)", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get("/payroll/employees/u1/bank")
       .set("Authorization", `Bearer ${token}`);

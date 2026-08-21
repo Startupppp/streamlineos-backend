@@ -1,7 +1,7 @@
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
-import { signToken } from "../../../../test/helpers/sign-token";
+import { ALL_MODULES, signToken } from "../../../../test/helpers/sign-token";
 
 describe("HR Directory auth/RBAC (e2e)", () => {
   let app: INestApplication;
@@ -70,7 +70,7 @@ describe("HR Directory auth/RBAC (e2e)", () => {
   });
 
   it("403 on GET /hr/employees without hr:employees read", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get("/hr/employees")
       .set("Authorization", `Bearer ${token}`);
@@ -79,7 +79,7 @@ describe("HR Directory auth/RBAC (e2e)", () => {
   });
 
   it("403 on GET /hr/headcount without hr:headcount read", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get("/hr/headcount")
       .set("Authorization", `Bearer ${token}`);
@@ -88,7 +88,7 @@ describe("HR Directory auth/RBAC (e2e)", () => {
   });
 
   it("403 on POST /hr/asset-returns without hr:assets manage", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/hr/asset-returns")
       .set("Authorization", `Bearer ${token}`)

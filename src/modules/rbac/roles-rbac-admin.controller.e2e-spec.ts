@@ -3,7 +3,7 @@ import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { AppModule } from "../../app.module";
 import { AllExceptionsFilter } from "../../common/http/all-exceptions.filter";
-import { signToken } from "../../../test/helpers/sign-token";
+import { ALL_MODULES, signToken } from "../../../test/helpers/sign-token";
 import { AccessService } from "../access/access.service";
 import { RolesService } from "./roles.service";
 import type { DataScope } from "../access/access.types";
@@ -77,7 +77,7 @@ describe("Roles RBAC admin endpoints (e2e)", () => {
     });
 
     it("returns 403 when the caller lacks settings:rbac:manage", async () => {
-      const token = await signToken({ permissions: [], enabledModules: [] });
+      const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
       const res = await request(app.getHttpServer())
         .get(`/roles/simulate/${TARGET_USER_ID}`)
         .set("Authorization", `Bearer ${token}`);
@@ -141,7 +141,7 @@ describe("Roles RBAC admin endpoints (e2e)", () => {
     });
 
     it("returns 403 when the caller lacks settings:rbac:manage", async () => {
-      const token = await signToken({ permissions: [], enabledModules: [] });
+      const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
       const res = await request(app.getHttpServer())
         .get("/roles/permissions/matrix")
         .set("Authorization", `Bearer ${token}`);

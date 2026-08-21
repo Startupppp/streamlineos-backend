@@ -1,7 +1,7 @@
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
-import { signToken } from "../../../../test/helpers/sign-token";
+import { ALL_MODULES, signToken } from "../../../../test/helpers/sign-token";
 
 describe("Accounting auth/RBAC (e2e)", () => {
   let app: INestApplication;
@@ -62,7 +62,7 @@ describe("Accounting auth/RBAC (e2e)", () => {
   });
 
   it("403 on GET /accounting/accounts without accounting:accounts read", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get("/accounting/accounts")
       .set("Authorization", `Bearer ${token}`);
@@ -71,7 +71,7 @@ describe("Accounting auth/RBAC (e2e)", () => {
   });
 
   it("403 on POST /accounting/journal without accounting:journal manage", async () => {
-    const token = await signToken({ permissions: ["accounting:journal:read"], enabledModules: [] });
+    const token = await signToken({ permissions: ["accounting:journal:read"], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/accounting/journal")
       .set("Authorization", `Bearer ${token}`)
@@ -81,7 +81,7 @@ describe("Accounting auth/RBAC (e2e)", () => {
   });
 
   it("403 on GET /accounting/reports/trial-balance without accounting:reports read", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get("/accounting/reports/trial-balance?asOf=2024-01-01")
       .set("Authorization", `Bearer ${token}`);

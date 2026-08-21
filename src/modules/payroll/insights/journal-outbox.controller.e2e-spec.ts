@@ -2,7 +2,7 @@ process.env.APP_URL ??= "http://localhost:1000";
 
 import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { signToken } from "test/helpers/sign-token";
+import { ALL_MODULES, signToken } from "test/helpers/sign-token";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { AccessService } from "../../access/access.service";
 import { EntitlementsService } from "../../access/entitlements.service";
@@ -104,7 +104,7 @@ describe("journal outbox — RBAC denies without the new permission keys (e2e)",
   afterAll(async () => { if (app) await app.close(); });
 
   it.each([...READ_ROUTES, ...WRITE_ROUTES])("403 on %s %s with no permissions", async (method, path) => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())[method](path)
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
@@ -117,7 +117,7 @@ describe("journal outbox — view permission does not grant ledger writes (e2e)"
   afterAll(async () => { if (app) await app.close(); });
 
   it.each(WRITE_ROUTES)("403 on %s %s for a view-only caller", async (method, path) => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())[method](path)
       .set("Authorization", `Bearer ${token}`)
       .send({ periodKey: "2025-07", reason: "x", status: "RECONCILED" });

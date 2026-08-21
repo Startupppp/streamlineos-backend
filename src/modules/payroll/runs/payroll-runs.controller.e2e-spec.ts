@@ -1,6 +1,6 @@
 import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { signToken } from "test/helpers/sign-token";
+import { ALL_MODULES, signToken } from "test/helpers/sign-token";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { AccessService } from "../../access/access.service";
 import { EntitlementsService } from "../../access/entitlements.service";
@@ -178,7 +178,7 @@ describe("payroll-runs RBAC — 403 when no permissions (e2e)", () => {
   ];
 
   it.each(rbacProtectedRoutes)("403 on %s %s with empty permission map", async (method, path) => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())[method](path)
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
@@ -192,7 +192,7 @@ describe("payroll-runs RBAC — manage routes blocked for view-only (e2e)", () =
   afterAll(async () => app.close());
 
   it("POST /payroll/runs → 403 for view-only (requires payroll:runs:update)", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/payroll/runs")
       .set("Authorization", `Bearer ${token}`)
@@ -202,7 +202,7 @@ describe("payroll-runs RBAC — manage routes blocked for view-only (e2e)", () =
   });
 
   it("POST /payroll/runs/1/generate → 403 for view-only (requires payroll:runs:manage)", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/payroll/runs/1/generate")
       .set("Authorization", `Bearer ${token}`);
@@ -211,7 +211,7 @@ describe("payroll-runs RBAC — manage routes blocked for view-only (e2e)", () =
   });
 
   it("POST /payroll/runs/1/recalculate → 403 for view-only (requires payroll:runs:manage)", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/payroll/runs/1/recalculate")
       .set("Authorization", `Bearer ${token}`);
@@ -220,7 +220,7 @@ describe("payroll-runs RBAC — manage routes blocked for view-only (e2e)", () =
   });
 
   it("PATCH /payroll/runs/1/exceptions/1/override → 403 for view-only (requires payroll:runs:manage)", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .patch("/payroll/runs/1/exceptions/1/override")
       .set("Authorization", `Bearer ${token}`)

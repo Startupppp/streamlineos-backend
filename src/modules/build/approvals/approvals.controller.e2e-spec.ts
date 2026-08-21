@@ -1,7 +1,7 @@
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
-import { signToken } from "../../../../test/helpers/sign-token";
+import { ALL_MODULES, signToken } from "../../../../test/helpers/sign-token";
 
 describe("ProjectsApprovals auth/RBAC (e2e)", () => {
   let app: INestApplication;
@@ -43,7 +43,7 @@ describe("ProjectsApprovals auth/RBAC (e2e)", () => {
   });
 
   it("403 on GET /projects/approvals/inbox without projects:approvals:view ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get("/build/approvals/inbox")
       .set("Authorization", `Bearer ${token}`);
@@ -52,7 +52,7 @@ describe("ProjectsApprovals auth/RBAC (e2e)", () => {
   });
 
   it("403 on GET /projects/1/approvals without projects:approvals:view ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get("/build/1/approvals")
       .set("Authorization", `Bearer ${token}`);
@@ -61,7 +61,7 @@ describe("ProjectsApprovals auth/RBAC (e2e)", () => {
   });
 
   it("403 on POST /projects/1/approvals without projects:approvals:request ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/build/1/approvals")
       .set("Authorization", `Bearer ${token}`)
@@ -71,7 +71,7 @@ describe("ProjectsApprovals auth/RBAC (e2e)", () => {
   });
 
   it("403 on PATCH /projects/1/approvals/2/decide without projects:approvals:decide ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .patch("/build/1/approvals/2/decide")
       .set("Authorization", `Bearer ${token}`)
@@ -81,7 +81,7 @@ describe("ProjectsApprovals auth/RBAC (e2e)", () => {
   });
 
   it("403 on PATCH /projects/1/approvals/2 without projects:approvals:manage ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .patch("/build/1/approvals/2")
       .set("Authorization", `Bearer ${token}`)
@@ -91,7 +91,7 @@ describe("ProjectsApprovals auth/RBAC (e2e)", () => {
   });
 
   it("403 on DELETE /projects/1/approvals/2 without projects:approvals:manage ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .delete("/build/1/approvals/2")
       .set("Authorization", `Bearer ${token}`);

@@ -1,6 +1,6 @@
 import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { signToken } from "test/helpers/sign-token";
+import { ALL_MODULES, signToken } from "test/helpers/sign-token";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { AccessService } from "../../access/access.service";
 import { EntitlementsService } from "../../access/entitlements.service";
@@ -215,7 +215,7 @@ describe("payroll-insights RBAC — 403 when no permissions (e2e)", () => {
   ];
 
   it.each(rbacRoutes)("403 on %s %s with empty permission map", async (method, path) => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())[method](path)
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
@@ -356,7 +356,7 @@ describe("payroll-insights — export requires payroll:reports:export (e2e)", ()
   afterAll(async () => app.close());
 
   it("GET /payroll/reports/summary?format=csv → 403 without payroll:reports:export", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get("/payroll/reports/summary?format=csv&month=2026-07")
       .set("Authorization", `Bearer ${token}`);
@@ -386,7 +386,7 @@ describe("payroll-insights — FnF requires payroll:fnf:view (e2e)", () => {
   afterAll(async () => app.close());
 
   it("GET /payroll/fnf → 403 for caller without payroll:fnf:view", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get("/payroll/fnf")
       .set("Authorization", `Bearer ${token}`);

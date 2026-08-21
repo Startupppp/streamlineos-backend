@@ -1,7 +1,7 @@
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
-import { signToken } from "../../../../test/helpers/sign-token";
+import { ALL_MODULES, signToken } from "../../../../test/helpers/sign-token";
 
 describe("Feedbucket auth/RBAC (e2e)", () => {
   let app: INestApplication;
@@ -50,7 +50,7 @@ describe("Feedbucket auth/RBAC (e2e)", () => {
   });
 
   it("403 on GET /feedbucket/widgets without feedbucket:widgets:view", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get("/feedbucket/widgets")
       .set("Authorization", `Bearer ${token}`);
@@ -58,7 +58,7 @@ describe("Feedbucket auth/RBAC (e2e)", () => {
   });
 
   it("403 on POST /feedbucket/widgets without feedbucket:widgets:create", async () => {
-    const token = await signToken({ permissions: ["feedbucket:widgets:view"], enabledModules: [] });
+    const token = await signToken({ permissions: ["feedbucket:widgets:view"], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/feedbucket/widgets")
       .set("Authorization", `Bearer ${token}`)
@@ -67,7 +67,7 @@ describe("Feedbucket auth/RBAC (e2e)", () => {
   });
 
   it("403 on GET /feedbucket/submissions without feedbucket:submissions:view", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get("/feedbucket/submissions")
       .set("Authorization", `Bearer ${token}`);
@@ -77,7 +77,7 @@ describe("Feedbucket auth/RBAC (e2e)", () => {
   it("403 on POST /feedbucket/submissions/1/convert-to-ticket without feedbucket:submissions:manage", async () => {
     const token = await signToken({
       permissions: ["feedbucket:submissions:view"],
-      enabledModules: [],
+      enabledModules: ALL_MODULES,
     });
     const res = await request(app.getHttpServer())
       .post("/feedbucket/submissions/1/convert-to-ticket")

@@ -4,7 +4,7 @@ import request from "supertest";
 import { DrizzleModule } from "../../../db/drizzle.module";
 import { AiModule } from "./ai.module";
 import { AllExceptionsFilter } from "../../../common/http/all-exceptions.filter";
-import { signToken } from "../../../../test/helpers/sign-token";
+import { ALL_MODULES, signToken } from "../../../../test/helpers/sign-token";
 
 describe("AI auth/RBAC (e2e)", () => {
   let app: INestApplication;
@@ -76,7 +76,7 @@ describe("AI auth/RBAC (e2e)", () => {
   it("403 on POST /ai/attrition-risk without hr:employees manage", async () => {
     process.env.OPENAI_API_KEY = "test-key";
     try {
-      const token = await signToken({ permissions: ["crm:leads:read"], enabledModules: [] });
+      const token = await signToken({ permissions: ["crm:leads:read"], enabledModules: ALL_MODULES });
       const res = await request(app.getHttpServer())
         .post("/ai/attrition-risk")
         .set("Authorization", `Bearer ${token}`)
@@ -91,7 +91,7 @@ describe("AI auth/RBAC (e2e)", () => {
   it("403 on POST /ai/generate-review without hr:performance manage", async () => {
     process.env.OPENAI_API_KEY = "test-key";
     try {
-      const token = await signToken({ permissions: ["crm:leads:read"], enabledModules: [] });
+      const token = await signToken({ permissions: ["crm:leads:read"], enabledModules: ALL_MODULES });
       const res = await request(app.getHttpServer())
         .post("/ai/generate-review")
         .set("Authorization", `Bearer ${token}`)

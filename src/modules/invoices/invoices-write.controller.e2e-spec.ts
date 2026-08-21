@@ -1,7 +1,7 @@
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
-import { signToken } from "test/helpers/sign-token";
+import { ALL_MODULES, signToken } from "test/helpers/sign-token";
 
 describe("Invoices write auth (e2e)", () => {
   let app: INestApplication;
@@ -30,7 +30,7 @@ describe("Invoices write auth (e2e)", () => {
   });
 
   it("does NOT require an ability on PATCH /invoices/:id (auth-only)", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .patch("/invoices/999999")
       .set("Authorization", `Bearer ${token}`)

@@ -1,7 +1,7 @@
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
-import { signToken } from "../../../../test/helpers/sign-token";
+import { ALL_MODULES, signToken } from "../../../../test/helpers/sign-token";
 
 describe("HR Performance auth/RBAC (e2e)", () => {
   let app: INestApplication;
@@ -86,7 +86,7 @@ describe("HR Performance auth/RBAC (e2e)", () => {
   });
 
   it("403 on POST /hr/feedback without hr:feedback manage", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/hr/feedback")
       .set("Authorization", `Bearer ${token}`)
@@ -96,7 +96,7 @@ describe("HR Performance auth/RBAC (e2e)", () => {
   });
 
   it("403 on GET /hr/compliance/statutory without hr:compliance manage", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get("/hr/compliance/statutory")
       .set("Authorization", `Bearer ${token}`);
@@ -105,7 +105,7 @@ describe("HR Performance auth/RBAC (e2e)", () => {
   });
 
   it("403 on GET /hr/enps without hr:performance manage (role-string gate)", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get("/hr/enps")
       .set("Authorization", `Bearer ${token}`);
@@ -125,7 +125,7 @@ describe("HR Performance auth/RBAC (e2e)", () => {
   it.each(authOnlyGetRoutes)(
     "does NOT enforce an ability gate on GET %s (auth-only)",
     async (path) => {
-      const token = await signToken({ permissions: [], enabledModules: [] });
+      const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
       const res = await request(app.getHttpServer())
         .get(path)
         .set("Authorization", `Bearer ${token}`);

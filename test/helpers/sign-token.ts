@@ -4,6 +4,15 @@ import {
   INTERNAL_TOKEN_ISSUER,
   type BackendClaims,
 } from "src/common/auth/backend-claims";
+import { MODULE_CATALOG } from "src/common/rbac/module-vocabulary";
+
+/**
+ * Every plan-gated module enabled. A permission-tier test has to get past the
+ * module tier first — `authorize` answers NO_MODULE before it reads a single
+ * grant — so a token with no modules proves 402, never the 403 the test is
+ * named for. The module tier has its own cases.
+ */
+export const ALL_MODULES: string[] = [...MODULE_CATALOG];
 
 type IgnoredClaims = {
   branchId?: string | null;

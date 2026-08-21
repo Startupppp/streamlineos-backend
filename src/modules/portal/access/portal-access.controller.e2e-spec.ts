@@ -3,7 +3,7 @@ import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { AppModule } from "../../../app.module";
 import { AllExceptionsFilter } from "../../../common/http/all-exceptions.filter";
-import { signToken } from "../../../../test/helpers/sign-token";
+import { ALL_MODULES, signToken } from "../../../../test/helpers/sign-token";
 
 describe("PortalAccess auth/RBAC (e2e)", () => {
   let app: INestApplication;
@@ -58,7 +58,7 @@ describe("PortalAccess auth/RBAC (e2e)", () => {
   );
 
   it("403 on POST /portal-access/memberships without projects:clientvisibility:manage permission", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/portal-access/memberships")
       .set("Authorization", `Bearer ${token}`)
@@ -68,7 +68,7 @@ describe("PortalAccess auth/RBAC (e2e)", () => {
   });
 
   it("403 on POST /portal-access/grants without projects:clientvisibility:manage permission", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/portal-access/grants")
       .set("Authorization", `Bearer ${token}`)
@@ -78,7 +78,7 @@ describe("PortalAccess auth/RBAC (e2e)", () => {
   });
 
   it("403 on PATCH /portal-access/memberships/:id/status without projects:clientvisibility:manage permission", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .patch(`/portal-access/memberships/${MEMBERSHIP_ID}/status`)
       .set("Authorization", `Bearer ${token}`)
@@ -88,7 +88,7 @@ describe("PortalAccess auth/RBAC (e2e)", () => {
   });
 
   it("403 on POST /portal-access/grants/:id/revoke without projects:clientvisibility:manage permission", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post(`/portal-access/grants/${GRANT_ID}/revoke`)
       .set("Authorization", `Bearer ${token}`);
@@ -97,7 +97,7 @@ describe("PortalAccess auth/RBAC (e2e)", () => {
   });
 
   it("403 on GET /portal-access/memberships without projects:portal:view permission", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get("/portal-access/memberships")
       .set("Authorization", `Bearer ${token}`);
@@ -106,7 +106,7 @@ describe("PortalAccess auth/RBAC (e2e)", () => {
   });
 
   it("403 on GET /portal-access/grants without projects:portal:view permission", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get("/portal-access/grants")
       .set("Authorization", `Bearer ${token}`);

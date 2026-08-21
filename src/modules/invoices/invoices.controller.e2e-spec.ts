@@ -1,7 +1,7 @@
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
-import { signToken } from "test/helpers/sign-token";
+import { ALL_MODULES, signToken } from "test/helpers/sign-token";
 
 describe("Invoices auth/RBAC (e2e)", () => {
   let app: INestApplication;
@@ -50,7 +50,7 @@ describe("Invoices auth/RBAC (e2e)", () => {
   });
 
   it("does NOT require an ability on GET /invoices/stats (auth-only)", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await callRoute("get", "/invoices/stats").set("Authorization", `Bearer ${token}`);
     expect(res.status).not.toBe(401);
     expect(res.status).not.toBe(403);

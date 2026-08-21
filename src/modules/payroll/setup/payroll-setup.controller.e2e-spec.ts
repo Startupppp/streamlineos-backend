@@ -1,7 +1,7 @@
 import type { INestApplication } from "@nestjs/common";
 import { ConflictException, NotFoundException } from "@nestjs/common";
 import request from "supertest";
-import { signToken } from "test/helpers/sign-token";
+import { ALL_MODULES, signToken } from "test/helpers/sign-token";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { AccessService } from "../../access/access.service";
 import { EntitlementsService } from "../../access/entitlements.service";
@@ -135,7 +135,7 @@ describe("payroll-setup RBAC — 403 when no permissions (e2e)", () => {
   ];
 
   it.each(rbacRoutes)("403 on %s %s with empty permission map", async (method, path) => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())[method](path)
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
@@ -233,7 +233,7 @@ describe("payroll-setup RBAC — view-only caller blocked from manage routes (e2
   afterAll(async () => app.close());
 
   it("POST /payroll/templates/1/duplicate → 403 for view-only caller", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/payroll/templates/1/duplicate")
       .set("Authorization", `Bearer ${token}`)
@@ -243,7 +243,7 @@ describe("payroll-setup RBAC — view-only caller blocked from manage routes (e2
   });
 
   it("POST /payroll/policies/1/activate → 403 for view-only caller", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/payroll/policies/1/activate")
       .set("Authorization", `Bearer ${token}`)
@@ -253,7 +253,7 @@ describe("payroll-setup RBAC — view-only caller blocked from manage routes (e2
   });
 
   it("POST /payroll/components → 403 for view-only caller", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/payroll/components")
       .set("Authorization", `Bearer ${token}`)
@@ -263,7 +263,7 @@ describe("payroll-setup RBAC — view-only caller blocked from manage routes (e2
   });
 
   it("DELETE /payroll/components/1 → 403 for view-only caller", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .delete("/payroll/components/1")
       .set("Authorization", `Bearer ${token}`);
@@ -272,7 +272,7 @@ describe("payroll-setup RBAC — view-only caller blocked from manage routes (e2
   });
 
   it("DELETE /payroll/templates/1 → 403 for view-only caller", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .delete("/payroll/templates/1")
       .set("Authorization", `Bearer ${token}`);

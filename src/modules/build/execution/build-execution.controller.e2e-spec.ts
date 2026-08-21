@@ -1,7 +1,7 @@
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
-import { signToken } from "../../../../test/helpers/sign-token";
+import { ALL_MODULES, signToken } from "../../../../test/helpers/sign-token";
 
 describe("ProjectsExecution auth/RBAC (e2e)", () => {
   let app: INestApplication;
@@ -95,7 +95,7 @@ describe("ProjectsExecution auth/RBAC (e2e)", () => {
   });
 
   it("403 on GET /projects/time-entries/team without projects:timesheets manage", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get("/build/time-entries/team")
       .set("Authorization", `Bearer ${token}`);
@@ -104,7 +104,7 @@ describe("ProjectsExecution auth/RBAC (e2e)", () => {
   });
 
   it("403 on PATCH /projects/time-entries/1/approve without projects:timesheets manage", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .patch("/build/time-entries/1/approve")
       .set("Authorization", `Bearer ${token}`);

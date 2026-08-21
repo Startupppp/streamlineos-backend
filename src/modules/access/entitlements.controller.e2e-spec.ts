@@ -3,7 +3,7 @@ import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { AppModule } from "../../app.module";
 import { AllExceptionsFilter } from "../../common/http/all-exceptions.filter";
-import { signToken } from "../../../test/helpers/sign-token";
+import { ALL_MODULES, signToken } from "../../../test/helpers/sign-token";
 import { EntitlementsService } from "./entitlements.service";
 import { AccessService } from "./access.service";
 
@@ -65,7 +65,7 @@ describeWithDb("Entitlements controller auth/RBAC (e2e)", () => {
 
   it("GET /access/org-modules → 403 when authenticated but lacks settings:manage", async () => {
     mockAccessService.resolveUserPermissions.mockResolvedValue(new Map());
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get("/access/org-modules")
       .set("Authorization", `Bearer ${token}`);

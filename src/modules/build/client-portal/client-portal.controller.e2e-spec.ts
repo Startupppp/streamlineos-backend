@@ -1,7 +1,7 @@
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
-import { signToken } from "../../../../test/helpers/sign-token";
+import { ALL_MODULES, signToken } from "../../../../test/helpers/sign-token";
 
 describe("Client Portal / Change Requests / Client Visibility auth/RBAC (e2e)", () => {
   let app: INestApplication;
@@ -52,7 +52,7 @@ describe("Client Portal / Change Requests / Client Visibility auth/RBAC (e2e)", 
   });
 
   it("403 on GET /projects/portal/projects without projects:portal:view ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get("/build/portal/projects")
       .set("Authorization", `Bearer ${token}`);
@@ -61,7 +61,7 @@ describe("Client Portal / Change Requests / Client Visibility auth/RBAC (e2e)", 
   });
 
   it("403 on GET /projects/portal/projects/1/overview without projects:portal:view ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get("/build/portal/projects/1/overview")
       .set("Authorization", `Bearer ${token}`);
@@ -70,7 +70,7 @@ describe("Client Portal / Change Requests / Client Visibility auth/RBAC (e2e)", 
   });
 
   it("403 on GET /projects/1/change-requests without projects:changerequests:view ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get("/build/1/change-requests")
       .set("Authorization", `Bearer ${token}`);
@@ -79,7 +79,7 @@ describe("Client Portal / Change Requests / Client Visibility auth/RBAC (e2e)", 
   });
 
   it("403 on POST /projects/1/change-requests without projects:changerequests:create ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/build/1/change-requests")
       .set("Authorization", `Bearer ${token}`)
@@ -89,7 +89,7 @@ describe("Client Portal / Change Requests / Client Visibility auth/RBAC (e2e)", 
   });
 
   it("403 on PATCH /projects/1/change-requests/2 without projects:changerequests:manage ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .patch("/build/1/change-requests/2")
       .set("Authorization", `Bearer ${token}`)
@@ -99,7 +99,7 @@ describe("Client Portal / Change Requests / Client Visibility auth/RBAC (e2e)", 
   });
 
   it("403 on DELETE /projects/1/change-requests/2 without projects:changerequests:manage ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .delete("/build/1/change-requests/2")
       .set("Authorization", `Bearer ${token}`);
@@ -108,7 +108,7 @@ describe("Client Portal / Change Requests / Client Visibility auth/RBAC (e2e)", 
   });
 
   it("403 on GET /projects/1/client-visibility without projects:clientvisibility:manage ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get("/build/1/client-visibility")
       .set("Authorization", `Bearer ${token}`);
@@ -117,7 +117,7 @@ describe("Client Portal / Change Requests / Client Visibility auth/RBAC (e2e)", 
   });
 
   it("403 on PATCH /projects/1/client-visibility/tickets/2 without projects:clientvisibility:manage ability", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .patch("/build/1/client-visibility/tickets/2")
       .set("Authorization", `Bearer ${token}`)

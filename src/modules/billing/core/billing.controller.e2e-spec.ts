@@ -1,7 +1,7 @@
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
-import { signToken } from "../../../../test/helpers/sign-token";
+import { ALL_MODULES, signToken } from "../../../../test/helpers/sign-token";
 
 describe("Billing auth/RBAC (e2e)", () => {
   let app: INestApplication;
@@ -37,7 +37,7 @@ describe("Billing auth/RBAC (e2e)", () => {
   });
 
   it("403 on POST /billing/razorpay without billing:subscription:manage", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/billing/razorpay")
       .set("Authorization", `Bearer ${token}`)
@@ -47,7 +47,7 @@ describe("Billing auth/RBAC (e2e)", () => {
   });
 
   it("403 on PATCH /billing/razorpay without billing:subscription:manage", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .patch("/billing/razorpay")
       .set("Authorization", `Bearer ${token}`)
@@ -62,7 +62,7 @@ describe("Billing auth/RBAC (e2e)", () => {
   });
 
   it("403 on GET /billing without billing:subscription:view", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get("/billing")
       .set("Authorization", `Bearer ${token}`);
@@ -78,7 +78,7 @@ describe("Billing auth/RBAC (e2e)", () => {
   });
 
   it("403 on POST /billing/ai-credits/purchase without billing:ai-credits:purchase permission", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/billing/ai-credits/purchase")
       .set("Authorization", `Bearer ${token}`)

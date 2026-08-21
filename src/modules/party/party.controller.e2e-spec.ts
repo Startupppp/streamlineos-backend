@@ -1,7 +1,7 @@
 import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
-import { signToken } from "test/helpers/sign-token";
+import { ALL_MODULES, signToken } from "test/helpers/sign-token";
 
 describe("Party auth/RBAC (e2e)", () => {
   let app: INestApplication;
@@ -55,7 +55,7 @@ describe("Party auth/RBAC (e2e)", () => {
   );
 
   it("403 on POST /party/parties without party:parties:create permission", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/party/parties")
       .set("Authorization", `Bearer ${token}`)
@@ -65,7 +65,7 @@ describe("Party auth/RBAC (e2e)", () => {
   });
 
   it("403 on PATCH /party/parties/:partyId without party:parties:update permission", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .patch(`/party/parties/${PARTY_ID}`)
       .set("Authorization", `Bearer ${token}`)
@@ -75,7 +75,7 @@ describe("Party auth/RBAC (e2e)", () => {
   });
 
   it("403 on DELETE /party/parties/:partyId without party:parties:delete permission", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .delete(`/party/parties/${PARTY_ID}`)
       .set("Authorization", `Bearer ${token}`);
@@ -84,7 +84,7 @@ describe("Party auth/RBAC (e2e)", () => {
   });
 
   it("403 on POST /party/parties/:partyId/contacts without party:contacts:manage permission", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post(`/party/parties/${PARTY_ID}/contacts`)
       .set("Authorization", `Bearer ${token}`)
@@ -94,7 +94,7 @@ describe("Party auth/RBAC (e2e)", () => {
   });
 
   it("403 on GET /party/parties without party:parties:view permission", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get("/party/parties")
       .set("Authorization", `Bearer ${token}`);

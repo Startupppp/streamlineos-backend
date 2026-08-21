@@ -1,7 +1,7 @@
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
-import { signToken } from "../../../test/helpers/sign-token";
+import { ALL_MODULES, signToken } from "../../../test/helpers/sign-token";
 
 describe("Goals auth/RBAC (e2e)", () => {
   let app: INestApplication;
@@ -49,7 +49,7 @@ describe("Goals auth/RBAC (e2e)", () => {
   });
 
   it("403 on GET /goals without projects:goals view", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get("/goals")
       .set("Authorization", `Bearer ${token}`);
@@ -58,7 +58,7 @@ describe("Goals auth/RBAC (e2e)", () => {
   });
 
   it("403 on POST /goals without projects:goals manage", async () => {
-    const token = await signToken({ permissions: ["build:goals:view"], enabledModules: [] });
+    const token = await signToken({ permissions: ["build:goals:view"], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/goals")
       .set("Authorization", `Bearer ${token}`);

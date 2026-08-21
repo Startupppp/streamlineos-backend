@@ -1,7 +1,7 @@
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
-import { signToken } from "../../../test/helpers/sign-token";
+import { ALL_MODULES, signToken } from "../../../test/helpers/sign-token";
 
 describe("Directory auth/RBAC (e2e)", () => {
   let app: INestApplication;
@@ -60,7 +60,7 @@ describe("Directory auth/RBAC (e2e)", () => {
   );
 
   it("403 on POST /directory/people without directory:people:create permission", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/directory/people")
       .set("Authorization", `Bearer ${token}`)
@@ -70,7 +70,7 @@ describe("Directory auth/RBAC (e2e)", () => {
   });
 
   it("403 on POST /directory/workers without directory:workers:manage permission", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/directory/workers")
       .set("Authorization", `Bearer ${token}`)
@@ -80,7 +80,7 @@ describe("Directory auth/RBAC (e2e)", () => {
   });
 
   it("403 on POST /directory/engagements/:id/terminate without directory:workers:terminate permission", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post(`/directory/engagements/${ENGAGEMENT_ID}/terminate`)
       .set("Authorization", `Bearer ${token}`)
@@ -90,7 +90,7 @@ describe("Directory auth/RBAC (e2e)", () => {
   });
 
   it("403 on POST /directory/engagements/:id/cancel without directory:workers:manage permission", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post(`/directory/engagements/${ENGAGEMENT_ID}/cancel`)
       .set("Authorization", `Bearer ${token}`);
@@ -99,7 +99,7 @@ describe("Directory auth/RBAC (e2e)", () => {
   });
 
   it("403 on GET /directory/people without directory:people:view permission", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get("/directory/people")
       .set("Authorization", `Bearer ${token}`);
@@ -108,7 +108,7 @@ describe("Directory auth/RBAC (e2e)", () => {
   });
 
   it("403 on GET /directory/workers without directory:workers:view permission", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get("/directory/workers")
       .set("Authorization", `Bearer ${token}`);

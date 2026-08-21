@@ -1,7 +1,7 @@
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
-import { signToken } from "../../../test/helpers/sign-token";
+import { ALL_MODULES, signToken } from "../../../test/helpers/sign-token";
 
 describe("Deals auth/RBAC (e2e)", () => {
   let app: INestApplication;
@@ -59,28 +59,31 @@ describe("Deals auth/RBAC (e2e)", () => {
   });
 
   it("403 on GET /deals without crm:deals read", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer()).get("/deals").set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on POST /deals without crm:deals create", async () => {
-    const token = await signToken({ permissions: ["crm:deals:read"], enabledModules: [] });
+    const token = await signToken({ permissions: ["crm:deals:read"], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer()).post("/deals").set("Authorization", `Bearer ${token}`).send({ name: "x" });
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on DELETE /deals/1 without crm:deals delete", async () => {
-    const token = await signToken({ permissions: ["crm:deals:read"], enabledModules: [] });
+    const token = await signToken({ permissions: ["crm:deals:read"], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer()).delete("/deals/1").set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
-  it("403 on POST /deals/approvals resolve without manage settings", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+  it("403 on POST /deals/approvals resolve for a non-owner holding the write permission", async () => {
+    const token = await signToken({
+      permissions: ["crm:deals:update"],
+      enabledModules: ALL_MODULES,
+    });
     const res = await request(app.getHttpServer())
       .post("/deals/approvals")
       .set("Authorization", `Bearer ${token}`)
@@ -89,7 +92,7 @@ describe("Deals auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Only admins can resolve approvals" });
   });
 
-  const authOnlyGetRoutes: ReadonlyArray<string> = [
+  const readGatedGetRoutes: ReadonlyArray<string> = [
     "/deals/stats",
     "/deals/aging",
     "/deals/forecast",
@@ -98,10 +101,23 @@ describe("Deals auth/RBAC (e2e)", () => {
     "/deals/approvals",
   ];
 
-  it.each(authOnlyGetRoutes)(
-    "does NOT enforce an ability gate on GET %s (auth-only)",
+  it.each(readGatedGetRoutes)(
+    "403 on GET %s without crm:deals:read",
     async (path) => {
-      const token = await signToken({ permissions: [], enabledModules: [] });
+      const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
+      const res = await request(app.getHttpServer()).get(path).set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
+    },
+  );
+
+  it.each(readGatedGetRoutes)(
+    "passes the ability gate on GET %s with crm:deals:read",
+    async (path) => {
+      const token = await signToken({
+        permissions: ["crm:deals:read"],
+        enabledModules: ALL_MODULES,
+      });
       const res = await request(app.getHttpServer()).get(path).set("Authorization", `Bearer ${token}`);
       expect(res.status).not.toBe(401);
       expect(res.status).not.toBe(403);

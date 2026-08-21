@@ -1,7 +1,7 @@
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
-import { signToken } from "test/helpers/sign-token";
+import { ALL_MODULES, signToken } from "test/helpers/sign-token";
 
 describe("Search auth/RBAC (e2e)", () => {
   let app: INestApplication;
@@ -17,7 +17,7 @@ describe("Search auth/RBAC (e2e)", () => {
   });
 
   it("does NOT enforce an ability gate on GET /search (auth-only)", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get("/search?q=ab")
       .set("Authorization", `Bearer ${token}`);
