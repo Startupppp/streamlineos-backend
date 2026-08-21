@@ -1,8 +1,6 @@
-import { Test } from "@nestjs/testing";
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { AppModule } from "../../app.module";
-import { AllExceptionsFilter } from "../../common/http/all-exceptions.filter";
+import { createE2eApp } from "test/helpers/e2e-app";
 import { ALL_MODULES, signToken } from "../../../test/helpers/sign-token";
 import { AccessService } from "../access/access.service";
 import { RolesService } from "./roles.service";
@@ -35,34 +33,34 @@ describe("Roles RBAC admin endpoints (e2e)", () => {
   let app: INestApplication;
 
   beforeAll(async () => {
-    process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
-    process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-
-    const ref = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(AccessService)
-      .useValue({
-        resolveUserPermissions: async (_orgId: string, _userId: string) =>
-          SIMULATE_PERMISSIONS_MAP,
-        isModuleEnabled: async (_orgId: string, _moduleKey: string) => true,
-        getSnapshot: async () => ({
-          permissions: ["settings:rbac:manage"],
-          scopes: { "settings:rbac:manage": "all" },
-          modules: {},
-          isOrgOwner: false,
-          version: 1,
-        }),
-      })
-      .overrideProvider(RolesService)
-      .useValue({
-        getPermissionsMatrix: async (_orgId: string) => MATRIX_RESPONSE,
-        getRoles: async () => [],
-        listTemplates: () => [],
-      })
-      .compile();
-
-    app = ref.createNestApplication();
-    app.useGlobalFilters(new AllExceptionsFilter());
-    await app.init();
+    app = await createE2eApp({
+      overrides: [
+        {
+          provide: AccessService,
+          useValue: {
+            resolveUserPermissions: async (_orgId: string, _userId: string) =>
+              SIMULATE_PERMISSIONS_MAP,
+            isModuleEnabled: async (_orgId: string, _moduleKey: string) => true,
+            getSnapshot: async () => ({
+              permissions: ["settings:rbac:manage"],
+              scopes: { "settings:rbac:manage": "all" },
+              modules: {},
+              isOrgOwner: false,
+              version: 1,
+            }),
+          },
+        },
+        {
+          provide: RolesService,
+          useValue: {
+            getPermissionsMatrix: async (_orgId: string) => MATRIX_RESPONSE,
+            getSimulationTarget: async () => ({ isOwner: false }),
+            getRoles: async () => [],
+            listTemplates: () => [],
+          },
+        },
+      ],
+    });
   });
 
   afterAll(async () => app.close());
@@ -73,7 +71,7 @@ describe("Roles RBAC admin endpoints (e2e)", () => {
         `/roles/simulate/${TARGET_USER_ID}`,
       );
       expect(res.status).toBe(401);
-      expect(res.body).toEqual({ error: "Unauthorized" });
+      expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
     });
 
     it("returns 403 when the caller lacks settings:rbac:manage", async () => {
@@ -82,13 +80,14 @@ describe("Roles RBAC admin endpoints (e2e)", () => {
         .get(`/roles/simulate/${TARGET_USER_ID}`)
         .set("Authorization", `Bearer ${token}`);
       expect(res.status).toBe(403);
-      expect(res.body).toMatchObject({ error: "Permission denied" });
+      expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
     });
 
     it("returns 200 with resolved permissions for the target user when admin calls", async () => {
       const token = await signToken({
         permissions: ["settings:rbac:manage"],
         enabledModules: [],
+        isOrgOwner: true,
       });
       const res = await request(app.getHttpServer())
         .get(`/roles/simulate/${TARGET_USER_ID}`)
@@ -106,6 +105,7 @@ describe("Roles RBAC admin endpoints (e2e)", () => {
       const token = await signToken({
         permissions: ["settings:rbac:manage"],
         enabledModules: [],
+        isOrgOwner: true,
       });
       const res = await request(app.getHttpServer())
         .get(`/roles/simulate/${TARGET_USER_ID}`)
@@ -120,6 +120,7 @@ describe("Roles RBAC admin endpoints (e2e)", () => {
       const token = await signToken({
         permissions: ["settings:rbac:manage"],
         enabledModules: [],
+        isOrgOwner: true,
       });
       const res = await request(app.getHttpServer())
         .get(`/roles/simulate/${TARGET_USER_ID}`)
@@ -137,7 +138,7 @@ describe("Roles RBAC admin endpoints (e2e)", () => {
     it("returns 401 when unauthenticated", async () => {
       const res = await request(app.getHttpServer()).get("/roles/permissions/matrix");
       expect(res.status).toBe(401);
-      expect(res.body).toEqual({ error: "Unauthorized" });
+      expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
     });
 
     it("returns 403 when the caller lacks settings:rbac:manage", async () => {
@@ -146,13 +147,14 @@ describe("Roles RBAC admin endpoints (e2e)", () => {
         .get("/roles/permissions/matrix")
         .set("Authorization", `Bearer ${token}`);
       expect(res.status).toBe(403);
-      expect(res.body).toMatchObject({ error: "Permission denied" });
+      expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
     });
 
     it("returns 200 with an array of roles and their permissions when admin calls", async () => {
       const token = await signToken({
         permissions: ["settings:rbac:manage"],
         enabledModules: [],
+        isOrgOwner: true,
       });
       const res = await request(app.getHttpServer())
         .get("/roles/permissions/matrix")
@@ -166,6 +168,7 @@ describe("Roles RBAC admin endpoints (e2e)", () => {
       const token = await signToken({
         permissions: ["settings:rbac:manage"],
         enabledModules: [],
+        isOrgOwner: true,
       });
       const res = await request(app.getHttpServer())
         .get("/roles/permissions/matrix")
@@ -183,6 +186,7 @@ describe("Roles RBAC admin endpoints (e2e)", () => {
       const token = await signToken({
         permissions: ["settings:rbac:manage"],
         enabledModules: [],
+        isOrgOwner: true,
       });
       const res = await request(app.getHttpServer())
         .get("/roles/permissions/matrix")

@@ -22,6 +22,8 @@ const ALL_INSIGHTS_PERMS = new Map([
   ["payroll:tax:manage", "all"],
   ["payroll:runs:view", "all"],
   ["payroll:settings:manage", "all"],
+  ["self:payroll", "all"],
+  ["self:payslips", "all"],
 ]);
 
 const permittedAccess = {
@@ -111,6 +113,11 @@ const mockCalendarService = {
 
 const mockDrizzle = {
   __client: { end: jest.fn().mockResolvedValue(undefined) },
+  execute: jest.fn().mockResolvedValue([]),
+  transaction: jest.fn().mockImplementation(
+    async (fn: (tx: { execute: jest.Mock }) => Promise<unknown>) =>
+      fn({ execute: jest.fn().mockResolvedValue([]) }),
+  ),
   select: jest.fn().mockReturnValue({
     from: jest.fn().mockReturnValue({
       leftJoin: jest.fn().mockReturnValue({
@@ -128,6 +135,8 @@ const mockDrizzle = {
   }),
   query: {
     taxDeclarations: { findFirst: jest.fn().mockResolvedValue(null) },
+    organizations: { findFirst: jest.fn().mockResolvedValue({ mfaEnforced: false }) },
+    users: { findFirst: jest.fn().mockResolvedValue({ totpEnabled: false }) },
   },
 };
 

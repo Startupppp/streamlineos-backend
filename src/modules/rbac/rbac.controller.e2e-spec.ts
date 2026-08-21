@@ -55,8 +55,15 @@ describe("Rbac auth (e2e)", () => {
     expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
   });
 
-  it("returns the static permission catalog on GET /rbac/permissions (auth-only, DB-free)", async () => {
+  it("403 on GET /rbac/permissions without settings:rbac:manage", async () => {
     const token = await signToken({ permissions: [], enabledModules: [] });
+    const res = await callRoute("get", "/rbac/permissions").set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
+  });
+
+  it("returns the static permission catalog on GET /rbac/permissions with settings:rbac:manage", async () => {
+    const token = await signToken({ permissions: ["settings:rbac:manage"], enabledModules: [] });
     const res = await callRoute("get", "/rbac/permissions").set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);

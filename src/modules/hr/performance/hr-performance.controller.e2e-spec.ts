@@ -104,28 +104,40 @@ describe("HR Performance auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
-  it("403 on GET /hr/enps without hr:performance manage (role-string gate)", async () => {
+  it("403 on GET /hr/enps without hr:engagement:manage", async () => {
     const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get("/hr/enps")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Only admins can view eNPS scores." });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
-  const authOnlyGetRoutes: ReadonlyArray<string> = [
-    "/hr/my-goals",
-    "/hr/feedback",
-    "/hr/recognition",
-    "/hr/surveys",
-    "/hr/assessments",
-    "/hr/rich-documents",
+  const abilityGatedGetRoutes: ReadonlyArray<[string, string]> = [
+    ["/hr/my-goals", "hr:performance:view"],
+    ["/hr/feedback", "hr:feedback:view"],
+    ["/hr/recognition", "hr:engagement:view"],
+    ["/hr/surveys", "hr:engagement:view"],
+    ["/hr/assessments", "hr:engagement:view"],
+    ["/hr/rich-documents", "hr:documents:view"],
   ];
 
-  it.each(authOnlyGetRoutes)(
-    "does NOT enforce an ability gate on GET %s (auth-only)",
+  it.each(abilityGatedGetRoutes)(
+    "403 on GET %s without %s permission",
     async (path) => {
       const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
+      const res = await request(app.getHttpServer())
+        .get(path)
+        .set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
+    },
+  );
+
+  it.each(abilityGatedGetRoutes)(
+    "passes the ability gate on GET %s with %s permission",
+    async (path, permission) => {
+      const token = await signToken({ permissions: [permission], enabledModules: ALL_MODULES });
       const res = await request(app.getHttpServer())
         .get(path)
         .set("Authorization", `Bearer ${token}`);

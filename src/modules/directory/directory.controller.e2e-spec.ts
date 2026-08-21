@@ -98,13 +98,14 @@ describe("Directory auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
-  it("403 on GET /directory/people without directory:people:view permission", async () => {
-    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
+  it("carries no permission gate on GET /directory/people — the people directory is platform core", async () => {
+    const token = await signToken({ permissions: [], enabledModules: [] });
     const res = await request(app.getHttpServer())
       .get("/directory/people")
       .set("Authorization", `Bearer ${token}`);
-    expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
+    expect(res.status).not.toBe(401);
+    expect(res.status).not.toBe(402);
+    expect(res.status).not.toBe(403);
   });
 
   it("403 on GET /directory/workers without directory:workers:view permission", async () => {

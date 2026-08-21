@@ -100,7 +100,7 @@ describe("ProjectsExecution auth/RBAC (e2e)", () => {
       .get("/build/time-entries/team")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Only admins can view team timesheets" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on PATCH /projects/time-entries/1/approve without projects:timesheets manage", async () => {
@@ -109,6 +109,6 @@ describe("ProjectsExecution auth/RBAC (e2e)", () => {
       .patch("/build/time-entries/1/approve")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Only admins can approve timesheets" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 });

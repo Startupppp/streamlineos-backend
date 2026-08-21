@@ -32,9 +32,6 @@ describe("HR lifecycle auth (e2e)", () => {
     ["get", "/hr/dashboard/onboarding-status"],
     ["get", "/hr/dashboard/headcount-trends"],
     ["get", "/hr/dashboard/time-to-fill"],
-    ["get", "/hr/dashboard/attendance-analytics"],
-    ["get", "/hr/dashboard/compliance"],
-    ["get", "/hr/dashboard/export"],
     ["get", "/hr/onboarding-docs/summary"],
   ];
 

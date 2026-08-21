@@ -1,25 +1,12 @@
-import { Test } from "@nestjs/testing";
 import { INestApplication } from "@nestjs/common";
-import { APP_GUARD } from "@nestjs/core";
 import request from "supertest";
-import { DrizzleModule } from "../../db/drizzle.module";
-import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AllExceptionsFilter } from "../../common/http/all-exceptions.filter";
-import { PublicModule } from "./public.module";
+import { createE2eApp } from "../../../test/helpers/e2e-app";
 
 describe("Public auth (e2e)", () => {
   let app: INestApplication;
 
   beforeAll(async () => {
-    process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
-    process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-    const ref = await Test.createTestingModule({
-      imports: [DrizzleModule, PublicModule],
-      providers: [{ provide: APP_GUARD, useClass: JwtAuthGuard }],
-    }).compile();
-    app = ref.createNestApplication();
-    app.useGlobalFilters(new AllExceptionsFilter());
-    await app.init();
+    app = await createE2eApp();
   });
 
   afterAll(async () => app.close());

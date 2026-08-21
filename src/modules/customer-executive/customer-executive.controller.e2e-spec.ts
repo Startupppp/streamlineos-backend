@@ -59,6 +59,7 @@ describe("CustomerExecutive auth/RBAC (e2e)", () => {
     ["get", "/customer-executive/nps/1"],
     ["patch", "/customer-executive/nps/1"],
     ["delete", "/customer-executive/nps/1"],
+    ["get", "/customer-executive/sla"],
   ];
 
   it.each(abilityGatedRoutes)(
@@ -71,8 +72,8 @@ describe("CustomerExecutive auth/RBAC (e2e)", () => {
     },
   );
 
-  it("does NOT require an ability on GET /customer-executive/sla (auth-only)", async () => {
-    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
+  it("passes the ability gate on GET /customer-executive/sla with crm:clients:read", async () => {
+    const token = await signToken({ permissions: ["crm:clients:read"], enabledModules: ALL_MODULES });
     const res = await callRoute("get", "/customer-executive/sla").set("Authorization", `Bearer ${token}`);
     expect(res.status).not.toBe(401);
     expect(res.status).not.toBe(403);

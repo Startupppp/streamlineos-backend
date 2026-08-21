@@ -9,6 +9,7 @@ import { LockingService } from "./locking.service";
 import { PayoutBatchesService } from "./payout-batches.service";
 import { PayslipTemplatesService } from "./payslip-templates.service";
 import { PublishingService } from "./publishing.service";
+import { PayrollCommandReceiptsService } from "../command-receipts.service";
 
 const ALL_PAYOUT_PERMS = new Map([
   ["payroll:runs:view", "all"],
@@ -84,6 +85,13 @@ const mockPublishingService = {
   downloadPdf: jest.fn().mockResolvedValue({ buffer: Buffer.from(""), contentType: "application/pdf" }),
 };
 
+const mockCommandReceiptsService = {
+  begin: jest.fn().mockResolvedValue({ kind: "fresh" as const, receiptId: 1, correlationId: "corr_1" }),
+  succeed: jest.fn().mockResolvedValue(undefined),
+  fail: jest.fn().mockResolvedValue(undefined),
+  hashRequest: jest.fn().mockReturnValue("hash"),
+};
+
 const alwaysOnEntitlements = {
   isModuleEnabled: async (): Promise<boolean> => true,
   getModuleMap: async (): Promise<Record<string, boolean>> => ({}),
@@ -128,6 +136,7 @@ async function buildApp(accessMock: typeof permittedAccess): Promise<INestApplic
       { provide: PayoutBatchesService, useValue: mockPayoutBatchesService },
       { provide: PayslipTemplatesService, useValue: mockPayslipTemplatesService },
       { provide: PublishingService, useValue: mockPublishingService },
+      { provide: PayrollCommandReceiptsService, useValue: mockCommandReceiptsService },
     ],
   });
 }

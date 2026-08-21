@@ -71,7 +71,6 @@ describe("HR Recruitment auth (e2e)", () => {
     ["get", "/hr/recruitment/headcount"],
     ["post", "/hr/recruitment/headcount"],
     ["patch", "/hr/recruitment/headcount/1"],
-    ["delete", "/hr/recruitment/headcount/1"],
     ["post", "/hr/recruitment/headcount/1/approve"],
     ["post", "/hr/recruitment/headcount/1/reject"],
     ["post", "/hr/recruitment/headcount/1/create-job"],

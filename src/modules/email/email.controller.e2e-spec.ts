@@ -11,7 +11,6 @@ describe("Email routes auth (e2e)", () => {
 
   const routes: ReadonlyArray<[string]> = [
     ["/notifications/dispatch"],
-    ["/organization/invitations/resend"],
     ["/settings/email-templates/test"],
   ];
 

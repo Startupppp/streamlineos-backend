@@ -1,9 +1,7 @@
-import { Test } from "@nestjs/testing";
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { AppModule } from "../../../app.module";
-import { AllExceptionsFilter } from "../../../common/http/all-exceptions.filter";
-import { signToken } from "../../../../test/helpers/sign-token";
+import { createE2eApp } from "test/helpers/e2e-app";
+import { signToken } from "test/helpers/sign-token";
 
 describe("CRM Automations & Products (e2e)", () => {
   let app: INestApplication;
@@ -12,12 +10,7 @@ describe("CRM Automations & Products (e2e)", () => {
   let otherOrgToken: string;
 
   beforeAll(async () => {
-    process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
-    process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    app = moduleRef.createNestApplication();
-    app.useGlobalFilters(new AllExceptionsFilter());
-    await app.init();
+    app = await createE2eApp();
 
     managerToken = await signToken({
       sub: "user_crm_mgr",
@@ -63,6 +56,7 @@ describe("CRM Automations & Products (e2e)", () => {
             ? agent.patch(path)
             : agent.delete(path));
       expect(res.status).toBe(401);
+      expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
     });
   });
 
@@ -72,6 +66,7 @@ describe("CRM Automations & Products (e2e)", () => {
         .get("/crm/automations")
         .set("Authorization", `Bearer ${memberToken}`);
       expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
     });
 
     it("POST /crm/automations → 403 for member without permission", async () => {
@@ -86,6 +81,7 @@ describe("CRM Automations & Products (e2e)", () => {
           isActive: true,
         });
       expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
     });
 
     it("GET /crm/products → 403 for member without permission", async () => {
@@ -93,6 +89,7 @@ describe("CRM Automations & Products (e2e)", () => {
         .get("/crm/products")
         .set("Authorization", `Bearer ${memberToken}`);
       expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
     });
 
     it("POST /crm/products → 403 for member without permission", async () => {
@@ -101,6 +98,7 @@ describe("CRM Automations & Products (e2e)", () => {
         .set("Authorization", `Bearer ${memberToken}`)
         .send({ name: "Widget", unitPrice: 999 });
       expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
     });
   });
 

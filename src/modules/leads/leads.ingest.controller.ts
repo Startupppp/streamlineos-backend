@@ -3,9 +3,9 @@ import { ApiKeyGuard } from "../../common/auth/api-key.guard";
 import { ApiKey, type ApiKeyContext } from "../../common/auth/api-key.decorator";
 import { ingestSchema } from "./dto/lead.schemas";
 import { LeadsService } from "./leads.service";
-import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { Public } from "../../common/auth/public.decorator";
 
-@RequireModule("crm")
+@Public()
 @Controller("leads/ingest")
 @UseGuards(ApiKeyGuard)
 export class LeadsIngestController {

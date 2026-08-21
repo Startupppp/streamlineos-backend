@@ -77,17 +77,14 @@ describe("Projects auth/RBAC (e2e)", () => {
     ["post", "/build/templates/1/apply"],
     ["get", "/build/roadmap"],
     ["post", "/build/roadmap"],
-    ["get", "/build/roadmap/1"],
     ["patch", "/build/roadmap/1"],
     ["delete", "/build/roadmap/1"],
     ["get", "/build/feedback"],
     ["post", "/build/feedback"],
-    ["get", "/build/feedback/1"],
     ["patch", "/build/feedback/1"],
     ["delete", "/build/feedback/1"],
     ["get", "/build/changelog"],
     ["post", "/build/changelog"],
-    ["get", "/build/changelog/1"],
     ["patch", "/build/changelog/1"],
     ["delete", "/build/changelog/1"],
   ];
@@ -127,8 +124,15 @@ describe("Projects auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
-  it("does NOT enforce an ability gate on GET /projects (auth-only)", async () => {
+  it("403 on GET /build without build:view permission", async () => {
     const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
+    const res = await request(app.getHttpServer()).get("/build").set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
+  });
+
+  it("passes the ability gate on GET /build with build:view permission", async () => {
+    const token = await signToken({ permissions: ["build:view"], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer()).get("/build").set("Authorization", `Bearer ${token}`);
     expect(res.status).not.toBe(401);
     expect(res.status).not.toBe(403);

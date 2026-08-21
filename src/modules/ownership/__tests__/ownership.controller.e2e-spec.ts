@@ -221,13 +221,17 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
       expect(res.body).toMatchObject({ code: "FORBIDDEN", message: expect.stringContaining("org owner") });
     });
 
-    it("platform admin also passes controller-level check for org transfer", async () => {
-      const token = await signToken({ isOrgOwner: false });
+    it("non-owner with ownership:org:transfer permission is still blocked by controller-level owner check", async () => {
+      mockAccessService.resolveUserPermissions.mockResolvedValue(
+        new Map<string, string>([["ownership:org:transfer", "all"]]),
+      );
+      const token = await signToken({ sub: "member_os_1" });
       const res = await request(app.getHttpServer())
         .post("/ownership/org/transfer")
         .set("Authorization", `Bearer ${token}`)
         .send({ toMembershipId: 99 });
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ code: "FORBIDDEN", message: expect.stringContaining("org owner") });
     });
   });
 

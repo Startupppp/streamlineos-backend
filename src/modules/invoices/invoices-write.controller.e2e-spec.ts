@@ -29,8 +29,18 @@ describe("Invoices write auth (e2e)", () => {
     expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
   });
 
-  it("does NOT require an ability on PATCH /invoices/:id (auth-only)", async () => {
+  it("403 on PATCH /invoices/:id without accounting:update", async () => {
     const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
+    const res = await request(app.getHttpServer())
+      .patch("/invoices/999999")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ status: "CANCELLED" });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
+  });
+
+  it("passes the ability gate on PATCH /invoices/:id with accounting:update", async () => {
+    const token = await signToken({ permissions: ["accounting:update"], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .patch("/invoices/999999")
       .set("Authorization", `Bearer ${token}`)

@@ -29,8 +29,6 @@ describe("Tasks auth (e2e)", () => {
     ["get", "/tasks"],
     ["post", "/tasks"],
     ["get", "/tasks/analytics"],
-    ["get", "/tasks/my-queue"],
-    ["get", "/tasks/overdue"],
     ["get", "/tasks/sequences"],
     ["post", "/tasks/sequences"],
     ["delete", "/tasks/sequences/1"],

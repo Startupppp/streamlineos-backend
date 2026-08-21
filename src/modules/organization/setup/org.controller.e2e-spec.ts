@@ -34,15 +34,17 @@ describe("Org auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
   });
 
-  const authOnlyGetRoutes: ReadonlyArray<string> = ["/org/members"];
+  it("403 on GET /org/members without directory:people:view", async () => {
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
+    const res = await callRoute("get", "/org/members").set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
+  });
 
-  it.each(authOnlyGetRoutes)(
-    "does NOT enforce an ability gate on GET %s (auth-only)",
-    async (path) => {
-      const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
-      const res = await callRoute("get", path).set("Authorization", `Bearer ${token}`);
-      expect(res.status).not.toBe(401);
-      expect(res.status).not.toBe(403);
-    },
-  );
+  it("passes the permission gate on GET /org/members with directory:people:view", async () => {
+    const token = await signToken({ permissions: ["directory:people:view"], enabledModules: ALL_MODULES });
+    const res = await callRoute("get", "/org/members").set("Authorization", `Bearer ${token}`);
+    expect(res.status).not.toBe(401);
+    expect(res.status).not.toBe(403);
+  });
 });

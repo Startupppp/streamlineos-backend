@@ -286,14 +286,13 @@ describe("payroll-setup — template delete (e2e)", () => {
   beforeAll(async () => { app = await buildApp(permittedAccess); });
   afterAll(async () => app.close());
 
-  it("DELETE /payroll/templates/1 → 200 success for custom template", async () => {
+  it("DELETE /payroll/templates/1 → 204 success for custom template", async () => {
     mockTemplatesService.deleteCustomTemplate.mockResolvedValueOnce({ success: true });
     const token = await signToken({ permissions: [], enabledModules: [] });
     const res = await request(app.getHttpServer())
       .delete("/payroll/templates/1")
       .set("Authorization", `Bearer ${token}`);
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ success: true });
+    expect(res.status).toBe(204);
   });
 
   it("DELETE /payroll/templates/1 → 409 when service rejects system template", async () => {

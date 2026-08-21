@@ -2,9 +2,16 @@ import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { signToken } from "test/helpers/sign-token";
+import { OrgHierarchyService } from "./org-hierarchy.service";
 
 const ORG_ID = "org_test_001";
 const USER_ID = "user_test_001";
+
+const mockHierarchyService = {
+  listBusinessUnits: jest.fn().mockResolvedValue([]),
+  getTree: jest.fn().mockResolvedValue([]),
+  getHierarchy: jest.fn().mockResolvedValue({}),
+};
 
 describe("/org-hierarchy (e2e)", () => {
   let app: INestApplication;
@@ -12,9 +19,11 @@ describe("/org-hierarchy (e2e)", () => {
   let memberToken: string;
 
   beforeAll(async () => {
-    app = await createE2eApp();
+    app = await createE2eApp({
+      overrides: [{ provide: OrgHierarchyService, useValue: mockHierarchyService }],
+    });
 
-    ownerToken = await signToken({ sub: USER_ID, orgId: ORG_ID });
+    ownerToken = await signToken({ sub: USER_ID, orgId: ORG_ID, isOrgOwner: true });
     memberToken = await signToken({ sub: "user_test_002", orgId: ORG_ID });
   });
 

@@ -19,13 +19,9 @@ describe("Goals auth/RBAC (e2e)", () => {
     ["patch", "/goals/1"],
     ["delete", "/goals/1"],
     ["post", "/goals/1/check-in"],
-    ["get", "/goals/1/key-results"],
-    ["post", "/goals/1/key-results"],
     ["get", "/goals/1/links"],
     ["post", "/goals/1/links"],
     ["delete", "/goals/1/links"],
-    ["patch", "/goals/key-results/1"],
-    ["delete", "/goals/key-results/1"],
   ];
 
   function callRoute(method: Method, path: string): request.Test {

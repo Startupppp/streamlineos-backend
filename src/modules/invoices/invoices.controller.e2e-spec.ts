@@ -49,8 +49,15 @@ describe("Invoices auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
-  it("does NOT require an ability on GET /invoices/stats (auth-only)", async () => {
+  it("403 on GET /invoices/stats without accounting:read", async () => {
     const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
+    const res = await callRoute("get", "/invoices/stats").set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
+  });
+
+  it("passes the ability gate on GET /invoices/stats with accounting:read", async () => {
+    const token = await signToken({ permissions: ["accounting:read"], enabledModules: ALL_MODULES });
     const res = await callRoute("get", "/invoices/stats").set("Authorization", `Bearer ${token}`);
     expect(res.status).not.toBe(401);
     expect(res.status).not.toBe(403);

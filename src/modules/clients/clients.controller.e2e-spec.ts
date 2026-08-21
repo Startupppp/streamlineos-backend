@@ -59,7 +59,7 @@ describe("Clients auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
   });
 
-  const authOnlyGetRoutes: ReadonlyArray<string> = [
+  const readGatedGetRoutes: ReadonlyArray<string> = [
     "/clients/list",
     "/clients/health",
     "/clients/churn-alerts",
@@ -70,10 +70,20 @@ describe("Clients auth/RBAC (e2e)", () => {
     "/clients/onboarding/templates",
   ];
 
-  it.each(authOnlyGetRoutes)(
-    "does NOT enforce an ability gate on GET %s (auth-only)",
+  it.each(readGatedGetRoutes)(
+    "403 on GET %s without crm:clients:read",
     async (path) => {
       const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
+      const res = await callRoute("get", path).set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
+    },
+  );
+
+  it.each(readGatedGetRoutes)(
+    "passes the ability gate on GET %s with crm:clients:read",
+    async (path) => {
+      const token = await signToken({ permissions: ["crm:clients:read"], enabledModules: ALL_MODULES });
       const res = await callRoute("get", path).set("Authorization", `Bearer ${token}`);
       expect(res.status).not.toBe(401);
       expect(res.status).not.toBe(403);

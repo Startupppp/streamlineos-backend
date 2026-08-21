@@ -1,20 +1,13 @@
-import { Test } from "@nestjs/testing";
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { AppModule } from "../../../app.module";
-import { AllExceptionsFilter } from "../../../common/http/all-exceptions.filter";
+import { createE2eApp } from "../../../../test/helpers/e2e-app";
 import { ALL_MODULES, signToken } from "../../../../test/helpers/sign-token";
 
 describe("PortalAccess auth/RBAC (e2e)", () => {
   let app: INestApplication;
 
   beforeAll(async () => {
-    process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
-    process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-    const ref = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    app = ref.createNestApplication();
-    app.useGlobalFilters(new AllExceptionsFilter());
-    await app.init();
+    app = await createE2eApp();
   });
 
   afterAll(async () => {
@@ -53,64 +46,64 @@ describe("PortalAccess auth/RBAC (e2e)", () => {
     async (method, path) => {
       const res = await callRoute(method, path);
       expect(res.status).toBe(401);
-      expect(res.body).toEqual({ error: "Unauthorized" });
+      expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
     },
   );
 
-  it("403 on POST /portal-access/memberships without projects:clientvisibility:manage permission", async () => {
+  it("403 on POST /portal-access/memberships without build:clientvisibility:manage permission", async () => {
     const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/portal-access/memberships")
       .set("Authorization", `Bearer ${token}`)
       .send({ partyId: "00000000-0000-0000-0000-000000000099" });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
-  it("403 on POST /portal-access/grants without projects:clientvisibility:manage permission", async () => {
+  it("403 on POST /portal-access/grants without build:clientvisibility:manage permission", async () => {
     const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/portal-access/grants")
       .set("Authorization", `Bearer ${token}`)
       .send({ projectId: 1, portalMembershipId: MEMBERSHIP_ID });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
-  it("403 on PATCH /portal-access/memberships/:id/status without projects:clientvisibility:manage permission", async () => {
+  it("403 on PATCH /portal-access/memberships/:id/status without build:clientvisibility:manage permission", async () => {
     const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .patch(`/portal-access/memberships/${MEMBERSHIP_ID}/status`)
       .set("Authorization", `Bearer ${token}`)
       .send({ status: "ACTIVE" });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
-  it("403 on POST /portal-access/grants/:id/revoke without projects:clientvisibility:manage permission", async () => {
+  it("403 on POST /portal-access/grants/:id/revoke without build:clientvisibility:manage permission", async () => {
     const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post(`/portal-access/grants/${GRANT_ID}/revoke`)
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
-  it("403 on GET /portal-access/memberships without projects:portal:view permission", async () => {
+  it("403 on GET /portal-access/memberships without build:portal:view permission", async () => {
     const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get("/portal-access/memberships")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
-  it("403 on GET /portal-access/grants without projects:portal:view permission", async () => {
+  it("403 on GET /portal-access/grants without build:portal:view permission", async () => {
     const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get("/portal-access/grants")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 });

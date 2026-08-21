@@ -1,10 +1,7 @@
-﻿import { Test } from "@nestjs/testing";
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { AppModule } from "../../../../app.module";
-import { AllExceptionsFilter } from "../../../../common/http/all-exceptions.filter";
+import { createE2eApp } from "../../../../../test/helpers/e2e-app";
 import { signToken } from "../../../../../test/helpers/sign-token";
-import { stubMembershipState } from "../../../../../test/helpers/membership-state";
 
 describe("/inventory/cycle-counts (e2e)", () => {
   let app: INestApplication;
@@ -12,20 +9,20 @@ describe("/inventory/cycle-counts (e2e)", () => {
   let noPermToken: string;
 
   beforeAll(async () => {
-    process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
-    process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-    const moduleRef = await stubMembershipState(
-      Test.createTestingModule({ imports: [AppModule] }),
-      {
-        owner_1: { role: "OWNER", isOwner: true },
-        member_1: { role: "MEMBER" },
-      },
-    ).compile();
-    app = moduleRef.createNestApplication();
-    app.useGlobalFilters(new AllExceptionsFilter());
-    await app.init();
-    ownerToken = await signToken({ sub: "owner_1", orgId: "org_inv_cc" });
-    noPermToken = await signToken({ sub: "member_1", orgId: "org_inv_cc" });
+    app = await createE2eApp();
+    ownerToken = await signToken({
+      sub: "owner_1",
+      orgId: "org_inv_cc",
+      isOrgOwner: true,
+      enabledModules: ["inventory"],
+    });
+    noPermToken = await signToken({
+      sub: "member_1",
+      orgId: "org_inv_cc",
+      isOrgOwner: false,
+      permissions: [],
+      enabledModules: ["inventory"],
+    });
   });
 
   afterAll(async () => app.close());

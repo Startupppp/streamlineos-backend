@@ -30,7 +30,7 @@ describe("/me (e2e)", () => {
   it("401 without a token", async () => {
     const res = await request(app.getHttpServer()).get("/me");
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: "Unauthorized" });
+    expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
   });
 
   it("200 with a valid token, returns the user context resolved from the membership row", async () => {

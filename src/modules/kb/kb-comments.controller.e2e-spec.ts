@@ -99,7 +99,7 @@ describe("KB Comments auth/RBAC (e2e)", () => {
 
   it("POST /kb/articles/1/comments creates comment with valid body", async () => {
     const token = await signToken({
-      permissions: ["kb:articles:view"],
+      permissions: ["kb:articles:create"],
       enabledModules: ["kb"],
     });
     const res = await request(app.getHttpServer())
@@ -118,7 +118,7 @@ describe("KB Comments auth/RBAC (e2e)", () => {
     const res = await request(app.getHttpServer())
       .post("/kb/comments/1/resolve")
       .set("Authorization", `Bearer ${token}`);
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ id: 1 });
     expect(res.body.resolvedAt).toBeDefined();
   });

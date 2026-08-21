@@ -34,10 +34,10 @@ describe("ManagedProducts auth/RBAC (e2e)", () => {
 
   const protectedRoutes: ReadonlyArray<[Method, string]> = [
     ["get", "/build/managed-products"],
-    ["get", `/projects/managed-products/${PRODUCT_ID}`],
+    ["get", `/build/managed-products/${PRODUCT_ID}`],
     ["post", "/build/managed-products"],
-    ["patch", `/projects/managed-products/${PRODUCT_ID}`],
-    ["delete", `/projects/managed-products/${PRODUCT_ID}`],
+    ["patch", `/build/managed-products/${PRODUCT_ID}`],
+    ["delete", `/build/managed-products/${PRODUCT_ID}`],
   ];
 
   it.each(protectedRoutes)(
@@ -59,20 +59,20 @@ describe("ManagedProducts auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
-  it("403 on PATCH /projects/managed-products/:id without projects:managed-products:update permission", async () => {
+  it("403 on PATCH /build/managed-products/:id without projects:managed-products:update permission", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .patch(`/projects/managed-products/${PRODUCT_ID}`)
+      .patch(`/build/managed-products/${PRODUCT_ID}`)
       .set("Authorization", `Bearer ${token}`)
       .send({ name: "Updated Product" });
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
-  it("403 on DELETE /projects/managed-products/:id without projects:managed-products:delete permission", async () => {
+  it("403 on DELETE /build/managed-products/:id without projects:managed-products:delete permission", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .delete(`/projects/managed-products/${PRODUCT_ID}`)
+      .delete(`/build/managed-products/${PRODUCT_ID}`)
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
@@ -87,10 +87,10 @@ describe("ManagedProducts auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
-  it("403 on GET /projects/managed-products/:id without projects:managed-products:view permission", async () => {
+  it("403 on GET /build/managed-products/:id without projects:managed-products:view permission", async () => {
     const token = await signToken({ permissions: [], enabledModules: ["build"] });
     const res = await request(app.getHttpServer())
-      .get(`/projects/managed-products/${PRODUCT_ID}`)
+      .get(`/build/managed-products/${PRODUCT_ID}`)
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });

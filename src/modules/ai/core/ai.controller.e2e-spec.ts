@@ -1,25 +1,33 @@
-import { Test } from "@nestjs/testing";
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { DrizzleModule } from "../../../db/drizzle.module";
-import { AiModule } from "./ai.module";
-import { AllExceptionsFilter } from "../../../common/http/all-exceptions.filter";
-import { ALL_MODULES, signToken } from "../../../../test/helpers/sign-token";
+import { createE2eApp } from "test/helpers/e2e-app";
+import { ALL_MODULES, signToken } from "test/helpers/sign-token";
+import { PlanLimitsService } from "../../billing/core/plan-limits.service";
+import { PaymentRequiredException } from "../../../common/http/api-exceptions";
+
+const planLimitsStub = {
+  assertFeature: async (_orgId: string, feature: string): Promise<void> => {
+    if (feature === "ai.candidate-scoring") {
+      throw new PaymentRequiredException({
+        code: "FEATURE_NOT_AVAILABLE",
+        message: "This feature is not available on your current plan.",
+        details: { feature, requiredPlan: "PROFESSIONAL", upgradePath: "/settings/billing" },
+      });
+    }
+  },
+  assertWithinLimit: async (): Promise<void> => {},
+};
 
 describe("AI auth/RBAC (e2e)", () => {
   let app: INestApplication;
   let savedOpenAiKey: string | undefined;
 
   beforeAll(async () => {
-    process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
-    process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
     savedOpenAiKey = process.env.OPENAI_API_KEY;
     delete process.env.OPENAI_API_KEY;
-
-    const ref = await Test.createTestingModule({ imports: [DrizzleModule, AiModule] }).compile();
-    app = ref.createNestApplication();
-    app.useGlobalFilters(new AllExceptionsFilter());
-    await app.init();
+    app = await createE2eApp({
+      overrides: [{ provide: PlanLimitsService, useValue: planLimitsStub }],
+    });
   });
 
   afterAll(async () => {
@@ -62,7 +70,7 @@ describe("AI auth/RBAC (e2e)", () => {
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
     const res = await callRoute(method, path);
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: "Unauthorized" });
+    expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
   });
 
   it("does NOT require auth on POST /public/kb/ask (public route)", async () => {
@@ -70,46 +78,36 @@ describe("AI auth/RBAC (e2e)", () => {
     expect(res.status).not.toBe(401);
     expect(res.status).not.toBe(403);
     expect(res.status).toBe(503);
-    expect(res.body).toEqual({ error: "AI assistant is not available" });
+    expect(res.body).toMatchObject({ code: "SERVICE_UNAVAILABLE", message: "AI assistant is not available" });
   });
 
-  it("403 on POST /ai/attrition-risk without hr:employees manage", async () => {
-    process.env.OPENAI_API_KEY = "test-key";
-    try {
-      const token = await signToken({ permissions: ["crm:leads:read"], enabledModules: ALL_MODULES });
-      const res = await request(app.getHttpServer())
-        .post("/ai/attrition-risk")
-        .set("Authorization", `Bearer ${token}`)
-        .send({ userId: "user_2" });
-      expect(res.status).toBe(403);
-      expect(res.body).toEqual({ error: "Only admins can analyze attrition risk" });
-    } finally {
-      delete process.env.OPENAI_API_KEY;
-    }
+  it("403 on POST /ai/attrition-risk without hr:employees:manage", async () => {
+    const token = await signToken({ permissions: ["crm:leads:read"], enabledModules: ALL_MODULES });
+    const res = await request(app.getHttpServer())
+      .post("/ai/attrition-risk")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ userId: "user_2" });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
-  it("403 on POST /ai/generate-review without hr:performance manage", async () => {
-    process.env.OPENAI_API_KEY = "test-key";
-    try {
-      const token = await signToken({ permissions: ["crm:leads:read"], enabledModules: ALL_MODULES });
-      const res = await request(app.getHttpServer())
-        .post("/ai/generate-review")
-        .set("Authorization", `Bearer ${token}`)
-        .send({ userId: "user_2", periodStart: "2026-01-01", periodEnd: "2026-03-31" });
-      expect(res.status).toBe(403);
-      expect(res.body).toEqual({ error: "Only admins/managers can generate reviews" });
-    } finally {
-      delete process.env.OPENAI_API_KEY;
-    }
+  it("403 on POST /ai/generate-review without hr:performance:manage", async () => {
+    const token = await signToken({ permissions: ["crm:leads:read"], enabledModules: ALL_MODULES });
+    const res = await request(app.getHttpServer())
+      .post("/ai/generate-review")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ userId: "user_2", periodStart: "2026-01-01", periodEnd: "2026-03-31" });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("402 on POST /ai/score-candidate when plan lacks the feature", async () => {
-    const token = await signToken({ plan: "FREE" });
+    const token = await signToken({ permissions: ["hr:interviews:manage"], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/ai/score-candidate")
       .set("Authorization", `Bearer ${token}`)
       .send({ candidateId: 1 });
     expect(res.status).toBe(402);
-    expect(res.body).toMatchObject({ requiredPlan: "PROFESSIONAL" });
+    expect(res.body).toMatchObject({ code: "FEATURE_NOT_AVAILABLE", details: { requiredPlan: "PROFESSIONAL" } });
   });
 });

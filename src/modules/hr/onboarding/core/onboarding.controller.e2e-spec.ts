@@ -66,7 +66,6 @@ describe("Onboarding auth/RBAC (e2e)", () => {
     ["patch", "/onboarding/bank-details"],
     ["get", "/onboarding/bank-details"],
     ["post", "/onboarding/submit"],
-    ["get", "/onboarding/user_1"],
   ];
 
   it.each(authOnlyRoutes)(
@@ -78,6 +77,20 @@ describe("Onboarding auth/RBAC (e2e)", () => {
       expect(res.status).not.toBe(403);
     },
   );
+
+  it("403 on GET /onboarding/user_1 without hr:onboarding:tasks:view", async () => {
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
+    const res = await callRoute("get", "/onboarding/user_1").set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
+  });
+
+  it("passes the ability gate on GET /onboarding/user_1 with hr:onboarding:tasks:view", async () => {
+    const token = await signToken({ permissions: ["hr:onboarding:tasks:view"], enabledModules: ALL_MODULES });
+    const res = await callRoute("get", "/onboarding/user_1").set("Authorization", `Bearer ${token}`);
+    expect(res.status).not.toBe(401);
+    expect(res.status).not.toBe(403);
+  });
 
   describe("HR module-checklist is HR-only (task: employees must never see HR admin setup)", () => {
     const hrGatedMutations: ReadonlyArray<[Method, string]> = [
@@ -108,7 +121,8 @@ describe("Onboarding auth/RBAC (e2e)", () => {
           permissions: ["onboarding:module-checklists:manage"],
           enabledModules: ["HR", "CRM"],
         });
-        const res = await callRoute(method, path).set("Authorization", `Bearer ${token}`);
+        const req = callRoute(method, path).set("Authorization", `Bearer ${token}`);
+        const res = path.includes("/skip") ? await req.send({ reason: "test" }) : await req;
         expect(res.status).toBe(403);
       },
     );

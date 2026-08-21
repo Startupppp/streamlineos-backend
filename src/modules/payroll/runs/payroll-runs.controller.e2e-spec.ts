@@ -12,9 +12,18 @@ import { CommandCenterService } from "./command-center.service";
 import { LoanAdjustmentsService } from "./loan-adjustments.service";
 import { ProfilesService } from "./profiles.service";
 import { GeneratePipelineService } from "./generate-pipeline.service";
+import { PayrollCommandReceiptsService } from "../command-receipts.service";
+
+const mockCommandReceiptsService = {
+  begin: jest.fn().mockResolvedValue({ kind: "fresh" as const, receiptId: 1, correlationId: "corr_1" }),
+  succeed: jest.fn().mockResolvedValue(undefined),
+  fail: jest.fn().mockResolvedValue(undefined),
+  hashRequest: jest.fn().mockReturnValue("hash"),
+};
 
 const ALL_RUNS_PERMS = new Map([
   ["payroll:runs:view", "all"],
+  ["payroll:runs:create", "all"],
   ["payroll:runs:update", "all"],
   ["payroll:runs:manage", "all"],
   ["payroll:salaries:view", "all"],
@@ -132,6 +141,7 @@ async function buildApp(accessMock: typeof permittedAccess): Promise<INestApplic
       { provide: CommandCenterService, useValue: mockCommandCenterService },
       { provide: LoanAdjustmentsService, useValue: mockLoanAdjustmentsService },
       { provide: ProfilesService, useValue: mockProfilesService },
+      { provide: PayrollCommandReceiptsService, useValue: mockCommandReceiptsService },
     ],
   });
 }

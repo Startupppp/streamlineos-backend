@@ -1,8 +1,6 @@
-import { Test } from "@nestjs/testing";
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { AppModule } from "../../../app.module";
-import { AllExceptionsFilter } from "../../../common/http/all-exceptions.filter";
+import { createE2eApp } from "../../../../test/helpers/e2e-app";
 import { signToken } from "../../../../test/helpers/sign-token";
 
 describe("/inventory/settings (e2e)", () => {
@@ -10,14 +8,7 @@ describe("/inventory/settings (e2e)", () => {
   let ownerToken: string;
 
   beforeAll(async () => {
-    process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
-    process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    app = moduleRef.createNestApplication();
-    app.useGlobalFilters(new AllExceptionsFilter());
-    await app.init();
-
+    app = await createE2eApp();
     ownerToken = await signToken({
       orgId: "org_inv_c2",
       isOrgOwner: true,

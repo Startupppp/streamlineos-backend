@@ -1,41 +1,39 @@
-import { Test } from "@nestjs/testing";
-import { INestApplication } from "@nestjs/common";
+import { INestApplication, NotFoundException } from "@nestjs/common";
 import request from "supertest";
-import { eq } from "drizzle-orm";
-import { AppModule } from "../../../app.module";
-import { AllExceptionsFilter } from "../../../common/http/all-exceptions.filter";
-import { signToken } from "../../../../test/helpers/sign-token";
-import { DRIZZLE } from "../../../db/drizzle.constants";
-import { type Db } from "../../../db/drizzle.module";
-import { organizations, users } from "../../../db/schema";
+import { createE2eApp } from "test/helpers/e2e-app";
+import { ALL_MODULES, signToken } from "test/helpers/sign-token";
+import { SignPublicService } from "../sign-public.service";
+import { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
 
-const P = "e2e-signos-rbac-";
-const ORG_ID = `${P}org`;
-const USER_ID = `${P}user`;
+const publicSigningStub = {
+  getSession: jest.fn().mockRejectedValue(new NotFoundException()),
+  getDocumentPreview: jest.fn().mockRejectedValue(new NotFoundException()),
+  requestOtp: jest.fn().mockRejectedValue(new NotFoundException()),
+  authenticate: jest.fn().mockRejectedValue(new NotFoundException()),
+  acceptConsent: jest.fn().mockRejectedValue(new NotFoundException()),
+  adoptSignature: jest.fn().mockRejectedValue(new NotFoundException()),
+  setFieldValue: jest.fn().mockRejectedValue(new NotFoundException()),
+  complete: jest.fn().mockRejectedValue(new NotFoundException()),
+  decline: jest.fn().mockRejectedValue(new NotFoundException()),
+  getPublicForm: jest.fn().mockRejectedValue(new NotFoundException()),
+  submitPublicForm: jest.fn().mockRejectedValue(new NotFoundException()),
+};
+
+const rateLimitStub = { check: jest.fn().mockResolvedValue({ allowed: true }) };
 
 describe("SignOS auth/RBAC (e2e)", () => {
   let app: INestApplication;
-  let db: Db;
 
   beforeAll(async () => {
-    process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-    const ref = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    app = ref.createNestApplication();
-    app.useGlobalFilters(new AllExceptionsFilter());
-    await app.init();
-    db = app.get(DRIZZLE);
+    app = await createE2eApp({
+      overrides: [
+        { provide: SignPublicService, useValue: publicSigningStub },
+        { provide: RateLimitService, useValue: rateLimitStub },
+      ],
+    });
+  });
 
-    await db.delete(users).where(eq(users.id, USER_ID));
-    await db.delete(organizations).where(eq(organizations.id, ORG_ID));
-    await db.insert(organizations).values({ id: ORG_ID, name: "E2E SignOS RBAC Org", slug: `${P}slug`, ownerMembershipId: 9001 });
-    await db.insert(users).values({ id: USER_ID, email: `${P}user@example.com` });
-  }, 30_000);
-
-  afterAll(async () => {
-    await db.delete(users).where(eq(users.id, USER_ID));
-    await db.delete(organizations).where(eq(organizations.id, ORG_ID));
-    await app.close();
-  }, 30_000);
+  afterAll(async () => app.close());
 
   type Method = "get" | "post" | "patch" | "delete";
 
@@ -57,7 +55,6 @@ describe("SignOS auth/RBAC (e2e)", () => {
   }
 
   const protectedRoutes: ReadonlyArray<[Method, string]> = [
-    // envelopes
     ["post", "/sign/envelopes"],
     ["get", "/sign/envelopes"],
     ["get", "/sign/envelopes/1"],
@@ -69,27 +66,22 @@ describe("SignOS auth/RBAC (e2e)", () => {
     ["post", "/sign/envelopes/1/resend"],
     ["post", "/sign/envelopes/1/send-reminder"],
     ["post", "/sign/envelopes/1/extend-expiration"],
-    // certificates / audit
     ["get", "/sign/envelopes/1/audit"],
     ["get", "/sign/envelopes/1/certificate"],
     ["get", "/sign/envelopes/1/final-pdf"],
     ["post", "/sign/envelopes/1/regenerate-certificate"],
-    // documents
     ["post", "/sign/documents/upload"],
     ["get", "/sign/envelopes/1/documents"],
     ["get", "/sign/documents/1/preview"],
     ["delete", "/sign/documents/1"],
-    // fields
     ["post", "/sign/envelopes/1/fields"],
     ["get", "/sign/envelopes/1/fields"],
     ["patch", "/sign/fields/1"],
     ["delete", "/sign/fields/1"],
-    // recipients
     ["post", "/sign/envelopes/1/recipients"],
     ["get", "/sign/envelopes/1/recipients"],
     ["patch", "/sign/recipients/1"],
     ["delete", "/sign/recipients/1"],
-    // templates
     ["post", "/sign/templates"],
     ["post", "/sign/envelopes/1/save-as-template"],
     ["get", "/sign/templates"],
@@ -98,13 +90,11 @@ describe("SignOS auth/RBAC (e2e)", () => {
     ["post", "/sign/templates/1/duplicate"],
     ["post", "/sign/templates/1/create-envelope"],
     ["post", "/sign/templates/1/publish-public-form"],
-    // bulk send
     ["post", "/sign/bulk-send/jobs"],
     ["get", "/sign/bulk-send/jobs"],
     ["get", "/sign/bulk-send/jobs/1"],
     ["post", "/sign/bulk-send/jobs/1/cancel"],
     ["get", "/sign/bulk-send/jobs/1/error-report"],
-    // admin
     ["get", "/sign/admin/settings"],
     ["patch", "/sign/admin/settings"],
     ["get", "/sign/admin/watermark-policies"],
@@ -114,7 +104,6 @@ describe("SignOS auth/RBAC (e2e)", () => {
     ["delete", "/sign/admin/watermark-policies/1"],
     ["post", "/sign/admin/run-reminder-sweep"],
     ["post", "/sign/admin/run-expiration-sweep"],
-    // reports
     ["get", "/sign/reports/dashboard"],
     ["get", "/sign/reports/summary"],
   ];
@@ -122,22 +111,22 @@ describe("SignOS auth/RBAC (e2e)", () => {
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
     const res = await callRoute(method, path);
     expect(res.status).toBe(401);
+    expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
   });
 
-  it.each(protectedRoutes)(
-    "403 on %s %s for an authenticated user with zero SignOS permission grants",
-    async (method, path) => {
-      const token = await signToken({
-        sub: USER_ID,
-        orgId: ORG_ID,
-        isOrgOwner: false,
-        permissions: [],
-        enabledModules: ["sign"],
-      });
-      const res = await callRoute(method, path, token);
-      expect(res.status).toBe(403);
-    },
-  );
+  it.each(protectedRoutes)("402 on %s %s when the sign module is not enabled", async (method, path) => {
+    const token = await signToken({ permissions: [], enabledModules: [] });
+    const res = await callRoute(method, path, token);
+    expect(res.status).toBe(402);
+    expect(res.body).toMatchObject({ code: "MODULE_NOT_ENABLED", details: { moduleKey: "sign" } });
+  });
+
+  it.each(protectedRoutes)("403 on %s %s with no sign permission grants", async (method, path) => {
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
+    const res = await callRoute(method, path, token);
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
+  });
 
   describe("public signing routes never require auth", () => {
     const publicRoutes: ReadonlyArray<[Method, string]> = [
@@ -151,7 +140,7 @@ describe("SignOS auth/RBAC (e2e)", () => {
       ["get", "/public/sign/forms/nonexistent-slug"],
     ];
 
-    it.each(publicRoutes)("never 401s on %s %s, even with a garbage token", async (method, path) => {
+    it.each(publicRoutes)("never 401s on %s %s", async (method, path) => {
       const res = await callRoute(method, path);
       expect(res.status).not.toBe(401);
       expect([404, 400, 403]).toContain(res.status);

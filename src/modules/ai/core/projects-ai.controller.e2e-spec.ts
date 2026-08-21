@@ -7,27 +7,37 @@ import { signToken } from "../../../../test/helpers/sign-token";
 import { stubMembershipState } from "../../../../test/helpers/membership-state";
 import { ProjectsAiService } from "./services/projects-ai.service";
 import { AccessService } from "../../access/access.service";
+import { createE2eApp } from "test/helpers/e2e-app";
+import { ALL_MODULES } from "test/helpers/sign-token";
+import { PlanLimitsService } from "../../billing/core/plan-limits.service";
+import { PaymentRequiredException } from "../../../common/http/api-exceptions";
 
 const RBAC_E2E_DATABASE_URL = process.env.RBAC_E2E_DATABASE_URL;
 const describeWithDb = RBAC_E2E_DATABASE_URL ? describe : describe.skip;
+
+const planLimitsStub = {
+  assertFeature: async (_orgId: string, feature: string): Promise<void> => {
+    if (feature === "ai.project-manager") {
+      throw new PaymentRequiredException({
+        code: "FEATURE_NOT_AVAILABLE",
+        message: "This feature is not available on your current plan.",
+        details: { feature, requiredPlan: "PROFESSIONAL", upgradePath: "/settings/billing" },
+      });
+    }
+  },
+  assertWithinLimit: async (): Promise<void> => {},
+};
 
 describe("ProjectsAI auth (e2e, no DB required)", () => {
   let app: INestApplication;
   let savedOpenAiKey: string | undefined;
 
   beforeAll(async () => {
-    process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
-    process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
     savedOpenAiKey = process.env.OPENAI_API_KEY;
     delete process.env.OPENAI_API_KEY;
-
-    const ref = await stubMembershipState(
-      Test.createTestingModule({ imports: [AppModule] }),
-      { owner_1: { role: "OWNER", isOwner: true } },
-    ).compile();
-    app = ref.createNestApplication();
-    app.useGlobalFilters(new AllExceptionsFilter());
-    await app.init();
+    app = await createE2eApp({
+      overrides: [{ provide: PlanLimitsService, useValue: planLimitsStub }],
+    });
   });
 
   afterAll(async () => {
@@ -48,45 +58,45 @@ describe("ProjectsAI auth (e2e, no DB required)", () => {
   it.each(protectedRoutes)("401 on %s %s without a token", async (_method, path) => {
     const res = await request(app.getHttpServer()).post(path);
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: "Unauthorized" });
+    expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
   });
 
-  it("402 on POST /ai/projects/1/summary when plan lacks ai.project-manager (FREE plan)", async () => {
-    const token = await signToken({ sub: "owner_1" });
+  it("402 on POST /ai/projects/1/summary when plan lacks ai.project-manager", async () => {
+    const token = await signToken({ permissions: ["build:ai:use"], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/ai/projects/1/summary")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(402);
-    expect(res.body).toMatchObject({ requiredPlan: "PROFESSIONAL" });
+    expect(res.body).toMatchObject({ code: "FEATURE_NOT_AVAILABLE", details: { requiredPlan: "PROFESSIONAL" } });
   });
 
   it("402 on POST /ai/projects/1/plan when plan lacks ai.project-manager", async () => {
-    const token = await signToken({ sub: "owner_1" });
+    const token = await signToken({ permissions: ["build:ai:use"], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/ai/projects/1/plan")
       .set("Authorization", `Bearer ${token}`)
       .send({ prompt: "Build a roadmap" });
     expect(res.status).toBe(402);
-    expect(res.body).toMatchObject({ requiredPlan: "PROFESSIONAL" });
+    expect(res.body).toMatchObject({ code: "FEATURE_NOT_AVAILABLE", details: { requiredPlan: "PROFESSIONAL" } });
   });
 
-  it("503 on POST /ai/projects/1/risks when OPENAI_API_KEY is not set (PROFESSIONAL plan)", async () => {
-    const token = await signToken({ sub: "owner_1" });
+  it("402 on POST /ai/projects/1/risks when plan lacks ai.project-manager", async () => {
+    const token = await signToken({ permissions: ["build:ai:use"], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/ai/projects/1/risks")
       .set("Authorization", `Bearer ${token}`);
-    expect(res.status).toBe(503);
-    expect(res.body).toMatchObject({ error: expect.stringContaining("not configured") });
+    expect(res.status).toBe(402);
+    expect(res.body).toMatchObject({ code: "FEATURE_NOT_AVAILABLE", details: { requiredPlan: "PROFESSIONAL" } });
   });
 
-  it("503 on POST /ai/projects/1/ask when OPENAI_API_KEY is not set", async () => {
-    const token = await signToken({ sub: "owner_1" });
+  it("402 on POST /ai/projects/1/ask when plan lacks ai.project-manager", async () => {
+    const token = await signToken({ permissions: ["build:ai:use"], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/ai/projects/1/ask")
       .set("Authorization", `Bearer ${token}`)
       .send({ question: "What is the status?" });
-    expect(res.status).toBe(503);
-    expect(res.body).toMatchObject({ error: expect.stringContaining("not configured") });
+    expect(res.status).toBe(402);
+    expect(res.body).toMatchObject({ code: "FEATURE_NOT_AVAILABLE", details: { requiredPlan: "PROFESSIONAL" } });
   });
 });
 
@@ -182,7 +192,7 @@ describeWithDb("ProjectsAI RBAC / mocked service (e2e)", () => {
       .post("/ai/projects/1/summary")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("403 on POST /ai/projects/1/ask when projects:ai:use is absent", async () => {
@@ -193,7 +203,7 @@ describeWithDb("ProjectsAI RBAC / mocked service (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ question: "Any blockers?" });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("200 + delegates to service on POST /ai/projects/1/summary with projects:ai:use granted", async () => {
@@ -230,7 +240,7 @@ describeWithDb("ProjectsAI RBAC / mocked service (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ prompt: "" });
     expect(res.status).toBe(400);
-    expect(res.body).toMatchObject({ error: expect.stringContaining("Validation failed") });
+    expect(res.body).toMatchObject({ code: "VALIDATION_FAILED" });
   });
 
   it.todo("402 on plan gate fires before service (orgOwner bypass not needed — plan check is in controller)");

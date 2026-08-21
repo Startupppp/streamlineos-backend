@@ -1,9 +1,10 @@
-import { Test } from "@nestjs/testing";
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
+import { createE2eApp } from "test/helpers/e2e-app";
+import { ALL_MODULES, signToken } from "test/helpers/sign-token";
+import { Test } from "@nestjs/testing";
 import { AppModule } from "../../app.module";
 import { AllExceptionsFilter } from "../../common/http/all-exceptions.filter";
-import { signToken } from "../../../test/helpers/sign-token";
 import { stubMembershipState } from "../../../test/helpers/membership-state";
 import { AccessService } from "../access/access.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -15,15 +16,7 @@ describe("ChatActions auth (e2e, no DB required)", () => {
   let app: INestApplication;
 
   beforeAll(async () => {
-    process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
-    process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-    const ref = await stubMembershipState(
-      Test.createTestingModule({ imports: [AppModule] }),
-      { member_1: { role: "MEMBER" } },
-    ).compile();
-    app = ref.createNestApplication();
-    app.useGlobalFilters(new AllExceptionsFilter());
-    await app.init();
+    app = await createE2eApp();
   });
 
   afterAll(async () => app.close());
@@ -38,47 +31,47 @@ describe("ChatActions auth (e2e, no DB required)", () => {
   it.each(protectedRoutes)("401 on %s %s without a token", async (_method, path) => {
     const res = await request(app.getHttpServer()).post(path);
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: "Unauthorized" });
+    expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
   });
 
-  it("403 on POST /chat/actions/create-task-from-message without projects:tickets:create", async () => {
-    const token = await signToken({ sub: "member_1" });
+  it("403 on POST /chat/actions/create-task-from-message without build:tickets:create", async () => {
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/chat/actions/create-task-from-message")
       .set("Authorization", `Bearer ${token}`)
       .send({ channelId: 1, messageId: 1, projectId: 1, type: "TASK" });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
-  it("403 on POST /chat/actions/assign-ticket without projects:tickets:assign", async () => {
-    const token = await signToken({ sub: "member_1" });
+  it("403 on POST /chat/actions/assign-ticket without build:tickets:assign", async () => {
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/chat/actions/assign-ticket")
       .set("Authorization", `Bearer ${token}`)
       .send({ channelId: 1, projectId: 1, ticketId: 1, assigneeId: "user_2" });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
-  it("403 on POST /chat/actions/set-due-date without projects:tickets:update", async () => {
-    const token = await signToken({ sub: "member_1" });
+  it("403 on POST /chat/actions/set-due-date without build:tickets:update", async () => {
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/chat/actions/set-due-date")
       .set("Authorization", `Bearer ${token}`)
       .send({ channelId: 1, projectId: 1, ticketId: 1, dueDate: "2026-12-31" });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
-  it("403 on POST /chat/actions/ticket-status without projects:tickets:update", async () => {
-    const token = await signToken({ sub: "member_1" });
+  it("403 on POST /chat/actions/ticket-status without build:tickets:update", async () => {
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .post("/chat/actions/ticket-status")
       .set("Authorization", `Bearer ${token}`)
       .send({ channelId: 1, projectId: 1, ticketId: 1, nextStatus: "IN_PROGRESS" });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ error: "Permission denied" });
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 });
 
