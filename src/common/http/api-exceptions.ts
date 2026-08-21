@@ -7,9 +7,13 @@ export class PaymentRequiredException extends HttpException {
 }
 
 export class ModuleDisabledException extends HttpException {
-  constructor(module: string) {
+  constructor(moduleKey: string) {
     super(
-      { error: "Module not available on this plan", code: "MODULE_NOT_ENABLED", module },
+      {
+        code: "MODULE_NOT_ENABLED",
+        message: "This module is not available on your plan.",
+        details: { moduleKey },
+      },
       HttpStatus.PAYMENT_REQUIRED,
     );
   }

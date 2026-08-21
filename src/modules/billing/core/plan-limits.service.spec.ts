@@ -1,8 +1,12 @@
-﻿import { ForbiddenException } from "@nestjs/common";
+﻿import { PaymentRequiredException } from "../../../common/http/api-exceptions";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { CacheService } from "../../../common/cache/cache.service";
 import { PlanLimitsService } from "./plan-limits.service";
+
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: (db: unknown, fn: (tx: unknown) => Promise<unknown>) => fn(db),
+}));
 
 function makeDb(overrides: Record<string, unknown> = {}) {
   return {
@@ -117,7 +121,7 @@ describe("PlanLimitsService", () => {
       await expect(service.assertWithinLimit("org1", "members", 1)).resolves.toBeUndefined();
     });
 
-    it("throws ForbiddenException when used + increment exceeds limit", async () => {
+    it("throws PaymentRequiredException when used + increment exceeds limit", async () => {
       mockDb = makeDb({
         execute: jest
           .fn()
@@ -125,10 +129,10 @@ describe("PlanLimitsService", () => {
           .mockResolvedValueOnce([{ count: 5 }]),
       });
       service = await build(mockDb);
-      await expect(service.assertWithinLimit("org1", "members", 1)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(service.assertWithinLimit("org1", "members", 1)).rejects.toBeInstanceOf(PaymentRequiredException);
     });
 
-    it("throws ForbiddenException when used equals limit and increment is 1", async () => {
+    it("throws PaymentRequiredException when used equals limit and increment is 1", async () => {
       mockDb = makeDb({
         execute: jest
           .fn()
@@ -136,7 +140,7 @@ describe("PlanLimitsService", () => {
           .mockResolvedValueOnce([{ count: 5 }]),
       });
       service = await build(mockDb);
-      await expect(service.assertWithinLimit("org1", "members", 1)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(service.assertWithinLimit("org1", "members", 1)).rejects.toBeInstanceOf(PaymentRequiredException);
     });
 
     it("does not throw for null limit (unlimited plan)", async () => {
@@ -161,6 +165,26 @@ describe("PlanLimitsService", () => {
       await expect(service.assertWithinLimit("org1", "members", 1)).rejects.toThrow(
         /Free.*members/,
       );
+    });
+
+    it("nests quota facts under details, which is the only field the error envelope forwards", async () => {
+      mockDb = makeDb({
+        execute: jest
+          .fn()
+          .mockResolvedValueOnce([{ plan: "FREE", status: "ACTIVE", trial_ends_at: null }])
+          .mockResolvedValueOnce([{ count: 5 }]),
+      });
+      service = await build(mockDb);
+      const error = await service
+        .assertWithinLimit("org1", "members", 1)
+        .then(() => null)
+        .catch((err: unknown) => err);
+
+      expect(error).toBeInstanceOf(PaymentRequiredException);
+      expect((error as PaymentRequiredException).getResponse()).toMatchObject({
+        code: "QUOTA_EXCEEDED",
+        details: { limitKey: "members", used: 5, limit: 5, upgradePath: "/settings/billing" },
+      });
     });
 
     it("uses negotiated enterprise seats when asserting members limit", async () => {
@@ -200,7 +224,7 @@ describe("PlanLimitsService", () => {
           .mockResolvedValueOnce([{ count: 5 }]),
       });
       service = await build(mockDb);
-      await expect(service.assertWithinLimit("org1", "members", 1)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(service.assertWithinLimit("org1", "members", 1)).rejects.toBeInstanceOf(PaymentRequiredException);
     });
 
     it("allows accept (increment 0) when invitation's slot is within the limit", async () => {
@@ -222,7 +246,7 @@ describe("PlanLimitsService", () => {
           .mockResolvedValueOnce([{ count: 6 }]),
       });
       service = await build(mockDb);
-      await expect(service.assertWithinLimit("org1", "members", 0)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(service.assertWithinLimit("org1", "members", 0)).rejects.toBeInstanceOf(PaymentRequiredException);
     });
   });
 });

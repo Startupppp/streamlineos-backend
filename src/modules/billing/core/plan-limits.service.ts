@@ -8,6 +8,7 @@ import {
   PLAN_LIMITS,
   PLAN_FEATURE_FLAGS,
   PLAN_LOCKED_MODULES,
+  PLAN_LABELS,
   type EffectivePlan,
   type LimitKey,
   type PlanFeatureFlags,
@@ -235,12 +236,11 @@ export class PlanLimitsService {
 
     const used = await this.fetchCount(orgId, key, executor);
     if (used + increment > limit) {
+      const label = LIMIT_KEY_LABELS[key];
       throw new PaymentRequiredException({
         code: "QUOTA_EXCEEDED",
-        limitKey: key,
-        used,
-        limit,
-        upgradePath: "/billing",
+        message: `Your ${PLAN_LABELS[plan]} plan allows ${limit} ${label} and ${used} are already in use. Upgrade to add more.`,
+        details: { limitKey: key, used, limit, upgradePath: "/settings/billing" },
       });
     }
 
@@ -257,10 +257,14 @@ export class PlanLimitsService {
   async assertFeature(orgId: string, feature: Feature): Promise<void> {
     const { plan } = await this.resolveTier(orgId);
     if (!canUseFeature(plan, feature)) {
+      const requiredPlan = minPlanFor(feature);
+      const available = requiredPlan
+        ? ` It is available from ${PLAN_LABELS[requiredPlan]}.`
+        : "";
       throw new PaymentRequiredException({
         code: "FEATURE_NOT_AVAILABLE",
-        feature,
-        requiredPlan: minPlanFor(feature),
+        message: `${feature} is not included in your ${PLAN_LABELS[plan]} plan.${available}`,
+        details: { feature, requiredPlan, upgradePath: "/settings/billing" },
       });
     }
   }
