@@ -58,7 +58,7 @@ function csvEscape(value: string): string {
 }
 
 @Controller("calendar")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard)
 export class CalendarController {
   constructor(
     private readonly calendar: CalendarService,
@@ -66,7 +66,6 @@ export class CalendarController {
   ) {}
 
   @Get("events")
-  @RequirePermission("calendar:read")
   getEvents(
     @Query(new ZodValidationPipe(listEventsSchema)) query: ListEventsInput,
     @CurrentUser() u: CurrentUserContext,
@@ -80,7 +79,6 @@ export class CalendarController {
   }
 
   @Get("external-events")
-  @RequirePermission("calendar:read")
   getExternalEvents(
     @Query(new ZodValidationPipe(externalEventsQuerySchema))
     query: ExternalEventsQueryInput,
@@ -96,7 +94,6 @@ export class CalendarController {
 
   @Post("events")
   @HttpCode(201)
-  @RequirePermission("calendar:write")
   createEvent(
     @Body(new ZodValidationPipe(createEventSchema)) body: CreateEventInput,
     @CurrentUser() u: CurrentUserContext,
@@ -105,7 +102,6 @@ export class CalendarController {
   }
 
   @Put("events/:eventId")
-  @RequirePermission("calendar:write")
   async updateEvent(
     @Param("eventId", ParseIntPipe) eventId: number,
     @Body(new ZodValidationPipe(updateEventSchema)) body: UpdateEventInput,
@@ -123,7 +119,6 @@ export class CalendarController {
   }
 
   @Delete("events/:eventId")
-  @RequirePermission("calendar:write")
   removeEvent(
     @Param("eventId", ParseIntPipe) eventId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -133,7 +128,6 @@ export class CalendarController {
 
   @Post("events/:eventId/rsvp")
   @HttpCode(200)
-  @RequirePermission("calendar:write")
   async rsvp(
     @Param("eventId", ParseIntPipe) eventId: number,
     @Body(new ZodValidationPipe(rsvpSchema)) body: RsvpInput,
@@ -145,6 +139,7 @@ export class CalendarController {
   }
 
   @Get("events/:eventId/rsvp")
+  @UseGuards(PermissionGuard)
   @RequirePermission("calendar:read")
   async listAttendees(
     @Param("eventId", ParseIntPipe) eventId: number,
@@ -156,6 +151,7 @@ export class CalendarController {
   }
 
   @Get("export")
+  @UseGuards(PermissionGuard)
   @RequirePermission("calendar:events:export")
   async exportEvents(
     @Query(new ZodValidationPipe(exportSchema)) query: ExportInput,

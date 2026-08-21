@@ -82,11 +82,11 @@ describe("assertKnownPermissionKeys", () => {
 describe("assertPermissionsGrantable — existing rules", () => {
   const grantable = new Set(["crm:leads:view", "crm:leads:create"]);
 
-  it("lets an org owner grant anything (bypass)", () => {
+  it("lets an org owner grant anything delegatable (bypass)", () => {
     expect(() =>
       assertPermissionsGrantable(
         { isOrgOwner: true, grantable: new Set() },
-        ["settings:rbac:manage", "billing:analytics:view"],
+        ["settings:rbac:manage", "hr:employees:view"],
       ),
     ).not.toThrow();
   });
@@ -393,5 +393,41 @@ describe("assertPermissionsGrantable — module-boundary enforcement (rule 3)", 
         MIXED_META,
       ),
     ).not.toThrow();
+  });
+});
+
+describe("platform billing is not delegatable", () => {
+  const orgOwner = { isOrgOwner: true, grantable: new Set<string>() };
+  const orgAdmin = {
+    isOrgOwner: false,
+    grantable: new Set(["settings:manage", "billing:subscription:manage"]),
+  };
+
+  it.each([
+    "billing:subscription:view",
+    "billing:subscription:manage",
+    "billing:seats:view",
+    "billing:coupons:manage",
+    "billing:profile:view",
+  ])("refuses to grant %s even to an organisation owner", (key) => {
+    expect(() => assertPermissionsGrantable(orgOwner, [key])).toThrow(ForbiddenException);
+  });
+
+  it("refuses an organisation admin who holds the key themselves", () => {
+    expect(() =>
+      assertPermissionsGrantable(orgAdmin, ["billing:subscription:manage"]),
+    ).toThrow(ForbiddenException);
+  });
+
+  it("leaves the organisation's own customer invoicing in accounting alone", () => {
+    expect(() =>
+      assertPermissionsGrantable(orgOwner, ["accounting:invoices:manage"]),
+    ).not.toThrow();
+  });
+
+  it("names every refused billing key so the refusal is explainable", () => {
+    expect(() =>
+      assertPermissionsGrantable(orgOwner, ["billing:seats:view", "billing:coupons:manage"]),
+    ).toThrow(/billing:seats:view, billing:coupons:manage/);
   });
 });

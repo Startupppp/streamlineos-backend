@@ -3,29 +3,23 @@ jest.mock("@composio/core", () => ({ Composio: jest.fn() }));
 import "reflect-metadata";
 import { CalendarController } from "./calendar.controller";
 import { REQUIRE_PERMISSION } from "../access/require-permission.decorator";
-import { ROLE_DEFAULT_PERMISSIONS } from "../rbac/permissions/role-defaults";
 
-describe("CalendarController RBAC metadata", () => {
+function gateOf(method: keyof CalendarController): string | undefined {
+  return Reflect.getMetadata(REQUIRE_PERMISSION, CalendarController.prototype[method]);
+}
+
+describe("CalendarController — organisation-wide reads are gated", () => {
   const gateExpectations: ReadonlyArray<[keyof CalendarController, string]> = [
-    ["getEvents", "calendar:read"],
-    ["getExternalEvents", "calendar:read"],
-    ["createEvent", "calendar:write"],
-    ["updateEvent", "calendar:write"],
-    ["removeEvent", "calendar:write"],
-    ["rsvp", "calendar:write"],
     ["listAttendees", "calendar:read"],
     ["exportEvents", "calendar:events:export"],
   ];
 
   it.each(gateExpectations)("%s requires %s", (method, permission) => {
-    const handler = CalendarController.prototype[method];
-    expect(Reflect.getMetadata(REQUIRE_PERMISSION, handler)).toBe(permission);
+    expect(gateOf(method)).toBe(permission);
   });
 });
 
-describe("CalendarController universal own-calendar guarantee", () => {
-  const memberPermissions = new Set(ROLE_DEFAULT_PERMISSIONS["MEMBER"] ?? []);
-
+describe("CalendarController — a member's own calendar cannot be taken away", () => {
   const ownCalendarMethods: ReadonlyArray<keyof CalendarController> = [
     "getEvents",
     "getExternalEvents",
@@ -35,13 +29,7 @@ describe("CalendarController universal own-calendar guarantee", () => {
     "rsvp",
   ];
 
-  it.each(ownCalendarMethods)(
-    "own-calendar route %s carries no gate a member could lack",
-    (method) => {
-      const handler = CalendarController.prototype[method];
-      const key: string | undefined = Reflect.getMetadata(REQUIRE_PERMISSION, handler);
-      if (key !== undefined && key !== null)
-        expect(memberPermissions.has(key)).toBe(true);
-    },
-  );
+  it.each(ownCalendarMethods)("%s carries no permission gate at all", (method) => {
+    expect(gateOf(method)).toBeUndefined();
+  });
 });

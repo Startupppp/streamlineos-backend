@@ -439,7 +439,7 @@ export class PlanLimitsService {
         message: is100
           ? `Your workspace has used all ${limit} ${label}. New additions are now blocked. Upgrade your plan to continue.`
           : `Your workspace has used ${afterCount} of ${limit} ${label} (${Math.round((afterCount / limit) * 100)}%). Consider upgrading before you hit the limit.`,
-        link: "/billing",
+        link: "/settings/billing",
       });
 
       await this.cache.set(dedupKey, true, QUOTA_ALERT_TTL_SECONDS);
