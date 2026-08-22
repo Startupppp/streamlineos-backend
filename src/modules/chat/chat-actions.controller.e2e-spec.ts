@@ -8,6 +8,8 @@ import { AllExceptionsFilter } from "../../common/http/all-exceptions.filter";
 import { stubMembershipState } from "../../../test/helpers/membership-state";
 import { AccessService } from "../access/access.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
+import { MfaPolicyService } from "../access/mfa-policy.service";
+import { makeMfaPolicyStub } from "test/helpers/mfa-policy-stub";
 
 const RBAC_E2E_DATABASE_URL = process.env.RBAC_E2E_DATABASE_URL;
 const describeWithDb = RBAC_E2E_DATABASE_URL ? describe : describe.skip;
@@ -109,7 +111,8 @@ const mockDbNoMembership = {
   returning: jest.fn().mockResolvedValue([]),
   update: jest.fn().mockReturnThis(),
   set: jest.fn().mockReturnThis(),
-  execute: jest.fn().mockResolvedValue(undefined),
+  execute: jest.fn().mockResolvedValue([]),
+  __client: { end: jest.fn().mockResolvedValue(undefined) },
   transaction: jest.fn().mockImplementation(
     async (cb: (tx: unknown) => Promise<unknown>) => cb(mockDbNoMembership),
   ),
@@ -127,7 +130,9 @@ describeWithDb("ChatActions membership-forbidden path (e2e, mocked)", () => {
         .overrideProvider(AccessService)
         .useValue(mockAccessServiceAllowed)
         .overrideProvider(DRIZZLE)
-        .useValue(mockDbNoMembership),
+        .useValue(mockDbNoMembership)
+        .overrideProvider(MfaPolicyService)
+        .useValue(makeMfaPolicyStub()),
       { member_1: { role: "MEMBER" }, owner_1: { role: "OWNER", isOwner: true } },
     ).compile();
 
