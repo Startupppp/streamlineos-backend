@@ -17,7 +17,7 @@ import {
   toGrantableSet,
 } from "../../common/rbac/grantability";
 import { AuditService } from "../../common/audit/audit.service";
-import { AccessService } from "../access/access.service";
+import { AccessService, SCOPE_RANK } from "../access/access.service";
 import { moduleScopedPermissions } from "../rbac/permissions";
 import type { DataScope } from "../access/access.types";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -30,6 +30,12 @@ export interface UserPermissionGrant {
   scope: DataScope;
   reason: string | null;
   createdAt: Date;
+}
+
+interface TargetMembership {
+  id: number;
+  userId: string;
+  status: (typeof organizationMembers.$inferSelect)["status"];
 }
 
 @Injectable()
@@ -53,16 +59,34 @@ export class UserPermissionGrantsService {
   private async resolveTargetMembership(
     orgId: string,
     membershipId: number,
-  ): Promise<{ id: number; userId: string }> {
+  ): Promise<TargetMembership> {
     const member = await this.db.query.organizationMembers.findFirst({
       where: and(
         eq(organizationMembers.orgId, orgId),
         eq(organizationMembers.id, membershipId),
       ),
-      columns: { id: true, userId: true },
+      columns: { id: true, userId: true, status: true },
     });
     if (!member) throw new NotFoundException("Member not found");
-    return { id: member.id, userId: member.userId };
+    return { id: member.id, userId: member.userId, status: member.status };
+  }
+
+  /**
+   * Widening capability needs a live membership, matching the module-access
+   * path. Reading and revoking stay open on a suspended person on purpose, so
+   * grants left behind can still be audited and cleared.
+   */
+  private async resolveActiveTargetMembership(
+    orgId: string,
+    membershipId: number,
+  ): Promise<TargetMembership> {
+    const member = await this.resolveTargetMembership(orgId, membershipId);
+    if (member.status !== "ACTIVE") {
+      throw new BadRequestException(
+        "Permissions can only be granted to active members",
+      );
+    }
+    return member;
   }
 
   private async resolveActorMembershipId(
@@ -129,14 +153,17 @@ export class UserPermissionGrantsService {
       requested.set(item.permissionKey, item.scope);
     }
 
-    const target = await this.resolveTargetMembership(actor.orgId, membershipId);
+    const target = await this.resolveActiveTargetMembership(
+      actor.orgId,
+      membershipId,
+    );
     if (target.userId === actor.userId) {
       throw new ForbiddenException(
         "You cannot grant permissions to yourself",
       );
     }
 
-    await this.assertGrantable(actor, Array.from(requested.keys()));
+    await this.assertGrantable(actor, requested);
 
     const grantedBy = await this.resolveActorMembershipId(actor);
     const rows = Array.from(requested.entries()).map(([permissionKey, scope]) => ({
@@ -219,10 +246,16 @@ export class UserPermissionGrantsService {
     return { success: true };
   }
 
+  /**
+   * A key may only be handed over at a scope the grantor themselves holds. The
+   * request body carries the scope and defaults it to `all`, so without this
+   * ceiling an `own` or `team` grantor mints org-wide access.
+   */
   private async assertGrantable(
     actor: CurrentUserContext,
-    keys: readonly string[],
+    requested: ReadonlyMap<string, DataScope>,
   ): Promise<void> {
+    const keys = Array.from(requested.keys());
     if (keys.length === 0) return;
 
     const [resolved, { bestRank, allowedModules }] = await Promise.all([
@@ -241,5 +274,22 @@ export class UserPermissionGrantsService {
       undefined,
       buildPermissionModuleMap(keys),
     );
+
+    if (actor.isOrgOwner) return;
+
+    const widened = keys.filter((key) => {
+      const held = resolved.get(key);
+      const wanted = requested.get(key);
+      if (held === undefined || wanted === undefined) return true;
+      return SCOPE_RANK[wanted] > SCOPE_RANK[held];
+    });
+    if (widened.length > 0) {
+      const preview = widened.slice(0, 5).join(", ");
+      throw new ForbiddenException(
+        `You cannot grant a wider data scope than your own: ${preview}${
+          widened.length > 5 ? ` (+${widened.length - 5} more)` : ""
+        }`,
+      );
+    }
   }
 }

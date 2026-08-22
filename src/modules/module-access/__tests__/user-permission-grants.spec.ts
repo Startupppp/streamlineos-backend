@@ -1,4 +1,8 @@
-import { ForbiddenException, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from "@nestjs/common";
 import { UserPermissionGrantsService } from "../user-permission-grants.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -45,7 +49,7 @@ const ACTOR: CurrentUserContext = {
 } as CurrentUserContext;
 
 type Deps = {
-  member?: { id: number; userId: string } | null;
+  member?: { id: number; userId: string; status: string } | null;
   actorMember?: { id: number } | null;
   resolved?: Map<string, string>;
   rankContext?: { bestRank: number; allowedModules: Set<string> | null };
@@ -55,7 +59,9 @@ type Deps = {
 function build(deps: Deps) {
   const findFirst = jest.fn(async (args: { columns?: Record<string, boolean> }) => {
     if (args.columns && "userId" in args.columns)
-      return deps.member === undefined ? { id: 7, userId: "u-target" } : deps.member;
+      return deps.member === undefined
+        ? { id: 7, userId: "u-target", status: "ACTIVE" }
+        : deps.member;
     return deps.actorMember === undefined ? { id: 3 } : deps.actorMember;
   });
 
@@ -198,13 +204,85 @@ describe("a grantor may only give away what their own standing carries", () => {
 
   it("refuses a grantor trying to widen their own access", async () => {
     const { service } = build({
-      member: { id: 7, userId: ACTOR.userId },
+      member: { id: 7, userId: ACTOR.userId, status: "ACTIVE" },
     });
     await expect(
       service.setGrants(ACTOR, "hr", 7, {
         items: [{ permissionKey: "hr:employees:manage", scope: "all" }],
       }),
     ).rejects.toThrow(/cannot grant permissions to yourself/);
+  });
+});
+
+describe("a grantor cannot hand out a wider scope than their own", () => {
+  it("refuses `all` from a grantor who only holds `team`", async () => {
+    const { service } = build({
+      resolved: new Map([["hr:employees:view", "team"]]),
+    });
+    await expect(
+      service.setGrants(ACTOR, "hr", 7, {
+        items: [{ permissionKey: "hr:employees:view", scope: "all" }],
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(txCalls.inserted).toHaveLength(0);
+  });
+
+  it("allows a scope at or below the grantor's own", async () => {
+    const { service } = build({
+      resolved: new Map([["hr:employees:view", "team"]]),
+    });
+    await expect(
+      service.setGrants(ACTOR, "hr", 7, {
+        items: [{ permissionKey: "hr:employees:view", scope: "own" }],
+      }),
+    ).resolves.toMatchObject({ success: true });
+    expect(txCalls.inserted[0]).toMatchObject({ scope: "own" });
+  });
+
+  it("still lets an org owner grant the broadest scope", async () => {
+    const owner = { ...ACTOR, isOrgOwner: true } as CurrentUserContext;
+    const { service } = build({
+      resolved: new Map([["hr:employees:view", "own"]]),
+    });
+    await expect(
+      service.setGrants(owner, "hr", 7, {
+        items: [{ permissionKey: "hr:employees:view", scope: "all" }],
+      }),
+    ).resolves.toMatchObject({ success: true });
+  });
+});
+
+describe("a suspended person can be audited and cleared, never widened", () => {
+  it("refuses to grant to a member who is not active", async () => {
+    const { service } = build({
+      member: { id: 7, userId: "u-target", status: "SUSPENDED" },
+    });
+    await expect(
+      service.setGrants(ACTOR, "hr", 7, {
+        items: [{ permissionKey: "hr:employees:view", scope: "all" }],
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(txCalls.inserted).toHaveLength(0);
+    expect(txCalls.deletes).toBe(0);
+  });
+
+  it("still revokes a grant left behind on a suspended member", async () => {
+    const { service } = build({
+      member: { id: 7, userId: "u-target", status: "SUSPENDED" },
+    });
+    await expect(
+      service.removeGrant(ACTOR, "hr", 7, "hr:employees:view"),
+    ).resolves.toEqual({ success: true });
+    expect(txCalls.deletes).toBe(1);
+  });
+
+  it("still lists what a suspended member holds", async () => {
+    const { service } = build({
+      member: { id: 7, userId: "u-target", status: "SUSPENDED" },
+    });
+    await expect(service.listGrants(ACTOR, "hr", 7)).resolves.toEqual({
+      grants: [],
+    });
   });
 });
 
