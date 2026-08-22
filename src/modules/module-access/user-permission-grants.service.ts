@@ -59,7 +59,7 @@ export class UserPermissionGrantsService {
         eq(organizationMembers.orgId, orgId),
         eq(organizationMembers.id, membershipId),
       ),
-      columns: { id: true, userId: true, status: true },
+      columns: { id: true, userId: true },
     });
     if (!member) throw new NotFoundException("Member not found");
     return { id: member.id, userId: member.userId };

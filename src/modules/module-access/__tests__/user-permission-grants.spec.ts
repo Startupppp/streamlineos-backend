@@ -45,7 +45,7 @@ const ACTOR: CurrentUserContext = {
 } as CurrentUserContext;
 
 type Deps = {
-  member?: { id: number; userId: string; status: string } | null;
+  member?: { id: number; userId: string } | null;
   actorMember?: { id: number } | null;
   resolved?: Map<string, string>;
   rankContext?: { bestRank: number; allowedModules: Set<string> | null };
@@ -54,8 +54,8 @@ type Deps = {
 
 function build(deps: Deps) {
   const findFirst = jest.fn(async (args: { columns?: Record<string, boolean> }) => {
-    if (args.columns && "status" in args.columns)
-      return deps.member === undefined ? { id: 7, userId: "u-target", status: "ACTIVE" } : deps.member;
+    if (args.columns && "userId" in args.columns)
+      return deps.member === undefined ? { id: 7, userId: "u-target" } : deps.member;
     return deps.actorMember === undefined ? { id: 3 } : deps.actorMember;
   });
 
@@ -198,7 +198,7 @@ describe("a grantor may only give away what their own standing carries", () => {
 
   it("refuses a grantor trying to widen their own access", async () => {
     const { service } = build({
-      member: { id: 7, userId: ACTOR.userId, status: "ACTIVE" },
+      member: { id: 7, userId: ACTOR.userId },
     });
     await expect(
       service.setGrants(ACTOR, "hr", 7, {
