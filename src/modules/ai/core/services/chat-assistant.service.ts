@@ -1,9 +1,15 @@
-import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { filterToolsByPersona, getPersona } from "../persona-registry";
 import { ModuleRef } from "@nestjs/core";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { google } from "@ai-sdk/google";
-import { stepCountIs, streamText, tool, type LanguageModel, type ModelMessage } from "ai";
+import {
+  stepCountIs,
+  streamText,
+  tool,
+  type LanguageModel,
+  type ModelMessage,
+} from "ai";
 import { and, count, desc, eq, ilike, isNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -24,7 +30,10 @@ import { type Db } from "../../../../db/drizzle.module";
 import { getTodayString } from "../../../../common/date";
 import { logger } from "../../../../common/logger/logger.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { AI_CREDIT_LEDGER, type AiCreditLedger } from "../gateway/credit-ledger.interface";
+import {
+  AI_CREDIT_LEDGER,
+  type AiCreditLedger,
+} from "../gateway/credit-ledger.interface";
 import { getReserveEstimateMilli } from "../billing/ai-cost-catalog";
 import { computeTokenCharge } from "../billing/ai-model-pricing.constants";
 import { AiUsageService } from "./ai-usage.service";
@@ -53,7 +62,9 @@ function resolveChatModelId(): string {
 
 function resolveChatModel(): LanguageModel {
   if (process.env.AI_CHAT_PROVIDER === "openrouter") {
-    return createOpenRouter({ apiKey: process.env.OPENROUTER_API_KEY }).chat(resolveChatModelId());
+    return createOpenRouter({ apiKey: process.env.OPENROUTER_API_KEY }).chat(
+      resolveChatModelId(),
+    );
   }
   return google(resolveChatModelId());
 }
@@ -66,7 +77,11 @@ interface ChatMessage {
 interface ChatContext {
   projectCount: number;
   ticketCount: number;
-  todayAttendance: { checkedIn: boolean; checkedOut: boolean; workHours: string | null } | null;
+  todayAttendance: {
+    checkedIn: boolean;
+    checkedOut: boolean;
+    workHours: string | null;
+  } | null;
   pendingLeaves: number;
   recentPayrolls: Array<{ month: string; netSalary: string; status: string }>;
   myLeadsCount: number;
@@ -97,7 +112,10 @@ export class ChatAssistantService {
     @Inject(AI_CREDIT_LEDGER) private readonly ledger: AiCreditLedger,
   ) {}
 
-  private async fetchContext(userId: string, orgId: string): Promise<ChatContext> {
+  private async fetchContext(
+    userId: string,
+    orgId: string,
+  ): Promise<ChatContext> {
     const today = getTodayString();
 
     const [
@@ -111,10 +129,20 @@ export class ChatAssistantService {
       myOpenDealsResult,
       topLeads,
     ] = await Promise.all([
-      this.db.select({ count: sql<number>`count(*)` }).from(projects).where(and(eq(projects.orgId, orgId), isNull(projects.deletedAt))),
-      this.db.select({ count: sql<number>`count(*)` }).from(tickets).where(and(eq(tickets.orgId, orgId), isNull(tickets.deletedAt))),
+      this.db
+        .select({ count: sql<number>`count(*)` })
+        .from(projects)
+        .where(and(eq(projects.orgId, orgId), isNull(projects.deletedAt))),
+      this.db
+        .select({ count: sql<number>`count(*)` })
+        .from(tickets)
+        .where(and(eq(tickets.orgId, orgId), isNull(tickets.deletedAt))),
       this.db.query.attendance.findFirst({
-        where: and(eq(attendance.userId, userId), eq(attendance.date, today), eq(attendance.orgId, orgId)),
+        where: and(
+          eq(attendance.userId, userId),
+          eq(attendance.date, today),
+          eq(attendance.orgId, orgId),
+        ),
       }),
       this.db.query.leaveRequests.findMany({
         where: and(
@@ -132,23 +160,39 @@ export class ChatAssistantService {
         })
         .from(payrollRunEmployees)
         .innerJoin(payrollRuns, eq(payrollRunEmployees.runId, payrollRuns.id))
-        .where(and(eq(payrollRunEmployees.userId, userId), eq(payrollRuns.orgId, orgId)))
+        .where(
+          and(
+            eq(payrollRunEmployees.userId, userId),
+            eq(payrollRuns.orgId, orgId),
+          ),
+        )
         .orderBy(desc(payrollRuns.createdAt))
         .limit(3),
-      this.db.select({ count: count() }).from(leads).where(and(eq(leads.orgId, orgId), eq(leads.assignedToId, userId))),
-      this.db.select({ count: count() }).from(leads).where(and(eq(leads.orgId, orgId), eq(leads.priority, "HOT"))),
+      this.db
+        .select({ count: count() })
+        .from(leads)
+        .where(and(eq(leads.orgId, orgId), eq(leads.assignedToId, userId))),
+      this.db
+        .select({ count: count() })
+        .from(leads)
+        .where(and(eq(leads.orgId, orgId), eq(leads.priority, "HOT"))),
       this.db
         .select({ count: count() })
         .from(deals)
         .where(
           and(
-            eq(deals.orgId, orgId), isNull(deals.deletedAt),
+            eq(deals.orgId, orgId),
+            isNull(deals.deletedAt),
             eq(deals.assignedToId, userId),
             sql`${deals.stage} NOT IN ('WON', 'LOST')`,
           ),
         ),
       this.db
-        .select({ name: leads.name, status: leads.status, priority: leads.priority })
+        .select({
+          name: leads.name,
+          status: leads.status,
+          priority: leads.priority,
+        })
         .from(leads)
         .where(and(eq(leads.orgId, orgId), eq(leads.assignedToId, userId)))
         .orderBy(desc(leads.createdAt))
@@ -301,26 +345,31 @@ Tone: Professional, concise, actionable.`;
     const { userId, orgId } = actor;
 
     const reserveMilli = getReserveEstimateMilli(CHAT_FEATURE);
-    let reservationId = 0;
-    try {
-      const reserved = await this.ledger.reserve({ orgId, userId, feature: CHAT_FEATURE, credits: reserveMilli });
-      reservationId = reserved.reservationId;
-    } catch (error) {
-      if (error instanceof BadRequestException) {
-        throw new BadRequestException(error.message ?? "Insufficient AI credits");
-      }
-      throw error;
-    }
+    const reserved = await this.ledger.reserve({
+      orgId,
+      userId,
+      feature: CHAT_FEATURE,
+      credits: reserveMilli,
+    });
+    const reservationId = reserved.reservationId;
 
     const context = await this.fetchContext(userId, orgId);
     const basePrompt = this.buildContextPrompt(context);
     const personaConfig = persona ? getPersona(persona) : undefined;
-    const contextPrompt = personaConfig ? `${personaConfig.preamble}\n\n${basePrompt}` : basePrompt;
+    const contextPrompt = personaConfig
+      ? `${personaConfig.preamble}\n\n${basePrompt}`
+      : basePrompt;
 
     const latest = messages.at(-1);
     if (latest?.role === "user") {
       if (conversationId !== undefined) {
-        await this.history.appendToConversation(orgId, userId, conversationId, "user", latest.content);
+        await this.history.appendToConversation(
+          orgId,
+          userId,
+          conversationId,
+          "user",
+          latest.content,
+        );
       } else {
         await this.history.append(orgId, userId, "user", latest.content);
       }
@@ -336,55 +385,100 @@ Tone: Professional, concise, actionable.`;
 
     const inlineTools = {
       searchProjects: tool({
-        description: "Search for projects by name to get their IDs. Use before calling askProjectAI or getProjectSummary when you only have a project name.",
+        description:
+          "Search for projects by name to get their IDs. Use before calling askProjectAI or getProjectSummary when you only have a project name.",
         inputSchema: z.object({
           query: z.string().min(1).describe("Partial project name to search"),
         }),
         execute: async ({ query }) => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "build:view");
+          const deny = await this.toolAccess.denyReason(
+            orgId,
+            userId,
+            "build:view",
+          );
           if (deny) return { denied: true, reason: deny };
 
           const results = await this.db
-            .select({ id: projects.id, name: projects.name, key: projects.key, status: projects.status })
+            .select({
+              id: projects.id,
+              name: projects.name,
+              key: projects.key,
+              status: projects.status,
+            })
             .from(projects)
-            .where(and(eq(projects.orgId, orgId), ne(projects.status, "ARCHIVED"), ilike(projects.name, `%${query}%`), isNull(projects.deletedAt)))
+            .where(
+              and(
+                eq(projects.orgId, orgId),
+                ne(projects.status, "ARCHIVED"),
+                ilike(projects.name, `%${query}%`),
+                isNull(projects.deletedAt),
+              ),
+            )
             .limit(10);
-          if (results.length === 0) return { results: [], message: `No projects found matching "${query}".` };
+          if (results.length === 0)
+            return {
+              results: [],
+              message: `No projects found matching "${query}".`,
+            };
           return { results, message: `Found ${results.length} project(s).` };
         },
       }),
 
       askProjectAI: tool({
-        description: "Ask an AI question about a specific project — e.g. what's blocked, why is it late, what are the risks. Requires a projectId; use searchProjects first if you only have a name.",
+        description:
+          "Ask an AI question about a specific project — e.g. what's blocked, why is it late, what are the risks. Requires a projectId; use searchProjects first if you only have a name.",
         inputSchema: z.object({
           projectId: z.number().int().positive().describe("Numeric project ID"),
-          question: z.string().min(1).describe("Question to ask about the project"),
+          question: z
+            .string()
+            .min(1)
+            .describe("Question to ask about the project"),
         }),
         execute: async ({ projectId, question }) => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "build:ai:use");
+          const deny = await this.toolAccess.denyReason(
+            orgId,
+            userId,
+            "build:ai:use",
+          );
           if (deny) return { denied: true, reason: deny };
 
           try {
-            return await this.projectsAi.ask(orgId, projectId, question, userId);
+            return await this.projectsAi.ask(
+              orgId,
+              projectId,
+              question,
+              userId,
+            );
           } catch {
-            return { success: false, message: `Project ${projectId} not found or has no ticket data.` };
+            return {
+              success: false,
+              message: `Project ${projectId} not found or has no ticket data.`,
+            };
           }
         },
       }),
 
       getProjectSummary: tool({
-        description: "Get an AI-generated summary of a project's health, progress, and highlights. Requires a projectId; use searchProjects first if you only have a name.",
+        description:
+          "Get an AI-generated summary of a project's health, progress, and highlights. Requires a projectId; use searchProjects first if you only have a name.",
         inputSchema: z.object({
           projectId: z.number().int().positive().describe("Numeric project ID"),
         }),
         execute: async ({ projectId }) => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "build:ai:use");
+          const deny = await this.toolAccess.denyReason(
+            orgId,
+            userId,
+            "build:ai:use",
+          );
           if (deny) return { denied: true, reason: deny };
 
           try {
             return await this.projectsAi.summarize(orgId, projectId, userId);
           } catch {
-            return { success: false, message: `Project ${projectId} not found or has no ticket data.` };
+            return {
+              success: false,
+              message: `Project ${projectId} not found or has no ticket data.`,
+            };
           }
         },
       }),
@@ -393,10 +487,16 @@ Tone: Professional, concise, actionable.`;
         description:
           "Search the organization's knowledge base (wiki pages and uploaded documents/notes) to answer the user's question with grounded information. Use this whenever the user asks about company docs, policies, uploaded files, notes, or wiki content.",
         inputSchema: z.object({
-          query: z.string().describe("The question to answer from the knowledge base"),
+          query: z
+            .string()
+            .describe("The question to answer from the knowledge base"),
         }),
         execute: async ({ query }) => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "kb:articles:view");
+          const deny = await this.toolAccess.denyReason(
+            orgId,
+            userId,
+            "kb:articles:view",
+          );
           if (deny) return { denied: true, reason: deny };
 
           try {
@@ -404,7 +504,10 @@ Tone: Professional, concise, actionable.`;
             const result = await kbAsk.ask(actor, { question: query });
             return { answer: result.answer, hasContext: result.hasContext };
           } catch {
-            return { answer: "Knowledge base search is unavailable right now.", hasContext: false };
+            return {
+              answer: "Knowledge base search is unavailable right now.",
+              hasContext: false,
+            };
           }
         },
       }),
@@ -428,61 +531,77 @@ Tone: Professional, concise, actionable.`;
       orgId,
     );
 
-    const buildStream = () => streamText({
-      model: resolveChatModel(),
-      messages: modelMessages,
-      system: contextPrompt,
-      temperature: 0.7,
-      // Retry only; a model swap cannot be applied once tokens have reached the client.
-      maxRetries: resolveLlmRetryPolicy().maxRetriesPerModel,
-      stopWhen: stepCountIs(10),
-      onFinish: async ({ text, usage }) => {
-        const promptTokens = usage?.inputTokens ?? 0;
-        const completionTokens = usage?.outputTokens ?? 0;
-        const { costUsd, milliCredits } = computeTokenCharge(modelId, promptTokens, completionTokens);
-        // Runs once the response has streamed, so the request transaction has committed and
-        // its tenant GUC is gone; without a fresh one every write here dies 42501, unlogged.
-        try {
-          await runInNewTenantTransaction(this.db, orgId, async () => {
-            await this.ledger.settle(reservationId, {
-              orgId,
-              actualMilli: milliCredits,
-              model: modelId,
-              promptTokens,
-              completionTokens,
-              totalTokens: promptTokens + completionTokens,
-              costUsd,
+    const buildStream = () =>
+      streamText({
+        model: resolveChatModel(),
+        messages: modelMessages,
+        system: contextPrompt,
+        temperature: 0.7,
+        // Retry only; a model swap cannot be applied once tokens have reached the client.
+        maxRetries: resolveLlmRetryPolicy().maxRetriesPerModel,
+        stopWhen: stepCountIs(10),
+        onFinish: async ({ text, usage }) => {
+          const promptTokens = usage?.inputTokens ?? 0;
+          const completionTokens = usage?.outputTokens ?? 0;
+          const { costUsd, milliCredits } = computeTokenCharge(
+            modelId,
+            promptTokens,
+            completionTokens,
+          );
+          // Runs once the response has streamed, so the request transaction has committed and
+          // its tenant GUC is gone; without a fresh one every write here dies 42501, unlogged.
+          try {
+            await runInNewTenantTransaction(this.db, orgId, async () => {
+              await this.ledger.settle(reservationId, {
+                orgId,
+                actualMilli: milliCredits,
+                model: modelId,
+                promptTokens,
+                completionTokens,
+                totalTokens: promptTokens + completionTokens,
+                costUsd,
+              });
+              await this.usageSvc.track({
+                orgId,
+                userId,
+                feature: CHAT_FEATURE,
+                model: modelId,
+                promptTokens,
+                completionTokens,
+                creditsMilli: milliCredits,
+              });
+              if (conversationId !== undefined) {
+                await this.history.appendToConversation(
+                  orgId,
+                  userId,
+                  conversationId,
+                  "assistant",
+                  text,
+                );
+              } else {
+                await this.history.append(orgId, userId, "assistant", text);
+              }
             });
-            await this.usageSvc.track({
+          } catch (error) {
+            logger.error("Failed to finalise assistant chat turn", {
+              error:
+                error instanceof Error
+                  ? (error.stack ?? error.message)
+                  : String(error),
               orgId,
-              userId,
-              feature: CHAT_FEATURE,
-              model: modelId,
-              promptTokens,
-              completionTokens,
-              creditsMilli: milliCredits,
+              reservationId,
             });
-            if (conversationId !== undefined) {
-              await this.history.appendToConversation(orgId, userId, conversationId, "assistant", text);
-            } else {
-              await this.history.append(orgId, userId, "assistant", text);
-            }
-          });
-        } catch (error) {
-          logger.error("Failed to finalise assistant chat turn", {
-            error: error instanceof Error ? (error.stack ?? error.message) : String(error),
-            orgId,
-            reservationId,
-          });
-        }
-      },
-      tools: effectiveTools,
-    });
+          }
+        },
+        tools: effectiveTools,
+      });
 
     try {
       return buildStream();
     } catch (error) {
-      void this.ledger.release(reservationId, "stream_setup_error", orgId).catch(() => undefined);
+      void this.ledger
+        .release(reservationId, "stream_setup_error", orgId)
+        .catch(() => undefined);
       throw error;
     }
   }

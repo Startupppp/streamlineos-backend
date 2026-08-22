@@ -11,12 +11,12 @@ jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
 }));
 
 import {
-  BadRequestException,
   ForbiddenException,
   HttpException,
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
+import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import type { Readable } from "node:stream";
 import type { Db } from "../../../db/drizzle.module";
 import { FeedbucketPublicController } from "../feedbucket-public.controller";
@@ -173,7 +173,7 @@ describe("POST /public/feedbucket/:publicKey/ai-assist", () => {
     const rateLimit = makeRateLimit();
     const aiService = makeAiService();
     (aiService.analyzePublic as jest.Mock).mockRejectedValue(
-      new BadRequestException("Insufficient AI credits"),
+      new InsufficientAiCreditsException(),
     );
 
     const err = await callAiAssist({ publicService, aiService, rateLimit }).catch((e: unknown) => e);

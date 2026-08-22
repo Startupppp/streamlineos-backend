@@ -1,4 +1,5 @@
-import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
+import { ServiceUnavailableException } from "@nestjs/common";
+import { InsufficientAiCreditsException } from "../../../../common/http/api-exceptions";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { z } from "zod";
 import { AiGatewayService } from "./ai-gateway.service";
@@ -157,9 +158,9 @@ describe("AiGatewayService", () => {
   });
 
   describe("quota_exceeded", () => {
-    it("returns quota_exceeded when ledger.reserve throws BadRequestException with 'Insufficient AI credits'", async () => {
+    it("returns quota_exceeded when ledger.reserve throws InsufficientAiCreditsException", async () => {
       const ledger = makeLedger({
-        reserve: jest.fn().mockRejectedValue(new BadRequestException("Insufficient AI credits")),
+        reserve: jest.fn().mockRejectedValue(new InsufficientAiCreditsException()),
       });
       const llm = makeLlm();
       const { svc } = await buildModule(llm, ledger);

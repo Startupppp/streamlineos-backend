@@ -6,6 +6,24 @@ export class PaymentRequiredException extends HttpException {
   }
 }
 
+export class InsufficientAiCreditsException extends HttpException {
+  constructor(options?: {
+    message?: string;
+    details?: Record<string, unknown>;
+  }) {
+    super(
+      {
+        code: "INSUFFICIENT_CREDITS",
+        message: options?.message?.trim()
+          ? options.message
+          : "Insufficient AI credits",
+        ...(options?.details !== undefined ? { details: options.details } : {}),
+      },
+      HttpStatus.PAYMENT_REQUIRED,
+    );
+  }
+}
+
 export class ModuleDisabledException extends HttpException {
   constructor(moduleKey: string) {
     super(
@@ -22,7 +40,10 @@ export class ModuleDisabledException extends HttpException {
 export class ProjectsForbiddenTicketException extends HttpException {
   constructor() {
     super(
-      { code: "PROJECTS_FORBIDDEN_TICKET", message: "You don't have access to this ticket's details." },
+      {
+        code: "PROJECTS_FORBIDDEN_TICKET",
+        message: "You don't have access to this ticket's details.",
+      },
       HttpStatus.FORBIDDEN,
     );
   }
@@ -71,7 +92,10 @@ export class ProjectsCommentNotFoundException extends HttpException {
 export class ChatActionForbiddenException extends HttpException {
   constructor() {
     super(
-      { code: "CHAT_ACTION_FORBIDDEN", message: "Not authorized to perform this chat action" },
+      {
+        code: "CHAT_ACTION_FORBIDDEN",
+        message: "Not authorized to perform this chat action",
+      },
       HttpStatus.FORBIDDEN,
     );
   }
@@ -80,7 +104,10 @@ export class ChatActionForbiddenException extends HttpException {
 export class ChatActionTicketStatusFailedException extends HttpException {
   constructor() {
     super(
-      { code: "CHAT_ACTION_TICKET_STATUS_FAILED", message: "Ticket status transition is not valid" },
+      {
+        code: "CHAT_ACTION_TICKET_STATUS_FAILED",
+        message: "Ticket status transition is not valid",
+      },
       HttpStatus.UNPROCESSABLE_ENTITY,
     );
   }
@@ -89,7 +116,11 @@ export class ChatActionTicketStatusFailedException extends HttpException {
 export class ProjectsTicketConflictException extends HttpException {
   constructor() {
     super(
-      { code: "PROJECTS_TICKET_CONFLICT", message: "Ticket was modified by another request. Please refresh and try again." },
+      {
+        code: "PROJECTS_TICKET_CONFLICT",
+        message:
+          "Ticket was modified by another request. Please refresh and try again.",
+      },
       HttpStatus.CONFLICT,
     );
   }
@@ -98,7 +129,10 @@ export class ProjectsTicketConflictException extends HttpException {
 export class ProjectsInvalidTicketStatusException extends HttpException {
   constructor(status: string) {
     super(
-      { code: "PROJECTS_INVALID_TICKET_STATUS", message: `"${status}" is not a valid status for this project` },
+      {
+        code: "PROJECTS_INVALID_TICKET_STATUS",
+        message: `"${status}" is not a valid status for this project`,
+      },
       HttpStatus.BAD_REQUEST,
     );
   }
@@ -107,7 +141,11 @@ export class ProjectsInvalidTicketStatusException extends HttpException {
 export class SupportTicketStaleException extends HttpException {
   constructor() {
     super(
-      { code: "STALE_TICKET", message: "Ticket was modified by another request. Please refresh and try again." },
+      {
+        code: "STALE_TICKET",
+        message:
+          "Ticket was modified by another request. Please refresh and try again.",
+      },
       HttpStatus.CONFLICT,
     );
   }

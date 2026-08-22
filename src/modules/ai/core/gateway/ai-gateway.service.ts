@@ -1,4 +1,9 @@
-import { BadRequestException, Inject, Injectable, ServiceUnavailableException } from "@nestjs/common";
+import {
+  Inject,
+  Injectable,
+  ServiceUnavailableException,
+} from "@nestjs/common";
+import { InsufficientAiCreditsException } from "../../../../common/http/api-exceptions";
 import { createHash, randomUUID } from "crypto";
 import { z, ZodError } from "zod";
 import { LlmService } from "../providers/llm.service";
@@ -6,8 +11,14 @@ import { AiUsageService } from "../services/ai-usage.service";
 import { AuditService } from "../../../../common/audit/audit.service";
 import { logger } from "../../../../common/logger/logger.service";
 import { redactSensitiveData } from "../redaction.util";
-import { AI_CREDIT_LEDGER, type AiCreditLedger } from "./credit-ledger.interface";
-import { computeTokenCharge, milliToCredits } from "../billing/ai-model-pricing.constants";
+import {
+  AI_CREDIT_LEDGER,
+  type AiCreditLedger,
+} from "./credit-ledger.interface";
+import {
+  computeTokenCharge,
+  milliToCredits,
+} from "../billing/ai-model-pricing.constants";
 import { getReserveEstimateMilli as getCatalogEstimateMilli } from "../billing/ai-cost-catalog";
 import type {
   AiInvokeResult,
@@ -29,11 +40,19 @@ type InvokeTextOpts = AiInvokeBaseOpts;
 
 type ReserveResult =
   | { reserved: true; reservationId: number }
-  | { reserved: false; correlationId: string; kind: AiInvokeFailure["kind"]; message: string };
+  | {
+      reserved: false;
+      correlationId: string;
+      kind: AiInvokeFailure["kind"];
+      message: string;
+    };
 
 @Injectable()
 export class AiGatewayService {
-  private readonly inflightMap = new Map<string, Promise<AiInvokeResult<unknown>>>();
+  private readonly inflightMap = new Map<
+    string,
+    Promise<AiInvokeResult<unknown>>
+  >();
 
   constructor(
     private readonly llm: LlmService,
@@ -42,7 +61,9 @@ export class AiGatewayService {
     @Inject(AI_CREDIT_LEDGER) private readonly ledger: AiCreditLedger,
   ) {}
 
-  async invokeStructured<T>(opts: InvokeStructuredOpts<T>): Promise<AiInvokeResult<T>> {
+  async invokeStructured<T>(
+    opts: InvokeStructuredOpts<T>,
+  ): Promise<AiInvokeResult<T>> {
     const correlationId = randomUUID();
     const dedupeKey = opts.dedupe ? buildDedupeKey(opts) : null;
 
@@ -54,24 +75,35 @@ export class AiGatewayService {
     const promise = this.runStructured(opts, correlationId);
 
     if (dedupeKey) {
-      this.inflightMap.set(dedupeKey, promise as Promise<AiInvokeResult<unknown>>);
-      promise.finally(() => this.inflightMap.delete(dedupeKey)).catch(() => undefined);
+      this.inflightMap.set(
+        dedupeKey,
+        promise as Promise<AiInvokeResult<unknown>>,
+      );
+      promise
+        .finally(() => this.inflightMap.delete(dedupeKey))
+        .catch(() => undefined);
     }
 
     return promise;
   }
 
-  async invokeStructuredWithUsage<T>(opts: InvokeStructuredOpts<T>): Promise<AiInvokeWithUsageResult<T>> {
+  async invokeStructuredWithUsage<T>(
+    opts: InvokeStructuredOpts<T>,
+  ): Promise<AiInvokeWithUsageResult<T>> {
     const correlationId = randomUUID();
     return this.runStructuredWithUsage(opts, correlationId);
   }
 
-  async invokeStructuredWithImage<T>(opts: InvokeStructuredWithImageOpts<T>): Promise<AiInvokeResult<T>> {
+  async invokeStructuredWithImage<T>(
+    opts: InvokeStructuredWithImageOpts<T>,
+  ): Promise<AiInvokeResult<T>> {
     const correlationId = randomUUID();
     return this.runStructuredWithImage(opts, correlationId);
   }
 
-  async invokeStructuredWithImageWithUsage<T>(opts: InvokeStructuredWithImageOpts<T>): Promise<AiInvokeWithUsageResult<T>> {
+  async invokeStructuredWithImageWithUsage<T>(
+    opts: InvokeStructuredWithImageOpts<T>,
+  ): Promise<AiInvokeWithUsageResult<T>> {
     const correlationId = randomUUID();
     const result = await this.runStructuredWithImage(opts, correlationId);
     if (!result.ok) return result;
@@ -106,30 +138,54 @@ export class AiGatewayService {
     const promise = this.runText(opts, correlationId);
 
     if (dedupeKey) {
-      this.inflightMap.set(dedupeKey, promise as Promise<AiInvokeResult<unknown>>);
-      promise.finally(() => this.inflightMap.delete(dedupeKey)).catch(() => undefined);
+      this.inflightMap.set(
+        dedupeKey,
+        promise as Promise<AiInvokeResult<unknown>>,
+      );
+      promise
+        .finally(() => this.inflightMap.delete(dedupeKey))
+        .catch(() => undefined);
     }
 
     return promise;
   }
 
-  async invokeTextWithUsage(opts: InvokeTextOpts): Promise<AiInvokeWithUsageResult<string>> {
+  async invokeTextWithUsage(
+    opts: InvokeTextOpts,
+  ): Promise<AiInvokeWithUsageResult<string>> {
     const correlationId = randomUUID();
     return this.runTextWithUsage(opts, correlationId);
   }
 
-  private async runStructured<T>(opts: InvokeStructuredOpts<T>, correlationId: string): Promise<AiInvokeResult<T>> {
+  private async runStructured<T>(
+    opts: InvokeStructuredOpts<T>,
+    correlationId: string,
+  ): Promise<AiInvokeResult<T>> {
     const { actor, feature, tier, maxTokens, charge, redact = true } = opts;
     const prompt = redact
-      ? { system: redactSensitiveData(opts.prompt.system), user: redactSensitiveData(opts.prompt.user) }
+      ? {
+          system: redactSensitiveData(opts.prompt.system),
+          user: redactSensitiveData(opts.prompt.user),
+        }
       : opts.prompt;
 
     const reserveMilli = charge ? getCatalogEstimateMilli(feature) : 0;
     let reservationId = 0;
 
     if (charge) {
-      const reserveResult = await this.reserveCredits(reserveMilli, actor, feature, correlationId);
-      if (!reserveResult.reserved) return { ok: false, kind: reserveResult.kind, message: reserveResult.message, correlationId: reserveResult.correlationId };
+      const reserveResult = await this.reserveCredits(
+        reserveMilli,
+        actor,
+        feature,
+        correlationId,
+      );
+      if (!reserveResult.reserved)
+        return {
+          ok: false,
+          kind: reserveResult.kind,
+          message: reserveResult.message,
+          correlationId: reserveResult.correlationId,
+        };
       reservationId = reserveResult.reservationId;
     }
 
@@ -149,10 +205,27 @@ export class AiGatewayService {
       const usage = result.usage;
 
       const { costUsd, milliCredits } = charge
-        ? computeTokenCharge(result.model, usage.promptTokens ?? 0, usage.completionTokens ?? 0)
+        ? computeTokenCharge(
+            result.model,
+            usage.promptTokens ?? 0,
+            usage.completionTokens ?? 0,
+          )
         : { costUsd: 0, milliCredits: 0 };
 
-      await this.settleAndTrack(reservationId, charge ? { milli: reserveMilli } : undefined, result.model, usage, actor, feature, opts.prompt, correlationId, latencyMs, "ok", milliCredits, costUsd);
+      await this.settleAndTrack(
+        reservationId,
+        charge ? { milli: reserveMilli } : undefined,
+        result.model,
+        usage,
+        actor,
+        feature,
+        opts.prompt,
+        correlationId,
+        latencyMs,
+        "ok",
+        milliCredits,
+        costUsd,
+      );
 
       return {
         ok: true,
@@ -168,11 +241,22 @@ export class AiGatewayService {
       };
     } catch (error) {
       const latencyMs = Date.now() - start;
-      return this.handleProviderError(error, reservationId, actor, feature, opts.prompt, correlationId, latencyMs);
+      return this.handleProviderError(
+        error,
+        reservationId,
+        actor,
+        feature,
+        opts.prompt,
+        correlationId,
+        latencyMs,
+      );
     }
   }
 
-  private async runStructuredWithUsage<T>(opts: InvokeStructuredOpts<T>, correlationId: string): Promise<AiInvokeWithUsageResult<T>> {
+  private async runStructuredWithUsage<T>(
+    opts: InvokeStructuredOpts<T>,
+    correlationId: string,
+  ): Promise<AiInvokeWithUsageResult<T>> {
     const result = await this.runStructured(opts, correlationId);
     if (!result.ok) return result;
 
@@ -194,18 +278,35 @@ export class AiGatewayService {
     return { ok: true, data: result.data, aiUsage };
   }
 
-  private async runStructuredWithImage<T>(opts: InvokeStructuredWithImageOpts<T>, correlationId: string): Promise<AiInvokeResult<T>> {
+  private async runStructuredWithImage<T>(
+    opts: InvokeStructuredWithImageOpts<T>,
+    correlationId: string,
+  ): Promise<AiInvokeResult<T>> {
     const { actor, feature, tier, maxTokens, charge, redact = true } = opts;
     const prompt = redact
-      ? { system: redactSensitiveData(opts.prompt.system), user: redactSensitiveData(opts.prompt.user) }
+      ? {
+          system: redactSensitiveData(opts.prompt.system),
+          user: redactSensitiveData(opts.prompt.user),
+        }
       : opts.prompt;
 
     const reserveMilli = charge ? getCatalogEstimateMilli(feature) : 0;
     let reservationId = 0;
 
     if (charge) {
-      const reserveResult = await this.reserveCredits(reserveMilli, actor, feature, correlationId);
-      if (!reserveResult.reserved) return { ok: false, kind: reserveResult.kind, message: reserveResult.message, correlationId: reserveResult.correlationId };
+      const reserveResult = await this.reserveCredits(
+        reserveMilli,
+        actor,
+        feature,
+        correlationId,
+      );
+      if (!reserveResult.reserved)
+        return {
+          ok: false,
+          kind: reserveResult.kind,
+          message: reserveResult.message,
+          correlationId: reserveResult.correlationId,
+        };
       reservationId = reserveResult.reservationId;
     }
 
@@ -226,10 +327,27 @@ export class AiGatewayService {
       const usage = result.usage;
 
       const { costUsd, milliCredits } = charge
-        ? computeTokenCharge(result.model, usage.promptTokens ?? 0, usage.completionTokens ?? 0)
+        ? computeTokenCharge(
+            result.model,
+            usage.promptTokens ?? 0,
+            usage.completionTokens ?? 0,
+          )
         : { costUsd: 0, milliCredits: 0 };
 
-      await this.settleAndTrack(reservationId, charge ? { milli: reserveMilli } : undefined, result.model, usage, actor, feature, opts.prompt, correlationId, latencyMs, "ok", milliCredits, costUsd);
+      await this.settleAndTrack(
+        reservationId,
+        charge ? { milli: reserveMilli } : undefined,
+        result.model,
+        usage,
+        actor,
+        feature,
+        opts.prompt,
+        correlationId,
+        latencyMs,
+        "ok",
+        milliCredits,
+        costUsd,
+      );
 
       return {
         ok: true,
@@ -245,22 +363,47 @@ export class AiGatewayService {
       };
     } catch (error) {
       const latencyMs = Date.now() - start;
-      return this.handleProviderError(error, reservationId, actor, feature, opts.prompt, correlationId, latencyMs);
+      return this.handleProviderError(
+        error,
+        reservationId,
+        actor,
+        feature,
+        opts.prompt,
+        correlationId,
+        latencyMs,
+      );
     }
   }
 
-  private async runText(opts: InvokeTextOpts, correlationId: string): Promise<AiInvokeResult<string>> {
+  private async runText(
+    opts: InvokeTextOpts,
+    correlationId: string,
+  ): Promise<AiInvokeResult<string>> {
     const { actor, feature, tier, maxTokens, charge, redact = true } = opts;
     const prompt = redact
-      ? { system: redactSensitiveData(opts.prompt.system), user: redactSensitiveData(opts.prompt.user) }
+      ? {
+          system: redactSensitiveData(opts.prompt.system),
+          user: redactSensitiveData(opts.prompt.user),
+        }
       : opts.prompt;
 
     const reserveMilli = charge ? getCatalogEstimateMilli(feature) : 0;
     let reservationId = 0;
 
     if (charge) {
-      const reserveResult = await this.reserveCredits(reserveMilli, actor, feature, correlationId);
-      if (!reserveResult.reserved) return { ok: false, kind: reserveResult.kind, message: reserveResult.message, correlationId: reserveResult.correlationId };
+      const reserveResult = await this.reserveCredits(
+        reserveMilli,
+        actor,
+        feature,
+        correlationId,
+      );
+      if (!reserveResult.reserved)
+        return {
+          ok: false,
+          kind: reserveResult.kind,
+          message: reserveResult.message,
+          correlationId: reserveResult.correlationId,
+        };
       reservationId = reserveResult.reservationId;
     }
 
@@ -278,10 +421,27 @@ export class AiGatewayService {
       const usage = result.usage;
 
       const { costUsd, milliCredits } = charge
-        ? computeTokenCharge(result.model, usage.promptTokens ?? 0, usage.completionTokens ?? 0)
+        ? computeTokenCharge(
+            result.model,
+            usage.promptTokens ?? 0,
+            usage.completionTokens ?? 0,
+          )
         : { costUsd: 0, milliCredits: 0 };
 
-      await this.settleAndTrack(reservationId, charge ? { milli: reserveMilli } : undefined, result.model, usage, actor, feature, opts.prompt, correlationId, latencyMs, "ok", milliCredits, costUsd);
+      await this.settleAndTrack(
+        reservationId,
+        charge ? { milli: reserveMilli } : undefined,
+        result.model,
+        usage,
+        actor,
+        feature,
+        opts.prompt,
+        correlationId,
+        latencyMs,
+        "ok",
+        milliCredits,
+        costUsd,
+      );
 
       return {
         ok: true,
@@ -297,11 +457,22 @@ export class AiGatewayService {
       };
     } catch (error) {
       const latencyMs = Date.now() - start;
-      return this.handleProviderError(error, reservationId, actor, feature, opts.prompt, correlationId, latencyMs);
+      return this.handleProviderError(
+        error,
+        reservationId,
+        actor,
+        feature,
+        opts.prompt,
+        correlationId,
+        latencyMs,
+      );
     }
   }
 
-  private async runTextWithUsage(opts: InvokeTextOpts, correlationId: string): Promise<AiInvokeWithUsageResult<string>> {
+  private async runTextWithUsage(
+    opts: InvokeTextOpts,
+    correlationId: string,
+  ): Promise<AiInvokeWithUsageResult<string>> {
     const result = await this.runText(opts, correlationId);
     if (!result.ok) return result;
 
@@ -338,11 +509,13 @@ export class AiGatewayService {
       });
       return { reserved: true, reservationId };
     } catch (error) {
-      if (error instanceof BadRequestException) {
-        const msg = error.message ?? "Insufficient AI credits";
-        if (msg.includes("Insufficient AI credits")) {
-          return { reserved: false, correlationId, kind: "quota_exceeded", message: msg };
-        }
+      if (error instanceof InsufficientAiCreditsException) {
+        return {
+          reserved: false,
+          correlationId,
+          kind: "quota_exceeded",
+          message: error.message,
+        };
       }
       throw error;
     }
@@ -352,7 +525,11 @@ export class AiGatewayService {
     reservationId: number,
     charge: { milli: number } | undefined,
     model: string,
-    usage: { promptTokens: number | null; completionTokens: number | null; totalTokens: number | null },
+    usage: {
+      promptTokens: number | null;
+      completionTokens: number | null;
+      totalTokens: number | null;
+    },
     actor: AiInvokeBaseOpts["actor"],
     feature: string,
     prompt: AiInvokeBaseOpts["prompt"],
@@ -377,7 +554,10 @@ export class AiGatewayService {
         });
       } catch (error: unknown) {
         logger.error("AI credit settlement failed", {
-          error: error instanceof Error ? (error.stack ?? error.message) : String(error),
+          error:
+            error instanceof Error
+              ? (error.stack ?? error.message)
+              : String(error),
           reservationId,
           orgId: actor.orgId,
           feature,
@@ -428,13 +608,19 @@ export class AiGatewayService {
     try {
       await this.ledger.release(reservationId, reason, orgId);
     } catch (error: unknown) {
-      logger.error("AI credit release failed — reserved credits stay held until the sweep", {
-        error: error instanceof Error ? (error.stack ?? error.message) : String(error),
-        reservationId,
-        orgId,
-        reason,
-        correlationId,
-      });
+      logger.error(
+        "AI credit release failed — reserved credits stay held until the sweep",
+        {
+          error:
+            error instanceof Error
+              ? (error.stack ?? error.message)
+              : String(error),
+          reservationId,
+          orgId,
+          reason,
+          correlationId,
+        },
+      );
     }
   }
 
@@ -448,17 +634,59 @@ export class AiGatewayService {
     latencyMs: number,
   ): Promise<AiInvokeResult<never>> {
     if (error instanceof ZodError) {
-      await this.releaseReservation(reservationId, "invalid_output", actor.orgId, correlationId);
-      await this.settleAndTrack(0, undefined, "unknown", { promptTokens: null, completionTokens: null, totalTokens: null }, actor, feature, prompt, correlationId, latencyMs, "error");
-      return { ok: false, kind: "invalid_output", message: "AI response did not match expected format", correlationId };
+      await this.releaseReservation(
+        reservationId,
+        "invalid_output",
+        actor.orgId,
+        correlationId,
+      );
+      await this.settleAndTrack(
+        0,
+        undefined,
+        "unknown",
+        { promptTokens: null, completionTokens: null, totalTokens: null },
+        actor,
+        feature,
+        prompt,
+        correlationId,
+        latencyMs,
+        "error",
+      );
+      return {
+        ok: false,
+        kind: "invalid_output",
+        message: "AI response did not match expected format",
+        correlationId,
+      };
     }
 
-    await this.releaseReservation(reservationId, "provider_error", actor.orgId, correlationId);
+    await this.releaseReservation(
+      reservationId,
+      "provider_error",
+      actor.orgId,
+      correlationId,
+    );
 
-    const message = error instanceof ServiceUnavailableException ? error.message : "AI provider is temporarily unavailable";
-    const kind = message.toLowerCase().includes("not configured") ? "not_configured" : "provider_unavailable";
+    const message =
+      error instanceof ServiceUnavailableException
+        ? error.message
+        : "AI provider is temporarily unavailable";
+    const kind = message.toLowerCase().includes("not configured")
+      ? "not_configured"
+      : "provider_unavailable";
 
-    await this.settleAndTrack(0, undefined, "unknown", { promptTokens: null, completionTokens: null, totalTokens: null }, actor, feature, prompt, correlationId, latencyMs, "error");
+    await this.settleAndTrack(
+      0,
+      undefined,
+      "unknown",
+      { promptTokens: null, completionTokens: null, totalTokens: null },
+      actor,
+      feature,
+      prompt,
+      correlationId,
+      latencyMs,
+      "error",
+    );
 
     return { ok: false, kind, message, correlationId };
   }
