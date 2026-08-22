@@ -1,4 +1,5 @@
 import { EMPLOYEE_SELF_SERVICE_GRANTS } from "../access-policy";
+import { isOrgOnlyPermission } from "../../../common/rbac/grantability";
 import { AccessPermissionResolver } from "../access-permission.resolver";
 import type { Db } from "../../../db/drizzle.module";
 
@@ -99,11 +100,15 @@ describe("Home surfaces are allowed to everyone", () => {
     for (const [, key] of HOME_SURFACES) expect(resolved[key]).toBeDefined();
   });
 
-  it.each([
-    "chat:org-settings:manage",
-    "chat:huddles:moderate",
-    "home:access:manage",
-  ])("keeps %s out of the universal set, so it stays delegatable", (key) => {
-    expect(universal.has(key)).toBe(false);
+  it.each(["chat:huddles:moderate", "home:access:manage"])(
+    "keeps %s out of the universal set, so it stays delegatable",
+    (key) => {
+      expect(universal.has(key)).toBe(false);
+    },
+  );
+
+  it("keeps chat:org-settings:manage out of the universal set AND out of every grant path, so only the org owner and org admins hold it", () => {
+    expect(universal.has("chat:org-settings:manage")).toBe(false);
+    expect(isOrgOnlyPermission("chat:org-settings:manage")).toBe(true);
   });
 });

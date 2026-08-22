@@ -27,8 +27,25 @@ export const RESERVED_PROPAGATION_KEYS: ReadonlySet<string> = new Set([
  */
 const ORG_ONLY_NAMESPACES: readonly string[] = ["billing"];
 
-export function isOrgOnlyPermission(key: string): boolean {
+/**
+ * Organisation-wide chat settings are run by the organisation owner and
+ * organisation admins, who already hold the whole catalog structurally. Barring
+ * the key from every grant path is what makes that true by construction:
+ * migration 0437 had handed it to CHAT_MODULE_ADMIN, and 0441 only reclaimed
+ * the roles nobody had been appointed to, so a module admin could otherwise
+ * still hold it. Huddle moderation stays delegatable — it moderates a
+ * conversation, it does not reconfigure the organisation.
+ */
+const ORG_ONLY_PERMISSION_KEYS: ReadonlySet<string> = new Set([
+  "chat:org-settings:manage",
+]);
+
+function isOrgOnlyNamespace(key: string): boolean {
   return ORG_ONLY_NAMESPACES.includes(key.split(":")[0] ?? "");
+}
+
+export function isOrgOnlyPermission(key: string): boolean {
+  return isOrgOnlyNamespace(key) || ORG_ONLY_PERMISSION_KEYS.has(key);
 }
 
 /**
@@ -95,10 +112,19 @@ export function assertPermissionsGrantable(
   target?: RoleGrantTarget,
   permissionMeta?: PermissionModuleMap,
 ): void {
-  const orgOnly = requestedKeys.filter(isOrgOnlyPermission);
+  const orgOnly = requestedKeys.filter(isOrgOnlyNamespace);
   if (orgOnly.length > 0) {
     throw new ForbiddenException(
       `Platform billing is managed by the organization owner and administrators only, and cannot be granted: ${orgOnly.join(", ")}`,
+    );
+  }
+
+  const orgOnlyKeys = requestedKeys.filter((key) =>
+    ORG_ONLY_PERMISSION_KEYS.has(key),
+  );
+  if (orgOnlyKeys.length > 0) {
+    throw new ForbiddenException(
+      `Organization-wide settings are managed by the organization owner and administrators only, and cannot be granted: ${orgOnlyKeys.join(", ")}`,
     );
   }
 

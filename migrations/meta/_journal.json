@@ -1436,6 +1436,13 @@
       "when": 1786701778560,
       "tag": "0448_hr_relational_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 205,
+      "version": "7",
+      "when": 1786701779560,
+      "tag": "0449_chat_org_settings_org_only",
+      "breakpoints": true
     }
   ]
 }
