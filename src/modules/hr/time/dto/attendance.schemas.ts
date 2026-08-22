@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { getTodayString } from "../../../../common/date/date.utils";
 
 export const checkInSchema = z.object({
   location: z
@@ -40,14 +41,72 @@ export const selfAttendanceHistoryQuerySchema = z.object({
   limit: z.coerce.number().int().min(10).max(100).default(20),
 });
 
+export const REGULARIZATION_WINDOW_DAYS = 30;
+
+const DAY_MS = 86_400_000;
+
+function isRealCalendarDate(iso: string): boolean {
+  const d = new Date(`${iso}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === iso;
+}
+
+function shiftDays(iso: string, days: number): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * The client sends an absolute timestamp built from a local wall-clock time, so
+ * its UTC date legitimately differs from attendanceDate by up to a day in either
+ * direction. Bound it to that window rather than demanding an exact date match.
+ */
+function fallsOnDate(iso: string, dateStr: string): boolean {
+  const ts = new Date(iso).getTime();
+  const base = new Date(`${dateStr}T00:00:00Z`).getTime();
+  if (Number.isNaN(ts) || Number.isNaN(base)) return false;
+  return ts >= base - DAY_MS && ts < base + 2 * DAY_MS;
+}
+
 export const createAttendanceRegularizationSchema = z
   .object({
-    attendanceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    attendanceDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .refine(isRealCalendarDate, { message: "That date does not exist" })
+      .refine((value) => value <= getTodayString(), {
+        message: "You cannot request a correction for a future date",
+      })
+      .refine(
+        (value) =>
+          value >= shiftDays(getTodayString(), -REGULARIZATION_WINDOW_DAYS),
+        {
+          message: `Corrections are only allowed within the last ${REGULARIZATION_WINDOW_DAYS} days`,
+        },
+      ),
     requestedCheckIn: z.string().datetime().optional(),
     requestedCheckOut: z.string().datetime().optional(),
     reason: z.string().min(10).max(500),
   })
   .strict()
+  .refine(
+    (value) =>
+      !value.requestedCheckIn ||
+      fallsOnDate(value.requestedCheckIn, value.attendanceDate),
+    {
+      message: "Check-in time must fall on the selected date",
+      path: ["requestedCheckIn"],
+    },
+  )
+  .refine(
+    (value) =>
+      !value.requestedCheckOut ||
+      fallsOnDate(value.requestedCheckOut, value.attendanceDate),
+    {
+      message: "Check-out time must fall on the selected date",
+      path: ["requestedCheckOut"],
+    },
+  )
   .refine((value) => value.requestedCheckIn || value.requestedCheckOut, {
     message: "Provide a corrected check-in or check-out time",
     path: ["requestedCheckIn"],

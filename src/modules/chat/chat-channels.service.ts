@@ -207,6 +207,7 @@ export class ChatChannelsService {
   async createChannel(orgId: string, userId: string, body: CreateChannelInput) {
     if (body.type === "DIRECT") {
       const { targetUserId } = body;
+      const isSelfDm = targetUserId === userId;
       await assertUsersInOrg(this.db, orgId, [targetUserId]);
 
       const myMemberships = await this.db
@@ -225,8 +226,11 @@ export class ChatChannelsService {
           with: { members: true },
         });
 
-        const dmChannel = existingDMs.find(
-          (ch) => ch.members.length === 2 && ch.members.some((m) => m.userId === targetUserId),
+        const dmChannel = existingDMs.find((ch) =>
+          isSelfDm
+            ? ch.members.length === 1 && ch.members[0]?.userId === userId
+            : ch.members.length === 2 &&
+              ch.members.some((m) => m.userId === targetUserId),
         );
 
         if (dmChannel) return { channel: dmChannel, created: false };
@@ -248,16 +252,27 @@ export class ChatChannelsService {
           .insert(chatChannels)
           .values({
             orgId,
-            name: `${currentUser?.name ?? "User"} & ${targetUser?.name ?? "User"}`,
+            name: isSelfDm
+              ? (currentUser?.name ?? "You")
+              : `${currentUser?.name ?? "User"} & ${targetUser?.name ?? "User"}`,
             type: "DIRECT",
             createdBy: userId,
           })
           .returning();
 
-        await tx.insert(chatChannelMembers).values([
-          { orgId, channelId: created.id, userId, role: "MEMBER" },
-          { orgId, channelId: created.id, userId: targetUserId, role: "MEMBER" },
-        ]);
+        await tx.insert(chatChannelMembers).values(
+          isSelfDm
+            ? [{ orgId, channelId: created.id, userId, role: "MEMBER" }]
+            : [
+                { orgId, channelId: created.id, userId, role: "MEMBER" },
+                {
+                  orgId,
+                  channelId: created.id,
+                  userId: targetUserId,
+                  role: "MEMBER",
+                },
+              ],
+        );
 
         return created;
       });

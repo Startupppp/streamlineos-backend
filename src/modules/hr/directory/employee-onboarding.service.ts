@@ -166,6 +166,7 @@ export class EmployeeOnboardingService {
             actorId: actor.userId,
             monthlySalary: body.monthlySalary,
             effectiveFrom,
+            salaryStructureTemplateId: body.salaryStructureTemplateId,
           });
         }
 
@@ -273,6 +274,7 @@ export class EmployeeOnboardingService {
           actorId: actor.userId,
           monthlySalary: body.monthlySalary,
           effectiveFrom,
+          salaryStructureTemplateId: body.salaryStructureTemplateId,
         });
       }
 

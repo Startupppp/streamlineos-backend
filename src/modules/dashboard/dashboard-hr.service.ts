@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import {
   and,
   count,
@@ -48,6 +48,8 @@ export interface BirthdayEntry {
 
 @Injectable()
 export class DashboardHrService {
+  private readonly logger = new Logger(DashboardHrService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
@@ -387,6 +389,24 @@ export class DashboardHrService {
     weekEnd.setDate(weekStart.getDate() + 6);
     weekEnd.setHours(23, 59, 59, 999);
 
+    const degraded: string[] = [];
+    const settle = async <T>(
+      source: string,
+      run: () => Promise<T>,
+      fallback: T,
+    ): Promise<T> => {
+      try {
+        return await run();
+      } catch (error: unknown) {
+        degraded.push(source);
+        this.logger.error(
+          `Personal dashboard source "${source}" failed for org ${orgId}`,
+          error instanceof Error ? error.stack : String(error),
+        );
+        return fallback;
+      }
+    };
+
     const [
       myTasks,
       timesheetRows,
@@ -395,81 +415,109 @@ export class DashboardHrService {
       unreadCount,
     ] = await Promise.all([
       modules.build
-        ? this.db.query.tickets.findMany({
-            where: and(
-              eq(tickets.orgId, orgId),
-              eq(tickets.assigneeId, userId),
-              isNull(tickets.deletedAt),
-              or(
-                eq(tickets.status, "TODO"),
-                eq(tickets.status, "IN_PROGRESS"),
-                eq(tickets.status, "IN_REVIEW"),
-              ),
-            ),
-            orderBy: [desc(tickets.updatedAt)],
-            limit: 10,
-            with: { project: { columns: { id: true, name: true } } },
-          })
+        ? settle(
+            "myTasks",
+            () =>
+              this.db.query.tickets.findMany({
+                where: and(
+                  eq(tickets.orgId, orgId),
+                  eq(tickets.assigneeId, userId),
+                  isNull(tickets.deletedAt),
+                  or(
+                    eq(tickets.status, "TODO"),
+                    eq(tickets.status, "IN_PROGRESS"),
+                    eq(tickets.status, "IN_REVIEW"),
+                  ),
+                ),
+                orderBy: [desc(tickets.updatedAt)],
+                limit: 10,
+                with: { project: { columns: { id: true, name: true } } },
+              }),
+            [],
+          )
         : [],
       modules.timesheets
-        ? this.db
-            .select({ hours: sum(timesheets.hours) })
-            .from(timesheets)
-            .where(
-              and(
-                eq(timesheets.orgId, orgId),
-                eq(timesheets.userId, userId),
-                gte(timesheets.date, weekStart.toISOString().slice(0, 10)),
-                lt(timesheets.date, weekEnd.toISOString().slice(0, 10)),
-              ),
-            )
+        ? settle(
+            "timesheet",
+            () =>
+              this.db
+                .select({ hours: sum(timesheets.hours) })
+                .from(timesheets)
+                .where(
+                  and(
+                    eq(timesheets.orgId, orgId),
+                    eq(timesheets.userId, userId),
+                    gte(timesheets.date, weekStart.toISOString().slice(0, 10)),
+                    lt(timesheets.date, weekEnd.toISOString().slice(0, 10)),
+                  ),
+                ),
+            [],
+          )
         : [],
       modules.hr
-        ? this.db
+        ? settle(
+            "leaveBalance",
+            () =>
+              this.db
+                .select({
+                  id: leaveBalances.id,
+                  balance: leaveBalances.balance,
+                  total: leaveTypes.daysPerYear,
+                  typeName: leaveTypes.name,
+                  year: leaveBalances.year,
+                })
+                .from(leaveBalances)
+                .innerJoin(
+                  leaveTypes,
+                  eq(leaveBalances.leaveTypeId, leaveTypes.id),
+                )
+                .where(
+                  and(
+                    eq(leaveBalances.orgId, orgId),
+                    eq(leaveBalances.userId, userId),
+                    eq(leaveBalances.year, now.getFullYear()),
+                  ),
+                ),
+            [],
+          )
+        : [],
+      settle(
+        "upcomingEvents",
+        () =>
+          this.db
             .select({
-              id: leaveBalances.id,
-              balance: leaveBalances.balance,
-              total: leaveTypes.daysPerYear,
-              typeName: leaveTypes.name,
-              year: leaveBalances.year,
+              id: calendarEvents.id,
+              title: calendarEvents.title,
+              startDate: calendarEvents.startDate,
+              endDate: calendarEvents.endDate,
+              category: calendarEvents.category,
             })
-            .from(leaveBalances)
-            .innerJoin(leaveTypes, eq(leaveBalances.leaveTypeId, leaveTypes.id))
+            .from(calendarEvents)
             .where(
               and(
-                eq(leaveBalances.orgId, orgId),
-                eq(leaveBalances.userId, userId),
-                eq(leaveBalances.year, now.getFullYear()),
+                eq(calendarEvents.orgId, orgId),
+                gte(calendarEvents.startDate, now),
               ),
             )
-        : [],
-      this.db
-        .select({
-          id: calendarEvents.id,
-          title: calendarEvents.title,
-          startDate: calendarEvents.startDate,
-          endDate: calendarEvents.endDate,
-          category: calendarEvents.category,
-        })
-        .from(calendarEvents)
-        .where(
-          and(
-            eq(calendarEvents.orgId, orgId),
-            gte(calendarEvents.startDate, now),
-          ),
-        )
-        .orderBy(calendarEvents.startDate)
-        .limit(3),
-      this.db
-        .select({ cnt: count() })
-        .from(notifications)
-        .where(
-          and(
-            eq(notifications.userId, userId),
-            eq(notifications.orgId, orgId),
-            eq(notifications.isRead, false),
-          ),
-        ),
+            .orderBy(calendarEvents.startDate)
+            .limit(3),
+        [],
+      ),
+      settle(
+        "unreadNotifications",
+        () =>
+          this.db
+            .select({ cnt: count() })
+            .from(notifications)
+            .where(
+              and(
+                eq(notifications.userId, userId),
+                eq(notifications.orgId, orgId),
+                eq(notifications.isRead, false),
+              ),
+            ),
+        [],
+      ),
     ]);
 
     const hoursLogged = Number(timesheetRows[0]?.hours ?? 0);
@@ -502,6 +550,7 @@ export class DashboardHrService {
         type: e.category,
       })),
       unreadNotifications: Number(unreadCount[0]?.cnt ?? 0),
+      degraded,
     };
   }
 }

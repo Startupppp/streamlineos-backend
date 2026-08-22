@@ -1,6 +1,7 @@
 import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { AllowNoOrg } from "../../../common/auth/allow-no-org.decorator";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
@@ -69,6 +70,7 @@ export class BillingController {
     return this.billing.getSubscription(u.orgId);
   }
 
+  @AllowNoOrg()
   @Get("plans")
   getPlans() {
     return this.billing.getPlans();
