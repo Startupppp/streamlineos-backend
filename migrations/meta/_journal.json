@@ -1415,6 +1415,27 @@
       "when": 1786701775560,
       "tag": "0445_payroll_locked_run_immutability",
       "breakpoints": true
+    },
+    {
+      "idx": 202,
+      "version": "7",
+      "when": 1786701776560,
+      "tag": "0446_attendance_leave_worker_subject",
+      "breakpoints": true
+    },
+    {
+      "idx": 203,
+      "version": "7",
+      "when": 1786701777560,
+      "tag": "0447_schema_drift_missing_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 204,
+      "version": "7",
+      "when": 1786701778560,
+      "tag": "0448_hr_relational_tables",
+      "breakpoints": true
     }
   ]
 }
