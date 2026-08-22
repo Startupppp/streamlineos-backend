@@ -22,7 +22,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { withTenant } from "../../../common/tenant";
 import type { FileStreamResult } from "../../storage/storage.service";
 import { StorageService } from "../../storage/storage.service";
-import { AccessService } from "../../access/access.service";
+import { AccessService, SCOPE_RANK } from "../../access/access.service";
 import type { DataScope } from "../../access/access.types";
 import { authorize } from "../../access/authorize";
 import type { CreateEmployeeExportJobInput } from "./dto/export-job.dto";
@@ -55,13 +55,6 @@ export class HrExportProcessingError extends Error {
     this.name = "HrExportProcessingError";
   }
 }
-
-const SCOPE_RANK: Record<DataScope, number> = {
-  none: 0,
-  own: 1,
-  team: 2,
-  all: 3,
-};
 
 export function narrowestExportScope(
   requested: HrExportDataScope,

@@ -37,7 +37,7 @@ import {
 } from "./module-access.helpers";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
-import { AccessService } from "../access/access.service";
+import { AccessService, SCOPE_RANK } from "../access/access.service";
 import {
   ACCESS_MANAGED_MODULES,
   PERMISSIONS,
@@ -52,12 +52,6 @@ import type {
 const MANAGED_MODULES = new Set<string>(ACCESS_MANAGED_MODULES);
 const PERM_DIFF_CAP = 50;
 const ROLE_ASSIGNEE_PAGE_SIZE = 100;
-const SCOPE_RANK: Record<DataScope, number> = {
-  none: 0,
-  own: 1,
-  team: 2,
-  all: 3,
-};
 
 interface RoleAssignee {
   membershipId: number;
