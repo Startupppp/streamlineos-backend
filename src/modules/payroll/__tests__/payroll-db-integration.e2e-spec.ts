@@ -84,9 +84,11 @@ async function cleanupStaleData(db: TestDb): Promise<void> {
   await db.delete(payrollPolicies).where(inArray(payrollPolicies.orgId, orgIds));
   await db.delete(employeeSalaryProfiles).where(inArray(employeeSalaryProfiles.orgId, orgIds));
   await db.delete(auditLogs).where(inArray(auditLogs.userId, userIds));
+  // organizations first: guard_owner_membership refuses to delete the membership the
+  // owner pointer still names, and stands down only once that pointer is gone.
+  await db.delete(organizations).where(inArray(organizations.id, orgIds));
   await db.delete(organizationMembers).where(inArray(organizationMembers.orgId, orgIds));
   await db.delete(users).where(inArray(users.id, userIds));
-  await db.delete(organizations).where(inArray(organizations.id, orgIds));
 }
 
 const d = process.env.DATABASE_URL ? describe : describe.skip;
@@ -122,20 +124,33 @@ d('Payroll DB Integration', () => {
       accountHolder: 'User A Test',
     });
 
-    await db.insert(organizations).values([
-      { id: ORG_A, name: `E2E Org A`, slug: `${P}slug-a`, ownerMembershipId: 9001 },
-      { id: ORG_B, name: `E2E Org B`, slug: `${P}slug-b`, ownerMembershipId: 9002 },
-    ]);
+    // organizations.owner_membership_id is NOT NULL behind a DEFERRABLE composite FK
+    // onto (organization_members.org_id, id), so the pointer must name a real
+    // membership by commit — allocate the ids first and write both in one
+    // transaction, exactly as registration does.
+    const seqRows = await sql<{ id: string }[]>`
+      SELECT nextval(pg_get_serial_sequence('organization_members', 'id')) AS id
+      FROM generate_series(1, 2)
+    `;
+    const ownerMembershipA = Number(seqRows[0]?.id);
+    const ownerMembershipB = Number(seqRows[1]?.id);
 
-    await db.insert(users).values([
-      { id: USER_A, email: `${P}user-a@example.com`, bankDetails: encryptedBank },
-      { id: USER_B, email: `${P}user-b@example.com` },
-    ]);
+    await db.transaction(async (tx) => {
+      await tx.insert(organizations).values([
+        { id: ORG_A, name: `E2E Org A`, slug: `${P}slug-a`, ownerMembershipId: ownerMembershipA },
+        { id: ORG_B, name: `E2E Org B`, slug: `${P}slug-b`, ownerMembershipId: ownerMembershipB },
+      ]);
 
-    await db.insert(organizationMembers).values([
-      { userId: USER_A, orgId: ORG_A },
-      { userId: USER_B, orgId: ORG_B },
-    ]);
+      await tx.insert(users).values([
+        { id: USER_A, email: `${P}user-a@example.com`, bankDetails: encryptedBank },
+        { id: USER_B, email: `${P}user-b@example.com` },
+      ]);
+
+      await tx.insert(organizationMembers).values([
+        { id: ownerMembershipA, userId: USER_A, orgId: ORG_A, isOwner: true },
+        { id: ownerMembershipB, userId: USER_B, orgId: ORG_B, isOwner: true },
+      ]);
+    });
 
     const [policy] = await db
       .insert(payrollPolicies)
