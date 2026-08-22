@@ -9,6 +9,7 @@ import {
   userDelegationPermissions,
 } from "../../db/schema";
 import { PERMISSIONS } from "./permissions";
+import { isDelegablePermission } from "../../common/rbac/grantability";
 
 type SupportedScope = "all" | "team" | "own";
 
@@ -72,6 +73,7 @@ export class PermissionCatalogSyncService implements OnModuleInit {
           action: permission.action,
           description: permission.description ?? null,
           moduleKey: permission.name.split(":")[0] ?? null,
+          isDelegable: isDelegablePermission(permission.name),
         })),
       )
       .onConflictDoUpdate({
@@ -81,6 +83,7 @@ export class PermissionCatalogSyncService implements OnModuleInit {
           action: sqlExcluded("action"),
           description: sqlExcluded("description"),
           moduleKey: sqlExcluded("module_key"),
+          isDelegable: sqlExcluded("is_delegable"),
         },
       });
 

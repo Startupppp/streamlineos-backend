@@ -17,6 +17,7 @@ import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transa
 import {
   assertPermissionsGrantable,
   buildPermissionModuleMap,
+  isDelegablePermission,
   ORG_ADMIN_PERMISSION_KEY,
   RESERVED_PROPAGATION_KEYS,
   ROLE_RANK,
@@ -299,7 +300,7 @@ export class RbacService {
   ): Promise<DiscoveryGrantableResult> {
     if (actor.isOrgOwner) {
       return {
-        grantableKeys: PERMISSIONS.map((p) => p.name),
+        grantableKeys: PERMISSIONS.map((p) => p.name).filter(isDelegablePermission),
         assignableRanks: [ROLE_RANK.MODULE_ADMIN, ROLE_RANK.MODULE_CUSTOM, ROLE_RANK.FUNCTIONAL],
         allowedModules: null,
       };
@@ -317,6 +318,7 @@ export class RbacService {
     const grantableKeys = PERMISSIONS
       .map((p) => p.name)
       .filter((key) => {
+        if (!isDelegablePermission(key)) return false;
         if (!grantable.has(key)) return false;
         if (!canPropagateReserved && RESERVED_PROPAGATION_KEYS.has(key)) {
           return false;

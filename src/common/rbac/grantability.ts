@@ -49,6 +49,17 @@ export function isOrgOnlyPermission(key: string): boolean {
 }
 
 /**
+ * `permissions.is_delegable`, derived from the policy above rather than declared
+ * per catalog entry, so the column, the grantable-key discovery and the guard
+ * cannot disagree. Delegability is a property of the key, not of an actor: a key
+ * barred here is barred on every path including the org owner's own, which is
+ * why this takes no actor.
+ */
+export function isDelegablePermission(key: string): boolean {
+  return !isOrgOnlyPermission(key);
+}
+
+/**
  * The reserved key itself, for PROPAGATION checks only — "may this actor grant
  * this key to someone else". It must never be used to decide whether the actor
  * IS an org admin; that is structural, via `isStructuralOrgAdmin`. The former
