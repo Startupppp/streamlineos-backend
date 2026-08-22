@@ -17,6 +17,7 @@ import { users } from "../../../db/schema/common/auth";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
+import { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
 import type {
   AddTeamMemberInput,
   CreateTeamInput,
@@ -36,6 +37,7 @@ export class TeamsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly pmWorkspaces: PmWorkspacesService,
   ) {}
 
   private async loadTeam(orgId: string, teamId: number): Promise<TeamRow> {
@@ -120,11 +122,13 @@ export class TeamsService {
   }
 
   async createTeam(orgId: string, userId: string, input: CreateTeamInput) {
+    const pmWorkspaceId = await this.pmWorkspaces.resolveDefaultWorkspaceId(orgId);
     try {
       const [row] = await this.db
         .insert(projectTeams)
         .values({
           orgId,
+          pmWorkspaceId,
           name: input.name,
           key: input.key,
           icon: input.icon ?? null,

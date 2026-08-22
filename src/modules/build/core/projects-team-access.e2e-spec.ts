@@ -7,15 +7,17 @@ import type { Db } from "../../../db/drizzle.module";
 import {
   organizationMembers,
   organizations,
+  pmWorkspaces,
   projectTeamAssignments,
   projectTeamMembers,
   projectTeams,
   projects,
   users,
 } from "../../../db/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { AccessService } from "../../access/access.service";
 import type { DataScope } from "../../access/access.types";
+import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 
 const RBAC_E2E_DATABASE_URL = process.env.RBAC_E2E_DATABASE_URL;
 const describeWithDb = RBAC_E2E_DATABASE_URL ? describe : describe.skip;
@@ -36,84 +38,75 @@ describeWithDb(
     const ids = { projectId: 0, teamId: 0 };
 
     async function cleanup(): Promise<void> {
-      const teamRows = await db
-        .select({ id: projectTeams.id })
-        .from(projectTeams)
-        .where(eq(projectTeams.orgId, ORG_ID));
-      for (const t of teamRows) {
-        await db
-          .delete(projectTeamMembers)
-          .where(eq(projectTeamMembers.teamId, t.id));
-        await db
-          .delete(projectTeamAssignments)
-          .where(eq(projectTeamAssignments.teamId, t.id));
-      }
-      await db.delete(projectTeams).where(eq(projectTeams.orgId, ORG_ID));
-      await db.delete(projects).where(eq(projects.orgId, ORG_ID));
-      await db
-        .delete(organizationMembers)
-        .where(eq(organizationMembers.orgId, ORG_ID));
-      await db.delete(organizations).where(eq(organizations.id, ORG_ID));
-      for (const id of Object.values(U)) {
-        await db.delete(users).where(eq(users.id, id));
-      }
+      await runInNewTenantTransaction(db, ORG_ID, async (tx) => {
+        // org first: guard_owner_membership blocks deletion of the owner membership while the org row still names it;
+        // cascade removes org_members, pm_workspaces, projects, project_teams, and their dependents
+        await tx.delete(organizations).where(eq(organizations.id, ORG_ID));
+        for (const id of Object.values(U)) {
+          await tx.delete(users).where(eq(users.id, id));
+        }
+      });
     }
 
     async function seed(): Promise<void> {
-      await db
-        .insert(organizations)
-        .values({ id: ORG_ID, name: "Team Access E2E", slug: ORG_ID , ownerMembershipId: 9001 })
-        .onConflictDoNothing();
-      await db
-        .insert(users)
-        .values([
-          { id: U.owner, email: `${U.owner}@e2e.test`, name: "Owner" },
-          {
-            id: U.teamMember,
-            email: `${U.teamMember}@e2e.test`,
-            name: "Team Member",
-          },
-          {
-            id: U.outsider,
-            email: `${U.outsider}@e2e.test`,
-            name: "Outsider",
-          },
-        ])
-        .onConflictDoNothing();
-      await db
-        .insert(organizationMembers)
-        .values([
-          { userId: U.owner, orgId: ORG_ID, isOwner: true },
-          { userId: U.teamMember, orgId: ORG_ID, isOwner: false },
-          { userId: U.outsider, orgId: ORG_ID, isOwner: false },
-        ])
-        .onConflictDoNothing();
+      await runInNewTenantTransaction(db, ORG_ID, async (tx) => {
+        // organizations.owner_membership_id is NOT NULL behind a DEFERRABLE deferred FK onto
+        // (organization_members.org_id, id) — allocate the id first and write both in one transaction
+        const seqRows = await tx.execute(
+          sql`SELECT nextval(pg_get_serial_sequence('organization_members', 'id')) AS id`,
+        );
+        const ownerMembershipId = Number(seqRows[0].id);
 
-      const [project] = await db
-        .insert(projects)
-        .values({
-          orgId: ORG_ID,
-          name: "Team Project",
-          key: "TAP",
-          managerId: U.owner,
-        })
-        .returning({ id: projects.id });
-      ids.projectId = project.id;
+        await tx
+          .insert(users)
+          .values([
+            { id: U.owner, email: `${U.owner}@e2e.test`, name: "Owner" },
+            { id: U.teamMember, email: `${U.teamMember}@e2e.test`, name: "Team Member" },
+            { id: U.outsider, email: `${U.outsider}@e2e.test`, name: "Outsider" },
+          ])
+          .onConflictDoNothing();
 
-      const [team] = await db
-        .insert(projectTeams)
-        .values({ orgId: ORG_ID, name: "Engineering", key: "ENG" })
-        .returning({ id: projectTeams.id });
-      ids.teamId = team.id;
+        await tx
+          .insert(organizations)
+          .values({ id: ORG_ID, name: "Team Access E2E", slug: ORG_ID, ownerMembershipId })
+          .onConflictDoNothing();
 
-      await db
-        .insert(projectTeamMembers)
-        .values({ orgId: ORG_ID, teamId: ids.teamId, userId: U.teamMember })
-        .onConflictDoNothing();
-      await db
-        .insert(projectTeamAssignments)
-        .values({ orgId: ORG_ID, teamId: ids.teamId, projectId: ids.projectId })
-        .onConflictDoNothing();
+        await tx
+          .insert(organizationMembers)
+          .values([
+            { id: ownerMembershipId, userId: U.owner, orgId: ORG_ID, isOwner: true },
+            { userId: U.teamMember, orgId: ORG_ID, isOwner: false },
+            { userId: U.outsider, orgId: ORG_ID, isOwner: false },
+          ])
+          .onConflictDoNothing();
+
+        const [ws] = await tx
+          .insert(pmWorkspaces)
+          .values({ orgId: ORG_ID, name: "E2E Workspace", slug: `ws-${ORG_ID}`, isDefault: true })
+          .returning({ pmWorkspaceId: pmWorkspaces.pmWorkspaceId });
+        const pmWorkspaceId = ws.pmWorkspaceId;
+
+        const [project] = await tx
+          .insert(projects)
+          .values({ orgId: ORG_ID, name: "Team Project", key: "TAP", managerId: U.owner, pmWorkspaceId })
+          .returning({ id: projects.id });
+        ids.projectId = project.id;
+
+        const [team] = await tx
+          .insert(projectTeams)
+          .values({ orgId: ORG_ID, name: "Engineering", key: "ENG", pmWorkspaceId })
+          .returning({ id: projectTeams.id });
+        ids.teamId = team.id;
+
+        await tx
+          .insert(projectTeamMembers)
+          .values({ orgId: ORG_ID, teamId: ids.teamId, userId: U.teamMember })
+          .onConflictDoNothing();
+        await tx
+          .insert(projectTeamAssignments)
+          .values({ orgId: ORG_ID, teamId: ids.teamId, projectId: ids.projectId })
+          .onConflictDoNothing();
+      });
     }
 
     beforeAll(async () => {
@@ -156,7 +149,7 @@ describeWithDb(
       grantViewPerms();
       const token = await tokenFor(U.teamMember);
       const res = await request(app.getHttpServer())
-        .get(`/projects/${ids.projectId}`)
+        .get(`/build/${ids.projectId}`)
         .set("Authorization", `Bearer ${token}`);
       expect(res.status).toBe(200);
     });
@@ -165,7 +158,7 @@ describeWithDb(
       grantViewPerms();
       const token = await tokenFor(U.teamMember);
       const res = await request(app.getHttpServer())
-        .get(`/projects/${ids.projectId}/tickets`)
+        .get(`/build/${ids.projectId}/tickets`)
         .set("Authorization", `Bearer ${token}`);
       expect(res.status).toBe(200);
     });
@@ -174,7 +167,7 @@ describeWithDb(
       grantViewPerms();
       const token = await tokenFor(U.teamMember);
       const res = await request(app.getHttpServer())
-        .get(`/projects/${ids.projectId}/roster`)
+        .get(`/build/${ids.projectId}/roster`)
         .set("Authorization", `Bearer ${token}`);
       expect(res.status).toBe(200);
       const memberIds = (res.body.members as Array<{ id: string }>).map(
@@ -187,7 +180,7 @@ describeWithDb(
       grantViewPerms();
       const token = await tokenFor(U.outsider);
       const res = await request(app.getHttpServer())
-        .get(`/projects/${ids.projectId}`)
+        .get(`/build/${ids.projectId}`)
         .set("Authorization", `Bearer ${token}`);
       expect(res.status).toBe(403);
     });

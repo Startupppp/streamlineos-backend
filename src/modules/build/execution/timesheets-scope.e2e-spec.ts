@@ -10,9 +10,10 @@ import {
   timesheets,
   users,
 } from "../../../db/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { AccessService } from "../../access/access.service";
 import type { DataScope } from "../../access/access.types";
+import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 
 const RBAC_E2E_DATABASE_URL = process.env.RBAC_E2E_DATABASE_URL;
 const describeWithDb = RBAC_E2E_DATABASE_URL ? describe : describe.skip;
@@ -33,61 +34,62 @@ describeWithDb(
     const entryIds = { admin: 0, member: 0 };
 
     async function cleanup(): Promise<void> {
-      await db.delete(timesheets).where(eq(timesheets.orgId, ORG_ID));
-      await db.delete(organizationMembers).where(eq(organizationMembers.orgId, ORG_ID));
-      await db.delete(organizations).where(eq(organizations.id, ORG_ID));
-      for (const id of Object.values(U)) {
-        await db.delete(users).where(eq(users.id, id));
-      }
+      await runInNewTenantTransaction(db, ORG_ID, async (tx) => {
+        // org first: guard_owner_membership blocks deletion of the owner membership while the org row still names it;
+        // cascade removes org_members and timesheets
+        await tx.delete(organizations).where(eq(organizations.id, ORG_ID));
+        for (const id of Object.values(U)) {
+          await tx.delete(users).where(eq(users.id, id));
+        }
+      });
     }
 
     async function seed(): Promise<void> {
-      await db
-        .insert(organizations)
-        .values({ id: ORG_ID, name: "TS Scope E2E", slug: ORG_ID , ownerMembershipId: 9001 })
-        .onConflictDoNothing();
+      await runInNewTenantTransaction(db, ORG_ID, async (tx) => {
+        // organizations.owner_membership_id is NOT NULL behind a DEFERRABLE deferred FK onto
+        // (organization_members.org_id, id) — allocate the id first and write both in one transaction
+        const seqRows = await tx.execute(
+          sql`SELECT nextval(pg_get_serial_sequence('organization_members', 'id')) AS id`,
+        );
+        const ownerMembershipId = Number(seqRows[0].id);
 
-      await db
-        .insert(users)
-        .values([
-          { id: U.admin, email: `${U.admin}@e2e.test`, name: "Admin" },
-          { id: U.member, email: `${U.member}@e2e.test`, name: "Member" },
-          { id: U.other, email: `${U.other}@e2e.test`, name: "Other" },
-        ])
-        .onConflictDoNothing();
+        await tx
+          .insert(users)
+          .values([
+            { id: U.admin, email: `${U.admin}@e2e.test`, name: "Admin" },
+            { id: U.member, email: `${U.member}@e2e.test`, name: "Member" },
+            { id: U.other, email: `${U.other}@e2e.test`, name: "Other" },
+          ])
+          .onConflictDoNothing();
 
-      await db
-        .insert(organizationMembers)
-        .values([
-          { userId: U.admin, orgId: ORG_ID, isOwner: true },
-          { userId: U.member, orgId: ORG_ID, isOwner: false },
-          { userId: U.other, orgId: ORG_ID, isOwner: false },
-        ])
-        .onConflictDoNothing();
+        await tx
+          .insert(organizations)
+          .values({ id: ORG_ID, name: "TS Scope E2E", slug: ORG_ID, ownerMembershipId })
+          .onConflictDoNothing();
 
-      const inserted = await db
-        .insert(timesheets)
-        .values([
-          {
-            orgId: ORG_ID,
-            userId: U.admin,
-            date: "2024-01-10",
-            hours: "2",
-          },
-          {
-            orgId: ORG_ID,
-            userId: U.member,
-            date: "2024-01-11",
-            hours: "1",
-          },
-        ])
-        .onConflictDoNothing()
-        .returning({ id: timesheets.id, userId: timesheets.userId });
+        await tx
+          .insert(organizationMembers)
+          .values([
+            { id: ownerMembershipId, userId: U.admin, orgId: ORG_ID, isOwner: true },
+            { userId: U.member, orgId: ORG_ID, isOwner: false },
+            { userId: U.other, orgId: ORG_ID, isOwner: false },
+          ])
+          .onConflictDoNothing();
 
-      for (const row of inserted) {
-        if (row.userId === U.admin) entryIds.admin = row.id;
-        if (row.userId === U.member) entryIds.member = row.id;
-      }
+        const inserted = await tx
+          .insert(timesheets)
+          .values([
+            { orgId: ORG_ID, userId: U.admin, date: "2024-01-10", hours: "2" },
+            { orgId: ORG_ID, userId: U.member, date: "2024-01-11", hours: "1" },
+          ])
+          .onConflictDoNothing()
+          .returning({ id: timesheets.id, userId: timesheets.userId });
+
+        for (const row of inserted) {
+          if (row.userId === U.admin) entryIds.admin = row.id;
+          if (row.userId === U.member) entryIds.member = row.id;
+        }
+      });
     }
 
     beforeAll(async () => {
@@ -112,7 +114,7 @@ describeWithDb(
       jest
         .spyOn(accessService, "resolveUserPermissions")
         .mockResolvedValue(
-          new Map<string, DataScope>([["build:timesheets:manage", "all"]]),
+          new Map<string, DataScope>([["build:timesheets:view", "all"], ["build:timesheets:manage", "all"]]),
         );
 
       const token = await signToken({
@@ -135,7 +137,7 @@ describeWithDb(
       jest
         .spyOn(accessService, "resolveUserPermissions")
         .mockResolvedValue(
-          new Map<string, DataScope>([["build:timesheets:manage", "own"]]),
+          new Map<string, DataScope>([["build:timesheets:view", "all"], ["build:timesheets:manage", "own"]]),
         );
 
       const token = await signToken({
@@ -156,7 +158,27 @@ describeWithDb(
       expect(returned.map((e) => e.id)).not.toContain(entryIds.admin);
     });
 
-    it("scope=none — returns an empty list", async () => {
+    it("view without manage falls back to own — a caller with no entries sees an empty list", async () => {
+      jest
+        .spyOn(accessService, "resolveUserPermissions")
+        .mockResolvedValue(new Map<string, DataScope>([["build:timesheets:view", "all"]]));
+
+      const token = await signToken({
+        sub: U.other,
+        orgId: ORG_ID,
+        enabledModules: ["build"],
+        isOrgOwner: false,
+      });
+
+      const res = await request(app.getHttpServer())
+        .get("/build/time-entries")
+        .set("Authorization", `Bearer ${token}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual([]);
+    });
+
+    it("403 before any scope is resolved when the caller holds no timesheets permission", async () => {
       jest
         .spyOn(accessService, "resolveUserPermissions")
         .mockResolvedValue(new Map<string, DataScope>());
@@ -172,8 +194,8 @@ describeWithDb(
         .get("/build/time-entries")
         .set("Authorization", `Bearer ${token}`);
 
-      expect(res.status).toBe(200);
-      expect(res.body).toEqual([]);
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
     });
 
     it("org owner always sees all entries regardless of permissions resolution", async () => {

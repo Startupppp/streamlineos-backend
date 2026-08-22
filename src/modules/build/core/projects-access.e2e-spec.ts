@@ -7,13 +7,15 @@ import type { Db } from "../../../db/drizzle.module";
 import {
   organizationMembers,
   organizations,
+  pmWorkspaces,
   projectMembers,
   projects,
   users,
 } from "../../../db/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { AccessService } from "../../access/access.service";
 import type { DataScope } from "../../access/access.types";
+import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 
 const RBAC_E2E_DATABASE_URL = process.env.RBAC_E2E_DATABASE_URL;
 const describeWithDb = RBAC_E2E_DATABASE_URL ? describe : describe.skip;
@@ -34,78 +36,71 @@ describeWithDb(
     const projectIds = { target: 0 };
 
     async function cleanup(): Promise<void> {
-      const existing = await db
-        .select({ id: projects.id })
-        .from(projects)
-        .where(eq(projects.orgId, ORG_ID));
-      for (const row of existing) {
-        await db
-          .delete(projectMembers)
-          .where(eq(projectMembers.projectId, row.id));
-      }
-      await db.delete(projects).where(eq(projects.orgId, ORG_ID));
-      await db
-        .delete(organizationMembers)
-        .where(eq(organizationMembers.orgId, ORG_ID));
-      await db.delete(organizations).where(eq(organizations.id, ORG_ID));
-      for (const id of Object.values(U)) {
-        await db.delete(users).where(eq(users.id, id));
-      }
+      await runInNewTenantTransaction(db, ORG_ID, async (tx) => {
+        // org first: guard_owner_membership blocks deletion of the owner membership while the org row still names it;
+        // cascade removes org_members, pm_workspaces, projects, and project_members
+        await tx.delete(organizations).where(eq(organizations.id, ORG_ID));
+        for (const id of Object.values(U)) {
+          await tx.delete(users).where(eq(users.id, id));
+        }
+      });
     }
 
     async function seed(): Promise<void> {
-      await db
-        .insert(organizations)
-        .values({ id: ORG_ID, name: "Proj Access E2E", slug: ORG_ID , ownerMembershipId: 9001 })
-        .onConflictDoNothing();
+      await runInNewTenantTransaction(db, ORG_ID, async (tx) => {
+        // organizations.owner_membership_id is NOT NULL behind a DEFERRABLE deferred FK onto
+        // (organization_members.org_id, id) — allocate the id first and write both in one transaction
+        const seqRows = await tx.execute(
+          sql`SELECT nextval(pg_get_serial_sequence('organization_members', 'id')) AS id`,
+        );
+        const ownerMembershipId = Number(seqRows[0].id);
 
-      await db
-        .insert(users)
-        .values([
-          { id: U.owner, email: `${U.owner}@e2e.test`, name: "Owner" },
-          {
-            id: U.member,
-            email: `${U.member}@e2e.test`,
-            name: "Member",
-          },
-          {
-            id: U.outsider,
-            email: `${U.outsider}@e2e.test`,
-            name: "Outsider",
-          },
-        ])
-        .onConflictDoNothing();
+        await tx
+          .insert(users)
+          .values([
+            { id: U.owner, email: `${U.owner}@e2e.test`, name: "Owner" },
+            { id: U.member, email: `${U.member}@e2e.test`, name: "Member" },
+            { id: U.outsider, email: `${U.outsider}@e2e.test`, name: "Outsider" },
+          ])
+          .onConflictDoNothing();
 
-      await db
-        .insert(organizationMembers)
-        .values([
-          { userId: U.owner, orgId: ORG_ID, isOwner: true },
-          { userId: U.member, orgId: ORG_ID, isOwner: false },
-          { userId: U.outsider, orgId: ORG_ID, isOwner: false },
-        ])
-        .onConflictDoNothing();
+        await tx
+          .insert(organizations)
+          .values({ id: ORG_ID, name: "Proj Access E2E", slug: ORG_ID, ownerMembershipId })
+          .onConflictDoNothing();
 
-      const inserted = await db
-        .insert(projects)
-        .values([
-          {
-            orgId: ORG_ID,
-            name: "Target Project",
-            key: "PATGT",
-            managerId: U.owner,
-          },
-        ])
-        .onConflictDoNothing()
-        .returning({ id: projects.id, name: projects.name });
+        await tx
+          .insert(organizationMembers)
+          .values([
+            { id: ownerMembershipId, userId: U.owner, orgId: ORG_ID, isOwner: true },
+            { userId: U.member, orgId: ORG_ID, isOwner: false },
+            { userId: U.outsider, orgId: ORG_ID, isOwner: false },
+          ])
+          .onConflictDoNothing();
 
-      for (const row of inserted) {
-        if (row.name === "Target Project") projectIds.target = row.id;
-      }
+        const [ws] = await tx
+          .insert(pmWorkspaces)
+          .values({ orgId: ORG_ID, name: "E2E Workspace", slug: `ws-${ORG_ID}`, isDefault: true })
+          .returning({ pmWorkspaceId: pmWorkspaces.pmWorkspaceId });
+        const pmWorkspaceId = ws.pmWorkspaceId;
 
-      await db
-        .insert(projectMembers)
-        .values({ orgId: ORG_ID, projectId: projectIds.target, userId: U.member })
-        .onConflictDoNothing();
+        const inserted = await tx
+          .insert(projects)
+          .values([
+            { orgId: ORG_ID, name: "Target Project", key: "PATGT", managerId: U.owner, pmWorkspaceId },
+          ])
+          .onConflictDoNothing()
+          .returning({ id: projects.id, name: projects.name });
+
+        for (const row of inserted) {
+          if (row.name === "Target Project") projectIds.target = row.id;
+        }
+
+        await tx
+          .insert(projectMembers)
+          .values({ orgId: ORG_ID, projectId: projectIds.target, userId: U.member })
+          .onConflictDoNothing();
+      });
     }
 
     beforeAll(async () => {
@@ -149,7 +144,7 @@ describeWithDb(
       grantViewOnly();
       const token = await tokenFor(U.member, false);
       const res = await request(app.getHttpServer())
-        .get(`/projects/${projectIds.target}/members`)
+        .get(`/build/${projectIds.target}/members`)
         .set("Authorization", `Bearer ${token}`);
       expect(res.status).toBe(200);
     });
@@ -158,7 +153,7 @@ describeWithDb(
       grantViewOnly();
       const token = await tokenFor(U.outsider, false);
       const res = await request(app.getHttpServer())
-        .get(`/projects/${projectIds.target}/members`)
+        .get(`/build/${projectIds.target}/members`)
         .set("Authorization", `Bearer ${token}`);
       expect(res.status).toBe(403);
     });
@@ -167,7 +162,7 @@ describeWithDb(
       grantViewOnly();
       const token = await tokenFor(U.outsider, false);
       const res = await request(app.getHttpServer())
-        .get(`/projects/${projectIds.target}/custom-states`)
+        .get(`/build/${projectIds.target}/custom-states`)
         .set("Authorization", `Bearer ${token}`);
       expect(res.status).toBe(403);
     });
@@ -176,7 +171,7 @@ describeWithDb(
       grantViewOnly();
       const token = await tokenFor(U.outsider, false);
       const res = await request(app.getHttpServer())
-        .get(`/projects/${projectIds.target}/automations`)
+        .get(`/build/${projectIds.target}/automations`)
         .set("Authorization", `Bearer ${token}`);
       expect(res.status).toBe(403);
     });
@@ -184,7 +179,7 @@ describeWithDb(
     it("the org owner can read the member list of any project", async () => {
       const token = await tokenFor(U.owner, true);
       const res = await request(app.getHttpServer())
-        .get(`/projects/${projectIds.target}/members`)
+        .get(`/build/${projectIds.target}/members`)
         .set("Authorization", `Bearer ${token}`);
       expect(res.status).toBe(200);
     });

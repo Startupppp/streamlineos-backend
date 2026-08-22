@@ -1,8 +1,9 @@
-import { text, integer, boolean, timestamp, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { text, integer, boolean, timestamp, index, unique, uniqueIndex, foreignKey } from "drizzle-orm/pg-core";
 import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
+import { pmWorkspaces } from "./pm-workspaces";
 
 export const projectTeams = build.table(
   "project_teams",
@@ -16,7 +17,7 @@ export const projectTeams = build.table(
     icon: text("icon"),
     color: text("color"),
     isPrivate: boolean("is_private").notNull().default(false),
-    pmWorkspaceId: text("pm_workspace_id"),
+    pmWorkspaceId: text("pm_workspace_id").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -28,6 +29,11 @@ export const projectTeams = build.table(
     uniqueIndex("uniq_project_teams_org_key").on(t.orgId, t.key),
     index("idx_project_teams_org").on(t.orgId).where(sql`deleted_at IS NULL`),
     unique("uniq_project_teams_org_id").on(t.orgId, t.id),
+    foreignKey({
+      columns: [t.orgId, t.pmWorkspaceId],
+      foreignColumns: [pmWorkspaces.orgId, pmWorkspaces.pmWorkspaceId],
+      name: "fk_project_teams_org_pm_workspace",
+    }),
   ],
 );
 
@@ -66,7 +72,7 @@ export const projectWorkspaceMembers = build.table(
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
     role: text("role").notNull().default("member"),
-    pmWorkspaceId: text("pm_workspace_id"),
+    pmWorkspaceId: text("pm_workspace_id").notNull(),
     addedAt: timestamp("added_at").defaultNow().notNull(),
   },
   (t) => [
@@ -76,6 +82,11 @@ export const projectWorkspaceMembers = build.table(
     ),
     index("idx_project_workspace_members_org").on(t.orgId),
     unique("uniq_project_workspace_members_org_id").on(t.orgId, t.id),
+    foreignKey({
+      columns: [t.orgId, t.pmWorkspaceId],
+      foreignColumns: [pmWorkspaces.orgId, pmWorkspaces.pmWorkspaceId],
+      name: "fk_project_workspace_members_org_pm_workspace",
+    }),
   ],
 );
 

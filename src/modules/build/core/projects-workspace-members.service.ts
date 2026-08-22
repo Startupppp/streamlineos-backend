@@ -15,6 +15,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
+import { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
 import type {
   AddWorkspaceMemberInput,
   ListWorkspaceMembersInput,
@@ -27,6 +28,7 @@ export class ProjectsWorkspaceMembersService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly pmWorkspaces: PmWorkspacesService,
   ) {}
 
   async list(orgId: string, query: ListWorkspaceMembersInput) {
@@ -123,9 +125,10 @@ export class ProjectsWorkspaceMembersService {
     }
 
     try {
+      const pmWorkspaceId = await this.pmWorkspaces.resolveDefaultWorkspaceId(orgId);
       const [row] = await this.db
         .insert(projectWorkspaceMembers)
-        .values({ orgId, userId: input.userId, role: input.role })
+        .values({ orgId, pmWorkspaceId, userId: input.userId, role: input.role })
         .returning();
       this.audit.log({
         action: "project_workspace.member_added",

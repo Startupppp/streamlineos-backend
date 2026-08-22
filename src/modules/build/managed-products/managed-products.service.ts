@@ -4,6 +4,7 @@ import { managedProducts } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
+import { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
 import type {
   CreateManagedProductInput,
   ListManagedProductsQuery,
@@ -20,6 +21,7 @@ export class ManagedProductsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly pmWorkspaces: PmWorkspacesService,
   ) {}
 
   private async loadProduct(orgId: string, managedProductId: number): Promise<ManagedProductRow> {
@@ -75,10 +77,12 @@ export class ManagedProductsService {
   }
 
   async createManagedProduct(orgId: string, userId: string, input: CreateManagedProductInput) {
+    const pmWorkspaceId = await this.pmWorkspaces.resolveDefaultWorkspaceId(orgId);
     const [row] = await this.db
       .insert(managedProducts)
       .values({
         orgId,
+        pmWorkspaceId,
         name: input.name,
         key: input.key,
         description: input.description ?? null,

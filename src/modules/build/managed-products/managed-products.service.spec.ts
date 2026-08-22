@@ -2,6 +2,7 @@ import { ConflictException, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { ManagedProductsService } from "./managed-products.service";
 import { AuditService } from "../../../common/audit/audit.service";
+import { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 
 const ORG_ID = "org-1";
@@ -53,6 +54,10 @@ describe("ManagedProductsService", () => {
         ManagedProductsService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AuditService, useValue: mockAudit },
+        {
+          provide: PmWorkspacesService,
+          useValue: { resolveDefaultWorkspaceId: jest.fn().mockResolvedValue("ws_default") },
+        },
       ],
     }).compile();
     svc = module.get(ManagedProductsService);
