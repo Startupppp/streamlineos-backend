@@ -2,6 +2,7 @@ import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { ALL_MODULES, signToken } from "../../../test/helpers/sign-token";
+import { effectiveRateLimit } from "../../common/ratelimit/rate-limit.service";
 
 describe("Auth controller (e2e)", () => {
   let app: INestApplication;
@@ -88,10 +89,10 @@ describe("Auth controller (e2e)", () => {
     expect(res.status).not.toBe(403);
   });
 
-  it("429 on POST /auth/register after exhausting the 3-per-minute rate limit", async () => {
+  it("429 on POST /auth/register after exhausting its rate limit", async () => {
     const ip = "10.0.1.11";
     const body = { firstName: "R", email: "rl-register@example.com", companyName: "Co" };
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < effectiveRateLimit("auth:register"); i++) {
       await request(app.getHttpServer())
         .post("/auth/register")
         .set("X-Forwarded-For", ip)
@@ -108,10 +109,10 @@ describe("Auth controller (e2e)", () => {
     });
   });
 
-  it("429 on POST /auth/magic-link after exhausting the 3-per-minute rate limit", async () => {
+  it("429 on POST /auth/magic-link after exhausting its rate limit", async () => {
     const ip = "10.0.1.13";
     const body = { email: "rl-magic@example.com" };
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < effectiveRateLimit("auth:magic-link"); i++) {
       await request(app.getHttpServer())
         .post("/auth/magic-link")
         .set("X-Forwarded-For", ip)

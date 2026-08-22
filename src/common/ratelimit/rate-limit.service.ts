@@ -82,6 +82,16 @@ const TIERS: Record<string, Tier> = {
 
 const DEV_LIMIT_MULTIPLIER = process.env.NODE_ENV === "production" ? 1 : 10;
 
+/**
+ * The limit actually enforced right now. Outside production every tier is
+ * multiplied so local work is not throttled, which means a test that hard-codes
+ * the declared limit exhausts a tenth of the real budget and never sees a 429.
+ */
+export function effectiveRateLimit(tier: string): number {
+  const t = TIERS[tier];
+  return t ? t.limit * DEV_LIMIT_MULTIPLIER : 0;
+}
+
 export interface RateLimitResult {
   allowed: boolean;
   retryAfterSecs: number;

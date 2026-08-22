@@ -2,6 +2,7 @@ import { Test } from "@nestjs/testing";
 import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { AllExceptionsFilter } from "src/common/http/all-exceptions.filter";
+import { DRIZZLE } from "src/db/drizzle.constants";
 import { RateLimitGuard } from "src/common/ratelimit/rate-limit.guard";
 import { RateLimitService } from "src/common/ratelimit/rate-limit.service";
 import { EmailService } from "src/modules/email/email.service";
@@ -49,6 +50,7 @@ describe("Public contact form (e2e)", () => {
         { provide: IntakeService, useValue: {} },
         { provide: OrgService, useValue: {} },
         { provide: PublicFormsService, useValue: {} },
+        { provide: DRIZZLE, useValue: {} },
       ],
     }).compile();
 

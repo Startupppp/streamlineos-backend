@@ -40,30 +40,24 @@ describe("/me (e2e)", () => {
     expect(res.body).toMatchObject({ userId: "user_77", orgId: "org_3", role: "SALES" });
   });
 
-  it("403 on /me/protected for a non-owner without the crm:leads:delete grant", async () => {
-    const token = await signToken({ sub: "member_1" });
-    const res = await request(app.getHttpServer())
-      .get("/me/protected")
-      .set("Authorization", `Bearer ${token}`);
-    expect(res.status).toBe(403);
-    expect(res.body).toEqual({ error: "Permission denied" });
-  });
-
-  it("200 on /me/protected for an org owner", async () => {
+  it("reports ownership from the membership row for an owner", async () => {
     const token = await signToken({ sub: "owner_1" });
-    const res = await request(app.getHttpServer())
-      .get("/me/protected")
-      .set("Authorization", `Bearer ${token}`);
+    const res = await request(app.getHttpServer()).get("/me").set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ ok: true, userId: "owner_1" });
+    expect(res.body).toMatchObject({ userId: "owner_1", role: "OWNER", isOrgOwner: true });
   });
 
-  it("403 on /me/protected when the token claims ownership the membership row does not grant", async () => {
+  it("ignores a token that claims ownership the membership row does not grant", async () => {
     const token = await signToken({ sub: "member_1", isOrgOwner: true });
-    const res = await request(app.getHttpServer())
-      .get("/me/protected")
-      .set("Authorization", `Bearer ${token}`);
-    expect(res.status).toBe(403);
-    expect(res.body).toEqual({ error: "Permission denied" });
+    const res = await request(app.getHttpServer()).get("/me").set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ userId: "member_1", role: "SALES", isOrgOwner: false });
+  });
+
+  it("never echoes the token's permission claim back as resolved access", async () => {
+    const token = await signToken({ sub: "member_1", permissions: ["crm:leads:delete"] });
+    const res = await request(app.getHttpServer()).get("/me").set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ permissions: [] });
   });
 });
