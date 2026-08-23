@@ -25,6 +25,7 @@ import {
   bumpPermissionsVersion,
   subscribeVersionBump,
 } from "../../common/rbac/access-invalidate";
+import { accessVersionChannel } from "../../common/rbac/access-version-channel";
 import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
 import type { AccessSnapshot, DataScope } from "./access.types";
 import { EntitlementsService, MODULE_CATALOG } from "./entitlements.service";
@@ -69,7 +70,15 @@ interface PermsEntry {
   expiresAt: number;
 }
 
-const VERSION_CACHE_TTL_MS = 5_000;
+/**
+ * A backstop, not the coherence mechanism. A bump clears the shared version key,
+ * so every instance sees the change on its next read; this bounds how long an
+ * instance trusts its own copy if both the shared clear and the local fan-out
+ * were lost. It can be short because a miss now costs a cache read rather than a
+ * tenant transaction.
+ */
+const VERSION_CACHE_TTL_MS = 1_000;
+const SHARED_VERSION_TTL_SECONDS = 300;
 const PERMS_CACHE_TTL_MS = 30_000;
 
 function isMissingRelationError(error: unknown): boolean {
@@ -139,6 +148,16 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     );
   }
   onModuleInit(): void {
+    accessVersionChannel.useStore({
+      get: (orgId) => this.cache.get<number>(CACHE_KEYS.accessVersion(orgId)),
+      set: (orgId, version) =>
+        this.cache.set(
+          CACHE_KEYS.accessVersion(orgId),
+          version,
+          SHARED_VERSION_TTL_SECONDS,
+        ),
+      clear: (orgId) => this.cache.invalidate(CACHE_KEYS.accessVersion(orgId)),
+    });
     this.unsubscribeVersionBump = subscribeVersionBump((orgId) => {
       this.versionCache.delete(orgId);
       this.deleteOrgEntries(this.membershipAccessCache, orgId);
@@ -182,9 +201,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       return fallback;
     }
   }
-  async getPermissionsVersion(orgId: string): Promise<number> {
-    const cached = this.versionCache.get(orgId);
-    if (cached && cached.expiresAt > Date.now()) return cached.version;
+  private async loadDurablePermissionsVersion(orgId: string): Promise<number> {
     const row = await runInTenantTransaction(
       this.db,
       () =>
@@ -198,7 +215,17 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
         ),
       { orgId },
     );
-    const version = row?.permissionsVersion ?? 1;
+    return row?.permissionsVersion ?? 1;
+  }
+
+  async getPermissionsVersion(orgId: string): Promise<number> {
+    const cached = this.versionCache.get(orgId);
+    if (cached && cached.expiresAt > Date.now()) return cached.version;
+
+    const version = await accessVersionChannel.read(orgId, () =>
+      this.loadDurablePermissionsVersion(orgId),
+    );
+
     this.versionCache.set(orgId, {
       version,
       expiresAt: Date.now() + VERSION_CACHE_TTL_MS,

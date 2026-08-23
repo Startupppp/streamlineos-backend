@@ -1,25 +1,23 @@
 import { sql } from "drizzle-orm";
 import { accessVersions } from "../../db/schema";
 import { type Db } from "../../db/drizzle.module";
+import {
+  accessVersionChannel,
+  type AccessVersionListener,
+} from "./access-version-channel";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 export type DbOrTx = Db | Tx;
 
-type VersionBumpListener = (orgId: string) => void;
-
-const versionBumpListeners = new Set<VersionBumpListener>();
-
-export function subscribeVersionBump(fn: VersionBumpListener): () => void {
-  versionBumpListeners.add(fn);
-  return () => {
-    versionBumpListeners.delete(fn);
-  };
+export function subscribeVersionBump(fn: AccessVersionListener): () => void {
+  return accessVersionChannel.subscribe(fn);
 }
 
-function notifyVersionBump(orgId: string): void {
-  for (const fn of versionBumpListeners) fn(orgId);
-}
-
+/**
+ * Published before the caller's transaction commits, deliberately. A rolled-back
+ * grant change then costs one wasted re-read; publishing after commit would risk
+ * missing one, and a missed invalidation honours a revoked grant.
+ */
 export async function bumpPermissionsVersion(tx: DbOrTx, orgId: string): Promise<void> {
   await tx
     .insert(accessVersions)
@@ -31,5 +29,5 @@ export async function bumpPermissionsVersion(tx: DbOrTx, orgId: string): Promise
         updatedAt: new Date(),
       },
     });
-  notifyVersionBump(orgId);
+  await accessVersionChannel.publish(orgId);
 }
