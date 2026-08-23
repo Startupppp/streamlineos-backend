@@ -255,7 +255,12 @@ export class WorkflowRunnerService {
               steps,
             }),
           })
-          .where(eq(workflowExecutions.id, execution.id));
+          .where(
+            and(
+              eq(workflowExecutions.id, execution.id),
+              eq(workflowExecutions.status, "running"),
+            ),
+          );
         return "suspended";
       }
 
@@ -298,6 +303,10 @@ export class WorkflowRunnerService {
     });
   }
 
+  /**
+   * Scoped to `running` so a cancel landing mid-walk is not overwritten by the
+   * terminal write — the cancelled row simply no longer matches.
+   */
   private async finish(
     tx: TenantTx,
     executionId: string,
@@ -321,7 +330,12 @@ export class WorkflowRunnerService {
             }
           : {}),
       })
-      .where(eq(workflowExecutions.id, executionId));
+      .where(
+        and(
+          eq(workflowExecutions.id, executionId),
+          eq(workflowExecutions.status, "running"),
+        ),
+      );
   }
 }
 

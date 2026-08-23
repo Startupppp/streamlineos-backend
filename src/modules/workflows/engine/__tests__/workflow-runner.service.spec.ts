@@ -43,9 +43,7 @@ function makeTx(rec: Recorder) {
     update: () => ({
       set: (values: Record<string, unknown>) => {
         rec.updates.push(values);
-        return {
-          where: () => thenableWith(rec.selects.length >= 0 ? claimRows : []),
-        };
+        return { where: () => thenableWith(claimRows) };
       },
     }),
     select: () => ({
