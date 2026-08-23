@@ -1,5 +1,6 @@
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { isPlanGatedModule } from "../../common/rbac/module-vocabulary";
+import { moduleAvailability } from "../../common/rbac/module-availability";
 import { moduleOf } from "./access.service";
 import type { AuthResult, DataScope } from "./access.types";
 import { isPersonalTokenPermissionDelegable } from "../../common/rbac/personal-token-policy";
@@ -7,6 +8,7 @@ import { isPersonalTokenPermissionDelegable } from "../../common/rbac/personal-t
 export interface AccessResolver {
   resolveUserPermissions(orgId: string, userId: string): Promise<Map<string, DataScope>>;
   isModuleEnabled(orgId: string, moduleKey: string): Promise<boolean>;
+  getUserDeniedModules?: (orgId: string, userId: string) => Promise<Set<string>>;
 }
 
 export async function authorize(
@@ -25,9 +27,22 @@ export async function authorize(
   }
 
   const moduleKey = moduleOf(permissionKey);
-  if (isPlanGatedModule(moduleKey) && !(await access.isModuleEnabled(ctx.orgId, moduleKey))) {
-    return { allow: false, scope: "none", reason: "NO_MODULE" };
-  }
+  const avail = await moduleAvailability(
+    {
+      isCoreModule: (key) => !isPlanGatedModule(key),
+      getModuleMap: async (orgId) => ({
+        [moduleKey]: await access.isModuleEnabled(orgId, moduleKey),
+      }),
+      getUserDeniedModules: access.getUserDeniedModules
+        ? (orgId, uid) => access.getUserDeniedModules!(orgId, uid)
+        : async () => new Set<string>(),
+      getPlanLockedModules: async () => [],
+    },
+    ctx.orgId,
+    ctx.userId,
+    moduleKey,
+  );
+  if (!avail.available) return { allow: false, scope: "none", reason: "NO_MODULE" };
 
   if (ctx.isOrgOwner) return { allow: true, scope: "all" };
 

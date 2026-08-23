@@ -43,6 +43,7 @@
     "test": "jest",
     "test:e2e": "jest --config ./jest-e2e.json",
     "test:e2e:ci": "node --max-old-space-size=6144 ./node_modules/jest/bin/jest.js --config ./jest-e2e.json --runInBand --forceExit",
+    "test:e2e:seeded": "node --max-old-space-size=6144 ./node_modules/jest/bin/jest.js --config ./jest-e2e-seeded.json --forceExit",
     "test:e2e:support": "node --max-old-space-size=6144 ./node_modules/jest/bin/jest.js --config ./jest-e2e.json --runInBand --testPathPattern=support",
     "db:check-request-txn": "node src/scripts/check-request-transaction-cost.mjs",
     "check:cycles": "npx --yes madge@8 --circular --extensions ts src"

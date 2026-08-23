@@ -171,6 +171,11 @@ export class EntitlementsService implements OnModuleInit {
     return this.coreModuleKeys.has(moduleIdFromStored(moduleKey));
   }
 
+  async getPlanLockedModules(orgId: string): Promise<readonly string[]> {
+    const { tier } = await this.planLimits.resolveTier(orgId);
+    return PLAN_LOCKED_MODULES[tier];
+  }
+
   async setModuleEnabled(
     orgId: string,
     moduleKey: string,

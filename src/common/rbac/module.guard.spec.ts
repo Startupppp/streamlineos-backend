@@ -35,8 +35,22 @@ describe("ModuleGuard", () => {
     getAllAndOverride: jest.fn(),
   } as jest.Mocked<Reflector>;
 
-  const entitlements: jest.Mocked<Pick<EntitlementsService, "isModuleEnabled">> = {
-    isModuleEnabled: jest.fn(),
+  const entitlements: jest.Mocked<
+    Pick<
+      EntitlementsService,
+      "isCoreModule" | "getModuleMap" | "getPlanLockedModules"
+    >
+  > = {
+    isCoreModule: jest.fn().mockReturnValue(false),
+    getModuleMap: jest.fn().mockResolvedValue({}),
+    getPlanLockedModules: jest.fn().mockResolvedValue([]),
+  };
+
+  // Expressed as the org's module map because that is what the guard now reads.
+  const orgHasModules = (map: Record<string, boolean>): void => {
+    entitlements.isCoreModule.mockReturnValue(false);
+    entitlements.getModuleMap.mockResolvedValue(map);
+    entitlements.getPlanLockedModules.mockResolvedValue([]);
   };
 
   const guard = new ModuleGuard(
@@ -66,13 +80,13 @@ describe("ModuleGuard", () => {
   it("passes through when no @RequireModule is set", async () => {
     setMetadata(undefined);
     expect(await guard.canActivate(ctx({}))).toBe(true);
-    expect(entitlements.isModuleEnabled).not.toHaveBeenCalled();
+    expect(entitlements.getModuleMap).not.toHaveBeenCalled();
   });
 
   it("lets a @Public() route through even though its class carries @RequireModule", async () => {
     setMetadata("support", true);
     expect(await guard.canActivate(publicCtx())).toBe(true);
-    expect(entitlements.isModuleEnabled).not.toHaveBeenCalled();
+    expect(entitlements.getModuleMap).not.toHaveBeenCalled();
   });
 
   it("does not throw reading orgId when there is no authenticated user", async () => {
@@ -82,61 +96,63 @@ describe("ModuleGuard", () => {
 
   it("allows when the module is enabled", async () => {
     setMetadata("crm");
-    entitlements.isModuleEnabled.mockResolvedValue(true);
+    orgHasModules({ crm: true });
     expect(await guard.canActivate(ctx({}))).toBe(true);
-    expect(entitlements.isModuleEnabled).toHaveBeenCalledWith("org-1", "crm");
+    expect(entitlements.getModuleMap).toHaveBeenCalledWith("org-1");
   });
 
 
   it("throws ModuleDisabledException when module not enabled and not admin", async () => {
     setMetadata("crm");
-    entitlements.isModuleEnabled.mockResolvedValue(false);
+    orgHasModules({ crm: false });
     await expect(guard.canActivate(ctx({}))).rejects.toThrow(ModuleDisabledException);
   });
 
   it("denies org owners when the module is disabled", async () => {
     setMetadata("crm");
-    entitlements.isModuleEnabled.mockResolvedValue(false);
+    orgHasModules({ crm: false });
     await expect(guard.canActivate(ctx({ isOrgOwner: true }))).rejects.toThrow(
       ModuleDisabledException,
     );
-    expect(entitlements.isModuleEnabled).toHaveBeenCalledWith("org-1", "crm");
   });
 
   it("denies org admins when the module is disabled", async () => {
     setMetadata("crm");
-    entitlements.isModuleEnabled.mockResolvedValue(false);
+    orgHasModules({ crm: false });
     await expect(guard.canActivate(ctx({}))).rejects.toThrow(ModuleDisabledException);
-    expect(entitlements.isModuleEnabled).toHaveBeenCalledWith("org-1", "crm");
   });
 
   it("normalizes the required key to lowercase before querying", async () => {
     setMetadata("BUILD");
-    entitlements.isModuleEnabled.mockResolvedValue(true);
+    orgHasModules({ build: true });
     expect(await guard.canActivate(ctx({}))).toBe(true);
-    expect(entitlements.isModuleEnabled).toHaveBeenCalledWith("org-1", "build");
   });
 
   it("queries the DB for the build module — not legacy PROJECTS alias", async () => {
     setMetadata("build");
-    entitlements.isModuleEnabled.mockResolvedValue(true);
+    orgHasModules({ build: true });
     expect(await guard.canActivate(ctx({}))).toBe(true);
-    expect(entitlements.isModuleEnabled).toHaveBeenCalledWith("org-1", "build");
+    await expect(guard.canActivate(ctx({}))).resolves.toBe(true);
+    orgHasModules({ projects: true });
+    await expect(guard.canActivate(ctx({}))).rejects.toThrow(ModuleDisabledException);
   });
 
   it("requires every module when @RequireModule receives an array", async () => {
     setMetadata(["crm", "inventory"]);
-    entitlements.isModuleEnabled.mockResolvedValue(true);
+    orgHasModules({ crm: true, inventory: true });
     expect(await guard.canActivate(ctx({}))).toBe(true);
-    expect(entitlements.isModuleEnabled).toHaveBeenCalledTimes(2);
-    expect(entitlements.isModuleEnabled).toHaveBeenNthCalledWith(1, "org-1", "crm");
-    expect(entitlements.isModuleEnabled).toHaveBeenNthCalledWith(2, "org-1", "inventory");
   });
 
   it("throws when any required module in the array is disabled", async () => {
     setMetadata(["crm", "inventory"]);
-    entitlements.isModuleEnabled.mockImplementation(async (_orgId, key) => key === "crm");
+    orgHasModules({ crm: true, inventory: false });
     await expect(guard.canActivate(ctx({}))).rejects.toThrow(ModuleDisabledException);
-    expect(entitlements.isModuleEnabled).toHaveBeenCalledWith("org-1", "inventory");
+  });
+
+  it("lets a core module through even when the org has no row for it", async () => {
+    setMetadata("chat");
+    entitlements.isCoreModule.mockReturnValue(true);
+    entitlements.getModuleMap.mockResolvedValue({});
+    expect(await guard.canActivate(ctx({}))).toBe(true);
   });
 });
