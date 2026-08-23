@@ -153,6 +153,19 @@ export class ChatChannelsController {
     return this.members.addMember(channelId, body.userId, u.userId);
   }
 
+  @ApiOperation({ summary: "Recompute an entity channel's display name" })
+  @ApiResponse({ status: 200, description: "OK" })
+  @Post(":channelId/refresh-name")
+  @HttpCode(200)
+  @RequirePermission("chat:channels:write")
+  async refreshEntityChannelName(
+    @Param("channelId", ParseIntPipe) channelId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<{ success: true }> {
+    await this.channels.reconcileEntityChannelDisplayName(channelId, actorOf(u));
+    return { success: true };
+  }
+
   @ApiOperation({ summary: "Remove a member from a channel" })
   @ApiResponse({ status: 200, description: "OK" })
   @Delete(":channelId/members/:userId")

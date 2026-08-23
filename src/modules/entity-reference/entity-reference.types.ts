@@ -68,6 +68,7 @@ export type EntityActionResult =
 export interface EntityAdapter {
   readonly moduleKey: string;
   readonly types: readonly string[];
+  // Pure: no writes, no observable side effects; a miss returns unresolved, never forbidden.
   resolve(
     actor: EntityActor,
     references: EntityReference[],

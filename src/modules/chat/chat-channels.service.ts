@@ -73,9 +73,18 @@ export class ChatChannelsService {
     await this.db
       .update(chatChannels)
       .set({ name: named.name })
-      .where(eq(chatChannels.id, channel.id));
+      .where(and(eq(chatChannels.id, channel.id), eq(chatChannels.orgId, actor.orgId)));
 
     return named;
+  }
+
+  async reconcileEntityChannelDisplayName(channelId: number, actor: EntityActor): Promise<void> {
+    const channel = await this.db.query.chatChannels.findFirst({
+      where: and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, actor.orgId)),
+      columns: { id: true, name: true, entityType: true, entityId: true },
+    });
+    if (!channel || !channel.entityType || !channel.entityId) return;
+    await this.ensureEntityChannelDisplayName(channel, actor);
   }
 
   async listMemberChannelIds(orgId: string, userId: string): Promise<number[]> {
@@ -181,9 +190,13 @@ export class ChatChannelsService {
         ]),
       );
 
-      const enrichedChannels = await Promise.all(
+      const resolutions = await Promise.allSettled(
         channels.map((ch) => this.resolveEntityChannelDisplayName(ch, actor)),
       );
+      const enrichedChannels = channels.map((ch, i) => {
+        const r = resolutions[i];
+        return r !== undefined && r.status === "fulfilled" ? r.value : ch;
+      });
 
       return enrichedChannels.map((ch) => ({
         ...ch,
@@ -372,7 +385,7 @@ export class ChatChannelsService {
       },
     });
 
-    if (existing) return this.ensureEntityChannelDisplayName(existing, actor);
+    if (existing) return this.resolveEntityChannelDisplayName(existing, actor);
 
     return this.db.transaction(async (tx) => {
       const [created] = await tx
