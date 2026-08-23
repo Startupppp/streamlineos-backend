@@ -149,7 +149,8 @@ export class ChatMessagesService {
     });
   }
 
-  async poll(channelId: number, userId: string, since: Date) {
+  async poll(channelId: number, actor: EntityActor, since: Date) {
+    const userId = actor.userId;
     if (!(await this.isMember(channelId, userId))) {
       throw new ForbiddenException("You are not a member of this channel");
     }
@@ -168,7 +169,7 @@ export class ChatMessagesService {
       },
     });
 
-    return newMessages.reverse();
+    return this.withResolvedReferences(actor, newMessages.reverse());
   }
 
   async send(channelId: number, userId: string, orgId: string, body: SendMessageInput) {
@@ -397,10 +398,11 @@ export class ChatMessagesService {
 
   async listThreadReplies(
     parentMessageId: number,
-    userId: string,
+    actor: EntityActor,
     cursor: number | undefined,
     limit: number,
   ) {
+    const userId = actor.userId;
     const parentMessage = await this.db.query.chatMessages.findFirst({
       where: eq(chatMessages.id, parentMessageId),
       with: {
@@ -438,7 +440,12 @@ export class ChatMessagesService {
       nextCursor = next?.id;
     }
 
-    return { parentMessage, replies: replies.reverse(), nextCursor };
+    const [resolvedParent] = await this.withResolvedReferences(actor, [parentMessage]);
+    return {
+      parentMessage: resolvedParent ?? parentMessage,
+      replies: await this.withResolvedReferences(actor, replies.reverse()),
+      nextCursor,
+    };
   }
 
   async sendThreadReply(

@@ -45,7 +45,10 @@ const mockDb = {
   query: {
     chatChannels: { findFirst: jest.fn().mockResolvedValue(null) },
     chatChannelMembers: { findFirst: jest.fn().mockResolvedValue(null) },
-    chatMessages: { findMany: jest.fn().mockResolvedValue([]) },
+    chatMessages: {
+      findMany: jest.fn().mockResolvedValue([]),
+      findFirst: jest.fn().mockResolvedValue({ id: 1, channelId: 1 }),
+    },
   },
   select: jest.fn().mockReturnThis(),
   from: jest.fn().mockReturnThis(),
@@ -97,6 +100,7 @@ describeWithDb("Chat entity channel access (e2e, mocked)", () => {
     mockDb.query.chatChannels.findFirst.mockResolvedValue(null);
     mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ userId: "member_1" });
     mockDb.query.chatMessages.findMany.mockResolvedValue([]);
+    mockDb.query.chatMessages.findFirst.mockResolvedValue({ id: 1, channelId: 1 });
     mockDb.where.mockReturnValue(q([TICKET_ROW]));
     mockDb.limit.mockResolvedValue([TICKET_ROW]);
   });
@@ -118,8 +122,12 @@ describeWithDb("Chat entity channel access (e2e, mocked)", () => {
   ];
 
   const messagesOf = (body: Record<string, unknown>) => {
-    const payload = (body["data"] ?? body) as { messages?: unknown[] };
-    const messages = payload.messages;
+    const payload = (body["data"] ?? body) as
+      | { messages?: unknown[]; replies?: unknown[] }
+      | unknown[];
+    const messages = Array.isArray(payload)
+      ? payload
+      : (payload.messages ?? payload.replies);
     if (!Array.isArray(messages))
       throw new Error(`no messages in response: ${JSON.stringify(body)}`);
     return messages as { metadata: { entities: { card: unknown }[] } }[];
@@ -286,5 +294,61 @@ describeWithDb("Chat entity channel access (e2e, mocked)", () => {
       .set("Authorization", `Bearer ${token}`);
 
     expect(res.status).toBe(200);
+  });
+
+  it("withholds a reference from a poller whose ticket access was revoked", async () => {
+    grant("chat:messages:read");
+    mockDb.query.chatMessages.findMany.mockResolvedValue(messageCarryingTicketRef);
+    const token = await signToken({
+      sub: "member_1",
+      permissions: ["chat:messages:read"],
+      enabledModules: ALL_MODULES,
+    });
+
+    const res = await request(app.getHttpServer())
+      .get("/chat/channels/1/messages/poll?since=2026-01-01T00:00:00.000Z")
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    const [entity] = messagesOf(res.body)[0].metadata.entities;
+    expect(entity.card).toBeNull();
+    expect(JSON.stringify(res.body)).not.toContain(TICKET_ROW.title);
+  });
+
+  it("resolves a reference for a poller who may see the ticket", async () => {
+    grant("chat:messages:read", "build:tickets:view");
+    mockDb.query.chatMessages.findMany.mockResolvedValue(messageCarryingTicketRef);
+    const token = await signToken({
+      sub: "member_1",
+      permissions: ["chat:messages:read"],
+      enabledModules: ALL_MODULES,
+    });
+
+    const res = await request(app.getHttpServer())
+      .get("/chat/channels/1/messages/poll?since=2026-01-01T00:00:00.000Z")
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    const [entity] = messagesOf(res.body)[0].metadata.entities;
+    expect(entity.card).toMatchObject({ title: TICKET_ROW.title });
+  });
+
+  it("withholds a reference in a thread from a reader whose ticket access was revoked", async () => {
+    grant("chat:messages:read");
+    mockDb.query.chatMessages.findMany.mockResolvedValue(messageCarryingTicketRef);
+    const token = await signToken({
+      sub: "member_1",
+      permissions: ["chat:messages:read"],
+      enabledModules: ALL_MODULES,
+    });
+
+    const res = await request(app.getHttpServer())
+      .get("/chat/channels/1/messages/1/thread")
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    const [entity] = messagesOf(res.body)[0].metadata.entities;
+    expect(entity.card).toBeNull();
+    expect(JSON.stringify(res.body)).not.toContain(TICKET_ROW.title);
   });
 });

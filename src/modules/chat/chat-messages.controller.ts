@@ -36,6 +36,7 @@ import {
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from "@nestjs/swagger";
+import { actorOf } from "../entity-reference/entity-actor";
 
 @ApiTags("Chat Messages")
 @ApiBearerAuth()
@@ -57,12 +58,7 @@ export class ChatMessagesController {
     @Query(new ZodValidationPipe(listMessagesQuerySchema)) query: ListMessagesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.messages.list(
-      channelId,
-      { orgId: u.orgId, userId: u.userId, isOrgOwner: u.isOrgOwner },
-      query.cursor,
-      query.limit ?? 50,
-    );
+    return this.messages.list(channelId, actorOf(u), query.cursor, query.limit ?? 50);
   }
 
   @ApiOperation({ summary: "Send a message to a channel" })
@@ -93,7 +89,7 @@ export class ChatMessagesController {
     if (!query.since) throw new BadRequestException("Missing required query param: since");
     const since = new Date(query.since);
     if (Number.isNaN(since.getTime())) throw new BadRequestException("Invalid 'since' timestamp");
-    return this.messages.poll(channelId, u.userId, since);
+    return this.messages.poll(channelId, actorOf(u), since);
   }
 
   @ApiOperation({ summary: "Edit message content" })
@@ -142,7 +138,7 @@ export class ChatMessagesController {
     @Query(new ZodValidationPipe(listMessagesQuerySchema)) query: ListMessagesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.messages.listThreadReplies(messageId, u.userId, query.cursor, query.limit ?? 50);
+    return this.messages.listThreadReplies(messageId, actorOf(u), query.cursor, query.limit ?? 50);
   }
 
   @ApiOperation({ summary: "Send a reply in a message thread" })
