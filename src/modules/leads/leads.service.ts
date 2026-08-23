@@ -129,12 +129,21 @@ export class LeadsService {
     if (filters?.dateTo) where.push(lte(leads.createdAt, new Date(filters.dateTo)));
     if (filters?.search) {
       const s = `%${filters.search}%`;
+      const cmpRows = await this.db.execute(
+        sql`SELECT app.search_lead_ids_by_company(${filters.search}, 501) AS id`,
+      );
+      const cmpCond: SQL =
+        cmpRows.length > 500
+          ? sql`${leads.company} ILIKE ${s}`
+          : cmpRows.length === 0
+          ? sql`false`
+          : inArray(leads.id, cmpRows.map((r) => Number(r["id"])));
       where.push(
         or(
           sql`${leads.name} ILIKE ${s}`,
           sql`${leads.email} ILIKE ${s}`,
           sql`${leads.phone} ILIKE ${s}`,
-          sql`${leads.company} ILIKE ${s}`,
+          cmpCond,
         )!,
       );
     }

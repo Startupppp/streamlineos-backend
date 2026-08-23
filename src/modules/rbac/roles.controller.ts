@@ -23,15 +23,13 @@ import { AccessService } from "../access/access.service";
 import type { DataScope } from "../access/access.types";
 import { RolesService } from "./roles.service";
 import {
-  cloneTemplateSchema,
-  createRoleSchema,
+  materializeTemplateSchema,
+  type MaterializeTemplateInput,
   listRolesQuerySchema,
   roleMemberSchema,
   setRolePermissionsSchema,
   simulationCandidatesQuerySchema,
   updateRoleSchema,
-  type CloneTemplateInput,
-  type CreateRoleInput,
   type ListRolesQuery,
   type RoleMemberInput,
   type SetRolePermissionsInput,
@@ -62,17 +60,6 @@ export class RolesController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.roles.getRoles(u.orgId, query);
-  }
-
-  @Post()
-  @HttpCode(201)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("settings:rbac:manage")
-  create(
-    @Body(new ZodValidationPipe(createRoleSchema)) body: CreateRoleInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.roles.createRole(u, body);
   }
 
   @Get("analytics")
@@ -136,6 +123,18 @@ export class RolesController {
     return this.roles.seedDefaultRoles(u.orgId);
   }
 
+  @Post("templates")
+  @HttpCode(201)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("settings:rbac:manage")
+  materializeTemplate(
+    @Body(new ZodValidationPipe(materializeTemplateSchema))
+    body: MaterializeTemplateInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.roles.materializeTemplate(u, body.templateId);
+  }
+
   @Get("templates")
   templates() {
     return this.roles.listTemplates();
@@ -146,17 +145,6 @@ export class RolesController {
   @RequirePermission("settings:rbac:manage")
   listAssignableDepartments(@CurrentUser() u: CurrentUserContext) {
     return this.roles.listAssignableDepartments(u.orgId);
-  }
-
-  @Post("templates")
-  @HttpCode(201)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("settings:rbac:manage")
-  cloneTemplate(
-    @Body(new ZodValidationPipe(cloneTemplateSchema)) body: CloneTemplateInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.roles.cloneTemplate(u, body);
   }
 
   @Get(":roleId")

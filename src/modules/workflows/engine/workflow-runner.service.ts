@@ -11,7 +11,10 @@ import {
   workflowVersions,
 } from "../../../db/schema";
 import { nextNodeId, parseWorkflowGraph, type WorkflowGraph } from "./workflow-graph";
-import { executeNode } from "./workflow-node-executors";
+import {
+  NODE_DISPATCH_PORT,
+  type NodeDispatchPort,
+} from "./node-outcome";
 import {
   isDue,
   readRunState,
@@ -36,13 +39,17 @@ interface ClaimedExecution {
   workflowVersionId: string;
   triggerData: Record<string, unknown> | null;
   context: Record<string, unknown> | null;
+  triggeredBy: string | null;
 }
 
 @Injectable()
 export class WorkflowRunnerService {
   private readonly logger = new Logger(WorkflowRunnerService.name);
 
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    @Inject(NODE_DISPATCH_PORT) private readonly dispatcher: NodeDispatchPort,
+  ) {}
 
   async sweep(): Promise<WorkflowSweepResult> {
     const totals: WorkflowSweepResult = {
@@ -134,6 +141,7 @@ export class WorkflowRunnerService {
           workflowVersionId: workflowExecutions.workflowVersionId,
           triggerData: workflowExecutions.triggerData,
           context: workflowExecutions.context,
+          triggeredBy: workflowExecutions.triggeredBy,
         });
       return claimed ?? null;
     });
@@ -219,10 +227,15 @@ export class WorkflowRunnerService {
       }
 
       const startedAt = new Date();
-      const outcome = executeNode(
+      const outcome = await this.dispatcher.execute(
         node,
         { triggerData, variables },
         startedAt,
+        {
+          orgId: execution.orgId,
+          executionId: execution.id,
+          userId: execution.triggeredBy,
+        },
       );
       steps += 1;
 

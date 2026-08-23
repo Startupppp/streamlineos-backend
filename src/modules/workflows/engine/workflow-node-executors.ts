@@ -6,18 +6,11 @@ import {
 } from "../../automation/shared-condition-evaluator";
 import type { WorkflowGraphNode, WorkflowNodeType } from "./workflow-graph";
 
+import type { NodeExecutionInput, NodeOutcome } from "./node-outcome";
+
 export const MAX_DELAY_MS = 30 * 24 * 60 * 60 * 1000;
 
-export type NodeOutcome =
-  | { kind: "continue"; output: Record<string, unknown>; branch?: string }
-  | { kind: "suspend"; output: Record<string, unknown>; resumeAt: Date }
-  | { kind: "halt"; output: Record<string, unknown> }
-  | { kind: "failed"; error: string };
-
-export interface NodeExecutionInput {
-  triggerData: Record<string, unknown>;
-  variables: Record<string, unknown>;
-}
+export type { NodeExecutionInput, NodeOutcome };
 
 const conditionConfigSchema = z.object({
   conditions: z
@@ -136,12 +129,8 @@ function executeDelay(node: WorkflowGraphNode, now: Date): NodeOutcome {
 }
 
 const UNIMPLEMENTED: Partial<Record<WorkflowNodeType, string>> = {
-  approval: "approval routing",
-  action: "action dispatch",
-  loop: "iteration",
-  ai_action: "the credit-metered AI gateway",
-  integration: "third-party calls through Composio",
-  script: "a sandboxed script runtime",
+  approval:
+    "a generic approval service. Every approval implementation here is domain-scoped — build:project_approvals, finance:fin_approval_requests, timesheets:timesheet_periods, payroll:payroll_approvals — so there is no org-wide approval table or inbox a workflow could route to. One must be built before this node can work",
 };
 
 export function executeNode(

@@ -4,9 +4,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import {
   organizationMembers,
-  roleAssignments,
   rolePermissionGrants,
-  roles,
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -23,9 +21,10 @@ import {
   ROLE_RANK,
   toGrantableSet,
 } from "../../common/rbac/grantability";
+import { resolveActorRankContext } from "../../common/rbac/resolve-actor-rank";
+import { isStructuralOrgAdmin } from "../../common/rbac/is-structural-org-admin";
 import {
   PERMISSIONS,
-  ROLE_DEFAULT_PERMISSIONS,
   UNIVERSAL_MEMBER_PERMISSION_GRANTS,
   UNIVERSAL_MEMBER_PERMISSIONS,
   type Permission,
@@ -40,10 +39,8 @@ import type {
   RevokeRolePermissionInput,
 } from "./dto/rbac.schemas";
 import { AccessService } from "../access/access.service";
-import { RolesService } from "./roles.service";
 import { ROLE_TEMPLATES } from "./role-templates.constants";
 
-const RBAC_MANAGE_KEY = "settings:rbac:manage";
 const CATALOG_KEYS = new Set(PERMISSIONS.map((p) => p.name));
 const UNIVERSAL_PERMISSION_KEYS = new Set<string>(
   UNIVERSAL_MEMBER_PERMISSIONS,
@@ -65,54 +62,11 @@ export class RbacService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
-    private readonly rolesService: RolesService,
     private readonly cache: CacheService,
   ) {}
 
   getAllPermissions(): Permission[] {
     return DISCOVERABLE_PERMISSIONS;
-  }
-
-  async getUserPermissions(userId: string, orgId: string): Promise<string[]> {
-    const membership = await this.db.query.organizationMembers.findFirst({
-      where: and(eq(organizationMembers.userId, userId), eq(organizationMembers.orgId, orgId)),
-      columns: { role: true, status: true },
-    });
-    if (membership?.status !== "ACTIVE") return [];
-    const role = membership?.role;
-
-    const rolePerms = role ? await this.grantsForRoleSlug(role, orgId) : [];
-    const defaultPerms = role ? (ROLE_DEFAULT_PERMISSIONS[role] ?? []) : [];
-
-    const permissionSet = new Set<string>();
-
-    UNIVERSAL_MEMBER_PERMISSIONS.forEach((key) => permissionSet.add(key));
-    rolePerms.forEach((key) => permissionSet.add(key));
-    defaultPerms.forEach((perm) => permissionSet.add(perm));
-
-    return Array.from(permissionSet);
-  }
-
-  async getRolePermissions(role: string, orgId: string): Promise<string[]> {
-    const keys = await this.grantsForRoleSlug(role, orgId);
-    return Array.from(new Set([...UNIVERSAL_MEMBER_PERMISSIONS, ...keys]));
-  }
-
-  private async grantsForRoleSlug(role: string, orgId: string): Promise<string[]> {
-    const rows = await this.db
-      .select({ permissionKey: rolePermissionGrants.permissionKey })
-      .from(rolePermissionGrants)
-      .innerJoin(roles, eq(rolePermissionGrants.roleId, roles.id))
-      .where(
-        and(
-          eq(rolePermissionGrants.orgId, orgId),
-          eq(roles.orgId, orgId),
-          eq(roles.slug, role),
-        ),
-      )
-      .limit(500);
-
-    return rows.map((row) => row.permissionKey);
   }
 
   async assignRolePermission(
@@ -178,20 +132,6 @@ export class RbacService {
       );
     }
 
-    if (input.permissionKey === RBAC_MANAGE_KEY) {
-      const willLockOut = await this.rolesService.wouldLockOutLastAdmin(
-        actor.orgId,
-        undefined,
-        input.roleId,
-        RBAC_MANAGE_KEY,
-      );
-      if (willLockOut) {
-        throw new ForbiddenException(
-          "Cannot revoke the last settings:rbac:manage permission grant",
-        );
-      }
-    }
-
     await runInTenantTransaction(this.db, async (tx) => {
       await tx
         .delete(rolePermissionGrants)
@@ -209,59 +149,7 @@ export class RbacService {
   }
 
   private async checkActorAccess(actor: CurrentUserContext): Promise<boolean> {
-    if (actor.isOrgOwner) return true;
-    const resolved = await this.access.resolveUserPermissions(actor.orgId, actor.userId);
-    const scope = resolved.get(RBAC_MANAGE_KEY);
-    return !!scope && scope !== "none";
-  }
-
-  private async resolveActorRankContext(
-    orgId: string,
-    userId: string,
-  ): Promise<{ bestRank: number; allowedModules: Set<string> | null }> {
-    const rows = await this.db
-      .select({ rank: roles.rank, moduleKey: roles.moduleKey })
-      .from(roleAssignments)
-      .innerJoin(
-        organizationMembers,
-        and(
-          eq(roleAssignments.organizationMembershipId, organizationMembers.id),
-          eq(roleAssignments.orgId, organizationMembers.orgId),
-        ),
-      )
-      .innerJoin(
-        roles,
-        and(eq(roleAssignments.roleId, roles.id), eq(roles.orgId, orgId)),
-      )
-      .where(
-        and(
-          eq(roleAssignments.orgId, orgId),
-          eq(organizationMembers.userId, userId),
-        ),
-      )
-      .limit(100);
-
-    if (rows.length === 0) {
-      return { bestRank: ROLE_RANK.FUNCTIONAL, allowedModules: null };
-    }
-
-    let bestRank: number = ROLE_RANK.FUNCTIONAL;
-    for (const row of rows) {
-      if (row.rank < bestRank) bestRank = row.rank;
-    }
-
-    const topRankRoles = rows.filter((r) => r.rank === bestRank);
-    const hasOrgWideRole = topRankRoles.some((r) => r.moduleKey === null);
-    if (hasOrgWideRole) {
-      return { bestRank, allowedModules: null };
-    }
-
-    const modules = new Set(
-      topRankRoles
-        .map((r) => r.moduleKey)
-        .filter((m): m is string => m !== null),
-    );
-    return { bestRank, allowedModules: modules };
+    return isStructuralOrgAdmin(this.db, actor);
   }
 
   async getDiscoveryPermissions(
@@ -278,7 +166,7 @@ export class RbacService {
       }));
     }
 
-    const { allowedModules } = await this.resolveActorRankContext(actor.orgId, actor.userId);
+    const { allowedModules } = await resolveActorRankContext(this.db, actor.orgId, actor.userId);
     return PERMISSIONS
       .filter((p) => {
         if (allowedModules === null) return true;
@@ -308,7 +196,7 @@ export class RbacService {
 
     const [resolved, { bestRank, allowedModules }] = await Promise.all([
       this.access.resolveUserPermissions(actor.orgId, actor.userId),
-      this.resolveActorRankContext(actor.orgId, actor.userId),
+      resolveActorRankContext(this.db, actor.orgId, actor.userId),
     ]);
 
     const grantable = toGrantableSet(resolved);

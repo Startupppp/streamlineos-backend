@@ -440,10 +440,13 @@ export class OwnershipTransfersService {
             id: ownershipTransfers.id,
             fromMembershipId: ownershipTransfers.fromMembershipId,
             toMembershipId: ownershipTransfers.toMembershipId,
+            scope: ownershipTransfers.scope,
+            moduleKey: ownershipTransfers.moduleKey,
           });
         if (rows.length === 0) return;
 
-          for (const row of rows)
+        const expiredModuleKeys: string[] = [];
+        for (const row of rows) {
           expired.push({
             orgId,
             transferId: row.id,
@@ -452,8 +455,16 @@ export class OwnershipTransfersService {
               row.toMembershipId,
             ]),
           });
+          if (row.scope === "MODULE" && row.moduleKey !== null)
+            expiredModuleKeys.push(row.moduleKey);
+        }
 
-        await this.cache.invalidateNamespace(`ownership:transfers:${orgId}`);
+        await Promise.all([
+          this.cache.invalidateNamespace(`ownership:transfers:${orgId}`),
+          ...expiredModuleKeys.map((k) =>
+            this.cache.invalidate(CACHE_KEYS.moduleAccessOwnership(orgId, k)),
+          ),
+        ]);
       },
     );
 

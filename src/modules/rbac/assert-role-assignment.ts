@@ -1,9 +1,11 @@
+import { ForbiddenException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.module";
 import { rolePermissionGrants } from "../../db/schema";
 import {
   assertPermissionsGrantable,
   buildPermissionModuleMap,
+  ROLE_RANK,
   toGrantableSet,
 } from "../../common/rbac/grantability";
 import { resolveActorRankContext } from "../../common/rbac/resolve-actor-rank";
@@ -16,6 +18,11 @@ export async function assertMayAssignRole(
   actor: CurrentUserContext,
   role: { id: number; rank: number; moduleKey: string | null },
 ): Promise<void> {
+  if (role.rank === ROLE_RANK.MODULE_OWNER)
+    throw new ForbiddenException(
+      "Module owner roles must be assigned through the ownership service, not the generic role-assignment path",
+    );
+
   if (actor.isOrgOwner) return;
 
   const grants = await db

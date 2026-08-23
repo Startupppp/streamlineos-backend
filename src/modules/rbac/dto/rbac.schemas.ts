@@ -18,33 +18,14 @@ export const revokeRolePermissionSchema = z.object({
   permissionKey: z.string().min(1).max(120),
 });
 
-export const createRoleSchema = z.object({
-  name: z.string().min(1).max(100),
-  slug: z
-    .string()
-    .min(1)
-    .max(50)
-    .regex(/^[A-Z0-9_]+$/),
-  permissions: z.array(z.string().min(1).max(120)).max(300).default([]),
-  moduleKey: z.string().max(64).optional(),
-  rank: z.number().int().min(20).max(40).optional(),
-});
-
 export const updateRoleSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   permissions: z.array(z.string().min(1).max(120)).max(300).optional(),
 });
 
-export const cloneTemplateSchema = z.object({
-  templateId: z.string().min(1).max(100),
-  name: z.string().min(1).max(100).optional(),
-  slug: z
-    .string()
-    .min(1)
-    .max(50)
-    .regex(/^[A-Z0-9_]+$/)
-    .optional(),
-});
+export const materializeTemplateSchema = z
+  .object({ templateId: z.string().min(1).max(64) })
+  .strict();
 
 export const setRolePermissionsSchema = z.object({
   version: z.number().int().positive(),
@@ -92,9 +73,8 @@ export const listRolesQuerySchema = z
 export type RolePermissionsQuery = z.infer<typeof rolePermissionsQuerySchema>;
 export type AssignRolePermissionInput = z.infer<typeof assignRolePermissionSchema>;
 export type RevokeRolePermissionInput = z.infer<typeof revokeRolePermissionSchema>;
-export type CreateRoleInput = z.infer<typeof createRoleSchema>;
 export type UpdateRoleInput = z.infer<typeof updateRoleSchema>;
-export type CloneTemplateInput = z.infer<typeof cloneTemplateSchema>;
+export type MaterializeTemplateInput = z.infer<typeof materializeTemplateSchema>;
 export type SetRolePermissionsInput = z.infer<typeof setRolePermissionsSchema>;
 export type RoleMemberInput = z.infer<typeof roleMemberSchema>;
 export type SimulationCandidatesQuery = z.infer<typeof simulationCandidatesQuerySchema>;

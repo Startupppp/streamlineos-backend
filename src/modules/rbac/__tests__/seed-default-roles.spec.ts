@@ -1,14 +1,5 @@
 import { RolesService } from "../roles.service";
 
-function makeInsertChain(returnValue: unknown = []) {
-  const chain: Record<string, jest.Mock> = {};
-  chain.values = jest.fn().mockReturnValue(chain);
-  chain.onConflictDoNothing = jest.fn().mockReturnValue(chain);
-  chain.onConflictDoUpdate = jest.fn().mockReturnValue(chain);
-  chain.returning = jest.fn().mockResolvedValue(returnValue);
-  return chain;
-}
-
 function makeSelectChain(returnValue: unknown = []) {
   const chain: Record<string, jest.Mock> = {};
   chain.from = jest.fn().mockReturnValue(chain);
@@ -19,15 +10,8 @@ function makeSelectChain(returnValue: unknown = []) {
 function createService(existingSlugs: string[]) {
   const service = Object.create(RolesService.prototype) as RolesService;
 
-  const txMock = {
-    insert: jest.fn().mockReturnValue(makeInsertChain()),
-    query: { roles: { findFirst: jest.fn().mockResolvedValue(undefined) } },
-  };
   const dbMock = {
     select: jest.fn().mockReturnValue(makeSelectChain([])),
-    transaction: jest.fn().mockImplementation((fn: (tx: unknown) => Promise<unknown>) =>
-      fn(txMock),
-    ),
     query: { roles: { findFirst: jest.fn() } },
   };
 
@@ -48,14 +32,19 @@ function createService(existingSlugs: string[]) {
 
   Reflect.set(service, "db", dbMock);
 
-  const cloneTemplate = jest.fn().mockResolvedValue({ id: 2 });
-  Reflect.set(service, "cloneTemplate", cloneTemplate);
-  return { service, cloneTemplate };
+  const seedFromTemplate = jest.fn().mockResolvedValue(undefined);
+  Reflect.set(service, "seedFromTemplate", seedFromTemplate);
+
+  return { service, seedFromTemplate };
 }
+
+jest.mock("../seed-system-roles", () => ({
+  seedSystemRolesForOrg: jest.fn().mockResolvedValue(undefined),
+}));
 
 describe("RolesService.seedDefaultRoles", () => {
   it("creates the starter roles that are missing and skips existing ones", async () => {
-    const { service, cloneTemplate } = createService(["ENGINEERING", "HR_ADMIN"]);
+    const { service, seedFromTemplate } = createService(["ENGINEERING", "HR_ADMIN"]);
 
     const result = await service.seedDefaultRoles("org-1");
 
@@ -66,15 +55,15 @@ describe("RolesService.seedDefaultRoles", () => {
       "DIGITAL_MARKETING",
       "ACCOUNTANT",
     ]);
-    expect(cloneTemplate).toHaveBeenCalledTimes(4);
-    expect(cloneTemplate).toHaveBeenCalledWith(
-      expect.objectContaining({ orgId: "org-1", isOrgOwner: true }),
-      { templateId: "sales_rep" },
+    expect(seedFromTemplate).toHaveBeenCalledTimes(4);
+    expect(seedFromTemplate).toHaveBeenCalledWith(
+      "org-1",
+      expect.objectContaining({ id: "sales_rep" }),
     );
   });
 
   it("is a no-op when every starter role already exists", async () => {
-    const { service, cloneTemplate } = createService([
+    const { service, seedFromTemplate } = createService([
       "ENGINEERING",
       "SALES_REP",
       "CUSTOMER_SUPPORT",
@@ -87,6 +76,6 @@ describe("RolesService.seedDefaultRoles", () => {
 
     expect(result.created).toEqual([]);
     expect(result.skipped).toHaveLength(6);
-    expect(cloneTemplate).not.toHaveBeenCalled();
+    expect(seedFromTemplate).not.toHaveBeenCalled();
   });
 });

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -10,10 +10,8 @@ import { RbacService } from "./rbac.service";
 import {
   assignRolePermissionSchema,
   revokeRolePermissionSchema,
-  rolePermissionsQuerySchema,
   type AssignRolePermissionInput,
   type RevokeRolePermissionInput,
-  type RolePermissionsQuery,
 } from "./dto/rbac.schemas";
 
 @Controller("rbac")
@@ -29,16 +27,6 @@ export class RbacController {
   @RequirePermission("settings:rbac:manage")
   getPermissions() {
     return this.rbac.getAllPermissions();
-  }
-
-  @Get("role-permissions")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("settings:rbac:manage")
-  getRolePermissions(
-    @Query(new ZodValidationPipe(rolePermissionsQuerySchema)) query: RolePermissionsQuery,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.rbac.getRolePermissions(query.role, u.orgId);
   }
 
   @Post("role-permissions")
@@ -61,11 +49,6 @@ export class RbacController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.rbac.revokeRolePermission(u, body);
-  }
-
-  @Get("user-permissions")
-  getUserPermissions(@CurrentUser() u: CurrentUserContext) {
-    return this.rbac.getUserPermissions(u.userId, u.orgId);
   }
 
   @Get("access-snapshot")

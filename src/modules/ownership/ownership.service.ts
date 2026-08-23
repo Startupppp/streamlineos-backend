@@ -19,7 +19,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
-import { assignModuleOwnerRole, revokeModuleOwnerRole } from "./module-owner-role.helper";
+import { assertModuleOwnerRoleAssigned, revokeModuleOwnerRole } from "./module-owner-role.helper";
 import { fetchMembershipById, resolveMembershipUserIds } from "./ownership-members.helper";
 import type { SetModuleOwnerInput } from "./dto/ownership.schemas";
 
@@ -163,7 +163,7 @@ export class OwnershipService {
       ) {
         await revokeModuleOwnerRole(tx, orgId, moduleKey, prevOwnership.ownerMembershipId);
       }
-      await assignModuleOwnerRole(tx, orgId, moduleKey, input.ownerMembershipId);
+      await assertModuleOwnerRoleAssigned(tx, orgId, moduleKey, input.ownerMembershipId);
 
       await bumpPermissionsVersion(tx, orgId);
       return prevOwnership?.ownerMembershipId ?? null;

@@ -47,13 +47,15 @@ export const updateUserStatusSchema = z.object({
 });
 export type UpdateUserStatusInput = z.infer<typeof updateUserStatusSchema>;
 
-const inviteEmailSchema = z
+export const canonicalEmailSchema = z
   .string()
   .trim()
   .min(1)
   .email()
   .max(254)
   .transform((value) => value.toLowerCase());
+
+const inviteEmailSchema = canonicalEmailSchema;
 
 export const inviteUserSchema = z.object({
   email: inviteEmailSchema,
@@ -103,7 +105,7 @@ export const listLoginHistorySchema = z.object({
 export type ListLoginHistoryInput = z.infer<typeof listLoginHistorySchema>;
 
 export const importUsersRowSchema = z.object({
-  email: z.string().email(),
+  email: canonicalEmailSchema,
   firstName: z.string().min(1).optional(),
   lastName: z.string().min(1).optional(),
   role: z.enum(ORG_MEMBER_ROLE_VALUES).default(ORG_MEMBER_ROLES.MEMBER),
@@ -123,7 +125,7 @@ export const bulkUpdateUsersSchema = z.object({
 export type BulkUpdateUsersInput = z.infer<typeof bulkUpdateUsersSchema>;
 
 export const createUserSchema = z.object({
-  email: z.string().email(),
+  email: canonicalEmailSchema,
   firstName: z.string().min(1).optional(),
   lastName: z.string().min(1).optional(),
   role: z.enum(ORG_MEMBER_ROLE_VALUES).default(ORG_MEMBER_ROLES.MEMBER),

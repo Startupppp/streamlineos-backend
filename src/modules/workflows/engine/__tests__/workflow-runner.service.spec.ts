@@ -15,6 +15,8 @@ jest.mock("../../../../common/tenant/for-each-org", () => ({
 }));
 
 import { WorkflowRunnerService, MAX_STEPS_PER_EXECUTION } from "../workflow-runner.service";
+import { executeNode } from "../workflow-node-executors";
+import type { NodeDispatchPort } from "../node-outcome";
 import type { Db } from "../../../../db/drizzle.module";
 
 interface StepRow {
@@ -81,7 +83,10 @@ function setup(definition: unknown, opts?: { claimed?: boolean; context?: unknow
   rec.selects.push([{ definitionJson: definition }]);
 
   currentTx = makeTx(rec);
-  const service = new WorkflowRunnerService({} as Db);
+  const dispatcher: NodeDispatchPort = {
+    execute: (node, input, now) => Promise.resolve(executeNode(node, input, now)),
+  };
+  const service = new WorkflowRunnerService({} as Db, dispatcher);
   return { service, rec };
 }
 
@@ -130,7 +135,7 @@ describe("WorkflowRunnerService.sweep", () => {
 
   it("fails the execution on a node type with no executor instead of leaving it pending", async () => {
     const { service, rec } = setup({
-      nodes: [node("t", "trigger"), node("s", "script")],
+      nodes: [node("t", "trigger"), node("s", "approval")],
       edges: [{ source: "t", target: "s" }],
     });
 
@@ -139,8 +144,8 @@ describe("WorkflowRunnerService.sweep", () => {
     expect(result.failed).toBe(1);
     expect(statusUpdates(rec)).toContain("failed");
     const failedStep = rec.steps.find((s) => s.status === "failed");
-    expect(failedStep?.nodeType).toBe("script");
-    expect(failedStep?.error).toContain("script");
+    expect(failedStep?.nodeType).toBe("approval");
+    expect(failedStep?.error).toContain("approval");
   });
 
   it("suspends on a delay node and records where to resume", async () => {

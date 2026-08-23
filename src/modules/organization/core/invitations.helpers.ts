@@ -1,8 +1,25 @@
 import { BadRequestException, ConflictException } from "@nestjs/common";
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull, lt } from "drizzle-orm";
 import { invitations, organizationMembers, organizations } from "../../../db/schema";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import type { Db } from "../../../db/drizzle.module";
+
+export function openAdminInvitationFilter(invitationId: string, orgId: string) {
+  return and(
+    eq(invitations.id, invitationId),
+    eq(invitations.orgId, orgId),
+    eq(invitations.status, "PENDING"),
+    isNull(invitations.acceptedAt),
+  );
+}
+
+export function expiredByTimePredicate(now: Date) {
+  return and(
+    eq(invitations.status, "PENDING"),
+    isNull(invitations.acceptedAt),
+    lt(invitations.expiresAt, now),
+  );
+}
 
 export function findActorMembershipId(
   db: Db,

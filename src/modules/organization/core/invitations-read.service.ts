@@ -1,12 +1,12 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, gt, ilike, isNull, lt, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, ilike, isNull, lt, sql } from "drizzle-orm";
 import { hashToken } from "../../../common/security/token.util";
 import { withPublicToken } from "../../../common/tenant/with-public-token";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { invitationEvents, invitations, users } from "../../../db/schema";
-import { requireActiveOrg } from "./invitations.helpers";
+import { expiredByTimePredicate, requireActiveOrg } from "./invitations.helpers";
 
 export interface ListInvitationsParams {
   page?: number;
@@ -36,14 +36,7 @@ export class InvitationsReadService {
     } else if (params?.status === "revoked") {
       conditions.push(eq(invitations.status, "REVOKED"));
     } else if (params?.status === "expired") {
-      const expiredFilter = or(
-        eq(invitations.status, "EXPIRED"),
-        and(
-          eq(invitations.status, "PENDING"),
-          isNull(invitations.acceptedAt),
-          lt(invitations.expiresAt, now),
-        ),
-      );
+      const expiredFilter = expiredByTimePredicate(now);
       if (expiredFilter) conditions.push(expiredFilter);
     } else if (!params?.includeAccepted) {
       conditions.push(eq(invitations.status, "PENDING"));

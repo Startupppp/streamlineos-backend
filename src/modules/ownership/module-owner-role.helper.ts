@@ -1,18 +1,19 @@
+import { BadRequestException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { roleAssignments, roles } from "../../db/schema";
 import type { DbOrTx } from "../../common/rbac/access-invalidate";
-import { logger } from "../../common/logger/logger.service";
 
 function moduleOwnerSlug(moduleKey: string): string {
   return `${moduleKey.toUpperCase()}_MODULE_OWNER`;
 }
 
+/** Returns false when the module's owner role is not seeded, so the caller decides the severity. */
 export async function assignModuleOwnerRole(
   tx: DbOrTx,
   orgId: string,
   moduleKey: string,
   membershipId: number,
-): Promise<void> {
+): Promise<boolean> {
   const slug = moduleOwnerSlug(moduleKey);
   const [role] = await tx
     .select({ id: roles.id })
@@ -20,10 +21,7 @@ export async function assignModuleOwnerRole(
     .where(and(eq(roles.orgId, orgId), eq(roles.slug, slug)))
     .limit(1);
 
-  if (!role) {
-    logger.warn(`[module-owner-role] "${slug}" not seeded for org ${orgId}; skipping assignment`);
-    return;
-  }
+  if (!role) return false;
 
   await tx
     .insert(roleAssignments)
@@ -34,6 +32,19 @@ export async function assignModuleOwnerRole(
       assignedByMembershipId: null,
     })
     .onConflictDoNothing();
+  return true;
+}
+
+export async function assertModuleOwnerRoleAssigned(
+  tx: DbOrTx,
+  orgId: string,
+  moduleKey: string,
+  membershipId: number,
+): Promise<void> {
+  if (!(await assignModuleOwnerRole(tx, orgId, moduleKey, membershipId)))
+    throw new BadRequestException(
+      `Role "${moduleKey.toUpperCase()}_MODULE_OWNER" is not seeded for this organisation; ownership transfer cannot complete`,
+    );
 }
 
 export async function revokeModuleOwnerRole(
@@ -49,9 +60,10 @@ export async function revokeModuleOwnerRole(
     .where(and(eq(roles.orgId, orgId), eq(roles.slug, slug)))
     .limit(1);
 
-  if (!role) {
-    return;
-  }
+  if (!role)
+    throw new BadRequestException(
+      `Role "${slug}" is not seeded for this organisation; ownership transfer cannot complete`,
+    );
 
   await tx
     .delete(roleAssignments)

@@ -1,10 +1,7 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
-import { and, eq, gt, isNull, or } from "drizzle-orm";
 import { moduleAccessDenied } from "./module-access-errors";
 import { ACCESS_MANAGED_MODULES } from "../rbac/permissions";
-import { organizationMembers, roleAssignments, roles } from "../../db/schema";
 import type { Db } from "../../db/drizzle.module";
-import { ROLE_RANK } from "../../common/rbac/grantability";
 import { resolveModuleManagementStanding } from "./module-standing";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
@@ -13,6 +10,7 @@ export {
   resolveModuleOwnerUserId,
   resolveModuleAuthorityFacts,
 } from "./module-standing";
+export { resolveActorRankContext } from "../../common/rbac/resolve-actor-rank";
 export type { ModuleAuthorityFacts } from "./module-standing";
 
 /**
@@ -109,55 +107,3 @@ export async function assertModuleAccessPolicy(
   throw moduleAccessDenied(action);
 }
 
-export async function resolveActorRankContext(
-  db: Db,
-  orgId: string,
-  userId: string,
-): Promise<{ bestRank: number; allowedModules: Set<string> | null }> {
-  const now = new Date();
-  const rows = await db
-    .select({ rank: roles.rank, moduleKey: roles.moduleKey })
-    .from(roleAssignments)
-    .innerJoin(
-      roles,
-      and(eq(roleAssignments.roleId, roles.id), eq(roles.orgId, orgId)),
-    )
-    .innerJoin(
-      organizationMembers,
-      and(
-        eq(organizationMembers.orgId, roleAssignments.orgId),
-        eq(organizationMembers.id, roleAssignments.organizationMembershipId),
-      ),
-    )
-    .where(
-      and(
-        eq(roleAssignments.orgId, orgId),
-        eq(organizationMembers.userId, userId),
-        eq(organizationMembers.status, "ACTIVE"),
-        or(
-          isNull(roleAssignments.expiresAt),
-          gt(roleAssignments.expiresAt, now),
-        ),
-      ),
-    )
-    .limit(100);
-
-  if (rows.length === 0) {
-    return { bestRank: ROLE_RANK.FUNCTIONAL, allowedModules: null };
-  }
-
-  let bestRank: number = ROLE_RANK.FUNCTIONAL;
-  for (const row of rows) {
-    if (row.rank < bestRank) bestRank = row.rank;
-  }
-
-  const topRankRoles = rows.filter((r) => r.rank === bestRank);
-  if (topRankRoles.some((r) => r.moduleKey === null)) {
-    return { bestRank, allowedModules: null };
-  }
-
-  const modules = new Set(
-    topRankRoles.map((r) => r.moduleKey).filter((m): m is string => m !== null),
-  );
-  return { bestRank, allowedModules: modules };
-}

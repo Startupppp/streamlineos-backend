@@ -3,10 +3,13 @@ import {
   isDelegablePermission,
   ROLE_RANK,
 } from "../../../common/rbac/grantability";
+import { resolveActorRankContext } from "../../../common/rbac/resolve-actor-rank";
 import { permissions } from "../../../db/schema";
 import { PermissionCatalogSyncService } from "../permission-catalog-sync.service";
 import { RbacService } from "../rbac.service";
 import { PERMISSIONS } from "../permissions";
+
+jest.mock("../../../common/rbac/resolve-actor-rank");
 
 const CATALOG_KEYS = PERMISSIONS.map((p) => p.name);
 const NON_DELEGABLE_KEYS = CATALOG_KEYS.filter(
@@ -75,12 +78,16 @@ function makeRbacService(
   });
   Reflect.set(svc, "db", {});
   Reflect.set(svc, "rolesService", {});
-  Reflect.set(svc, "resolveActorRankContext", () =>
-    Promise.resolve({ bestRank: ROLE_RANK.FUNCTIONAL, allowedModules }),
-  );
+
+  (resolveActorRankContext as jest.Mock).mockResolvedValue({
+    bestRank: ROLE_RANK.FUNCTIONAL,
+    allowedModules,
+  });
 
   return svc;
 }
+
+beforeEach(() => jest.clearAllMocks());
 
 describe("permission delegability", () => {
   it("has non-delegable keys in the catalog, so the rule is not vacuous", () => {

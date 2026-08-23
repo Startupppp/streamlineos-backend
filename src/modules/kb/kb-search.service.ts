@@ -54,11 +54,12 @@ export class KbSearchService {
     const principal = await this.access.getPrincipalIds(user);
 
     const tsquery = sql`websearch_to_tsquery('english', ${input.q})`;
+    const keywordCond = await this.resolveArticleKeywordCondition(input.q, tsquery, 500);
     const conditions: SQL[] = [
       eq(kbArticles.orgId, user.orgId),
       inArray(kbArticles.spaceId, ids),
       ne(kbArticles.status, "archived"),
-      this.keywordMatch(input.q, tsquery),
+      keywordCond,
     ];
     if (!isAdmin) conditions.push(this.articleRestrictionFilter(user.orgId, principal));
     if (input.spaceId) conditions.push(eq(kbArticles.spaceId, input.spaceId));
@@ -225,11 +226,12 @@ export class KbSearchService {
     spaceId?: number,
   ): Promise<number[]> {
     const tsquery = sql`websearch_to_tsquery('english', ${query})`;
+    const keywordCond = await this.resolveArticleKeywordCondition(query, tsquery, 500);
     const conditions: SQL[] = [
       eq(kbArticles.orgId, orgId),
       inArray(kbArticles.spaceId, spaceIds),
       eq(kbArticles.status, "published"),
-      this.keywordMatch(query, tsquery),
+      keywordCond,
       this.articleRestrictionFilter(orgId, principal),
     ];
     if (spaceId) conditions.push(eq(kbArticles.spaceId, spaceId));
@@ -377,9 +379,13 @@ export class KbSearchService {
     )`;
   }
 
-  private keywordMatch(query: string, tsquery: SQL): SQL {
-    const term = `%${query}%`;
-    return sql`(fts @@ ${tsquery} or (numnode(${tsquery}) = 0 and (${kbArticles.title} ilike ${term} or ${kbArticles.excerpt} ilike ${term} or ${kbArticles.contentText} ilike ${term})))`;
+  private async resolveArticleKeywordCondition(q: string, tsquery: SQL, cap: number): Promise<SQL> {
+    const term = `%${q}%`;
+    const fallback = sql`(fts @@ ${tsquery} or (numnode(${tsquery}) = 0 and (${kbArticles.title} ilike ${term} or ${kbArticles.excerpt} ilike ${term} or ${kbArticles.contentText} ilike ${term})))`;
+    const rows = await this.db.execute(sql`SELECT app.search_kb_article_ids(${q}, ${cap + 1}) AS id`);
+    if (rows.length === 0 || rows.length > cap) return fallback;
+    const ids = rows.map((r) => Number(r["id"]));
+    return inArray(kbArticles.id, ids);
   }
 
   private keywordRank(tsquery: SQL): SQL<number> {

@@ -24,10 +24,10 @@ import {
   assertPermissionsGrantable,
   buildPermissionModuleMap,
   isImmutableSystemRole,
-  ROLE_RANK,
   toGrantableSet,
   type RoleGrantTarget,
 } from "../../common/rbac/grantability";
+import { resolveActorRankContext } from "../../common/rbac/resolve-actor-rank";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
 import { AccessService } from "../access/access.service";
@@ -88,55 +88,6 @@ export class RolePermissionService {
     );
   }
 
-  private async resolveActorRankContext(
-    orgId: string,
-    userId: string,
-  ): Promise<{ bestRank: number; allowedModules: Set<string> | null }> {
-    const rows = await this.db
-      .select({ rank: roles.rank, moduleKey: roles.moduleKey })
-      .from(roleAssignments)
-      .innerJoin(
-        roles,
-        and(eq(roleAssignments.roleId, roles.id), eq(roles.orgId, orgId)),
-      )
-      .innerJoin(
-        organizationMembers,
-        and(
-          eq(organizationMembers.orgId, roleAssignments.orgId),
-          eq(organizationMembers.id, roleAssignments.organizationMembershipId),
-        ),
-      )
-      .where(
-        and(
-          eq(roleAssignments.orgId, orgId),
-          eq(organizationMembers.userId, userId),
-        ),
-      )
-      .limit(100);
-
-    if (rows.length === 0) {
-      return { bestRank: ROLE_RANK.FUNCTIONAL, allowedModules: null };
-    }
-
-    let bestRank: number = ROLE_RANK.FUNCTIONAL;
-    for (const row of rows) {
-      if (row.rank < bestRank) bestRank = row.rank;
-    }
-
-    const topRankRoles = rows.filter((r) => r.rank === bestRank);
-    const hasOrgWideRole = topRankRoles.some((r) => r.moduleKey === null);
-    if (hasOrgWideRole) {
-      return { bestRank, allowedModules: null };
-    }
-
-    const modules = new Set(
-      topRankRoles
-        .map((r) => r.moduleKey)
-        .filter((m): m is string => m !== null),
-    );
-    return { bestRank, allowedModules: modules };
-  }
-
   private async assertGrantable(
     actor: CurrentUserContext,
     requestedKeys: readonly string[],
@@ -145,7 +96,7 @@ export class RolePermissionService {
     if (actor.isOrgOwner) return;
     const [resolved, { bestRank, allowedModules }] = await Promise.all([
       this.access.resolveUserPermissions(actor.orgId, actor.userId),
-      this.resolveActorRankContext(actor.orgId, actor.userId),
+      resolveActorRankContext(this.db, actor.orgId, actor.userId),
     ]);
     const permMeta = buildPermissionModuleMap(requestedKeys);
     assertPermissionsGrantable(

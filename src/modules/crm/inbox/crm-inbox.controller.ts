@@ -17,16 +17,9 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { readRequestScope } from "../../organization/core/read-request-scope";
 import { CrmInboxService } from "./crm-inbox.service";
 import { snoozeTaskSchema, type SnoozeTaskInput } from "./crm-inbox.dto";
-
-const SCOPES = ["all", "team", "own", "none"] as const;
-type Scope = (typeof SCOPES)[number];
-
-function readScope(req: Request): Scope {
-  const raw = (req as Request & { rbacScope?: string }).rbacScope;
-  return SCOPES.find((s) => s === raw) ?? "all";
-}
 
 @Controller("crm/inbox")
 @RequireModule("crm")
@@ -37,13 +30,13 @@ export class CrmInboxController {
   @Get()
   @RequirePermission("crm:leads:view")
   async getInbox(@Req() req: Request, @CurrentUser() user: CurrentUserContext) {
-    return this.svc.getInbox(user.orgId, user.userId, readScope(req));
+    return this.svc.getInbox(user.orgId, user.userId, readRequestScope(req));
   }
 
   @Get("counts")
   @RequirePermission("crm:leads:view")
   async getCounts(@Req() req: Request, @CurrentUser() user: CurrentUserContext) {
-    return this.svc.getCounts(user.orgId, user.userId, readScope(req));
+    return this.svc.getCounts(user.orgId, user.userId, readRequestScope(req));
   }
 
   @Post("tasks/:taskId/snooze")
@@ -55,7 +48,7 @@ export class CrmInboxController {
     @Req() req: Request,
     @CurrentUser() user: CurrentUserContext,
   ) {
-    await this.svc.snoozeTask(user.orgId, taskId, user.userId, body, readScope(req));
+    await this.svc.snoozeTask(user.orgId, taskId, user.userId, body, readRequestScope(req));
     return { success: true };
   }
 
@@ -66,7 +59,7 @@ export class CrmInboxController {
     @Req() req: Request,
     @CurrentUser() user: CurrentUserContext,
   ) {
-    await this.svc.completeTask(user.orgId, taskId, user.userId, readScope(req));
+    await this.svc.completeTask(user.orgId, taskId, user.userId, readRequestScope(req));
     return { success: true };
   }
 }
