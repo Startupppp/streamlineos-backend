@@ -46,20 +46,25 @@ export class ChatNotificationsService {
     const defaultPreference = settings.defaultNotificationPreference;
 
     const now = new Date();
-    for (const { userId, mutedUntil, notificationPreference } of members) {
-      if (userId === message.senderId) continue;
-      if (mutedUntil && mutedUntil > now) continue;
+    const recipients = members.filter(({ userId, mutedUntil, notificationPreference }) => {
+      if (userId === message.senderId) return false;
+      if (mutedUntil && mutedUntil > now) return false;
       const effectivePreference =
         notificationPreference !== "DEFAULT" ? notificationPreference : defaultPreference;
-      if (SUPPRESSED_GENERAL_PREFERENCES.has(effectivePreference)) continue;
-      await this.ably.publishToUser(orgId, userId, "notification:message", {
-        channelId,
-        messageId: message.id,
-        senderId: message.senderId,
-        senderName: message.senderName,
-        channelType,
-      });
-    }
+      return !SUPPRESSED_GENERAL_PREFERENCES.has(effectivePreference);
+    });
+
+    await Promise.allSettled(
+      recipients.map(({ userId }) =>
+        this.ably.publishToUser(orgId, userId, "notification:message", {
+          channelId,
+          messageId: message.id,
+          senderId: message.senderId,
+          senderName: message.senderName,
+          channelType,
+        }),
+      ),
+    );
   }
 
   async publishMentionNotification(
@@ -87,16 +92,20 @@ export class ChatNotificationsService {
     const settings = await this.orgSettings.getSettings(orgId);
     const defaultPreference = settings.defaultNotificationPreference;
 
-    for (const userId of mentionedUserIds) {
+    const recipients = mentionedUserIds.filter((userId) => {
       const pref = preferenceByUser.get(userId) ?? "DEFAULT";
-      const effectivePreference = pref !== "DEFAULT" ? pref : defaultPreference;
-      if (effectivePreference === "NOTHING") continue;
-      await this.ably.publishToUser(orgId, userId, "notification:mention", {
-        channelId,
-        messageId: message.id,
-        senderId: message.senderId,
-        senderName: message.senderName,
-      });
-    }
+      return (pref !== "DEFAULT" ? pref : defaultPreference) !== "NOTHING";
+    });
+
+    await Promise.allSettled(
+      recipients.map((userId) =>
+        this.ably.publishToUser(orgId, userId, "notification:mention", {
+          channelId,
+          messageId: message.id,
+          senderId: message.senderId,
+          senderName: message.senderName,
+        }),
+      ),
+    );
   }
 }

@@ -17,6 +17,7 @@ import { ChatRealtimeController } from "./chat-realtime.controller";
 import { ChatChannelsService } from "./chat-channels.service";
 import { ChatChannelMembersService } from "./chat-channel-members.service";
 import { ChatMessagesService } from "./chat-messages.service";
+import { ChatMessageFanoutService } from "./chat-message-fanout.service";
 import { ChatPresenceService } from "./chat-presence.service";
 import { ChatTypingService } from "./chat-typing.service";
 import { ChatPinsService } from "./chat-pins.service";
@@ -39,6 +40,7 @@ import { EntityReferenceModule } from "../entity-reference/entity-reference.modu
     ChatChannelsService,
     ChatChannelMembersService,
     ChatMessagesService,
+    ChatMessageFanoutService,
     ChatPresenceService,
     ChatTypingService,
     ChatPinsService,

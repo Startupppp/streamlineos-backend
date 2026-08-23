@@ -13,7 +13,8 @@ import {
   chatMessages,
   users,
 } from "../../db/schema";
-import type { ChatAttachmentPayload } from "../realtime/dto/realtime.schemas";
+import type { ChatAttachmentPayload, PersistedMessage } from "./chat-message.types";
+import { ChatMessageFanoutService } from "./chat-message-fanout.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
@@ -33,16 +34,6 @@ import type {
   EntityReference,
 } from "../entity-reference/entity-reference.types";
 
-type PersistedMessage = {
-  id: number;
-  channelId: number;
-  senderId: string;
-  content: string | null;
-  createdAt: Date;
-  replyToId: number | null;
-  metadata: Record<string, unknown> | null;
-  messageType: "text" | "lead_submission" | "system";
-};
 
 /**
  * A realtime publish reaches every channel member at once, so it cannot resolve
@@ -74,6 +65,7 @@ export class ChatMessagesService {
     private readonly replyReminders: ChatReplyRemindersService,
     private readonly orgSettings: ChatOrgSettingsService,
     private readonly entities: EntityReferenceService,
+    private readonly fanout: ChatMessageFanoutService,
   ) {}
 
   private async isMember(channelId: number, userId: string): Promise<boolean> {
@@ -239,13 +231,19 @@ export class ChatMessagesService {
           message.id,
           userId,
         );
-        await this.dispatchMessageSideEffects(
+        const channelRow = await this.db.query.chatChannels.findFirst({
+          where: eq(chatChannels.id, channelId),
+          columns: { type: true },
+        });
+        await this.fanout.dispatch({
           orgId,
           channelId,
+          channelType: channelRow?.type ?? null,
           message,
-          body,
-          insertedAttachments,
-        );
+          content: body?.content ?? null,
+          attachments: insertedAttachments,
+          strippedMetadata: strippedReferenceMetadata(message.metadata),
+        });
       }).catch((error: unknown) => {
         logger.error("chat message side effects failed", {
           orgId,
@@ -257,97 +255,6 @@ export class ChatMessagesService {
     if (!registerAfterCommit(deferred)) void deferred();
 
     return message;
-  }
-
-  private async dispatchMessageSideEffects(
-    orgId: string,
-    channelId: number,
-    message: PersistedMessage,
-    body: SendMessageInput,
-    insertedAttachments: ChatAttachmentPayload[],
-  ): Promise<void> {
-    if (!this.ably.configured && !this.webPush.configured) return;
-
-    const [sender] = await this.db
-      .select({ name: users.name, image: users.image })
-      .from(users)
-      .where(eq(users.id, message.senderId))
-      .limit(1);
-    const senderName = sender?.name ?? null;
-    const senderImage = sender?.image ?? null;
-
-    await this.ably.publishChatMessage(orgId, channelId, {
-      id: message.id,
-      channelId: message.channelId,
-      senderId: message.senderId,
-      senderName,
-      senderImage,
-      content: message.content,
-      createdAt: message.createdAt,
-      replyToId: message.replyToId,
-      metadata: strippedReferenceMetadata(message.metadata),
-      messageType: message.messageType,
-      attachments: insertedAttachments,
-    });
-
-    // RT-001: neither the sender's name nor the message text crosses the push
-    // boundary. The client opens the channel and loads it over an authenticated
-    // request. This costs the lock-screen preview deliberately — a chat message can
-    // contain anything, and the push service is a third party.
-    await this.webPush.sendToChannelMembers(channelId, message.senderId, {
-      category: "CHAT",
-      url: `/chat?channel=${channelId}`,
-    });
-
-    const channelData = await this.db.query.chatChannels.findFirst({
-      where: eq(chatChannels.id, channelId),
-      columns: { type: true },
-    });
-
-    if (channelData?.type === "DIRECT") {
-      await this.notifications.publishNewMessageNotification(orgId, channelId, {
-        id: message.id,
-        senderId: message.senderId,
-        senderName,
-      }, channelData.type);
-    }
-
-    if (body?.content) {
-      const mentionPattern = /@([^\s@]+(?:\s[^\s@]+)*)/g;
-      const matches = [...body.content.matchAll(mentionPattern)].map(m => m[1].toLowerCase());
-      if (matches.length > 0) {
-        const channelMembers = await this.db.query.chatChannelMembers.findMany({
-          where: eq(chatChannelMembers.channelId, channelId),
-          with: { user: { columns: { id: true, name: true } } },
-        });
-        const userId = message.senderId;
-        if (matches.some(m => m === "channel" || m === "everyone" || m === "here")) {
-          const memberIds = channelMembers.map(m => m.userId).filter(id => id !== userId);
-          if (memberIds.length > 0) {
-            await this.notifications.publishMentionNotification(orgId, channelId, {
-              id: message.id, senderId: userId, senderName: senderName ?? "Someone",
-            }, memberIds);
-          }
-        }
-        const individualMentionIds: string[] = [];
-        for (const member of channelMembers) {
-          if (!member.user || member.userId === userId) continue;
-          const memberName = member.user.name?.trim().toLowerCase() ?? "";
-          if (!memberName) continue;
-          const firstName = memberName.split(" ")[0] ?? "";
-          if (matches.some(m => memberName.includes(m) || (firstName !== "" && m.includes(firstName)))) {
-            individualMentionIds.push(member.userId);
-          }
-        }
-        if (individualMentionIds.length > 0) {
-          await this.notifications.publishMentionNotification(orgId, channelId, {
-            id: message.id,
-            senderId: userId,
-            senderName: senderName ?? "Someone",
-          }, individualMentionIds);
-        }
-      }
-    }
   }
 
   async edit(messageId: number, userId: string, orgId: string, content: string) {
