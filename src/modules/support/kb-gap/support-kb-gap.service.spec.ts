@@ -1,4 +1,5 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
+import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { Test } from "@nestjs/testing";
 import { SupportKbGapService } from "./support-kb-gap.service";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
@@ -376,7 +377,7 @@ describe("SupportKbGapService", () => {
       );
     });
 
-    it("should throw BadRequestException when AI gateway returns quota_exceeded", async () => {
+    it("should throw 402 when AI gateway returns quota_exceeded", async () => {
       const db = makeDb();
       db.query.supportKnowledgeGaps.findFirst.mockResolvedValue(baseGap);
       db.query.kbSpaces.findFirst.mockResolvedValue({ id: 7 });
@@ -384,7 +385,9 @@ describe("SupportKbGapService", () => {
       mockGateway.invokeStructuredWithUsage.mockResolvedValue(makeGatewayFail("quota_exceeded", "Out of credits"));
 
       const service = await makeService(db);
-      await expect(service.proposeDraft("org1", 1, "user1")).rejects.toThrow(BadRequestException);
+      await expect(service.proposeDraft("org1", 1, "user1")).rejects.toThrow(
+        InsufficientAiCreditsException,
+      );
     });
 
     it("should throw BadRequestException when AI gateway returns provider_unavailable", async () => {

@@ -1,4 +1,5 @@
-import { BadRequestException, Inject, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
+import { Inject, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
+import { InsufficientAiCreditsException } from "../../../../common/http/api-exceptions";
 import { and, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import {
   kbArticleAttachments,
@@ -214,7 +215,7 @@ export class KbRagService {
 
     if (!gatewayResult.ok) {
       if (gatewayResult.kind === "quota_exceeded") {
-        throw new BadRequestException(gatewayResult.message);
+        throw new InsufficientAiCreditsException({ message: gatewayResult.message });
       }
       throw new ServiceUnavailableException("AI provider is temporarily unavailable");
     }

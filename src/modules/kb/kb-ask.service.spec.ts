@@ -1,7 +1,5 @@
-import {
-  BadRequestException,
-  ServiceUnavailableException,
-} from "@nestjs/common";
+import { ServiceUnavailableException } from "@nestjs/common";
+import { InsufficientAiCreditsException } from "../../common/http/api-exceptions";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { KbAskService } from "./kb-ask.service";
 import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
@@ -123,11 +121,11 @@ describe("KbAskService", () => {
     expect(call[0].actor).toEqual({ orgId: "org1", userId: "user1" });
   });
 
-  it("throws BadRequestException on quota_exceeded", async () => {
+  it("throws 402 on quota_exceeded", async () => {
     mockGateway.invokeTextWithUsage.mockResolvedValueOnce(
       makeGatewayFail("quota_exceeded", "Insufficient AI credits"),
     );
-    await expect(service.ask(user, input)).rejects.toThrow(BadRequestException);
+    await expect(service.ask(user, input)).rejects.toThrow(InsufficientAiCreditsException);
   });
 
   it("throws ServiceUnavailableException on provider_unavailable", async () => {

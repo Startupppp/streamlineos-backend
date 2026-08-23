@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ConflictException,
   ForbiddenException,
   HttpException,
@@ -7,8 +6,8 @@ import {
   Inject,
   Injectable,
   NotFoundException,
-  ServiceUnavailableException,
 } from "@nestjs/common";
+import { throwOnAiFailure } from "../ai/core/services/gateway-result.util";
 import { and, eq, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -96,22 +95,6 @@ function sanitizeHtml(html: string): string {
     .replace(/\son\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi, "")
     .replace(/href\s*=\s*["']?\s*javascript:[^"'\s>]*/gi, 'href="#"')
     .replace(/src\s*=\s*["']?\s*javascript:[^"'\s>]*/gi, 'src=""');
-}
-
-function throwOnFailure(kind: "not_configured" | "provider_unavailable" | "quota_exceeded" | "invalid_output", message: string): never {
-  switch (kind) {
-    case "quota_exceeded":
-      throw new BadRequestException(message);
-    case "not_configured":
-    case "provider_unavailable":
-      throw new ServiceUnavailableException(message);
-    case "invalid_output":
-      throw new ServiceUnavailableException("AI returned an invalid response");
-    default: {
-      const _exhaustive: never = kind;
-      throw new ServiceUnavailableException(`Unhandled AI failure: ${String(_exhaustive)}`);
-    }
-  }
 }
 
 @Injectable()
@@ -228,7 +211,7 @@ export class FeedbucketAiService {
     });
 
     if (!result.ok) {
-      throwOnFailure(result.kind, result.message);
+      throwOnAiFailure(result);
     }
 
     const rawResult = result.data;

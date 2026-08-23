@@ -1,4 +1,5 @@
-import { BadRequestException, ForbiddenException, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import { ForbiddenException, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { SupportAiService } from "./support-ai.service";
 import { SupportAiEmbeddingsHelper } from "./support-ai-embeddings.helper";
@@ -220,9 +221,9 @@ describe("SupportAiService", () => {
       expect((replyCall[0].payload as { escalated: boolean }).escalated).toBe(false);
     });
 
-    it("throws BadRequestException on quota_exceeded", async () => {
+    it("throws 402 on quota_exceeded", async () => {
       mockGateway.invokeText.mockResolvedValueOnce(makeGatewayFail("quota_exceeded", "Insufficient AI credits"));
-      await expect(service.suggestReply("org1", 42)).rejects.toThrow(BadRequestException);
+      await expect(service.suggestReply("org1", 42)).rejects.toThrow(InsufficientAiCreditsException);
     });
 
     it("throws ServiceUnavailableException on provider_unavailable", async () => {
@@ -341,10 +342,10 @@ describe("SupportAiService", () => {
       expect(mockDb.insert).not.toHaveBeenCalled();
     });
 
-    it("throws BadRequestException on quota_exceeded", async () => {
+    it("throws 402 on quota_exceeded", async () => {
       mockDb.query.supportTicketMessages.findFirst.mockResolvedValueOnce({ body: "hello" });
       mockGateway.invokeStructured.mockResolvedValueOnce(makeGatewayFail("quota_exceeded", "Insufficient AI credits"));
-      await expect(service.translateMessage("org1", 42, 1, "French")).rejects.toThrow(BadRequestException);
+      await expect(service.translateMessage("org1", 42, 1, "French")).rejects.toThrow(InsufficientAiCreditsException);
     });
 
     it("returns null gracefully when the gateway returns a provider failure", async () => {
@@ -470,9 +471,9 @@ describe("SupportAiService", () => {
       expect(result?.changes).toHaveLength(2);
     });
 
-    it("throws BadRequestException when credits are exhausted", async () => {
+    it("throws 402 when credits are exhausted", async () => {
       mockGateway.invokeStructured.mockResolvedValueOnce(makeGatewayFail("quota_exceeded", "Insufficient AI credits"));
-      await expect(service.improveReply("org1", 42, "some draft")).rejects.toThrow(BadRequestException);
+      await expect(service.improveReply("org1", 42, "some draft")).rejects.toThrow(InsufficientAiCreditsException);
     });
 
     it("throws ServiceUnavailableException when provider is down", async () => {

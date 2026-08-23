@@ -3,9 +3,9 @@ import {
   Injectable,
   ConflictException,
   NotFoundException,
-  BadRequestException,
   ServiceUnavailableException,
 } from "@nestjs/common";
+import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { z } from "zod";
 import type {
   CreateEmailTemplateInput,
@@ -114,7 +114,7 @@ export class HrEmailTemplatesService {
 
     if (!result.ok) {
       if (result.kind === "quota_exceeded")
-        throw new BadRequestException(result.message);
+        throw new InsufficientAiCreditsException({ message: result.message });
       if (result.kind === "not_configured")
         throw new ServiceUnavailableException(
           "AI is not configured. Set OPENAI_API_KEY.",

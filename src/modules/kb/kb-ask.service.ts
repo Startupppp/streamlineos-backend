@@ -1,4 +1,5 @@
-import { BadRequestException, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
+import { Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
+import { InsufficientAiCreditsException } from "../../common/http/api-exceptions";
 import { KbEventsService } from "./kb-events.service";
 import { KbSearchService } from "./kb-search.service";
 import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
@@ -100,7 +101,7 @@ export class KbAskService {
 
     if (!gatewayResult.ok) {
       if (gatewayResult.kind === "quota_exceeded") {
-        throw new BadRequestException(gatewayResult.message);
+        throw new InsufficientAiCreditsException({ message: gatewayResult.message });
       }
       throw new ServiceUnavailableException("AI assistant is temporarily unavailable");
     }

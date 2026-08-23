@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -203,7 +204,8 @@ export class SupportAiService {
       },
     });
     if (!gatewayResult.ok) {
-      if (gatewayResult.kind === "quota_exceeded") throw new BadRequestException(gatewayResult.message);
+      if (gatewayResult.kind === "quota_exceeded")
+        throw new InsufficientAiCreditsException({ message: gatewayResult.message });
       throw new ServiceUnavailableException("AI assistant is temporarily unavailable");
     }
     await this.replacePendingSuggestions(orgId, ticketId, ["reply"]);
@@ -232,7 +234,8 @@ export class SupportAiService {
       },
     });
     if (!gatewayResult.ok) {
-      if (gatewayResult.kind === "quota_exceeded") throw new BadRequestException(gatewayResult.message);
+      if (gatewayResult.kind === "quota_exceeded")
+        throw new InsufficientAiCreditsException({ message: gatewayResult.message });
       logger.error("support suggest-macro failed", { orgId, ticketId, kind: gatewayResult.kind });
       return null;
     }
@@ -285,7 +288,8 @@ export class SupportAiService {
       },
     });
     if (!gatewayResult.ok) {
-      if (gatewayResult.kind === "quota_exceeded") throw new BadRequestException(gatewayResult.message);
+      if (gatewayResult.kind === "quota_exceeded")
+        throw new InsufficientAiCreditsException({ message: gatewayResult.message });
       logger.error("support message translation failed", { orgId, ticketId, messageId, kind: gatewayResult.kind });
       return null;
     }
@@ -316,7 +320,8 @@ export class SupportAiService {
       },
     });
     if (!gatewayResult.ok) {
-      if (gatewayResult.kind === "quota_exceeded") throw new BadRequestException(gatewayResult.message);
+      if (gatewayResult.kind === "quota_exceeded")
+        throw new InsufficientAiCreditsException({ message: gatewayResult.message });
       throw new ServiceUnavailableException("AI assistant is temporarily unavailable");
     }
     return gatewayResult.data;
@@ -345,7 +350,8 @@ export class SupportAiService {
       },
     });
     if (!gatewayResult.ok) {
-      if (gatewayResult.kind === "quota_exceeded") throw new BadRequestException(gatewayResult.message);
+      if (gatewayResult.kind === "quota_exceeded")
+        throw new InsufficientAiCreditsException({ message: gatewayResult.message });
       throw new ServiceUnavailableException("AI assistant is temporarily unavailable");
     }
     return gatewayResult.data;
@@ -376,7 +382,8 @@ export class SupportAiService {
       },
     });
     if (!gatewayResult.ok) {
-      if (gatewayResult.kind === "quota_exceeded") throw new BadRequestException(gatewayResult.message);
+      if (gatewayResult.kind === "quota_exceeded")
+        throw new InsufficientAiCreditsException({ message: gatewayResult.message });
       logger.error("support handoff summary failed", { orgId, ticketId, kind: gatewayResult.kind });
       return null;
     }
@@ -405,7 +412,8 @@ export class SupportAiService {
       },
     });
     if (!gatewayResult.ok) {
-      if (gatewayResult.kind === "quota_exceeded") throw new BadRequestException(gatewayResult.message);
+      if (gatewayResult.kind === "quota_exceeded")
+        throw new InsufficientAiCreditsException({ message: gatewayResult.message });
       logger.error("support root-cause clustering failed", { orgId, ticketId, kind: gatewayResult.kind });
       return null;
     }

@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { and, desc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -124,11 +125,9 @@ export class SupportKbGapService {
 
     if (!gatewayResult.ok) {
       logger.error("support kb-gap draft failed", { orgId, gapId, kind: gatewayResult.kind });
-      throw new BadRequestException(
-        gatewayResult.kind === "quota_exceeded"
-          ? gatewayResult.message
-          : "AI draft generation failed",
-      );
+      if (gatewayResult.kind === "quota_exceeded")
+        throw new InsufficientAiCreditsException({ message: gatewayResult.message });
+      throw new BadRequestException("AI draft generation failed");
     }
 
     const { title, body } = gatewayResult.data;

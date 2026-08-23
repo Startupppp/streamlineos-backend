@@ -1,7 +1,8 @@
 jest.mock("../../email/app-url", () => ({ appUrl: "https://test.example.com" }));
 jest.mock("../../build/core/projects-tickets.service");
 
-import { BadRequestException, ConflictException, ForbiddenException, HttpException, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import { ConflictException, ForbiddenException, HttpException, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { FeedbucketAiService } from "../feedbucket-ai.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
@@ -195,7 +196,7 @@ describe("FeedbucketAiService", () => {
       );
     });
 
-    it("throws BadRequestException when gateway returns quota_exceeded", async () => {
+    it("throws 402 when gateway returns quota_exceeded", async () => {
       const failure: AiInvokeWithUsageResult<FeedbackAnalysis> = {
         ok: false,
         kind: "quota_exceeded",
@@ -203,7 +204,7 @@ describe("FeedbucketAiService", () => {
         correlationId: "corr-x",
       };
       const { service } = buildService({ gateway: makeGateway(failure) });
-      await expect(service.analyze(makeUser(), SUB_ID)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.analyze(makeUser(), SUB_ID)).rejects.toBeInstanceOf(InsufficientAiCreditsException);
     });
 
     it("throws ServiceUnavailableException when gateway returns provider_unavailable", async () => {
