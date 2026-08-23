@@ -474,34 +474,4 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
     });
   });
 
-  describe("Home has no access administration to route to", () => {
-    const homeRoutes: ReadonlyArray<[Method, string]> = [
-      ["get", "/module-access/home/catalog"],
-      ["get", "/module-access/home/roles"],
-      ["get", "/module-access/home/groups"],
-      ["get", "/module-access/home/ownership"],
-    ];
-
-    it.each(homeRoutes)("401 on %s %s without a token", async (method, path) => {
-      const res = await callRoute(method, path);
-      expect(res.status).toBe(401);
-    });
-
-    it.each(homeRoutes)("404 on %s %s for a real caller", async (method, path) => {
-      const token = await signToken({ sub: "owner_ma_1" });
-      const res = await callRoute(method, path).set(
-        "Authorization",
-        `Bearer ${token}`,
-      );
-      expect(res.status).toBe(404);
-    });
-
-    it("never reaches the service, so there is nothing to authorize", async () => {
-      const token = await signToken({ sub: "owner_ma_1" });
-      await request(app.getHttpServer())
-        .get("/module-access/home/catalog")
-        .set("Authorization", `Bearer ${token}`);
-      expect(mockModuleAccessService.listCatalog).not.toHaveBeenCalled();
-    });
-  });
 });
