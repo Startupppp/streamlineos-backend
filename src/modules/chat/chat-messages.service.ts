@@ -25,6 +25,7 @@ import { WebPushService } from "../realtime/web-push.service";
 import { ChatNotificationsService } from "./chat-notifications.service";
 import { ChatReplyRemindersService } from "./chat-reply-reminders.service";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
+import { nextReactions } from "./chat-reactions";
 import type { SendMessageInput } from "./dto/chat.schemas";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import type {
@@ -568,33 +569,23 @@ export class ChatMessagesService {
     });
     if (!membership) throw new ForbiddenException("You are not a member of this channel");
 
-    const message = await this.db.query.chatMessages.findFirst({
-      where: and(
-        eq(chatMessages.id, messageId),
-        eq(chatMessages.channelId, channelId),
-        eq(chatMessages.isDeleted, false),
-      ),
-      columns: { id: true, reactions: true },
-    });
+    // Locked for the rest of the request transaction: without it two reactors read the
+    // same snapshot and the second write erases the first.
+    const [message] = await this.db
+      .select({ id: chatMessages.id, reactions: chatMessages.reactions })
+      .from(chatMessages)
+      .where(
+        and(
+          eq(chatMessages.id, messageId),
+          eq(chatMessages.channelId, channelId),
+          eq(chatMessages.isDeleted, false),
+        ),
+      )
+      .for("update")
+      .limit(1);
     if (!message) throw new NotFoundException("Message not found");
 
-    const current = message.reactions ?? {};
-
-    const withoutUser: Record<string, string[]> = {};
-    for (const [key, reactors] of Object.entries(current)) {
-      const filtered = reactors.filter((id) => id !== userId);
-      if (filtered.length > 0) withoutUser[key] = filtered;
-    }
-
-    const userHadThisEmoji = (current[emoji] ?? []).includes(userId);
-
-    let updated: Record<string, string[]>;
-    if (userHadThisEmoji) {
-      updated = withoutUser;
-    } else {
-      const existing = withoutUser[emoji] ?? [];
-      updated = { ...withoutUser, [emoji]: [...existing, userId] };
-    }
+    const updated = nextReactions(message.reactions ?? {}, userId, emoji);
 
     await this.db
       .update(chatMessages)
