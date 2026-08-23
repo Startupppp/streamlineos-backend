@@ -54,7 +54,6 @@ export class AccessSnapshotResolver {
         scopes[key] = scope;
       }
       return {
-        permissions: Object.keys(scopes),
         scopes,
         modules: await this.resolveModuleFlags(orgId, EMPTY_DENIED_MODULES),
         isOrgOwner: currentUserContext.isOrgOwner,
@@ -66,7 +65,6 @@ export class AccessSnapshotResolver {
 
     const resolved = await this.resolveUserPermissions(orgId, userId);
     const scopes: Record<string, DataScope> = {};
-    const permissions: string[] = [];
     for (const [key, scope] of resolved) {
       if (scope === "none") continue;
       if (
@@ -75,7 +73,6 @@ export class AccessSnapshotResolver {
       )
         continue;
       scopes[key] = scope;
-      permissions.push(key);
     }
 
     const [denied, canManageOrganizationMembership] = await Promise.all([
@@ -85,7 +82,6 @@ export class AccessSnapshotResolver {
     const modules = await this.resolveModuleFlags(orgId, denied);
 
     return {
-      permissions,
       scopes,
       modules,
       isOrgOwner: currentUserContext.isOrgOwner,
