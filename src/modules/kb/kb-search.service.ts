@@ -5,6 +5,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { KbAccessService } from "./kb-access.service";
 import { KbEventsService } from "./kb-events.service";
+import { pageVisibleTo } from "./kb-page-visibility";
 import { EmbeddingsService } from "../ai/core/providers/embeddings.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { SearchInput } from "./dto/kb-ai.schemas";
@@ -134,6 +135,9 @@ export class KbSearchService {
       }
     }
 
+    const projectIds = await this.access.getAccessibleProjectIds(user);
+    const pageVisibility = pageVisibleTo(user, projectIds);
+
     const [articleKeyword, articleVector, pageKeyword, pageVector] = await Promise.all([
       hasSpaces
         ? this.articleKeywordCandidates(user.orgId, ids, q, pool, principal, spaceId)
@@ -141,9 +145,9 @@ export class KbSearchService {
       hasSpaces && vectorLiteral
         ? this.articleVectorCandidates(user.orgId, ids, vectorLiteral, pool, principal, spaceId)
         : Promise.resolve<number[]>([]),
-      this.pageKeywordCandidates(user.orgId, q, pool),
+      this.pageKeywordCandidates(user.orgId, q, pool, pageVisibility),
       vectorLiteral
-        ? this.pageVectorCandidates(user.orgId, vectorLiteral, pool)
+        ? this.pageVectorCandidates(user.orgId, vectorLiteral, pool, pageVisibility)
         : Promise.resolve<number[]>([]),
     ]);
 
@@ -201,7 +205,7 @@ export class KbSearchService {
             inArray(kbPages.id, pageIds),
             isNull(kbPages.deletedAt),
             ne(kbPages.status, "archived"),
-            sql`${kbPages.visibility} IN ('org', 'public')`,
+            pageVisibility,
           ),
         );
       for (const row of pageRows) {
@@ -291,6 +295,7 @@ export class KbSearchService {
     orgId: string,
     query: string,
     pool: number,
+    pageVisibility: SQL,
   ): Promise<number[]> {
     const tsquery = sql`websearch_to_tsquery('english', ${query})`;
     const term = `%${query}%`;
@@ -301,7 +306,7 @@ export class KbSearchService {
         and(
           eq(kbPages.orgId, orgId),
           isNull(kbPages.deletedAt),
-          sql`${kbPages.visibility} IN ('org', 'public')`,
+          pageVisibility,
           sql`(fts @@ ${tsquery} OR (numnode(${tsquery}) = 0 AND ${kbPages.title} ILIKE ${term}))`,
         ),
       )
@@ -314,6 +319,7 @@ export class KbSearchService {
     orgId: string,
     vector: string,
     pool: number,
+    pageVisibility: SQL,
   ): Promise<number[]> {
     try {
       const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
@@ -325,7 +331,7 @@ export class KbSearchService {
           and(
             eq(kbPages.id, kbArticleChunks.pageId),
             isNull(kbPages.deletedAt),
-            sql`${kbPages.visibility} IN ('org', 'public')`,
+            pageVisibility,
           ),
         )
         .where(

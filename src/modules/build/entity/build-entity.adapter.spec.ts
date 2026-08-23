@@ -312,6 +312,82 @@ describe("BuildEntityAdapter", () => {
     });
   });
 
+  describe("discovery and submission cannot disagree", () => {
+    const TICKET_ROW = [
+      { id: 1, title: "T", status: "TODO", ticketNumber: 1, projectKey: "W" },
+    ];
+    const PROJECT_ROW = [{ id: 1, name: "P", status: "ACTIVE", key: "P" }];
+
+    const cases: ReadonlyArray<
+      [string, string[], Record<string, unknown>[], { type: string; id: string }]
+    > = [
+      // A deliberately partial key set: the actor may assign but not update, so
+      // an unfiltered catalog would offer two actions submission then refuses.
+      [
+        "ticket",
+        ["build:tickets:view", "build:tickets:assign"],
+        TICKET_ROW,
+        { type: "ticket", id: "1" },
+      ],
+      [
+        "project",
+        ["build:view", "build:tickets:create"],
+        PROJECT_ROW,
+        { type: "project", id: "1" },
+      ],
+    ];
+
+    it.each(cases)(
+      "accepts every %s action it offered, at the adapter gate",
+      async (_label, keys, rows, reference) => {
+        const { adapter } = makeAdapter(keys, rows);
+        const [offered] = await adapter.actionsFor(ACTOR, [reference]);
+        expect(offered.length).toBeGreaterThan(0);
+
+        for (const action of offered) {
+          const result = await adapter.submitAction(ACTOR, reference, action.id, {});
+          const refusedByTheGate =
+            !result.ok && (result.reason === "invalid" || result.reason === "forbidden");
+          expect(refusedByTheGate).toBe(false);
+        }
+      },
+    );
+
+    it("refuses a ticket action on a reference type that has no ticket catalog", async () => {
+      const { adapter } = makeAdapter(
+        ["build:view", "build:tickets:update"],
+        PROJECT_ROW,
+      );
+
+      const result = await adapter.submitAction(
+        ACTOR,
+        { type: "project", id: "1" },
+        "status",
+        {},
+      );
+
+      expect(result).toEqual({ ok: false, reason: "invalid" });
+    });
+
+    /**
+     * Discovery gates on readability, submission on the write key plus the
+     * runner's own tenant and project-membership checks. They are not the same
+     * question, so an unreadable reference offers nothing while submission is
+     * decided further down. Pinned rather than corrected: the runner is the
+     * stricter of the two, so the asymmetry cannot admit anything.
+     */
+    it("offers nothing on an unreadable reference and leaves the refusal to the runner", async () => {
+      const { adapter, actions } = makeAdapter(["build:tickets:update"], []);
+      const reference = { type: "ticket", id: "1" };
+
+      const [offered] = await adapter.actionsFor(ACTOR, [reference]);
+      expect(offered).toEqual([]);
+
+      await adapter.submitAction(ACTOR, reference, "status", {});
+      expect(actions.run).toHaveBeenCalled();
+    });
+  });
+
   describe("scope enforcement", () => {
     const TICKET_ROW = {
       id: 1,

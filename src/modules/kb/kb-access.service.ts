@@ -14,6 +14,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { CacheService } from "../../common/cache/cache.service";
+import { getAccessibleProjectIds } from "./kb-project-access.util";
 
 const KB_MANAGE_SPACES = "kb:spaces:manage";
 const KB_SPACE_VIEWER_PERMISSION = "kb:space:viewer";
@@ -61,6 +62,10 @@ export class KbAccessService {
 
   async invalidateAccessibleSpaceIds(orgId: string): Promise<void> {
     await this.cache.invalidateNamespace(`kb:acc-spaces:${orgId}`);
+  }
+
+  async getAccessibleProjectIds(user: CurrentUserContext): Promise<number[]> {
+    return getAccessibleProjectIds(this.db, user);
   }
 
   private async computeAccessibleSpaceIds(user: CurrentUserContext): Promise<number[]> {

@@ -33,6 +33,7 @@ const makeDb = (searchIds: unknown[] = []) => {
 
 const makeAccess = (spaceIds: number[] = [1], isAdminResult = false) => ({
   getAccessibleSpaceIds: jest.fn().mockResolvedValue(spaceIds),
+  getAccessibleProjectIds: jest.fn().mockResolvedValue([]),
   isAdmin: jest.fn().mockReturnValue(isAdminResult),
   getPrincipalIds: jest.fn().mockResolvedValue({ userId: "user-1", roleSlugs: ["MEMBER"] }),
 });
