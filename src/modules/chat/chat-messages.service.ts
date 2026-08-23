@@ -23,6 +23,11 @@ import { ChatNotificationsService } from "./chat-notifications.service";
 import { ChatReplyRemindersService } from "./chat-reply-reminders.service";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import type { SendMessageInput } from "./dto/chat.schemas";
+import { EntityReferenceService } from "../entity-reference/entity-reference.service";
+import type {
+  EntityActor,
+  EntityReference,
+} from "../entity-reference/entity-reference.types";
 
 type PersistedMessage = {
   id: number;
@@ -45,6 +50,7 @@ export class ChatMessagesService {
     private readonly notifications: ChatNotificationsService,
     private readonly replyReminders: ChatReplyRemindersService,
     private readonly orgSettings: ChatOrgSettingsService,
+    private readonly entities: EntityReferenceService,
   ) {}
 
   private async isMember(channelId: number, userId: string): Promise<boolean> {
@@ -57,7 +63,13 @@ export class ChatMessagesService {
     return Boolean(member);
   }
 
-  async list(channelId: number, userId: string, cursor: number | undefined, limit: number) {
+  async list(
+    channelId: number,
+    actor: EntityActor,
+    cursor: number | undefined,
+    limit: number,
+  ) {
+    const userId = actor.userId;
     if (!(await this.isMember(channelId, userId))) {
       throw new ForbiddenException("You are not a member of this channel");
     }
@@ -84,7 +96,57 @@ export class ChatMessagesService {
       nextCursor = next?.id;
     }
 
-    return { messages: messages.reverse(), nextCursor };
+    return {
+      messages: await this.withResolvedReferences(actor, messages.reverse()),
+      nextCursor,
+    };
+  }
+
+  /**
+   * References are resolved for the reader, now — not read back from the copy
+   * taken when the message was sent. A reader who never had, or has lost, access
+   * to the record gets the reference back with no card.
+   */
+  private async withResolvedReferences<
+    T extends { metadata: Record<string, unknown> | null },
+  >(actor: EntityActor, messages: T[]): Promise<T[]> {
+    const flat: { message: number; reference: EntityReference }[] = [];
+
+    messages.forEach((message, index) => {
+      const raw = message.metadata?.["entities"];
+      if (!Array.isArray(raw)) return;
+      for (const entry of raw) {
+        if (typeof entry !== "object" || entry === null) continue;
+        const { type, id } = entry as { type?: unknown; id?: unknown };
+        if (typeof type !== "string" || typeof id !== "string") continue;
+        flat.push({ message: index, reference: { type, id } });
+      }
+    });
+
+    if (flat.length === 0) return messages;
+
+    const resolutions = await this.entities.resolve(
+      actor,
+      flat.map((entry) => entry.reference),
+    );
+
+    const byMessage = new Map<number, unknown[]>();
+    flat.forEach((entry, position) => {
+      const resolution = resolutions[position];
+      const list = byMessage.get(entry.message) ?? [];
+      list.push(
+        resolution?.status === "resolved"
+          ? { ...entry.reference, card: resolution.card }
+          : { ...entry.reference, card: null },
+      );
+      byMessage.set(entry.message, list);
+    });
+
+    return messages.map((message, index) => {
+      const entities = byMessage.get(index);
+      if (!entities) return message;
+      return { ...message, metadata: { ...message.metadata, entities } };
+    });
   }
 
   async poll(channelId: number, userId: string, since: Date) {
@@ -398,6 +460,33 @@ export class ChatMessagesService {
     if (!parentMessage) throw new NotFoundException("Message not found");
 
     return this.send(channelId, userId, orgId, { ...body, replyToId: parentMessageId });
+  }
+
+  /**
+   * Chat owns message content, so a module acting on a message reads it here
+   * rather than joining the chat tables itself. Null means the message is not
+   * this org's, not this channel's, or deleted.
+   */
+  async readMessageContent(
+    messageId: number,
+    channelId: number,
+    orgId: string,
+  ): Promise<string | null> {
+    const [row] = await this.db
+      .select({ content: chatMessages.content })
+      .from(chatMessages)
+      .innerJoin(chatChannels, eq(chatMessages.channelId, chatChannels.id))
+      .where(
+        and(
+          eq(chatMessages.id, messageId),
+          eq(chatMessages.channelId, channelId),
+          eq(chatChannels.orgId, orgId),
+          eq(chatMessages.isDeleted, false),
+        ),
+      )
+      .limit(1);
+
+    return row?.content ?? null;
   }
 
   async sendSystemMessage(

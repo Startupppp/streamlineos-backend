@@ -1,6 +1,7 @@
-import { ForbiddenException } from "@nestjs/common";
+import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { and, eq, gt, isNull, or } from "drizzle-orm";
 import { moduleAccessDenied } from "./module-access-errors";
+import { ACCESS_MANAGED_MODULES } from "../rbac/permissions";
 import { organizationMembers, roleAssignments, roles } from "../../db/schema";
 import type { Db } from "../../db/drizzle.module";
 import { ROLE_RANK } from "../../common/rbac/grantability";
@@ -11,8 +12,9 @@ import type { DataScope } from "../access/access.types";
 export {
   resolveModuleOwnerUserId,
   resolveModuleAuthorityFacts,
+  resolveModuleStanding,
 } from "./module-standing";
-export type { ModuleAuthorityFacts } from "./module-standing";
+export type { ModuleAuthorityFacts, ModuleStanding } from "./module-standing";
 
 /**
  * Write authority is intentionally structural. A module-scoped effective
@@ -30,6 +32,8 @@ export async function hasModuleAccessManagementAuthority(
   const standing = await resolveModuleManagementStanding(db, actor, moduleKey);
   return standing?.canManageAccess ?? false;
 }
+
+const MANAGED_MODULES = new Set<string>(ACCESS_MANAGED_MODULES);
 
 export interface ModuleAccessPolicyDeps {
   db: Db;
@@ -60,11 +64,19 @@ export function moduleAccessPolicyDeps(
   };
 }
 
+export function assertManagedModule(moduleKey: string): void {
+  if (!MANAGED_MODULES.has(moduleKey))
+    throw new NotFoundException(
+      `Access is not separately managed for module "${moduleKey}"`,
+    );
+}
+
 export async function assertModuleEnabled(
   deps: Pick<ModuleAccessPolicyDeps, "isModuleEnabled">,
   orgId: string,
   moduleKey: string,
 ): Promise<void> {
+  assertManagedModule(moduleKey);
   if (!(await deps.isModuleEnabled(orgId, moduleKey)))
     throw new ForbiddenException(`The ${moduleKey} module is not enabled`);
 }

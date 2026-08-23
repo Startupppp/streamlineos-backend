@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, desc, eq, gt, inArray, isNotNull, isNull } from "drizzle-orm";
 import {
   chatChannelMembers,
@@ -13,11 +13,15 @@ import { CacheService } from "../../common/cache/cache.service";
 import { logger } from "../../common/logger/logger.service";
 import type { CreateChannelInput } from "./dto/chat.schemas";
 import { assertUsersInOrg } from "../../common/tenant/org-membership";
-import {
-  isStaleEntityChannelName,
-  resolveEntityChannelName,
-} from "./entity-channel-name.util";
+import { EntityReferenceService } from "../entity-reference/entity-reference.service";
+import type { EntityActor } from "../entity-reference/entity-reference.types";
 
+export function entityChannelFallbackName(
+  entityType: string,
+  entityId: string,
+): string {
+  return `${entityType.charAt(0).toUpperCase() + entityType.slice(1)}: ${entityId}`;
+}
 
 @Injectable()
 export class ChatChannelsService {
@@ -25,6 +29,7 @@ export class ChatChannelsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly planLimits: PlanLimitsService,
     private readonly cache: CacheService,
+    private readonly entities: EntityReferenceService,
   ) {}
 
   private async ensureEntityChannelDisplayName<
@@ -34,17 +39,20 @@ export class ChatChannelsService {
       entityType: string | null;
       entityId: string | null;
     },
-  >(channel: T, orgId: string): Promise<T> {
+  >(channel: T, actor: EntityActor): Promise<T> {
     if (!channel.entityType || !channel.entityId) return channel;
 
-    const resolved = await resolveEntityChannelName(
-      this.db,
-      channel.entityType,
-      channel.entityId,
-      orgId,
-    );
-    if (!resolved || channel.name === resolved) return channel;
-    if (!isStaleEntityChannelName(channel.name, channel.entityType, channel.entityId)) {
+    const [resolution] = await this.entities.resolve(actor, [
+      { type: channel.entityType, id: channel.entityId },
+    ]);
+    if (resolution?.status !== "resolved") return channel;
+
+    const resolved = resolution.card.title;
+    if (channel.name === resolved) return channel;
+    if (
+      channel.name !==
+      entityChannelFallbackName(channel.entityType, channel.entityId)
+    ) {
       return channel;
     }
 
@@ -71,15 +79,16 @@ export class ChatChannelsService {
     return rows.map((row) => row.channelId);
   }
 
-  async getMyChannels(userId: string, orgId: string) {
-    return this.listMemberChannels(userId, orgId, false);
+  async getMyChannels(actor: EntityActor) {
+    return this.listMemberChannels(actor, false);
   }
 
-  async getArchivedChannels(userId: string, orgId: string) {
-    return this.listMemberChannels(userId, orgId, true);
+  async getArchivedChannels(actor: EntityActor) {
+    return this.listMemberChannels(actor, true);
   }
 
-  private async listMemberChannels(userId: string, orgId: string, archived: boolean) {
+  private async listMemberChannels(actor: EntityActor, archived: boolean) {
+    const { userId, orgId } = actor;
     try {
       const memberships = await this.db
         .select({ channelId: chatChannelMembers.channelId })
@@ -159,7 +168,7 @@ export class ChatChannelsService {
       );
 
       const enrichedChannels = await Promise.all(
-        channels.map((ch) => this.ensureEntityChannelDisplayName(ch, orgId)),
+        channels.map((ch) => this.ensureEntityChannelDisplayName(ch, actor)),
       );
 
       return enrichedChannels.map((ch) => ({
@@ -320,12 +329,27 @@ export class ChatChannelsService {
     return { channel, created: true };
   }
 
-  async getOrCreateEntityChannel(entityType: string, entityId: string, userId: string, orgId: string) {
+  /**
+   * Opening a record's channel is a read of the record, so it resolves through
+   * the entity seam first. An unresolvable reference — missing, deleted, another
+   * tenant's, or one the caller may not read — is indistinguishable, and none of
+   * them reach the channel tables.
+   */
+  async getOrCreateEntityChannel(
+    entityType: string,
+    entityId: string,
+    actor: EntityActor,
+  ) {
+    const reference = { type: entityType, id: entityId };
+    const [resolution] = await this.entities.resolve(actor, [reference]);
+    if (resolution?.status !== "resolved")
+      throw new NotFoundException("Record not found");
+
     const existing = await this.db.query.chatChannels.findFirst({
       where: and(
         eq(chatChannels.entityType, entityType),
         eq(chatChannels.entityId, entityId),
-        eq(chatChannels.orgId, orgId),
+        eq(chatChannels.orgId, actor.orgId),
       ),
       with: {
         members: {
@@ -334,50 +358,29 @@ export class ChatChannelsService {
       },
     });
 
-    if (existing) {
-      const isMember = existing.members.some((m) => m.userId === userId);
-      if (!isMember) {
-        await this.db.insert(chatChannelMembers).values({
-          orgId,
-          channelId: existing.id,
-          userId,
-          role: "MEMBER",
-        });
-      }
-      return this.ensureEntityChannelDisplayName(existing, orgId);
-    }
+    if (existing) return this.ensureEntityChannelDisplayName(existing, actor);
 
-    const resolvedName = await resolveEntityChannelName(
-      this.db,
-      entityType,
-      entityId,
-      orgId,
-    );
-    const fallbackName = `${entityType.charAt(0).toUpperCase() + entityType.slice(1)}: ${entityId}`;
-
-    const channel = await this.db.transaction(async (tx) => {
+    return this.db.transaction(async (tx) => {
       const [created] = await tx
         .insert(chatChannels)
         .values({
-          orgId,
-          name: resolvedName ?? fallbackName,
+          orgId: actor.orgId,
+          name: resolution.card.title,
           type: "GROUP",
-          createdBy: userId,
+          createdBy: actor.userId,
           entityType,
           entityId,
         })
         .returning();
 
       await tx.insert(chatChannelMembers).values({
-        orgId,
+        orgId: actor.orgId,
         channelId: created.id,
-        userId,
+        userId: actor.userId,
         role: "ADMIN",
       });
 
       return created;
     });
-
-    return channel;
   }
 }

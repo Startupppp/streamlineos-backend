@@ -7,6 +7,7 @@ import { WebPushService } from "../realtime/web-push.service";
 import { ChatReplyRemindersService } from "./chat-reply-reminders.service";
 import { ChatNotificationsService } from "./chat-notifications.service";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
+import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import { CacheService } from "../../common/cache/cache.service";
 
 const mockDb = {
@@ -49,6 +50,13 @@ const mockNotifications = {
   publishNewMessageNotification: jest.fn().mockResolvedValue(undefined),
   publishMentionNotification: jest.fn().mockResolvedValue(undefined),
 };
+const mockEntities = {
+  resolve: jest.fn().mockResolvedValue([]),
+  actionsFor: jest.fn().mockResolvedValue([]),
+  submitAction: jest.fn(),
+  isKnownType: jest.fn().mockReturnValue(true),
+};
+
 const mockOrgSettings = {
   getSettings: jest.fn().mockResolvedValue({ maxAttachmentSizeMb: 25 }),
 };
@@ -69,6 +77,7 @@ describe("ChatMessagesService", () => {
         { provide: ChatNotificationsService, useValue: mockNotifications },
         { provide: ChatReplyRemindersService, useValue: mockReplyReminders },
         { provide: ChatOrgSettingsService, useValue: mockOrgSettings },
+        { provide: EntityReferenceService, useValue: mockEntities },
       ],
     }).compile();
     service = module.get(ChatMessagesService);

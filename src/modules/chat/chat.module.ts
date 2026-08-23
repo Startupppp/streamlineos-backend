@@ -28,9 +28,10 @@ import { ChatInviteLinksService } from "./chat-invite-links.service";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import { ChatSummarizeService } from "./chat-summarize.service";
 import { RealtimeModule } from "../realtime/realtime.module";
+import { EntityReferenceModule } from "../entity-reference/entity-reference.module";
 
 @Module({
-  imports: [BillingModule, RealtimeModule],
+  imports: [BillingModule, RealtimeModule, EntityReferenceModule],
   controllers: [ChatActionsController, ChatChannelsController, ChatMessagesController, ChatPresenceController, ChatPinsController, ChatHuddlesController, ChatSearchController, ChatSavedController, ChatLinkPreviewController, ChatInviteLinksController, ChatOrgSettingsController, ChatSummarizeController, ChatRealtimeController],
   providers: [
     ChatChannelsService,

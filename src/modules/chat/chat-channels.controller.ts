@@ -38,6 +38,7 @@ import {
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { z } from "zod";
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from "@nestjs/swagger";
+import { actorOf } from "../entity-reference/entity-actor";
 
 @ApiTags("Chat Channels")
 @ApiBearerAuth()
@@ -56,7 +57,7 @@ export class ChatChannelsController {
   @Get()
   @RequirePermission("chat:channels:read")
   list(@CurrentUser() u: CurrentUserContext) {
-    return this.channels.getMyChannels(u.userId, u.orgId);
+    return this.channels.getMyChannels(actorOf(u));
   }
 
   @ApiOperation({ summary: "List archived channels for the current user" })
@@ -64,7 +65,7 @@ export class ChatChannelsController {
   @Get("archived")
   @RequirePermission("chat:channels:read")
   listArchived(@CurrentUser() u: CurrentUserContext) {
-    return this.channels.getArchivedChannels(u.userId, u.orgId);
+    return this.channels.getArchivedChannels(actorOf(u));
   }
 
   @ApiOperation({ summary: "List public channels available to join" })
@@ -84,7 +85,7 @@ export class ChatChannelsController {
     @Param("entityId") entityId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.channels.getOrCreateEntityChannel(entityType, entityId, u.userId, u.orgId);
+    return this.channels.getOrCreateEntityChannel(entityType, entityId, actorOf(u));
   }
 
   @ApiOperation({ summary: "Create a new channel or return existing DM/entity channel" })
@@ -165,7 +166,9 @@ export class ChatChannelsController {
     return this.members.removeMember(channelId, targetUserId, u.userId);
   }
 
-  @ApiOperation({ summary: "Join a public channel" })
+  @ApiOperation({
+    summary: "Join a public channel, or a record channel you can read",
+  })
   @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/join")
   @HttpCode(200)
@@ -174,7 +177,7 @@ export class ChatChannelsController {
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.members.joinPublicChannel(channelId, u.userId, u.orgId);
+    return this.members.joinOpenChannel(channelId, actorOf(u));
   }
 
   @ApiOperation({ summary: "Leave a channel" })

@@ -155,9 +155,19 @@ describeWithDb("ChatActions membership-forbidden path (e2e, mocked)", () => {
     mockAccessServiceAllowed.isModuleEnabled.mockResolvedValue(true);
     mockDbNoMembership.query.projectMembers.findFirst.mockResolvedValue(null);
     mockDbNoMembership.query.chatMessages.findFirst.mockResolvedValue(null);
-    mockDbNoMembership.query.projects.findFirst.mockResolvedValue(null);
-    mockDbNoMembership.query.tickets.findFirst.mockResolvedValue(null);
-    mockDbNoMembership.where.mockReturnValue(chatQ([]));
+    mockDbNoMembership.query.projects.findFirst.mockResolvedValue({ key: "WEB" });
+    // The record exists and the caller can read it; the only thing standing
+    // between them and the write is project membership. Without a real ticket
+    // these cases would 404 before the membership check they exist to prove.
+    mockDbNoMembership.query.tickets.findFirst.mockResolvedValue({
+      id: 1,
+      status: "TODO",
+      assigneeId: null,
+      dueDate: null,
+      projectId: 1,
+    });
+    mockDbNoMembership.where.mockReturnValue(chatQ([{ content: "from chat" }]));
+    mockDbNoMembership.limit.mockResolvedValue([{ content: "from chat" }]);
   });
 
   it("403 CHAT_ACTION_FORBIDDEN on POST /chat/actions/create-task-from-message when caller is not a project member", async () => {

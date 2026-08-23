@@ -57,7 +57,12 @@ export class ChatMessagesController {
     @Query(new ZodValidationPipe(listMessagesQuerySchema)) query: ListMessagesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.messages.list(channelId, u.userId, query.cursor, query.limit ?? 50);
+    return this.messages.list(
+      channelId,
+      { orgId: u.orgId, userId: u.userId, isOrgOwner: u.isOrgOwner },
+      query.cursor,
+      query.limit ?? 50,
+    );
   }
 
   @ApiOperation({ summary: "Send a message to a channel" })

@@ -139,20 +139,12 @@ export class ModuleAccessGroupsService {
     private readonly audit: AuditService,
   ) {}
 
-  private assertKnownModule(moduleKey: string): void {
-    if (!MANAGED_MODULES.has(moduleKey)) {
-      throw new NotFoundException(
-        `Access is not separately managed for module "${moduleKey}"`,
-      );
-    }
-  }
-
   private async assertAccess(
     actor: CurrentUserContext,
     moduleKey: string,
     action: "view" | "manage",
   ): Promise<void> {
-    this.assertKnownModule(moduleKey);
+    assertManagedModule(moduleKey);
     await assertModuleAccessPolicy(
       moduleAccessPolicyDeps(this.db, this.access),
       actor,
@@ -169,7 +161,7 @@ export class ModuleAccessGroupsService {
     actor: CurrentUserContext,
     moduleKey: string,
   ): Promise<void> {
-    this.assertKnownModule(moduleKey);
+    assertManagedModule(moduleKey);
     await assertModuleEnabled(
       moduleAccessPolicyDeps(this.db, this.access),
       actor.orgId,

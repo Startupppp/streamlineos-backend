@@ -5,7 +5,18 @@ const channelBaseSchema = z.object({
   description: z.string().optional(),
   avatarUrl: z.string().optional(),
   memberIds: z.array(z.string()).min(1),
-  entityType: z.enum(["project", "client", "task", "sprint", "release", "incident"]).optional(),
+  entityType: z
+    .enum([
+      "project",
+      "client",
+      "deal",
+      "task",
+      "ticket",
+      "sprint",
+      "release",
+      "incident",
+    ])
+    .optional(),
   entityId: z.string().optional(),
 });
 
@@ -134,7 +145,7 @@ export type AddMemberInput = z.infer<typeof addMemberSchema>;
 
 export const ticketStatusActionSchema = z.object({
   channelId: z.number().int().positive(),
-  projectId: z.number().int().positive(),
+  projectId: z.number().int().positive().optional(),
   ticketId: z.number().int().positive(),
   nextStatus: z.string().min(1).max(100),
 });
@@ -151,7 +162,7 @@ export type CreateTaskFromMessageInput = z.infer<typeof createTaskFromMessageSch
 
 export const assignTicketFromChatSchema = z.object({
   channelId: z.number().int().positive(),
-  projectId: z.number().int().positive(),
+  projectId: z.number().int().positive().optional(),
   ticketId: z.number().int().positive(),
   assigneeId: z.string().min(1),
 });
@@ -159,7 +170,7 @@ export type AssignTicketFromChatInput = z.infer<typeof assignTicketFromChatSchem
 
 export const setDueDateFromChatSchema = z.object({
   channelId: z.number().int().positive(),
-  projectId: z.number().int().positive(),
+  projectId: z.number().int().positive().optional(),
   ticketId: z.number().int().positive(),
   dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD"),
 });

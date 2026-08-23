@@ -35,7 +35,8 @@ import {
   assertModuleAccessPolicy,
   moduleAccessPolicyDeps,
   resolveActorRankContext,
-  resolveModuleAuthorityFacts,
+  resolveModuleStanding,
+  type ModuleStanding,
 } from "./module-access.helpers";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
@@ -148,16 +149,8 @@ export class ModuleAccessService {
     private readonly audit: AuditService,
   ) {}
 
-  private assertKnownModule(moduleKey: string): void {
-    if (!MANAGED_MODULES.has(moduleKey)) {
-      throw new NotFoundException(
-        `Access is not separately managed for module "${moduleKey}"`,
-      );
-    }
-  }
-
   moduleCatalog(moduleKey: string): Permission[] {
-    this.assertKnownModule(moduleKey);
+    assertManagedModule(moduleKey);
     return PERMISSIONS.filter((p) => administeringModuleOf(p.name) === moduleKey);
   }
 
@@ -170,7 +163,7 @@ export class ModuleAccessService {
     moduleKey: string,
     action: "view" | "manage",
   ): Promise<void> {
-    this.assertKnownModule(moduleKey);
+    assertManagedModule(moduleKey);
     await assertModuleAccessPolicy(
       moduleAccessPolicyDeps(this.db, this.access),
       actor,
@@ -506,25 +499,16 @@ export class ModuleAccessService {
     isOrgAdmin: boolean;
     isModuleOwner: boolean;
     isModuleAdmin: boolean;
+    standing: ModuleStanding;
   }> {
-    this.assertKnownModule(moduleKey);
+    assertManagedModule(moduleKey);
 
-    const membership = await this.db.query.organizationMembers.findFirst({
-      where: and(
-        eq(organizationMembers.orgId, actor.orgId),
-        eq(organizationMembers.userId, actor.userId),
-        eq(organizationMembers.status, "ACTIVE"),
-      ),
-      columns: { id: true },
-    });
-    if (!membership)
-      throw new ForbiddenException("Not an active member of this organization");
-
-    const [resolved, moduleAuthority, isOrgAdmin] = await Promise.all([
+    const [resolved, standing] = await Promise.all([
       this.access.resolveUserPermissions(actor.orgId, actor.userId),
-      resolveModuleAuthorityFacts(this.db, actor, moduleKey),
-      isStructuralOrgAdmin(this.db, actor),
+      resolveModuleStanding(this.db, actor, moduleKey),
     ]);
+    if (standing.source === "none")
+      throw new ForbiddenException("Not an active member of this organization");
 
     const permissions = Array.from(resolved.entries())
       .filter(([key]) => administeringModuleOf(key) === moduleKey)
@@ -532,9 +516,11 @@ export class ModuleAccessService {
 
     return {
       permissions,
-      isOrgOwner: actor.isOrgOwner,
-      isOrgAdmin,
-      ...moduleAuthority,
+      isOrgOwner: standing.source === "org-owner",
+      isOrgAdmin: standing.source === "org-admin",
+      isModuleOwner: standing.source === "module-ownership",
+      isModuleAdmin: standing.source === "module-role",
+      standing,
     };
   }
 
