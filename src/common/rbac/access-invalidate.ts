@@ -14,6 +14,13 @@ export function subscribeVersionBump(fn: AccessVersionListener): () => void {
 }
 
 /**
+ * A reader with no row sees version 1, so a first bump must land above it —
+ * inserting the column default would leave every version-keyed cache entry
+ * reachable and the change invisible until its TTL lapsed.
+ */
+const FIRST_BUMPED_VERSION = 2;
+
+/**
  * Published before the caller's transaction commits, deliberately. A rolled-back
  * grant change then costs one wasted re-read; publishing after commit would risk
  * missing one, and a missed invalidation honours a revoked grant.
@@ -21,7 +28,7 @@ export function subscribeVersionBump(fn: AccessVersionListener): () => void {
 export async function bumpPermissionsVersion(tx: DbOrTx, orgId: string): Promise<void> {
   await tx
     .insert(accessVersions)
-    .values({ orgId })
+    .values({ orgId, permissionsVersion: FIRST_BUMPED_VERSION })
     .onConflictDoUpdate({
       target: accessVersions.orgId,
       set: {
