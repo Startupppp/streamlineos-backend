@@ -13,8 +13,8 @@ const ALWAYS_ON_AT_RUNTIME = [
 ] as const;
 
 const registryIds = new Set(MODULE_REGISTRY.map((m) => m.id));
-const universal = MODULE_REGISTRY.filter((m) => m.ladder === "universal").map((m) => m.id);
-const notPlanGated = MODULE_REGISTRY.filter((m) => !m.planGated).map((m) => m.id);
+const universal: string[] = MODULE_REGISTRY.filter((m) => m.ladder === "universal").map((m) => m.id);
+const notPlanGated: string[] = MODULE_REGISTRY.filter((m) => !m.planGated).map((m) => m.id);
 
 describe("what makes a module always available", () => {
   it("every always-on module has a registry entry", () => {
@@ -30,15 +30,14 @@ describe("what makes a module always available", () => {
     const alwaysOnButPlanGated = ALWAYS_ON_AT_RUNTIME.filter(
       (id) => !notPlanGated.includes(id),
     );
-    const notPlanGatedButNotAlwaysOn = notPlanGated.filter(
-      (id) => !ALWAYS_ON_AT_RUNTIME.includes(id as (typeof ALWAYS_ON_AT_RUNTIME)[number]),
-    );
+    const alwaysOn: string[] = [...ALWAYS_ON_AT_RUNTIME];
+    const notPlanGatedButNotAlwaysOn = notPlanGated.filter((id) => !alwaysOn.includes(id));
 
     expect(alwaysOnButPlanGated.sort()).toEqual(["chat", "kb"]);
     expect(notPlanGatedButNotAlwaysOn.sort()).toEqual(["billing"]);
   });
 
   it("keeps billing out of the always-on set", () => {
-    expect(ALWAYS_ON_AT_RUNTIME).not.toContain("billing");
+    expect([...ALWAYS_ON_AT_RUNTIME]).not.toContain("billing");
   });
 });
