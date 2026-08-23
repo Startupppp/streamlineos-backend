@@ -23,9 +23,12 @@ const makeChain = (finalValue: unknown[] = []) => {
   return chain;
 };
 
-const makeDb = () => {
+const makeDb = (searchIds: unknown[] = []) => {
   const chain = makeChain([]);
-  return { select: jest.fn().mockReturnValue(chain) };
+  return {
+    select: jest.fn().mockReturnValue(chain),
+    execute: jest.fn().mockResolvedValue(searchIds),
+  };
 };
 
 const makeAccess = (spaceIds: number[] = [1], isAdminResult = false) => ({
@@ -59,6 +62,24 @@ describe("KbSearchService — restriction enforcement", () => {
 
     expect(access.getPrincipalIds).toHaveBeenCalledWith(user);
     expect(access.isAdmin).toHaveBeenCalledWith(user);
+  });
+
+  it("asks the SECURITY DEFINER search function for ids before falling back to a scan", async () => {
+    const db = makeDb([{ id: 7 }, { id: 9 }]);
+    const access = makeAccess([1], false);
+
+    const svc = new KbSearchService(
+      db as never,
+      access as never,
+      makeEmbeddings() as never,
+      makeEvents() as never,
+    );
+
+    await svc.retrieveTopArticles(makeUser(), "test query", 5);
+
+    expect(db.execute).toHaveBeenCalled();
+    const statement = db.execute.mock.calls[0]?.[0];
+    expect(JSON.stringify(statement)).toContain("app.search_kb_article_ids");
   });
 
   it("returns empty array when query is blank", async () => {
