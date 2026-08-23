@@ -95,7 +95,7 @@ export class BuildEntityActions {
       ),
       columns: { projectId: true },
     });
-    return membership !== undefined;
+    return Boolean(membership);
   }
 
   private async changeStatus(

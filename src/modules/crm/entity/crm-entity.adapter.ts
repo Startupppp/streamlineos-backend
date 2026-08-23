@@ -81,7 +81,6 @@ export class CrmEntityAdapter implements EntityAdapter {
     return results;
   }
 
-  /** CRM records are referenceable but carry no in-chat actions yet. */
   async actionsFor(
     _actor: EntityActor,
     references: EntityReference[],

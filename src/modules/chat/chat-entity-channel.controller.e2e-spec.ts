@@ -45,6 +45,7 @@ const mockDb = {
   query: {
     chatChannels: { findFirst: jest.fn().mockResolvedValue(null) },
     chatChannelMembers: { findFirst: jest.fn().mockResolvedValue(null) },
+    chatMessages: { findMany: jest.fn().mockResolvedValue([]) },
   },
   select: jest.fn().mockReturnThis(),
   from: jest.fn().mockReturnThis(),
@@ -94,9 +95,35 @@ describeWithDb("Chat entity channel access (e2e, mocked)", () => {
     jest.clearAllMocks();
     mockAccess.isModuleEnabled.mockResolvedValue(true);
     mockDb.query.chatChannels.findFirst.mockResolvedValue(null);
+    mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ userId: "member_1" });
+    mockDb.query.chatMessages.findMany.mockResolvedValue([]);
     mockDb.where.mockReturnValue(q([TICKET_ROW]));
     mockDb.limit.mockResolvedValue([TICKET_ROW]);
   });
+
+  const messageCarryingTicketRef = [
+    {
+      id: 1,
+      channelId: 1,
+      senderId: "member_1",
+      content: "look at this",
+      createdAt: new Date(),
+      replyToId: null,
+      messageType: "text",
+      metadata: { entities: [{ type: "ticket", id: "7" }] },
+      sender: { id: "member_1", name: "Ann", image: null },
+      attachments: [],
+      replyTo: null,
+    },
+  ];
+
+  const messagesOf = (body: Record<string, unknown>) => {
+    const payload = (body["data"] ?? body) as { messages?: unknown[] };
+    const messages = payload.messages;
+    if (!Array.isArray(messages))
+      throw new Error(`no messages in response: ${JSON.stringify(body)}`);
+    return messages as { metadata: { entities: { card: unknown }[] } }[];
+  };
 
   const grant = (...keys: string[]) =>
     mockAccess.resolveUserPermissions.mockResolvedValue(
@@ -204,5 +231,60 @@ describeWithDb("Chat entity channel access (e2e, mocked)", () => {
       .set("Authorization", `Bearer ${token}`);
 
     expect(mockDb.insert).not.toHaveBeenCalled();
+  });
+
+  it("resolves a ticket reference in scrollback for a reader who may see it", async () => {
+    grant("chat:messages:read", "build:tickets:view");
+    mockDb.query.chatMessages.findMany.mockResolvedValue(messageCarryingTicketRef);
+    const token = await signToken({
+      sub: "member_1",
+      permissions: ["chat:messages:read"],
+      enabledModules: ALL_MODULES,
+    });
+
+    const res = await request(app.getHttpServer())
+      .get("/chat/channels/1/messages")
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    const [entity] = messagesOf(res.body)[0].metadata.entities;
+    expect(entity.card).toMatchObject({ title: TICKET_ROW.title });
+  });
+
+  it("withholds the same reference from a reader whose ticket access was revoked", async () => {
+    grant("chat:messages:read");
+    mockDb.query.chatMessages.findMany.mockResolvedValue(messageCarryingTicketRef);
+    const token = await signToken({
+      sub: "member_1",
+      permissions: ["chat:messages:read"],
+      enabledModules: ALL_MODULES,
+    });
+
+    const res = await request(app.getHttpServer())
+      .get("/chat/channels/1/messages")
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    const [entity] = messagesOf(res.body)[0].metadata.entities;
+    expect(entity.card).toBeNull();
+    expect(JSON.stringify(res.body)).not.toContain(TICKET_ROW.title);
+  });
+
+  it("serves a CRM deal through the same route shape as a Build ticket", async () => {
+    grant("chat:channels:read", "crm:deals:read");
+    const dealRow = { id: 3, name: "Acme renewal", stage: "NEGOTIATION" };
+    mockDb.where.mockReturnValue(q([dealRow]));
+    mockDb.limit.mockResolvedValue([dealRow]);
+    const token = await signToken({
+      sub: "member_1",
+      permissions: ["chat:channels:read"],
+      enabledModules: ALL_MODULES,
+    });
+
+    const res = await request(app.getHttpServer())
+      .get("/chat/channels/entity/deal/3")
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
   });
 });

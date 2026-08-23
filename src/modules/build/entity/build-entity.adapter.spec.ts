@@ -16,11 +16,6 @@ function accessStub(keys: string[]) {
   return { resolveUserPermissions: jest.fn(async () => map) };
 }
 
-/**
- * A read that never happens cannot leak. Every authority test below asserts the
- * refusal by proving the database was not touched, which is the property that
- * failed in the resolver this adapter replaces.
- */
 function dbStub(rows: Record<string, unknown>[] = []) {
   const limit = jest.fn(async () => rows);
   const where = jest.fn(() => ({ limit }));
@@ -68,10 +63,6 @@ describe("BuildEntityAdapter", () => {
     ]);
   });
 
-  /**
-   * Entity channels were stored under `task` before message references settled
-   * on `ticket`. Existing rows must keep resolving, and under the same key.
-   */
   it("resolves the legacy `task` type as a ticket, behind the ticket read key", async () => {
     const { adapter, db } = makeAdapter([]);
     const [refused] = await adapter.resolve(ACTOR, [{ type: "task", id: "1" }]);

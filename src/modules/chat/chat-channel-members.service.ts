@@ -150,11 +150,6 @@ export class ChatChannelMembersService {
     return { ok: true };
   }
 
-  /**
-   * Open to join: a public channel, or a record's channel whose record the
-   * caller can read. Opening a record's channel no longer joins them silently,
-   * so this is the deliberate act that replaces that side effect.
-   */
   async joinOpenChannel(channelId: number, actor: EntityActor) {
     const channel = await this.db.query.chatChannels.findFirst({
       where: and(

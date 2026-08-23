@@ -156,9 +156,6 @@ describeWithDb("ChatActions membership-forbidden path (e2e, mocked)", () => {
     mockDbNoMembership.query.projectMembers.findFirst.mockResolvedValue(null);
     mockDbNoMembership.query.chatMessages.findFirst.mockResolvedValue(null);
     mockDbNoMembership.query.projects.findFirst.mockResolvedValue({ key: "WEB" });
-    // The record exists and the caller can read it; the only thing standing
-    // between them and the write is project membership. Without a real ticket
-    // these cases would 404 before the membership check they exist to prove.
     mockDbNoMembership.query.tickets.findFirst.mockResolvedValue({
       id: 1,
       status: "TODO",

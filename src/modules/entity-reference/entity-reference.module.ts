@@ -11,10 +11,6 @@ import {
   type EntityAdapter,
 } from "./entity-reference.types";
 
-/**
- * Adding a reference type is an adapter plus one entry in the factory below.
- * Nothing downstream — chat, the registry, the schemas — learns the new type.
- */
 @Module({
   imports: [AccessModule],
   providers: [

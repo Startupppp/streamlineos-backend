@@ -462,11 +462,6 @@ export class ChatMessagesService {
     return this.send(channelId, userId, orgId, { ...body, replyToId: parentMessageId });
   }
 
-  /**
-   * Chat owns message content, so a module acting on a message reads it here
-   * rather than joining the chat tables itself. Null means the message is not
-   * this org's, not this channel's, or deleted.
-   */
   async readMessageContent(
     messageId: number,
     channelId: number,
