@@ -2,43 +2,39 @@ import { eq } from "drizzle-orm";
 import { chatChannelMembers } from "../../db/schema";
 import { type Db } from "../../db/drizzle.module";
 
-const MENTION_PATTERN = /@([^\s@]+(?:\s[^\s@]+)*)/g;
+const MENTION_PATTERN = /@([^\s@]+)/g;
 const EVERYONE_ALIASES = new Set(["channel", "everyone", "here"]);
 
 export interface MentionResolutionInput {
   channelId: number;
   senderId: string;
   content: string;
+  mentionedUserIds?: readonly string[];
+}
+
+export function mentionsEveryone(content: string): boolean {
+  return [...content.matchAll(MENTION_PATTERN)].some((match) =>
+    EVERYONE_ALIASES.has((match[1] ?? "").toLowerCase()),
+  );
 }
 
 export async function resolveMentionedUserIds(
   db: Db,
   input: MentionResolutionInput,
 ): Promise<string[]> {
-  const mentions = [...input.content.matchAll(MENTION_PATTERN)].map((match) =>
-    (match[1] ?? "").toLowerCase(),
-  );
-  if (mentions.length === 0) return [];
+  const everyone = mentionsEveryone(input.content);
+  const claimed = new Set(input.mentionedUserIds ?? []);
+  if (!everyone && claimed.size === 0) return [];
 
   const members = await db.query.chatChannelMembers.findMany({
     where: eq(chatChannelMembers.channelId, input.channelId),
-    with: { user: { columns: { id: true, name: true } } },
+    columns: { userId: true },
   });
 
-  const recipients = members.filter((member) => member.userId !== input.senderId);
+  const recipients = members
+    .map((member) => member.userId)
+    .filter((userId) => userId !== input.senderId);
 
-  if (mentions.some((mention) => EVERYONE_ALIASES.has(mention)))
-    return recipients.map((member) => member.userId);
-
-  return recipients
-    .filter((member) => {
-      const name = member.user?.name?.trim().toLowerCase() ?? "";
-      if (!name) return false;
-      const firstName = name.split(" ")[0] ?? "";
-      return mentions.some(
-        (mention) =>
-          name.includes(mention) || (firstName !== "" && mention.includes(firstName)),
-      );
-    })
-    .map((member) => member.userId);
+  if (everyone) return recipients;
+  return recipients.filter((userId) => claimed.has(userId));
 }

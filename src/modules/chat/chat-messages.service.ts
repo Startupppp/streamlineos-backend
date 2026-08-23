@@ -241,6 +241,7 @@ export class ChatMessagesService {
           channelType: channelRow?.type ?? null,
           message,
           content: body?.content ?? null,
+          mentionedUserIds: body?.mentionedUserIds,
           attachments: insertedAttachments,
           strippedMetadata: strippedReferenceMetadata(message.metadata),
         });

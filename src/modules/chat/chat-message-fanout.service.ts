@@ -16,6 +16,7 @@ export interface MessageFanoutInput {
   channelType: string | null;
   message: PersistedMessage;
   content: string | null;
+  mentionedUserIds?: readonly string[];
   attachments: ChatAttachmentPayload[];
   strippedMetadata: Record<string, unknown> | null;
 }
@@ -95,6 +96,7 @@ export class ChatMessageFanoutService {
       channelId: input.channelId,
       senderId: input.message.senderId,
       content: input.content,
+      mentionedUserIds: input.mentionedUserIds,
     });
     if (mentions.length === 0) return;
     await this.notifications.publishMentionNotification(
