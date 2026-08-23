@@ -225,21 +225,3 @@ export async function canTransferModuleOwnership(
   return STANDING.none.canTransferOwnership;
 }
 
-export async function resolveModuleStanding(
-  db: Db,
-  actor: CurrentUserContext,
-  moduleKey: string,
-): Promise<ModuleStanding> {
-  const managing = await resolveModuleManagementStanding(db, actor, moduleKey);
-  if (managing) return managing;
-
-  const membership = await db.query.organizationMembers.findFirst({
-    where: and(
-      eq(organizationMembers.orgId, actor.orgId),
-      eq(organizationMembers.userId, actor.userId),
-      eq(organizationMembers.status, "ACTIVE"),
-    ),
-    columns: { id: true },
-  });
-  return membership ? STANDING.membership : STANDING.none;
-}

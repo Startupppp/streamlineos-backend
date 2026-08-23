@@ -12,9 +12,8 @@ import type { DataScope } from "../access/access.types";
 export {
   resolveModuleOwnerUserId,
   resolveModuleAuthorityFacts,
-  resolveModuleStanding,
 } from "./module-standing";
-export type { ModuleAuthorityFacts, ModuleStanding } from "./module-standing";
+export type { ModuleAuthorityFacts } from "./module-standing";
 
 /**
  * Write authority is intentionally structural. A module-scoped effective

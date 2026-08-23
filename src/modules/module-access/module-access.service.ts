@@ -32,17 +32,16 @@ import { administeringModuleOf } from "../../common/rbac/module-vocabulary";
 import { isStructuralOrgAdmin } from "../../common/rbac/is-structural-org-admin";
 import { moduleAccessDenied } from "./module-access-errors";
 import {
+  assertManagedModule,
   assertModuleAccessPolicy,
   moduleAccessPolicyDeps,
   resolveActorRankContext,
-  resolveModuleStanding,
-  type ModuleStanding,
+  resolveModuleAuthorityFacts,
 } from "./module-access.helpers";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
 import { AccessService, SCOPE_RANK } from "../access/access.service";
 import {
-  ACCESS_MANAGED_MODULES,
   PERMISSIONS,
   ROLE_DEFAULT_PERMISSIONS,
   type Permission,
@@ -52,7 +51,6 @@ import type {
   SetModuleRolePermissionsInput,
 } from "./dto/module-access.schemas";
 
-const MANAGED_MODULES = new Set<string>(ACCESS_MANAGED_MODULES);
 const PERM_DIFF_CAP = 50;
 const ROLE_ASSIGNEE_PAGE_SIZE = 100;
 
@@ -499,16 +497,27 @@ export class ModuleAccessService {
     isOrgAdmin: boolean;
     isModuleOwner: boolean;
     isModuleAdmin: boolean;
-    standing: ModuleStanding;
   }> {
     assertManagedModule(moduleKey);
 
-    const [resolved, standing] = await Promise.all([
-      this.access.resolveUserPermissions(actor.orgId, actor.userId),
-      resolveModuleStanding(this.db, actor, moduleKey),
-    ]);
-    if (standing.source === "none")
+    const membership = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, actor.orgId),
+        eq(organizationMembers.userId, actor.userId),
+        eq(organizationMembers.status, "ACTIVE"),
+      ),
+      columns: { id: true },
+    });
+    if (!membership)
       throw new ForbiddenException("Not an active member of this organization");
+
+    // Reported as independent facts, not as a single standing: an org owner or
+    // org admin can also be the module owner, and the ownership tab keys on it.
+    const [resolved, moduleAuthority, isOrgAdmin] = await Promise.all([
+      this.access.resolveUserPermissions(actor.orgId, actor.userId),
+      resolveModuleAuthorityFacts(this.db, actor, moduleKey),
+      isStructuralOrgAdmin(this.db, actor),
+    ]);
 
     const permissions = Array.from(resolved.entries())
       .filter(([key]) => administeringModuleOf(key) === moduleKey)
@@ -516,11 +525,9 @@ export class ModuleAccessService {
 
     return {
       permissions,
-      isOrgOwner: standing.source === "org-owner",
-      isOrgAdmin: standing.source === "org-admin",
-      isModuleOwner: standing.source === "module-ownership",
-      isModuleAdmin: standing.source === "module-role",
-      standing,
+      isOrgOwner: actor.isOrgOwner,
+      isOrgAdmin,
+      ...moduleAuthority,
     };
   }
 

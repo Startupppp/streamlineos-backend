@@ -155,7 +155,7 @@ describe("ModuleAccessService.getCallerPermissions", () => {
 
   it("throws ForbiddenException when the caller is not an active org member", async () => {
     const inactiveMockDb = {
-      select: jest.fn(),
+      select: jest.fn().mockReturnValue(makeFlexChain([])),
       query: {
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue(null),

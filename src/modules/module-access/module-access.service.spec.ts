@@ -284,29 +284,21 @@ describe("ModuleAccessService", () => {
       expect(keys).not.toContain("hr:employees:view");
     });
 
-    it("reports the module owner's standing", async () => {
+    it("reports org-level and module-level authority independently, since one person can hold both", async () => {
+      (
+        mockDb.query as { organizationMembers: { findFirst: jest.Mock } }
+      ).organizationMembers.findFirst.mockResolvedValue({
+        id: 1,
+        isOwner: false,
+        role: "ORG_ADMIN",
+      });
       (mockDb.select as jest.Mock)
         .mockReturnValueOnce(makeSelectChain([{ userId: "u1" }]))
         .mockReturnValueOnce(makeSelectChain([]));
 
       const result = await svc.getCallerPermissions(actor(), "hr");
 
-      expect(result).toMatchObject({
-        isModuleOwner: true,
-        isModuleAdmin: false,
-        isOrgAdmin: false,
-        standing: { level: "owner", canManageAccess: true, canTransferOwnership: true },
-      });
-    });
-
-    it("reports a plain member as having no management standing", async () => {
-      const result = await svc.getCallerPermissions(actor(), "hr");
-
-      expect(result).toMatchObject({
-        isModuleOwner: false,
-        isModuleAdmin: false,
-        standing: { level: "member", canManageAccess: false },
-      });
+      expect(result).toMatchObject({ isOrgAdmin: true, isModuleOwner: true });
     });
 
     it("refuses someone who is not an active member", async () => {

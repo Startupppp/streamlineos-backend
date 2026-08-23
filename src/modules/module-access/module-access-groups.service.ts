@@ -50,6 +50,7 @@ import {
   moduleOwnershipDenied,
 } from "./module-access-errors";
 import {
+  assertManagedModule,
   assertModuleAccessPolicy,
   assertModuleEnabled,
   moduleAccessPolicyDeps,
@@ -60,11 +61,7 @@ import { canTransferModuleOwnership } from "./module-standing";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
 import { AccessService } from "../access/access.service";
-import {
-  ACCESS_MANAGED_MODULES,
-  PERMISSIONS,
-  ROLE_DEFAULT_PERMISSIONS,
-} from "../rbac/permissions";
+import { PERMISSIONS, ROLE_DEFAULT_PERMISSIONS } from "../rbac/permissions";
 import type {
   AddFlatMemberInput,
   AddModuleGroupMemberInput,
@@ -76,7 +73,6 @@ import type {
   UpdateMemberGroupsInput,
 } from "./dto/module-access.schemas";
 
-const MANAGED_MODULES = new Set<string>(ACCESS_MANAGED_MODULES);
 
 export interface ModuleRoleGroup {
   id: number;
