@@ -4,10 +4,15 @@ import { pushSubscriptions } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { SubscribeInput } from "./dto/push.schemas";
+import { APP_CONFIG } from "../../config/config.module";
+import type { AppConfig } from "../../config/env.validation";
 
 @Injectable()
 export class PushService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    @Inject(APP_CONFIG) private readonly config: Pick<AppConfig, "VAPID_PUBLIC_KEY">,
+  ) {}
 
   async subscribe(orgId: string, userId: string, input: SubscribeInput) {
     await this.db
@@ -28,6 +33,6 @@ export class PushService {
   }
 
   getVapidPublicKey() {
-    return { key: process.env.VAPID_PUBLIC_KEY ?? "" };
+    return { key: this.config.VAPID_PUBLIC_KEY ?? "" };
   }
 }

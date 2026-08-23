@@ -1,7 +1,9 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import Ably, { type capabilityOp } from "ably";
 import { logger } from "../../common/logger/logger.service";
 import type { ChatMessagePayload } from "./dto/realtime.schemas";
+import { APP_CONFIG } from "../../config/config.module";
+import type { AppConfig } from "../../config/env.validation";
 
 const CHAT_TOKEN_TTL_MS = 3_600 * 1_000;
 const MAX_CAPABILITY_CHANNELS = 500;
@@ -9,8 +11,12 @@ const MAX_CAPABILITY_CHANNELS = 500;
 @Injectable()
 export class AblyService {
   private readonly logger = new Logger(AblyService.name);
-  private readonly apiKey = process.env.ABLY_API_KEY?.trim();
+  private readonly apiKey: string | undefined;
   private restClient: Ably.Rest | null = null;
+
+  constructor(@Inject(APP_CONFIG) private readonly config: Pick<AppConfig, "ABLY_API_KEY">) {
+    this.apiKey = this.config.ABLY_API_KEY?.trim();
+  }
 
   get configured(): boolean {
     return Boolean(this.apiKey);

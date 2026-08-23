@@ -17,6 +17,8 @@ import { validateMagicBytes } from "../storage/file-signatures";
 import { KbIndexingService } from "./kb-indexing.service";
 import { isExtractableMime, extractAttachmentText } from "./kb-attachment-extract.util";
 import type { CreateKbSourceNoteInput } from "./dto/kb-sources.schemas";
+import { APP_CONFIG } from "../../config/config.module";
+import type { AppConfig } from "../../config/env.validation";
 
 const DOCX_MIME =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -31,6 +33,7 @@ export class KbSourcesService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly storage: StorageService,
     private readonly indexing: KbIndexingService,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
   async list(orgId: string) {
@@ -110,8 +113,8 @@ export class KbSourcesService {
       );
     }
 
-    const kbBucket = process.env.R2_KB_BUCKET_NAME;
-    const kbPublicUrl = process.env.R2_KB_PUBLIC_URL;
+    const kbBucket = this.config.R2_KB_BUCKET_NAME;
+    const kbPublicUrl = this.config.R2_KB_PUBLIC_URL;
     const useKbBucket = Boolean(kbBucket && kbPublicUrl);
     const result = await this.storage.uploadFile(
       buffer,

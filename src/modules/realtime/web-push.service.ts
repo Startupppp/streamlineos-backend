@@ -5,18 +5,24 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { chatChannelMembers, pushSubscriptions } from "../../db/schema";
 import type { PushPayload } from "./dto/realtime.schemas";
+import { APP_CONFIG } from "../../config/config.module";
+import type { AppConfig } from "../../config/env.validation";
 
 const EXPIRED_STATUS = new Set([404, 410]);
 
 @Injectable()
 export class WebPushService {
-  private readonly publicKey = process.env.VAPID_PUBLIC_KEY?.trim();
-  private readonly privateKey = process.env.VAPID_PRIVATE_KEY?.trim();
+  private readonly publicKey: string | undefined;
+  private readonly privateKey: string | undefined;
 
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {
-    if (this.publicKey && this.privateKey) {
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
+  ) {
+    this.publicKey = this.config.VAPID_PUBLIC_KEY?.trim();
+    this.privateKey = this.config.VAPID_PRIVATE_KEY?.trim();
+    if (this.publicKey && this.privateKey)
       webpush.setVapidDetails(this.vapidSubject(), this.publicKey, this.privateKey);
-    }
   }
 
   get configured(): boolean {
@@ -47,18 +53,16 @@ export class WebPushService {
             JSON.stringify(payload),
           );
         } catch (error) {
-          if (error instanceof webpush.WebPushError && EXPIRED_STATUS.has(error.statusCode)) {
+          if (error instanceof webpush.WebPushError && EXPIRED_STATUS.has(error.statusCode))
             expiredEndpoints.push(sub.endpoint);
-          }
         }
       }),
     );
 
-    if (expiredEndpoints.length > 0) {
+    if (expiredEndpoints.length > 0)
       await this.db
         .delete(pushSubscriptions)
         .where(inArray(pushSubscriptions.endpoint, expiredEndpoints));
-    }
   }
 
   async sendToChannelMembers(
@@ -84,10 +88,10 @@ export class WebPushService {
   }
 
   private vapidSubject(): string {
-    const appUrl = process.env.APP_URL?.trim();
-    if (appUrl?.startsWith("https://")) return appUrl;
+    const appUrl = this.config.APP_URL.trim();
+    if (appUrl.startsWith("https://")) return appUrl;
 
-    const from = process.env.EMAIL_FROM_ADDRESS?.trim();
+    const from = this.config.EMAIL_FROM_ADDRESS?.trim();
     if (from) {
       if (from.startsWith("mailto:")) return from;
       if (from.includes("@")) return `mailto:${from}`;

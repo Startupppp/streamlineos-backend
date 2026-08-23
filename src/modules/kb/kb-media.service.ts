@@ -1,10 +1,12 @@
-import { BadRequestException, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
 import sharp from "sharp";
 import { AuditService } from "../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { StorageService, type UploadResult } from "../storage/storage.service";
 import { validateMagicBytes } from "../storage/file-signatures";
 import { KbIndexingService } from "./kb-indexing.service";
+import { APP_CONFIG } from "../../config/config.module";
+import type { AppConfig } from "../../config/env.validation";
 
 export interface KbMediaUploadResult extends UploadResult {
   name: string;
@@ -57,6 +59,7 @@ export class KbMediaService {
     private readonly storage: StorageService,
     private readonly audit: AuditService,
     private readonly indexing: KbIndexingService,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
   async upload(
@@ -101,8 +104,8 @@ export class KbMediaService {
       }
     }
 
-    const kbBucket = process.env.R2_KB_BUCKET_NAME;
-    const kbPublicUrl = process.env.R2_KB_PUBLIC_URL;
+    const kbBucket = this.config.R2_KB_BUCKET_NAME;
+    const kbPublicUrl = this.config.R2_KB_PUBLIC_URL;
     const useKbBucket = Boolean(kbBucket && kbPublicUrl);
     const result = await this.storage.uploadFile(
       uploadBuffer,

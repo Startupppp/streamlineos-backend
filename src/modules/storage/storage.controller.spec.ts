@@ -2,6 +2,23 @@ import { ForbiddenException } from "@nestjs/common";
 import { StorageController } from "./storage.controller";
 import { StorageService } from "./storage.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import type { AppConfig } from "../../config/env.validation";
+
+function makeStorageConfig(publicUrl?: string): AppConfig {
+  return {
+    NODE_ENV: "test",
+    RBAC_MIGRATION_MODE: "off",
+    PORT: 1500,
+    DATABASE_URL: "postgres://test",
+    BACKEND_JWT_SECRET: "x".repeat(44),
+    PORTAL_JWT_SECRET: "x".repeat(44),
+    CORS_ORIGINS: "http://localhost",
+    APP_URL: "http://localhost:3000",
+    ENCRYPTION_KEY: "x".repeat(32),
+    corsOrigins: ["http://localhost"],
+    NEXT_PUBLIC_R2_PUBLIC_URL: publicUrl,
+  };
+}
 
 function ctx(orgId: string): CurrentUserContext {
   return {
@@ -204,16 +221,8 @@ describe("StorageController.download — cross-org file isolation", () => {
 });
 
 describe("StorageService private file references", () => {
-  const originalPublicUrl = process.env.NEXT_PUBLIC_R2_PUBLIC_URL;
-
-  afterEach(() => {
-    if (originalPublicUrl === undefined) delete process.env.NEXT_PUBLIC_R2_PUBLIC_URL;
-    else process.env.NEXT_PUBLIC_R2_PUBLIC_URL = originalPublicUrl;
-  });
-
   it("extracts only keys belonging to the configured storage base", () => {
-    process.env.NEXT_PUBLIC_R2_PUBLIC_URL = "https://files.example.com";
-    const storage = new StorageService({} as never);
+    const storage = new StorageService({} as never, makeStorageConfig("https://files.example.com"));
 
     expect(storage.getFileKeyFromUrl("https://files.example.com/onboarding-docs/a.pdf"))
       .toBe("onboarding-docs/a.pdf");
@@ -222,7 +231,7 @@ describe("StorageService private file references", () => {
   });
 
   it("rejects absolute URLs and traversal as object keys", () => {
-    const storage = new StorageService({} as never);
+    const storage = new StorageService({} as never, makeStorageConfig());
 
     expect(storage.isValidFileKey("onboarding-docs/a.pdf")).toBe(true);
     expect(storage.isValidFileKey("https://attacker.example/a.pdf")).toBe(false);

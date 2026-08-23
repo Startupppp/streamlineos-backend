@@ -6,6 +6,16 @@ import type { StorageService, UploadResult } from "../storage/storage.service";
 import type { AuditService } from "../../common/audit/audit.service";
 import type { KbIndexingService } from "./kb-indexing.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { validateEnv } from "../../config/env.validation";
+
+const kbConfig = validateEnv({
+  DATABASE_URL: "postgres://test",
+  BACKEND_JWT_SECRET: "x".repeat(44),
+  PORTAL_JWT_SECRET: "x".repeat(44),
+  CORS_ORIGINS: "http://localhost",
+  APP_URL: "http://localhost:3000",
+  ENCRYPTION_KEY: "x".repeat(32),
+});
 
 interface MockChain {
   rotate: jest.Mock;
@@ -85,6 +95,7 @@ describe("KbMediaService", () => {
       mockStorage as unknown as StorageService,
       mockAudit as unknown as AuditService,
       mockIndexing,
+      kbConfig,
     );
   });
 
