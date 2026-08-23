@@ -4,7 +4,6 @@ import { moduleAccessDenied } from "./module-access-errors";
 import { organizationMembers, roleAssignments, roles } from "../../db/schema";
 import type { Db } from "../../db/drizzle.module";
 import { ROLE_RANK } from "../../common/rbac/grantability";
-import { isStructuralOrgAdmin } from "../../common/rbac/is-structural-org-admin";
 import { resolveModuleManagementStanding } from "./module-standing";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
@@ -32,7 +31,7 @@ export async function hasModuleAccessManagementAuthority(
   return standing?.canManageAccess ?? false;
 }
 
-interface ModuleAccessPolicyDeps {
+export interface ModuleAccessPolicyDeps {
   db: Db;
   isModuleEnabled: (orgId: string, moduleKey: string) => Promise<boolean>;
   resolveUserPermissions: (
@@ -41,14 +40,42 @@ interface ModuleAccessPolicyDeps {
   ) => Promise<ReadonlyMap<string, DataScope>>;
 }
 
+interface ModuleAccessPolicySource {
+  isModuleEnabled(orgId: string, moduleKey: string): Promise<boolean>;
+  resolveUserPermissions(
+    orgId: string,
+    userId: string,
+  ): Promise<ReadonlyMap<string, DataScope>>;
+}
+
+export function moduleAccessPolicyDeps(
+  db: Db,
+  access: ModuleAccessPolicySource,
+): ModuleAccessPolicyDeps {
+  return {
+    db,
+    isModuleEnabled: (orgId, key) => access.isModuleEnabled(orgId, key),
+    resolveUserPermissions: (orgId, userId) =>
+      access.resolveUserPermissions(orgId, userId),
+  };
+}
+
+export async function assertModuleEnabled(
+  deps: Pick<ModuleAccessPolicyDeps, "isModuleEnabled">,
+  orgId: string,
+  moduleKey: string,
+): Promise<void> {
+  if (!(await deps.isModuleEnabled(orgId, moduleKey)))
+    throw new ForbiddenException(`The ${moduleKey} module is not enabled`);
+}
+
 export async function assertModuleAccessPolicy(
   deps: ModuleAccessPolicyDeps,
   actor: CurrentUserContext,
   moduleKey: string,
   action: "view" | "manage",
 ): Promise<void> {
-  if (!(await deps.isModuleEnabled(actor.orgId, moduleKey)))
-    throw new ForbiddenException(`The ${moduleKey} module is not enabled`);
+  await assertModuleEnabled(deps, actor.orgId, moduleKey);
 
   if (actor.isOrgOwner) return;
 
@@ -59,13 +86,16 @@ export async function assertModuleAccessPolicy(
     throw moduleAccessDenied(action);
   }
 
-  if (await isStructuralOrgAdmin(deps.db, actor)) return;
-
   const resolved = await deps.resolveUserPermissions(actor.orgId, actor.userId);
   const scope =
     resolved.get(`${moduleKey}:access:${action}`) ??
     resolved.get(`${moduleKey}:access:manage`);
-  if (!scope || scope === "none") throw moduleAccessDenied(action);
+  if (scope && scope !== "none") return;
+
+  if (await hasModuleAccessManagementAuthority(deps.db, actor, moduleKey))
+    return;
+
+  throw moduleAccessDenied(action);
 }
 
 export async function resolveActorRankContext(

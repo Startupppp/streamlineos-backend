@@ -33,6 +33,7 @@ import { isStructuralOrgAdmin } from "../../common/rbac/is-structural-org-admin"
 import { moduleAccessDenied } from "./module-access-errors";
 import {
   assertModuleAccessPolicy,
+  moduleAccessPolicyDeps,
   resolveActorRankContext,
   resolveModuleAuthorityFacts,
 } from "./module-access.helpers";
@@ -171,12 +172,7 @@ export class ModuleAccessService {
   ): Promise<void> {
     this.assertKnownModule(moduleKey);
     await assertModuleAccessPolicy(
-      {
-        db: this.db,
-        isModuleEnabled: (orgId, key) => this.access.isModuleEnabled(orgId, key),
-        resolveUserPermissions: (orgId, userId) =>
-          this.access.resolveUserPermissions(orgId, userId),
-      },
+      moduleAccessPolicyDeps(this.db, this.access),
       actor,
       moduleKey,
       action,

@@ -1,4 +1,3 @@
-import { moduleOwningNamespace } from "../../common/rbac/module-vocabulary";
 import {
   BadRequestException,
   ConflictException,
@@ -45,12 +44,15 @@ import {
   toGrantableSet,
 } from "../../common/rbac/grantability";
 import { isStructuralOrgAdmin } from "../../common/rbac/is-structural-org-admin";
+import { administeringModuleOf } from "../../common/rbac/module-vocabulary";
 import {
   moduleAccessDenied,
   moduleOwnershipDenied,
 } from "./module-access-errors";
 import {
   assertModuleAccessPolicy,
+  assertModuleEnabled,
+  moduleAccessPolicyDeps,
   resolveActorRankContext,
   resolveModuleOwnerUserId,
 } from "./module-access.helpers";
@@ -75,10 +77,6 @@ import type {
 } from "./dto/module-access.schemas";
 
 const MANAGED_MODULES = new Set<string>(ACCESS_MANAGED_MODULES);
-
-function moduleOf(permissionKey: string): string {
-  return moduleOwningNamespace(permissionKey.split(":")[0] ?? permissionKey);
-}
 
 export interface ModuleRoleGroup {
   id: number;
@@ -156,12 +154,7 @@ export class ModuleAccessGroupsService {
   ): Promise<void> {
     this.assertKnownModule(moduleKey);
     await assertModuleAccessPolicy(
-      {
-        db: this.db,
-        isModuleEnabled: (orgId, key) => this.access.isModuleEnabled(orgId, key),
-        resolveUserPermissions: (orgId, userId) =>
-          this.access.resolveUserPermissions(orgId, userId),
-      },
+      moduleAccessPolicyDeps(this.db, this.access),
       actor,
       moduleKey,
       action,
@@ -177,16 +170,18 @@ export class ModuleAccessGroupsService {
     moduleKey: string,
   ): Promise<void> {
     this.assertKnownModule(moduleKey);
-    if (!(await this.access.isModuleEnabled(actor.orgId, moduleKey))) {
-      throw new ForbiddenException(`The ${moduleKey} module is not enabled`);
-    }
+    await assertModuleEnabled(
+      moduleAccessPolicyDeps(this.db, this.access),
+      actor.orgId,
+      moduleKey,
+    );
     if (await canTransferModuleOwnership(this.db, actor, moduleKey)) return;
     throw moduleOwnershipDenied();
   }
 
   private modulePermissionKeys(moduleKey: string): Set<string> {
     return new Set(
-      PERMISSIONS.filter((p) => moduleOf(p.name) === moduleKey).map(
+      PERMISSIONS.filter((p) => administeringModuleOf(p.name) === moduleKey).map(
         (p) => p.name,
       ),
     );

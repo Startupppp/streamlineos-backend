@@ -1443,6 +1443,13 @@
       "when": 1786701779560,
       "tag": "0449_chat_org_settings_org_only",
       "breakpoints": true
+    },
+    {
+      "idx": 206,
+      "version": "7",
+      "when": 1786701780560,
+      "tag": "0450_home_module_access_keys",
+      "breakpoints": true
     }
   ]
 }
