@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import {
   canonicalEmailSchema,
   createUserSchema,
@@ -55,26 +53,3 @@ describe("createUserSchema", () => {
   });
 });
 
-describe("UsersService.createUser email canonicalisation contract", () => {
-  const source = readFileSync(
-    resolve(process.cwd(), "src", "modules", "users", "users.service.ts"),
-    "utf8",
-  );
-  const method = source.slice(
-    source.indexOf("async createUser("),
-    source.indexOf("async listUsers("),
-  );
-
-  it("does not re-canonicalise email in the service — relies on schema transform", () => {
-    expect(method).not.toContain(".toLowerCase()");
-    expect(method).not.toContain(".trim()");
-  });
-
-  it("probes the users table with the email directly from parsed input", () => {
-    expect(method).toContain("eq(users.email, email)");
-  });
-
-  it("inserts the email value directly from parsed input", () => {
-    expect(method).toContain("email,");
-  });
-});

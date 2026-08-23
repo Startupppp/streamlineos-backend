@@ -41,7 +41,7 @@ BEGIN
 
   IF dup_count > 0 THEN
     RAISE EXCEPTION
-      'Migration 0453 blocked: % canonical email address(es) have case-variant duplicates '
+      'Migration 0455 blocked: % canonical email address(es) have case-variant duplicates '
       'in the users table.  Resolve them manually before re-running.  Offending addresses: %',
       dup_count, dup_list;
   END IF;
