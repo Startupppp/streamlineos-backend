@@ -1,7 +1,6 @@
 import {
   pgTable,
   text,
-  serial,
   timestamp,
   boolean,
   jsonb,
@@ -19,7 +18,7 @@ import { deals } from "../crm";
 export const chatChannels = pgTable(
   "chat_channels",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -60,7 +59,7 @@ export const chatChannels = pgTable(
 export const chatChannelMembers = pgTable(
   "chat_channel_members",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -92,7 +91,7 @@ export const chatChannelMembers = pgTable(
 export const chatMessages = pgTable(
   "chat_messages",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -139,7 +138,7 @@ export const chatMessages = pgTable(
 export const chatAttachments = pgTable(
   "chat_attachments",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -163,7 +162,7 @@ export const chatAttachments = pgTable(
 export const chatUserPresence = pgTable(
   "chat_user_presence",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     userId: text("user_id")
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
@@ -184,7 +183,7 @@ export const chatUserPresence = pgTable(
 export const chatPinnedMessages = pgTable(
   "chat_pinned_messages",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -210,7 +209,7 @@ export const chatPinnedMessages = pgTable(
 export const chatSavedMessages = pgTable(
   "chat_saved_messages",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -233,7 +232,7 @@ export const chatSavedMessages = pgTable(
 export const chatReplyReminders = pgTable(
   "chat_reply_reminders",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -362,7 +361,7 @@ export const chatSavedMessagesRelations = relations(
 export const chatHuddles = pgTable(
   "chat_huddles",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -388,7 +387,7 @@ export const chatHuddles = pgTable(
 export const chatHuddleParticipants = pgTable(
   "chat_huddle_participants",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -418,7 +417,7 @@ export const chatHuddleParticipants = pgTable(
 export const chatChannelInviteLinks = pgTable(
   "chat_channel_invite_links",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -460,7 +459,7 @@ export const chatChannelInviteLinksRelations = relations(
 export const chatOrgSettings = pgTable(
   "chat_org_settings",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),

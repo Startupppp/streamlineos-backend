@@ -1506,6 +1506,13 @@
       "when": 1786701789560,
       "tag": "0459_chat_invite_token_at_rest",
       "breakpoints": true
+    },
+    {
+      "idx": 216,
+      "version": "7",
+      "when": 1786701790560,
+      "tag": "0460_chat_identity_primary_keys",
+      "breakpoints": true
     }
   ]
 }
