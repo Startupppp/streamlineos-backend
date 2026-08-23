@@ -186,6 +186,19 @@ export class AccessPermissionResolver {
     ): void => {
       const canonicalKey =
         key === "hr:employees:read" ? "hr:employees:view" : key;
+      // The write-time guard only covers the API grant paths, so a migration can
+      // still seat an org-only key in a grant table (0437 did). Owners and org
+      // admins returned the whole catalog above and never reach here.
+      if (!isDelegablePermission(canonicalKey)) {
+        if (!this.warnedUnknownKeys.has(canonicalKey)) {
+          this.warnedUnknownKeys.add(canonicalKey);
+          logger.warn(
+            "access: org-only permission key found in a grant - dropped from resolved permissions",
+            { orgId, key: canonicalKey, source },
+          );
+        }
+        return;
+      }
       if (CATALOG_KEY_SET.has(canonicalKey)) {
         merge(canonicalKey, scope);
         return;
