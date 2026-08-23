@@ -42,6 +42,48 @@ export class EntityReferenceService {
     );
   }
 
+  async withResolvedReferences<
+    T extends { metadata: Record<string, unknown> | null },
+  >(actor: EntityActor, messages: T[]): Promise<T[]> {
+    const flat: { message: number; reference: EntityReference }[] = [];
+
+    messages.forEach((message, index) => {
+      const raw = message.metadata?.["entities"];
+      if (!Array.isArray(raw)) return;
+      for (const entry of raw) {
+        if (typeof entry !== "object" || entry === null) continue;
+        const { type, id } = entry as { type?: unknown; id?: unknown };
+        if (typeof type !== "string" || typeof id !== "string") continue;
+        flat.push({ message: index, reference: { type, id } });
+      }
+    });
+
+    if (flat.length === 0) return messages;
+
+    const resolutions = await this.resolve(
+      actor,
+      flat.map((entry) => entry.reference),
+    );
+
+    const byMessage = new Map<number, unknown[]>();
+    flat.forEach((entry, position) => {
+      const resolution = resolutions[position];
+      const list = byMessage.get(entry.message) ?? [];
+      list.push(
+        resolution?.status === "resolved"
+          ? { ...entry.reference, card: resolution.card }
+          : { ...entry.reference, card: null },
+      );
+      byMessage.set(entry.message, list);
+    });
+
+    return messages.map((message, index) => {
+      const entities = byMessage.get(index);
+      if (!entities) return message;
+      return { ...message, metadata: { ...message.metadata, entities } };
+    });
+  }
+
   async actionsFor(
     actor: EntityActor,
     references: EntityReference[],

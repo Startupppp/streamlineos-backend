@@ -180,7 +180,11 @@ export class WorkspaceCopilotTools {
           if (deny) return { denied: true, reason: deny };
 
           const safeLimit = Math.min(limit, 10);
-          const result = await this.chatSearch.searchMessages(orgId, userId, query, safeLimit);
+          const result = await this.chatSearch.searchMessages(
+            { orgId, userId, isOrgOwner: actor.isOrgOwner },
+            query,
+            safeLimit,
+          );
           return result;
         },
       }),

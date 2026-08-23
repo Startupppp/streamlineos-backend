@@ -15,14 +15,6 @@ export const RESERVED_PROPAGATION_KEYS: ReadonlySet<string> = new Set([
   "settings:rbac:manage",
 ]);
 
-// Keys and namespaces here are barred on every grant path including the org
-// owner's own — "org owner and org admin only" holds by construction, not
-// convention. billing: is never delegated (the org's customer invoicing is
-// accounting and is unaffected). chat:org-settings:manage belongs here because
-// migration 0437 handed it to CHAT_MODULE_ADMIN and 0441 only reclaimed roles
-// nobody had been appointed to, so a module admin could otherwise still hold
-// it; huddle moderation stays delegatable because it moderates a conversation,
-// not the organisation.
 const ORG_ONLY_NAMESPACES: readonly string[] = ["billing"];
 
 const ORG_ONLY_PERMISSION_KEYS: ReadonlySet<string> = new Set([

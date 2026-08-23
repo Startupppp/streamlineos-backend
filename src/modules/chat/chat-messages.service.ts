@@ -43,6 +43,25 @@ type PersistedMessage = {
   messageType: "text" | "lead_submission" | "system";
 };
 
+/**
+ * A realtime publish reaches every channel member at once, so it cannot resolve
+ * references per reader the way the REST paths do. It therefore carries only the
+ * type and id; each client resolves the card over its own authenticated request,
+ * which is where the permission check happens.
+ */
+function strippedReferenceMetadata(
+  metadata: Record<string, unknown> | null,
+): Record<string, unknown> | null {
+  const raw = metadata?.["entities"];
+  if (!Array.isArray(raw)) return metadata;
+  const entities = raw.map((entry) => {
+    if (typeof entry !== "object" || entry === null) return entry;
+    const { type, id } = entry as { type?: unknown; id?: unknown };
+    return { type, id };
+  });
+  return { ...metadata, entities };
+}
+
 @Injectable()
 export class ChatMessagesService {
   constructor(
@@ -113,43 +132,7 @@ export class ChatMessagesService {
   private async withResolvedReferences<
     T extends { metadata: Record<string, unknown> | null },
   >(actor: EntityActor, messages: T[]): Promise<T[]> {
-    const flat: { message: number; reference: EntityReference }[] = [];
-
-    messages.forEach((message, index) => {
-      const raw = message.metadata?.["entities"];
-      if (!Array.isArray(raw)) return;
-      for (const entry of raw) {
-        if (typeof entry !== "object" || entry === null) continue;
-        const { type, id } = entry as { type?: unknown; id?: unknown };
-        if (typeof type !== "string" || typeof id !== "string") continue;
-        flat.push({ message: index, reference: { type, id } });
-      }
-    });
-
-    if (flat.length === 0) return messages;
-
-    const resolutions = await this.entities.resolve(
-      actor,
-      flat.map((entry) => entry.reference),
-    );
-
-    const byMessage = new Map<number, unknown[]>();
-    flat.forEach((entry, position) => {
-      const resolution = resolutions[position];
-      const list = byMessage.get(entry.message) ?? [];
-      list.push(
-        resolution?.status === "resolved"
-          ? { ...entry.reference, card: resolution.card }
-          : { ...entry.reference, card: null },
-      );
-      byMessage.set(entry.message, list);
-    });
-
-    return messages.map((message, index) => {
-      const entities = byMessage.get(index);
-      if (!entities) return message;
-      return { ...message, metadata: { ...message.metadata, entities } };
-    });
+    return this.entities.withResolvedReferences(actor, messages);
   }
 
   async poll(channelId: number, actor: EntityActor, since: Date) {
@@ -301,7 +284,7 @@ export class ChatMessagesService {
       content: message.content,
       createdAt: message.createdAt,
       replyToId: message.replyToId,
-      metadata: message.metadata,
+      metadata: strippedReferenceMetadata(message.metadata),
       messageType: message.messageType,
       attachments: insertedAttachments,
     });
@@ -569,7 +552,7 @@ export class ChatMessagesService {
         content: message.content,
         createdAt: message.createdAt,
         replyToId: message.replyToId,
-        metadata,
+        metadata: strippedReferenceMetadata(metadata),
         messageType: "system",
         attachments: [],
       })

@@ -3,14 +3,19 @@ import { and, desc, eq, lt } from "drizzle-orm";
 import { chatChannelMembers, chatMessages, chatSavedMessages } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import { EntityReferenceService } from "../entity-reference/entity-reference.service";
+import type { EntityActor } from "../entity-reference/entity-reference.types";
 
 @Injectable()
 export class ChatSavedService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly entities: EntityReferenceService,
+  ) {}
 
-  async list(userId: string, cursor?: number, limit = 30) {
+  async list(actor: EntityActor, cursor?: number, limit = 30) {
     const safeLimit = Math.min(Math.max(1, limit), 100);
-    const conditions = [eq(chatSavedMessages.userId, userId)];
+    const conditions = [eq(chatSavedMessages.userId, actor.userId)];
     if (cursor) {
       conditions.push(lt(chatSavedMessages.id, cursor));
     }
@@ -32,8 +37,12 @@ export class ChatSavedService {
 
     const hasMore = rows.length > safeLimit;
     if (hasMore) rows.pop();
+    const resolved = await this.entities.withResolvedReferences(
+      actor,
+      rows.map((row) => row.message),
+    );
     return {
-      items: rows,
+      items: rows.map((row, index) => ({ ...row, message: resolved[index] })),
       nextCursor: hasMore ? rows[rows.length - 1]?.id : undefined,
     };
   }

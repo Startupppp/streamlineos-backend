@@ -326,6 +326,21 @@ export class ModuleAccessService {
           { rank: role.rank, moduleKey: role.moduleKey },
           permMeta,
         );
+
+        const widened = Array.from(deduped)
+          .filter(([key, scope]) => {
+            const held = resolved.get(key);
+            return held === undefined || SCOPE_RANK[scope] > SCOPE_RANK[held];
+          })
+          .map(([key]) => key);
+        if (widened.length > 0) {
+          const preview = widened.slice(0, 5).join(", ");
+          throw new ForbiddenException(
+            `You cannot grant a wider data scope than your own: ${preview}${
+              widened.length > 5 ? ` (+${widened.length - 5} more)` : ""
+            }`,
+          );
+        }
       }
     }
 

@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Inject, Injectable } from "@ne
 import { and, eq } from "drizzle-orm";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
+import { administeringModuleOf } from "../../common/rbac/module-vocabulary";
 import {
   organizationMembers,
   rolePermissionGrants,
@@ -170,8 +171,7 @@ export class RbacService {
     return PERMISSIONS
       .filter((p) => {
         if (allowedModules === null) return true;
-        const mod = p.name.indexOf(":") === -1 ? null : p.name.slice(0, p.name.indexOf(":"));
-        return mod !== null && allowedModules.has(mod);
+        return allowedModules.has(administeringModuleOf(p.name));
       })
       .map((p) => ({
         name: p.name,

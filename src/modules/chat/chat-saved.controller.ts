@@ -26,7 +26,11 @@ export class ChatSavedController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     const parsedLimit = limit ? Math.min(Math.max(1, parseInt(limit, 10)), 100) : 30;
-    return this.saved.list(u.userId, cursor ? parseInt(cursor, 10) : undefined, parsedLimit);
+    return this.saved.list(
+      { orgId: u.orgId, userId: u.userId, isOrgOwner: u.isOrgOwner },
+      cursor ? parseInt(cursor, 10) : undefined,
+      parsedLimit,
+    );
   }
 
   @ApiOperation({ summary: "Save a message to the current user's saved list" })

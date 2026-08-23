@@ -112,6 +112,7 @@ export interface ModuleOwnership {
 }
 
 export interface FlatModuleMember {
+  membershipId: number;
   userId: string;
   displayName: string;
   email: string;
@@ -1201,6 +1202,7 @@ export class ModuleAccessGroupsService {
     }
 
     const data: FlatModuleMember[] = memberRows.map((r) => ({
+      membershipId: r.membershipId,
       userId: r.userId,
       displayName: r.name ?? r.email ?? r.userId,
       email: r.email ?? "",
