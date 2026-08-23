@@ -11,7 +11,6 @@ export const ACCESS_MANAGED_MODULES = [
   "payroll",
   "sign",
   "timesheets",
-  "home",
   "workflows",
   "blog",
   "directory",

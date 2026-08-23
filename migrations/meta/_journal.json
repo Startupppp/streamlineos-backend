@@ -1450,6 +1450,13 @@
       "when": 1786701780560,
       "tag": "0450_home_module_access_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 207,
+      "version": "7",
+      "when": 1786701781560,
+      "tag": "0452_remove_home_access_ladder",
+      "breakpoints": true
     }
   ]
 }

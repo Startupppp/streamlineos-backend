@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import {
   ACCESS_MANAGED_MODULES,
   PERMISSIONS,
@@ -38,39 +36,35 @@ describe("which permission keys a module owns", () => {
   });
 });
 
-describe("the Home backfill matches what the corrected templates grant", () => {
+/**
+ * Home is universal to every active member, so there is nothing to grant per
+ * role and no access screen to open. It still ADMINISTERS the communication
+ * namespaces above — that mapping lives in `ADDITIONAL_MODULE_NAMESPACES` and is
+ * deliberately independent of whether a module is access-managed.
+ */
+describe("Home is administered without an access ladder of its own", () => {
   const catalog = new Set(PERMISSIONS.map((p) => p.name));
-  const migration = readFileSync(
-    join(process.cwd(), "migrations", "0450_home_module_access_keys.sql"),
-    "utf8",
-  );
 
-  it("grants owner and admin exactly the access keys their template now produces", () => {
-    const templateKeys = buildModuleAdminPermissionKeys("home", catalog).filter(
-      (key) => key.startsWith("home:access:"),
-    );
-    expect(templateKeys.sort()).toEqual([
-      "home:access:manage",
-      "home:access:view",
-    ]);
-    for (const key of templateKeys) expect(migration).toContain(key);
-    expect(migration).toContain("'HOME_MODULE_OWNER', 'HOME_MODULE_ADMIN'");
+  it("is not an access-managed module", () => {
+    expect(ACCESS_MANAGED_MODULES).not.toContain("home");
   });
 
-  it("grants the member role only the read key, as every other module's member role holds", () => {
-    expect(
-      buildModuleMemberPermissionKeys("home", catalog).filter((key) =>
-        key.startsWith("home:access:"),
-      ),
-    ).toEqual(["home:access:view"]);
+  it("keeps no home:access key in the catalog", () => {
+    expect(catalog.has("home:access:view")).toBe(false);
+    expect(catalog.has("home:access:manage")).toBe(false);
+  });
+
+  it("seeds no home:access key onto any role template", () => {
+    for (const build of [
+      buildModuleAdminPermissionKeys,
+      buildModuleMemberPermissionKeys,
+    ])
+      expect(
+        build("home", catalog).filter((key) => key.startsWith("home:access:")),
+      ).toEqual([]);
+
     expect(buildModuleMemberPermissionKeys("hr", catalog)).toContain(
       "hr:access:view",
     );
-    expect(migration).toContain("'HOME_MODULE_MEMBER'");
-  });
-
-  it("bumps the permission version, so a cached resolution cannot hide the new keys", () => {
-    expect(migration).toContain("access_versions");
-    expect(migration).toContain('"permissions_version" + 1');
   });
 });
