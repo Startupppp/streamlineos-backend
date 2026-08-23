@@ -437,10 +437,11 @@ export class KbPageTreeService {
 
   async getTrash(user: CurrentUserContext): Promise<PageRow[]> {
     const orgId = user.orgId;
+    const projectIds = await getAccessibleProjectIds(this.db, user);
     return this.db
       .select()
       .from(kbPages)
-      .where(and(eq(kbPages.orgId, orgId), isNotNull(kbPages.deletedAt), pageVisibleTo(user)))
+      .where(and(eq(kbPages.orgId, orgId), isNotNull(kbPages.deletedAt), pageVisibleTo(user, projectIds)))
       .orderBy(sql`${kbPages.deletedAt} desc`)
       .limit(100);
   }

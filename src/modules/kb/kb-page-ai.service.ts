@@ -6,6 +6,7 @@ import { type Db } from "../../db/drizzle.module";
 import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { pageVisibleTo } from "./kb-page-visibility";
+import { getAccessibleProjectIds } from "./kb-project-access.util";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { AiUsageMeta } from "../ai/core/gateway/ai-gateway.types";
 import { throwOnAiFailure } from "../ai/core/services/gateway-result.util";
@@ -21,12 +22,13 @@ export class KbPageAiService {
   ) {}
 
   private async assertPageVisible(user: CurrentUserContext, pageId: number) {
+    const projectIds = await getAccessibleProjectIds(this.db, user);
     const page = await this.db.query.kbPages.findFirst({
       where: and(
         eq(kbPages.id, pageId),
         eq(kbPages.orgId, user.orgId),
         isNull(kbPages.deletedAt),
-        pageVisibleTo(user),
+        pageVisibleTo(user, projectIds),
       ),
       columns: { id: true, title: true, contentText: true },
     });

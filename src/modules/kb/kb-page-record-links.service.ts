@@ -6,6 +6,7 @@ import type { Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { CreateRecordLinkDto, RecordLinkByRecordQuery } from "./dto/kb-page-record-links.schemas";
 import { pageVisibleTo } from "./kb-page-visibility";
+import { getAccessibleProjectIds } from "./kb-project-access.util";
 
 @Injectable()
 export class KbPageRecordLinksService {
@@ -75,6 +76,7 @@ export class KbPageRecordLinksService {
   }
 
   async listByRecord(user: CurrentUserContext, query: RecordLinkByRecordQuery) {
+    const projectIds = await getAccessibleProjectIds(this.db, user);
     return this.db
       .select({
         pageId: kbPages.id,
@@ -89,19 +91,20 @@ export class KbPageRecordLinksService {
           eq(kbPageLinks.targetType, query.targetType),
           eq(kbPageLinks.targetId, query.targetId),
           isNull(kbPages.deletedAt),
-          pageVisibleTo(user),
+          pageVisibleTo(user, projectIds),
         ),
       )
       .limit(50);
   }
 
   private async assertPageAccessible(user: CurrentUserContext, pageId: number) {
+    const projectIds = await getAccessibleProjectIds(this.db, user);
     const page = await this.db.query.kbPages.findFirst({
       where: and(
         eq(kbPages.id, pageId),
         eq(kbPages.orgId, user.orgId),
         isNull(kbPages.deletedAt),
-        pageVisibleTo(user),
+        pageVisibleTo(user, projectIds),
       ),
       columns: { id: true },
     });

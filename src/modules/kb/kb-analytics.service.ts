@@ -6,6 +6,7 @@ import { type Db } from "../../db/drizzle.module";
 import type { RangeInput } from "./dto/kb-analytics.schemas";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { pageVisibleTo } from "./kb-page-visibility";
+import { getAccessibleProjectIds } from "./kb-project-access.util";
 
 type TopArticle = {
   id: number;
@@ -149,6 +150,7 @@ export class KbAnalyticsService {
   }
 
   async pages(user: CurrentUserContext): Promise<PageAnalyticsRow[]> {
+    const projectIds = await getAccessibleProjectIds(this.db, user);
     return this.db
       .select({
         id: kbPages.id,
@@ -170,7 +172,7 @@ export class KbAnalyticsService {
         kbPageVersions,
         and(eq(kbPageVersions.pageId, kbPages.id), eq(kbPageVersions.orgId, user.orgId)),
       )
-      .where(and(eq(kbPages.orgId, user.orgId), isNull(kbPages.deletedAt), pageVisibleTo(user)))
+      .where(and(eq(kbPages.orgId, user.orgId), isNull(kbPages.deletedAt), pageVisibleTo(user, projectIds)))
       .groupBy(kbPages.id)
       .orderBy(desc(sql`count(distinct ${kbPageVisits.id})`))
       .limit(50);

@@ -6,6 +6,7 @@ import { type Db } from "../../db/drizzle.module";
 import type { CreatePageCommentInput, UpdatePageCommentInput } from "./dto/kb-page-comments.schemas";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { pageVisibleTo } from "./kb-page-visibility";
+import { getAccessibleProjectIds } from "./kb-project-access.util";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 
 type CommentRow = typeof kbPageComments.$inferSelect;
@@ -38,13 +39,14 @@ export class KbPageCommentsService {
   async create(user: CurrentUserContext, pageId: number, input: CreatePageCommentInput): Promise<CommentRow> {
     const orgId = user.orgId;
     const authorId = user.userId;
+    const projectIds = await getAccessibleProjectIds(this.db, user);
 
     const page = await this.db.query.kbPages.findFirst({
       where: and(
         eq(kbPages.id, pageId),
         eq(kbPages.orgId, orgId),
         isNull(kbPages.deletedAt),
-        pageVisibleTo(user),
+        pageVisibleTo(user, projectIds),
       ),
       columns: { id: true, createdById: true, ownerUserId: true },
     });
@@ -138,12 +140,13 @@ export class KbPageCommentsService {
   }
 
   private async assertPageExists(user: CurrentUserContext, pageId: number): Promise<void> {
+    const projectIds = await getAccessibleProjectIds(this.db, user);
     const page = await this.db.query.kbPages.findFirst({
       where: and(
         eq(kbPages.id, pageId),
         eq(kbPages.orgId, user.orgId),
         isNull(kbPages.deletedAt),
-        pageVisibleTo(user),
+        pageVisibleTo(user, projectIds),
       ),
       columns: { id: true },
     });
