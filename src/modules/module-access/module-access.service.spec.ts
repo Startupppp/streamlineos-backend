@@ -203,17 +203,17 @@ describe("ModuleAccessService", () => {
         .mockReturnValueOnce(makeSelectChain([]));
 
       await expect(
-        svc.assertModuleAccess(actor(), "home", "view"),
+        svc.assertModuleAccess(actor(), "hr", "view"),
       ).resolves.toBeUndefined();
     });
 
     it("lets a module admin read their own module without holding the view key", async () => {
       (mockDb.select as jest.Mock)
         .mockReturnValueOnce(makeSelectChain([]))
-        .mockReturnValueOnce(makeSelectChain([{ rank: 20, moduleKey: "home" }]));
+        .mockReturnValueOnce(makeSelectChain([{ rank: 20, moduleKey: "hr" }]));
 
       await expect(
-        svc.assertModuleAccess(actor(), "home", "view"),
+        svc.assertModuleAccess(actor(), "hr", "view"),
       ).resolves.toBeUndefined();
     });
 
@@ -242,8 +242,14 @@ describe("ModuleAccessService", () => {
       });
 
       await expect(
-        svc.assertModuleAccess(actor(), "home", "view"),
+        svc.assertModuleAccess(actor(), "hr", "view"),
       ).resolves.toBeUndefined();
+    });
+
+    it("refuses Home outright, which is universal and has no access ladder", async () => {
+      await expect(
+        svc.assertModuleAccess(actor({ isOrgOwner: true }), "home", "view"),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 
@@ -255,33 +261,22 @@ describe("ModuleAccessService", () => {
       expect(catalog.some((p) => p.name === "hr:access:manage")).toBe(true);
     });
 
-    it("returns everything Home administers, not just the home namespace", async () => {
-      const catalog = await svc.listCatalog(actor({ isOrgOwner: true }), "home");
-      const names = catalog.map((p) => p.name);
-      expect(names).toContain("home:access:manage");
-      expect(names).toContain("chat:channels:read");
-      expect(names).toContain("mail:inbox:view");
-      expect(names).toContain("calendar:read");
-      expect(names).not.toContain("hr:employees:view");
+    it("has no catalog for Home, which is universal and administers no ladder", async () => {
+      await expect(
+        svc.listCatalog(actor({ isOrgOwner: true }), "home"),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 
   describe("getCallerPermissions", () => {
-    it("reports the caller's Home permissions, which live in the namespaces Home administers", async () => {
+    it("reports nothing for Home, which has no access screen to report against", async () => {
       resolveUserPermissions.mockResolvedValue(
-        new Map<string, string>([
-          ["chat:channels:read", "all"],
-          ["mail:inbox:view", "all"],
-          ["hr:employees:view", "all"],
-        ]),
+        new Map<string, string>([["chat:channels:read", "all"]]),
       );
 
-      const result = await svc.getCallerPermissions(actor(), "home");
-      const keys = result.permissions.map((p) => p.key);
-
-      expect(keys).toContain("chat:channels:read");
-      expect(keys).toContain("mail:inbox:view");
-      expect(keys).not.toContain("hr:employees:view");
+      await expect(
+        svc.getCallerPermissions(actor(), "home"),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it("reports org-level and module-level authority independently, since one person can hold both", async () => {
