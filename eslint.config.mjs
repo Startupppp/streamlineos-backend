@@ -46,6 +46,12 @@ export default tseslint.config(
         },
         {
           selector:
+            'MemberExpression[object.name="process"][property.name="env"]:not([parent.type="MemberExpression"])',
+          message:
+            "Passing process.env around as a value is the same read one indirection later - it hid three unvalidated variables behind `env = process.env` defaults. Inject APP_CONFIG.",
+        },
+        {
+          selector:
             'MemberExpression[object.object.name="process"][object.property.name="env"][computed=true][property.value!="NODE_ENV"]',
           message:
             "Read configuration through the injected APP_CONFIG token, not process.env[...]. The bracket form is the same read and is not an escape hatch.",
@@ -61,8 +67,11 @@ export default tseslint.config(
       "src/common/cache/cache.module.ts",
       "src/common/portal-auth/portal-jwt-auth.guard.ts",
       "src/common/security/secret-encryption.util.ts",
+      "src/common/tenant/with-tenant.ts",
       "src/modules/ai/confirmation/ai-confirmation.service.ts",
       "src/modules/ai/core/providers/embeddings.service.ts",
+      "src/modules/ai/core/providers/llm-provider.config.ts",
+      "src/modules/ai/core/providers/llm-retry.ts",
       "src/modules/ai/core/services/chat-assistant-model.ts",
       "src/modules/auth/auth.controller.ts",
       "src/modules/billing/core/plan-entitlements.constants.ts",

@@ -96,6 +96,19 @@ const baseSchema = z
       emptyToUndefined,
       z.enum(["google", "openrouter"]).optional(),
     ),
+    AI_FAST_FALLBACK_MODELS: z.preprocess(
+      emptyToUndefined,
+      z.string().trim().optional(),
+    ),
+    AI_STANDARD_FALLBACK_MODELS: z.preprocess(
+      emptyToUndefined,
+      z.string().trim().optional(),
+    ),
+    /** Left unbounded above; the retry policy clamps to 5 rather than failing a boot over it. */
+    AI_LLM_MAX_RETRIES: z.preprocess(
+      emptyToUndefined,
+      z.coerce.number().int().min(0).optional(),
+    ),
     RAZORPAY_KEY_ID: z.preprocess(emptyToUndefined, z.string().optional()),
     RAZORPAY_KEY_SECRET: z.preprocess(emptyToUndefined, z.string().optional()),
     RAZORPAY_WEBHOOK_SECRET: z.preprocess(
