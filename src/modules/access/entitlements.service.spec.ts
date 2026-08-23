@@ -115,6 +115,26 @@ describe("EntitlementsService", () => {
       expect(result).toBe(false);
     });
 
+    it("honours a stored row written in the other case", async () => {
+      const { db, mocks } = buildMockDb();
+      mocks.findMany.mockResolvedValue([{ moduleKey: "HR", enabled: true }]);
+      const { cache } = buildMockCache();
+
+      const result = await buildService(db, cache).isModuleEnabled("org-1", "hr");
+
+      expect(result).toBe(true);
+    });
+
+    it("honours a required key written in the other case", async () => {
+      const { db, mocks } = buildMockDb();
+      mocks.findMany.mockResolvedValue([{ moduleKey: "hr", enabled: true }]);
+      const { cache } = buildMockCache();
+
+      const result = await buildService(db, cache).isModuleEnabled("org-1", "HR");
+
+      expect(result).toBe(true);
+    });
+
     it("returns true for a CORE module key even with no rows (always-on)", async () => {
       const { db, mocks } = buildMockDb();
       mocks.findMany.mockResolvedValue([]);

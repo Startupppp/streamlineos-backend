@@ -6,6 +6,7 @@ import { ModuleDisabledException } from "../http/api-exceptions";
 import { IS_PUBLIC } from "../auth/public.decorator";
 import type { CurrentUserContext } from "../auth/backend-claims";
 import { EntitlementsService } from "../../modules/access/entitlements.service";
+import { moduleIdFromStored } from "./module-registry";
 
 @Injectable()
 export class ModuleGuard implements CanActivate {
@@ -38,7 +39,7 @@ export class ModuleGuard implements CanActivate {
     const user = req.user;
     if (!user) return true;
     const moduleKeys = (Array.isArray(required) ? required : [required]).map(
-      (key) => key.toLowerCase(),
+      moduleIdFromStored,
     );
     for (const moduleKey of moduleKeys) {
       const enabled = await this.entitlements.isModuleEnabled(

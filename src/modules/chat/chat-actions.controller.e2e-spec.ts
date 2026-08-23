@@ -1,220 +1,151 @@
-import { INestApplication } from "@nestjs/common";
+import { ForbiddenException, type INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { ALL_MODULES, signToken } from "test/helpers/sign-token";
-import { Test } from "@nestjs/testing";
-import { AppModule } from "../../app.module";
-import { AllExceptionsFilter } from "../../common/http/all-exceptions.filter";
-import { stubMembershipState } from "../../../test/helpers/membership-state";
-import { AccessService } from "../access/access.service";
-import { DRIZZLE } from "../../db/drizzle.constants";
-import { MfaPolicyService } from "../access/mfa-policy.service";
-import { makeMfaPolicyStub } from "test/helpers/mfa-policy-stub";
+import { ChatChannelMembersService } from "./chat-channel-members.service";
+import { ChatMessagesService } from "./chat-messages.service";
+import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 
-const RBAC_E2E_DATABASE_URL = process.env.RBAC_E2E_DATABASE_URL;
-const describeWithDb = RBAC_E2E_DATABASE_URL ? describe : describe.skip;
+/**
+ * Only one route remains here. Status, assign and due date moved to
+ * `/chat/entity-actions/*`, and their guard-tier assertions moved with them
+ * rather than being deleted — see `chat-entity-actions.controller.e2e-spec.ts`,
+ * which additionally asserts the thing this route family used to get wrong: a
+ * caller must not be refused for want of a Build permission on a record Build
+ * does not own.
+ */
+
+const members = {
+  assertChannelMembership: jest.fn().mockResolvedValue(undefined),
+};
+
+const messages = {
+  readMessageContent: jest.fn().mockResolvedValue("the original message"),
+  sendSystemMessage: jest.fn().mockResolvedValue(undefined),
+};
+
+const entities = {
+  submitAction: jest.fn().mockResolvedValue({
+    ok: true,
+    message: null,
+    data: { ticketId: 5, ticketNumber: 11 },
+  }),
+};
+
+const BODY = { channelId: 1, messageId: 2, projectId: 3, type: "TASK" };
 
 describe("ChatActions auth (e2e, no DB required)", () => {
   let app: INestApplication;
 
   beforeAll(async () => {
-    app = await createE2eApp();
-  });
-
-  afterAll(async () => app.close());
-
-  const protectedRoutes: ReadonlyArray<["post", string]> = [
-    ["post", "/chat/actions/create-task-from-message"],
-    ["post", "/chat/actions/assign-ticket"],
-    ["post", "/chat/actions/set-due-date"],
-    ["post", "/chat/actions/ticket-status"],
-  ];
-
-  it.each(protectedRoutes)("401 on %s %s without a token", async (_method, path) => {
-    const res = await request(app.getHttpServer()).post(path);
-    expect(res.status).toBe(401);
-    expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
-  });
-
-  it("403 on POST /chat/actions/create-task-from-message without build:tickets:create", async () => {
-    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
-    const res = await request(app.getHttpServer())
-      .post("/chat/actions/create-task-from-message")
-      .set("Authorization", `Bearer ${token}`)
-      .send({ channelId: 1, messageId: 1, projectId: 1, type: "TASK" });
-    expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
-  });
-
-  it("403 on POST /chat/actions/assign-ticket without build:tickets:assign", async () => {
-    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
-    const res = await request(app.getHttpServer())
-      .post("/chat/actions/assign-ticket")
-      .set("Authorization", `Bearer ${token}`)
-      .send({ channelId: 1, projectId: 1, ticketId: 1, assigneeId: "user_2" });
-    expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
-  });
-
-  it("403 on POST /chat/actions/set-due-date without build:tickets:update", async () => {
-    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
-    const res = await request(app.getHttpServer())
-      .post("/chat/actions/set-due-date")
-      .set("Authorization", `Bearer ${token}`)
-      .send({ channelId: 1, projectId: 1, ticketId: 1, dueDate: "2026-12-31" });
-    expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
-  });
-
-  it("403 on POST /chat/actions/ticket-status without build:tickets:update", async () => {
-    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
-    const res = await request(app.getHttpServer())
-      .post("/chat/actions/ticket-status")
-      .set("Authorization", `Bearer ${token}`)
-      .send({ channelId: 1, projectId: 1, ticketId: 1, nextStatus: "IN_PROGRESS" });
-    expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
-  });
-});
-
-const mockAccessServiceAllowed = {
-  resolveUserPermissions: jest.fn().mockResolvedValue(
-    new Map<string, "all" | "own" | "team" | "none">([
-      ["build:tickets:create", "all"],
-      ["build:tickets:assign", "all"],
-      ["build:tickets:update", "all"],
-    ]),
-  ),
-  isModuleEnabled: jest.fn().mockResolvedValue(true),
-};
-
-function chatQ(value: unknown[]): Promise<unknown[]> & { limit: jest.Mock } {
-  const p = Promise.resolve(value);
-  return Object.assign(p, { limit: jest.fn().mockResolvedValue(value) }) as unknown as Promise<unknown[]> & { limit: jest.Mock };
-}
-
-const mockDbNoMembership = {
-  query: {
-    projectMembers: { findFirst: jest.fn().mockResolvedValue(null) },
-    chatMessages: { findFirst: jest.fn().mockResolvedValue(null) },
-    projects: { findFirst: jest.fn().mockResolvedValue(null) },
-    tickets: { findFirst: jest.fn().mockResolvedValue(null) },
-  },
-  select: jest.fn().mockReturnThis(),
-  from: jest.fn().mockReturnThis(),
-  innerJoin: jest.fn().mockReturnThis(),
-  leftJoin: jest.fn().mockReturnThis(),
-  where: jest.fn().mockReturnValue(chatQ([])),
-  limit: jest.fn().mockResolvedValue([]),
-  insert: jest.fn().mockReturnThis(),
-  values: jest.fn().mockReturnThis(),
-  returning: jest.fn().mockResolvedValue([]),
-  update: jest.fn().mockReturnThis(),
-  set: jest.fn().mockReturnThis(),
-  execute: jest.fn().mockResolvedValue([]),
-  __client: { end: jest.fn().mockResolvedValue(undefined) },
-  transaction: jest.fn().mockImplementation(
-    async (cb: (tx: unknown) => Promise<unknown>) => cb(mockDbNoMembership),
-  ),
-};
-
-describeWithDb("ChatActions membership-forbidden path (e2e, mocked)", () => {
-  let app: INestApplication;
-
-  beforeAll(async () => {
-    process.env.DATABASE_URL ??= process.env.RBAC_E2E_DATABASE_URL ?? "postgres://u:p@localhost:5432/db";
-    process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-
-    const ref = await stubMembershipState(
-      Test.createTestingModule({ imports: [AppModule] })
-        .overrideProvider(AccessService)
-        .useValue(mockAccessServiceAllowed)
-        .overrideProvider(DRIZZLE)
-        .useValue(mockDbNoMembership)
-        .overrideProvider(MfaPolicyService)
-        .useValue(makeMfaPolicyStub()),
-      { member_1: { role: "MEMBER" }, owner_1: { role: "OWNER", isOwner: true } },
-    ).compile();
-
-    app = ref.createNestApplication();
-    app.useGlobalFilters(new AllExceptionsFilter());
-    await app.init();
+    app = await createE2eApp({
+      overrides: [
+        { provide: ChatChannelMembersService, useValue: members },
+        { provide: ChatMessagesService, useValue: messages },
+        { provide: EntityReferenceService, useValue: entities },
+      ],
+    });
   });
 
   afterAll(async () => app.close());
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockAccessServiceAllowed.resolveUserPermissions.mockResolvedValue(
-      new Map<string, "all" | "own" | "team" | "none">([
-        ["build:tickets:create", "all"],
-        ["build:tickets:assign", "all"],
-        ["build:tickets:update", "all"],
-      ]),
-    );
-    mockAccessServiceAllowed.isModuleEnabled.mockResolvedValue(true);
-    mockDbNoMembership.query.projectMembers.findFirst.mockResolvedValue(null);
-    mockDbNoMembership.query.chatMessages.findFirst.mockResolvedValue(null);
-    mockDbNoMembership.query.projects.findFirst.mockResolvedValue({ key: "WEB" });
-    mockDbNoMembership.query.tickets.findFirst.mockResolvedValue({
-      id: 1,
-      status: "TODO",
-      assigneeId: null,
-      dueDate: null,
-      projectId: 1,
+    members.assertChannelMembership.mockResolvedValue(undefined);
+    messages.readMessageContent.mockResolvedValue("the original message");
+    entities.submitAction.mockResolvedValue({
+      ok: true,
+      message: null,
+      data: { ticketId: 5, ticketNumber: 11 },
     });
-    mockDbNoMembership.where.mockReturnValue(chatQ([{ content: "from chat" }]));
-    mockDbNoMembership.limit.mockResolvedValue([{ content: "from chat" }]);
   });
 
-  it("403 CHAT_ACTION_FORBIDDEN on POST /chat/actions/create-task-from-message when caller is not a project member", async () => {
-    const token = await signToken({ sub: "member_1" });
+  it("401 without a token", async () => {
+    const res = await request(app.getHttpServer()).post(
+      "/chat/actions/create-task-from-message",
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("403 when the caller is not a member of the conversation", async () => {
+    members.assertChannelMembership.mockRejectedValue(
+      new ForbiddenException("You are not a member of this channel"),
+    );
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
+
     const res = await request(app.getHttpServer())
       .post("/chat/actions/create-task-from-message")
       .set("Authorization", `Bearer ${token}`)
-      .send({ channelId: 1, messageId: 1, projectId: 1, type: "TASK" });
+      .send(BODY);
+
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({
-      code: "CHAT_ACTION_FORBIDDEN",
-      message: "Not authorized to perform this chat action",
-    });
-    expect(mockDbNoMembership.query.projectMembers.findFirst).toHaveBeenCalledTimes(1);
   });
 
-  it("403 CHAT_ACTION_FORBIDDEN on POST /chat/actions/assign-ticket when caller is not a project member", async () => {
-    const token = await signToken({ sub: "member_1" });
+  it("402 when the chat module is disabled", async () => {
+    const token = await signToken({ permissions: [], enabledModules: [] });
+
     const res = await request(app.getHttpServer())
-      .post("/chat/actions/assign-ticket")
+      .post("/chat/actions/create-task-from-message")
       .set("Authorization", `Bearer ${token}`)
-      .send({ channelId: 1, projectId: 1, ticketId: 1, assigneeId: "user_2" });
-    expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({
-      code: "CHAT_ACTION_FORBIDDEN",
-      message: "Not authorized to perform this chat action",
-    });
-    expect(mockDbNoMembership.query.projectMembers.findFirst).toHaveBeenCalledTimes(1);
+      .send(BODY);
+
+    expect(res.status).toBe(402);
   });
 
-  it("403 CHAT_ACTION_FORBIDDEN on POST /chat/actions/set-due-date when caller is not a project member", async () => {
-    const token = await signToken({ sub: "member_1" });
+  it("leaves the create refusal to the adapter that owns the record", async () => {
+    entities.submitAction.mockResolvedValue({ ok: false, reason: "forbidden" });
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
+
     const res = await request(app.getHttpServer())
-      .post("/chat/actions/set-due-date")
+      .post("/chat/actions/create-task-from-message")
       .set("Authorization", `Bearer ${token}`)
-      .send({ channelId: 1, projectId: 1, ticketId: 1, dueDate: "2026-12-31" });
+      .send(BODY);
+
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({
-      code: "CHAT_ACTION_FORBIDDEN",
-      message: "Not authorized to perform this chat action",
-    });
-    expect(mockDbNoMembership.query.projectMembers.findFirst).toHaveBeenCalledTimes(1);
   });
 
-  it("org owners skip the membership DB check entirely on POST /chat/actions/create-task-from-message", async () => {
-    const token = await signToken({ sub: "owner_1" });
+  it("refuses when the message cannot be read by this caller", async () => {
+    messages.readMessageContent.mockResolvedValue(null);
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
+
+    const res = await request(app.getHttpServer())
+      .post("/chat/actions/create-task-from-message")
+      .set("Authorization", `Bearer ${token}`)
+      .send(BODY);
+
+    expect(res.status).toBe(403);
+  });
+
+  it("passes the message text through as the new record's description", async () => {
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
+
     await request(app.getHttpServer())
       .post("/chat/actions/create-task-from-message")
       .set("Authorization", `Bearer ${token}`)
-      .send({ channelId: 1, messageId: 1, projectId: 1, type: "TASK" });
-    expect(mockDbNoMembership.query.projectMembers.findFirst).not.toHaveBeenCalled();
+      .send(BODY);
+
+    expect(entities.submitAction).toHaveBeenCalledWith(
+      expect.anything(),
+      { type: "project", id: "3" },
+      "create-ticket",
+      expect.objectContaining({ description: "the original message" }),
+    );
+  });
+
+  const retired: ReadonlyArray<string> = [
+    "/chat/actions/ticket-status",
+    "/chat/actions/assign-ticket",
+    "/chat/actions/set-due-date",
+  ];
+
+  it.each(retired)("404 on the retired route %s", async (path) => {
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
+
+    const res = await request(app.getHttpServer())
+      .post(path)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ channelId: 1 });
+
+    expect(res.status).toBe(404);
   });
 });

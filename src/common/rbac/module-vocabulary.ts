@@ -1,37 +1,22 @@
-export const MODULE_CATALOG = [
-  "hr",
-  "crm",
-  "build",
-  "accounting",
-  "inventory",
-  "kb",
-  "chat",
-  "support",
-  "surveys",
-  "payroll",
-  "sign",
-  "timesheets",
-] as const;
+import {
+  additionalNamespaces,
+  planGatedModuleIds,
+  type PlanGatedModuleId,
+} from "./module-registry";
 
-export type ModuleKey = (typeof MODULE_CATALOG)[number];
+export type ModuleKey = PlanGatedModuleId;
 
-const PLAN_GATED_MODULES: ReadonlySet<string> = new Set(MODULE_CATALOG);
+/** Computed from the registry. Nothing here is authored twice. */
+export const MODULE_CATALOG: readonly ModuleKey[] = planGatedModuleIds();
 
+const PLAN_GATED_MODULES: ReadonlySet<string> = new Set<string>(MODULE_CATALOG);
 
 export function isPlanGatedModule(module: string): boolean {
   return PLAN_GATED_MODULES.has(module);
 }
 
-// Home administers chat, mail, calendar and notifications through one ladder
-// rather than four; the mapping lives here rather than in the key strings
-// because renaming a key breaks every stored grant. Always use
-// administeringModuleOf() to resolve ownership — split(":")[0] gives the wrong
-// answer for any key in a non-native namespace.
-const ADDITIONAL_MODULE_NAMESPACES: Readonly<
-  Record<string, readonly string[]>
-> = {
-  home: ["chat", "mail", "calendar", "notifications"],
-};
+const ADDITIONAL_MODULE_NAMESPACES: Readonly<Record<string, readonly string[]>> =
+  additionalNamespaces();
 
 export function namespacesForModule(moduleKey: string): readonly string[] {
   const additional = ADDITIONAL_MODULE_NAMESPACES[moduleKey];

@@ -1,0 +1,103 @@
+import { Body, Controller, Post, UseGuards } from "@nestjs/common";
+import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { CurrentUser } from "../../common/auth/current-user.decorator";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
+import {
+  entityActionsAvailableSchema,
+  submitEntityActionSchema,
+  type EntityActionsAvailableInput,
+  type SubmitEntityActionInput,
+} from "./dto/chat.schemas";
+import { ChatChannelMembersService } from "./chat-channel-members.service";
+import { ChatMessagesService } from "./chat-messages.service";
+import { EntityReferenceService } from "../entity-reference/entity-reference.service";
+import { actorOf } from "../entity-reference/entity-actor";
+import {
+  ChatActionForbiddenException,
+  ChatActionTicketStatusFailedException,
+  ProjectsTicketNotFoundException,
+} from "../../common/http/api-exceptions";
+import type {
+  EntityActionResult,
+  EntityReference,
+} from "../entity-reference/entity-reference.types";
+
+/**
+ * Generic over reference type on purpose: it carries no module permission key,
+ * because a module key on a route the reference seam serves can only ever
+ * exclude the modules the seam exists to include. The right to be in the
+ * conversation is what this route checks; the right to perform the action
+ * belongs to the adapter that owns the record, which already enforces it.
+ */
+@RequireModule("chat")
+@Controller("chat/entity-actions")
+@UseGuards(JwtAuthGuard)
+export class ChatEntityActionsController {
+  constructor(
+    private readonly entities: EntityReferenceService,
+    private readonly members: ChatChannelMembersService,
+    private readonly chatMessages: ChatMessagesService,
+  ) {}
+
+  @Post("available")
+  async availableActions(
+    @Body(new ZodValidationPipe(entityActionsAvailableSchema))
+    body: EntityActionsAvailableInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    await this.members.assertChannelMembership(body.channelId, u.userId);
+
+    const actions = await this.entities.actionsFor(actorOf(u), [
+      ...body.references,
+    ]);
+
+    return {
+      references: body.references.map((reference, index) => ({
+        reference,
+        actions: actions[index] ?? [],
+      })),
+    };
+  }
+
+  @Post("submit")
+  async submitAction(
+    @Body(new ZodValidationPipe(submitEntityActionSchema))
+    body: SubmitEntityActionInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    await this.members.assertChannelMembership(body.channelId, u.userId);
+
+    const result = await this.entities.submitAction(
+      actorOf(u),
+      body.reference,
+      body.actionId,
+      body.input,
+    );
+    const data = this.unwrap(result);
+    this.announce(body.channelId, u, result, body.reference);
+    return { success: true, ...data };
+  }
+
+  private unwrap(result: EntityActionResult): Record<string, unknown> {
+    if (result.ok) return result.data;
+    if (result.reason === "not-found") throw new ProjectsTicketNotFoundException();
+    if (result.reason === "invalid") throw new ChatActionTicketStatusFailedException();
+    throw new ChatActionForbiddenException();
+  }
+
+  private announce(
+    channelId: number,
+    u: CurrentUserContext,
+    result: EntityActionResult,
+    reference: EntityReference,
+  ): void {
+    if (!result.ok || !result.message) return;
+    void this.chatMessages
+      .sendSystemMessage(channelId, u.userId, u.orgId, result.message, {
+        entities: [reference],
+      })
+      .catch(() => undefined);
+  }
+}

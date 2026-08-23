@@ -1,20 +1,12 @@
 import type { Permission } from "./types";
+import {
+  delegableModuleIds,
+  type DelegableModuleId,
+} from "../../../common/rbac/module-registry";
 
-export const ACCESS_MANAGED_MODULES = [
-  "hr",
-  "crm",
-  "build",
-  "accounting",
-  "inventory",
-  "support",
-  "surveys",
-  "payroll",
-  "sign",
-  "timesheets",
-  "workflows",
-  "blog",
-  "directory",
-] as const;
+/** Computed from the registry: every module whose ladder is delegable. */
+export const ACCESS_MANAGED_MODULES: readonly DelegableModuleId[] =
+  delegableModuleIds();
 
 export const MODULE_ACCESS_PERMISSIONS: Permission[] =
   ACCESS_MANAGED_MODULES.flatMap((moduleKey) => [

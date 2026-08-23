@@ -16,6 +16,7 @@ import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
 import { MODULE_CATALOG } from "../../common/rbac/module-vocabulary";
+import { moduleIdFromStored } from "../../common/rbac/module-registry";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { ACCESS_MANAGED_MODULES } from "../rbac/permissions";
 import { assignModuleOwnerRole } from "../ownership/module-owner-role.helper";
@@ -135,7 +136,10 @@ export class EntitlementsService implements OnModuleInit {
               [],
             );
             const result: Record<string, boolean> = {};
-            for (const row of rows) result[row.moduleKey] = row.enabled;
+            // Stored keys are normalised on the way in, so a row written in
+            // another case still answers the same question.
+            for (const row of rows)
+              result[moduleIdFromStored(row.moduleKey)] = row.enabled;
             return result;
           },
           { orgId },
@@ -149,7 +153,8 @@ export class EntitlementsService implements OnModuleInit {
     return map;
   }
 
-  async isModuleEnabled(orgId: string, moduleKey: string): Promise<boolean> {
+  async isModuleEnabled(orgId: string, rawModuleKey: string): Promise<boolean> {
+    const moduleKey = moduleIdFromStored(rawModuleKey);
     if (this.coreModuleKeys.has(moduleKey)) return true;
     const map = await this.getModuleMap(orgId);
     const enabled = map[moduleKey];
@@ -163,7 +168,7 @@ export class EntitlementsService implements OnModuleInit {
   }
 
   isCoreModule(moduleKey: string): boolean {
-    return this.coreModuleKeys.has(moduleKey);
+    return this.coreModuleKeys.has(moduleIdFromStored(moduleKey));
   }
 
   async setModuleEnabled(

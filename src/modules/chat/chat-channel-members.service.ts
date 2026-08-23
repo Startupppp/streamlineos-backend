@@ -39,6 +39,11 @@ export class ChatChannelMembersService {
     return member;
   }
 
+  /** The only right a generic entity-action route needs: being in the room. */
+  async assertChannelMembership(channelId: number, userId: string): Promise<void> {
+    await this.assertMember(channelId, userId);
+  }
+
   private async assertAdmin(channelId: number, userId: string) {
     const member = await this.assertMember(channelId, userId);
     if (member.role !== "ADMIN") throw new ForbiddenException("Only channel admins can perform this action");
