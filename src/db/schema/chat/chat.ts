@@ -425,7 +425,9 @@ export const chatChannelInviteLinks = pgTable(
     channelId: integer("channel_id")
       .references(() => chatChannels.id, { onDelete: "cascade" })
       .notNull(),
-    token: text("token").notNull(),
+    token: text("token"),
+    tokenHash: text("token_hash"),
+    tokenEncrypted: text("token_encrypted"),
     createdBy: text("created_by")
       .references(() => users.id)
       .notNull(),
@@ -434,6 +436,7 @@ export const chatChannelInviteLinks = pgTable(
   },
   (table) => [
     uniqueIndex("uniq_chat_invite_link_token").on(table.token),
+    uniqueIndex("uniq_chat_invite_link_token_hash").on(table.tokenHash),
     index("idx_chat_invite_links_channel").on(table.channelId, table.revokedAt),
     index("idx_chat_channel_invite_links_org").on(table.orgId),
     unique("uniq_chat_channel_invite_links_org_id").on(table.orgId, table.id),

@@ -1499,6 +1499,13 @@
       "when": 1786701788560,
       "tag": "0458_hr_relational_tables_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 215,
+      "version": "7",
+      "when": 1786701789560,
+      "tag": "0459_chat_invite_token_at_rest",
+      "breakpoints": true
     }
   ]
 }
