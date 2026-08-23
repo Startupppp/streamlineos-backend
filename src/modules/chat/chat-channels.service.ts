@@ -32,7 +32,7 @@ export class ChatChannelsService {
     private readonly entities: EntityReferenceService,
   ) {}
 
-  private async ensureEntityChannelDisplayName<
+  private async resolveEntityChannelDisplayName<
     T extends {
       id: number;
       name: string;
@@ -56,12 +56,26 @@ export class ChatChannelsService {
       return channel;
     }
 
+    return { ...channel, name: resolved };
+  }
+
+  private async ensureEntityChannelDisplayName<
+    T extends {
+      id: number;
+      name: string;
+      entityType: string | null;
+      entityId: string | null;
+    },
+  >(channel: T, actor: EntityActor): Promise<T> {
+    const named = await this.resolveEntityChannelDisplayName(channel, actor);
+    if (named.name === channel.name) return named;
+
     await this.db
       .update(chatChannels)
-      .set({ name: resolved })
+      .set({ name: named.name })
       .where(eq(chatChannels.id, channel.id));
 
-    return { ...channel, name: resolved };
+    return named;
   }
 
   async listMemberChannelIds(orgId: string, userId: string): Promise<number[]> {
@@ -168,7 +182,7 @@ export class ChatChannelsService {
       );
 
       const enrichedChannels = await Promise.all(
-        channels.map((ch) => this.ensureEntityChannelDisplayName(ch, actor)),
+        channels.map((ch) => this.resolveEntityChannelDisplayName(ch, actor)),
       );
 
       return enrichedChannels.map((ch) => ({
