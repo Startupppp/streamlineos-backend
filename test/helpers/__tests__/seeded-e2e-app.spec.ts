@@ -27,24 +27,25 @@ describe(`${SEEDED_HARNESS} harness self-tests`, () => {
   it(
     `${SEEDED_HARNESS} permission absent → 403; permission granted → 200`,
     async () => {
-      const fixture = await seedOrg(seededApp.seedDb).addMember("alice").build();
-      console.log(`fixture: ${fixture.label()}`);
+      // Two members rather than one before/after: granting to the same person mid-test
+      // crosses a cache generation, which proves nothing about permissions.
+      const fixture = await seedOrg(seededApp.seedDb)
+        .addMember("alice")
+        .addMember("bob", { permissionKeys: ["settings:rbac:manage"] })
+        .build();
       try {
         const alice = fixture.members["alice"];
-        if (!alice) throw new Error("alice not in fixture");
-
-        const token = await signSeededToken(alice.userId, fixture.orgId);
+        const bob = fixture.members["bob"];
+        if (!alice || !bob) throw new Error("fixture members missing");
 
         const denied = await request(seededApp.app.getHttpServer())
           .get("/roles")
-          .set("Authorization", `Bearer ${token}`);
+          .set("Authorization", `Bearer ${await signSeededToken(alice.userId, fixture.orgId)}`);
         expect({ status: denied.status, fixture: fixture.label() }).toMatchObject({ status: 403 });
-
-        await fixture.grantPermissions("alice", ["settings:rbac:manage"]);
 
         const allowed = await request(seededApp.app.getHttpServer())
           .get("/roles")
-          .set("Authorization", `Bearer ${token}`);
+          .set("Authorization", `Bearer ${await signSeededToken(bob.userId, fixture.orgId)}`);
         expect({ status: allowed.status, fixture: fixture.label() }).toMatchObject({ status: 200 });
       } finally {
         await fixture.teardown();
