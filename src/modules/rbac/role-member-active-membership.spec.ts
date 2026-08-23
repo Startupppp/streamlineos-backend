@@ -5,7 +5,6 @@ import { CacheService } from "../../common/cache/cache.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { AccessService } from "../access/access.service";
-import { RoleLockoutService } from "./role-lockout.service";
 import { RoleMemberService } from "./role-member.service";
 
 describe("RoleMemberService active membership enforcement", () => {
@@ -42,7 +41,6 @@ describe("RoleMemberService active membership enforcement", () => {
         { provide: CacheService, useValue: {} },
         { provide: AuditService, useValue: { log: jest.fn() } },
         { provide: NotificationDispatchService, useValue: {} },
-        { provide: RoleLockoutService, useValue: {} },
         { provide: AccessService, useValue: { resolveUserPermissions: jest.fn(), getPermissionsVersion: jest.fn() } },
       ],
     }).compile();

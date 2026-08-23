@@ -40,6 +40,16 @@ export function buildOrgAdminPermissionKeys(dbCatalog: Set<string>): string[] {
   return candidates.filter((key) => dbCatalog.has(key));
 }
 
+/**
+ * Keys that module members receive at a narrower scope than the default "all".
+ * Consulted only when inserting grants for MODULE_MEMBER roles, so admin-rung
+ * roles are unaffected. Add an entry here whenever a module's view key is
+ * scopable and new orgs should default members to "own" or "team".
+ */
+const MODULE_MEMBER_KEY_SCOPE_OVERRIDE: Record<string, "own" | "team" | "all"> = {
+  "sign:envelope:view": "own",
+};
+
 /** Keys a module's admins need that live outside their own namespace. */
 const MODULE_ADMIN_EXTRA_KEYS: Readonly<Record<string, readonly string[]>> = {
   hr: ["settings:view", "settings:organization:manage"],
@@ -146,6 +156,7 @@ export async function seedSystemRolesForOrg(
         created += 1;
         const row = inserted[0];
         if (row && spec.permissionKeys.length > 0) {
+          const isMemberRole = spec.slug.endsWith("_MODULE_MEMBER");
           await tx
             .insert(rolePermissionGrants)
             .values(
@@ -153,7 +164,9 @@ export async function seedSystemRolesForOrg(
                 orgId,
                 roleId: row.id,
                 permissionKey,
-                scope: "all" as const,
+                scope: isMemberRole
+                  ? (MODULE_MEMBER_KEY_SCOPE_OVERRIDE[permissionKey] ?? ("all" as const))
+                  : ("all" as const),
               })),
             )
             .onConflictDoNothing();

@@ -24,12 +24,7 @@ export const SIGN_PERMISSIONS: Permission[] = [
     resource: "sign:envelope",
     action: "view",
     description: "View SignOS envelopes you sent or were assigned",
-  },
-  {
-    name: "sign:envelope:view_all",
-    resource: "sign:envelope",
-    action: "view_all",
-    description: "View all SignOS envelopes in the organization",
+    scopable: true,
   },
   {
     name: "sign:envelope:send",

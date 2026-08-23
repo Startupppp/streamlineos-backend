@@ -6,7 +6,6 @@ import { ROLE_RANK } from "../../common/rbac/grantability";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { AccessService } from "../access/access.service";
-import { RoleLockoutService } from "./role-lockout.service";
 import { RoleMemberService } from "./role-member.service";
 
 describe("assertMayAssignRole — MODULE_OWNER rank is blocked on the generic path", () => {
@@ -41,7 +40,6 @@ describe("assertMayAssignRole — MODULE_OWNER rank is blocked on the generic pa
         { provide: CacheService, useValue: {} },
         { provide: AuditService, useValue: { log: jest.fn() } },
         { provide: NotificationDispatchService, useValue: {} },
-        { provide: RoleLockoutService, useValue: {} },
         {
           provide: AccessService,
           useValue: { resolveUserPermissions: jest.fn(), getPermissionsVersion: jest.fn() },
@@ -88,7 +86,6 @@ describe("assertMayAssignRole — MODULE_OWNER rank is blocked on the generic pa
         { provide: CacheService, useValue: {} },
         { provide: AuditService, useValue: { log: jest.fn() } },
         { provide: NotificationDispatchService, useValue: {} },
-        { provide: RoleLockoutService, useValue: {} },
         {
           provide: AccessService,
           useValue: { resolveUserPermissions: jest.fn(), getPermissionsVersion: jest.fn() },

@@ -54,7 +54,6 @@ import {
   ROLE_DEFAULT_PERMISSIONS,
   UNIVERSAL_MEMBER_PERMISSIONS,
 } from "./permissions";
-import { RoleLockoutService } from "./role-lockout.service";
 import {
   RolePermissionService,
   type RolePermissionMatrixEntry,
@@ -80,7 +79,6 @@ export class RolesService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly access: AccessService,
-    private readonly lockout: RoleLockoutService,
     private readonly rolePermission: RolePermissionService,
     private readonly roleMember: RoleMemberService,
   ) {}
@@ -359,17 +357,6 @@ export class RolesService {
     if (!(await isStructuralOrgAdmin(this.db, actor)))
       throw new ForbiddenException("Only org admins may delete roles");
 
-    const willLockOut = await this.lockout.wouldLockOutLastAdmin(
-      actor.orgId,
-      undefined,
-      roleId,
-    );
-    if (willLockOut) {
-      throw new ForbiddenException(
-        "Cannot delete a role that would remove all role-management access",
-      );
-    }
-
     await runInTenantTransaction(
       this.db,
       async (tx): Promise<void> => {
@@ -608,11 +595,4 @@ export class RolesService {
     return this.roleMember.removeRoleMember(actor, roleId, input);
   }
 
-  wouldLockOutLastAdmin(
-    orgId: string,
-    excludeUserId?: string,
-    excludeRoleId?: number,
-  ): Promise<boolean> {
-    return this.lockout.wouldLockOutLastAdmin(orgId, excludeUserId, excludeRoleId);
-  }
 }

@@ -9,6 +9,7 @@ import {
 import type { InviteActor } from "./invitations.service";
 import { assertMayGrantRole } from "../../../common/rbac/assert-may-grant-role";
 import { assertTargetNotOwner } from "../../../common/rbac/assert-target-not-owner";
+import { assertNotLastStructuralAdmin } from "../../../common/rbac/assert-not-last-structural-admin";
 import { AccessService } from "../../access/access.service";
 import {
   and,
@@ -759,7 +760,7 @@ export class OrgMembershipService {
       async (tx) => {
         await assertTargetNotOwner(tx, orgId, memberUserId);
         const [member] = await tx
-          .select({ id: organizationMembers.id })
+          .select({ id: organizationMembers.id, role: organizationMembers.role })
           .from(organizationMembers)
           .where(
             and(
@@ -771,6 +772,8 @@ export class OrgMembershipService {
           .limit(1);
 
         if (!member) throw new NotFoundException("Member not found");
+
+        await assertNotLastStructuralAdmin(tx, orgId, member.id, member.role, role);
 
         const ownedModuleKeys = await this.queryOwnedModuleKeys(
           tx,

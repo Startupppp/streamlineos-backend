@@ -1485,6 +1485,13 @@
       "when": 1786701786560,
       "tag": "0456_chat_deal_channel_entity_backfill",
       "breakpoints": true
+    },
+    {
+      "idx": 213,
+      "version": "7",
+      "when": 1786701787560,
+      "tag": "0457_sign_envelope_view_scope",
+      "breakpoints": true
     }
   ]
 }

@@ -9,6 +9,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
+import { readRequestScope } from "../organization/core/read-request-scope";
 import { SignEnvelopesService } from "./sign-envelopes.service";
 import {
   createEnvelopeSchema,
@@ -50,8 +51,12 @@ export class SignEnvelopesController {
 
   @Get()
   @RequirePermission("sign:envelope:view")
-  list(@Query(new ZodValidationPipe(listEnvelopesSchema)) query: ListEnvelopesInput, @CurrentUser() u: CurrentUserContext) {
-    const viewAll = u.isOrgOwner || u.permissions.includes("sign:envelope:view_all");
+  list(
+    @Query(new ZodValidationPipe(listEnvelopesSchema)) query: ListEnvelopesInput,
+    @CurrentUser() u: CurrentUserContext,
+    @Req() req: Request,
+  ) {
+    const viewAll = readRequestScope(req) === "all";
     return this.envelopes.list(u.orgId, query, { userId: u.userId, viewAll });
   }
 
