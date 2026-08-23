@@ -11,6 +11,12 @@ export const organizations = pgTable("organizations", {
   logo: text("logo"),
   website: text("website"),
   industry: text("industry"),
+  /**
+   * Where this organisation's data physically lives. Nullable because an
+   * unplaced organisation must be representable — resolution then fails closed
+   * rather than guessing a region and writing rows into the wrong database.
+   */
+  region: text("region"),
   timezone: text("timezone").default("Asia/Kolkata").notNull(),
   currency: text("currency").default("INR").notNull(),
   fiscalYearStart: integer("fiscal_year_start").default(4).notNull(),

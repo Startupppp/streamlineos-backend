@@ -11,6 +11,8 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { MediaCompressionService } from "../../common/media/media-compression.service";
+import { getRegionRegistry, hasRegionRegistry } from "../../common/region/region-registry";
+import type { RegionStorageConfig } from "../../common/region/region.config";
 
 interface R2Config {
   region: string;
@@ -59,7 +61,33 @@ const PRIVATE_HR_FOLDERS = new Set([
 export class StorageService {
   constructor(private readonly compression: MediaCompressionService) {}
 
+  private static toR2Config(storage: RegionStorageConfig): R2Config {
+    return {
+      region: storage.region,
+      bucketName: storage.bucket,
+      accessKeyId: storage.accessKeyId,
+      secretAccessKey: storage.secretAccessKey,
+      endpoint: storage.endpoint,
+    };
+  }
+
+  /**
+   * The primary region's bucket.
+   *
+   * Reads through the region topology rather than the environment, so bucket
+   * configuration has one source and a second region is a matter of adding a
+   * definition. Callers that know whose data they are touching should prefer
+   * `configForOrg`; this remains correct while there is one region, and is the
+   * path the module migrations will replace.
+   */
   private getConfig(): R2Config {
+    if (hasRegionRegistry()) {
+      const registry = getRegionRegistry();
+      return StorageService.toR2Config(
+        registry.bindingFor(registry.primary).definition.storage,
+      );
+    }
+
     return {
       region: process.env.R2_REGION || "auto",
       bucketName: process.env.R2_BUCKET_NAME,
@@ -67,6 +95,14 @@ export class StorageService {
       secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
       endpoint: process.env.R2_ENDPOINT,
     };
+  }
+
+  /**
+   * The bucket holding this organisation's files, resolved through the same
+   * placement as its database. Fails closed for an unplaced organisation.
+   */
+  async configForOrg(orgId: string): Promise<R2Config> {
+    return StorageService.toR2Config(await getRegionRegistry().storageForOrg(orgId));
   }
 
   isConfigured(): boolean {
