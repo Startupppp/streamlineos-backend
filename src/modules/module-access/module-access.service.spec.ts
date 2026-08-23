@@ -196,6 +196,42 @@ describe("ModuleAccessService", () => {
         svc.assertModuleAccess(actor(), "hr", "manage"),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
+
+    it("lets a module owner read their own module without holding the view key", async () => {
+      (mockDb.select as jest.Mock)
+        .mockReturnValueOnce(makeSelectChain([{ userId: "u1" }]))
+        .mockReturnValueOnce(makeSelectChain([]));
+
+      await expect(
+        svc.assertModuleAccess(actor(), "home", "view"),
+      ).resolves.toBeUndefined();
+    });
+
+    it("lets a module admin read their own module without holding the view key", async () => {
+      (mockDb.select as jest.Mock)
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([{ rank: 20, moduleKey: "home" }]));
+
+      await expect(
+        svc.assertModuleAccess(actor(), "home", "view"),
+      ).resolves.toBeUndefined();
+    });
+
+    it("still lets the view key alone grant read-only access administration", async () => {
+      resolveUserPermissions.mockResolvedValue(
+        new Map([["hr:access:view", "all"]]),
+      );
+
+      await expect(
+        svc.assertModuleAccess(actor(), "hr", "view"),
+      ).resolves.toBeUndefined();
+    });
+
+    it("forbids a member with neither standing nor the view key", async () => {
+      await expect(
+        svc.assertModuleAccess(actor(), "hr", "view"),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
   });
 
   describe("moduleCatalog / listCatalog", () => {
@@ -204,6 +240,35 @@ describe("ModuleAccessService", () => {
       expect(catalog.length).toBeGreaterThan(0);
       expect(catalog.every((p) => p.name.split(":")[0] === "hr")).toBe(true);
       expect(catalog.some((p) => p.name === "hr:access:manage")).toBe(true);
+    });
+
+    it("returns everything Home administers, not just the home namespace", async () => {
+      const catalog = await svc.listCatalog(actor({ isOrgOwner: true }), "home");
+      const names = catalog.map((p) => p.name);
+      expect(names).toContain("home:access:manage");
+      expect(names).toContain("chat:channels:read");
+      expect(names).toContain("mail:inbox:view");
+      expect(names).toContain("calendar:read");
+      expect(names).not.toContain("hr:employees:view");
+    });
+  });
+
+  describe("getCallerPermissions", () => {
+    it("reports the caller's Home permissions, which live in the namespaces Home administers", async () => {
+      resolveUserPermissions.mockResolvedValue(
+        new Map<string, string>([
+          ["chat:channels:read", "all"],
+          ["mail:inbox:view", "all"],
+          ["hr:employees:view", "all"],
+        ]),
+      );
+
+      const result = await svc.getCallerPermissions(actor(), "home");
+      const keys = result.permissions.map((p) => p.key);
+
+      expect(keys).toContain("chat:channels:read");
+      expect(keys).toContain("mail:inbox:view");
+      expect(keys).not.toContain("hr:employees:view");
     });
   });
 

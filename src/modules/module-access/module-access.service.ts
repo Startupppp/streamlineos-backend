@@ -28,6 +28,7 @@ import {
   isImmutableSystemRole,
   toGrantableSet,
 } from "../../common/rbac/grantability";
+import { administeringModuleOf } from "../../common/rbac/module-vocabulary";
 import { isStructuralOrgAdmin } from "../../common/rbac/is-structural-org-admin";
 import { moduleAccessDenied } from "./module-access-errors";
 import {
@@ -76,10 +77,6 @@ export async function invalidateRoleAssigneePages(
     if (!last) return;
     afterMembershipId = last.membershipId;
   }
-}
-
-function moduleOf(permissionKey: string): string {
-  return permissionKey.split(":")[0] ?? permissionKey;
 }
 
 const VIEW_ACTIONS = ["view", "read"] as const;
@@ -160,7 +157,7 @@ export class ModuleAccessService {
 
   moduleCatalog(moduleKey: string): Permission[] {
     this.assertKnownModule(moduleKey);
-    return PERMISSIONS.filter((p) => moduleOf(p.name) === moduleKey);
+    return PERMISSIONS.filter((p) => administeringModuleOf(p.name) === moduleKey);
   }
 
   private moduleCatalogKeys(moduleKey: string): Set<string> {
@@ -398,11 +395,11 @@ export class ModuleAccessService {
         }
 
         const oldModuleKeys = new Set<string>(
-          Array.from(base.keys()).filter((k) => moduleOf(k) === moduleKey),
+          Array.from(base.keys()).filter((k) => administeringModuleOf(k) === moduleKey),
         );
 
         for (const key of Array.from(base.keys())) {
-          if (moduleOf(key) === moduleKey) base.delete(key);
+          if (administeringModuleOf(key) === moduleKey) base.delete(key);
         }
         for (const [key, scope] of deduped) base.set(key, scope);
 
@@ -534,7 +531,7 @@ export class ModuleAccessService {
     ]);
 
     const permissions = Array.from(resolved.entries())
-      .filter(([key]) => key.startsWith(`${moduleKey}:`))
+      .filter(([key]) => administeringModuleOf(key) === moduleKey)
       .map(([key, scope]) => ({ key, scope }));
 
     return {

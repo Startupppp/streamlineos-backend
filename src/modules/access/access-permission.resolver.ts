@@ -13,6 +13,7 @@ import {
   userDelegations,
 } from "../../db/schema";
 import { logger } from "../../common/logger/logger.service";
+import { isDelegablePermission } from "../../common/rbac/grantability";
 import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
 import {
   ROLE_DEFAULT_PERMISSIONS,
@@ -294,8 +295,10 @@ export class AccessPermissionResolver {
       mergeIfKnown(row.permissionKey, row.scope, "user-grant");
     }
 
+    // Ownership expansion is not a grant path, so the org-only bar has to bite here too.
     for (const { moduleKey } of ownershipRows) {
       for (const key of moduleScopedPermissions(moduleKey)) {
+        if (!isDelegablePermission(key)) continue;
         merge(key, "all");
       }
     }
