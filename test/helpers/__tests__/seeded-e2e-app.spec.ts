@@ -27,8 +27,7 @@ describe(`${SEEDED_HARNESS} harness self-tests`, () => {
   it(
     `${SEEDED_HARNESS} permission absent → 403; permission granted → 200`,
     async () => {
-      // Two members rather than one before/after: granting to the same person mid-test
-      // crosses a cache generation, which proves nothing about permissions.
+      // Two members: this one proves the gate. The mid-test grant below proves invalidation.
       const fixture = await seedOrg(seededApp.seedDb)
         .addMember("alice")
         .addMember("bob", { permissionKeys: ["settings:rbac:manage"] })
@@ -52,6 +51,34 @@ describe(`${SEEDED_HARNESS} harness self-tests`, () => {
       }
     },
     60_000,
+  );
+
+  it(
+    `${SEEDED_HARNESS} a grant made after the caller was denied takes effect`,
+    async () => {
+      const fixture = await seedOrg(seededApp.seedDb).addMember("carol").build();
+      try {
+        const carol = fixture.members["carol"];
+        if (!carol) throw new Error("carol not in fixture");
+        const token = await signSeededToken(carol.userId, fixture.orgId);
+        const server = seededApp.app.getHttpServer();
+
+        const denied = await request(server)
+          .get("/roles")
+          .set("Authorization", `Bearer ${token}`);
+        expect({ status: denied.status, fixture: fixture.label() }).toMatchObject({ status: 403 });
+
+        await fixture.grantPermissions("carol", ["settings:rbac:manage"]);
+
+        const allowed = await request(server)
+          .get("/roles")
+          .set("Authorization", `Bearer ${token}`);
+        expect({ status: allowed.status, fixture: fixture.label() }).toMatchObject({ status: 200 });
+      } finally {
+        await fixture.teardown();
+      }
+    },
+    120_000,
   );
 
   it(
