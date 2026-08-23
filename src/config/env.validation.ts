@@ -13,7 +13,7 @@ const optionalUrl = z.preprocess(
   z.string().trim().url().optional(),
 );
 
-const schema = z
+const baseSchema = z
   .object({
     NODE_ENV: z
       .enum(["development", "production", "test"])
@@ -54,6 +54,17 @@ const schema = z
       emptyToUndefined,
       z.string().trim().min(40, "ZEPTOMAIL_TOKEN looks truncated").optional(),
     ),
+    /** Absent, the ZeptoMail webhook rejects every delivery — it fails closed, not open. */
+    ZEPTOMAIL_WEBHOOK_SECRET: z.preprocess(
+      emptyToUndefined,
+      z.string().trim().optional(),
+    ),
+    RESEND_WEBHOOK_SECRET: z.preprocess(
+      emptyToUndefined,
+      z.string().trim().optional(),
+    ),
+    /** Below 32 characters the unsubscribe signer refuses to mint a token at all. */
+    UNSUBSCRIBE_TOKEN_SECRET: deploymentSecret,
     EMAIL_FROM_ADDRESS: optionalEmail,
     UPSTASH_REDIS_REST_URL: z.string().url().optional(),
     UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
@@ -108,6 +119,12 @@ const schema = z
       emptyToUndefined,
       z.string().trim().optional(),
     ),
+    BRAND_SUPPORT_EMAIL: optionalEmail,
+    NEXT_PUBLIC_SUPPORT_EMAIL: optionalEmail,
+    EMAIL_LOGO_PATH: z.preprocess(
+      emptyToUndefined,
+      z.string().trim().optional(),
+    ),
     CHAT_REPLY_REMINDER_MINUTES: z.preprocess(
       emptyToUndefined,
       z.coerce.number().int().positive().optional(),
@@ -120,12 +137,21 @@ const schema = z
       emptyToUndefined,
       z.enum(["true", "false"]).optional(),
     ),
+    HR_EXPORT_WORKER_ENABLED: z.preprocess(
+      emptyToUndefined,
+      z.enum(["true", "false"]).optional(),
+    ),
     /** Override default STARTER trial length (days). Defaults to 14 when unset. */
     TRIAL_DAYS: z.preprocess(
       emptyToUndefined,
       z.coerce.number().int().min(1).max(365).optional(),
     ),
-  })
+  });
+
+/** The schema's own key list, so a coverage test need not restate it. */
+export const CONFIG_VARIABLE_NAMES: string[] = Object.keys(baseSchema.shape);
+
+const schema = baseSchema
   .superRefine((config, context) => {
     if (config.NODE_ENV !== "production") return;
     if (config.RBAC_MIGRATION_MODE === "degrade") {
