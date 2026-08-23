@@ -612,13 +612,7 @@ export class RolesService {
     orgId: string,
     excludeUserId?: string,
     excludeRoleId?: number,
-    excludePermissionKey?: string,
   ): Promise<boolean> {
-    return this.lockout.wouldLockOutLastAdmin(
-      orgId,
-      excludeUserId,
-      excludeRoleId,
-      excludePermissionKey,
-    );
+    return this.lockout.wouldLockOutLastAdmin(orgId, excludeUserId, excludeRoleId);
   }
 }

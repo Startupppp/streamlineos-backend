@@ -13,7 +13,6 @@ import { UserProfileService } from "./user-profile.service";
 import { UserOpsService } from "./user-ops.service";
 import { InvitationsService } from "../organization/core/invitations.service";
 import { InvitationsReadService } from "../organization/core/invitations-read.service";
-import { InvitationLifecycleService } from "../organization/core/invitation-lifecycle.service";
 import {
   listUsersSchema, updateUserSchema, updateUserStatusSchema,
   inviteUserSchema, bulkInviteSchema, updatePreferencesSchema,
@@ -39,7 +38,6 @@ export class UsersController {
     private readonly userOps: UserOpsService,
     private readonly invitations: InvitationsService,
     private readonly invitationsRead: InvitationsReadService,
-    private readonly invitationsLifecycle: InvitationLifecycleService,
   ) {}
 
   // ── Static GET routes (must be before any :userId parameterized routes) ──
@@ -196,7 +194,7 @@ export class UsersController {
     @Body(new ZodValidationPipe(changeInviteRoleSchema)) body: ChangeInviteRoleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.invitationsLifecycle.changeRole(
+    return this.invitations.changeRole(
       u.orgId,
       invitationId,
       { userId: u.userId, isOrgOwner: u.isOrgOwner },
@@ -207,7 +205,7 @@ export class UsersController {
   @RequirePermission("settings:organization:manage")
   @Delete("invitations/:invitationId")
   cancelInvite(@Param("invitationId") invitationId: string, @CurrentUser() u: CurrentUserContext) {
-    return this.invitationsLifecycle.cancel(u.orgId, invitationId, {
+    return this.invitations.cancel(u.orgId, invitationId, {
       userId: u.userId,
       isOrgOwner: u.isOrgOwner,
     });

@@ -14,7 +14,6 @@ export class RoleLockoutService {
     orgId: string,
     excludeUserId?: string,
     excludeRoleId?: number,
-    excludePermissionKey?: string,
   ): Promise<boolean> {
     const ownerRows = await this.db
       .select({ userId: organizationMembers.userId })
@@ -23,11 +22,6 @@ export class RoleLockoutService {
       .limit(1)
       .catch(() => null);
     if (ownerRows && ownerRows.length > 0) return false;
-
-    const excludedRoleId: number | undefined =
-      excludeRoleId !== undefined && excludePermissionKey === RBAC_MANAGE_KEY
-        ? excludeRoleId
-        : undefined;
 
     const rows = await this.db
       .select({ userId: organizationMembers.userId })
@@ -39,8 +33,8 @@ export class RoleLockoutService {
           eq(rolePermissionGrants.orgId, orgId),
           eq(rolePermissionGrants.permissionKey, RBAC_MANAGE_KEY),
           ne(rolePermissionGrants.scope, "none"),
-          excludedRoleId !== undefined
-            ? ne(rolePermissionGrants.roleId, excludedRoleId)
+          excludeRoleId !== undefined
+            ? ne(rolePermissionGrants.roleId, excludeRoleId)
             : undefined,
         ),
       )
