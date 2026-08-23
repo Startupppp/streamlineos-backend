@@ -10,6 +10,7 @@ import {
   sprints,
   ticketAssignees,
   tickets,
+  users,
 } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
 import type { DataScope } from "../../access/access.types";
@@ -25,6 +26,7 @@ import {
   type EntityActor,
   type EntityAdapter,
   type EntityCard,
+  type EntityOption,
   type EntityReference,
   type EntityResolution,
 } from "../../entity-reference/entity-reference.types";
@@ -140,6 +142,7 @@ export class BuildEntityAdapter implements EntityAdapter {
       actor.userId,
     );
     const resolutions = await this.resolveWith(actor, references, permissions);
+    const owningProject = await this.owningProjectIds(actor, references, resolutions);
 
     return references.map((reference, index) => {
       if (resolutions[index]?.status !== "resolved") return [];
@@ -148,14 +151,126 @@ export class BuildEntityAdapter implements EntityAdapter {
         : reference.type === "project"
           ? PROJECT_ACTIONS
           : [];
+      const projectId = owningProject.get(index);
       return catalog
         .filter((action) => holds(actor, permissions, action.key))
         .map((action) => ({
           id: action.id,
           label: action.label,
-          inputs: action.inputs,
+          inputs: action.inputs.map((input) =>
+            input.kind === "user" && projectId !== undefined
+              ? {
+                  ...input,
+                  options: {
+                    from: { type: "project", id: String(projectId) },
+                  },
+                }
+              : input,
+          ),
         }));
     });
+  }
+
+  /**
+   * The project each resolved ticket belongs to, so a `user` input can name the
+   * membership its answers must come from. Derived here rather than accepted
+   * from the caller: a client that could name the source could widen it.
+   */
+  private async owningProjectIds(
+    actor: EntityActor,
+    references: EntityReference[],
+    resolutions: EntityResolution[],
+  ): Promise<Map<number, number>> {
+    const wanted = new Map<number, number>();
+    references.forEach((reference, index) => {
+      if (resolutions[index]?.status !== "resolved") return;
+      if (isTicketType(reference.type)) {
+        const id = numericId(reference);
+        if (id !== null) wanted.set(index, id);
+        return;
+      }
+      if (reference.type !== "project") return;
+      const id = numericId(reference);
+      if (id !== null) wanted.set(index, id);
+    });
+    if (wanted.size === 0) return new Map();
+
+    const ticketIndexes = [...wanted].filter(([index]) =>
+      isTicketType(references[index]?.type ?? ""),
+    );
+    const projectByIndex = new Map<number, number>();
+    for (const [index] of wanted) {
+      const reference = references[index];
+      if (reference && reference.type === "project") {
+        const id = numericId(reference);
+        if (id !== null) projectByIndex.set(index, id);
+      }
+    }
+    if (ticketIndexes.length === 0) return projectByIndex;
+
+    const rows = await this.db
+      .select({ id: tickets.id, projectId: tickets.projectId })
+      .from(tickets)
+      .where(
+        and(
+          eq(tickets.orgId, actor.orgId),
+          inArray(
+            tickets.id,
+            ticketIndexes.map(([, ticketId]) => ticketId),
+          ),
+        ),
+      );
+    const projectByTicket = new Map(rows.map((row) => [row.id, row.projectId]));
+    for (const [index, ticketId] of ticketIndexes) {
+      const projectId = projectByTicket.get(ticketId);
+      if (projectId !== null && projectId !== undefined)
+        projectByIndex.set(index, projectId);
+    }
+    return projectByIndex;
+  }
+
+  /** Members of a project the actor can actually read. */
+  async optionsFor(
+    actor: EntityActor,
+    reference: EntityReference,
+  ): Promise<EntityOption[]> {
+    if (reference.type !== "project") return [];
+    const projectId = numericId(reference);
+    if (projectId === null) return [];
+
+    const permissions = await this.access.resolveUserPermissions(
+      actor.orgId,
+      actor.userId,
+    );
+    const [resolution] = await this.resolveWith(actor, [reference], permissions);
+    if (resolution?.status !== "resolved") return [];
+
+    const rows = await this.db
+      .select({
+        userId: projectMembers.userId,
+        name: users.name,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        email: users.email,
+        image: users.image,
+      })
+      .from(projectMembers)
+      .innerJoin(users, eq(users.id, projectMembers.userId))
+      .where(
+        and(
+          eq(projectMembers.orgId, actor.orgId),
+          eq(projectMembers.projectId, projectId),
+        ),
+      );
+
+    return rows.map((row) => ({
+      value: row.userId,
+      label:
+        row.name ??
+        [row.firstName, row.lastName].filter(Boolean).join(" ").trim() ??
+        row.email,
+      imageUrl: row.image,
+    }));
   }
 
   async submitAction(

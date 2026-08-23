@@ -160,6 +160,19 @@ export class BuildEntityActions {
     const assigneeId = text(input, "assigneeId");
     if (!assigneeId) return { ok: false, reason: "invalid" };
 
+    // The same set the action's declared option source offers. Without this,
+    // submission accepted anyone the picker would never have shown - including
+    // someone outside the project, who cannot open the ticket they were given.
+    const assignable = await this.db.query.projectMembers.findFirst({
+      where: and(
+        eq(projectMembers.orgId, actor.orgId),
+        eq(projectMembers.projectId, projectId),
+        eq(projectMembers.userId, assigneeId),
+      ),
+      columns: { projectId: true },
+    });
+    if (!assignable) return { ok: false, reason: "invalid" };
+
     await this.db.transaction(async (tx) => {
       await tx
         .update(tickets)

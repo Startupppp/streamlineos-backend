@@ -18,11 +18,33 @@ export type EntityResolution =
 
 export type EntityActionInputKind = "text" | "date" | "user" | "choice";
 
+/**
+ * Where an input's valid answers come from, when they are not a literal list.
+ *
+ * `choices` answers this for the `choice` kind. Nothing answered it for `user`,
+ * so an action could say it needed a person without saying WHICH people — and a
+ * form built from that declaration would offer the whole organisation while the
+ * adapter refused everyone outside the record's own membership.
+ *
+ * The reference is chosen by the adapter from the record being acted on, never
+ * supplied by the caller: a client that could name the source could widen it.
+ */
+export interface EntityActionOptionSource {
+  from: EntityReference;
+}
+
+export interface EntityOption {
+  value: string;
+  label: string;
+  imageUrl?: string | null;
+}
+
 export interface EntityActionInput {
   name: string;
   kind: EntityActionInputKind;
   required: boolean;
   choices?: string[];
+  options?: EntityActionOptionSource;
 }
 
 export interface EntityAction {
@@ -60,6 +82,14 @@ export interface EntityAdapter {
     actionId: string,
     input: Record<string, unknown>,
   ): Promise<EntityActionResult>;
+  /**
+   * The candidates an option source resolves to. Optional: an adapter that
+   * declares no option source never needs it.
+   */
+  optionsFor?(
+    actor: EntityActor,
+    reference: EntityReference,
+  ): Promise<EntityOption[]>;
 }
 
 export interface ModuleEntitlementPort {

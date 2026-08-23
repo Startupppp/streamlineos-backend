@@ -26,7 +26,11 @@ function accessStubScoped(entries: ReadonlyArray<[string, DataScope]>) {
 
 function dbStub(rows: Record<string, unknown>[] = []) {
   const limit = jest.fn(async () => rows);
-  const where = jest.fn(() => ({ limit }));
+  // A drizzle builder is awaitable AND chainable; a stub that only supports
+  // `.where().limit()` breaks the moment a query awaits `.where()` directly.
+  const where = jest.fn(() =>
+    Object.assign(Promise.resolve(rows), { limit }),
+  );
   const chain: { where: typeof where; innerJoin: () => unknown } = {
     where,
     innerJoin: () => chain,
@@ -385,6 +389,97 @@ describe("BuildEntityAdapter", () => {
 
       await adapter.submitAction(ACTOR, reference, "status", {});
       expect(actions.run).toHaveBeenCalled();
+    });
+  });
+
+  describe("an input declares where its options come from", () => {
+    const TICKET_ROW = [
+      { id: 1, title: "T", status: "TODO", ticketNumber: 1, projectKey: "W" },
+    ];
+    const PROJECT_ROW = [{ id: 7, name: "P", status: "ACTIVE", key: "P" }];
+
+    it("names the ticket's own project as the source for a person input", async () => {
+      const db = dbStubSeq(TICKET_ROW, [{ id: 1, projectId: 7 }]);
+      const adapter = new BuildEntityAdapter(
+        db,
+        accessStub(["build:tickets:view", "build:tickets:assign"]),
+        ACTIONS_STUB,
+      );
+
+      const [actions] = await adapter.actionsFor(ACTOR, [
+        { type: "ticket", id: "1" },
+      ]);
+      const assign = actions.find((action) => action.id === "assign");
+
+      expect(assign?.inputs[0]?.options).toEqual({
+        from: { type: "project", id: "7" },
+      });
+    });
+
+    it("leaves inputs that are not person inputs untouched", async () => {
+      const db = dbStubSeq(TICKET_ROW, [{ id: 1, projectId: 7 }]);
+      const adapter = new BuildEntityAdapter(
+        db,
+        accessStub(["build:tickets:view", "build:tickets:update"]),
+        ACTIONS_STUB,
+      );
+
+      const [actions] = await adapter.actionsFor(ACTOR, [
+        { type: "ticket", id: "1" },
+      ]);
+
+      for (const action of actions)
+        for (const input of action.inputs)
+          if (input.kind !== "user") expect(input.options).toBeUndefined();
+    });
+
+    it("offers the members of a project the actor can read", async () => {
+      const db = dbStubSeq(PROJECT_ROW, [
+        { userId: "u1", name: "Priya", firstName: null, lastName: null, email: "p@x", image: null },
+      ]);
+      const adapter = new BuildEntityAdapter(db, accessStub(["build:view"]), ACTIONS_STUB);
+
+      const options = await adapter.optionsFor(ACTOR, { type: "project", id: "7" });
+
+      expect(options).toEqual([
+        { value: "u1", label: "Priya", imageUrl: null },
+      ]);
+    });
+
+    it("offers nothing for a project the actor cannot read", async () => {
+      const adapter = new BuildEntityAdapter(
+        dbStub([]),
+        accessStub([]),
+        ACTIONS_STUB,
+      );
+
+      await expect(
+        adapter.optionsFor(ACTOR, { type: "project", id: "7" }),
+      ).resolves.toEqual([]);
+    });
+
+    it("offers nothing for a reference type that has no membership", async () => {
+      const adapter = new BuildEntityAdapter(
+        dbStub([]),
+        accessStub(["build:tickets:view"]),
+        ACTIONS_STUB,
+      );
+
+      await expect(
+        adapter.optionsFor(ACTOR, { type: "ticket", id: "1" }),
+      ).resolves.toEqual([]);
+    });
+
+    it("offers nothing for a reference whose id is not a number", async () => {
+      const adapter = new BuildEntityAdapter(
+        dbStub([]),
+        accessStub(["build:view"]),
+        ACTIONS_STUB,
+      );
+
+      await expect(
+        adapter.optionsFor(ACTOR, { type: "project", id: "not-a-number" }),
+      ).resolves.toEqual([]);
     });
   });
 

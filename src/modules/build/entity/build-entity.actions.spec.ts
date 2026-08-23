@@ -208,6 +208,40 @@ describe("BuildEntityActions", () => {
       expect(result).toEqual({ ok: false, reason: "invalid" });
     });
 
+
+    /**
+     * The action's declared option source offers the ticket's project members.
+     * These pin that submission accepts exactly that set - offering a candidate
+     * the adapter would refuse is the same defect as discovery offering an
+     * action submission refuses, which is already pinned on the adapter.
+     */
+    it("accepts an assignee who is a member of the ticket's project", async () => {
+      mockDb.query.tickets.findFirst.mockResolvedValue(STUB_TICKET);
+      mockDb.query.projectMembers.findFirst
+        .mockResolvedValueOnce({ projectId: 7 })
+        .mockResolvedValueOnce({ projectId: 7 });
+
+      const result = await service.run(ACTOR, TICKET_REF, "assign", {
+        assigneeId: "user_2",
+      });
+
+      expect(result.ok).toBe(true);
+    });
+
+    it("refuses an assignee the option source would never have offered", async () => {
+      mockDb.query.tickets.findFirst.mockResolvedValue(STUB_TICKET);
+      mockDb.query.projectMembers.findFirst
+        .mockResolvedValueOnce({ projectId: 7 })
+        .mockResolvedValueOnce(null);
+
+      const result = await service.run(ACTOR, TICKET_REF, "assign", {
+        assigneeId: "someone-outside-the-project",
+      });
+
+      expect(result).toEqual({ ok: false, reason: "invalid" });
+      expect(mockDb.transaction).not.toHaveBeenCalled();
+    });
+
     it("executes the ticket update and activity-log insert inside the same transaction", async () => {
       mockDb.query.tickets.findFirst.mockResolvedValue(STUB_TICKET);
       mockDb.query.projectMembers.findFirst.mockResolvedValue({ projectId: 7 });

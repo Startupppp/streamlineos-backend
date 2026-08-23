@@ -5,8 +5,10 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import {
+  entityActionOptionsSchema,
   entityActionsAvailableSchema,
   submitEntityActionSchema,
+  type EntityActionOptionsInput,
   type EntityActionsAvailableInput,
   type SubmitEntityActionInput,
 } from "./dto/chat.schemas";
@@ -59,6 +61,17 @@ export class ChatEntityActionsController {
         actions: actions[index] ?? [],
       })),
     };
+  }
+
+  @Post("options")
+  async actionOptions(
+    @Body(new ZodValidationPipe(entityActionOptionsSchema))
+    body: EntityActionOptionsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    await this.members.assertChannelMembership(body.channelId, u.userId);
+
+    return { options: await this.entities.optionsFor(actorOf(u), body.reference) };
   }
 
   @Post("submit")

@@ -171,3 +171,10 @@ export const submitEntityActionSchema = z.object({
 
 export type EntityActionsAvailableInput = z.infer<typeof entityActionsAvailableSchema>;
 export type SubmitEntityActionInput = z.infer<typeof submitEntityActionSchema>;
+
+export const entityActionOptionsSchema = z.object({
+  channelId: z.number().int().positive(),
+  reference: entityReferenceSchema,
+});
+
+export type EntityActionOptionsInput = z.infer<typeof entityActionOptionsSchema>;

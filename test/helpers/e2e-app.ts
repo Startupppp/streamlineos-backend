@@ -79,12 +79,19 @@ const entitlementsStub = {
     Object.fromEntries(current().enabledModules.map((key) => [key, true])),
   getEffectiveModuleMap: async (): Promise<Record<string, boolean>> =>
     Object.fromEntries(current().enabledModules.map((key) => [key, true])),
+  // `ModuleGuard` resolves availability from four sources, not one. The three
+  // below are pinned to the identity answer so a module's availability is still
+  // decided by the token's `enabledModules` alone, which is what every existing
+  // spec was written against.
+  isCoreModule: (): boolean => false,
+  getPlanLockedModules: async (): Promise<readonly string[]> => [],
 };
 
 const accessStub = {
   resolveUserPermissions: async (): Promise<Map<string, DataScope>> =>
     new Map(current().permissions.map((key) => [key, "all" as DataScope])),
   isModuleEnabled: entitlementsStub.isModuleEnabled,
+  getUserDeniedModules: async (): Promise<ReadonlySet<string>> => new Set<string>(),
 };
 
 export interface E2eAppOptions {

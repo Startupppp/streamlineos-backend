@@ -7,6 +7,7 @@ import {
   type EntityActionResult,
   type EntityActor,
   type EntityAdapter,
+  type EntityOption,
   type EntityReference,
   type EntityResolution,
   type ModuleEntitlementPort,
@@ -112,6 +113,28 @@ export class EntityReferenceService {
     if (!enabled) return { ok: false, reason: "not-found" };
 
     return adapter.submitAction(actor, reference, actionId, input);
+  }
+
+  /**
+   * Resolves an option source to its candidates. An unknown type, a disabled
+   * module or an adapter that declares no option source all yield an empty list
+   * rather than an error — the same shape `resolve` already uses, so a caller
+   * never has to tell "none" apart from "not applicable".
+   */
+  async optionsFor(
+    actor: EntityActor,
+    reference: EntityReference,
+  ): Promise<EntityOption[]> {
+    const adapter = this.byType.get(reference.type);
+    if (!adapter?.optionsFor) return [];
+
+    const enabled = await this.entitlement.isModuleEnabled(
+      actor.orgId,
+      adapter.moduleKey,
+    );
+    if (!enabled) return [];
+
+    return adapter.optionsFor(actor, reference);
   }
 
   private async dispatch<T>(
