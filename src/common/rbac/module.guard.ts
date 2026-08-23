@@ -20,6 +20,12 @@ export class ModuleGuard implements CanActivate {
     >(REQUIRE_MODULE, [context.getHandler(), context.getClass()]);
     if (!required) return true;
 
+    /**
+     * A `@Public()` route has no `req.user` to read an org from, so reaching the
+     * entitlement lookup threw and every such route 500'd — inbound support
+     * webhooks, public CSAT and whiteboard sharing all sit on classes carrying
+     * `@RequireModule`. `JwtAuthGuard` and `MfaGuard` already skip on this key.
+     */
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC, [
       context.getHandler(),
       context.getClass(),
