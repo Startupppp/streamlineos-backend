@@ -13,12 +13,8 @@ export function subscribeVersionBump(fn: AccessVersionListener): () => void {
   return accessVersionChannel.subscribe(fn);
 }
 
-/**
- * A reader with no row sees version 1, so a first bump must land above it —
- * inserting the column default would leave every version-keyed cache entry
- * reachable and the change invisible until its TTL lapsed.
- */
-const FIRST_BUMPED_VERSION = 2;
+const ABSENT_ROW_VERSION = 1;
+const FIRST_BUMPED_VERSION = ABSENT_ROW_VERSION + 1;
 
 /**
  * Published before the caller's transaction commits, deliberately. A rolled-back
