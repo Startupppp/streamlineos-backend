@@ -22,14 +22,11 @@ export function isPlanGatedModule(module: string): boolean {
   return PLAN_GATED_MODULES.has(module);
 }
 
-/**
- * A module always owns its own namespace, and may administer others. Home is
- * the exception that needs the map: chat, mail and calendar are the
- * communication surfaces every active member keeps, and they are administered
- * by one Home ladder rather than three. The mapping lives here rather than in
- * the key strings, because renaming a key would break every grant already
- * stored against it.
- */
+// Home administers chat, mail, calendar and notifications through one ladder
+// rather than four; the mapping lives here rather than in the key strings
+// because renaming a key breaks every stored grant. Always use
+// administeringModuleOf() to resolve ownership — split(":")[0] gives the wrong
+// answer for any key in a non-native namespace.
 const ADDITIONAL_MODULE_NAMESPACES: Readonly<
   Record<string, readonly string[]>
 > = {
@@ -41,7 +38,6 @@ export function namespacesForModule(moduleKey: string): readonly string[] {
   return additional ? [moduleKey, ...additional] : [moduleKey];
 }
 
-/** The module that administers `permissionKey`, which is not always its first segment. */
 export function administeringModuleOf(permissionKey: string): string {
   const separatorIndex = permissionKey.indexOf(":");
   return moduleOwningNamespace(

@@ -34,7 +34,8 @@ const CHUNK = num("SEED_CHUNK", 25000);
 const SPRINTS_PER_PROJECT = 5;
 const LABELS_PER_PROJECT = 8;
 
-const sql = postgres(adminUrl, { max: 1, prepare: false, ssl: "require", onnotice: () => {} });
+const ssl = process.env.PGSSLMODE === "disable" ? false : "require";
+const sql = postgres(adminUrl, { max: 1, prepare: false, ssl, onnotice: () => {} });
 
 const started = Date.now();
 const log = (msg) => console.log(`[${((Date.now() - started) / 1000).toFixed(1)}s] ${msg}`);
@@ -278,8 +279,12 @@ async function analyze() {
     "ticket_label_mappings", "ticket_labels", "work_item_relations", "sprints",
     "project_members", "project_statuses", "timesheets", "pm_workspaces",
   ];
-  for (const t of tables) await sql.unsafe(`analyze public.${t}`);
-  log(`analyze: ${tables.length} tables`);
+  const wanted = new Set(tables);
+  const present = await sql`select schemaname, tablename from pg_tables`;
+  const targets = present.filter((row) => wanted.has(row.tablename));
+  for (const t of targets)
+    await sql.unsafe(`analyze ${t.schemaname}.${t.tablename}`);
+  log(`analyze: ${targets.length}/${tables.length} tables`);
 }
 
 async function main() {

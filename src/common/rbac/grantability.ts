@@ -15,27 +15,16 @@ export const RESERVED_PROPAGATION_KEYS: ReadonlySet<string> = new Set([
   "settings:rbac:manage",
 ]);
 
-/**
- * Platform billing is deliberately NOT delegatable: it is run by the
- * organisation owner and organisation administrators only, who hold the whole
- * catalog structurally and never need a grant. Barring the namespace from every
- * grant path — including the owner's own — is what makes "org owner and org
- * admin only" true by construction rather than by convention, so there is no
- * billing owner rung to appoint and no per-person billing grant to write.
- * This is platform billing; the organisation's own customer invoicing lives in
- * accounting and is unaffected.
- */
+// Keys and namespaces here are barred on every grant path including the org
+// owner's own — "org owner and org admin only" holds by construction, not
+// convention. billing: is never delegated (the org's customer invoicing is
+// accounting and is unaffected). chat:org-settings:manage belongs here because
+// migration 0437 handed it to CHAT_MODULE_ADMIN and 0441 only reclaimed roles
+// nobody had been appointed to, so a module admin could otherwise still hold
+// it; huddle moderation stays delegatable because it moderates a conversation,
+// not the organisation.
 const ORG_ONLY_NAMESPACES: readonly string[] = ["billing"];
 
-/**
- * Organisation-wide chat settings are run by the organisation owner and
- * organisation admins, who already hold the whole catalog structurally. Barring
- * the key from every grant path is what makes that true by construction:
- * migration 0437 had handed it to CHAT_MODULE_ADMIN, and 0441 only reclaimed
- * the roles nobody had been appointed to, so a module admin could otherwise
- * still hold it. Huddle moderation stays delegatable — it moderates a
- * conversation, it does not reconfigure the organisation.
- */
 const ORG_ONLY_PERMISSION_KEYS: ReadonlySet<string> = new Set([
   "chat:org-settings:manage",
 ]);
@@ -48,23 +37,10 @@ export function isOrgOnlyPermission(key: string): boolean {
   return isOrgOnlyNamespace(key) || ORG_ONLY_PERMISSION_KEYS.has(key);
 }
 
-/**
- * `permissions.is_delegable`, derived from the policy above rather than declared
- * per catalog entry, so the column, the grantable-key discovery and the guard
- * cannot disagree. Delegability is a property of the key, not of an actor: a key
- * barred here is barred on every path including the org owner's own, which is
- * why this takes no actor.
- */
 export function isDelegablePermission(key: string): boolean {
   return !isOrgOnlyPermission(key);
 }
 
-/**
- * The reserved key itself, for PROPAGATION checks only — "may this actor grant
- * this key to someone else". It must never be used to decide whether the actor
- * IS an org admin; that is structural, via `isStructuralOrgAdmin`. The former
- * `grantsOrgAdmin()` helper did exactly that and was removed (AC-04, §21).
- */
 export const ORG_ADMIN_PERMISSION_KEY = "settings:manage";
 
 export interface GrantabilityActor {

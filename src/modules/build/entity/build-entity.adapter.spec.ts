@@ -16,6 +16,14 @@ function accessStub(keys: string[]) {
   return { resolveUserPermissions: jest.fn(async () => map) };
 }
 
+function accessStubScoped(entries: ReadonlyArray<[string, DataScope]>) {
+  return {
+    resolveUserPermissions: jest.fn(
+      async () => new Map<string, DataScope>(entries),
+    ),
+  };
+}
+
 function dbStub(rows: Record<string, unknown>[] = []) {
   const limit = jest.fn(async () => rows);
   const where = jest.fn(() => ({ limit }));
@@ -31,6 +39,29 @@ function dbStub(rows: Record<string, unknown>[] = []) {
     select: jest.Mock;
   };
 }
+
+function dbStubSeq(...rowSets: Record<string, unknown>[][]) {
+  let call = 0;
+  const where = jest.fn(() => {
+    const rows = rowSets[call++] ?? [];
+    return Object.assign(Promise.resolve(rows), {
+      limit: jest.fn().mockResolvedValue(rows),
+    });
+  });
+  const chain: { where: typeof where; innerJoin: () => unknown } = {
+    where,
+    innerJoin: () => chain,
+  };
+  const innerJoin = jest.fn(() => chain);
+  chain.innerJoin = innerJoin;
+  const from = jest.fn(() => chain);
+  const select = jest.fn(() => ({ from }));
+  return { select } as unknown as Db;
+}
+
+const ACTIONS_STUB = {
+  run: jest.fn(async () => ({ ok: true as const, message: null, data: {} })),
+} as unknown as ConstructorParameters<typeof BuildEntityAdapter>[2];
 
 function makeAdapter(keys: string[], rows: Record<string, unknown>[] = []) {
   const db = dbStub(rows);
@@ -278,6 +309,76 @@ describe("BuildEntityAdapter", () => {
       ]);
 
       expect(actions).toEqual([]);
+    });
+  });
+
+  describe("scope enforcement", () => {
+    const TICKET_ROW = {
+      id: 1,
+      title: "T",
+      status: "TODO",
+      ticketNumber: 1,
+      projectKey: "W",
+    };
+
+    it("scope none: returns unresolved without hitting the database", async () => {
+      const db = dbStub([TICKET_ROW]);
+      const adapter = new BuildEntityAdapter(
+        db,
+        accessStubScoped([["build:tickets:view", "none"]]),
+        ACTIONS_STUB,
+      );
+
+      const [result] = await adapter.resolve(ACTOR, [
+        { type: "ticket", id: "1" },
+      ]);
+
+      expect(result.status).toBe("unresolved");
+      expect(db.select).not.toHaveBeenCalled();
+    });
+
+    it("scope own: does not resolve a ticket the actor has no stake in", async () => {
+      const adapter = new BuildEntityAdapter(
+        dbStubSeq([], []),
+        accessStubScoped([["build:tickets:view", "own"]]),
+        ACTIONS_STUB,
+      );
+
+      const [result] = await adapter.resolve(ACTOR, [
+        { type: "ticket", id: "1" },
+      ]);
+
+      expect(result.status).toBe("unresolved");
+    });
+
+    it("scope own: resolves a ticket the actor is assigned to", async () => {
+      const adapter = new BuildEntityAdapter(
+        dbStubSeq([{ ticketId: 1 }], [TICKET_ROW]),
+        accessStubScoped([["build:tickets:view", "own"]]),
+        ACTIONS_STUB,
+      );
+
+      const [result] = await adapter.resolve(ACTOR, [
+        { type: "ticket", id: "1" },
+      ]);
+
+      expect(result.status).toBe("resolved");
+    });
+
+    it("org owner resolves a ticket without holding any permission key", async () => {
+      const owner: EntityActor = { ...ACTOR, isOrgOwner: true };
+      const db = dbStub([TICKET_ROW]);
+      const adapter = new BuildEntityAdapter(
+        db,
+        accessStubScoped([]),
+        ACTIONS_STUB,
+      );
+
+      const [result] = await adapter.resolve(owner, [
+        { type: "ticket", id: "1" },
+      ]);
+
+      expect(result.status).toBe("resolved");
     });
   });
 });

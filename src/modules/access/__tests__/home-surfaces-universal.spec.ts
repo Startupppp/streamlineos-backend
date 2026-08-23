@@ -88,7 +88,7 @@ describe("Home surfaces are allowed to everyone", () => {
       new Map(),
       1000,
     );
-    const resolved = await resolver.computeUserPermissions("org-1", "u-1");
+    const resolved = await resolver.computeUserPermissions("org-1", "u-1", 1);
     expect(resolved).toEqual({});
     for (const [, key] of HOME_SURFACES) expect(resolved[key]).toBeUndefined();
   });
@@ -97,6 +97,7 @@ describe("Home surfaces are allowed to everyone", () => {
     const resolved = await resolverForMemberWithNoRoles().computeUserPermissions(
       "org-1",
       "u-1",
+      1,
     );
     for (const [, key] of HOME_SURFACES) expect(resolved[key]).toBeDefined();
   });
@@ -156,14 +157,14 @@ describe("owning the Home module does not confer org-wide chat settings", () => 
 
   it("still expands the rest of the module, so the test is not vacuous", async () => {
     const resolved =
-      await resolverForHomeModuleOwner().computeUserPermissions("org-1", "u-1");
+      await resolverForHomeModuleOwner().computeUserPermissions("org-1", "u-1", 1);
     expect(resolved["chat:invite-links:manage"]).toBe("all");
     expect(resolved["chat:huddles:moderate"]).toBe("all");
   });
 
   it("withholds chat:org-settings:manage from a Home module owner", async () => {
     const resolved =
-      await resolverForHomeModuleOwner().computeUserPermissions("org-1", "u-1");
+      await resolverForHomeModuleOwner().computeUserPermissions("org-1", "u-1", 1);
     expect(resolved["chat:org-settings:manage"]).toBeUndefined();
   });
 });

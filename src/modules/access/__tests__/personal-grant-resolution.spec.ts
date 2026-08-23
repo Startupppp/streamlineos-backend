@@ -65,13 +65,13 @@ describe("per-person grants fold into the resolved permission set", () => {
     const resolver = buildResolver({
       personalGrants: [{ permissionKey: GRANT_KEY, scope: "all" }],
     });
-    const resolved = await resolver.computeUserPermissions(ORG, USER);
+    const resolved = await resolver.computeUserPermissions(ORG, USER, 1);
     expect(resolved[GRANT_KEY]).toBe("all");
   });
 
   it("resolves nothing extra when the person holds no personal grant", async () => {
     const resolver = buildResolver({ personalGrants: [] });
-    const resolved = await resolver.computeUserPermissions(ORG, USER);
+    const resolved = await resolver.computeUserPermissions(ORG, USER, 1);
     expect(resolved[GRANT_KEY]).toBeUndefined();
   });
 
@@ -79,7 +79,7 @@ describe("per-person grants fold into the resolved permission set", () => {
     const resolver = buildResolver({
       personalGrants: [{ permissionKey: GRANT_KEY, scope: "own" }],
     });
-    const resolved = await resolver.computeUserPermissions(ORG, USER);
+    const resolved = await resolver.computeUserPermissions(ORG, USER, 1);
     expect(resolved[GRANT_KEY]).toBe("own");
   });
 
@@ -89,7 +89,7 @@ describe("per-person grants fold into the resolved permission set", () => {
       roleGrants: [{ roleId: 1, permissionKey: GRANT_KEY, scope: "all" }],
       personalGrants: [{ permissionKey: GRANT_KEY, scope: "own" }],
     });
-    const resolved = await resolver.computeUserPermissions(ORG, USER);
+    const resolved = await resolver.computeUserPermissions(ORG, USER, 1);
     expect(resolved[GRANT_KEY]).toBe("all");
   });
 
@@ -98,11 +98,11 @@ describe("per-person grants fold into the resolved permission set", () => {
       roleIds: [{ roleId: 1 }],
       roleGrants: [],
       personalGrants: [{ permissionKey: GRANT_KEY, scope: "all" }],
-    }).computeUserPermissions(ORG, USER);
+    }).computeUserPermissions(ORG, USER, 1);
 
     const withoutRole = await buildResolver({
       personalGrants: [{ permissionKey: GRANT_KEY, scope: "all" }],
-    }).computeUserPermissions(ORG, USER);
+    }).computeUserPermissions(ORG, USER, 1);
 
     expect(withRole[GRANT_KEY]).toBe("all");
     expect(withoutRole[GRANT_KEY]).toBe("all");
@@ -131,6 +131,6 @@ describe("per-person grants fold into the resolved permission set", () => {
       new Map(),
       1000,
     );
-    expect(await resolver.computeUserPermissions(ORG, USER)).toEqual({});
+    expect(await resolver.computeUserPermissions(ORG, USER, 1)).toEqual({});
   });
 });

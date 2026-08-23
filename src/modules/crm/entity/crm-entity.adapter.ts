@@ -7,6 +7,10 @@ import { AccessService } from "../../access/access.service";
 import type { DataScope } from "../../access/access.types";
 import { applyScope } from "../../access/apply-scope";
 import {
+  scopeFor,
+  type Permissions,
+} from "../../entity-reference/entity-scope";
+import {
   unresolved,
   type EntityAction,
   type EntityActionResult,
@@ -16,8 +20,6 @@ import {
   type EntityReference,
   type EntityResolution,
 } from "../../entity-reference/entity-reference.types";
-
-type Permissions = Map<string, DataScope>;
 
 interface AccessPort {
   resolveUserPermissions(orgId: string, userId: string): Promise<Permissions>;
@@ -55,7 +57,7 @@ export class CrmEntityAdapter implements EntityAdapter {
     references.forEach((reference, index) => {
       const readKey = READ_KEY[reference.type];
       if (!readKey) return;
-      const scope = this.scopeFor(actor, permissions, readKey);
+      const scope = scopeFor(actor, permissions, readKey);
       if (scope === "none") return;
       const id = Number(reference.id);
       if (!Number.isInteger(id) || id <= 0) return;
@@ -90,15 +92,6 @@ export class CrmEntityAdapter implements EntityAdapter {
 
   async submitAction(): Promise<EntityActionResult> {
     return { ok: false, reason: "invalid" };
-  }
-
-  private scopeFor(
-    actor: EntityActor,
-    permissions: Permissions,
-    key: string,
-  ): DataScope {
-    if (actor.isOrgOwner) return "all";
-    return permissions.get(key) ?? "none";
   }
 
   private async readClients(

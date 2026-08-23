@@ -75,7 +75,7 @@ describe("an org-only key never resolves from a grant table", () => {
         { roleId: 1, permissionKey: NORMAL_KEY, scope: "all" },
       ],
     });
-    const resolved = await resolver.computeUserPermissions(ORG, USER);
+    const resolved = await resolver.computeUserPermissions(ORG, USER, 1);
 
     expect(resolved[ORG_ONLY_KEY]).toBeUndefined();
     expect(resolved[NORMAL_KEY]).toBe("all");
@@ -85,7 +85,7 @@ describe("an org-only key never resolves from a grant table", () => {
     const resolver = buildResolver({
       personalGrants: [{ permissionKey: ORG_ONLY_KEY, scope: "all" }],
     });
-    const resolved = await resolver.computeUserPermissions(ORG, USER);
+    const resolved = await resolver.computeUserPermissions(ORG, USER, 1);
     expect(resolved[ORG_ONLY_KEY]).toBeUndefined();
   });
 
@@ -93,7 +93,7 @@ describe("an org-only key never resolves from a grant table", () => {
     const resolver = buildResolver({
       delegated: [{ permissionKey: ORG_ONLY_KEY }],
     });
-    const resolved = await resolver.computeUserPermissions(ORG, USER);
+    const resolved = await resolver.computeUserPermissions(ORG, USER, 1);
     expect(resolved[ORG_ONLY_KEY]).toBeUndefined();
   });
 
@@ -101,19 +101,19 @@ describe("an org-only key never resolves from a grant table", () => {
     const resolver = buildResolver({
       personalGrants: [{ permissionKey: BILLING_KEY, scope: "all" }],
     });
-    const resolved = await resolver.computeUserPermissions(ORG, USER);
+    const resolved = await resolver.computeUserPermissions(ORG, USER, 1);
     expect(resolved[BILLING_KEY]).toBeUndefined();
   });
 
   it("still gives the org owner the key, who holds the catalog structurally", async () => {
     const resolver = buildResolver({ isOwner: true });
-    const resolved = await resolver.computeUserPermissions(ORG, USER);
+    const resolved = await resolver.computeUserPermissions(ORG, USER, 1);
     expect(resolved[ORG_ONLY_KEY]).toBe("all");
   });
 
   it("still gives an org admin the key", async () => {
     const resolver = buildResolver({ memberRole: "ORG_ADMIN" });
-    const resolved = await resolver.computeUserPermissions(ORG, USER);
+    const resolved = await resolver.computeUserPermissions(ORG, USER, 1);
     expect(resolved[ORG_ONLY_KEY]).toBe("all");
   });
 });

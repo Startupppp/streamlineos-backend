@@ -14,6 +14,11 @@ import {
 import { AccessService } from "../../access/access.service";
 import type { DataScope } from "../../access/access.types";
 import {
+  holds,
+  scopeFor,
+  type Permissions,
+} from "../../entity-reference/entity-scope";
+import {
   unresolved,
   type EntityAction,
   type EntityActionResult,
@@ -24,8 +29,6 @@ import {
   type EntityResolution,
 } from "../../entity-reference/entity-reference.types";
 import { BuildEntityActions } from "./build-entity.actions";
-
-type Permissions = Map<string, DataScope>;
 
 interface AccessPort {
   resolveUserPermissions(orgId: string, userId: string): Promise<Permissions>;
@@ -146,7 +149,7 @@ export class BuildEntityAdapter implements EntityAdapter {
           ? PROJECT_ACTIONS
           : [];
       return catalog
-        .filter((action) => this.holds(actor, permissions, action.key))
+        .filter((action) => holds(actor, permissions, action.key))
         .map((action) => ({
           id: action.id,
           label: action.label,
@@ -172,27 +175,10 @@ export class BuildEntityAdapter implements EntityAdapter {
         : [];
     const action = catalog.find((candidate) => candidate.id === actionId);
     if (!action) return { ok: false, reason: "invalid" };
-    if (!this.holds(actor, permissions, action.key))
+    if (!holds(actor, permissions, action.key))
       return { ok: false, reason: "forbidden" };
 
     return this.actions.run(actor, reference, actionId, input);
-  }
-
-  private scopeFor(
-    actor: EntityActor,
-    permissions: Permissions,
-    key: string,
-  ): DataScope {
-    if (actor.isOrgOwner) return "all";
-    return permissions.get(key) ?? "none";
-  }
-
-  private holds(
-    actor: EntityActor,
-    permissions: Permissions,
-    key: string,
-  ): boolean {
-    return this.scopeFor(actor, permissions, key) !== "none";
   }
 
   private async resolveWith(
@@ -209,7 +195,7 @@ export class BuildEntityAdapter implements EntityAdapter {
     references.forEach((reference, index) => {
       const readKey = READ_KEY[reference.type];
       if (!readKey) return;
-      const scope = this.scopeFor(actor, permissions, readKey);
+      const scope = scopeFor(actor, permissions, readKey);
       if (scope === "none") return;
       const id = numericId(reference);
       if (id === null) return;

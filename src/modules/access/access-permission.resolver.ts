@@ -42,6 +42,19 @@ export interface MembershipAccessState {
   expiresAt: number;
 }
 
+/**
+ * Keyed by the access version so a bump on another instance invalidates it too.
+ * Without the version this cache was the one access cache a bump could not
+ * reach across a process boundary.
+ */
+export function membershipCacheKey(
+  orgId: string,
+  userId: string,
+  version: number,
+): string {
+  return `${orgId}:${userId}:${version}`;
+}
+
 export class AccessPermissionResolver {
   constructor(
     private readonly getDatabase: () => Db,
@@ -58,6 +71,7 @@ export class AccessPermissionResolver {
   async computeUserPermissions(
     orgId: string,
     userId: string,
+    version: number,
   ): Promise<Record<string, DataScope>> {
     const member = await this.db.query.organizationMembers.findFirst({
       where: and(
@@ -67,7 +81,7 @@ export class AccessPermissionResolver {
       columns: { isOwner: true, status: true, id: true, role: true },
     });
     const gate = evaluateMembershipGate(member);
-    this.membershipAccessCache.set(`${orgId}:${userId}`, {
+    this.membershipAccessCache.set(membershipCacheKey(orgId, userId, version), {
       exists: Boolean(member),
       active: gate.active,
       isOwnerOrAdmin:

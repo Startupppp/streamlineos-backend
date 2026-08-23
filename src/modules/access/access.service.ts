@@ -38,6 +38,7 @@ import {
 } from "./access-policy";
 import {
   AccessPermissionResolver,
+  membershipCacheKey,
   type MembershipAccessState,
 } from "./access-permission.resolver";
 import {
@@ -176,6 +177,12 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     this.unsubscribeVersionBump?.();
     this.unsubscribeVersionBump = null;
   }
+  private deleteMemberEntries(orgId: string, userId: string): void {
+    const prefix = `${orgId}:${userId}:`;
+    for (const key of this.membershipAccessCache.keys()) {
+      if (key.startsWith(prefix)) this.membershipAccessCache.delete(key);
+    }
+  }
   private deleteOrgEntries<T>(cache: Map<string, T>, orgId: string): void {
     const prefix = `${orgId}:`;
     for (const key of cache.keys()) {
@@ -251,7 +258,9 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     const version = await this.getPermissionsVersion(orgId);
     const permsKey = `${orgId}:${userId}:${version}`;
     const cachedPerms = this.permsCache.get(permsKey);
-    const cachedMembership = this.membershipAccessCache.get(`${orgId}:${userId}`);
+    const cachedMembership = this.membershipAccessCache.get(
+      membershipCacheKey(orgId, userId, version),
+    );
     const now = Date.now();
 
     if (
@@ -283,7 +292,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
         } else {
           const resolved = await this.cache.cached<Record<string, DataScope>>(
             CACHE_KEYS.accessPerms(orgId, userId, version),
-            () => this.computeUserPermissions(orgId, userId),
+            () => this.computeUserPermissions(orgId, userId, version),
             CACHE_TTL.LONG,
           );
           this.permsCache.set(permsKey, {
@@ -298,7 +307,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
           }
           map = new Map(Object.entries(resolved));
         }
-        const membership = await this.getMembershipAccessState(orgId, userId);
+        const membership = await this.getMembershipAccessState(orgId, userId, version);
         if (!membership.active) return new Map();
         this.applyUniversalGrants(map);
         if (membership.isOwnerOrAdmin) return map;
@@ -343,12 +352,13 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
   private async getMembershipAccessState(
     orgId: string,
     userId: string,
+    version: number,
   ): Promise<{
     exists: boolean;
     active: boolean;
     isOwnerOrAdmin: boolean;
   }> {
-    const cacheKey = `${orgId}:${userId}`;
+    const cacheKey = membershipCacheKey(orgId, userId, version);
     const cached = this.membershipAccessCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) return cached;
     const member = await this.db.query.organizationMembers.findFirst({
@@ -375,13 +385,17 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     orgId: string,
     userId: string,
   ): Promise<boolean> {
-    const cached = this.membershipAccessCache.get(`${orgId}:${userId}`);
+    const version = await this.getPermissionsVersion(orgId);
+    const cached = this.membershipAccessCache.get(
+      membershipCacheKey(orgId, userId, version),
+    );
     if (cached && cached.expiresAt > Date.now()) return cached.isOwnerOrAdmin;
 
     return runInTenantTransaction(
       this.db,
       async () =>
-        (await this.getMembershipAccessState(orgId, userId)).isOwnerOrAdmin,
+        (await this.getMembershipAccessState(orgId, userId, version))
+          .isOwnerOrAdmin,
       { orgId },
     );
   }
@@ -427,7 +441,11 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     orgId: string,
     userId: string,
   ): Promise<{ moduleKey: string; enabled: boolean; core: boolean }[]> {
-    const membership = await this.getMembershipAccessState(orgId, userId);
+    const membership = await this.getMembershipAccessState(
+      orgId,
+      userId,
+      await this.getPermissionsVersion(orgId),
+    );
     if (!membership.exists) {
       throw new NotFoundException("User is not a member of this organization");
     }
@@ -477,7 +495,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
           `Module "${moduleKey}" is always available to organization members`,
         );
       }
-      this.membershipAccessCache.delete(`${orgId}:${userId}`);
+      this.deleteMemberEntries(orgId, userId);
       return this.getUserModuleAccess(orgId, userId);
     }
     await runInTenantTransaction(
@@ -541,8 +559,13 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
   private async computeUserPermissions(
     orgId: string,
     userId: string,
+    version: number,
   ): Promise<Record<string, DataScope>> {
-    return this.permissionResolver.computeUserPermissions(orgId, userId);
+    return this.permissionResolver.computeUserPermissions(
+      orgId,
+      userId,
+      version,
+    );
   }
   async membersWithPermission(
     orgId: string,

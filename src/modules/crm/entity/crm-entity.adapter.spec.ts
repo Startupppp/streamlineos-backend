@@ -23,6 +23,23 @@ function makeAdapter(keys: string[], rows: Record<string, unknown>[] = []) {
   return { adapter: new CrmEntityAdapter(db, access), select };
 }
 
+function makeAdapterScoped(
+  entries: ReadonlyArray<[string, DataScope]>,
+  rows: Record<string, unknown>[] = [],
+) {
+  const limit = jest.fn(async () => rows);
+  const where = jest.fn(() => ({ limit }));
+  const from = jest.fn(() => ({ where }));
+  const select = jest.fn(() => ({ from }));
+  const db = { select } as unknown as Db;
+  const access = {
+    resolveUserPermissions: jest.fn(
+      async () => new Map<string, DataScope>(entries),
+    ),
+  };
+  return { adapter: new CrmEntityAdapter(db, access), select };
+}
+
 describe("CrmEntityAdapter", () => {
   it("claims the two CRM reference types", () => {
     const { adapter } = makeAdapter([]);
@@ -73,5 +90,78 @@ describe("CrmEntityAdapter", () => {
     ]);
 
     expect(actions).toEqual([]);
+  });
+
+  describe("scope enforcement", () => {
+    const CLIENT_ROW = { id: 5, name: "Acme Ltd", company: "Acme", status: "ACTIVE" };
+    const DEAL_ROW = { id: 9, name: "Big Deal", stage: "PROPOSAL" };
+
+    it("scope none: returns unresolved without hitting the database", async () => {
+      const { adapter, select } = makeAdapterScoped([
+        ["crm:clients:read", "none"],
+      ]);
+
+      const [result] = await adapter.resolve(ACTOR, [
+        { type: "client", id: "5" },
+      ]);
+
+      expect(result.status).toBe("unresolved");
+      expect(select).not.toHaveBeenCalled();
+    });
+
+    it("scope own: does not resolve a client the actor does not manage", async () => {
+      const { adapter } = makeAdapterScoped([["crm:clients:read", "own"]], []);
+
+      const [result] = await adapter.resolve(ACTOR, [
+        { type: "client", id: "5" },
+      ]);
+
+      expect(result.status).toBe("unresolved");
+    });
+
+    it("scope own: resolves a client the actor manages", async () => {
+      const { adapter } = makeAdapterScoped(
+        [["crm:clients:read", "own"]],
+        [CLIENT_ROW],
+      );
+
+      const [result] = await adapter.resolve(ACTOR, [
+        { type: "client", id: "5" },
+      ]);
+
+      expect(result.status).toBe("resolved");
+    });
+
+    it("scope own: does not resolve a deal the actor is not assigned to", async () => {
+      const { adapter } = makeAdapterScoped([["crm:deals:read", "own"]], []);
+
+      const [result] = await adapter.resolve(ACTOR, [
+        { type: "deal", id: "9" },
+      ]);
+
+      expect(result.status).toBe("unresolved");
+    });
+
+    it("org owner resolves a client without holding any permission key", async () => {
+      const owner: EntityActor = { ...ACTOR, isOrgOwner: true };
+      const { adapter } = makeAdapterScoped([], [CLIENT_ROW]);
+
+      const [result] = await adapter.resolve(owner, [
+        { type: "client", id: "5" },
+      ]);
+
+      expect(result.status).toBe("resolved");
+    });
+
+    it("org owner resolves a deal without holding any permission key", async () => {
+      const owner: EntityActor = { ...ACTOR, isOrgOwner: true };
+      const { adapter } = makeAdapterScoped([], [DEAL_ROW]);
+
+      const [result] = await adapter.resolve(owner, [
+        { type: "deal", id: "9" },
+      ]);
+
+      expect(result.status).toBe("resolved");
+    });
   });
 });

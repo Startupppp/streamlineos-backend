@@ -32,10 +32,6 @@ export interface WorkflowNodeExecutor {
   ): Promise<NodeOutcome>;
 }
 
-/**
- * The runner depends on this port, not on the dispatcher class, so a test can
- * supply a plain object without a cast; `WorkflowNodeDispatcher` satisfies it.
- */
 export interface NodeDispatchPort {
   execute(
     node: WorkflowGraphNode,

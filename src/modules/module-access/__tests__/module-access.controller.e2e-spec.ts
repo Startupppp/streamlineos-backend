@@ -10,6 +10,7 @@ import { signToken } from "test/helpers/sign-token";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { ModuleAccessService } from "../module-access.service";
 import { ModuleAccessGroupsService } from "../module-access-groups.service";
+import { ACCESS_MANAGED_MODULES } from "src/modules/rbac/permissions/module-access";
 
 const ROLE_ID = 7;
 const GROUP_ID = 9;
@@ -473,5 +474,80 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
       expect(res.body).toMatchObject({ code: "VALIDATION_FAILED" });
     });
   });
+
+  describe.each([...ACCESS_MANAGED_MODULES])(
+    "Per-module guard matrix — %s",
+    (moduleKey) => {
+      const unauthRoutes: ReadonlyArray<[Method, string]> = [
+        ["get", `/module-access/${moduleKey}/catalog`],
+        ["get", `/module-access/${moduleKey}/groups`],
+        ["get", `/module-access/${moduleKey}/ownership`],
+      ];
+
+      it.each(unauthRoutes)(
+        "401 on %s %s without a token",
+        async (method, path) => {
+          const res = await callRoute(method, path);
+          expect(res.status).toBe(401);
+          expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
+        },
+      );
+
+      it("org owner gets 200 on GET catalog", async () => {
+        const token = await signToken({ sub: "owner_1", isOrgOwner: true });
+        const res = await request(app.getHttpServer())
+          .get(`/module-access/${moduleKey}/catalog`)
+          .set("Authorization", `Bearer ${token}`);
+        expect(res.status).toBe(200);
+      });
+
+      it("org admin gets 200 on GET groups", async () => {
+        const token = await signToken({ sub: "admin_1", role: "ORG_ADMIN" });
+        const res = await request(app.getHttpServer())
+          .get(`/module-access/${moduleKey}/groups`)
+          .set("Authorization", `Bearer ${token}`);
+        expect(res.status).toBe(200);
+      });
+
+      it("module admin gets 200 on GET catalog", async () => {
+        const token = await signToken({
+          sub: "modadmin_1",
+          permissions: [`${moduleKey}:access:manage`],
+        });
+        const res = await request(app.getHttpServer())
+          .get(`/module-access/${moduleKey}/catalog`)
+          .set("Authorization", `Bearer ${token}`);
+        expect(res.status).toBe(200);
+      });
+
+      it("unauthorized caller: service denies catalog → 403", async () => {
+        mockModuleAccessService.listCatalog.mockRejectedValueOnce(
+          new ForbiddenException("You do not have access to manage this module's roles"),
+        );
+        const token = await signToken({ sub: "member_1" });
+        const res = await request(app.getHttpServer())
+          .get(`/module-access/${moduleKey}/catalog`)
+          .set("Authorization", `Bearer ${token}`);
+        expect(res.status).toBe(403);
+        expect(res.body).toMatchObject({ code: "FORBIDDEN" });
+      });
+
+      it("module admin: service denies ownership transfer → 403", async () => {
+        mockModuleAccessGroupsService.initiateOwnershipTransfer.mockRejectedValueOnce(
+          new ForbiddenException("Only the module owner may initiate a transfer"),
+        );
+        const token = await signToken({
+          sub: "modadmin_1",
+          permissions: [`${moduleKey}:access:manage`],
+        });
+        const res = await request(app.getHttpServer())
+          .post(`/module-access/${moduleKey}/ownership/transfer`)
+          .set("Authorization", `Bearer ${token}`)
+          .send({ toUserId: "u-new-owner" });
+        expect(res.status).toBe(403);
+        expect(res.body).toMatchObject({ code: "FORBIDDEN" });
+      });
+    },
+  );
 
 });

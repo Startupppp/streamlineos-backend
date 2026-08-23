@@ -11,6 +11,9 @@ function buildService(membership: {
 }): AccessService {
   const db = {
     query: {
+      accessVersions: {
+        findFirst: jest.fn().mockResolvedValue({ permissionsVersion: 1 }),
+      },
       organizationMembers: {
         findFirst: jest.fn().mockResolvedValue(membership),
       },
