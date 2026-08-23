@@ -32,6 +32,10 @@ export const EVAL_ACCEPTANCE = {
   PM_GROUNDING_RATE: 0.8,
   EXTRACTION_SCHEMA_VALID_RATE: 0.9,
   EXTRACTION_NULL_ABSENT_RATE: 1.0,
+  /** Zero tolerance: a false merge fuses two customers' histories. */
+  DUPLICATE_NO_FALSE_MERGE_RATE: 1.0,
+  DUPLICATE_RECALL: 0.9,
+  DUPLICATE_OBVIOUS_MERGE_RATE: 1.0,
 } as const;
 
 export async function runEval<TInput, TOutput>(

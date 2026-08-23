@@ -1,6 +1,6 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
-import { businessParties, partyContacts } from "../../db/schema/party";
+import { and, count, desc, eq, exists, ilike, isNull, or, sql } from "drizzle-orm";
+import { businessParties, partyContacts, partyRoles } from "../../db/schema/party";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
@@ -79,7 +79,7 @@ export class PartyService {
   }
 
   async listParties(organizationId: string, query: ListPartiesQuery): Promise<PartyListPage> {
-    const { page, limit, partyType, search, cursor } = query;
+    const { page, limit, partyType, search, cursor, role } = query;
     const offset = (page - 1) * limit;
     const position = decodeCursor(cursor);
 
@@ -95,6 +95,23 @@ export class PartyService {
       eq(businessParties.organizationId, organizationId),
       isNull(businessParties.deletedAt),
       partyType ? eq(businessParties.partyType, partyType) : undefined,
+      // A semi-join rather than a join: a party holding a role twice must not
+      // appear twice in the list.
+      role
+        ? exists(
+            this.db
+              .select({ one: sql`1` })
+              .from(partyRoles)
+              .where(
+                and(
+                  eq(partyRoles.organizationId, businessParties.organizationId),
+                  eq(partyRoles.partyId, businessParties.partyId),
+                  eq(partyRoles.role, role),
+                  isNull(partyRoles.removedAt),
+                ),
+              ),
+          )
+        : undefined,
       searchCondition,
     );
 

@@ -1464,6 +1464,20 @@
       "when": 1787477893400,
       "tag": "0208_workflow_runtime",
       "breakpoints": true
+    },
+    {
+      "idx": 209,
+      "version": "7",
+      "when": 1787482151985,
+      "tag": "0209_party_roles_and_merges",
+      "breakpoints": true
+    },
+    {
+      "idx": 210,
+      "version": "7",
+      "when": 1787482522735,
+      "tag": "0210_backfill_party_role_permissions",
+      "breakpoints": true
     }
   ]
 }
