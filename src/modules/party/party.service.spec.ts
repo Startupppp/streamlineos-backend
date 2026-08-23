@@ -289,8 +289,12 @@ describe("PartyService", () => {
           return {
             from: jest.fn().mockReturnValue({
               where: jest.fn().mockReturnValue({
-                limit: jest.fn().mockReturnValue({
-                  offset: jest.fn().mockResolvedValue(rows),
+                // The list is ordered now: LIMIT/OFFSET without ORDER BY gives a
+                // non-repeatable page, and the cursor branch needs the same order.
+                orderBy: jest.fn().mockReturnValue({
+                  limit: jest.fn().mockReturnValue({
+                    offset: jest.fn().mockResolvedValue(rows),
+                  }),
                 }),
               }),
             }),
@@ -314,6 +318,8 @@ describe("PartyService", () => {
         limit: 20,
         total: 2,
         totalPages: 1,
+        nextCursor: null,
+        hasMore: false,
       });
     });
 
@@ -325,8 +331,10 @@ describe("PartyService", () => {
           return {
             from: jest.fn().mockReturnValue({
               where: jest.fn().mockReturnValue({
-                limit: jest.fn().mockReturnValue({
-                  offset: jest.fn().mockResolvedValue([]),
+                orderBy: jest.fn().mockReturnValue({
+                  limit: jest.fn().mockReturnValue({
+                    offset: jest.fn().mockResolvedValue([]),
+                  }),
                 }),
               }),
             }),

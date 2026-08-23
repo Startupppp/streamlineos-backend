@@ -5,6 +5,7 @@ const partyTypeValues = ["CUSTOMER", "VENDOR", "PARTNER", "BOTH"] as const;
 export const listPartiesQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
+  cursor: z.string().optional(),
   partyType: z.enum(partyTypeValues).optional(),
   search: z.string().optional(),
 });

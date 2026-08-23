@@ -1443,6 +1443,20 @@
       "when": 1787471892600,
       "tag": "0205_organizations_region",
       "breakpoints": true
+    },
+    {
+      "idx": 206,
+      "version": "7",
+      "when": 1787473928922,
+      "tag": "0206_party_custom_fields_and_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 207,
+      "version": "7",
+      "when": 1787474325964,
+      "tag": "0207_backfill_crm_party_permissions",
+      "breakpoints": true
     }
   ]
 }

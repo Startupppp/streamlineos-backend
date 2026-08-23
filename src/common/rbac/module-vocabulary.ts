@@ -32,6 +32,11 @@ export function isPlanGatedModule(module: string): boolean {
 const MODULE_PERMISSION_NAMESPACES: Readonly<Record<string, readonly string[]>> =
   {
     home: ["chat", "mail", "calendar", "notifications"],
+    // CRM owns parties. The party ladder is not a product of its own: a CRM
+    // administrator has to be able to manage the customers their deals point at,
+    // and without this `moduleScopedPermissions("crm")` skips every party key,
+    // leaving the endpoints reachable only by an organisation admin.
+    crm: ["crm", "party"],
   };
 
 export function namespacesForModule(moduleKey: string): readonly string[] {

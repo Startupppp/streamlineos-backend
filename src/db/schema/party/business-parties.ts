@@ -1,5 +1,6 @@
 import {
   pgTable,
+  jsonb,
   text,
   timestamp,
   index,
@@ -27,6 +28,7 @@ export const businessParties = pgTable(
     email: text("email"),
     phone: text("phone"),
     status: text("status").default("active").notNull(),
+    customFields: jsonb("custom_fields").$type<Record<string, unknown>>(),
     notes: text("notes"),
     deletedAt: timestamp("deleted_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
