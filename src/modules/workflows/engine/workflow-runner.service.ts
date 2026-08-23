@@ -178,7 +178,12 @@ export class WorkflowRunnerService {
     const [version] = await tx
       .select({ definitionJson: workflowVersions.definitionJson })
       .from(workflowVersions)
-      .where(eq(workflowVersions.id, execution.workflowVersionId))
+      .where(
+        and(
+          eq(workflowVersions.id, execution.workflowVersionId),
+          eq(workflowVersions.orgId, execution.orgId),
+        ),
+      )
       .limit(1);
 
     if (!version) return { ok: false, error: "Workflow version not found" };
@@ -257,6 +262,10 @@ export class WorkflowRunnerService {
 
       if (outcome.kind === "suspend") {
         const next = nextNodeId(graph, node.id);
+        if (next === null) {
+          await this.finish(tx, execution.id, "completed", { variables, steps });
+          return "completed";
+        }
         await tx
           .update(workflowExecutions)
           .set({

@@ -5,6 +5,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { clients, deals } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
 import type { DataScope } from "../../access/access.types";
+import { applyScope } from "../../access/apply-scope";
 import {
   unresolved,
   type EntityAction,
@@ -46,32 +47,31 @@ export class CrmEntityAdapter implements EntityAdapter {
       actor.userId,
     );
     const results = references.map(unresolved);
-    const wanted = new Map<string, { id: number; index: number }[]>();
+    const wanted = new Map<
+      string,
+      { scope: DataScope; entries: { id: number; index: number }[] }
+    >();
 
     references.forEach((reference, index) => {
       const readKey = READ_KEY[reference.type];
       if (!readKey) return;
-      if (!this.holds(actor, permissions, readKey)) return;
+      const scope = this.scopeFor(actor, permissions, readKey);
+      if (scope === "none") return;
       const id = Number(reference.id);
       if (!Number.isInteger(id) || id <= 0) return;
-      const batch = wanted.get(reference.type) ?? [];
-      batch.push({ id, index });
+      const batch = wanted.get(reference.type) ?? { scope, entries: [] };
+      batch.entries.push({ id, index });
       wanted.set(reference.type, batch);
     });
 
     await Promise.all(
       [...wanted].map(async ([type, batch]) => {
+        const ids = batch.entries.map((entry) => entry.id);
         const cards =
           type === "client"
-            ? await this.readClients(
-                actor.orgId,
-                batch.map((entry) => entry.id),
-              )
-            : await this.readDeals(
-                actor.orgId,
-                batch.map((entry) => entry.id),
-              );
-        for (const entry of batch) {
+            ? await this.readClients(actor, ids, batch.scope)
+            : await this.readDeals(actor, ids, batch.scope);
+        for (const entry of batch.entries) {
           const card = cards.get(entry.id);
           if (card) results[entry.index] = { status: "resolved", card };
         }
@@ -92,17 +92,21 @@ export class CrmEntityAdapter implements EntityAdapter {
     return { ok: false, reason: "invalid" };
   }
 
-  private holds(
+  private scopeFor(
     actor: EntityActor,
     permissions: Permissions,
     key: string,
-  ): boolean {
-    if (actor.isOrgOwner) return true;
-    const scope = permissions.get(key);
-    return scope !== undefined && scope !== "none";
+  ): DataScope {
+    if (actor.isOrgOwner) return "all";
+    return permissions.get(key) ?? "none";
   }
 
-  private async readClients(orgId: string, ids: number[]) {
+  private async readClients(
+    actor: EntityActor,
+    ids: number[],
+    scope: DataScope,
+  ) {
+    const { orgId, userId } = actor;
     const rows = await this.db
       .select({
         id: clients.id,
@@ -111,7 +115,15 @@ export class CrmEntityAdapter implements EntityAdapter {
         status: clients.status,
       })
       .from(clients)
-      .where(and(eq(clients.orgId, orgId), inArray(clients.id, ids)))
+      .where(
+        and(
+          eq(clients.orgId, orgId),
+          inArray(clients.id, ids),
+          applyScope(scope, orgId, userId, {
+            ownerColumn: clients.accountManagerId,
+          }),
+        ),
+      )
       .limit(ids.length);
 
     const byId = new Map<number, EntityCard>();
@@ -127,7 +139,12 @@ export class CrmEntityAdapter implements EntityAdapter {
     return byId;
   }
 
-  private async readDeals(orgId: string, ids: number[]) {
+  private async readDeals(
+    actor: EntityActor,
+    ids: number[],
+    scope: DataScope,
+  ) {
+    const { orgId, userId } = actor;
     const rows = await this.db
       .select({
         id: deals.id,
@@ -136,7 +153,14 @@ export class CrmEntityAdapter implements EntityAdapter {
       })
       .from(deals)
       .where(
-        and(eq(deals.orgId, orgId), inArray(deals.id, ids), isNull(deals.deletedAt)),
+        and(
+          eq(deals.orgId, orgId),
+          inArray(deals.id, ids),
+          isNull(deals.deletedAt),
+          applyScope(scope, orgId, userId, {
+            ownerColumn: deals.assignedToId,
+          }),
+        ),
       )
       .limit(ids.length);
 

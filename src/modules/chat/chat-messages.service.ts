@@ -16,6 +16,9 @@ import {
 import type { ChatAttachmentPayload } from "../realtime/dto/realtime.schemas";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { logger } from "../../common/logger/logger.service";
+import { registerAfterCommit } from "../../common/tenant/tenant-context";
+import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { CacheService } from "../../common/cache/cache.service";
 import { AblyService } from "../realtime/ably.service";
 import { WebPushService } from "../realtime/web-push.service";
@@ -243,11 +246,31 @@ export class ChatMessagesService {
       return { message: created, insertedAttachments: attachmentRows };
     });
 
-    void this.cache.invalidateNamespace(`chat:unread:${orgId}`).catch(() => undefined);
-    void this.replyReminders
-      .scheduleForMessage(orgId, channelId, message.id, userId)
-      .catch(() => undefined);
-    void this.dispatchMessageSideEffects(orgId, channelId, message, body, insertedAttachments).catch(() => undefined);
+    const deferred = () =>
+      runInNewTenantTransaction(this.db, orgId, async () => {
+        await this.cache.invalidateNamespace(`chat:unread:${orgId}`);
+        await this.replyReminders.scheduleForMessage(
+          orgId,
+          channelId,
+          message.id,
+          userId,
+        );
+        await this.dispatchMessageSideEffects(
+          orgId,
+          channelId,
+          message,
+          body,
+          insertedAttachments,
+        );
+      }).catch((error: unknown) => {
+        logger.error("chat message side effects failed", {
+          orgId,
+          channelId,
+          messageId: message.id,
+          error: error instanceof Error ? error.message : "Unknown error",
+        });
+      });
+    if (!registerAfterCommit(deferred)) void deferred();
 
     return message;
   }
@@ -325,8 +348,10 @@ export class ChatMessagesService {
         const individualMentionIds: string[] = [];
         for (const member of channelMembers) {
           if (!member.user || member.userId === userId) continue;
-          const memberName = member.user.name?.toLowerCase() ?? "";
-          if (matches.some(m => memberName.includes(m) || m.includes(memberName.split(" ")[0]))) {
+          const memberName = member.user.name?.trim().toLowerCase() ?? "";
+          if (!memberName) continue;
+          const firstName = memberName.split(" ")[0] ?? "";
+          if (matches.some(m => memberName.includes(m) || (firstName !== "" && m.includes(firstName)))) {
             individualMentionIds.push(member.userId);
           }
         }

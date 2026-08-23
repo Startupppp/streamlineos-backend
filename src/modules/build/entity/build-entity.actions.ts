@@ -2,6 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import type { TenantTx } from "../../../db/drizzle.types";
 import {
   projectMembers,
   projects,
@@ -118,12 +119,21 @@ export class BuildEntityActions {
     const valid = await resolveValidTicketStatuses(this.db, projectId, actor.orgId);
     if (!valid.has(nextStatus)) return { ok: false, reason: "invalid" };
 
-    await this.db
-      .update(tickets)
-      .set({ status: nextStatus, updatedAt: new Date() })
-      .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, actor.orgId)));
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(tickets)
+        .set({ status: nextStatus, updatedAt: new Date() })
+        .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, actor.orgId)));
 
-    await this.logActivity(actor, ticketId, "status_changed", currentStatus, nextStatus);
+      await this.logActivity(
+        tx,
+        actor,
+        ticketId,
+        "status_changed",
+        currentStatus,
+        nextStatus,
+      );
+    });
     this.audit.log({
       action: "ticket.status_changed",
       userId: actor.userId,
@@ -150,18 +160,21 @@ export class BuildEntityActions {
     const assigneeId = text(input, "assigneeId");
     if (!assigneeId) return { ok: false, reason: "invalid" };
 
-    await this.db
-      .update(tickets)
-      .set({ assigneeId, updatedAt: new Date() })
-      .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, actor.orgId)));
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(tickets)
+        .set({ assigneeId, updatedAt: new Date() })
+        .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, actor.orgId)));
 
-    await this.logActivity(
-      actor,
-      ticketId,
-      "assignee_changed",
-      currentAssigneeId,
-      assigneeId,
-    );
+      await this.logActivity(
+        tx,
+        actor,
+        ticketId,
+        "assignee_changed",
+        currentAssigneeId,
+        assigneeId,
+      );
+    });
     this.audit.log({
       action: "ticket.assignee_changed",
       userId: actor.userId,
@@ -184,18 +197,21 @@ export class BuildEntityActions {
     const dueDate = text(input, "dueDate");
     if (!dueDate) return { ok: false, reason: "invalid" };
 
-    await this.db
-      .update(tickets)
-      .set({ dueDate, updatedAt: new Date() })
-      .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, actor.orgId)));
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(tickets)
+        .set({ dueDate, updatedAt: new Date() })
+        .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, actor.orgId)));
 
-    await this.logActivity(
-      actor,
-      ticketId,
-      "due_date_changed",
-      currentDueDate,
-      dueDate,
-    );
+      await this.logActivity(
+        tx,
+        actor,
+        ticketId,
+        "due_date_changed",
+        currentDueDate,
+        dueDate,
+      );
+    });
     this.audit.log({
       action: "ticket.due_date_changed",
       userId: actor.userId,
@@ -283,22 +299,20 @@ export class BuildEntityActions {
   }
 
   private async logActivity(
+    tx: TenantTx,
     actor: EntityActor,
     ticketId: number,
     action: TicketActivityAction,
     fromValue: string | null,
     toValue: string | null,
   ): Promise<void> {
-    await this.db
-      .insert(ticketActivityLog)
-      .values({
-        orgId: actor.orgId,
-        ticketId,
-        userId: actor.userId,
-        action,
-        fromValue,
-        toValue,
-      })
-      .catch(() => undefined);
+    await tx.insert(ticketActivityLog).values({
+      orgId: actor.orgId,
+      ticketId,
+      userId: actor.userId,
+      action,
+      fromValue,
+      toValue,
+    });
   }
 }

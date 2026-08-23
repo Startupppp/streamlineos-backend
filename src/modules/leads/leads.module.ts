@@ -14,6 +14,7 @@ import { LeadsDetailController } from "./leads-detail.controller";
 import { LeadsOpsController } from "./leads-ops.controller";
 import { LeadsService } from "./leads.service";
 import { LeadsBoardService } from "./leads-board.service";
+import { LeadsReadService } from "./leads-read.service";
 import { LeadsReportsService } from "./leads-reports.service";
 import { LeadsReportsTeamService } from "./leads-reports-team.service";
 import { LeadsExportsService } from "./leads-exports.service";
@@ -33,6 +34,7 @@ import { LeadNotificationAiService } from "./lead-notification-ai.service";
   ],
   providers: [
     LeadsBoardService,
+    LeadsReadService,
     LeadsService,
     LeadsReportsService,
     LeadsReportsTeamService,

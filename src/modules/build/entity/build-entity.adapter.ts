@@ -1,12 +1,14 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, type SQL } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import {
   projectIncidents,
+  projectMembers,
   projectReleases,
   projects,
   sprints,
+  ticketAssignees,
   tickets,
 } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
@@ -176,14 +178,21 @@ export class BuildEntityAdapter implements EntityAdapter {
     return this.actions.run(actor, reference, actionId, input);
   }
 
+  private scopeFor(
+    actor: EntityActor,
+    permissions: Permissions,
+    key: string,
+  ): DataScope {
+    if (actor.isOrgOwner) return "all";
+    return permissions.get(key) ?? "none";
+  }
+
   private holds(
     actor: EntityActor,
     permissions: Permissions,
     key: string,
   ): boolean {
-    if (actor.isOrgOwner) return true;
-    const scope = permissions.get(key);
-    return scope !== undefined && scope !== "none";
+    return this.scopeFor(actor, permissions, key) !== "none";
   }
 
   private async resolveWith(
@@ -192,27 +201,32 @@ export class BuildEntityAdapter implements EntityAdapter {
     permissions: Permissions,
   ): Promise<EntityResolution[]> {
     const results = references.map(unresolved);
-    const wanted = new Map<string, { id: number; index: number }[]>();
+    const wanted = new Map<
+      string,
+      { scope: DataScope; entries: { id: number; index: number }[] }
+    >();
 
     references.forEach((reference, index) => {
       const readKey = READ_KEY[reference.type];
       if (!readKey) return;
-      if (!this.holds(actor, permissions, readKey)) return;
+      const scope = this.scopeFor(actor, permissions, readKey);
+      if (scope === "none") return;
       const id = numericId(reference);
       if (id === null) return;
-      const batch = wanted.get(reference.type) ?? [];
-      batch.push({ id, index });
+      const batch = wanted.get(reference.type) ?? { scope, entries: [] };
+      batch.entries.push({ id, index });
       wanted.set(reference.type, batch);
     });
 
     await Promise.all(
       [...wanted].map(async ([type, batch]) => {
         const cards = await this.readCards(
-          actor.orgId,
+          actor,
           type,
-          batch.map((entry) => entry.id),
+          batch.entries.map((entry) => entry.id),
+          batch.scope,
         );
-        for (const entry of batch) {
+        for (const entry of batch.entries) {
           const card = cards.get(entry.id);
           if (card) results[entry.index] = { status: "resolved", card };
         }
@@ -223,26 +237,79 @@ export class BuildEntityAdapter implements EntityAdapter {
   }
 
   private async readCards(
-    orgId: string,
+    actor: EntityActor,
     type: string,
     ids: number[],
+    scope: DataScope,
   ): Promise<Map<number, EntityCard>> {
-    if (isTicketType(type)) return this.readTickets(orgId, type, ids);
+    if (isTicketType(type)) return this.readTickets(actor, type, ids, scope);
     switch (type) {
       case "project":
-        return this.readProjects(orgId, ids);
+        return this.readProjects(actor, ids, scope);
       case "sprint":
-        return this.readSprints(orgId, ids);
+        return this.readSprints(actor, ids, scope);
       case "release":
-        return this.readReleases(orgId, ids);
+        return this.readReleases(actor, ids, scope);
       case "incident":
-        return this.readIncidents(orgId, ids);
+        return this.readIncidents(actor, ids, scope);
       default:
         return new Map();
     }
   }
 
-  private async readTickets(orgId: string, type: string, ids: number[]) {
+  private async memberProjectIds(
+    orgId: string,
+    userId: string,
+    projectIds: number[],
+  ): Promise<Set<number>> {
+    if (projectIds.length === 0) return new Set();
+    const rows = await this.db
+      .select({ projectId: projectMembers.projectId })
+      .from(projectMembers)
+      .where(
+        and(
+          eq(projectMembers.orgId, orgId),
+          eq(projectMembers.userId, userId),
+          inArray(projectMembers.projectId, projectIds),
+        ),
+      );
+    return new Set(rows.map((row) => row.projectId));
+  }
+
+  private async readTickets(
+    actor: EntityActor,
+    type: string,
+    ids: number[],
+    scope: DataScope,
+  ) {
+    const { orgId, userId } = actor;
+    const conditions: SQL[] = [
+      eq(tickets.orgId, orgId),
+      inArray(tickets.id, ids),
+      isNull(tickets.deletedAt),
+    ];
+
+    if (scope !== "all") {
+      const assigned = await this.db
+        .select({ ticketId: ticketAssignees.ticketId })
+        .from(ticketAssignees)
+        .where(
+          and(
+            eq(ticketAssignees.orgId, orgId),
+            eq(ticketAssignees.userId, userId),
+            inArray(ticketAssignees.ticketId, ids),
+          ),
+        );
+      const assignedIds = assigned.map((row) => row.ticketId);
+      const reachable = or(
+        eq(tickets.assigneeId, userId),
+        eq(tickets.reporterId, userId),
+        ...(assignedIds.length > 0 ? [inArray(tickets.id, assignedIds)] : []),
+      );
+      if (!reachable) return new Map<number, EntityCard>();
+      conditions.push(reachable);
+    }
+
     const rows = await this.db
       .select({
         id: tickets.id,
@@ -253,13 +320,7 @@ export class BuildEntityAdapter implements EntityAdapter {
       })
       .from(tickets)
       .innerJoin(projects, eq(tickets.projectId, projects.id))
-      .where(
-        and(
-          eq(tickets.orgId, orgId),
-          inArray(tickets.id, ids),
-          isNull(tickets.deletedAt),
-        ),
-      )
+      .where(and(...conditions))
       .limit(ids.length);
 
     return this.index(rows, (row) => ({
@@ -272,7 +333,24 @@ export class BuildEntityAdapter implements EntityAdapter {
     }));
   }
 
-  private async readProjects(orgId: string, ids: number[]) {
+  private async readProjects(
+    actor: EntityActor,
+    ids: number[],
+    scope: DataScope,
+  ) {
+    const { orgId, userId } = actor;
+    const conditions: SQL[] = [
+      eq(projects.orgId, orgId),
+      inArray(projects.id, ids),
+      isNull(projects.deletedAt),
+    ];
+
+    if (scope !== "all") {
+      const reachable = await this.memberProjectIds(orgId, userId, ids);
+      if (reachable.size === 0) return new Map<number, EntityCard>();
+      conditions.push(inArray(projects.id, [...reachable]));
+    }
+
     const rows = await this.db
       .select({
         id: projects.id,
@@ -281,13 +359,7 @@ export class BuildEntityAdapter implements EntityAdapter {
         status: projects.status,
       })
       .from(projects)
-      .where(
-        and(
-          eq(projects.orgId, orgId),
-          inArray(projects.id, ids),
-          isNull(projects.deletedAt),
-        ),
-      )
+      .where(and(...conditions))
       .limit(ids.length);
 
     return this.index(rows, (row) => ({
@@ -300,8 +372,24 @@ export class BuildEntityAdapter implements EntityAdapter {
     }));
   }
 
-  private async readSprints(orgId: string, ids: number[]) {
-    const rows = await this.db
+  private async keepReachable<T extends { projectId: number }>(
+    actor: EntityActor,
+    scope: DataScope,
+    rows: T[],
+  ): Promise<T[]> {
+    if (scope === "all") return rows;
+    const reachable = await this.memberProjectIds(actor.orgId, actor.userId, [
+      ...new Set(rows.map((row) => row.projectId)),
+    ]);
+    return rows.filter((row) => reachable.has(row.projectId));
+  }
+
+  private async readSprints(
+    actor: EntityActor,
+    ids: number[],
+    scope: DataScope,
+  ) {
+    const found = await this.db
       .select({
         id: sprints.id,
         name: sprints.name,
@@ -311,12 +399,13 @@ export class BuildEntityAdapter implements EntityAdapter {
       .from(sprints)
       .where(
         and(
-          eq(sprints.orgId, orgId),
+          eq(sprints.orgId, actor.orgId),
           inArray(sprints.id, ids),
           isNull(sprints.deletedAt),
         ),
       )
       .limit(ids.length);
+    const rows = await this.keepReachable(actor, scope, found);
 
     return this.index(rows, (row) => ({
       type: "sprint",
@@ -328,8 +417,12 @@ export class BuildEntityAdapter implements EntityAdapter {
     }));
   }
 
-  private async readReleases(orgId: string, ids: number[]) {
-    const rows = await this.db
+  private async readReleases(
+    actor: EntityActor,
+    ids: number[],
+    scope: DataScope,
+  ) {
+    const found = await this.db
       .select({
         id: projectReleases.id,
         name: projectReleases.name,
@@ -340,12 +433,13 @@ export class BuildEntityAdapter implements EntityAdapter {
       .from(projectReleases)
       .where(
         and(
-          eq(projectReleases.orgId, orgId),
+          eq(projectReleases.orgId, actor.orgId),
           inArray(projectReleases.id, ids),
           isNull(projectReleases.deletedAt),
         ),
       )
       .limit(ids.length);
+    const rows = await this.keepReachable(actor, scope, found);
 
     return this.index(rows, (row) => ({
       type: "release",
@@ -357,24 +451,30 @@ export class BuildEntityAdapter implements EntityAdapter {
     }));
   }
 
-  private async readIncidents(orgId: string, ids: number[]) {
-    const rows = await this.db
+  private async readIncidents(
+    actor: EntityActor,
+    ids: number[],
+    scope: DataScope,
+  ) {
+    const found = await this.db
       .select({
         id: projectIncidents.id,
         title: projectIncidents.title,
         incidentNumber: projectIncidents.incidentNumber,
         status: projectIncidents.status,
         severity: projectIncidents.severity,
+        projectId: projectIncidents.projectId,
       })
       .from(projectIncidents)
       .where(
         and(
-          eq(projectIncidents.orgId, orgId),
+          eq(projectIncidents.orgId, actor.orgId),
           inArray(projectIncidents.id, ids),
           isNull(projectIncidents.deletedAt),
         ),
       )
       .limit(ids.length);
+    const rows = await this.keepReachable(actor, scope, found);
 
     return this.index(rows, (row) => ({
       type: "incident",

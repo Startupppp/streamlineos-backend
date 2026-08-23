@@ -1,6 +1,7 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { ForbiddenException } from "@nestjs/common";
 import { LeadsService } from "../leads.service";
+import { LeadsReadService } from "../leads-read.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -59,6 +60,7 @@ describe("LeadsService plan-limit enforcement", () => {
         { provide: CrmAttributionReportService, useValue: { recordTouch: jest.fn().mockResolvedValue(undefined) } },
         { provide: TerritoryMatchService, useValue: {} },
         { provide: LeadsBoardService, useValue: { getBoard: jest.fn(), getStats: jest.fn() } },
+        { provide: LeadsReadService, useValue: { listLeads: jest.fn(), getBoard: jest.fn(), getStats: jest.fn(), getLead: jest.fn() } },
       ],
     }).compile();
 
