@@ -1,5 +1,7 @@
-import { HttpException, HttpStatus, Injectable } from "@nestjs/common";
+import { HttpException, HttpStatus, Inject, Injectable } from "@nestjs/common";
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { APP_CONFIG } from "../../../config/config.module";
+import type { AppConfig } from "../../../config/env.validation";
 import {
   razorpayOrderErrorSchema,
   razorpayOrderSchema,
@@ -14,16 +16,18 @@ interface CreateOrderParams {
 
 @Injectable()
 export class RazorpayService {
+  constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {}
+
   private get keyId(): string | undefined {
-    return process.env.RAZORPAY_KEY_ID;
+    return this.config.RAZORPAY_KEY_ID;
   }
 
   private get keySecret(): string | undefined {
-    return process.env.RAZORPAY_KEY_SECRET;
+    return this.config.RAZORPAY_KEY_SECRET;
   }
 
   private get webhookSecret(): string | undefined {
-    return process.env.RAZORPAY_WEBHOOK_SECRET;
+    return this.config.RAZORPAY_WEBHOOK_SECRET;
   }
 
   isConfigured(): boolean {

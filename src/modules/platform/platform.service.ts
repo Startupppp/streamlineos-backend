@@ -16,6 +16,8 @@ import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
 import { EmailService } from "../email/email.service";
 import { getSupportEmail } from "../email/branding";
+import { APP_CONFIG } from "../../config/config.module";
+import type { AppConfig } from "../../config/env.validation";
 import {
   getContactAdminNotificationEmail,
   getContactAutoreplyEmail,
@@ -31,8 +33,6 @@ export interface VisitMeta {
 const DAY_MS = 24 * 60 * 60 * 1000;
 const inr = (paise: number) => Math.round(paise / 100);
 
-const BRAND_URL = (process.env.APP_URL ?? "").replace(/\/$/, "");
-
 const TOPIC_LABEL: Record<string, string> = {
   sales: "Talk to sales",
   support: "Get support",
@@ -41,17 +41,22 @@ const TOPIC_LABEL: Record<string, string> = {
   other: "Something else",
 };
 
-function getContactRecipients(): string[] {
-  const recipient = process.env.CONTACT_NOTIFICATION_EMAIL?.trim();
-  return recipient ? [recipient] : [getSupportEmail()];
-}
-
 @Injectable()
 export class PlatformService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
     private readonly email: EmailService,
   ) {}
+
+  private get brandUrl(): string {
+    return this.config.APP_URL.replace(/\/$/, "");
+  }
+
+  private getContactRecipients(): string[] {
+    const recipient = this.config.CONTACT_NOTIFICATION_EMAIL?.trim();
+    return recipient ? [recipient] : [getSupportEmail()];
+  }
 
   async submitContactForm(input: ContactFormInput): Promise<{ ok: true }> {
     const reference = `MSG-${randomBytes(6).toString("hex").toUpperCase()}`;
@@ -67,7 +72,7 @@ export class PlatformService {
       status: "NEW",
     });
 
-    const adminRecipients = getContactRecipients();
+    const adminRecipients = this.getContactRecipients();
     const topicLabel = TOPIC_LABEL[input.topic ?? "other"] ?? "Something else";
     const receivedAt = new Date().toLocaleDateString("en-GB", {
       weekday: "short",
@@ -86,7 +91,7 @@ export class PlatformService {
         receivedAt,
         company: input.company,
         phone: input.phone,
-        inboxUrl: `${BRAND_URL}/owner/inbox/${reference}`,
+        inboxUrl: `${this.brandUrl}/owner/inbox/${reference}`,
       });
       await this.email.sendEmail({
         to: adminRecipients,
