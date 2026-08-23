@@ -39,7 +39,7 @@ export const updateChannelSchema = z.object({
 export const sendMessageSchema = z.object({
   content: z.string().optional(),
   replyToId: z.number().optional(),
-  mentionedUserIds: z.array(z.string().uuid()).max(200).optional(),
+  mentionedUserIds: z.array(z.string().min(1)).max(200).optional(),
   attachments: z
     .array(
       z.object({
