@@ -1,53 +1,53 @@
+import { Inject, Injectable } from "@nestjs/common";
 import { Resend } from "resend";
 import { SendMailClient } from "zeptomail";
 import { logger } from "../../common/logger/logger.service";
+import { APP_CONFIG } from "../../config/config.module";
+import type { AppConfig } from "../../config/env.validation";
 import { getFromAddress, getFromParts } from "./email.constants";
+import {
+  fallbackProvider,
+  selectProvider,
+  type EmailOptions,
+  type Provider,
+} from "./email-provider-selection";
 
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 1000;
 const ZEPTOMAIL_TIMEOUT_MS = 30_000;
+const ZEPTOMAIL_DEFAULT_URL = "https://api.zeptomail.in/v1.1/email";
 
-const RESEND_API_KEY = process.env.RESEND_API_KEY;
-const ZEPTOMAIL_API_URL = process.env.ZEPTOMAIL_API_URL?.trim() || "https://api.zeptomail.in/v1.1/email";
-const ZEPTOMAIL_TOKEN_RAW = process.env.ZEPTOMAIL_TOKEN?.trim();
-const ZEPTOMAIL_TOKEN = ZEPTOMAIL_TOKEN_RAW
-  ? ZEPTOMAIL_TOKEN_RAW.startsWith("Zoho-enczapikey")
-    ? ZEPTOMAIL_TOKEN_RAW
-    : `Zoho-enczapikey ${ZEPTOMAIL_TOKEN_RAW}`
-  : undefined;
-const EMAIL_PROVIDER_PREFERENCE = process.env.EMAIL_PROVIDER?.toLowerCase().trim();
+export type {
+  EmailAttachment,
+  EmailDispatcher,
+  EmailOptions,
+  Provider,
+} from "./email-provider-selection";
 
-const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
-const zeptomail = ZEPTOMAIL_TOKEN
-  ? new SendMailClient({ url: ZEPTOMAIL_API_URL, token: ZEPTOMAIL_TOKEN })
-  : null;
-
-export type Provider = "zeptomail" | "resend" | "none";
-
-export interface EmailAttachment {
-  filename: string;
-  content: Buffer | string;
-  type: string;
-  cid?: string;
-  disposition?: "inline" | "attachment";
+interface EmailClients {
+  resend: Resend | null;
+  zeptomail: SendMailClient | null;
 }
 
-export interface EmailOptions {
-  to: string | string[];
-  subject: string;
-  html: string;
-  text?: string;
-  attachments?: EmailAttachment[];
-  replyTo?: string;
-  cc?: string | string[];
-  bcc?: string | string[];
-  organizationId?: string | null;
-  /**
-   * COMP-002. Extra RFC headers, currently `List-Unsubscribe` and
-   * `List-Unsubscribe-Post`. Set only on non-mandatory mail — a payslip or a security
-   * alert must not advertise an opt-out it will not honour.
-   */
-  headers?: Record<string, string>;
+function zeptomailToken(raw: string | undefined): string | undefined {
+  const trimmed = raw?.trim();
+  if (!trimmed) return undefined;
+  return trimmed.startsWith("Zoho-enczapikey")
+    ? trimmed
+    : `Zoho-enczapikey ${trimmed}`;
+}
+
+export function buildEmailClients(config: AppConfig): EmailClients {
+  const token = zeptomailToken(config.ZEPTOMAIL_TOKEN);
+  return {
+    resend: config.RESEND_API_KEY ? new Resend(config.RESEND_API_KEY) : null,
+    zeptomail: token
+      ? new SendMailClient({
+          url: config.ZEPTOMAIL_API_URL?.trim() || ZEPTOMAIL_DEFAULT_URL,
+          token,
+        })
+      : null,
+  };
 }
 
 class EmailSendError extends Error {
@@ -60,19 +60,6 @@ class EmailSendError extends Error {
   }
 }
 
-function resolveProvider(): Provider {
-  if (EMAIL_PROVIDER_PREFERENCE === "zeptomail" && zeptomail) return "zeptomail";
-  if (EMAIL_PROVIDER_PREFERENCE === "resend" && resend) return "resend";
-  if (zeptomail) return "zeptomail";
-  if (resend) return "resend";
-  return "none";
-}
-
-const activeProvider: Provider = resolveProvider();
-
-export function getEmailProvider(): Provider {
-  return activeProvider;
-}
 
 function normalizeRecipients(to: string | string[]): string[] {
   const arr = Array.isArray(to) ? to : [to];
@@ -129,7 +116,8 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   });
 }
 
-async function sendViaResend(options: EmailOptions): Promise<void> {
+async function sendViaResend(clients: EmailClients, options: EmailOptions): Promise<void> {
+  const resend = clients.resend;
   if (!resend) throw new EmailSendError("Resend not initialized", true);
 
   const recipients = normalizeRecipients(options.to);
@@ -211,7 +199,8 @@ function toBase64(content: Buffer | string): string {
   return Buffer.isBuffer(content) ? content.toString("base64") : content;
 }
 
-async function sendViaZeptomail(options: EmailOptions): Promise<void> {
+async function sendViaZeptomail(clients: EmailClients, options: EmailOptions): Promise<void> {
+  const zeptomail = clients.zeptomail;
   if (!zeptomail) throw new EmailSendError("ZeptoMail client not initialized", true);
 
   const recipients = normalizeRecipients(options.to);
@@ -252,34 +241,56 @@ async function sendViaZeptomail(options: EmailOptions): Promise<void> {
   }
 }
 
-async function sendWithProvider(provider: Provider, options: EmailOptions): Promise<void> {
+async function sendWithProvider(
+  clients: EmailClients,
+  provider: Provider,
+  options: EmailOptions,
+): Promise<void> {
   if (provider === "zeptomail") {
-    await sendViaZeptomail(options);
+    await sendViaZeptomail(clients, options);
     return;
   }
   if (provider === "resend") {
-    await sendViaResend(options);
+    await sendViaResend(clients, options);
     return;
   }
   throw new EmailSendError("No email provider configured", true);
 }
 
-export async function sendEmailOnceDirect(options: EmailOptions): Promise<void> {
-  const recipients = normalizeRecipients(options.to);
-  if (recipients.length === 0) {
-    logger.warn("EMAIL_SKIPPED: no recipients", { subject: options.subject });
-    return;
-  }
-  await sendWithProvider(activeProvider, { ...options, to: recipients });
-}
+@Injectable()
+export class EmailProviderService {
+  private readonly clients: EmailClients;
+  private readonly activeProvider: Provider;
 
-export async function dispatchEmail(options: EmailOptions): Promise<void> {
+  constructor(@Inject(APP_CONFIG) config: AppConfig) {
+    this.clients = buildEmailClients(config);
+    this.activeProvider = selectProvider(
+      config.EMAIL_PROVIDER,
+      this.clients.zeptomail !== null,
+      this.clients.resend !== null,
+    );
+  }
+
+  getEmailProvider(): Provider {
+    return this.activeProvider;
+  }
+
+  async sendEmailOnceDirect(options: EmailOptions): Promise<void> {
   const recipients = normalizeRecipients(options.to);
   if (recipients.length === 0) {
     logger.warn("EMAIL_SKIPPED: no recipients", { subject: options.subject });
     return;
   }
-  if (activeProvider === "none") {
+    await sendWithProvider(this.clients, this.activeProvider, { ...options, to: recipients });
+  }
+
+  async dispatchEmail(options: EmailOptions): Promise<void> {
+  const recipients = normalizeRecipients(options.to);
+  if (recipients.length === 0) {
+    logger.warn("EMAIL_SKIPPED: no recipients", { subject: options.subject });
+    return;
+  }
+  if (this.activeProvider === "none") {
     logger.warn("EMAIL_SKIPPED: no email provider configured", {
       to: recipients,
       subject: options.subject,
@@ -288,35 +299,34 @@ export async function dispatchEmail(options: EmailOptions): Promise<void> {
     throw new EmailSendError("No email provider configured", true);
   }
 
-  const fallbackProvider: Provider | null =
-    activeProvider === "zeptomail" && resend
-      ? "resend"
-      : activeProvider === "resend" && zeptomail
-        ? "zeptomail"
-        : null;
+  const fallback = fallbackProvider(
+    this.activeProvider,
+    this.clients.zeptomail !== null,
+    this.clients.resend !== null,
+  );
 
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      await sendWithProvider(activeProvider, options);
+      await sendWithProvider(this.clients, this.activeProvider, options);
       return;
     } catch (error) {
       lastError = error;
       if (!isTransientError(error)) {
-        if (fallbackProvider) {
+        if (fallback) {
           logger.warn("Email primary provider rejected send; trying fallback", {
-            primary: activeProvider,
-            fallback: fallbackProvider,
+            primary: this.activeProvider,
+            fallback,
             to: recipients,
             subject: options.subject,
           });
           try {
-            await sendWithProvider(fallbackProvider, options);
+            await sendWithProvider(this.clients, fallback, options);
             return;
           } catch (fallbackError) {
             logger.error("Email fallback provider failed", {
-              fallback: fallbackProvider,
+              fallback,
               to: recipients,
               subject: options.subject,
               error: fallbackError,
@@ -325,7 +335,7 @@ export async function dispatchEmail(options: EmailOptions): Promise<void> {
           }
         }
         logger.error("Email send failed (non-retryable)", {
-          provider: activeProvider,
+          provider: this.activeProvider,
           to: recipients,
           subject: options.subject,
           attempt,
@@ -336,7 +346,7 @@ export async function dispatchEmail(options: EmailOptions): Promise<void> {
       if (attempt < MAX_RETRIES) {
         const backoff = BASE_DELAY_MS * Math.pow(2, attempt - 1);
         logger.warn(`Email retry ${attempt}/${MAX_RETRIES}`, {
-          provider: activeProvider,
+          provider: this.activeProvider,
           to: recipients,
           subject: options.subject,
           nextRetryMs: backoff,
@@ -347,10 +357,11 @@ export async function dispatchEmail(options: EmailOptions): Promise<void> {
   }
 
   logger.error("Email send failed after all retries", {
-    provider: activeProvider,
+    provider: this.activeProvider,
     to: options.to,
     subject: options.subject,
     error: lastError,
   });
   throw lastError;
+  }
 }

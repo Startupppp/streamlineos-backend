@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { appUrl } from "./app-url";
 import { EmailSendersBase } from "./email-senders.base";
+import { EmailProviderService } from "./email.provider";
 import { getTrialReminderEmail } from "./templates/platform";
 import { EmailOutboxService } from "./email-outbox.service";
 import { type EmailOptions } from "./email.provider";
@@ -39,8 +40,11 @@ export type { EmailOptions } from "./email.provider";
 
 @Injectable()
 export class EmailService extends EmailSendersBase {
-  constructor(private readonly outbox: EmailOutboxService) {
-    super();
+  constructor(
+    private readonly outbox: EmailOutboxService,
+    emailProvider: EmailProviderService,
+  ) {
+    super(emailProvider);
   }
 
   override sendEmail(options: EmailOptions): Promise<void> {

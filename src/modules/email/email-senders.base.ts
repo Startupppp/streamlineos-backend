@@ -1,6 +1,6 @@
 import { appUrl } from "./app-url";
 import { getBrandName } from "./branding";
-import { dispatchEmail, type EmailOptions } from "./email.provider";
+import { EmailProviderService, type EmailOptions } from "./email.provider";
 import {
   getVerificationEmailTemplate,
   getMagicLinkEmailTemplate,
@@ -29,8 +29,10 @@ import {
 } from "./templates/notifications-misc";
 
 export abstract class EmailSendersBase {
+  protected constructor(protected readonly emailProvider: EmailProviderService) {}
+
   sendEmail(options: EmailOptions): Promise<void> {
-    return dispatchEmail(options);
+    return this.emailProvider.dispatchEmail(options);
   }
 
   sendVerificationEmail(email: string, token: string): Promise<void> {
