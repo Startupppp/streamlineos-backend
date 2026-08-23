@@ -7,6 +7,7 @@ import {
 import { Reflector } from "@nestjs/core";
 
 import { DeprecationInterceptor } from "./common/deprecation/deprecation.interceptor";
+import { ObservabilityEnrichmentInterceptor } from "./common/observability";
 import { ConfigModule } from "./config/config.module";
 import { JwtAuthGuard } from "./common/auth/jwt-auth.guard";
 import { AuthContextModule } from "./common/auth/auth-context.module";
@@ -174,6 +175,8 @@ import { ZodValidationInterceptor } from "./common/validation/zod-validation.int
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: MfaGuard },
     { provide: APP_GUARD, useClass: ModuleGuard },
+    // First interceptor to run, so everything after it logs under a known caller.
+    { provide: APP_INTERCEPTOR, useClass: ObservabilityEnrichmentInterceptor },
     { provide: APP_INTERCEPTOR, useClass: DeprecationInterceptor },
     { provide: APP_INTERCEPTOR, useClass: ZodValidationInterceptor },
     { provide: APP_INTERCEPTOR, useClass: TenantContextInterceptor },

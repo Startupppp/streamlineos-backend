@@ -2,6 +2,7 @@ import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from
 import type { Request, Response } from "express";
 import { ZodError } from "zod";
 import { logger } from "../logger/logger.service";
+import { reportError } from "../observability/error-reporter";
 import { isTransientDbError } from "../db/transient-error";
 
 type ApiErrorEnvelope = {
@@ -63,14 +64,22 @@ function describeUnhandled(exception: unknown): Record<string, unknown> {
   const query = record["query"];
   const column = record["column_name"];
   const table = record["table_name"];
+  // `detail`, `hint` and `query` quote the offending row — a unique violation sets
+  // detail to `Key (email)=(ada@example.com) already exists.` — so they are grouped
+  // under one key the redactor withholds. Table, column and SQLSTATE carry no row
+  // data and stay readable, which is what makes the redaction survivable.
+  const driverDetail: Record<string, unknown> = {
+    ...(typeof detail === "string" ? { detail } : {}),
+    ...(typeof hint === "string" ? { hint } : {}),
+    ...(typeof query === "string" ? { query } : {}),
+  };
+
   return {
     message: exception.message,
     stack: exception.stack,
-    ...(typeof detail === "string" ? { detail } : {}),
-    ...(typeof hint === "string" ? { hint } : {}),
     ...(typeof column === "string" ? { column } : {}),
     ...(typeof table === "string" ? { table } : {}),
-    ...(typeof query === "string" ? { query } : {}),
+    ...(Object.keys(driverDetail).length > 0 ? { driverDetail } : {}),
   };
 }
 
@@ -121,11 +130,18 @@ export class AllExceptionsFilter implements ExceptionFilter {
       return;
     }
 
+    const request = describeRequest(host);
+
+    // `error: exception` used to be passed here and serialised to `{}` — an Error's
+    // own fields are not enumerable, so it carried nothing. `describeUnhandled`
+    // is the part that actually says what went wrong.
     logger.error("Unhandled exception", {
-      error: exception,
       ...describeUnhandled(exception),
-      request: describeRequest(host),
+      request,
     });
+
+    // The logger has the record either way; this is the copy a human gets paged on.
+    reportError(exception, request);
     res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       code: "INTERNAL_ERROR",
       message: "An unexpected error occurred",

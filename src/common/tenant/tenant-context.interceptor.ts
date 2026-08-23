@@ -17,6 +17,7 @@ import {
   type TenantAudience,
 } from "./tenant-context";
 import { withTenant } from "./with-tenant";
+import { bindObservabilityContext, reportError } from "../observability";
 
 interface TenantBearingRequest {
   user?: { orgId?: string };
@@ -74,12 +75,18 @@ export class TenantContextInterceptor implements NestInterceptor {
       ),
     );
 
-    for (const hook of afterCommit)
-      void hook().catch((error: unknown) => {
+    for (const hook of afterCommit) {
+      // Bound explicitly: the hook is detached from the request, and inheriting the
+      // caller's identity by accident is not something to rely on.
+      const run = bindObservabilityContext(hook);
+      void run().catch((error: unknown) => {
         this.logger.error(
           `after-commit hook failed for org ${resolved.orgId}: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
         );
+        // A deferred failure that is only logged is the next outage nobody saw coming.
+        reportError(error, { orgId: resolved.orgId, phase: "after-commit" });
       });
+    }
 
     return result;
   }

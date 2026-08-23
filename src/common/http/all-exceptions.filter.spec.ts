@@ -1,6 +1,12 @@
 import { ArgumentsHost, BadRequestException, HttpException, NotFoundException } from "@nestjs/common";
 import { ZodError, z } from "zod";
 import { AllExceptionsFilter } from "./all-exceptions.filter";
+import {
+  resetErrorReporter,
+  setErrorReporter,
+  type ErrorReport,
+} from "../observability/error-reporter";
+import { runWithObservabilityContext } from "../observability/observability-context";
 
 function hostWith(): { host: ArgumentsHost; json: jest.Mock; status: jest.Mock } {
   const json = jest.fn();
@@ -98,6 +104,70 @@ describe("AllExceptionsFilter", () => {
     expect(json).toHaveBeenCalledWith({
       code: "HTTP_502",
       message: "Delivery failed.",
+    });
+  });
+
+  describe("operational reporting", () => {
+    let reports: ErrorReport[];
+
+    beforeEach(() => {
+      reports = [];
+      setErrorReporter({ report: (r) => reports.push(r) });
+    });
+    afterEach(() => resetErrorReporter());
+
+    it("reports an unhandled error so a human is told, not just a log file", () => {
+      const { host } = hostWith();
+      const boom = new Error("boom");
+
+      filter.catch(boom, host);
+
+      expect(reports).toHaveLength(1);
+      expect(reports[0].error).toBe(boom);
+      expect(reports[0].extra).toMatchObject({ method: "GET", url: "/x" });
+    });
+
+    it("attaches the correlation identity so the report joins the request's logs", async () => {
+      const { host } = hostWith();
+
+      await runWithObservabilityContext(
+        { correlationId: "c-1", orgId: "org-1" },
+        async () => filter.catch(new Error("boom"), host),
+      );
+
+      expect(reports[0].context).toMatchObject({ correlationId: "c-1", orgId: "org-1" });
+    });
+
+    it("does not report an expected client error", () => {
+      const { host } = hostWith();
+      filter.catch(new NotFoundException("Deal not found"), host);
+      expect(reports).toHaveLength(0);
+    });
+
+    it("keeps driver diagnostics that quote the offending row out of the log", () => {
+      const { host } = hostWith();
+      const stderr = jest.spyOn(process.stderr, "write").mockReturnValue(true);
+
+      // A real 23505 populates `detail` far more often than `query`.
+      const dbError = Object.assign(new Error("duplicate key value violates unique constraint"), {
+        code: "23505",
+        detail: "Key (email)=(ada@example.com) already exists.",
+        hint: "Try a different address for ada@example.com",
+        query: "insert into parties (email) values ('ada@example.com')",
+        table_name: "parties",
+        column_name: "email",
+      });
+      filter.catch(dbError, host);
+
+      const written = stderr.mock.calls.map((call) => String(call[0])).join("");
+      stderr.mockRestore();
+
+      expect(written).not.toContain("ada@example.com");
+      expect(written).toContain("[redacted]");
+      // The non-sensitive diagnostics survive, or the redaction is useless.
+      expect(written).toContain("parties");
+      expect(written).toContain("email");
+      expect(written).toContain("duplicate key value violates unique constraint");
     });
   });
 });
