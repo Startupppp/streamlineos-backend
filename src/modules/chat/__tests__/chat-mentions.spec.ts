@@ -49,6 +49,11 @@ describe("resolveMentionedUserIds", () => {
     expect(await resolve("talking to myself @Sam", [SENDER])).toEqual([]);
   });
 
+  it("notifies the whole channel for @everyone when no identities are sent at all", async () => {
+    const ids = await resolve("@everyone standup");
+    expect(ids.sort()).toEqual([ALEX, ALEXANDER].sort());
+  });
+
   it("still notifies the whole channel for @everyone", async () => {
     const ids = await resolve("@everyone standup", []);
     expect(ids.sort()).toEqual([ALEX, ALEXANDER].sort());

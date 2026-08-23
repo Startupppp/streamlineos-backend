@@ -58,6 +58,21 @@ describe("ChatMessagesService.send", () => {
     expect(dispatch).toHaveBeenCalledTimes(1);
   });
 
+  it("hands the composer's mention identities to the fan-out", async () => {
+    const dispatch = jest.fn().mockResolvedValue(undefined);
+    const service = makeService({ dispatch });
+
+    await service.send(1, "sender", "org-1", {
+      content: "hello @alex",
+      mentionedUserIds: ["user-alex"],
+    } as never);
+    await flushDeferred();
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ mentionedUserIds: ["user-alex"] }),
+    );
+  });
+
   it("returns the persisted message", async () => {
     const service = makeService({ dispatch: jest.fn().mockResolvedValue(undefined) });
 
