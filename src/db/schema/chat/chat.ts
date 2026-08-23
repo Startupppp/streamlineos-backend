@@ -48,6 +48,11 @@ export const chatChannels = pgTable(
   (table) => [
     index("idx_chat_channels_org").on(table.orgId),
     index("idx_chat_channels_last_msg").on(table.orgId, table.lastMessageAt),
+    index("idx_chat_channels_org_entity").on(
+      table.orgId,
+      table.entityType,
+      table.entityId,
+    ),
     unique("uniq_chat_channels_org_id").on(table.orgId, table.id),
   ],
 );
