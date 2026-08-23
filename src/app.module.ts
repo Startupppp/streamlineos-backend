@@ -9,6 +9,7 @@ import { Reflector } from "@nestjs/core";
 import { DeprecationInterceptor } from "./common/deprecation/deprecation.interceptor";
 import { ObservabilityEnrichmentInterceptor } from "./common/observability";
 import { RegionModule } from "./common/region/region.module";
+import { WorkflowModule } from "./common/workflow";
 import { ConfigModule } from "./config/config.module";
 import { JwtAuthGuard } from "./common/auth/jwt-auth.guard";
 import { AuthContextModule } from "./common/auth/auth-context.module";
@@ -94,6 +95,7 @@ import { ZodValidationInterceptor } from "./common/validation/zod-validation.int
 @Module({
   imports: [
     RegionModule,
+    WorkflowModule,
     ConfigModule,
     DrizzleModule,
     CacheModule,
