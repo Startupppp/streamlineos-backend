@@ -473,4 +473,41 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
       expect(res.body).toMatchObject({ code: "VALIDATION_FAILED" });
     });
   });
+
+  describe("Home is routed like any other managed module", () => {
+    const homeRoutes: ReadonlyArray<[Method, string]> = [
+      ["get", "/module-access/home/catalog"],
+      ["get", "/module-access/home/roles"],
+      ["get", "/module-access/home/groups"],
+      ["get", "/module-access/home/ownership"],
+    ];
+
+    it.each(homeRoutes)("401 on %s %s without a token", async (method, path) => {
+      const res = await callRoute(method, path);
+      expect(res.status).toBe(401);
+    });
+
+    it("GET /module-access/home/catalog reaches the service rather than 404ing", async () => {
+      const token = await signToken({ sub: "owner_ma_1" });
+      const res = await request(app.getHttpServer())
+        .get("/module-access/home/catalog")
+        .set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(200);
+      expect(mockModuleAccessService.listCatalog).toHaveBeenCalledWith(
+        expect.objectContaining({ orgId: expect.any(String) }),
+        "home",
+      );
+    });
+
+    it("surfaces the service's refusal for a caller with no standing", async () => {
+      mockModuleAccessService.listCatalog.mockRejectedValue(
+        new ForbiddenException("You do not have access to manage this module's roles"),
+      );
+      const token = await signToken({ sub: "member_ma_1" });
+      const res = await request(app.getHttpServer())
+        .get("/module-access/home/catalog")
+        .set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(403);
+    });
+  });
 });

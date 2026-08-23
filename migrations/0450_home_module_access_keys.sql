@@ -29,8 +29,6 @@ WHERE r."is_system" = true
   AND EXISTS (SELECT 1 FROM "permissions" p WHERE p."name" = 'home:access:view')
 ON CONFLICT DO NOTHING;
 --> statement-breakpoint
--- Resolution is cached per (userId, orgId) and busted by permissions_version, so anyone who just
--- gained the key must not wait for their cache to expire.
 INSERT INTO "access_versions" ("org_id", "permissions_version", "updated_at")
 SELECT DISTINCT r."org_id", 2, now()
 FROM "roles" r

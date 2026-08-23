@@ -232,6 +232,19 @@ describe("ModuleAccessService", () => {
         svc.assertModuleAccess(actor(), "hr", "view"),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
+
+    it("lets a STRUCTURAL org admin read a module they hold no key for", async () => {
+      (
+        mockDb.query as { organizationMembers: { findFirst: jest.Mock } }
+      ).organizationMembers.findFirst.mockResolvedValue({
+        isOwner: false,
+        role: "ORG_ADMIN",
+      });
+
+      await expect(
+        svc.assertModuleAccess(actor(), "home", "view"),
+      ).resolves.toBeUndefined();
+    });
   });
 
   describe("moduleCatalog / listCatalog", () => {
