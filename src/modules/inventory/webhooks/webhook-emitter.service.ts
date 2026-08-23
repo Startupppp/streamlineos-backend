@@ -53,7 +53,7 @@ export class InventoryWebhookEmitter {
 
           // Re-validate immediately before the outbound fetch to close the
           // DNS-rebinding / TOCTOU window between registration and delivery.
-          const isProd = process.env["NODE_ENV"] === "production";
+          const isProd = process.env.NODE_ENV === "production";
           let safeToFetch = true;
           try {
             await assertSafeWebhookUrl(webhook.url, isProd);

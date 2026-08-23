@@ -128,6 +128,7 @@ export class WorkflowScriptExecutor
     const cjsVariant: QuickJSSyncVariant = {
       type: "sync",
       importFFI: RELEASE_SYNC.importFFI,
+      // eslint-disable-next-line @typescript-eslint/no-require-imports -- the WASM module is CJS; import() of it fails under Jest
       importModuleLoader: () => Promise.resolve(require(emscriptenPath)),
     };
     this.quickJS = await newQuickJSWASMModuleFromVariant(cjsVariant);
