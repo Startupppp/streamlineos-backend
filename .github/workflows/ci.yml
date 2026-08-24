@@ -1,0 +1,80 @@
+name: Backend CI
+
+# The previous config sat at the repository root as `backend.yml`, where GitHub
+# never looks, and ran `npm ci` against `backend/package-lock.json` -- a path and
+# a package manager this repository does not use. So nothing was enforced.
+#
+# Ticket 12's acceptance gates live in `evals/*.eval.spec.ts` and are asserted by
+# `meetsGate` against `EVAL_ACCEPTANCE`. They run under `pnpm test`, so a prompt
+# or model change that regresses one of them fails this job.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # The live evals cost provider credits, so they are not on every push. Once a
+  # day is enough to catch a model the provider changed underneath us.
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      # Includes the eval acceptance gates. The heap is raised because the
+      # project's own typecheck needs it and jest transpiles the same tree.
+      - name: Test
+        run: pnpm test
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+
+      - name: Build
+        run: pnpm build
+
+  # Separate job so a provider outage or a credit limit fails visibly on its own
+  # rather than looking like a broken build.
+  live-evals:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Live evals against the real models
+        run: pnpm test -- evals/
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+          # Every eval spec in the repo gates its live block on this one var, so
+          # supplying it is what turns the six of them on.
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

@@ -1,5 +1,8 @@
 export const AI_FEATURE_COSTS: Readonly<Record<string, number>> = {
   "crm.score-lead": 1,
+  // Ticket 12: one small-model call per inbound activity, reading a capped
+  // conversation and returning a next step plus a stage inference.
+  "crm.autonomy-extract": 1,
   "crm.predict-deal": 1,
   "crm.churn-risk": 1,
   "crm.next-action": 1,
