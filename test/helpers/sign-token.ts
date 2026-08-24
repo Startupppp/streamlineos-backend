@@ -4,15 +4,16 @@ import {
   INTERNAL_TOKEN_ISSUER,
   type BackendClaims,
 } from "src/common/auth/backend-claims";
-import { MODULE_CATALOG } from "src/common/rbac/module-vocabulary";
+import { moduleIds } from "src/common/rbac/module-registry";
 
 /**
- * Every plan-gated module enabled. A permission-tier test has to get past the
- * module tier first — `authorize` answers NO_MODULE before it reads a single
- * grant — so a token with no modules proves 402, never the 403 the test is
- * named for. The module tier has its own cases.
+ * EVERY module, not just the plan-gated ones. A permission-tier test has to get past
+ * the module tier first — `authorize` answers NO_MODULE before it reads a single grant —
+ * so a token missing a module proves 402, never the 403 the test is named for. This read
+ * MODULE_CATALOG until that constant became money-only, at which point chat and kb fell
+ * out of it and seven chat specs started failing on 402.
  */
-export const ALL_MODULES: string[] = [...MODULE_CATALOG];
+export const ALL_MODULES: string[] = moduleIds();
 
 type IgnoredClaims = {
   branchId?: string | null;
