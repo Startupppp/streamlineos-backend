@@ -89,4 +89,47 @@ describe("BuildCalendarSource", () => {
     const result = await source.load(ctx);
     expect(result).toHaveLength(0);
   });
+
+  it("surfaces a ticket from a project the user is a member of and returns nothing when the join yields no rows", async () => {
+    const ticketRow = {
+      id: 15,
+      title: "Fix crash",
+      dueDate: "2026-08-20",
+      status: "open",
+      ticketNumber: 5,
+      projectId: 2,
+      projectKey: "APP",
+    };
+
+    const allowSource = await buildSource(buildDb([ticketRow]));
+    const allowResult = await allowSource.load(ctx);
+    expect(allowResult).toHaveLength(1);
+    expect(allowResult[0]?.id).toBe("ticket-15");
+
+    const denySource = await buildSource(buildDb([]));
+    const denyResult = await denySource.load(ctx);
+    expect(denyResult).toHaveLength(0);
+  });
+
+  it("ticket projection includes correct start, end and color fields", async () => {
+    const source = await buildSource(
+      buildDb([
+        {
+          id: 8,
+          title: "Update docs",
+          dueDate: "2026-08-25",
+          status: "open",
+          ticketNumber: 3,
+          projectId: 1,
+          projectKey: "DOC",
+        },
+      ]),
+    );
+    const result = await source.load(ctx);
+
+    const proj = result[0];
+    expect(proj?.start).toEqual(new Date("2026-08-25"));
+    expect(proj?.end).toEqual(new Date("2026-08-25"));
+    expect(proj?.color).toBe("blue");
+  });
 });

@@ -229,7 +229,7 @@ export class HrCalendarSource implements CalendarEventSource, OnModuleInit {
         category: "leave",
         meta: {
           source: "leave",
-          description: leave.reason ?? null,
+          description: leave.userId === userId ? (leave.reason ?? null) : null,
           creatorName: leave.userName ?? null,
         },
       });

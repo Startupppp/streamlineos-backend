@@ -85,4 +85,33 @@ describe("TasksCalendarSource", () => {
     const result = await source.load(ctx);
     expect(result).toHaveLength(0);
   });
+
+  it("surfaces a task assigned to the user and returns nothing when the query yields no rows", async () => {
+    const dueDate = new Date("2026-08-20");
+
+    const allowSource = await buildSource(buildDb([{ id: 77, title: "Write tests", dueDate, status: "open" }]));
+    const allowResult = await allowSource.load(ctx);
+    expect(allowResult).toHaveLength(1);
+    expect(allowResult[0]?.id).toBe("task-77");
+
+    const denySource = await buildSource(buildDb([]));
+    const denyResult = await denySource.load(ctx);
+    expect(denyResult).toHaveLength(0);
+  });
+
+  it("task projection satisfies the full CalendarEventProjection contract", async () => {
+    const dueDate = new Date("2026-08-18");
+    const source = await buildSource(buildDb([{ id: 5, title: "Deploy now", dueDate, status: "open" }]));
+    const result = await source.load(ctx);
+
+    const proj = result[0];
+    expect(proj?.id).toBe("task-5");
+    expect(proj?.title).toBe("Deploy now");
+    expect(proj?.start).toEqual(dueDate);
+    expect(proj?.end).toEqual(dueDate);
+    expect(proj?.allDay).toBe(true);
+    expect(proj?.color).toBe("red");
+    expect(proj?.category).toBe("task");
+    expect(proj?.meta).toEqual({ source: "task" });
+  });
 });

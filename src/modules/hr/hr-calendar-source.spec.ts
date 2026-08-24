@@ -78,6 +78,7 @@ async function buildSource(
 // 7 orgHolidays (via listCompatibleHolidays), 8 holidays (via listCompatibleHolidays),
 // 9 organizationMembers
 const FUTURE_JOIN = [{ joinedAt: null, activatedAt: null, joiningDate: "2999-01-01" }];
+const ACTIVE_JOIN = [{ joinedAt: new Date("2020-01-01T00:00:00.000Z"), activatedAt: null, joiningDate: null }];
 const ORG_UTC = [{ timezone: "UTC" }];
 
 function emptyWith(overrides: Record<number, unknown[]>): unknown[][] {
@@ -101,6 +102,49 @@ describe("HrCalendarSource", () => {
     const source = await buildSource(buildDb(emptyWith({})));
     const result = await source.load(ctx);
     expect(result).toHaveLength(0);
+  });
+
+  it("shows a colleague's absence without its reason", async () => {
+    const leaveRows = [
+      {
+        id: 7,
+        userId: "someone-else",
+        startDate: "2026-08-12",
+        endDate: "2026-08-12",
+        reason: "Chemotherapy appointment",
+        userName: "Bob",
+        isHalfDay: false,
+        halfDayPeriod: null,
+      },
+    ];
+    const source = await buildSource(buildDb(emptyWith({ 0: leaveRows })));
+
+    const leave = (await source.load(ctx)).find((p) => p.id === "leave-7");
+
+    expect(leave).toBeDefined();
+    expect(leave?.meta["creatorName"]).toBe("Bob");
+    expect(leave?.meta["description"]).toBeNull();
+    expect(JSON.stringify(leave)).not.toContain("Chemotherapy");
+  });
+
+  it("keeps the reason on the reader's own absence", async () => {
+    const leaveRows = [
+      {
+        id: 8,
+        userId: "user-1",
+        startDate: "2026-08-13",
+        endDate: "2026-08-13",
+        reason: "Chemotherapy appointment",
+        userName: "Alice",
+        isHalfDay: false,
+        halfDayPeriod: null,
+      },
+    ];
+    const source = await buildSource(buildDb(emptyWith({ 0: leaveRows })));
+
+    const leave = (await source.load(ctx)).find((p) => p.id === "leave-8");
+
+    expect(leave?.meta["description"]).toBe("Chemotherapy appointment");
   });
 
   it("converts an approved leave to a projection with category=leave", async () => {
@@ -186,5 +230,81 @@ describe("HrCalendarSource", () => {
     const expectedEnd = new Date(scheduledAt);
     expectedEnd.setMinutes(expectedEnd.getMinutes() + 60);
     expect(interview?.end).toEqual(expectedEnd);
+  });
+
+  it("maps leave start and end to noon UTC regardless of the source date string", async () => {
+    const leaveRows = [
+      {
+        id: 3,
+        userId: "user-1",
+        startDate: "2026-08-10",
+        endDate: "2026-08-12",
+        reason: null,
+        userName: "Alice",
+        isHalfDay: false,
+        halfDayPeriod: null,
+      },
+    ];
+    const source = await buildSource(buildDb(emptyWith({ 0: leaveRows })));
+    const result = await source.load(ctx);
+
+    const leave = result.find((e) => e.id === "leave-3");
+    expect(leave?.start).toEqual(new Date("2026-08-10T12:00:00.000Z"));
+    expect(leave?.end).toEqual(new Date("2026-08-12T12:00:00.000Z"));
+  });
+
+  it("surfaces only interviews where the user is interviewer or panel member, and nothing when no rows match", async () => {
+    const scheduledAt = new Date("2026-08-15T10:00:00.000Z");
+    const interviewRow = {
+      id: 20,
+      scheduledAt,
+      duration: 30,
+      type: "Technical",
+      interviewerId: "user-1",
+      location: null,
+      meetingLink: null,
+    };
+
+    const allowSource = await buildSource(buildDb(emptyWith({ 1: [interviewRow] })));
+    const allowResult = await allowSource.load(ctx);
+    expect(allowResult.filter((e) => e.category === "interview")).toHaveLength(1);
+
+    const denySource = await buildSource(buildDb(emptyWith({})));
+    const denyResult = await denySource.load(ctx);
+    expect(denyResult.filter((e) => e.category === "interview")).toHaveLength(0);
+  });
+
+  it("generates an attendance event for an active member with a present check-in record", async () => {
+    const attendanceRow = {
+      id: 55,
+      date: "2026-08-05",
+      checkIn: new Date("2026-08-05T09:00:00.000Z"),
+      checkOut: new Date("2026-08-05T17:00:00.000Z"),
+      status: "PRESENT",
+      workHours: "8",
+      breakHours: "0",
+      createdAt: new Date("2026-08-05T17:00:00.000Z"),
+    };
+    const source = await buildSource(buildDb(emptyWith({ 3: [attendanceRow], 9: ACTIVE_JOIN })));
+    const result = await source.load(ctx);
+
+    const event = result.find((e) => e.id === "attendance-55");
+    expect(event).toBeDefined();
+    expect(event?.category).toBe("attendance");
+    expect(event?.allDay).toBe(true);
+    expect(event?.start).toEqual(new Date("2026-08-05T12:00:00.000Z"));
+    expect(event?.color).toBe("green");
+  });
+
+  it("generates a WFH attendance event for an approved WFH day with no attendance record on a past weekday", async () => {
+    const wfhRow = { id: 99, date: "2026-08-03" };
+    const source = await buildSource(buildDb(emptyWith({ 4: [wfhRow], 9: ACTIVE_JOIN })));
+    const result = await source.load(ctx);
+
+    const event = result.find((e) => e.id === "attendance-wfh-99");
+    expect(event).toBeDefined();
+    expect(event?.category).toBe("attendance");
+    expect(event?.allDay).toBe(true);
+    expect(event?.start).toEqual(new Date("2026-08-03T12:00:00.000Z"));
   });
 });
