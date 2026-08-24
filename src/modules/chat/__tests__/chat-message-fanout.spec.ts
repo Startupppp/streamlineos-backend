@@ -20,7 +20,14 @@ function makeDb() {
   chain.returning = jest.fn().mockResolvedValue([persisted]);
   chain.limit = jest.fn().mockResolvedValue([{ id: 1 }]);
   chain.query = {
-    chatChannelMembers: { findFirst: jest.fn().mockResolvedValue({ userId: "sender" }) },
+    chatChannelMembers: {
+      findFirst: jest.fn().mockResolvedValue({ userId: "sender" }),
+      findMany: jest.fn().mockResolvedValue([
+        { userId: "sender" },
+        { userId: "user-alex" },
+        { userId: "user-alexander" },
+      ]),
+    },
     chatChannels: { findFirst: jest.fn().mockResolvedValue({ type: "PUBLIC" }) },
   };
   chain.execute = jest.fn().mockResolvedValue([]);
@@ -58,7 +65,7 @@ describe("ChatMessagesService.send", () => {
     expect(dispatch).toHaveBeenCalledTimes(1);
   });
 
-  it("hands the composer's mention identities to the fan-out", async () => {
+  it("hands the composer's mention identities to the fan-out, checked against the roster", async () => {
     const dispatch = jest.fn().mockResolvedValue(undefined);
     const service = makeService({ dispatch });
 
@@ -71,6 +78,31 @@ describe("ChatMessagesService.send", () => {
     expect(dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ mentionedUserIds: ["user-alex"] }),
     );
+  });
+
+  it("expands @everyone to the channel, which the send path previously never did", async () => {
+    const dispatch = jest.fn().mockResolvedValue(undefined);
+    const service = makeService({ dispatch });
+
+    await service.send(1, "sender", "org-1", { content: "@everyone standup" } as never);
+    await flushDeferred();
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ mentionedUserIds: ["user-alex", "user-alexander"] }),
+    );
+  });
+
+  it("drops a claimed mention for someone who is not in the channel", async () => {
+    const dispatch = jest.fn().mockResolvedValue(undefined);
+    const service = makeService({ dispatch });
+
+    await service.send(1, "sender", "org-1", {
+      content: "hello @outsider",
+      mentionedUserIds: ["user-outsider"],
+    } as never);
+    await flushDeferred();
+
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ mentionedUserIds: [] }));
   });
 
   it("returns the persisted message", async () => {

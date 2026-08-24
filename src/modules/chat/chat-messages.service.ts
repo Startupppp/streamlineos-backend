@@ -18,6 +18,7 @@ import { ChatMessageFanoutService } from "./chat-message-fanout.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
+import { resolveMentionedUserIds } from "./chat-mentions";
 import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { CacheService } from "../../common/cache/cache.service";
@@ -235,13 +236,20 @@ export class ChatMessagesService {
           where: eq(chatChannels.id, channelId),
           columns: { type: true },
         });
+        const mentionedUserIds = await resolveMentionedUserIds(this.db, {
+          orgId,
+          channelId,
+          senderId: userId,
+          content: body?.content ?? "",
+          mentionedUserIds: body?.mentionedUserIds,
+        });
         await this.fanout.dispatch({
           orgId,
           channelId,
           channelType: channelRow?.type ?? null,
           message,
           content: body?.content ?? null,
-          mentionedUserIds: body?.mentionedUserIds,
+          mentionedUserIds,
           attachments: insertedAttachments,
           strippedMetadata: strippedReferenceMetadata(message.metadata),
         });

@@ -24,6 +24,7 @@
     "seed:marketplace-apps": "node --env-file=.env -r ts-node/register src/db/seeds/marketplace-apps.seed.ts",
     "purge:user": "node src/scripts/purge-user.mjs",
     "e2e:smoke": "node src/scripts/e2e-smoke.mjs",
+    "verify:chat-mentions": "node --env-file=.env src/scripts/verify-chat-mention-delivery.mjs",
     "seed:build-load": "node --env-file=.env src/scripts/seed-build-load.mjs",
     "baseline:build": "node --env-file=.env src/scripts/capture-build-baseline.mjs",
     "backfill:member-roles": "node src/scripts/backfill-member-role-assignments.mjs",

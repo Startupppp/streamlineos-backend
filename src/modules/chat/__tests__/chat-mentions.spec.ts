@@ -22,6 +22,7 @@ const roster = [
 
 const resolve = (content: string, mentionedUserIds?: string[]) =>
   resolveMentionedUserIds(makeDb(roster) as never, {
+    orgId: "org-1",
     channelId: 1,
     senderId: SENDER,
     content,
