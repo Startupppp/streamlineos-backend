@@ -1,17 +1,19 @@
-import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, isNull } from "drizzle-orm";
+import { ConflictException, Inject, Injectable } from "@nestjs/common";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   candidates,
   candidateOffers,
   hrPeople,
   hrEmployments,
   hrEmployeeSensitiveFields,
+  organizationPeople,
   users,
   organizationMembers,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
+import { getPostgresErrorDetails } from "../../../common/db/postgres-error";
 
 /**
  * Offer accepted → single Person + Employment path.
@@ -55,6 +57,41 @@ export class RecruitmentHandoffService {
         .limit(1)
         .then((rows) => rows[0] ?? null);
 
+      const orgPersonRow = matchedUser
+        ? await tx.query.organizationPeople.findFirst({
+            where: and(
+              eq(organizationPeople.organizationId, orgId),
+              eq(organizationPeople.userId, matchedUser.id),
+              isNull(organizationPeople.deletedAt),
+            ),
+            columns: { organizationPersonId: true },
+          })
+        : await tx.query.organizationPeople.findFirst({
+            where: and(
+              eq(organizationPeople.organizationId, orgId),
+              sql`lower(trim(${organizationPeople.workEmail})) = ${workEmail}`,
+              isNull(organizationPeople.deletedAt),
+            ),
+            columns: { organizationPersonId: true },
+          });
+
+      const resolvedOrgPersonId = orgPersonRow?.organizationPersonId
+        ?? await tx
+            .insert(organizationPeople)
+            .values({
+              organizationId: orgId,
+              userId: matchedUser?.id ?? null,
+              firstName: candidate.firstName,
+              lastName: candidate.lastName,
+              workEmail,
+            })
+            .returning({ organizationPersonId: organizationPeople.organizationPersonId })
+            .then((rows) => {
+              const row = rows[0];
+              if (!row) throw new Error("Failed to create canonical person record");
+              return row.organizationPersonId;
+            });
+
       const existingByUser = matchedUser
         ? await tx.query.hrPeople.findFirst({
             where: and(
@@ -62,7 +99,7 @@ export class RecruitmentHandoffService {
               eq(hrPeople.userId, matchedUser.id),
               isNull(hrPeople.deletedAt),
             ),
-            columns: { id: true },
+            columns: { id: true, organizationPersonId: true },
           })
         : null;
 
@@ -72,38 +109,66 @@ export class RecruitmentHandoffService {
           eq(hrPeople.workEmail, workEmail),
           isNull(hrPeople.deletedAt),
         ),
-        columns: { id: true, userId: true },
+        columns: { id: true, userId: true, organizationPersonId: true },
       });
 
       let personId: number;
 
       if (existingByUser) {
         personId = existingByUser.id;
+        if (existingByUser.organizationPersonId === null)
+          await tx
+            .update(hrPeople)
+            .set({ organizationPersonId: resolvedOrgPersonId })
+            .where(and(eq(hrPeople.id, personId), eq(hrPeople.orgId, orgId)))
+            .catch((err: unknown) => {
+              const { code, constraint } = getPostgresErrorDetails(err);
+              if (code === "23505" && constraint === "uniq_hr_people_org_person_link")
+                throw new ConflictException("This person already has an employment record in this organisation");
+              throw err;
+            });
       } else if (existingByEmail) {
         personId = existingByEmail.id;
-        if (matchedUser && !existingByEmail.userId) {
+        const needsLink = existingByEmail.organizationPersonId === null;
+        const needsUserUpdate = matchedUser && !existingByEmail.userId;
+        if (needsUserUpdate || needsLink)
           await tx
             .update(hrPeople)
             .set({
-              userId: matchedUser.id,
-              firstName: candidate.firstName,
-              lastName: candidate.lastName,
-              phone: candidate.phone ?? null,
+              ...(needsUserUpdate && {
+                userId: matchedUser.id,
+                firstName: candidate.firstName,
+                lastName: candidate.lastName,
+                phone: candidate.phone ?? null,
+              }),
+              ...(needsLink && { organizationPersonId: resolvedOrgPersonId }),
             })
-            .where(and(eq(hrPeople.id, personId), eq(hrPeople.orgId, orgId)));
-        }
+            .where(and(eq(hrPeople.id, personId), eq(hrPeople.orgId, orgId)))
+            .catch((err: unknown) => {
+              const { code, constraint } = getPostgresErrorDetails(err);
+              if (code === "23505" && constraint === "uniq_hr_people_org_person_link")
+                throw new ConflictException("This person already has an employment record in this organisation");
+              throw err;
+            });
       } else {
         const [inserted] = await tx
           .insert(hrPeople)
           .values({
             orgId,
             userId: matchedUser?.id ?? null,
+            organizationPersonId: resolvedOrgPersonId,
             firstName: candidate.firstName,
             lastName: candidate.lastName,
             workEmail,
             phone: candidate.phone ?? null,
           })
-          .returning({ id: hrPeople.id });
+          .returning({ id: hrPeople.id })
+          .catch((err: unknown) => {
+            const { code, constraint } = getPostgresErrorDetails(err);
+            if (code === "23505" && constraint === "uniq_hr_people_org_person_link")
+              throw new ConflictException("This person already has an employment record in this organisation");
+            throw err;
+          });
         personId = inserted.id;
       }
 
