@@ -24,6 +24,7 @@ import { RateLimitGuard } from "../../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../../common/ratelimit/use-rate-limit.decorator";
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { NoTenantTransaction } from "../../../../common/tenant";
 import { logger } from "../../../../common/logger/logger.service";
 import { z } from "zod";
 import { ChatAssistantService } from "../services/chat-assistant.service";
@@ -196,6 +197,9 @@ export class ChatAssistantController {
   @RequirePermission("ai:chat:use")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:chat")
+  // pipeTextStreamToResponse returns before the stream ends; the request transaction
+  // would commit under the still-running tools and onFinish. Both open their own.
+  @NoTenantTransaction()
   async chatAssistant(
     @Body() body: unknown,
     @CurrentUser() u: CurrentUserContext,

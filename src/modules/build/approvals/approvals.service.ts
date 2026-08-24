@@ -50,8 +50,7 @@ export class ApprovalsService {
     const channel = await this.chatChannels.getOrCreateEntityChannel(
       "project",
       String(projectId),
-      requestedById,
-      orgId,
+      { orgId, userId: requestedById, isOrgOwner: false },
     );
     await this.chatMessages.sendSystemMessage(
       channel.id,

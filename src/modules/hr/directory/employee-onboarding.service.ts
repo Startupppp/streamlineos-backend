@@ -166,6 +166,7 @@ export class EmployeeOnboardingService {
             actorId: actor.userId,
             monthlySalary: body.monthlySalary,
             effectiveFrom,
+            salaryStructureTemplateId: body.salaryStructureTemplateId,
           });
         }
 
@@ -273,6 +274,7 @@ export class EmployeeOnboardingService {
           actorId: actor.userId,
           monthlySalary: body.monthlySalary,
           effectiveFrom,
+          salaryStructureTemplateId: body.salaryStructureTemplateId,
         });
       }
 
@@ -339,7 +341,7 @@ export class EmployeeOnboardingService {
           tokenHash,
           expiresAt: addDays(new Date(), 7),
         });
-        const signInUrl = `${appUrl}/magic-link?token=${rawToken}`;
+        const signInUrl = `${appUrl()}/magic-link?token=${rawToken}`;
         await this.email.sendWelcomeEmail(newUser.email, `${body.firstName} ${body.lastName}`, signInUrl);
       } catch (emailErr) {
         logger.error("Failed to send welcome email", { email: newUser.email, error: emailErr });

@@ -5,6 +5,8 @@ import type { Db } from "../../db/drizzle.module";
 import { AblyService } from "../realtime/ably.service";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import { and, eq, inArray } from "drizzle-orm";
+import { boundedMap } from "../../common/async/bounded-map";
+import { logger } from "../../common/logger/logger.service";
 
 const SUPPRESSED_GENERAL_PREFERENCES = new Set(["NOTHING", "MENTIONS"]);
 
@@ -18,6 +20,23 @@ const SUPPRESSED_GENERAL_PREFERENCES = new Set(["NOTHING", "MENTIONS"]);
  * for a toast, and nothing that has to be authorized. The client fetches the message
  * through the API, where access is re-checked. Nothing consumed `content` from here.
  */
+
+const PUBLISH_CONCURRENCY = 16;
+
+function reportFailures(
+  event: string,
+  channelId: number,
+  results: PromiseSettledResult<unknown>[],
+): void {
+  const failed = results.filter((result) => result.status === "rejected").length;
+  if (failed === 0) return;
+  logger.error("chat notification publish failed for some recipients", {
+    event,
+    channelId,
+    failed,
+    total: results.length,
+  });
+}
 
 @Injectable()
 export class ChatNotificationsService {
@@ -46,20 +65,24 @@ export class ChatNotificationsService {
     const defaultPreference = settings.defaultNotificationPreference;
 
     const now = new Date();
-    for (const { userId, mutedUntil, notificationPreference } of members) {
-      if (userId === message.senderId) continue;
-      if (mutedUntil && mutedUntil > now) continue;
+    const recipients = members.filter(({ userId, mutedUntil, notificationPreference }) => {
+      if (userId === message.senderId) return false;
+      if (mutedUntil && mutedUntil > now) return false;
       const effectivePreference =
         notificationPreference !== "DEFAULT" ? notificationPreference : defaultPreference;
-      if (SUPPRESSED_GENERAL_PREFERENCES.has(effectivePreference)) continue;
-      await this.ably.publishToUser(orgId, userId, "notification:message", {
+      return !SUPPRESSED_GENERAL_PREFERENCES.has(effectivePreference);
+    });
+
+    const delivered = await boundedMap(recipients, PUBLISH_CONCURRENCY, ({ userId }) =>
+      this.ably.publishToUser(orgId, userId, "notification:message", {
         channelId,
         messageId: message.id,
         senderId: message.senderId,
         senderName: message.senderName,
         channelType,
-      });
-    }
+      }),
+    );
+    reportFailures("notification:message", channelId, delivered);
   }
 
   async publishMentionNotification(
@@ -87,16 +110,19 @@ export class ChatNotificationsService {
     const settings = await this.orgSettings.getSettings(orgId);
     const defaultPreference = settings.defaultNotificationPreference;
 
-    for (const userId of mentionedUserIds) {
+    const recipients = mentionedUserIds.filter((userId) => {
       const pref = preferenceByUser.get(userId) ?? "DEFAULT";
-      const effectivePreference = pref !== "DEFAULT" ? pref : defaultPreference;
-      if (effectivePreference === "NOTHING") continue;
-      await this.ably.publishToUser(orgId, userId, "notification:mention", {
+      return (pref !== "DEFAULT" ? pref : defaultPreference) !== "NOTHING";
+    });
+
+    const delivered = await boundedMap(recipients, PUBLISH_CONCURRENCY, (userId) =>
+      this.ably.publishToUser(orgId, userId, "notification:mention", {
         channelId,
         messageId: message.id,
         senderId: message.senderId,
         senderName: message.senderName,
-      });
-    }
+      }),
+    );
+    reportFailures("notification:mention", channelId, delivered);
   }
 }

@@ -59,10 +59,6 @@ async function bootstrap(): Promise<void> {
   app.use(compression());
   app.enableShutdownHooks();
   app.use(correlationIdMiddleware);
-  app.useBodyParser("json", { limit: "3mb" });
-  app.useGlobalFilters(new AllExceptionsFilter());
-  app.useGlobalInterceptors(new ResponseTransformInterceptor());
-  app.useBodyParser("urlencoded", { extended: true, limit: "1mb" });
 
   app.enableCors({
     origin: isDevelopment
@@ -72,6 +68,11 @@ async function bootstrap(): Promise<void> {
       : config.corsOrigins,
     credentials: true,
   });
+
+  app.useBodyParser("json", { limit: "3mb" });
+  app.useGlobalFilters(new AllExceptionsFilter());
+  app.useGlobalInterceptors(new ResponseTransformInterceptor());
+  app.useBodyParser("urlencoded", { extended: true, limit: "1mb" });
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle("StreamlineOS API")

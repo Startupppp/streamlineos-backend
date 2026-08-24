@@ -1,51 +1,44 @@
-export const MODULE_CATALOG = [
-  "hr",
-  "crm",
-  "build",
-  "accounting",
-  "inventory",
-  "kb",
-  "chat",
-  "support",
-  "surveys",
-  "payroll",
-  "sign",
-  "timesheets",
-] as const;
+import {
+  additionalNamespaces,
+  administrableModuleIds,
+  planGatedModuleIds,
+  type PlanGatedModuleId,
+} from "./module-registry";
 
-export type ModuleKey = (typeof MODULE_CATALOG)[number];
+export type ModuleKey = PlanGatedModuleId;
 
-const PLAN_GATED_MODULES: ReadonlySet<string> = new Set(MODULE_CATALOG);
+/** Plan gating, and only that. What the screens list is ADMINISTRABLE_MODULES. */
+export const MODULE_CATALOG: readonly ModuleKey[] = planGatedModuleIds();
 
+/** What the modules and per-person access screens list, core modules included. */
+export const ADMINISTRABLE_MODULES: readonly string[] = administrableModuleIds();
+
+const PLAN_GATED_MODULES: ReadonlySet<string> = new Set<string>(MODULE_CATALOG);
 
 export function isPlanGatedModule(module: string): boolean {
   return PLAN_GATED_MODULES.has(module);
 }
 
-/**
- * A module usually owns the permission namespace that shares its name. Home is
- * the exception: chat, mail and calendar are the communication surfaces every
- * active member keeps, and they are administered by one Home ladder rather than
- * three. The mapping lives here rather than in the key strings, because
- * renaming a key would break every grant already stored against it.
- */
-const MODULE_PERMISSION_NAMESPACES: Readonly<Record<string, readonly string[]>> =
-  {
-    home: ["chat", "mail", "calendar", "notifications"],
-    // CRM owns parties. The party ladder is not a product of its own: a CRM
-    // administrator has to be able to manage the customers their deals point at,
-    // and without this `moduleScopedPermissions("crm")` skips every party key,
-    // leaving the endpoints reachable only by an organisation admin.
-    crm: ["crm", "party"],
-  };
+const ADDITIONAL_MODULE_NAMESPACES: Readonly<Record<string, readonly string[]>> =
+  additionalNamespaces();
 
 export function namespacesForModule(moduleKey: string): readonly string[] {
-  return MODULE_PERMISSION_NAMESPACES[moduleKey] ?? [moduleKey];
+  const additional = ADDITIONAL_MODULE_NAMESPACES[moduleKey];
+  return additional ? [moduleKey, ...additional] : [moduleKey];
+}
+
+export function administeringModuleOf(permissionKey: string): string {
+  const separatorIndex = permissionKey.indexOf(":");
+  return moduleOwningNamespace(
+    separatorIndex === -1
+      ? permissionKey
+      : permissionKey.slice(0, separatorIndex),
+  );
 }
 
 export function moduleOwningNamespace(namespace: string): string {
   for (const [moduleKey, namespaces] of Object.entries(
-    MODULE_PERMISSION_NAMESPACES,
+    ADDITIONAL_MODULE_NAMESPACES,
   )) {
     if (namespaces.includes(namespace)) return moduleKey;
   }

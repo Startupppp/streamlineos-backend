@@ -10,6 +10,14 @@ import { updateLeaveSchema } from "./dto/leaves.schemas";
 const readSource = (fileName: string) =>
   readFileSync(join(__dirname, fileName), "utf8");
 
+/** Local calendar date, matching what the schema compares against. */
+const localDateShift = (days: number): string => {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+
 describe("HR time transition invariants", () => {
   it("accepts only the dedicated revert-to-pending contract", () => {
     expect(updateLeaveSchema.safeParse({ status: "PENDING" }).success).toBe(true);
@@ -19,20 +27,53 @@ describe("HR time transition invariants", () => {
   });
 
   it("validates regularization correction shape before persistence", () => {
+    const recent = localDateShift(-3);
+
     expect(
       createAttendanceRegularizationSchema.safeParse({
-        attendanceDate: "2026-08-13",
+        attendanceDate: recent,
         reason: "Correct an omitted attendance punch",
       }).success,
     ).toBe(false);
     expect(
       createAttendanceRegularizationSchema.safeParse({
-        attendanceDate: "2026-08-13",
-        requestedCheckIn: "2026-08-13T10:00:00.000Z",
-        requestedCheckOut: "2026-08-13T09:00:00.000Z",
+        attendanceDate: recent,
+        requestedCheckIn: `${recent}T10:00:00.000Z`,
+        requestedCheckOut: `${recent}T09:00:00.000Z`,
         reason: "Correct an invalid attendance punch",
       }).success,
     ).toBe(false);
+    expect(
+      createAttendanceRegularizationSchema.safeParse({
+        attendanceDate: recent,
+        requestedCheckIn: `${recent}T09:00:00.000Z`,
+        requestedCheckOut: `${recent}T18:00:00.000Z`,
+        reason: "Correct an omitted attendance punch",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("bounds a regularization to a real, recent date the times fall on", () => {
+    const shift = localDateShift;
+    const reason = "Correct an omitted attendance punch";
+    const parse = (attendanceDate: string, checkIn: string) =>
+      createAttendanceRegularizationSchema.safeParse({
+        attendanceDate,
+        requestedCheckIn: checkIn,
+        reason,
+      }).success;
+
+    const future = shift(5);
+    expect(parse(future, `${future}T09:00:00.000Z`)).toBe(false);
+
+    const tooOld = shift(-90);
+    expect(parse(tooOld, `${tooOld}T09:00:00.000Z`)).toBe(false);
+
+    expect(parse("2026-02-31", `${shift(-1)}T09:00:00.000Z`)).toBe(false);
+
+    const recent = shift(-2);
+    expect(parse(recent, "2019-01-01T09:00:00.000Z")).toBe(false);
+    expect(parse(recent, `${recent}T09:00:00.000Z`)).toBe(true);
   });
 
   it("keeps leave transitions conditional, versioned, and balance-locked", () => {

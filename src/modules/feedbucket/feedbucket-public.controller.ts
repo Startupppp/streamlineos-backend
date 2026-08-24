@@ -24,6 +24,7 @@ import {
 import type { Request } from "express";
 import { and, eq } from "drizzle-orm";
 import { Public } from "../../common/auth/public.decorator";
+import { InsufficientAiCreditsException } from "../../common/http/api-exceptions";
 import { FeedbucketPublicService } from "./feedbucket-public.service";
 import { FeedbucketAiService } from "./feedbucket-ai.service";
 import { StorageService } from "../storage/storage.service";
@@ -402,14 +403,10 @@ export class FeedbucketPublicController {
           HttpStatus.SERVICE_UNAVAILABLE,
         );
       }
-      if (
-        err instanceof HttpException &&
-        err.getStatus() === HttpStatus.BAD_REQUEST
-      ) {
-        throw new HttpException(
-          { message: "Insufficient AI credits for this widget." },
-          HttpStatus.PAYMENT_REQUIRED,
-        );
+      if (err instanceof InsufficientAiCreditsException) {
+        throw new InsufficientAiCreditsException({
+          message: "Insufficient AI credits for this widget.",
+        });
       }
       throw err;
     }

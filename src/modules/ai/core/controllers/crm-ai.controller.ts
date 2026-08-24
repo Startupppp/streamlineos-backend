@@ -4,6 +4,7 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  HttpException,
   Inject,
   InternalServerErrorException,
   NotFoundException,
@@ -293,7 +294,7 @@ export class CrmAiController {
       }
       throw new BadRequestException("Invalid type");
     } catch (error) {
-      if (error instanceof BadRequestException) throw error;
+      if (error instanceof HttpException) throw error;
       throw new InternalServerErrorException("Internal Server Error");
     }
   }

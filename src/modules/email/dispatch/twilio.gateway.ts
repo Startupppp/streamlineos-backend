@@ -1,4 +1,6 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
+import { APP_CONFIG } from "../../../config/config.module";
+import type { AppConfig } from "../../../config/env.validation";
 import { logger } from "../../../common/logger/logger.service";
 
 interface TwilioSendParams {
@@ -27,10 +29,12 @@ export interface TwilioFallbackResult {
 
 @Injectable()
 export class TwilioGateway {
+  constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {}
+
   private async send(params: TwilioSendParams): Promise<TwilioSendResult> {
-    const accountSid = process.env.TWILIO_ACCOUNT_SID;
-    const authToken = process.env.TWILIO_AUTH_TOKEN;
-    const fromNumber = process.env.TWILIO_FROM_NUMBER;
+    const accountSid = this.config.TWILIO_ACCOUNT_SID;
+    const authToken = this.config.TWILIO_AUTH_TOKEN;
+    const fromNumber = this.config.TWILIO_FROM_NUMBER;
 
     if (!accountSid || !authToken || !fromNumber) {
       logger.info("Twilio not configured — skipping message", {

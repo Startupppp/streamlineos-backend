@@ -2,15 +2,22 @@ import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "../../../../../test/helpers/e2e-app";
 import { signToken } from "../../../../../test/helpers/sign-token";
+import { DRIZZLE } from "../../../../../src/db/drizzle.constants";
+import type { Db } from "../../../../../src/db/drizzle.module";
+import { seedOrg, seedUser, cleanupSeedOrgs, cleanupSeedUsers } from "../../../../../test/helpers/e2e-seed";
 
 describe("/inventory/stock/adjustments (e2e)", () => {
   let app: INestApplication;
+  let db: Db;
   let ownerToken: string;
   let nonOwnerToken: string;
   let _createdId: number;
 
   beforeAll(async () => {
     app = await createE2eApp();
+    db = app.get<Db>(DRIZZLE);
+    await seedOrg(db, "org_inv_e2e", "org-inv-e2e");
+    await seedUser(db, "owner_1", "owner-1@e2e.test");
     ownerToken = await signToken({
       sub: "owner_1",
       orgId: "org_inv_e2e",
@@ -26,7 +33,11 @@ describe("/inventory/stock/adjustments (e2e)", () => {
     });
   });
 
-  afterAll(async () => app.close());
+  afterAll(async () => {
+    await cleanupSeedOrgs(db, ["org_inv_e2e"]);
+    await cleanupSeedUsers(db, ["owner_1"]);
+    await app.close();
+  });
 
   it("401 without token", async () => {
     const res = await request(app.getHttpServer()).get("/inventory/stock/adjustments");

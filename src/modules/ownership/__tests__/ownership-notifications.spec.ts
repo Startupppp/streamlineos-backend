@@ -65,7 +65,12 @@ describe("Ownership transfer notifications", () => {
       }),
     }),
     update: jest.fn().mockReturnValue({
-      set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
+      set: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          returning: jest.fn().mockResolvedValue([{ id: TRANSFER_ID }]),
+          then: (resolve: (rows: unknown[]) => unknown) => Promise.resolve([]).then(resolve),
+        }),
+      }),
     }),
     transaction: jest.fn((fn: (t: MockDb) => Promise<unknown>) => fn(db)),
   };

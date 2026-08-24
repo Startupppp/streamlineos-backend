@@ -1,0 +1,53 @@
+import { Module } from "@nestjs/common";
+import { AiModule } from "../../ai/core/ai.module";
+import { AiJobsModule } from "../../ai/jobs/ai-jobs.module";
+import { KbCoreModule } from "../core/kb-core.module";
+import { KbRetrievalModule } from "../retrieval/kb-retrieval.module";
+import { KbArticlesService } from "./kb-articles.service";
+import { KbCategoriesService } from "./kb-categories.service";
+import { KbCommentsService } from "./kb-comments.service";
+import { KbArticleAiService } from "./kb-article-ai.service";
+import { KbAiFeedbackService } from "./kb-ai-feedback.service";
+import { KbAuthoringService } from "./kb-authoring.service";
+import { KbVerificationService } from "./kb-verification.service";
+import { KbFromTicketService } from "./kb-from-ticket.service";
+import { KbAnalyticsService } from "./kb-analytics.service";
+import { KbArticlesController } from "./kb-articles.controller";
+import { KbCategoriesController } from "./kb-categories.controller";
+import { KbCommentsController } from "./kb-comments.controller";
+import { KbArticleAiController } from "./kb-article-ai.controller";
+import { KbAiFeedbackController } from "./kb-ai-feedback.controller";
+import { KbAuthoringController } from "./kb-authoring.controller";
+import { KbVerificationController } from "./kb-verification.controller";
+import { KbFromTicketController } from "./kb-from-ticket.controller";
+import { KbAnalyticsController } from "./kb-analytics.controller";
+import { KbWidgetController } from "./kb-widget.controller";
+
+@Module({
+  imports: [AiModule, AiJobsModule, KbCoreModule, KbRetrievalModule],
+  controllers: [
+    KbArticlesController,
+    KbCategoriesController,
+    KbCommentsController,
+    KbArticleAiController,
+    KbAiFeedbackController,
+    KbAuthoringController,
+    KbVerificationController,
+    KbFromTicketController,
+    KbAnalyticsController,
+    KbWidgetController,
+  ],
+  providers: [
+    KbArticlesService,
+    KbCategoriesService,
+    KbCommentsService,
+    KbArticleAiService,
+    KbAiFeedbackService,
+    KbAuthoringService,
+    KbVerificationService,
+    KbFromTicketService,
+    KbAnalyticsService,
+  ],
+  exports: [KbArticlesService],
+})
+export class KbHelpCentreModule {}

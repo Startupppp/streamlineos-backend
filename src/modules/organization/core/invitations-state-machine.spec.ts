@@ -11,7 +11,6 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { EmailService } from "../../email/email.service";
 import { InvitationsService } from "./invitations.service";
-import { InvitationLifecycleService } from "./invitation-lifecycle.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 
 describe("InvitationsService state transitions", () => {
@@ -45,7 +44,6 @@ describe("InvitationsService state transitions", () => {
     ),
   };
   let service: InvitationsService;
-  let lifecycle: InvitationLifecycleService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -62,7 +60,6 @@ describe("InvitationsService state transitions", () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         InvitationsService,
-        InvitationLifecycleService,
         { provide: DRIZZLE, useValue: db },
         { provide: AuditService, useValue: { log: jest.fn() } },
         {
@@ -85,7 +82,6 @@ describe("InvitationsService state transitions", () => {
       ],
     }).compile();
     service = moduleRef.get(InvitationsService);
-    lifecycle = moduleRef.get(InvitationLifecycleService);
   });
 
   it.each(["resend", "cancel"] as const)(
@@ -101,7 +97,7 @@ describe("InvitationsService state transitions", () => {
                 isOrgOwner: false,
               })
           : () =>
-              lifecycle.cancel("org-a", "invite-from-org-b", {
+              service.cancel("org-a", "invite-from-org-b", {
                 userId: "actor-1",
                 isOrgOwner: false,
               });
@@ -121,7 +117,7 @@ describe("InvitationsService state transitions", () => {
     });
 
     await expect(
-      lifecycle.cancel("org-a", "invite-1", {
+      service.cancel("org-a", "invite-1", {
         userId: "actor-1",
         isOrgOwner: false,
       }),
@@ -158,7 +154,7 @@ describe("InvitationsService state transitions", () => {
                 isOrgOwner: false,
               })
           : () =>
-              lifecycle.cancel("org-a", "invite-1", {
+              service.cancel("org-a", "invite-1", {
                 userId: "actor-1",
                 isOrgOwner: false,
               });
@@ -181,7 +177,7 @@ describe("InvitationsService state transitions", () => {
     updateReturning.mockResolvedValueOnce([]);
 
     await expect(
-      lifecycle.changeRole(
+      service.changeRole(
         "org-a",
         "invite-1",
         { userId: "actor-1", isOrgOwner: true },
@@ -210,9 +206,9 @@ describe("InvitationsService state transitions", () => {
         operation === "resend"
           ? () => service.resend("org-a", "invite-1", actor)
           : operation === "cancel"
-            ? () => lifecycle.cancel("org-a", "invite-1", actor)
+            ? () => service.cancel("org-a", "invite-1", actor)
             : () =>
-                lifecycle.changeRole(
+                service.changeRole(
                   "org-a",
                   "invite-1",
                   actor,

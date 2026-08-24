@@ -25,7 +25,6 @@ import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
-import { RoleLockoutService } from "./role-lockout.service";
 import type { RoleMemberInput } from "./dto/rbac.schemas";
 import { assertMayAssignRole } from "./assert-role-assignment";
 
@@ -36,7 +35,6 @@ export class RoleMemberService {
     private readonly cache: CacheService,
     private readonly audit: AuditService,
     private readonly dispatch: NotificationDispatchService,
-    private readonly lockout: RoleLockoutService,
     private readonly access: AccessService,
   ) {}
 
@@ -290,15 +288,6 @@ export class RoleMemberService {
     input: RoleMemberInput,
   ): Promise<{ success: true }> {
     await this.getRole(actor.orgId, roleId);
-
-    if (input.principalType === "user") {
-      const willLockOut = await this.lockout.wouldLockOutLastAdmin(actor.orgId, input.principalId);
-      if (willLockOut) {
-        throw new ForbiddenException(
-          "Cannot remove the last administrator with role-management access",
-        );
-      }
-    }
 
     const membershipForRemoval = input.principalType === "user"
       ? await this.db.query.organizationMembers.findFirst({

@@ -254,7 +254,7 @@ export class LeadStatusService {
           leadName: lead.name,
           fromStatus: null,
           toStatus: "Converted",
-          leadUrl: `${appUrl}/crm/clients`,
+          leadUrl: `${appUrl()}/crm/clients`,
         });
         await this.email.sendEmail({ to: salesRep.email, subject, html });
       }
@@ -267,7 +267,7 @@ export class LeadStatusService {
             leadName: lead.name,
             fromStatus: null,
             toStatus: "Converted",
-            leadUrl: `${appUrl}/crm/clients`,
+            leadUrl: `${appUrl()}/crm/clients`,
           });
           await this.email.sendEmail({ to: crmUser.email, subject, html });
         }

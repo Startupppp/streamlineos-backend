@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   NotFoundException,
 } from "@nestjs/common";
@@ -42,11 +43,17 @@ function makeSelectChain(result: unknown[]): SelectChain {
 type UpdateChain = {
   set: jest.Mock;
   where: jest.Mock;
+  returning: jest.Mock;
 };
 
-function makeUpdateChain(): UpdateChain {
-  const chain: UpdateChain = { set: jest.fn(), where: jest.fn().mockResolvedValue([]) };
+function makeUpdateChain(result: unknown[] = [{ id: "updated" }]): UpdateChain {
+  const chain: UpdateChain = {
+    set: jest.fn(),
+    where: jest.fn(),
+    returning: jest.fn().mockResolvedValue(result),
+  };
   chain.set.mockReturnValue(chain);
+  chain.where.mockReturnValue(chain);
   return chain;
 }
 
@@ -411,7 +418,7 @@ describe("OwnershipService — access / business-rule logic", () => {
       expect(mockDb.insert).toHaveBeenCalledTimes(3);
     });
 
-    it("does not revoke when the MODULE_OWNER role is not seeded", async () => {
+    it("throws BadRequestException when the MODULE_OWNER role is not seeded (prevents half-apply)", async () => {
       const transfer = buildModuleTransfer();
       const recipientMembership = { id: TO_MEMBERSHIP_ID, userId: TARGET_USER, isOwner: false, status: "ACTIVE" };
       const currentOwnership = { ownerMembershipId: FROM_MEMBERSHIP_ID };
@@ -425,16 +432,15 @@ describe("OwnershipService — access / business-rule logic", () => {
         .mockReturnValueOnce(makeSelectChain([recipientMembership]))
         .mockReturnValueOnce(makeSelectChain([currentOwnership]))
         .mockReturnValueOnce(makeSelectChain(memberships))
-        .mockReturnValueOnce(makeSelectChain([]))
         .mockReturnValueOnce(makeSelectChain([]));
 
       mockDb.delete.mockReturnValue({ where: jest.fn().mockResolvedValue([]) });
       mockDb.insert.mockReturnValue(makeInsertChain([]));
       mockDb.update.mockReturnValue(makeUpdateChain());
 
-      const result = await responses.acceptTransfer(ORG, TARGET_USER, TRANSFER_ID);
-
-      expect(result).toMatchObject({ success: true });
+      await expect(
+        responses.acceptTransfer(ORG, TARGET_USER, TRANSFER_ID),
+      ).rejects.toBeInstanceOf(BadRequestException);
       expect(mockDb.delete).not.toHaveBeenCalled();
     });
 
@@ -464,6 +470,74 @@ describe("OwnershipService — access / business-rule logic", () => {
       await responses.acceptTransfer(ORG, TARGET_USER, TRANSFER_ID);
 
       expect(mockDb.delete).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("concurrent terminal transitions — conditional UPDATE prevents double-commit", () => {
+    const TRANSFER_ID = "tfr-concurrent-test";
+
+    it("declineTransfer throws ConflictException when UPDATE affects 0 rows (concurrent accept won)", async () => {
+      const transfer = {
+        id: TRANSFER_ID,
+        toMembershipId: 2,
+        status: "PENDING" as const,
+        scope: "ORGANIZATION" as const,
+        moduleKey: null,
+        fromMembershipId: 1,
+      };
+      const recipientMembership = { id: 2, userId: TARGET_USER, isOwner: false, status: "ACTIVE" };
+
+      mockDb.select
+        .mockReturnValueOnce(makeSelectChain([transfer]))
+        .mockReturnValueOnce(makeSelectChain([recipientMembership]));
+      mockDb.update.mockReturnValue(makeUpdateChain([]));
+
+      await expect(
+        responses.declineTransfer(ORG, TARGET_USER, TRANSFER_ID, {}),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it("cancelTransfer throws ConflictException when UPDATE affects 0 rows (concurrent accept won)", async () => {
+      const transfer = {
+        id: TRANSFER_ID,
+        fromMembershipId: 1,
+        status: "PENDING" as const,
+        scope: "MODULE" as const,
+        moduleKey: "hr",
+        toMembershipId: 2,
+      };
+      const actorMembership = { id: 1, userId: ACTOR_USER, isOwner: false, status: "ACTIVE" };
+
+      mockDb.select
+        .mockReturnValueOnce(makeSelectChain([transfer]))
+        .mockReturnValueOnce(makeSelectChain([actorMembership]));
+      mockDb.update.mockReturnValue(makeUpdateChain([]));
+
+      await expect(
+        responses.cancelTransfer(ORG, ACTOR_USER, TRANSFER_ID, false),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it("declineTransfer succeeds (no conflict) when UPDATE affects 1 row", async () => {
+      const transfer = {
+        id: TRANSFER_ID,
+        toMembershipId: 2,
+        status: "PENDING" as const,
+        scope: "ORGANIZATION" as const,
+        moduleKey: null,
+        fromMembershipId: 1,
+      };
+      const recipientMembership = { id: 2, userId: TARGET_USER, isOwner: false, status: "ACTIVE" };
+
+      mockDb.select
+        .mockReturnValue(makeSelectChain([recipientMembership]))
+        .mockReturnValueOnce(makeSelectChain([transfer]))
+        .mockReturnValueOnce(makeSelectChain([recipientMembership]));
+      mockDb.update.mockReturnValue(makeUpdateChain([{ id: TRANSFER_ID }]));
+
+      await expect(
+        responses.declineTransfer(ORG, TARGET_USER, TRANSFER_ID, {}),
+      ).resolves.toMatchObject({ success: true });
     });
   });
 

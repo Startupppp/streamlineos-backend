@@ -25,9 +25,11 @@ import {
   bumpPermissionsVersion,
   subscribeVersionBump,
 } from "../../common/rbac/access-invalidate";
+import { accessVersionChannel } from "../../common/rbac/access-version-channel";
 import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
 import type { AccessSnapshot, DataScope } from "./access.types";
 import { EntitlementsService, MODULE_CATALOG } from "./entitlements.service";
+import { ADMINISTRABLE_MODULES } from "../../common/rbac/module-vocabulary";
 import { MfaPolicyService } from "./mfa-policy.service";
 import {
   broadest,
@@ -37,6 +39,7 @@ import {
 } from "./access-policy";
 import {
   AccessPermissionResolver,
+  membershipCacheKey,
   type MembershipAccessState,
 } from "./access-permission.resolver";
 import {
@@ -69,7 +72,15 @@ interface PermsEntry {
   expiresAt: number;
 }
 
-const VERSION_CACHE_TTL_MS = 5_000;
+/**
+ * A backstop, not the coherence mechanism. A bump clears the shared version key,
+ * so every instance sees the change on its next read; this bounds how long an
+ * instance trusts its own copy if both the shared clear and the local fan-out
+ * were lost. It can be short because a miss now costs a cache read rather than a
+ * tenant transaction.
+ */
+const VERSION_CACHE_TTL_MS = 1_000;
+const SHARED_VERSION_TTL_SECONDS = 300;
 const PERMS_CACHE_TTL_MS = 30_000;
 
 function isMissingRelationError(error: unknown): boolean {
@@ -139,6 +150,16 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     );
   }
   onModuleInit(): void {
+    accessVersionChannel.useStore({
+      get: (orgId) => this.cache.get<number>(CACHE_KEYS.accessVersion(orgId)),
+      set: (orgId, version) =>
+        this.cache.set(
+          CACHE_KEYS.accessVersion(orgId),
+          version,
+          SHARED_VERSION_TTL_SECONDS,
+        ),
+      clear: (orgId) => this.cache.invalidate(CACHE_KEYS.accessVersion(orgId)),
+    });
     this.unsubscribeVersionBump = subscribeVersionBump((orgId) => {
       this.versionCache.delete(orgId);
       this.deleteOrgEntries(this.membershipAccessCache, orgId);
@@ -156,6 +177,12 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
   onModuleDestroy(): void {
     this.unsubscribeVersionBump?.();
     this.unsubscribeVersionBump = null;
+  }
+  private deleteMemberEntries(orgId: string, userId: string): void {
+    const prefix = `${orgId}:${userId}:`;
+    for (const key of this.membershipAccessCache.keys()) {
+      if (key.startsWith(prefix)) this.membershipAccessCache.delete(key);
+    }
   }
   private deleteOrgEntries<T>(cache: Map<string, T>, orgId: string): void {
     const prefix = `${orgId}:`;
@@ -182,9 +209,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       return fallback;
     }
   }
-  async getPermissionsVersion(orgId: string): Promise<number> {
-    const cached = this.versionCache.get(orgId);
-    if (cached && cached.expiresAt > Date.now()) return cached.version;
+  private async loadDurablePermissionsVersion(orgId: string): Promise<number> {
     const row = await runInTenantTransaction(
       this.db,
       () =>
@@ -198,7 +223,17 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
         ),
       { orgId },
     );
-    const version = row?.permissionsVersion ?? 1;
+    return row?.permissionsVersion ?? 1;
+  }
+
+  async getPermissionsVersion(orgId: string): Promise<number> {
+    const cached = this.versionCache.get(orgId);
+    if (cached && cached.expiresAt > Date.now()) return cached.version;
+
+    const version = await accessVersionChannel.read(orgId, () =>
+      this.loadDurablePermissionsVersion(orgId),
+    );
+
     this.versionCache.set(orgId, {
       version,
       expiresAt: Date.now() + VERSION_CACHE_TTL_MS,
@@ -224,7 +259,9 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     const version = await this.getPermissionsVersion(orgId);
     const permsKey = `${orgId}:${userId}:${version}`;
     const cachedPerms = this.permsCache.get(permsKey);
-    const cachedMembership = this.membershipAccessCache.get(`${orgId}:${userId}`);
+    const cachedMembership = this.membershipAccessCache.get(
+      membershipCacheKey(orgId, userId, version),
+    );
     const now = Date.now();
 
     if (
@@ -256,7 +293,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
         } else {
           const resolved = await this.cache.cached<Record<string, DataScope>>(
             CACHE_KEYS.accessPerms(orgId, userId, version),
-            () => this.computeUserPermissions(orgId, userId),
+            () => this.computeUserPermissions(orgId, userId, version),
             CACHE_TTL.LONG,
           );
           this.permsCache.set(permsKey, {
@@ -271,7 +308,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
           }
           map = new Map(Object.entries(resolved));
         }
-        const membership = await this.getMembershipAccessState(orgId, userId);
+        const membership = await this.getMembershipAccessState(orgId, userId, version);
         if (!membership.active) return new Map();
         this.applyUniversalGrants(map);
         if (membership.isOwnerOrAdmin) return map;
@@ -316,12 +353,13 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
   private async getMembershipAccessState(
     orgId: string,
     userId: string,
+    version: number,
   ): Promise<{
     exists: boolean;
     active: boolean;
     isOwnerOrAdmin: boolean;
   }> {
-    const cacheKey = `${orgId}:${userId}`;
+    const cacheKey = membershipCacheKey(orgId, userId, version);
     const cached = this.membershipAccessCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) return cached;
     const member = await this.db.query.organizationMembers.findFirst({
@@ -348,13 +386,17 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     orgId: string,
     userId: string,
   ): Promise<boolean> {
-    const cached = this.membershipAccessCache.get(`${orgId}:${userId}`);
+    const version = await this.getPermissionsVersion(orgId);
+    const cached = this.membershipAccessCache.get(
+      membershipCacheKey(orgId, userId, version),
+    );
     if (cached && cached.expiresAt > Date.now()) return cached.isOwnerOrAdmin;
 
     return runInTenantTransaction(
       this.db,
       async () =>
-        (await this.getMembershipAccessState(orgId, userId)).isOwnerOrAdmin,
+        (await this.getMembershipAccessState(orgId, userId, version))
+          .isOwnerOrAdmin,
       { orgId },
     );
   }
@@ -400,12 +442,16 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     orgId: string,
     userId: string,
   ): Promise<{ moduleKey: string; enabled: boolean; core: boolean }[]> {
-    const membership = await this.getMembershipAccessState(orgId, userId);
+    const membership = await this.getMembershipAccessState(
+      orgId,
+      userId,
+      await this.getPermissionsVersion(orgId),
+    );
     if (!membership.exists) {
       throw new NotFoundException("User is not a member of this organization");
     }
     const denied = await this.getUserDeniedModules(orgId, userId);
-    return MODULE_CATALOG.map((moduleKey) => ({
+    return ADMINISTRABLE_MODULES.map((moduleKey) => ({
       moduleKey,
       enabled: !denied.has(moduleKey),
       core: this.entitlements.isCoreModule(moduleKey),
@@ -450,7 +496,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
           `Module "${moduleKey}" is always available to organization members`,
         );
       }
-      this.membershipAccessCache.delete(`${orgId}:${userId}`);
+      this.deleteMemberEntries(orgId, userId);
       return this.getUserModuleAccess(orgId, userId);
     }
     await runInTenantTransaction(
@@ -514,8 +560,13 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
   private async computeUserPermissions(
     orgId: string,
     userId: string,
+    version: number,
   ): Promise<Record<string, DataScope>> {
-    return this.permissionResolver.computeUserPermissions(orgId, userId);
+    return this.permissionResolver.computeUserPermissions(
+      orgId,
+      userId,
+      version,
+    );
   }
   async membersWithPermission(
     orgId: string,

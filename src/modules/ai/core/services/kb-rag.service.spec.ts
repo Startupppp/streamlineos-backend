@@ -3,10 +3,8 @@ jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
   runInNewTenantTransaction: (db: unknown, _orgId: string, fn: (tx: unknown) => Promise<unknown>) => fn(db),
 }));
 
-import {
-  BadRequestException,
-  ServiceUnavailableException,
-} from "@nestjs/common";
+import { ServiceUnavailableException } from "@nestjs/common";
+import { InsufficientAiCreditsException } from "../../../../common/http/api-exceptions";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { KbRagService } from "./kb-rag.service";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
@@ -124,7 +122,7 @@ describe("KbRagService", () => {
       expect(call[0].actor).toEqual({ orgId: ORG_ID, userId: null });
     });
 
-    it("maps quota_exceeded to BadRequestException", async () => {
+    it("maps quota_exceeded to a 402", async () => {
       mockDb.limit
         .mockResolvedValueOnce([{ id: 99 }])
         .mockResolvedValue([chunkRow]);
@@ -134,7 +132,7 @@ describe("KbRagService", () => {
 
       await expect(
         service.answerQuestion({ orgId: ORG_ID, question: QUESTION }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(InsufficientAiCreditsException);
     });
 
     it("throws ServiceUnavailableException on provider_unavailable", async () => {

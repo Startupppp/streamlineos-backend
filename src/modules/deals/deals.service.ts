@@ -130,7 +130,11 @@ export class DealsService {
 
   private async maybeCreateNegotiationChannel(orgId: string, userId: string, dealId: number): Promise<void> {
     const alreadyLinked = await this.db.query.chatChannels.findFirst({
-      where: eq(chatChannels.linkedDealId, dealId),
+      where: and(
+        eq(chatChannels.orgId, orgId),
+        eq(chatChannels.entityType, "deal"),
+        eq(chatChannels.entityId, String(dealId)),
+      ),
       columns: { id: true },
     });
     if (alreadyLinked) return;
@@ -150,7 +154,8 @@ export class DealsService {
         type: "GROUP",
         description: `Auto-created deal channel for deal #${dealId}`,
         createdBy: userId,
-        linkedDealId: dealId,
+        entityType: "deal",
+        entityId: String(dealId),
       })
       .returning({ id: chatChannels.id });
 

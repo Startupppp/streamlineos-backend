@@ -1,15 +1,17 @@
-import { Injectable } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { ConflictException, Injectable } from "@nestjs/common";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import {
   hrPeople,
   hrEmployments,
+  organizationPeople,
   attendance,
   assets,
   leaveBalances,
   leaveTypes,
   documents,
 } from "../../../db/schema";
+import { getPostgresErrorDetails } from "../../../common/db/postgres-error";
 import { hrImportRows } from "../../../db/schema/hr/import-jobs";
 import {
   employeeRowSchema,
@@ -50,14 +52,37 @@ export class HrImportCommitService {
     return null;
   }
 
+  private async resolveImportOrgPersonId(tx: Tx, orgId: string, workEmail: string, firstName: string, lastName: string): Promise<string> {
+    const byEmail = await tx.query.organizationPeople.findFirst({
+      where: and(
+        eq(organizationPeople.organizationId, orgId),
+        sql`lower(trim(${organizationPeople.workEmail})) = ${workEmail}`,
+        isNull(organizationPeople.deletedAt),
+      ),
+      columns: { organizationPersonId: true },
+    });
+    if (byEmail) return byEmail.organizationPersonId;
+
+    const [created] = await tx
+      .insert(organizationPeople)
+      .values({ organizationId: orgId, firstName, lastName, workEmail })
+      .returning({ organizationPersonId: organizationPeople.organizationPersonId });
+    if (!created) throw new Error("Failed to create canonical person record");
+    return created.organizationPersonId;
+  }
+
   private async commitEmployee(tx: Tx, orgId: string, row: EmployeeRow): Promise<CommitRef> {
+    const workEmail = row.email.toLowerCase().trim();
+    const organizationPersonId = await this.resolveImportOrgPersonId(tx, orgId, workEmail, row.firstName, row.lastName);
+
     const [person] = await tx
       .insert(hrPeople)
       .values({
         orgId,
+        organizationPersonId,
         firstName: row.firstName,
         lastName: row.lastName,
-        workEmail: row.email,
+        workEmail,
         phone: row.phone ?? null,
         gender: row.gender ?? null,
       })
@@ -81,14 +106,27 @@ export class HrImportCommitService {
     }
 
     const existing = await tx
-      .select({ id: hrPeople.id })
+      .select({ id: hrPeople.id, organizationPersonId: hrPeople.organizationPersonId })
       .from(hrPeople)
-      .where(and(eq(hrPeople.orgId, orgId), eq(hrPeople.workEmail, row.email)))
+      .where(and(eq(hrPeople.orgId, orgId), eq(hrPeople.workEmail, workEmail), isNull(hrPeople.deletedAt)))
       .limit(1);
 
-    const existingId = existing[0]?.id;
-    if (!existingId) throw new Error(`Employee with email ${row.email} could not be inserted or found`);
-    return { table: "hr_people", id: existingId };
+    const existingRow = existing[0];
+    if (!existingRow) throw new Error(`Employee with email ${row.email} could not be inserted or found`);
+
+    if (existingRow.organizationPersonId === null)
+      await tx
+        .update(hrPeople)
+        .set({ organizationPersonId })
+        .where(and(eq(hrPeople.id, existingRow.id), eq(hrPeople.orgId, orgId)))
+        .catch((err: unknown) => {
+          const { code, constraint } = getPostgresErrorDetails(err);
+          if (code === "23505" && constraint === "uniq_hr_people_org_person_link")
+            throw new ConflictException("Duplicate directory-person link detected during import");
+          throw err;
+        });
+
+    return { table: "hr_people", id: existingRow.id };
   }
 
   private async commitLeaveBalance(tx: Tx, orgId: string, row: LeaveBalanceRow): Promise<CommitRef> {

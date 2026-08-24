@@ -1,9 +1,27 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull } from "drizzle-orm";
 import { chatChannelInviteLinks, chatChannelMembers, chatChannels } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import {
+  decryptSecret,
+  encryptSecret,
+  isEncryptedSecret,
+} from "../../common/security/secret-encryption.util";
+
+function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+function newInviteToken() {
+  const token = randomBytes(24).toString("hex");
+  return {
+    token,
+    tokenHash: hashToken(token),
+    tokenEncrypted: encryptSecret(token),
+  };
+}
 
 @Injectable()
 export class ChatInviteLinksService {
@@ -31,11 +49,21 @@ export class ChatInviteLinksService {
     const member = await this.assertAdmin(channelId, userId);
 
     const existing = await this.findActiveLink(channelId);
-    if (existing) return { token: existing.token };
+    if (existing) {
+      const shown = this.readableToken(existing);
+      if (shown) return { token: shown };
+    }
 
-    const token = randomBytes(24).toString("hex");
-    await this.db.insert(chatChannelInviteLinks).values({ orgId: member.orgId, channelId, token, createdBy: userId });
-    return { token };
+    const minted = newInviteToken();
+    await this.db.insert(chatChannelInviteLinks).values({
+      orgId: member.orgId,
+      channelId,
+      token: null,
+      tokenHash: minted.tokenHash,
+      tokenEncrypted: minted.tokenEncrypted,
+      createdBy: userId,
+    });
+    return { token: minted.token };
   }
 
   async regenerateInviteLink(channelId: number, userId: string) {
@@ -51,14 +79,31 @@ export class ChatInviteLinksService {
         ),
       );
 
-    const token = randomBytes(24).toString("hex");
-    await this.db.insert(chatChannelInviteLinks).values({ orgId: member.orgId, channelId, token, createdBy: userId });
-    return { token };
+    const minted = newInviteToken();
+    await this.db.insert(chatChannelInviteLinks).values({
+      orgId: member.orgId,
+      channelId,
+      token: null,
+      tokenHash: minted.tokenHash,
+      tokenEncrypted: minted.tokenEncrypted,
+      createdBy: userId,
+    });
+    return { token: minted.token };
+  }
+
+  // A link minted before this column existed is still plaintext until it is regenerated.
+  private readableToken(link: {
+    token: string | null;
+    tokenEncrypted: string | null;
+  }): string | null {
+    if (link.tokenEncrypted && isEncryptedSecret(link.tokenEncrypted))
+      return decryptSecret(link.tokenEncrypted);
+    return link.token;
   }
 
   async joinViaInviteLink(token: string, userId: string, orgId: string) {
     const link = await this.db.query.chatChannelInviteLinks.findFirst({
-      where: and(eq(chatChannelInviteLinks.token, token), isNull(chatChannelInviteLinks.revokedAt)),
+      where: and(eq(chatChannelInviteLinks.tokenHash, hashToken(token)), isNull(chatChannelInviteLinks.revokedAt)),
     });
     if (!link) throw new NotFoundException("Invite link is invalid or has been revoked");
 

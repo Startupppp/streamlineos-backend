@@ -6,7 +6,6 @@ import { RolesController } from "./roles.controller";
 import { PrincipalGroupsController } from "./principal-groups.controller";
 import { RbacService } from "./rbac.service";
 import { RolesService } from "./roles.service";
-import { RoleLockoutService } from "./role-lockout.service";
 import { RolePermissionService } from "./role-permission.service";
 import { RoleMemberService } from "./role-member.service";
 import { PrincipalGroupsService } from "./principal-groups.service";
@@ -19,7 +18,6 @@ import { PermissionCatalogSyncService } from "./permission-catalog-sync.service"
     RbacService,
     RolesService,
     RoleMemberService,
-    RoleLockoutService,
     RolePermissionService,
     PrincipalGroupsService,
     PermissionCatalogSyncService,

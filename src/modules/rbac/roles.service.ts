@@ -42,6 +42,7 @@ import {
   toGrantableSet,
   type RoleGrantTarget,
 } from "../../common/rbac/grantability";
+import { isStructuralOrgAdmin } from "../../common/rbac/is-structural-org-admin";
 import { resolveActorRankContext } from "../../common/rbac/resolve-actor-rank";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { seedSystemRolesForOrg } from "./seed-system-roles";
@@ -53,15 +54,12 @@ import {
   ROLE_DEFAULT_PERMISSIONS,
   UNIVERSAL_MEMBER_PERMISSIONS,
 } from "./permissions";
-import { RoleLockoutService } from "./role-lockout.service";
 import {
   RolePermissionService,
   type RolePermissionMatrixEntry,
 } from "./role-permission.service";
 import { RoleMemberService } from "./role-member.service";
 import type {
-  CloneTemplateInput,
-  CreateRoleInput,
   ListRolesQuery,
   RoleMemberInput,
   SetRolePermissionsInput,
@@ -81,7 +79,6 @@ export class RolesService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly access: AccessService,
-    private readonly lockout: RoleLockoutService,
     private readonly rolePermission: RolePermissionService,
     private readonly roleMember: RoleMemberService,
   ) {}
@@ -271,57 +268,6 @@ export class RolesService {
     return role;
   }
 
-  async createRole(actor: CurrentUserContext, input: CreateRoleInput) {
-    assertKnownPermissionKeys(input.permissions, CATALOG_KEYS);
-    const targetRank = input.rank ?? ROLE_RANK.FUNCTIONAL;
-    const targetModuleKey = input.moduleKey ?? null;
-    const target: RoleGrantTarget = {
-      rank: targetRank,
-      moduleKey: targetModuleKey,
-    };
-    await this.assertGrantable(actor, input.permissions, target);
-
-    const created = await runInTenantTransaction(
-      this.db,
-      async (tx) => {
-        const existing = await tx.query.roles.findFirst({
-          where: and(eq(roles.slug, input.slug), eq(roles.orgId, actor.orgId)),
-        });
-        if (existing)
-          throw new ConflictException("A role with this slug already exists");
-
-        const [row] = await tx
-          .insert(roles)
-          .values({
-            name: input.name,
-            slug: input.slug,
-            orgId: actor.orgId,
-            isSystem: false,
-            moduleKey: targetModuleKey,
-            rank: targetRank,
-          })
-          .returning();
-
-        if (input.permissions.length > 0) {
-          await tx.insert(rolePermissionGrants).values(
-            input.permissions.map((permissionKey) => ({
-              orgId: actor.orgId,
-              roleId: row.id,
-              permissionKey,
-              scope: "all" as const,
-            })),
-          );
-        }
-
-        await bumpPermissionsVersion(tx, actor.orgId);
-        return row;
-      },
-      { orgId: actor.orgId },
-    );
-
-    return created;
-  }
-
   async updateRole(
     actor: CurrentUserContext,
     roleId: number,
@@ -408,16 +354,8 @@ export class RolesService {
     actor: CurrentUserContext,
     roleId: number,
   ): Promise<{ success: true }> {
-    const willLockOut = await this.lockout.wouldLockOutLastAdmin(
-      actor.orgId,
-      undefined,
-      roleId,
-    );
-    if (willLockOut) {
-      throw new ForbiddenException(
-        "Cannot delete a role that would remove all role-management access",
-      );
-    }
+    if (!(await isStructuralOrgAdmin(this.db, actor)))
+      throw new ForbiddenException("Only org admins may delete roles");
 
     await runInTenantTransaction(
       this.db,
@@ -543,16 +481,6 @@ export class RolesService {
   async seedDefaultRoles(orgId: string) {
     await seedSystemRolesForOrg(this.db, orgId);
 
-    const privilegedActor: CurrentUserContext = {
-      userId: "",
-      orgId,
-      role: "ORG_ADMIN",
-      permissions: [],
-      isOrgOwner: true,
-      tokenScopes: null,
-      sessionId: "",
-    };
-
     const starterTemplateIds = [
       "engineering",
       "sales_rep",
@@ -575,46 +503,55 @@ export class RolesService {
         skipped.push(template.slug);
         continue;
       }
-      await this.cloneTemplate(privilegedActor, { templateId });
+      await this.seedFromTemplate(orgId, template);
       created.push(template.slug);
     }
     return { created, skipped };
   }
 
-  async cloneTemplate(actor: CurrentUserContext, input: CloneTemplateInput) {
-    const template = ROLE_TEMPLATES.find((t) => t.id === input.templateId);
-    if (!template) throw new NotFoundException("Template not found");
+  /**
+   * Materialises a FIXED catalog template. The caller names a template id and
+   * nothing else — name, slug and permissions come from the template — so this
+   * is not custom-role creation, which is why it survives while `createRole` did not.
+   */
+  async materializeTemplate(
+    actor: CurrentUserContext,
+    templateId: string,
+  ): Promise<typeof roles.$inferSelect> {
+    if (!(await isStructuralOrgAdmin(this.db, actor)))
+      throw new ForbiddenException(
+        "Only an organization owner or administrator may add a role",
+      );
 
-    const slug = input.slug ?? template.slug;
-    const name = input.name ?? template.name;
+    const template = ROLE_TEMPLATES.find((t) => t.id === templateId);
+    if (!template) throw new NotFoundException("Role template not found");
 
-    const validPermissions = template.permissions.filter((key) =>
-      CATALOG_KEYS.has(key),
-    );
+    const existing = await this.db.query.roles.findFirst({
+      where: and(eq(roles.slug, template.slug), eq(roles.orgId, actor.orgId)),
+    });
+    if (existing) return existing;
 
-    const cloneTarget: RoleGrantTarget = {
-      rank: ROLE_RANK.FUNCTIONAL,
-      moduleKey: null,
-    };
-    await this.assertGrantable(actor, validPermissions, cloneTarget);
+    await this.seedFromTemplate(actor.orgId, template);
+    const [created] = await this.db
+      .select()
+      .from(roles)
+      .where(and(eq(roles.slug, template.slug), eq(roles.orgId, actor.orgId)))
+      .limit(1);
+    if (!created) throw new ConflictException("Role template could not be created");
+    return created;
+  }
 
-    const created = await runInTenantTransaction(
+  private async seedFromTemplate(orgId: string, template: RoleTemplate): Promise<void> {
+    const validPermissions = template.permissions.filter((k) => CATALOG_KEYS.has(k));
+    await runInTenantTransaction(
       this.db,
       async (tx) => {
-        const existing = await tx.query.roles.findFirst({
-          where: and(eq(roles.slug, slug), eq(roles.orgId, actor.orgId)),
-        });
-        if (existing)
-          throw new ConflictException(
-            `A role with slug "${slug}" already exists`,
-          );
-
         const [row] = await tx
           .insert(roles)
           .values({
-            name,
-            slug,
-            orgId: actor.orgId,
+            name: template.name,
+            slug: template.slug,
+            orgId,
             isSystem: false,
             rank: ROLE_RANK.FUNCTIONAL,
             moduleKey: null,
@@ -624,7 +561,7 @@ export class RolesService {
         if (validPermissions.length > 0) {
           await tx.insert(rolePermissionGrants).values(
             validPermissions.map((permissionKey) => ({
-              orgId: actor.orgId,
+              orgId,
               roleId: row.id,
               permissionKey,
               scope: "all" as const,
@@ -632,13 +569,10 @@ export class RolesService {
           );
         }
 
-        await bumpPermissionsVersion(tx, actor.orgId);
-        return row;
+        await bumpPermissionsVersion(tx, orgId);
       },
-      { orgId: actor.orgId },
+      { orgId },
     );
-
-    return created;
   }
 
   getRoleMembers(orgId: string, roleId: number) {
@@ -661,17 +595,4 @@ export class RolesService {
     return this.roleMember.removeRoleMember(actor, roleId, input);
   }
 
-  wouldLockOutLastAdmin(
-    orgId: string,
-    excludeUserId?: string,
-    excludeRoleId?: number,
-    excludePermissionKey?: string,
-  ): Promise<boolean> {
-    return this.lockout.wouldLockOutLastAdmin(
-      orgId,
-      excludeUserId,
-      excludeRoleId,
-      excludePermissionKey,
-    );
-  }
 }

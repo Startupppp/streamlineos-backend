@@ -1,6 +1,6 @@
 import { appUrl } from "./app-url";
 import { getBrandName } from "./branding";
-import { dispatchEmail, type EmailOptions } from "./email.provider";
+import { EmailProviderService, type EmailOptions } from "./email.provider";
 import {
   getVerificationEmailTemplate,
   getMagicLinkEmailTemplate,
@@ -29,15 +29,17 @@ import {
 } from "./templates/notifications-misc";
 
 export abstract class EmailSendersBase {
+  protected constructor(protected readonly emailProvider: EmailProviderService) {}
+
   sendEmail(options: EmailOptions): Promise<void> {
-    return dispatchEmail(options);
+    return this.emailProvider.dispatchEmail(options);
   }
 
   sendVerificationEmail(email: string, token: string): Promise<void> {
     return this.sendEmail({
       to: email,
       subject: "Verify your email address",
-      html: getVerificationEmailTemplate(`${appUrl}/verify-email?token=${token}&email=${encodeURIComponent(email)}`),
+      html: getVerificationEmailTemplate(`${appUrl()}/verify-email?token=${token}&email=${encodeURIComponent(email)}`),
     });
   }
 
@@ -58,7 +60,7 @@ export abstract class EmailSendersBase {
     return this.sendEmail({
       to: email,
       subject: `You've been invited to join ${organizationName}`,
-      html: getInvitationEmailTemplate(`${appUrl}/invitation/${token}`, organizationName, inviterName),
+      html: getInvitationEmailTemplate(`${appUrl()}/invitation/${token}`, organizationName, inviterName),
     });
   }
 
@@ -158,7 +160,7 @@ export abstract class EmailSendersBase {
         startDate,
         endDate,
         reason,
-        `${appUrl}/hr/leaves`,
+        `${appUrl()}/hr/leaves`,
       ),
     });
   }
@@ -224,7 +226,7 @@ export abstract class EmailSendersBase {
         lastWorkingDate,
         noticePeriodDays,
         reason,
-        `${appUrl}/hr/exit`,
+        `${appUrl()}/hr/exit`,
       ),
     });
   }
@@ -246,7 +248,7 @@ export abstract class EmailSendersBase {
         lastWorkingDate,
         noticePeriodDays,
         submissionDate,
-        `${appUrl}/hr/exit`,
+        `${appUrl()}/hr/exit`,
       ),
     });
   }
@@ -282,7 +284,7 @@ export abstract class EmailSendersBase {
   }
 
   sendMagicLinkEmail(email: string, token: string): Promise<void> {
-    const magicLink = `${appUrl}/magic-link?token=${token}`;
+    const magicLink = `${appUrl()}/magic-link?token=${token}`;
     return this.sendEmail({
       to: email,
       subject: "Your sign-in link",

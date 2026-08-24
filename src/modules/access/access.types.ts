@@ -15,7 +15,6 @@ export interface MfaState {
 }
 
 export interface AccessSnapshot {
-  permissions: string[];
   scopes: Record<string, DataScope>;
   modules: Record<string, boolean>;
   isOrgOwner: boolean;

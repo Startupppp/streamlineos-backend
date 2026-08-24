@@ -41,6 +41,7 @@ import {
   PLAN_PRICES_PAISE,
   ANNUAL_DISCOUNT_PCT,
   buildPlanCatalog,
+  TRIAL_PLAN,
 } from "./plan-entitlements.constants";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 
@@ -417,7 +418,7 @@ export class BillingService {
   }
 
   getPlans() {
-    return { plans: buildPlanCatalog() };
+    return { plans: buildPlanCatalog(), trialPlan: TRIAL_PLAN };
   }
 
   getMarketplace() {

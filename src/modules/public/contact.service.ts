@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
 import {
   BadRequestException,
+  Inject,
   Injectable,
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { z } from "zod";
+import { APP_CONFIG } from "../../config/config.module";
+import type { AppConfig } from "../../config/env.validation";
 import { EmailService } from "../email/email.service";
 import { getContactAdminNotificationEmail } from "../email/templates";
 import type { ContactSubmitInput } from "./dto/public.schemas";
@@ -17,7 +20,10 @@ const notificationEmailSchema = z.string().trim().email();
 
 @Injectable()
 export class ContactService {
-  constructor(private readonly email: EmailService) {}
+  constructor(
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
+    private readonly email: EmailService,
+  ) {}
 
   async submit(
     input: ContactSubmitInput,
@@ -50,7 +56,7 @@ export class ContactService {
   }
 
   private getNotificationEmail(): string {
-    const configured = process.env.CONTACT_NOTIFICATION_EMAIL;
+    const configured = this.config.CONTACT_NOTIFICATION_EMAIL;
     const parsed = notificationEmailSchema.safeParse(configured);
     if (!parsed.success) {
       throw new ServiceUnavailableException(
@@ -64,7 +70,7 @@ export class ContactService {
     token: string | undefined,
     clientIp: string | undefined,
   ): Promise<void> {
-    const secret = process.env.TURNSTILE_SECRET_KEY?.trim();
+    const secret = this.config.TURNSTILE_SECRET_KEY?.trim();
     if (!secret) return;
     if (!token) {
       throw new BadRequestException("Bot verification is required");

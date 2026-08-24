@@ -26,6 +26,7 @@ import { HrInterviewsModule } from "./interviews/hr-interviews.module";
 import { HrImportModule } from "./import/hr-import.module";
 import { OnboardingRootModule } from "./onboarding/onboarding.module";
 import { HrHubModule } from "./hub/hr-hub.module";
+import { HrCalendarModule } from "./hr-calendar.module";
 
 const HR_MODULES = [
   HrConfigModule,
@@ -55,6 +56,7 @@ const HR_MODULES = [
   HrImportModule,
   OnboardingRootModule,
   HrHubModule,
+  HrCalendarModule,
 ];
 
 @Module({

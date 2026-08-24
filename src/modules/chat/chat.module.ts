@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { BillingModule } from "../billing/core/billing.module";
 import { ChatActionsController } from "./chat-actions.controller";
+import { ChatEntityActionsController } from "./chat-entity-actions.controller";
 import { ChatChannelsController } from "./chat-channels.controller";
 import { ChatMessagesController } from "./chat-messages.controller";
 import { ChatPresenceController } from "./chat-presence.controller";
@@ -16,6 +17,7 @@ import { ChatRealtimeController } from "./chat-realtime.controller";
 import { ChatChannelsService } from "./chat-channels.service";
 import { ChatChannelMembersService } from "./chat-channel-members.service";
 import { ChatMessagesService } from "./chat-messages.service";
+import { ChatMessageFanoutService } from "./chat-message-fanout.service";
 import { ChatPresenceService } from "./chat-presence.service";
 import { ChatTypingService } from "./chat-typing.service";
 import { ChatPinsService } from "./chat-pins.service";
@@ -28,14 +30,17 @@ import { ChatInviteLinksService } from "./chat-invite-links.service";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import { ChatSummarizeService } from "./chat-summarize.service";
 import { RealtimeModule } from "../realtime/realtime.module";
+import { EntityReferenceModule } from "../entity-reference/entity-reference.module";
 
 @Module({
-  imports: [BillingModule, RealtimeModule],
-  controllers: [ChatActionsController, ChatChannelsController, ChatMessagesController, ChatPresenceController, ChatPinsController, ChatHuddlesController, ChatSearchController, ChatSavedController, ChatLinkPreviewController, ChatInviteLinksController, ChatOrgSettingsController, ChatSummarizeController, ChatRealtimeController],
+  imports: [BillingModule, RealtimeModule, EntityReferenceModule],
+  controllers: [ChatActionsController,
+    ChatEntityActionsController, ChatChannelsController, ChatMessagesController, ChatPresenceController, ChatPinsController, ChatHuddlesController, ChatSearchController, ChatSavedController, ChatLinkPreviewController, ChatInviteLinksController, ChatOrgSettingsController, ChatSummarizeController, ChatRealtimeController],
   providers: [
     ChatChannelsService,
     ChatChannelMembersService,
     ChatMessagesService,
+    ChatMessageFanoutService,
     ChatPresenceService,
     ChatTypingService,
     ChatPinsService,

@@ -252,6 +252,7 @@ export const onboardEmployeeSchema = z.object({
     }, "Employee must be at least 16 years old"),
   taxId: z.string().optional(),
   monthlySalary: z.number().min(0, "Salary cannot be negative").max(9_999_999, "Salary exceeds maximum").optional(),
+  salaryStructureTemplateId: z.number().int().positive().optional(),
   bankDetails: z
     .object({
       accountNumber: z.string().optional(),

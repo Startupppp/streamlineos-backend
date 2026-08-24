@@ -19,7 +19,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { candidates, emailTemplates } from "../../../db/schema";
 import { EmailService } from "../email.service";
-import { getEmailProvider } from "../email.provider";
+import { EmailProviderService } from "../email.provider";
 
 const sendEmailSchema = z.object({
   to: z.string().email(),
@@ -46,6 +46,7 @@ export class HrSendEmailController {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly emailService: EmailService,
+    private readonly emailProvider: EmailProviderService,
   ) {}
 
   @Post()
@@ -55,7 +56,7 @@ export class HrSendEmailController {
     @Body(new ZodValidationPipe(sendEmailSchema)) body: SendEmailInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (getEmailProvider() === "none")
+    if (this.emailProvider.getEmailProvider() === "none")
       throw new BadRequestException(
         "Email not configured. Set ZEPTOMAIL_TOKEN or RESEND_API_KEY.",
       );

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, desc, eq, gt, ilike, inArray, ne, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, ilike, inArray, sql } from "drizzle-orm";
 import {
   chatChannelMembers,
   chatMessages,
@@ -107,7 +107,7 @@ export class ChatPresenceService {
     });
   }
 
-  getOrgUsers(userId: string, orgId: string) {
+  getOrgUsers(orgId: string) {
     return this.db
       .select({
         id: users.id,
@@ -119,11 +119,7 @@ export class ChatPresenceService {
       .from(users)
       .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
       .where(
-        and(
-          eq(users.isActive, true),
-          ne(users.id, userId),
-          eq(organizationMembers.orgId, orgId),
-        ),
+        and(eq(users.isActive, true), eq(organizationMembers.orgId, orgId)),
       );
   }
 }

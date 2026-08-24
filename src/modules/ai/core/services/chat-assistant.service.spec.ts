@@ -14,7 +14,8 @@ jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
   runInNewTenantTransaction: (db: unknown, _orgId: string, fn: (tx: unknown) => Promise<unknown>) => fn(db),
 }));
 
-import { BadRequestException } from "@nestjs/common";
+import { HttpStatus } from "@nestjs/common";
+import { InsufficientAiCreditsException } from "../../../../common/http/api-exceptions";
 import { streamText } from "ai";
 import { ChatAssistantService } from "./chat-assistant.service";
 import { type AiCreditLedger } from "../gateway/credit-ledger.interface";
@@ -135,19 +136,23 @@ describe("ChatAssistantService — credit charging", () => {
     expect(ledger.settle).toHaveBeenCalledWith(42, expect.objectContaining({ model: expect.any(String) }));
   });
 
-  it("throws BadRequestException and does NOT call streamText when credits are exhausted", async () => {
+  it("throws 402 and does NOT call streamText when credits are exhausted", async () => {
     const ledger = makeLedger({
-      reserve: jest.fn().mockRejectedValue(new BadRequestException("Insufficient AI credits")),
+      reserve: jest.fn().mockRejectedValue(new InsufficientAiCreditsException()),
     });
 
     (streamText as jest.Mock).mockImplementation(() => ({}));
 
     const { svc } = buildService(ledger);
 
-    await expect(
-      svc.processChat([{ role: "user", content: "hello" }], ACTOR),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    const error: unknown = await svc
+      .processChat([{ role: "user", content: "hello" }], ACTOR)
+      .catch((e: unknown) => e);
 
+    expect(error).toBeInstanceOf(InsufficientAiCreditsException);
+    expect(
+      error instanceof InsufficientAiCreditsException ? error.getStatus() : null,
+    ).toBe(HttpStatus.PAYMENT_REQUIRED);
     expect(streamText).not.toHaveBeenCalled();
   });
 

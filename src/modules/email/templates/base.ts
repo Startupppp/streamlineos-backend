@@ -50,7 +50,7 @@ export function getEmailTemplate({
   content,
 }: EmailTemplateProps): string {
   const supportEmail = getSupportEmail();
-  const brandUrl = appUrl;
+  const brandUrl = appUrl();
   const brandName = getBrandName();
   const safeBrandName = escapeHtml(brandName);
   const brandMark = buildBrandMark(brandName);

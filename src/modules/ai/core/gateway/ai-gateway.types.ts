@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 export interface AiTokenUsage {
   promptTokens: number | null;
   completionTokens: number | null;
@@ -61,3 +63,14 @@ export interface AiInvokeBaseOpts {
   redact?: boolean;
   dedupe?: boolean;
 }
+
+export interface InvokeStructuredOpts<T> extends AiInvokeBaseOpts {
+  schema: z.ZodType<T>;
+}
+
+export interface InvokeStructuredWithImageOpts<T>
+  extends InvokeStructuredOpts<T> {
+  images: string[];
+}
+
+export type InvokeTextOpts = AiInvokeBaseOpts;

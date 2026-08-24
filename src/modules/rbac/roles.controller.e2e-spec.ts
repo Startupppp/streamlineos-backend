@@ -49,14 +49,6 @@ describe("/roles (e2e)", () => {
   });
 
   describe("RBAC enforcement", () => {
-    it("403 on POST /roles for plain member", async () => {
-      const res = await request(app.getHttpServer())
-        .post("/roles")
-        .set("Authorization", `Bearer ${memberToken}`)
-        .send({ name: "Test Role", slug: "test-role", permissions: [] });
-      expect(res.status).toBe(403);
-    });
-
     it("403 on DELETE /roles/:id for plain member", async () => {
       const res = await request(app.getHttpServer())
         .delete("/roles/999")

@@ -171,7 +171,7 @@ export class SignEnvelopeDispatchService {
             cc.email,
             cc.name,
             envelope.title,
-            `${appUrl}/sign/envelopes/${envelopeId}`,
+            `${appUrl()}/sign/envelopes/${envelopeId}`,
           );
         }
       }

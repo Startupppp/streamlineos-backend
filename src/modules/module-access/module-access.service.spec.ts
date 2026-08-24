@@ -196,6 +196,61 @@ describe("ModuleAccessService", () => {
         svc.assertModuleAccess(actor(), "hr", "manage"),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
+
+    it("lets a module owner read their own module without holding the view key", async () => {
+      (mockDb.select as jest.Mock)
+        .mockReturnValueOnce(makeSelectChain([{ userId: "u1" }]))
+        .mockReturnValueOnce(makeSelectChain([]));
+
+      await expect(
+        svc.assertModuleAccess(actor(), "hr", "view"),
+      ).resolves.toBeUndefined();
+    });
+
+    it("lets a module admin read their own module without holding the view key", async () => {
+      (mockDb.select as jest.Mock)
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([{ rank: 20, moduleKey: "hr" }]));
+
+      await expect(
+        svc.assertModuleAccess(actor(), "hr", "view"),
+      ).resolves.toBeUndefined();
+    });
+
+    it("still lets the view key alone grant read-only access administration", async () => {
+      resolveUserPermissions.mockResolvedValue(
+        new Map([["hr:access:view", "all"]]),
+      );
+
+      await expect(
+        svc.assertModuleAccess(actor(), "hr", "view"),
+      ).resolves.toBeUndefined();
+    });
+
+    it("forbids a member with neither standing nor the view key", async () => {
+      await expect(
+        svc.assertModuleAccess(actor(), "hr", "view"),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it("lets a STRUCTURAL org admin read a module they hold no key for", async () => {
+      (
+        mockDb.query as { organizationMembers: { findFirst: jest.Mock } }
+      ).organizationMembers.findFirst.mockResolvedValue({
+        isOwner: false,
+        role: "ORG_ADMIN",
+      });
+
+      await expect(
+        svc.assertModuleAccess(actor(), "hr", "view"),
+      ).resolves.toBeUndefined();
+    });
+
+    it("refuses Home outright, which is universal and has no access ladder", async () => {
+      await expect(
+        svc.assertModuleAccess(actor({ isOrgOwner: true }), "home", "view"),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
   });
 
   describe("moduleCatalog / listCatalog", () => {
@@ -204,6 +259,51 @@ describe("ModuleAccessService", () => {
       expect(catalog.length).toBeGreaterThan(0);
       expect(catalog.every((p) => p.name.split(":")[0] === "hr")).toBe(true);
       expect(catalog.some((p) => p.name === "hr:access:manage")).toBe(true);
+    });
+
+    it("has no catalog for Home, which is universal and administers no ladder", async () => {
+      await expect(
+        svc.listCatalog(actor({ isOrgOwner: true }), "home"),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe("getCallerPermissions", () => {
+    it("reports nothing for Home, which has no access screen to report against", async () => {
+      resolveUserPermissions.mockResolvedValue(
+        new Map<string, string>([["chat:channels:read", "all"]]),
+      );
+
+      await expect(
+        svc.getCallerPermissions(actor(), "home"),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it("reports org-level and module-level authority independently, since one person can hold both", async () => {
+      (
+        mockDb.query as { organizationMembers: { findFirst: jest.Mock } }
+      ).organizationMembers.findFirst.mockResolvedValue({
+        id: 1,
+        isOwner: false,
+        role: "ORG_ADMIN",
+      });
+      (mockDb.select as jest.Mock)
+        .mockReturnValueOnce(makeSelectChain([{ userId: "u1" }]))
+        .mockReturnValueOnce(makeSelectChain([]));
+
+      const result = await svc.getCallerPermissions(actor(), "hr");
+
+      expect(result).toMatchObject({ isOrgAdmin: true, isModuleOwner: true });
+    });
+
+    it("refuses someone who is not an active member", async () => {
+      (
+        mockDb.query as { organizationMembers: { findFirst: jest.Mock } }
+      ).organizationMembers.findFirst.mockResolvedValue(undefined);
+
+      await expect(
+        svc.getCallerPermissions(actor(), "hr"),
+      ).rejects.toBeInstanceOf(ForbiddenException);
     });
   });
 

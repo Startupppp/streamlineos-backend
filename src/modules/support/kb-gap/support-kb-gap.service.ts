@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { and, desc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -20,8 +21,8 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { forEachOrg } from "../../../common/tenant/for-each-org";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
-import { KbArticlesService } from "../../kb/kb-articles.service";
-import { KbEventsService } from "../../kb/kb-events.service";
+import { KbArticlesService } from "../../kb/help-centre/kb-articles.service";
+import { KbEventsService } from "../../kb/core/kb-events.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { logger } from "../../../common/logger/logger.service";
 import { SupportKnowledgeGapStatus } from "../../../db/schema/support/support-kb-gap";
@@ -124,11 +125,9 @@ export class SupportKbGapService {
 
     if (!gatewayResult.ok) {
       logger.error("support kb-gap draft failed", { orgId, gapId, kind: gatewayResult.kind });
-      throw new BadRequestException(
-        gatewayResult.kind === "quota_exceeded"
-          ? gatewayResult.message
-          : "AI draft generation failed",
-      );
+      if (gatewayResult.kind === "quota_exceeded")
+        throw new InsufficientAiCreditsException({ message: gatewayResult.message });
+      throw new BadRequestException("AI draft generation failed");
     }
 
     const { title, body } = gatewayResult.data;

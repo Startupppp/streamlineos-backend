@@ -5,6 +5,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
+import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { and, eq } from "drizzle-orm";
 import { candidateApplications, candidates, interviews } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -100,7 +101,7 @@ Score the candidate on technicalSkills, experience, communication, cultureFit an
 
     if (!gatewayResult.ok) {
       if (gatewayResult.kind === "quota_exceeded")
-        throw new BadRequestException(gatewayResult.message);
+        throw new InsufficientAiCreditsException({ message: gatewayResult.message });
       throw new ServiceUnavailableException(
         "AI scoring is temporarily unavailable",
       );
@@ -220,7 +221,7 @@ Provide a verdict (STRONG_HIRE, HIRE, ON_FENCE or NO_HIRE), an overall composite
 
     if (!gatewayResult.ok) {
       if (gatewayResult.kind === "quota_exceeded")
-        throw new BadRequestException(gatewayResult.message);
+        throw new InsufficientAiCreditsException({ message: gatewayResult.message });
       throw new ServiceUnavailableException(
         "AI scoring is temporarily unavailable",
       );

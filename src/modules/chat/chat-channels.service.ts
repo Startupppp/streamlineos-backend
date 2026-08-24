@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
 import { and, count, desc, eq, gt, inArray, isNotNull, isNull } from "drizzle-orm";
 import {
   chatChannelMembers,
@@ -13,11 +13,15 @@ import { CacheService } from "../../common/cache/cache.service";
 import { logger } from "../../common/logger/logger.service";
 import type { CreateChannelInput } from "./dto/chat.schemas";
 import { assertUsersInOrg } from "../../common/tenant/org-membership";
-import {
-  isStaleEntityChannelName,
-  resolveEntityChannelName,
-} from "./entity-channel-name.util";
+import { EntityReferenceService } from "../entity-reference/entity-reference.service";
+import type { EntityActor } from "../entity-reference/entity-reference.types";
 
+export function entityChannelFallbackName(
+  entityType: string,
+  entityId: string,
+): string {
+  return `${entityType.charAt(0).toUpperCase() + entityType.slice(1)}: ${entityId}`;
+}
 
 @Injectable()
 export class ChatChannelsService {
@@ -25,7 +29,35 @@ export class ChatChannelsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly planLimits: PlanLimitsService,
     private readonly cache: CacheService,
+    private readonly entities: EntityReferenceService,
   ) {}
+
+  private async resolveEntityChannelDisplayName<
+    T extends {
+      id: number;
+      name: string;
+      entityType: string | null;
+      entityId: string | null;
+    },
+  >(channel: T, actor: EntityActor): Promise<T> {
+    if (!channel.entityType || !channel.entityId) return channel;
+
+    const [resolution] = await this.entities.resolve(actor, [
+      { type: channel.entityType, id: channel.entityId },
+    ]);
+    if (resolution?.status !== "resolved") return channel;
+
+    const resolved = resolution.card.title;
+    if (channel.name === resolved) return channel;
+    if (
+      channel.name !==
+      entityChannelFallbackName(channel.entityType, channel.entityId)
+    ) {
+      return channel;
+    }
+
+    return { ...channel, name: resolved };
+  }
 
   private async ensureEntityChannelDisplayName<
     T extends {
@@ -34,26 +66,25 @@ export class ChatChannelsService {
       entityType: string | null;
       entityId: string | null;
     },
-  >(channel: T, orgId: string): Promise<T> {
-    if (!channel.entityType || !channel.entityId) return channel;
-
-    const resolved = await resolveEntityChannelName(
-      this.db,
-      channel.entityType,
-      channel.entityId,
-      orgId,
-    );
-    if (!resolved || channel.name === resolved) return channel;
-    if (!isStaleEntityChannelName(channel.name, channel.entityType, channel.entityId)) {
-      return channel;
-    }
+  >(channel: T, actor: EntityActor): Promise<T> {
+    const named = await this.resolveEntityChannelDisplayName(channel, actor);
+    if (named.name === channel.name) return named;
 
     await this.db
       .update(chatChannels)
-      .set({ name: resolved })
-      .where(eq(chatChannels.id, channel.id));
+      .set({ name: named.name })
+      .where(and(eq(chatChannels.id, channel.id), eq(chatChannels.orgId, actor.orgId)));
 
-    return { ...channel, name: resolved };
+    return named;
+  }
+
+  async reconcileEntityChannelDisplayName(channelId: number, actor: EntityActor): Promise<void> {
+    const channel = await this.db.query.chatChannels.findFirst({
+      where: and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, actor.orgId)),
+      columns: { id: true, name: true, entityType: true, entityId: true },
+    });
+    if (!channel || !channel.entityType || !channel.entityId) return;
+    await this.ensureEntityChannelDisplayName(channel, actor);
   }
 
   async listMemberChannelIds(orgId: string, userId: string): Promise<number[]> {
@@ -71,15 +102,16 @@ export class ChatChannelsService {
     return rows.map((row) => row.channelId);
   }
 
-  async getMyChannels(userId: string, orgId: string) {
-    return this.listMemberChannels(userId, orgId, false);
+  async getMyChannels(actor: EntityActor) {
+    return this.listMemberChannels(actor, false);
   }
 
-  async getArchivedChannels(userId: string, orgId: string) {
-    return this.listMemberChannels(userId, orgId, true);
+  async getArchivedChannels(actor: EntityActor) {
+    return this.listMemberChannels(actor, true);
   }
 
-  private async listMemberChannels(userId: string, orgId: string, archived: boolean) {
+  private async listMemberChannels(actor: EntityActor, archived: boolean) {
+    const { userId, orgId } = actor;
     try {
       const memberships = await this.db
         .select({ channelId: chatChannelMembers.channelId })
@@ -158,9 +190,13 @@ export class ChatChannelsService {
         ]),
       );
 
-      const enrichedChannels = await Promise.all(
-        channels.map((ch) => this.ensureEntityChannelDisplayName(ch, orgId)),
+      const resolutions = await Promise.allSettled(
+        channels.map((ch) => this.resolveEntityChannelDisplayName(ch, actor)),
       );
+      const enrichedChannels = channels.map((ch, i) => {
+        const r = resolutions[i];
+        return r !== undefined && r.status === "fulfilled" ? r.value : ch;
+      });
 
       return enrichedChannels.map((ch) => ({
         ...ch,
@@ -171,7 +207,7 @@ export class ChatChannelsService {
       logger.error(archived ? "[chat.getArchivedChannels]" : "[chat.getMyChannels]", {
         error: error instanceof Error ? error.message : "Unknown error",
       });
-      return [];
+      throw new InternalServerErrorException("Failed to load channels");
     }
   }
 
@@ -207,6 +243,7 @@ export class ChatChannelsService {
   async createChannel(orgId: string, userId: string, body: CreateChannelInput) {
     if (body.type === "DIRECT") {
       const { targetUserId } = body;
+      const isSelfDm = targetUserId === userId;
       await assertUsersInOrg(this.db, orgId, [targetUserId]);
 
       const myMemberships = await this.db
@@ -225,8 +262,11 @@ export class ChatChannelsService {
           with: { members: true },
         });
 
-        const dmChannel = existingDMs.find(
-          (ch) => ch.members.length === 2 && ch.members.some((m) => m.userId === targetUserId),
+        const dmChannel = existingDMs.find((ch) =>
+          isSelfDm
+            ? ch.members.length === 1 && ch.members[0]?.userId === userId
+            : ch.members.length === 2 &&
+              ch.members.some((m) => m.userId === targetUserId),
         );
 
         if (dmChannel) return { channel: dmChannel, created: false };
@@ -248,16 +288,27 @@ export class ChatChannelsService {
           .insert(chatChannels)
           .values({
             orgId,
-            name: `${currentUser?.name ?? "User"} & ${targetUser?.name ?? "User"}`,
+            name: isSelfDm
+              ? (currentUser?.name ?? "You")
+              : `${currentUser?.name ?? "User"} & ${targetUser?.name ?? "User"}`,
             type: "DIRECT",
             createdBy: userId,
           })
           .returning();
 
-        await tx.insert(chatChannelMembers).values([
-          { orgId, channelId: created.id, userId, role: "MEMBER" },
-          { orgId, channelId: created.id, userId: targetUserId, role: "MEMBER" },
-        ]);
+        await tx.insert(chatChannelMembers).values(
+          isSelfDm
+            ? [{ orgId, channelId: created.id, userId, role: "MEMBER" }]
+            : [
+                { orgId, channelId: created.id, userId, role: "MEMBER" },
+                {
+                  orgId,
+                  channelId: created.id,
+                  userId: targetUserId,
+                  role: "MEMBER",
+                },
+              ],
+        );
 
         return created;
       });
@@ -305,12 +356,27 @@ export class ChatChannelsService {
     return { channel, created: true };
   }
 
-  async getOrCreateEntityChannel(entityType: string, entityId: string, userId: string, orgId: string) {
+  /**
+   * Opening a record's channel is a read of the record, so it resolves through
+   * the entity seam first. An unresolvable reference — missing, deleted, another
+   * tenant's, or one the caller may not read — is indistinguishable, and none of
+   * them reach the channel tables.
+   */
+  async getOrCreateEntityChannel(
+    entityType: string,
+    entityId: string,
+    actor: EntityActor,
+  ) {
+    const reference = { type: entityType, id: entityId };
+    const [resolution] = await this.entities.resolve(actor, [reference]);
+    if (resolution?.status !== "resolved")
+      throw new NotFoundException("Record not found");
+
     const existing = await this.db.query.chatChannels.findFirst({
       where: and(
         eq(chatChannels.entityType, entityType),
         eq(chatChannels.entityId, entityId),
-        eq(chatChannels.orgId, orgId),
+        eq(chatChannels.orgId, actor.orgId),
       ),
       with: {
         members: {
@@ -319,50 +385,29 @@ export class ChatChannelsService {
       },
     });
 
-    if (existing) {
-      const isMember = existing.members.some((m) => m.userId === userId);
-      if (!isMember) {
-        await this.db.insert(chatChannelMembers).values({
-          orgId,
-          channelId: existing.id,
-          userId,
-          role: "MEMBER",
-        });
-      }
-      return this.ensureEntityChannelDisplayName(existing, orgId);
-    }
+    if (existing) return this.resolveEntityChannelDisplayName(existing, actor);
 
-    const resolvedName = await resolveEntityChannelName(
-      this.db,
-      entityType,
-      entityId,
-      orgId,
-    );
-    const fallbackName = `${entityType.charAt(0).toUpperCase() + entityType.slice(1)}: ${entityId}`;
-
-    const channel = await this.db.transaction(async (tx) => {
+    return this.db.transaction(async (tx) => {
       const [created] = await tx
         .insert(chatChannels)
         .values({
-          orgId,
-          name: resolvedName ?? fallbackName,
+          orgId: actor.orgId,
+          name: resolution.card.title,
           type: "GROUP",
-          createdBy: userId,
+          createdBy: actor.userId,
           entityType,
           entityId,
         })
         .returning();
 
       await tx.insert(chatChannelMembers).values({
-        orgId,
+        orgId: actor.orgId,
         channelId: created.id,
-        userId,
+        userId: actor.userId,
         role: "ADMIN",
       });
 
       return created;
     });
-
-    return channel;
   }
 }

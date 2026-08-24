@@ -28,18 +28,20 @@ import {
   isImmutableSystemRole,
   toGrantableSet,
 } from "../../common/rbac/grantability";
+import { administeringModuleOf } from "../../common/rbac/module-vocabulary";
 import { isStructuralOrgAdmin } from "../../common/rbac/is-structural-org-admin";
 import { moduleAccessDenied } from "./module-access-errors";
 import {
+  assertManagedModule,
   assertModuleAccessPolicy,
+  moduleAccessPolicyDeps,
   resolveActorRankContext,
   resolveModuleAuthorityFacts,
 } from "./module-access.helpers";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
-import { AccessService } from "../access/access.service";
+import { AccessService, SCOPE_RANK } from "../access/access.service";
 import {
-  ACCESS_MANAGED_MODULES,
   PERMISSIONS,
   ROLE_DEFAULT_PERMISSIONS,
   type Permission,
@@ -49,15 +51,8 @@ import type {
   SetModuleRolePermissionsInput,
 } from "./dto/module-access.schemas";
 
-const MANAGED_MODULES = new Set<string>(ACCESS_MANAGED_MODULES);
 const PERM_DIFF_CAP = 50;
 const ROLE_ASSIGNEE_PAGE_SIZE = 100;
-const SCOPE_RANK: Record<DataScope, number> = {
-  none: 0,
-  own: 1,
-  team: 2,
-  all: 3,
-};
 
 interface RoleAssignee {
   membershipId: number;
@@ -82,10 +77,6 @@ export async function invalidateRoleAssigneePages(
     if (!last) return;
     afterMembershipId = last.membershipId;
   }
-}
-
-function moduleOf(permissionKey: string): string {
-  return permissionKey.split(":")[0] ?? permissionKey;
 }
 
 const VIEW_ACTIONS = ["view", "read"] as const;
@@ -156,17 +147,9 @@ export class ModuleAccessService {
     private readonly audit: AuditService,
   ) {}
 
-  private assertKnownModule(moduleKey: string): void {
-    if (!MANAGED_MODULES.has(moduleKey)) {
-      throw new NotFoundException(
-        `Access is not separately managed for module "${moduleKey}"`,
-      );
-    }
-  }
-
   moduleCatalog(moduleKey: string): Permission[] {
-    this.assertKnownModule(moduleKey);
-    return PERMISSIONS.filter((p) => moduleOf(p.name) === moduleKey);
+    assertManagedModule(moduleKey);
+    return PERMISSIONS.filter((p) => administeringModuleOf(p.name) === moduleKey);
   }
 
   private moduleCatalogKeys(moduleKey: string): Set<string> {
@@ -178,14 +161,9 @@ export class ModuleAccessService {
     moduleKey: string,
     action: "view" | "manage",
   ): Promise<void> {
-    this.assertKnownModule(moduleKey);
+    assertManagedModule(moduleKey);
     await assertModuleAccessPolicy(
-      {
-        db: this.db,
-        isModuleEnabled: (orgId, key) => this.access.isModuleEnabled(orgId, key),
-        resolveUserPermissions: (orgId, userId) =>
-          this.access.resolveUserPermissions(orgId, userId),
-      },
+      moduleAccessPolicyDeps(this.db, this.access),
       actor,
       moduleKey,
       action,
@@ -348,6 +326,21 @@ export class ModuleAccessService {
           { rank: role.rank, moduleKey: role.moduleKey },
           permMeta,
         );
+
+        const widened = Array.from(deduped)
+          .filter(([key, scope]) => {
+            const held = resolved.get(key);
+            return held === undefined || SCOPE_RANK[scope] > SCOPE_RANK[held];
+          })
+          .map(([key]) => key);
+        if (widened.length > 0) {
+          const preview = widened.slice(0, 5).join(", ");
+          throw new ForbiddenException(
+            `You cannot grant a wider data scope than your own: ${preview}${
+              widened.length > 5 ? ` (+${widened.length - 5} more)` : ""
+            }`,
+          );
+        }
       }
     }
 
@@ -404,11 +397,11 @@ export class ModuleAccessService {
         }
 
         const oldModuleKeys = new Set<string>(
-          Array.from(base.keys()).filter((k) => moduleOf(k) === moduleKey),
+          Array.from(base.keys()).filter((k) => administeringModuleOf(k) === moduleKey),
         );
 
         for (const key of Array.from(base.keys())) {
-          if (moduleOf(key) === moduleKey) base.delete(key);
+          if (administeringModuleOf(key) === moduleKey) base.delete(key);
         }
         for (const [key, scope] of deduped) base.set(key, scope);
 
@@ -520,7 +513,7 @@ export class ModuleAccessService {
     isModuleOwner: boolean;
     isModuleAdmin: boolean;
   }> {
-    this.assertKnownModule(moduleKey);
+    assertManagedModule(moduleKey);
 
     const membership = await this.db.query.organizationMembers.findFirst({
       where: and(
@@ -533,6 +526,8 @@ export class ModuleAccessService {
     if (!membership)
       throw new ForbiddenException("Not an active member of this organization");
 
+    // Reported as independent facts, not as a single standing: an org owner or
+    // org admin can also be the module owner, and the ownership tab keys on it.
     const [resolved, moduleAuthority, isOrgAdmin] = await Promise.all([
       this.access.resolveUserPermissions(actor.orgId, actor.userId),
       resolveModuleAuthorityFacts(this.db, actor, moduleKey),
@@ -540,7 +535,7 @@ export class ModuleAccessService {
     ]);
 
     const permissions = Array.from(resolved.entries())
-      .filter(([key]) => key.startsWith(`${moduleKey}:`))
+      .filter(([key]) => administeringModuleOf(key) === moduleKey)
       .map(([key, scope]) => ({ key, scope }));
 
     return {

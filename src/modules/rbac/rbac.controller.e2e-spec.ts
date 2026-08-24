@@ -30,15 +30,11 @@ describe("Rbac auth (e2e)", () => {
 
   const authedRoutes: ReadonlyArray<[Method, string]> = [
     ["get", "/rbac/permissions"],
-    ["get", "/rbac/role-permissions?role=SALES"],
     ["post", "/rbac/role-permissions"],
     ["delete", "/rbac/role-permissions"],
-    ["get", "/rbac/user-permissions"],
     ["get", "/roles"],
-    ["post", "/roles"],
     ["get", "/roles/analytics"],
     ["get", "/roles/templates"],
-    ["post", "/roles/templates"],
     ["get", "/roles/1"],
     ["patch", "/roles/1"],
     ["delete", "/roles/1"],

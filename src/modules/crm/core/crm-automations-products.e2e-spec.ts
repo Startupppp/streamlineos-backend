@@ -2,15 +2,22 @@ import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { signToken } from "test/helpers/sign-token";
+import { DRIZZLE } from "src/db/drizzle.constants";
+import type { Db } from "src/db/drizzle.module";
+import { seedOrg, cleanupSeedOrgs } from "test/helpers/e2e-seed";
 
 describe("CRM Automations & Products (e2e)", () => {
   let app: INestApplication;
+  let db: Db;
   let managerToken: string;
   let memberToken: string;
   let otherOrgToken: string;
 
   beforeAll(async () => {
     app = await createE2eApp();
+    db = app.get<Db>(DRIZZLE);
+    await seedOrg(db, "org_crm_test", "org-crm-test");
+    await seedOrg(db, "org_other", "org-other");
 
     managerToken = await signToken({
       sub: "user_crm_mgr",
@@ -32,7 +39,10 @@ describe("CRM Automations & Products (e2e)", () => {
     });
   });
 
-  afterAll(async () => app.close());
+  afterAll(async () => {
+    await cleanupSeedOrgs(db, ["org_crm_test", "org_other"]);
+    await app.close();
+  });
 
   describe("Authentication — 401 without token", () => {
     const routes: ReadonlyArray<["get" | "post" | "patch" | "delete", string]> = [

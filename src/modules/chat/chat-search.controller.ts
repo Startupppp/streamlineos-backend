@@ -28,7 +28,15 @@ export class ChatSearchController {
     @Query("sender") sender: string | undefined,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.search.searchMessages(u.orgId, u.userId, q ?? "", 20, cursor ? parseInt(cursor) : undefined, from, to, sender);
+    return this.search.searchMessages(
+      { orgId: u.orgId, userId: u.userId, isOrgOwner: u.isOrgOwner },
+      q ?? "",
+      20,
+      cursor ? parseInt(cursor) : undefined,
+      from,
+      to,
+      sender,
+    );
   }
 
   @ApiOperation({ summary: "Search channels by name" })

@@ -4,13 +4,18 @@ import { and, desc, eq, gte, ilike, inArray, lt, lte, or, sql } from "drizzle-or
 import { chatChannelMembers, chatChannels, chatMessages, organizationMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import { EntityReferenceService } from "../entity-reference/entity-reference.service";
+import type { EntityActor } from "../entity-reference/entity-reference.types";
 
 const CHAT_SEARCH_ID_CAP = 1000;
 const TRIGRAM_MIN_TERM_LENGTH = 3;
 
 @Injectable()
 export class ChatSearchService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly entities: EntityReferenceService,
+  ) {}
 
   /**
    * Trigram index is unusable under RLS, so selective terms resolve through the
@@ -29,7 +34,8 @@ export class ChatSearchService {
     return inArray(chatMessages.id, ids);
   }
 
-  async searchMessages(orgId: string, userId: string, query: string, limit = 20, cursor?: number, from?: string, to?: string, sender?: string) {
+  async searchMessages(actor: EntityActor, query: string, limit = 20, cursor?: number, from?: string, to?: string, sender?: string) {
+    const { orgId, userId } = actor;
     const term = query.trim();
     if (!term) return { results: [], nextCursor: undefined };
 
@@ -63,7 +69,8 @@ export class ChatSearchService {
 
     const hasMore = rows.length > limit;
     if (hasMore) rows.pop();
-    return { results: rows, nextCursor: hasMore ? rows[rows.length - 1]?.id : undefined };
+    const results = await this.entities.withResolvedReferences(actor, rows);
+    return { results, nextCursor: hasMore ? rows[rows.length - 1]?.id : undefined };
   }
 
   async searchChannels(orgId: string, userId: string, query: string) {

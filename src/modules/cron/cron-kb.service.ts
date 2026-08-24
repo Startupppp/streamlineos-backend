@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { KbPageTreeService } from "../kb/kb-page-tree.service";
-import { KbSettingsService } from "../kb/kb-settings.service";
+import { KbPageTreeService } from "../kb/wiki/kb-page-tree.service";
+import { KbSettingsService } from "../kb/core/kb-settings.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { forEachOrg } from "../../common/tenant";

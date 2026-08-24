@@ -21,7 +21,7 @@ export const platformTemplates: Record<string, TemplateEntry> = {
         reference: "REF-2026-001",
         receivedAt: "Wed, 2 Jul 2026, 10:15 AM",
         company: "Mehta Solutions",
-        inboxUrl: `${BASE_URL}/platform/inbox`,
+        inboxUrl: `${BASE_URL()}/platform/inbox`,
       }).html,
   },
   "platform.contact_autoreply": {
@@ -55,7 +55,7 @@ export const platformTemplates: Record<string, TemplateEntry> = {
       getTrialReminderEmail({
         orgName: "Mehta Solutions",
         daysLeft: 5,
-        upgradeUrl: `${BASE_URL}/billing/upgrade`,
+        upgradeUrl: `${BASE_URL()}/billing/upgrade`,
         plan: "Business",
       }).html,
   },

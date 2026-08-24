@@ -14,6 +14,7 @@ import {
 } from "@nestjs/common";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { readRequestScope } from "../organization/core/read-request-scope";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
@@ -106,7 +107,7 @@ export class FeedbucketController {
     @Query(new ZodValidationPipe(listSubmissionsQuerySchema)) query: ListSubmissionsQuery,
     @Req() req: Request,
   ) {
-    const scope = req.rbacScope ?? "all";
+    const scope = readRequestScope(req);
     return this.submissions.list(user.orgId, user.userId, query, scope);
   }
 
@@ -172,7 +173,7 @@ export class FeedbucketController {
   @Get("stats")
   @RequirePermission("feedbucket:submissions:view")
   getStats(@CurrentUser() user: CurrentUserContext, @Req() req: Request) {
-    const scope = req.rbacScope ?? "all";
+    const scope = readRequestScope(req);
     return this.submissions.stats(user.orgId, user.userId, scope);
   }
 }

@@ -1,4 +1,4 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, type SQL } from "drizzle-orm";
 import {
   hrEmployments,
   hrPeople,
@@ -269,4 +269,119 @@ export function resolvePerson(
   if (subject.kind === "user") return resolveUser(db, orgId, subject);
   if (subject.kind === "worker") return resolveWorker(db, orgId, subject);
   return resolvePersonRecord(db, orgId, subject);
+}
+
+export type PersonIdentity = {
+  organizationPersonId: string;
+  userId: string | null;
+  workerId: string | null;
+  displayName: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  workEmail: string | null;
+  isMember: boolean;
+  isPayeeWorker: boolean;
+};
+
+export function subjectKey(subject: PersonSubject): string {
+  if (subject.kind === "user") return `user:${subject.userId}`;
+  if (subject.kind === "worker") return `worker:${subject.workerId}`;
+  return `person:${subject.organizationPersonId}`;
+}
+
+// One query for many subjects; anchored on organization_people, so an absent subject means identity unknown, never "skip".
+export async function resolvePeopleIdentities(
+  db: Db,
+  orgId: string,
+  subjects: PersonSubject[],
+): Promise<Map<string, PersonIdentity>> {
+  const identities = new Map<string, PersonIdentity>();
+  if (subjects.length === 0) return identities;
+
+  const userIds = subjects.filter((s) => s.kind === "user").map((s) => s.userId);
+  const workerIds = subjects
+    .filter((s) => s.kind === "worker")
+    .map((s) => s.workerId);
+  const personIds = subjects
+    .filter((s) => s.kind === "person")
+    .map((s) => s.organizationPersonId);
+
+  const matchers: SQL[] = [];
+  if (userIds.length > 0)
+    matchers.push(inArray(organizationPeople.userId, userIds));
+  if (workerIds.length > 0) matchers.push(inArray(workers.workerId, workerIds));
+  if (personIds.length > 0)
+    matchers.push(inArray(organizationPeople.organizationPersonId, personIds));
+  const anySubject = or(...matchers);
+  if (!anySubject) return identities;
+
+  const rows = await db
+    .select({
+      organizationPersonId: organizationPeople.organizationPersonId,
+      userId: organizationPeople.userId,
+      displayName: organizationPeople.displayName,
+      firstName: organizationPeople.firstName,
+      lastName: organizationPeople.lastName,
+      workEmail: organizationPeople.workEmail,
+      workerId: workers.workerId,
+      isPayee: workers.isPayee,
+      membershipId: organizationMembers.id,
+    })
+    .from(organizationPeople)
+    .leftJoin(
+      workers,
+      and(
+        eq(workers.organizationPersonId, organizationPeople.organizationPersonId),
+        eq(workers.organizationId, organizationPeople.organizationId),
+        isNull(workers.deletedAt),
+      ),
+    )
+    .leftJoin(
+      organizationMembers,
+      and(
+        eq(organizationMembers.userId, organizationPeople.userId),
+        eq(organizationMembers.orgId, organizationPeople.organizationId),
+      ),
+    )
+    .where(
+      and(
+        eq(organizationPeople.organizationId, orgId),
+        isNull(organizationPeople.deletedAt),
+        anySubject,
+      ),
+    );
+
+  for (const row of rows) {
+    const identity: PersonIdentity = {
+      organizationPersonId: row.organizationPersonId,
+      userId: row.userId ?? null,
+      workerId: row.workerId ?? null,
+      displayName: row.displayName ?? null,
+      firstName: row.firstName ?? null,
+      lastName: row.lastName ?? null,
+      workEmail: row.workEmail ?? null,
+      isMember: row.membershipId !== null && row.membershipId !== undefined,
+      isPayeeWorker: row.isPayee === true,
+    };
+    identities.set(
+      subjectKey({
+        kind: "person",
+        organizationPersonId: identity.organizationPersonId,
+      }),
+      identity,
+    );
+    if (identity.userId)
+      identities.set(subjectKey({ kind: "user", userId: identity.userId }), identity);
+    if (identity.workerId)
+      identities.set(
+        subjectKey({ kind: "worker", workerId: identity.workerId }),
+        identity,
+      );
+  }
+
+  const requested = new Set(subjects.map(subjectKey));
+  for (const key of [...identities.keys()])
+    if (!requested.has(key)) identities.delete(key);
+
+  return identities;
 }

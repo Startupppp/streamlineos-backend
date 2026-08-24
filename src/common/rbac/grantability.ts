@@ -15,28 +15,24 @@ export const RESERVED_PROPAGATION_KEYS: ReadonlySet<string> = new Set([
   "settings:rbac:manage",
 ]);
 
-/**
- * Platform billing is deliberately NOT delegatable: it is run by the
- * organisation owner and organisation administrators only, who hold the whole
- * catalog structurally and never need a grant. Barring the namespace from every
- * grant path — including the owner's own — is what makes "org owner and org
- * admin only" true by construction rather than by convention, so there is no
- * billing owner rung to appoint and no per-person billing grant to write.
- * This is platform billing; the organisation's own customer invoicing lives in
- * accounting and is unaffected.
- */
 const ORG_ONLY_NAMESPACES: readonly string[] = ["billing"];
 
-export function isOrgOnlyPermission(key: string): boolean {
+const ORG_ONLY_PERMISSION_KEYS: ReadonlySet<string> = new Set([
+  "chat:org-settings:manage",
+]);
+
+function isOrgOnlyNamespace(key: string): boolean {
   return ORG_ONLY_NAMESPACES.includes(key.split(":")[0] ?? "");
 }
 
-/**
- * The reserved key itself, for PROPAGATION checks only — "may this actor grant
- * this key to someone else". It must never be used to decide whether the actor
- * IS an org admin; that is structural, via `isStructuralOrgAdmin`. The former
- * `grantsOrgAdmin()` helper did exactly that and was removed (AC-04, §21).
- */
+export function isOrgOnlyPermission(key: string): boolean {
+  return isOrgOnlyNamespace(key) || ORG_ONLY_PERMISSION_KEYS.has(key);
+}
+
+export function isDelegablePermission(key: string): boolean {
+  return !isOrgOnlyPermission(key);
+}
+
 export const ORG_ADMIN_PERMISSION_KEY = "settings:manage";
 
 export interface GrantabilityActor {
@@ -95,10 +91,19 @@ export function assertPermissionsGrantable(
   target?: RoleGrantTarget,
   permissionMeta?: PermissionModuleMap,
 ): void {
-  const orgOnly = requestedKeys.filter(isOrgOnlyPermission);
+  const orgOnly = requestedKeys.filter(isOrgOnlyNamespace);
   if (orgOnly.length > 0) {
     throw new ForbiddenException(
       `Platform billing is managed by the organization owner and administrators only, and cannot be granted: ${orgOnly.join(", ")}`,
+    );
+  }
+
+  const orgOnlyKeys = requestedKeys.filter((key) =>
+    ORG_ONLY_PERMISSION_KEYS.has(key),
+  );
+  if (orgOnlyKeys.length > 0) {
+    throw new ForbiddenException(
+      `Organization-wide settings are managed by the organization owner and administrators only, and cannot be granted: ${orgOnlyKeys.join(", ")}`,
     );
   }
 

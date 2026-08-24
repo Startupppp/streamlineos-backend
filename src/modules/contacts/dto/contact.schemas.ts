@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { personNameSchema } from "../../../common/validation/person-name.schema";
 
 export const listSchema = z.object({
   search: z.string().optional(),
@@ -12,7 +13,7 @@ export const searchSchema = z.object({
 });
 
 export const createSchema = z.object({
-  name: z.string().min(1).max(200),
+  name: personNameSchema,
   email: z.string().email().optional().or(z.literal("")),
   phone: z.string().optional(),
   title: z.string().optional(),
@@ -28,7 +29,7 @@ export const createSchema = z.object({
 });
 
 export const updateSchema = z.object({
-  name: z.string().optional(),
+  name: personNameSchema.optional(),
   email: z.string().email().nullable().optional(),
   phone: z.string().nullable().optional(),
   title: z.string().nullable().optional(),
@@ -46,7 +47,7 @@ export const updateSchema = z.object({
 
 /** Matches the CRM contacts CSV import dialog payload. */
 export const bulkImportContactRowSchema = z.object({
-  name: z.string().min(1).max(200),
+  name: personNameSchema,
   email: z.string().email().optional().or(z.literal("")),
   phone: z.string().optional(),
   company: z.string().optional(),

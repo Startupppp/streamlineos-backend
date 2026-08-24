@@ -42,7 +42,7 @@ export class ClientsEmailService {
       year: "numeric",
     });
     const recordedBy = salesRep?.name ?? "N/A";
-    const clientUrl = `${appUrl}/crm/clients/${accountId}`;
+    const clientUrl = `${appUrl()}/crm/clients/${accountId}`;
 
     const sends: Promise<void>[] = [];
 

@@ -157,7 +157,7 @@ export function getCompanyAnnouncementEmailTemplate(
     <p class="email-text" style="font-size:13px;color:${EMAIL_THEME.textMuted};margin:0 0 4px 0;">
       Posted by <strong style="color:${EMAIL_THEME.textStrong};">${safeAnnouncedBy}</strong> on ${postedDate}
     </p>
-    ${renderButton(`Open ${brand}`, `${appUrl}/dashboard`)}
+    ${renderButton(`Open ${brand}`, `${appUrl()}/dashboard`)}
   `;
 
   return getEmailTemplate({

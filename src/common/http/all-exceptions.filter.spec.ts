@@ -78,6 +78,29 @@ describe("AllExceptionsFilter", () => {
     });
   });
 
+  it("maps a body-parser rejection to its real status instead of a 500", () => {
+    const { host, json, status } = hostWith();
+    filter.catch(
+      Object.assign(new Error("request entity too large"), { type: "entity.too.large" }),
+      host,
+    );
+    expect(status).toHaveBeenCalledWith(413);
+    expect(json).toHaveBeenCalledWith({
+      code: "PAYLOAD_TOO_LARGE",
+      message: "The request payload is too large.",
+    });
+  });
+
+  it("leaves an unrelated error carrying a type field on the 500 path", () => {
+    const { host, json, status } = hostWith();
+    filter.catch(Object.assign(new Error("boom"), { type: "something.else" }), host);
+    expect(status).toHaveBeenCalledWith(500);
+    expect(json).toHaveBeenCalledWith({
+      code: "INTERNAL_ERROR",
+      message: "An unexpected error occurred",
+    });
+  });
+
   it("passes BadRequestException message through", () => {
     const { host, json, status } = hostWith();
     filter.catch(new BadRequestException("Validation failed: a: Required"), host);

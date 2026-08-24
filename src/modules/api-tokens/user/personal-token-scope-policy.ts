@@ -19,7 +19,7 @@ function belongsToDisabledModule(
 export function grantablePersonalTokenPermissions(
   snapshot: AccessSnapshot,
 ): Permission[] {
-  const granted = new Set(snapshot.permissions);
+  const granted = new Set(Object.keys(snapshot.scopes));
   return PERMISSIONS.filter(
     (permission) =>
       granted.has(permission.name) &&

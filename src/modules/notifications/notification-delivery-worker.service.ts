@@ -1,4 +1,6 @@
 import { Inject, Injectable, Logger, OnModuleInit, OnModuleDestroy } from "@nestjs/common";
+import { APP_CONFIG } from "../../config/config.module";
+import type { AppConfig } from "../../config/env.validation";
 import { randomUUID } from "crypto";
 import { and, eq, lte, lt, or, desc, inArray, sql } from "drizzle-orm";
 import { notificationDeliveries, notificationQueue, notificationProviderAccounts } from "../../db/schema";
@@ -51,11 +53,12 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly registry: NotificationProviderRegistry,
     private readonly events: NotificationEventRegistryService,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
   onModuleInit(): void {
-    if (process.env.NOTIFICATIONS_INPROCESS_WORKER === "false") return;
-    const intervalMs = Number(process.env.NOTIFICATIONS_WORKER_INTERVAL_MS) || 15_000;
+    if (this.config.NOTIFICATIONS_INPROCESS_WORKER === "false") return;
+    const intervalMs = this.config.NOTIFICATIONS_WORKER_INTERVAL_MS ?? 15_000;
     this.drainTimer = setInterval(() => {
       void this.drainTick();
     }, intervalMs);

@@ -1,6 +1,8 @@
 import { createHmac } from "crypto";
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { APP_CONFIG } from "../../config/config.module";
+import type { AppConfig } from "../../config/env.validation";
 import {
   changelogEntries,
   feedbackPosts,
@@ -16,7 +18,10 @@ import type { RoadmapFeedbackInput, RoadmapVoteInput } from "./dto/public.schema
 
 @Injectable()
 export class RoadmapService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
+    @Inject(DRIZZLE) private readonly db: Db,
+  ) {}
 
   async getRoadmap(orgId: string) {
     const org = await this.db.query.organizations.findFirst({
@@ -81,7 +86,7 @@ export class RoadmapService {
   }
 
   private hashIp(ip: string): string {
-    const secret = process.env.VOTE_IP_SALT ?? process.env.BACKEND_JWT_SECRET;
+    const secret = this.config.VOTE_IP_SALT ?? this.config.BACKEND_JWT_SECRET;
     if (!secret) throw new Error("VOTE_IP_SALT or BACKEND_JWT_SECRET is required to hash voter IPs");
     return createHmac("sha256", secret)
       .update(`roadmap-vote:${ip}`)

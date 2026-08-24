@@ -5,10 +5,10 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import {
   type EmailOptions,
-  getEmailProvider,
   isTransientError,
-  sendEmailOnceDirect,
+  EmailProviderService,
 } from "./email.provider";
+import type { EmailDispatcher } from "./email-provider-selection";
 import { EmailSuppressionService, canonicalEmail } from "./email-suppression.service";
 import { getTenantContext } from "../../common/tenant/tenant-context";
 
@@ -45,6 +45,7 @@ export class EmailOutboxService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly suppression: EmailSuppressionService,
+    @Inject(EmailProviderService) private readonly emailProvider: EmailDispatcher,
   ) {}
 
   /**
@@ -151,7 +152,7 @@ export class EmailOutboxService {
       throw new Error("Failed to enqueue email");
     }
 
-    if (getEmailProvider() === "none") {
+    if (this.emailProvider.getEmailProvider() === "none") {
       await this.db
         .update(emailOutbox)
         .set({ status: "FAILED", attempts: 1, lastError: "No email provider configured" })
@@ -165,7 +166,7 @@ export class EmailOutboxService {
     }
 
     try {
-      await sendEmailOnceDirect(options);
+      await this.emailProvider.sendEmailOnceDirect(options);
       await this.db
         .update(emailOutbox)
         .set({ status: "SENT", sentAt: new Date(), attempts: 1 })
@@ -241,7 +242,7 @@ export class EmailOutboxService {
       };
 
       try {
-        await sendEmailOnceDirect(emailOptions);
+        await this.emailProvider.sendEmailOnceDirect(emailOptions);
         await this.db
           .update(emailOutbox)
           .set({ status: "SENT", sentAt: new Date(), attempts: newAttempts, lastError: null })

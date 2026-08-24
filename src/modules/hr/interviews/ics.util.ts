@@ -13,6 +13,7 @@ export interface InterviewIcsInput {
   candidateEmail: string | null;
   interviewerName: string | null;
   interviewerEmail: string | null;
+  fallbackOrganizerEmail?: string;
   orgName: string;
   organizerEmail?: string | null;
 }
@@ -45,8 +46,6 @@ function foldLine(line: string): string {
   return chunks.join("\r\n");
 }
 
-const FALLBACK_ORGANIZER_EMAIL = process.env["NOREPLY_EMAIL"] ?? "noreply@mail.local";
-
 export function buildInterviewIcs(input: InterviewIcsInput): { ics: string; fileName: string } {
   const dtStart = formatIcsDate(input.scheduledAt);
   const dtEnd = formatIcsDate(addMinutes(input.scheduledAt, input.duration));
@@ -78,7 +77,7 @@ export function buildInterviewIcs(input: InterviewIcsInput): { ics: string; file
     );
   }
 
-  const organizerEmail = input.organizerEmail ?? FALLBACK_ORGANIZER_EMAIL;
+  const organizerEmail = input.organizerEmail ?? input.fallbackOrganizerEmail ?? "noreply@mail.local";
 
   const lines = [
     "BEGIN:VCALENDAR",

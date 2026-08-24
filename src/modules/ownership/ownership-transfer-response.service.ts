@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -24,7 +25,7 @@ import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
 import { syncStructuralRoleAssignment } from "../../common/rbac/sync-structural-role";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import {
-  assignModuleOwnerRole,
+  assertModuleOwnerRoleAssigned,
   revokeModuleOwnerRole,
 } from "./module-owner-role.helper";
 import {
@@ -265,10 +266,21 @@ export class OwnershipTransferResponseService {
         .set({ ownerMembershipId: toMember.id })
         .where(eq(organizations.id, orgId));
 
-      await tx
+      const [accepted] = await tx
         .update(ownershipTransfers)
         .set({ status: "ACCEPTED", respondedAt: new Date() })
-        .where(eq(ownershipTransfers.id, transferId));
+        .where(
+          and(
+            eq(ownershipTransfers.id, transferId),
+            eq(ownershipTransfers.orgId, orgId),
+            eq(ownershipTransfers.status, "PENDING"),
+          ),
+        )
+        .returning({ id: ownershipTransfers.id });
+      if (!accepted)
+        throw new ConflictException(
+          "Transfer is no longer pending; a concurrent response committed first",
+        );
 
       await bumpPermissionsVersion(tx, orgId);
       return fromMember.userId;
@@ -350,12 +362,23 @@ export class OwnershipTransferResponseService {
         });
 
       await revokeModuleOwnerRole(tx, orgId, moduleKey, fromMember.id);
-      await assignModuleOwnerRole(tx, orgId, moduleKey, toMember.id);
+      await assertModuleOwnerRoleAssigned(tx, orgId, moduleKey, toMember.id);
 
-      await tx
+      const [accepted] = await tx
         .update(ownershipTransfers)
         .set({ status: "ACCEPTED", respondedAt: new Date() })
-        .where(eq(ownershipTransfers.id, transferId));
+        .where(
+          and(
+            eq(ownershipTransfers.id, transferId),
+            eq(ownershipTransfers.orgId, orgId),
+            eq(ownershipTransfers.status, "PENDING"),
+          ),
+        )
+        .returning({ id: ownershipTransfers.id });
+      if (!accepted)
+        throw new ConflictException(
+          "Transfer is no longer pending; a concurrent response committed first",
+        );
 
       await bumpPermissionsVersion(tx, orgId);
       return fromMember.userId;
@@ -406,14 +429,25 @@ export class OwnershipTransferResponseService {
       );
     }
 
-    await this.db
+    const [declined] = await this.db
       .update(ownershipTransfers)
       .set({
         status: "DECLINED",
         respondedAt: new Date(),
         reason: input.reason ?? null,
       })
-      .where(eq(ownershipTransfers.id, transferId));
+      .where(
+        and(
+          eq(ownershipTransfers.id, transferId),
+          eq(ownershipTransfers.orgId, orgId),
+          eq(ownershipTransfers.status, "PENDING"),
+        ),
+      )
+      .returning({ id: ownershipTransfers.id });
+    if (!declined)
+      throw new ConflictException(
+        "Transfer is no longer pending; a concurrent response committed first",
+      );
 
     await this.invalidateTransferCaches(
       orgId,
@@ -503,10 +537,21 @@ export class OwnershipTransferResponseService {
       );
     }
 
-    await this.db
+    const [cancelled] = await this.db
       .update(ownershipTransfers)
       .set({ status: "CANCELLED" })
-      .where(eq(ownershipTransfers.id, transferId));
+      .where(
+        and(
+          eq(ownershipTransfers.id, transferId),
+          eq(ownershipTransfers.orgId, orgId),
+          eq(ownershipTransfers.status, "PENDING"),
+        ),
+      )
+      .returning({ id: ownershipTransfers.id });
+    if (!cancelled)
+      throw new ConflictException(
+        "Transfer is no longer pending; a concurrent response committed first",
+      );
 
     await this.invalidateTransferCaches(
       orgId,

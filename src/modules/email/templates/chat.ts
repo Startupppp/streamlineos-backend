@@ -10,7 +10,7 @@ export function getChatReplyReminderEmail(
   channelId: number,
 ): string {
   const brand = getBrandName();
-  const chatUrl = `${appUrl}/chat?channel=${channelId}`;
+  const chatUrl = `${appUrl()}/chat?channel=${channelId}`;
   const preview = messagePreview.trim() || "Sent an attachment";
   const content = `<h1 class="email-title">${escapeHtml(senderName)} messaged you</h1>
 <p class="email-text">Hi ${escapeHtml(recipientName)},</p>

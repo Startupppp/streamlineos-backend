@@ -3,6 +3,7 @@ import { ConflictException, ForbiddenException } from "@nestjs/common";
 import { ChatChannelMembersService } from "./chat-channel-members.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { CacheService } from "../../common/cache/cache.service";
+import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 
 const mockDb = {
   query: {
@@ -20,6 +21,13 @@ const mockDb = {
   select: jest.fn().mockReturnThis(),
   from: jest.fn().mockReturnThis(),
   transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(mockDb)),
+};
+
+const mockEntities = {
+  resolve: jest.fn().mockResolvedValue([{ status: "unresolved" }]),
+  actionsFor: jest.fn().mockResolvedValue([[]]),
+  submitAction: jest.fn(),
+  isKnownType: jest.fn().mockReturnValue(true),
 };
 
 const mockCache = {
@@ -41,6 +49,7 @@ describe("ChatChannelMembersService", () => {
         ChatChannelMembersService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: CacheService, useValue: mockCache },
+        { provide: EntityReferenceService, useValue: mockEntities },
       ],
     }).compile();
     service = module.get(ChatChannelMembersService);

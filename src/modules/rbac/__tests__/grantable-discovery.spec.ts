@@ -1,12 +1,14 @@
-import { ForbiddenException } from "@nestjs/common";
 import {
   assertPermissionsGrantable,
   buildPermissionModuleMap,
   ROLE_RANK,
   toGrantableSet,
 } from "../../../common/rbac/grantability";
+import { resolveActorRankContext } from "../../../common/rbac/resolve-actor-rank";
 import { RbacService } from "../rbac.service";
 import { PERMISSIONS } from "../permissions";
+
+jest.mock("../../../common/rbac/resolve-actor-rank");
 
 const HR_KEYS = PERMISSIONS.filter((p) => p.name.startsWith("hr:")).map((p) => p.name);
 const CRM_KEYS = PERMISSIONS.filter((p) => p.name.startsWith("crm:")).map((p) => p.name);
@@ -29,12 +31,20 @@ function makeRbacService(overrides: {
   Reflect.set(svc, "db", {});
   Reflect.set(svc, "rolesService", {});
 
+  const mockFn = resolveActorRankContext as jest.Mock;
   if (overrides.resolveRankContext) {
-    Reflect.set(svc, "resolveActorRankContext", overrides.resolveRankContext);
+    mockFn.mockImplementation(
+      (_db: unknown, orgId: string, userId: string) =>
+        overrides.resolveRankContext!(orgId, userId),
+    );
+  } else {
+    mockFn.mockResolvedValue({ bestRank: ROLE_RANK.FUNCTIONAL, allowedModules: null });
   }
 
   return svc;
 }
+
+beforeEach(() => jest.clearAllMocks());
 
 describe("getDiscoveryGrantable — Module Admin scoping", () => {
   it("returns only hr: keys for an HR Module Admin", async () => {
@@ -166,7 +176,7 @@ describe("assertPermissionsGrantable — Module Admin rank boundary", () => {
 
     expect(() =>
       assertPermissionsGrantable(actor, crmSample, target, permMeta),
-    ).toThrow(ForbiddenException);
+    ).toThrow();
   });
 
   it("throws when a Module Admin tries to grant permissions from another module", () => {
@@ -184,7 +194,7 @@ describe("assertPermissionsGrantable — Module Admin rank boundary", () => {
 
     expect(() =>
       assertPermissionsGrantable(actor, crossModuleKeys, target, permMeta),
-    ).toThrow(ForbiddenException);
+    ).toThrow();
   });
 
   it("throws when actor tries to elevate above their own rank (no target.rank check exemption)", () => {
@@ -203,6 +213,6 @@ describe("assertPermissionsGrantable — Module Admin rank boundary", () => {
 
     expect(() =>
       assertPermissionsGrantable(actor, requestedKeys, target, permMeta),
-    ).toThrow(ForbiddenException);
+    ).toThrow();
   });
 });

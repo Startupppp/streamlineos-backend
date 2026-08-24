@@ -18,7 +18,7 @@ export const crmTemplates: Record<string, TemplateEntry> = {
         amount: "5,00,000",
         date: "Mon, 7 Jul 2026",
         recordedBy: "Priya Sharma",
-        clientUrl: `${BASE_URL}/crm/clients/1`,
+        clientUrl: `${BASE_URL()}/crm/clients/1`,
       }).html,
   },
   "crm.lead_status_change": {
@@ -31,7 +31,7 @@ export const crmTemplates: Record<string, TemplateEntry> = {
         leadName: "Raj Industries",
         fromStatus: "New",
         toStatus: "Qualified",
-        leadUrl: `${BASE_URL}/crm/leads/5`,
+        leadUrl: `${BASE_URL()}/crm/leads/5`,
       }).html,
   },
   "crm.lead_distribution": {
@@ -43,7 +43,7 @@ export const crmTemplates: Record<string, TemplateEntry> = {
         recipientName: "Priya Sharma",
         assignerName: "Rahul Verma",
         leadCount: 3,
-        leadsUrl: `${BASE_URL}/crm/leads`,
+        leadsUrl: `${BASE_URL()}/crm/leads`,
       }).html,
   },
 };

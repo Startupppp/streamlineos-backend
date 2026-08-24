@@ -34,12 +34,17 @@ describe("Phase 2.1 lifecycle journey (contracts)", () => {
       }),
       query: {
         hrPeople: {
-          findFirst: jest.fn().mockResolvedValue({ id: 7, userId: null }),
+          findFirst: jest
+            .fn()
+            .mockResolvedValue({ id: 7, userId: null, organizationPersonId: null }),
         },
         hrEmployments: {
           findFirst: jest.fn().mockResolvedValue({ id: 50 }),
         },
         users: { findFirst: jest.fn() },
+        organizationPeople: {
+          findFirst: jest.fn().mockResolvedValue({ organizationPersonId: "op-1" }),
+        },
       },
       update: jest.fn().mockReturnValue({
         set: jest.fn().mockReturnValue({

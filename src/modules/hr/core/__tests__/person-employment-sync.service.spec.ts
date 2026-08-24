@@ -1,7 +1,12 @@
 import { PersonEmploymentSyncService } from "../person-employment-sync.service";
 
 describe("PersonEmploymentSyncService", () => {
-  it("creates person and employment when neither exists", async () => {
+  it("creates person and employment when neither exists, linking to a new canonical person", async () => {
+    const insertOrgPerson = jest.fn().mockReturnValue({
+      values: jest.fn().mockReturnValue({
+        returning: jest.fn().mockResolvedValue([{ organizationPersonId: "op-1" }]),
+      }),
+    });
     const insertPeople = jest.fn().mockReturnValue({
       values: jest.fn().mockReturnValue({
         returning: jest.fn().mockResolvedValue([{ id: 10 }]),
@@ -24,9 +29,16 @@ describe("PersonEmploymentSyncService", () => {
         hrEmployments: {
           findFirst: jest.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(null),
         },
+        organizationPeople: {
+          findFirst: jest
+            .fn()
+            .mockResolvedValueOnce(null)
+            .mockResolvedValueOnce(null),
+        },
       },
       insert: jest
         .fn()
+        .mockImplementationOnce(() => insertOrgPerson())
         .mockImplementationOnce(() => insertPeople())
         .mockImplementationOnce(() => insertEmp()),
     };
@@ -51,9 +63,11 @@ describe("PersonEmploymentSyncService", () => {
       createdEmployment: true,
     });
     expect(audit.log).toHaveBeenCalled();
+    const insertedPeopleValues = insertPeople.mock.results[0];
+    expect(insertedPeopleValues).toBeDefined();
   });
 
-  it("reuses existing primary employment", async () => {
+  it("reuses existing primary employment without querying canonical person", async () => {
     const db = {
       query: {
         hrPeople: {
@@ -61,6 +75,9 @@ describe("PersonEmploymentSyncService", () => {
         },
         hrEmployments: {
           findFirst: jest.fn().mockResolvedValue({ id: 9, personId: 3 }),
+        },
+        organizationPeople: {
+          findFirst: jest.fn(),
         },
       },
       insert: jest.fn(),
@@ -80,5 +97,6 @@ describe("PersonEmploymentSyncService", () => {
     expect(result.createdEmployment).toBe(false);
     expect(result.employmentId).toBe(9);
     expect(db.insert).not.toHaveBeenCalled();
+    expect(db.query.organizationPeople.findFirst).not.toHaveBeenCalled();
   });
 });

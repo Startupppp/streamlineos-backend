@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, gt, isNull, or } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.types";
 import { organizationMembers, roleAssignments, roles } from "../../db/schema";
 import { ROLE_RANK } from "./grantability";
@@ -13,6 +13,7 @@ export async function resolveActorRankContext(
   orgId: string,
   userId: string,
 ): Promise<ActorRankContext> {
+  const now = new Date();
   const rows = await db
     .select({ rank: roles.rank, moduleKey: roles.moduleKey })
     .from(roleAssignments)
@@ -31,6 +32,8 @@ export async function resolveActorRankContext(
       and(
         eq(roleAssignments.orgId, orgId),
         eq(organizationMembers.userId, userId),
+        eq(organizationMembers.status, "ACTIVE"),
+        or(isNull(roleAssignments.expiresAt), gt(roleAssignments.expiresAt, now)),
       ),
     )
     .limit(100);

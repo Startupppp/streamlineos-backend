@@ -10,7 +10,6 @@ import { OrgLifecycleService } from "./org-lifecycle.service";
 import { OrganizationSettingsService } from "./organization-settings.service";
 import { InvitationsService } from "./invitations.service";
 import { InvitationsReadService } from "./invitations-read.service";
-import { InvitationLifecycleService } from "./invitation-lifecycle.service";
 import { InvitationAcceptanceService } from "./invitation-acceptance.service";
 import { RealtimeModule } from "../../realtime/realtime.module";
 
@@ -26,13 +25,11 @@ import { RealtimeModule } from "../../realtime/realtime.module";
     InvitationsService,
     InvitationsReadService,
     InvitationAcceptanceService,
-    InvitationLifecycleService,
   ],
   exports: [
     InvitationsService,
     InvitationsReadService,
     InvitationAcceptanceService,
-    InvitationLifecycleService,
     OrgMembershipService,
   ],
 })

@@ -126,7 +126,7 @@ export function getAccountLockedEmailTemplate(name: string): string {
       Hi ${sName}, your ${escapeHtml(brand)} account was locked after 5 failed sign-in attempts.
     </p>
     ${renderCallout("Your account unlocks automatically in 15 minutes. You can also sign in again with a magic link or one-time code after the lockout ends.", "warning")}
-    ${renderButton(`Sign in to ${brand}`, `${appUrl}/signin`)}
+    ${renderButton(`Sign in to ${brand}`, `${appUrl()}/signin`)}
   `;
 
   return getEmailTemplate({

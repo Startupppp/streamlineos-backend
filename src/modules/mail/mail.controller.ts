@@ -1,15 +1,11 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Get,
   HttpCode,
-  HttpException,
-  HttpStatus,
   Param,
   Post,
   Query,
-  ServiceUnavailableException,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
@@ -157,15 +153,7 @@ export class MailController {
     @Body(new ZodValidationPipe(inboxSummaryBodySchema)) body: InboxSummaryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    try {
-      return await this.mailAi.inboxSummary(u, body.accountId);
-    } catch (err) {
-      if (err instanceof BadRequestException) {
-        throw new HttpException({ message: "Insufficient AI credits" }, HttpStatus.PAYMENT_REQUIRED);
-      }
-      if (err instanceof ServiceUnavailableException) throw err;
-      throw err;
-    }
+    return this.mailAi.inboxSummary(u, body.accountId);
   }
 
   @Post("ai/thread-summary")
@@ -175,15 +163,7 @@ export class MailController {
     @Body(new ZodValidationPipe(threadSummaryBodySchema)) body: ThreadSummaryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    try {
-      return await this.mailAi.threadSummary(u, body.accountId, body.threadId);
-    } catch (err) {
-      if (err instanceof BadRequestException) {
-        throw new HttpException({ message: "Insufficient AI credits" }, HttpStatus.PAYMENT_REQUIRED);
-      }
-      if (err instanceof ServiceUnavailableException) throw err;
-      throw err;
-    }
+    return this.mailAi.threadSummary(u, body.accountId, body.threadId);
   }
 
   @Post("ai/draft")
@@ -193,14 +173,6 @@ export class MailController {
     @Body(new ZodValidationPipe(draftBodySchema)) body: DraftInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    try {
-      return await this.mailAi.draft(u, body);
-    } catch (err) {
-      if (err instanceof BadRequestException) {
-        throw new HttpException({ message: "Insufficient AI credits" }, HttpStatus.PAYMENT_REQUIRED);
-      }
-      if (err instanceof ServiceUnavailableException) throw err;
-      throw err;
-    }
+    return this.mailAi.draft(u, body);
   }
 }

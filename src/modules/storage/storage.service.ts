@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { randomUUID } from "crypto";
 import { Readable } from "stream";
 import { extname } from "path";
@@ -11,6 +11,8 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { MediaCompressionService } from "../../common/media/media-compression.service";
+import { APP_CONFIG } from "../../config/config.module";
+import type { AppConfig } from "../../config/env.validation";
 import { getRegionRegistry, hasRegionRegistry } from "../../common/region/region-registry";
 import type { RegionStorageConfig } from "../../common/region/region.config";
 
@@ -59,7 +61,10 @@ const PRIVATE_HR_FOLDERS = new Set([
 
 @Injectable()
 export class StorageService {
-  constructor(private readonly compression: MediaCompressionService) {}
+  constructor(
+    private readonly compression: MediaCompressionService,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
+  ) {}
 
   private static toR2Config(storage: RegionStorageConfig): R2Config {
     return {
@@ -88,12 +93,14 @@ export class StorageService {
       );
     }
 
+    // No topology configured: the flat single-region variables, read through the
+    // validated config rather than process.env so a missing one fails at boot.
     return {
-      region: process.env.R2_REGION || "auto",
-      bucketName: process.env.R2_BUCKET_NAME,
-      accessKeyId: process.env.R2_ACCESS_KEY_ID,
-      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
-      endpoint: process.env.R2_ENDPOINT,
+      region: this.config.R2_REGION ?? "auto",
+      bucketName: this.config.R2_BUCKET_NAME,
+      accessKeyId: this.config.R2_ACCESS_KEY_ID,
+      secretAccessKey: this.config.R2_SECRET_ACCESS_KEY,
+      endpoint: this.config.R2_ENDPOINT,
     };
   }
 
@@ -139,7 +146,7 @@ export class StorageService {
   private publicUrlFor(folder: string, key: string, override?: string): string {
     const folderRoot = folder.split("/", 1)[0] ?? folder;
     if (PRIVATE_HR_FOLDERS.has(folderRoot)) return key;
-    const publicBase = override || process.env.NEXT_PUBLIC_R2_PUBLIC_URL;
+    const publicBase = override ?? this.config.NEXT_PUBLIC_R2_PUBLIC_URL;
     return publicBase ? `${publicBase}/${key}` : key;
   }
 
@@ -265,7 +272,7 @@ export class StorageService {
     const value = url.trim();
     if (!/^https?:\/\//i.test(value)) return value;
 
-    const base = process.env.NEXT_PUBLIC_R2_PUBLIC_URL?.replace(/\/$/, "");
+    const base = this.config.NEXT_PUBLIC_R2_PUBLIC_URL?.replace(/\/$/, "");
     if (!base || !value.startsWith(`${base}/`)) return "";
 
     try {

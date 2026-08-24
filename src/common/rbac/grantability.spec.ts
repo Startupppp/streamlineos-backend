@@ -79,6 +79,42 @@ describe("assertKnownPermissionKeys", () => {
   });
 });
 
+describe("organisation-wide chat settings are never delegated", () => {
+  it("refuses chat:org-settings:manage even to a grantor who holds it", () => {
+    expect(() =>
+      assertPermissionsGrantable(
+        {
+          isOrgOwner: false,
+          grantable: new Set(["chat:org-settings:manage"]),
+        },
+        ["chat:org-settings:manage"],
+      ),
+    ).toThrow(ForbiddenException);
+  });
+
+  it("refuses it to an org owner too, so there is no rung to appoint", () => {
+    expect(() =>
+      assertPermissionsGrantable(
+        { isOrgOwner: true, grantable: new Set() },
+        ["chat:org-settings:manage"],
+      ),
+    ).toThrow(ForbiddenException);
+  });
+
+  it("leaves the rest of the chat namespace delegatable", () => {
+    const chatAdmin = new Set([
+      "chat:huddles:moderate",
+      "chat:invite-links:manage",
+    ]);
+    expect(() =>
+      assertPermissionsGrantable({ isOrgOwner: false, grantable: chatAdmin }, [
+        "chat:huddles:moderate",
+        "chat:invite-links:manage",
+      ]),
+    ).not.toThrow();
+  });
+});
+
 describe("assertPermissionsGrantable — existing rules", () => {
   const grantable = new Set(["crm:leads:view", "crm:leads:create"]);
 

@@ -43,8 +43,10 @@
     "test": "jest",
     "test:e2e": "jest --config ./jest-e2e.json",
     "test:e2e:ci": "node --max-old-space-size=6144 ./node_modules/jest/bin/jest.js --config ./jest-e2e.json --runInBand --forceExit",
+    "test:e2e:seeded": "node --max-old-space-size=6144 ./node_modules/jest/bin/jest.js --config ./jest-e2e-seeded.json --forceExit",
     "test:e2e:support": "node --max-old-space-size=6144 ./node_modules/jest/bin/jest.js --config ./jest-e2e.json --runInBand --testPathPattern=support",
-    "db:check-request-txn": "node src/scripts/check-request-transaction-cost.mjs"
+    "db:check-request-txn": "node src/scripts/check-request-transaction-cost.mjs",
+    "check:cycles": "npx --yes madge@8 --circular --extensions ts src"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.33",
@@ -80,6 +82,7 @@
     "pdf-parse": "^1.1.4",
     "postgres": "^3.4.7",
     "qrcode": "^1.5.4",
+    "quickjs-emscripten": "0.32.0",
     "reflect-metadata": "^0.2.2",
     "resend": "^6.16.0",
     "rxjs": "^7.8.1",
@@ -136,14 +139,20 @@
       "dist"
     ],
     "transform": {
-      "^.+\\.ts$": "ts-jest",
+      "^.+\\.ts$": [
+        "ts-jest",
+        {
+          "isolatedModules": true
+        }
+      ],
       "^.+\\.js$": [
         "ts-jest",
         {
           "tsconfig": {
             "allowJs": true
           },
-          "diagnostics": false
+          "diagnostics": false,
+          "isolatedModules": true
         }
       ]
     },

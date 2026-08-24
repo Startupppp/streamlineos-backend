@@ -1,8 +1,6 @@
 import {
   canTransferModuleOwnership,
-  resolveModuleStanding,
-  type ModuleStanding,
-  type ModuleStandingLevel,
+  resolveModuleManagementStanding,
 } from "../module-standing";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -47,52 +45,37 @@ function actor(isOrgOwner = false): CurrentUserContext {
   return { orgId: ORG, userId: "user-1", isOrgOwner } as CurrentUserContext;
 }
 
-const LEVELS: ModuleStandingLevel[] = ["owner", "admin", "member", "none"];
-
-function describeStanding(standing: ModuleStanding): string {
-  switch (standing.level) {
-    case "owner":
-      return "owner";
-    case "admin":
-      return "admin";
-    case "member":
-      return "member";
-    case "none":
-      return "none";
-  }
-}
-
-describe("resolveModuleStanding", () => {
-  it("answers one question with one of exactly four standings", async () => {
-    const standing = await resolveModuleStanding(
-      createDb({ activeMembership: true }),
-      actor(),
-      MODULE,
-    );
-    expect(LEVELS).toContain(standing.level);
-    expect(describeStanding(standing)).toBe("member");
+describe("resolveModuleManagementStanding", () => {
+  it("answers with null when the caller has no management standing", async () => {
+    expect(
+      await resolveModuleManagementStanding(
+        createDb({ activeMembership: true }),
+        actor(),
+        MODULE,
+      ),
+    ).toBeNull();
   });
 
   it("resolves the organisation owner as owner everywhere", async () => {
-    const standing = await resolveModuleStanding(createDb({}), actor(true), MODULE);
-    expect(standing.level).toBe("owner");
-    expect(standing.source).toBe("org-owner");
-    expect(standing.canManageAccess).toBe(true);
+    const standing = await resolveModuleManagementStanding(createDb({}), actor(true), MODULE);
+    expect(standing?.level).toBe("owner");
+    expect(standing?.source).toBe("org-owner");
+    expect(standing?.canManageAccess).toBe(true);
   });
 
   it("resolves an organisation admin as having module-management authority everywhere", async () => {
-    const standing = await resolveModuleStanding(
+    const standing = await resolveModuleManagementStanding(
       createDb({ orgMember: { isOwner: false, role: "ORG_ADMIN" } }),
       actor(),
       MODULE,
     );
-    expect(standing.level).toBe("admin");
-    expect(standing.source).toBe("org-admin");
-    expect(standing.canManageAccess).toBe(true);
+    expect(standing?.level).toBe("admin");
+    expect(standing?.source).toBe("org-admin");
+    expect(standing?.canManageAccess).toBe(true);
   });
 
   it("resolves the module owner from the ownership record", async () => {
-    const standing = await resolveModuleStanding(
+    const standing = await resolveModuleManagementStanding(
       createDb({
         orgMember: { isOwner: false, role: "MEMBER" },
         ownerUserId: "user-1",
@@ -100,12 +83,12 @@ describe("resolveModuleStanding", () => {
       actor(),
       MODULE,
     );
-    expect(standing.source).toBe("module-ownership");
-    expect(standing.canTransferOwnership).toBe(true);
+    expect(standing?.source).toBe("module-ownership");
+    expect(standing?.canTransferOwnership).toBe(true);
   });
 
   it("resolves a module admin from a ranked role assignment", async () => {
-    const standing = await resolveModuleStanding(
+    const standing = await resolveModuleManagementStanding(
       createDb({
         orgMember: { isOwner: false, role: "MEMBER" },
         ownerUserId: "someone-else",
@@ -114,36 +97,38 @@ describe("resolveModuleStanding", () => {
       actor(),
       MODULE,
     );
-    expect(standing.level).toBe("admin");
-    expect(standing.source).toBe("module-role");
+    expect(standing?.level).toBe("admin");
+    expect(standing?.source).toBe("module-role");
   });
 
-  it("separates a member of the organisation from a stranger to it", async () => {
-    const member = await resolveModuleStanding(
-      createDb({ orgMember: { isOwner: false, role: "MEMBER" }, activeMembership: true }),
-      actor(),
-      MODULE,
-    );
-    expect(member.level).toBe("member");
+  it("gives neither a plain member nor a stranger any management standing", async () => {
+    expect(
+      await resolveModuleManagementStanding(
+        createDb({ orgMember: { isOwner: false, role: "MEMBER" }, activeMembership: true }),
+        actor(),
+        MODULE,
+      ),
+    ).toBeNull();
 
-    const stranger = await resolveModuleStanding(
-      createDb({ orgMember: null, activeMembership: false }),
-      actor(),
-      MODULE,
-    );
-    expect(stranger.level).toBe("none");
+    expect(
+      await resolveModuleManagementStanding(
+        createDb({ orgMember: null, activeMembership: false }),
+        actor(),
+        MODULE,
+      ),
+    ).toBeNull();
   });
 
   it("keeps ownership transfer away from every admin standing", async () => {
-    const orgAdmin = await resolveModuleStanding(
+    const orgAdmin = await resolveModuleManagementStanding(
       createDb({ orgMember: { isOwner: false, role: "ORG_ADMIN" } }),
       actor(),
       MODULE,
     );
-    expect(orgAdmin.canManageAccess).toBe(true);
-    expect(orgAdmin.canTransferOwnership).toBe(false);
+    expect(orgAdmin?.canManageAccess).toBe(true);
+    expect(orgAdmin?.canTransferOwnership).toBe(false);
 
-    const moduleAdmin = await resolveModuleStanding(
+    const moduleAdmin = await resolveModuleManagementStanding(
       createDb({
         orgMember: { isOwner: false, role: "MEMBER" },
         ownerUserId: "someone-else",
@@ -152,18 +137,18 @@ describe("resolveModuleStanding", () => {
       actor(),
       MODULE,
     );
-    expect(moduleAdmin.canManageAccess).toBe(true);
-    expect(moduleAdmin.canTransferOwnership).toBe(false);
+    expect(moduleAdmin?.canManageAccess).toBe(true);
+    expect(moduleAdmin?.canTransferOwnership).toBe(false);
   });
 
   it("is generic on the module key, so a nineteenth module needs no change here", async () => {
     for (const moduleKey of ["hr", "chat", "mail", "a-module-invented-today"]) {
-      const standing = await resolveModuleStanding(
+      const standing = await resolveModuleManagementStanding(
         createDb({}),
         actor(true),
         moduleKey,
       );
-      expect(standing.level).toBe("owner");
+      expect(standing?.level).toBe("owner");
     }
   });
 });

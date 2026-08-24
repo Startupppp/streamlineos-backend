@@ -11,7 +11,8 @@ if (!url) {
 }
 
 const ORG = process.env.SEED_ORG_ID ?? "aa5627a2-a7de-4dca-97d2-135f3a5f801b";
-const sql = postgres(url, { max: 1, prepare: false, ssl: "require", onnotice: () => {} });
+const ssl = process.env.PGSSLMODE === "disable" ? false : "require";
+const sql = postgres(url, { max: 1, prepare: false, ssl, onnotice: () => {} });
 
 const CHECKS = [
   {

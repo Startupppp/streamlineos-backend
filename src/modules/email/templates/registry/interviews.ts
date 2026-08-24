@@ -49,7 +49,7 @@ export const interviewsTemplates: Record<string, TemplateEntry> = {
     generateHtml: () =>
       getSelfScheduleBookingEmail(
         "Arjun Kapoor",
-        `${BASE_URL}/schedule/abc123`,
+        `${BASE_URL()}/schedule/abc123`,
         "Fri, 11 Jul 2026",
         "Acme Corp",
       ).html,

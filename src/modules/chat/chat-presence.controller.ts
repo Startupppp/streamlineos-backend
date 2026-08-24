@@ -89,6 +89,6 @@ export class ChatPresenceController {
   @Get("users")
   @RequirePermission("chat:channels:read")
   users(@CurrentUser() u: CurrentUserContext) {
-    return this.presence.getOrgUsers(u.userId, u.orgId);
+    return this.presence.getOrgUsers(u.orgId);
   }
 }

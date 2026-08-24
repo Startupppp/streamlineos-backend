@@ -11,7 +11,7 @@ export const organizationTemplates: Record<string, TemplateEntry> = {
     category: "Organization",
     name: "Team Invitation",
     subject: "You've been invited to join Acme Corp",
-    generateHtml: () => getInvitationEmailTemplate(`${BASE_URL}/invitation/tok123`, "Acme Corp", "Rahul Verma"),
+    generateHtml: () => getInvitationEmailTemplate(`${BASE_URL()}/invitation/tok123`, "Acme Corp", "Rahul Verma"),
   },
   "org.holiday": {
     category: "Organization",

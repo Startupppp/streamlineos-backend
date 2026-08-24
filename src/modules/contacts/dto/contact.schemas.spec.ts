@@ -22,7 +22,16 @@ describe("contact schemas", () => {
   });
 
   it("createSchema accepts empty-string email", () => {
-    expect(createSchema.parse({ name: "A", email: "" }).email).toBe("");
+    expect(createSchema.parse({ name: "Ana", email: "" }).email).toBe("");
+  });
+
+  it("createSchema rejects a name that is not a name", () => {
+    expect(() => createSchema.parse({ name: "(*&(&TGISBFd Df" })).toThrow();
+    expect(() => createSchema.parse({ name: "A" })).toThrow();
+    expect(() => createSchema.parse({ name: "   " })).toThrow();
+    expect(createSchema.parse({ name: "  Mary-Jane O'Brien  " }).name).toBe(
+      "Mary-Jane O'Brien",
+    );
   });
 
   it("updateSchema is all-optional and allows nullable fields", () => {

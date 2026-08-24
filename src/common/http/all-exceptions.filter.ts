@@ -20,6 +20,7 @@ function defaultCode(status: number): string {
     [HttpStatus.NOT_FOUND]: "NOT_FOUND",
     [HttpStatus.CONFLICT]: "CONFLICT",
     [HttpStatus.PAYLOAD_TOO_LARGE]: "PAYLOAD_TOO_LARGE",
+    [HttpStatus.UNSUPPORTED_MEDIA_TYPE]: "UNSUPPORTED_MEDIA_TYPE",
     [HttpStatus.UNPROCESSABLE_ENTITY]: "UNPROCESSABLE_ENTITY",
     [HttpStatus.TOO_MANY_REQUESTS]: "RATE_LIMITED",
     [HttpStatus.SERVICE_UNAVAILABLE]: "SERVICE_UNAVAILABLE",
@@ -53,6 +54,37 @@ function httpErrorEnvelope(
     code: typeof body.code === "string" ? body.code : defaultCode(status),
     message: messageFromHttpBody(body),
     ...(body.details !== undefined ? { details: body.details } : {}),
+  };
+}
+
+const BODY_PARSER_STATUS: Partial<Record<string, number>> = {
+  "entity.too.large": HttpStatus.PAYLOAD_TOO_LARGE,
+  "parameters.too.many": HttpStatus.PAYLOAD_TOO_LARGE,
+  "entity.parse.failed": HttpStatus.BAD_REQUEST,
+  "entity.verify.failed": HttpStatus.BAD_REQUEST,
+  "request.aborted": HttpStatus.BAD_REQUEST,
+  "request.size.invalid": HttpStatus.BAD_REQUEST,
+  "encoding.unsupported": HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+  "charset.unsupported": HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+};
+
+const BODY_PARSER_MESSAGE: Partial<Record<number, string>> = {
+  [HttpStatus.PAYLOAD_TOO_LARGE]: "The request payload is too large.",
+  [HttpStatus.BAD_REQUEST]: "The request body could not be read.",
+  [HttpStatus.UNSUPPORTED_MEDIA_TYPE]: "That request encoding isn't supported.",
+};
+
+function bodyParserFailure(exception: unknown): (ApiErrorEnvelope & { status: number }) | null {
+  if (typeof exception !== "object" || exception === null) return null;
+  if (!("type" in exception)) return null;
+  const type = Reflect.get(exception, "type");
+  if (typeof type !== "string") return null;
+  const status = BODY_PARSER_STATUS[type];
+  if (status === undefined) return null;
+  return {
+    status,
+    code: defaultCode(status),
+    message: BODY_PARSER_MESSAGE[status] ?? "The request could not be completed.",
   };
 }
 
@@ -116,6 +148,17 @@ export class AllExceptionsFilter implements ExceptionFilter {
       res
         .status(status)
         .json(httpErrorEnvelope(status, body as string | Record<string, unknown>));
+      return;
+    }
+
+    const parserFailure = bodyParserFailure(exception);
+    if (parserFailure) {
+      const { status, ...envelope } = parserFailure;
+      logger.warn("Rejected an unreadable request body", {
+        code: envelope.code,
+        request: describeRequest(host),
+      });
+      res.status(status).json(envelope satisfies ApiErrorEnvelope);
       return;
     }
 

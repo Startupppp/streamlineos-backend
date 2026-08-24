@@ -3,10 +3,15 @@ import { and, desc, eq } from "drizzle-orm";
 import { chatChannelMembers, chatMessages, chatPinnedMessages } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import { EntityReferenceService } from "../entity-reference/entity-reference.service";
+import type { EntityActor } from "../entity-reference/entity-reference.types";
 
 @Injectable()
 export class ChatPinsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly entities: EntityReferenceService,
+  ) {}
 
   private async assertMember(channelId: number, userId: string) {
     const member = await this.db.query.chatChannelMembers.findFirst({
@@ -16,9 +21,9 @@ export class ChatPinsService {
     return member;
   }
 
-  async listPins(channelId: number, userId: string) {
-    await this.assertMember(channelId, userId);
-    return this.db.query.chatPinnedMessages.findMany({
+  async listPins(channelId: number, actor: EntityActor) {
+    await this.assertMember(channelId, actor.userId);
+    const rows = await this.db.query.chatPinnedMessages.findMany({
       where: eq(chatPinnedMessages.channelId, channelId),
       orderBy: [desc(chatPinnedMessages.pinnedAt)],
       limit: 100,
@@ -32,6 +37,12 @@ export class ChatPinsService {
         pinnedByUser: { columns: { id: true, name: true } },
       },
     });
+
+    const resolved = await this.entities.withResolvedReferences(
+      actor,
+      rows.map((row) => row.message),
+    );
+    return rows.map((row, index) => ({ ...row, message: resolved[index] }));
   }
 
   async pin(channelId: number, messageId: number, userId: string) {

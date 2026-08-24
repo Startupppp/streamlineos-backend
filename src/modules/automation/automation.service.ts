@@ -174,7 +174,7 @@ export class AutomationService {
     return ticketId;
   }
 
-  private async executeAction(
+  async executeAction(
     orgId: string,
     action: AutomationAction,
     payload: EventPayload,

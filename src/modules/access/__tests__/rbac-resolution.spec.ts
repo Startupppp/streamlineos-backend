@@ -184,10 +184,10 @@ describe("AccessService.getAccessSnapshot — org owner receives every catalog p
     const svc = buildService(db);
     const snapshot = await svc.getAccessSnapshot(ORG_A, USER, ctx);
 
-    expect(snapshot.permissions.length).toBeGreaterThan(0);
-    expect(snapshot.permissions).toContain("hr:employees:view");
-    expect(snapshot.permissions).toContain("crm:leads:view");
-    expect(snapshot.permissions).toContain("ownership:org:transfer");
+    expect(Object.keys(snapshot.scopes).length).toBeGreaterThan(0);
+    expect(snapshot.scopes).toHaveProperty("hr:employees:view");
+    expect(snapshot.scopes).toHaveProperty("crm:leads:view");
+    expect(snapshot.scopes).toHaveProperty("ownership:org:transfer");
     expect(snapshot.scopes["hr:leaves:approve"]).toBe("all");
     expect(snapshot.scopes["hr:employees:view"]).toBe("all");
     expect(snapshot.isOrgOwner).toBe(true);

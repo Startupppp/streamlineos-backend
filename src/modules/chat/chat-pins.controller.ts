@@ -23,7 +23,11 @@ export class ChatPinsController {
   @Get()
   @RequirePermission("chat:messages:read")
   list(@Param("channelId", ParseIntPipe) channelId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.pins.listPins(channelId, u.userId);
+    return this.pins.listPins(channelId, {
+      orgId: u.orgId,
+      userId: u.userId,
+      isOrgOwner: u.isOrgOwner,
+    });
   }
 
   @ApiOperation({ summary: "Pin a message in a channel" })

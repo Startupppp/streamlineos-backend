@@ -17,13 +17,15 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import type { UpdateChannelInput } from "./dto/chat.schemas";
 import { assertUsersInOrg } from "../../common/tenant/org-membership";
-
+import { EntityReferenceService } from "../entity-reference/entity-reference.service";
+import type { EntityActor } from "../entity-reference/entity-reference.types";
 
 @Injectable()
 export class ChatChannelMembersService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly entities: EntityReferenceService,
   ) {}
 
   private async assertMember(channelId: number, userId: string) {
@@ -35,6 +37,11 @@ export class ChatChannelMembersService {
     });
     if (!member) throw new ForbiddenException("You are not a member of this channel");
     return member;
+  }
+
+  /** The only right a generic entity-action route needs: being in the room. */
+  async assertChannelMembership(channelId: number, userId: string): Promise<void> {
+    await this.assertMember(channelId, userId);
   }
 
   private async assertAdmin(channelId: number, userId: string) {
@@ -148,31 +155,41 @@ export class ChatChannelMembersService {
     return { ok: true };
   }
 
-  async joinPublicChannel(channelId: number, userId: string, orgId: string) {
+  async joinOpenChannel(channelId: number, actor: EntityActor) {
     const channel = await this.db.query.chatChannels.findFirst({
       where: and(
         eq(chatChannels.id, channelId),
-        eq(chatChannels.orgId, orgId),
-        eq(chatChannels.type, "PUBLIC"),
+        eq(chatChannels.orgId, actor.orgId),
         eq(chatChannels.isArchived, false),
       ),
+      columns: { id: true, type: true, entityType: true, entityId: true },
     });
 
-    if (!channel) throw new NotFoundException("Public channel not found");
+    if (!channel) throw new NotFoundException("Channel not found");
+
+    if (channel.type !== "PUBLIC") {
+      if (!channel.entityType || !channel.entityId)
+        throw new NotFoundException("Channel not found");
+      const [resolution] = await this.entities.resolve(actor, [
+        { type: channel.entityType, id: channel.entityId },
+      ]);
+      if (resolution?.status !== "resolved")
+        throw new NotFoundException("Channel not found");
+    }
 
     const existing = await this.db.query.chatChannelMembers.findFirst({
       where: and(
         eq(chatChannelMembers.channelId, channelId),
-        eq(chatChannelMembers.userId, userId),
+        eq(chatChannelMembers.userId, actor.userId),
       ),
     });
 
     if (existing) return { ok: true };
 
     await this.db.insert(chatChannelMembers).values({
-      orgId,
+      orgId: actor.orgId,
       channelId,
-      userId,
+      userId: actor.userId,
       role: "MEMBER",
     });
 

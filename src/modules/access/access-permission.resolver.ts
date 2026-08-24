@@ -13,6 +13,7 @@ import {
   userDelegations,
 } from "../../db/schema";
 import { logger } from "../../common/logger/logger.service";
+import { isDelegablePermission } from "../../common/rbac/grantability";
 import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
 import {
   ROLE_DEFAULT_PERMISSIONS,
@@ -41,6 +42,19 @@ export interface MembershipAccessState {
   expiresAt: number;
 }
 
+/**
+ * Keyed by the access version so a bump on another instance invalidates it too.
+ * Without the version this cache was the one access cache a bump could not
+ * reach across a process boundary.
+ */
+export function membershipCacheKey(
+  orgId: string,
+  userId: string,
+  version: number,
+): string {
+  return `${orgId}:${userId}:${version}`;
+}
+
 export class AccessPermissionResolver {
   constructor(
     private readonly getDatabase: () => Db,
@@ -57,6 +71,7 @@ export class AccessPermissionResolver {
   async computeUserPermissions(
     orgId: string,
     userId: string,
+    version: number,
   ): Promise<Record<string, DataScope>> {
     const member = await this.db.query.organizationMembers.findFirst({
       where: and(
@@ -66,7 +81,7 @@ export class AccessPermissionResolver {
       columns: { isOwner: true, status: true, id: true, role: true },
     });
     const gate = evaluateMembershipGate(member);
-    this.membershipAccessCache.set(`${orgId}:${userId}`, {
+    this.membershipAccessCache.set(membershipCacheKey(orgId, userId, version), {
       exists: Boolean(member),
       active: gate.active,
       isOwnerOrAdmin:
@@ -185,6 +200,19 @@ export class AccessPermissionResolver {
     ): void => {
       const canonicalKey =
         key === "hr:employees:read" ? "hr:employees:view" : key;
+      // The write-time guard only covers the API grant paths, so a migration can
+      // still seat an org-only key in a grant table (0437 did). Owners and org
+      // admins returned the whole catalog above and never reach here.
+      if (!isDelegablePermission(canonicalKey)) {
+        if (!this.warnedUnknownKeys.has(canonicalKey)) {
+          this.warnedUnknownKeys.add(canonicalKey);
+          logger.warn(
+            "access: org-only permission key found in a grant - dropped from resolved permissions",
+            { orgId, key: canonicalKey, source },
+          );
+        }
+        return;
+      }
       if (CATALOG_KEY_SET.has(canonicalKey)) {
         merge(canonicalKey, scope);
         return;
@@ -294,8 +322,10 @@ export class AccessPermissionResolver {
       mergeIfKnown(row.permissionKey, row.scope, "user-grant");
     }
 
+    // Ownership expansion is not a grant path, so the org-only bar has to bite here too.
     for (const { moduleKey } of ownershipRows) {
       for (const key of moduleScopedPermissions(moduleKey)) {
+        if (!isDelegablePermission(key)) continue;
         merge(key, "all");
       }
     }

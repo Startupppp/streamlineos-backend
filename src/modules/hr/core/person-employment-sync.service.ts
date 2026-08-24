@@ -1,9 +1,10 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, desc, eq, gt, isNull, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull, lte, sql } from "drizzle-orm";
 import {
   hrEmployments,
   hrPeople,
   organizationMembers,
+  organizationPeople,
   users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -101,6 +102,42 @@ export class PersonEmploymentSyncService {
     private readonly audit: HrAuditService,
   ) {}
 
+  private async resolveOrgPersonId(
+    db: Db,
+    orgId: string,
+    userId: string,
+    workEmail: string,
+    firstName: string,
+    lastName: string,
+  ): Promise<string> {
+    const byUser = await db.query.organizationPeople.findFirst({
+      where: and(
+        eq(organizationPeople.organizationId, orgId),
+        eq(organizationPeople.userId, userId),
+        isNull(organizationPeople.deletedAt),
+      ),
+      columns: { organizationPersonId: true },
+    });
+    if (byUser) return byUser.organizationPersonId;
+
+    const byEmail = await db.query.organizationPeople.findFirst({
+      where: and(
+        eq(organizationPeople.organizationId, orgId),
+        sql`lower(trim(${organizationPeople.workEmail})) = ${workEmail}`,
+        isNull(organizationPeople.deletedAt),
+      ),
+      columns: { organizationPersonId: true },
+    });
+    if (byEmail) return byEmail.organizationPersonId;
+
+    const [created] = await db
+      .insert(organizationPeople)
+      .values({ organizationId: orgId, userId, firstName, lastName, workEmail })
+      .returning({ organizationPersonId: organizationPeople.organizationPersonId });
+    if (!created) throw new Error("Failed to create canonical person record");
+    return created.organizationPersonId;
+  }
+
   async ensureFromUser(
     orgId: string,
     actorId: string,
@@ -133,6 +170,9 @@ export class PersonEmploymentSyncService {
       });
 
       if (existingByEmail) {
+        const linkId = existingByEmail.organizationPersonId === null
+          ? await this.resolveOrgPersonId(db, orgId, input.userId, email, input.firstName, input.lastName)
+          : null;
         await db
           .update(hrPeople)
           .set({
@@ -140,15 +180,20 @@ export class PersonEmploymentSyncService {
             firstName: input.firstName,
             lastName: input.lastName,
             phone: input.phone ?? existingByEmail.phone,
+            ...(linkId !== null && { organizationPersonId: linkId }),
           })
           .where(and(eq(hrPeople.id, existingByEmail.id), eq(hrPeople.orgId, orgId)));
         personId = existingByEmail.id;
       } else {
+        const organizationPersonId = await this.resolveOrgPersonId(
+          db, orgId, input.userId, email, input.firstName, input.lastName,
+        );
         const [created] = await db
           .insert(hrPeople)
           .values({
             orgId,
             userId: input.userId,
+            organizationPersonId,
             firstName: input.firstName,
             lastName: input.lastName,
             workEmail: email,

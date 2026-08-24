@@ -23,6 +23,7 @@ import {
 import { encryptBankDetails } from '../../hr/onboarding/core/crypto.helpers';
 import { DEFAULT_PAYROLL_TOGGLES } from '../payroll.types';
 import { PayoutBatchesService } from '../payout/payout-batches.service';
+import { validateEnv } from '../../../config/env.validation';
 import { ProfilesService } from '../runs/profiles.service';
 import { AuditService } from '../../../common/audit/audit.service';
 import { StorageService } from '../../storage/storage.service';
@@ -303,10 +304,19 @@ d('Payroll DB Integration', () => {
     await sql.end({ timeout: 5 });
   }, 30_000);
 
-  describe('Scenario 1 — Idempotency replay', () => {
+  const storageConfig = validateEnv({
+  DATABASE_URL: 'postgres://test',
+  BACKEND_JWT_SECRET: 'x'.repeat(44),
+  PORTAL_JWT_SECRET: 'x'.repeat(44),
+  CORS_ORIGINS: 'http://localhost',
+  APP_URL: 'http://localhost:3000',
+  ENCRYPTION_KEY: 'x'.repeat(32),
+});
+
+describe('Scenario 1 — Idempotency replay', () => {
     it('returns the same batch on a second call with an identical idempotency key', async () => {
       const auditSvc = new AuditService(db);
-      const storageSvc = new StorageService({} as unknown as MediaCompressionService);
+      const storageSvc = new StorageService({} as unknown as MediaCompressionService, storageConfig);
       const svc = new PayoutBatchesService(db, auditSvc, storageSvc, { postFinalized: async () => undefined } as unknown as PayrollPostingService);
 
       const idemKey = `${P}idem-key-001`;
@@ -432,7 +442,7 @@ d('Payroll DB Integration', () => {
 
     it('rejects fetching another org member bank details for a user outside the caller org', async () => {
       const auditSvc = new AuditService(db);
-      const storageSvc = new StorageService({} as unknown as MediaCompressionService);
+      const storageSvc = new StorageService({} as unknown as MediaCompressionService, storageConfig);
       const svc = new PayoutBatchesService(db, auditSvc, storageSvc, { postFinalized: async () => undefined } as unknown as PayrollPostingService);
 
       await expect(svc.getBankDetails(ORG_A, USER_B, USER_A)).rejects.toThrow(ForbiddenException);
@@ -440,7 +450,7 @@ d('Payroll DB Integration', () => {
 
     it('allows fetching bank details for a confirmed member of the caller org', async () => {
       const auditSvc = new AuditService(db);
-      const storageSvc = new StorageService({} as unknown as MediaCompressionService);
+      const storageSvc = new StorageService({} as unknown as MediaCompressionService, storageConfig);
       const svc = new PayoutBatchesService(db, auditSvc, storageSvc, { postFinalized: async () => undefined } as unknown as PayrollPostingService);
 
       const result = await svc.getBankDetails(ORG_A, USER_A, USER_A);

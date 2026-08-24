@@ -1,21 +1,7 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import {
-  eq,
-  and,
-  desc,
-  asc,
-  sql,
-  count,
-  gte,
-  lte,
-  or,
-  inArray,
-  isNull,
-  type SQL,
-} from "drizzle-orm";
+import { eq, and, inArray, isNull } from "drizzle-orm";
 import {
   leads,
-  leadActivities,
   notifications,
   organizationMembers,
   users,
@@ -33,37 +19,18 @@ import { CrmValidationService } from "../crm/metadata/crm-validation.service";
 import { CrmAttributionReportService } from "../crm/core/crm-attribution-report.service";
 import { TerritoryMatchService } from "../crm/core/territory-match.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
-import { LeadsBoardService, type BoardOpts, type StatsFilters } from "./leads-board.service";
-import { applyScope } from "../access/apply-scope";
-import type { DataScope } from "../access/access.types";
+import type { BoardOpts, StatsFilters } from "./leads-board.service";
+import { LeadsReadService, type ListFilters } from "./leads-read.service";
 import {
   evaluateAssignmentRules,
   recalculateLeadScore,
   applySlaPolicy,
 } from "./lead-triggers";
 import type {
-  ListInput,
   CreateInput,
   UpdateInput,
   IngestInput,
 } from "./dto/lead.schemas";
-
-type ListFilters = ListInput & { userId?: string; scope?: DataScope };
-
-function pushLeadsViewScope(
-  where: SQL[],
-  orgId: string,
-  scope: DataScope | undefined,
-  userId: string | undefined,
-): void {
-  if (!scope) return;
-  if (scope === "none") {
-    where.push(sql`false`);
-    return;
-  }
-  if (!userId) return;
-  where.push(applyScope(scope, orgId, userId, { ownerColumn: leads.assignedToId }));
-}
 
 export type AssigneeNotMember = { error: "assignee_not_member" };
 
@@ -89,7 +56,7 @@ export class LeadsService {
     private readonly bus: CrmAutomationBusService,
     private readonly attribution: CrmAttributionReportService,
     private readonly territoryMatch: TerritoryMatchService,
-    private readonly boardService: LeadsBoardService,
+    private readonly reads: LeadsReadService,
     private readonly planLimits: PlanLimitsService,
   ) {}
 
@@ -118,94 +85,19 @@ export class LeadsService {
   }
 
   async listLeads(orgId: string, filters?: ListFilters) {
-    const where = [eq(leads.orgId, orgId), isNull(leads.deletedAt)];
-
-    pushLeadsViewScope(where, orgId, filters?.scope, filters?.userId);
-    if (filters?.status) where.push(eq(leads.status, filters.status));
-    if (filters?.priority) where.push(eq(leads.priority, filters.priority));
-    if (filters?.source) where.push(eq(leads.source, filters.source));
-    if (filters?.assignedToId) where.push(eq(leads.assignedToId, filters.assignedToId));
-    if (filters?.dateFrom) where.push(gte(leads.createdAt, new Date(filters.dateFrom)));
-    if (filters?.dateTo) where.push(lte(leads.createdAt, new Date(filters.dateTo)));
-    if (filters?.search) {
-      const s = `%${filters.search}%`;
-      where.push(
-        or(
-          sql`${leads.name} ILIKE ${s}`,
-          sql`${leads.email} ILIKE ${s}`,
-          sql`${leads.phone} ILIKE ${s}`,
-          sql`${leads.company} ILIKE ${s}`,
-        )!,
-      );
-    }
-
-    const colMap = {
-      name: leads.name,
-      email: leads.email,
-      company: leads.company,
-      status: leads.status,
-      priority: leads.priority,
-      source: leads.source,
-      score: leads.score,
-      potentialValue: leads.potentialValue,
-      createdAt: leads.createdAt,
-    } as const;
-
-    const sortBy = filters?.sortBy ?? "createdAt";
-    const sortOrder = filters?.sortOrder ?? "desc";
-    const orderCol = colMap[sortBy as keyof typeof colMap] ?? leads.createdAt;
-    const orderFn = sortOrder === "asc" ? asc(orderCol) : desc(orderCol);
-
-    const page = filters?.page ?? 1;
-    const limit = filters?.limit ?? 50;
-    const offset = (page - 1) * limit;
-    const whereClause = and(...where);
-
-    const [allLeads, totalResult] = await Promise.all([
-      this.db.query.leads.findMany({
-        where: whereClause,
-        with: {
-          assignedTo: { columns: { id: true, name: true, image: true } },
-          campaign: { columns: { id: true, name: true } },
-        },
-        orderBy: [orderFn],
-        limit,
-        offset,
-      }),
-      this.db.select({ count: count() }).from(leads).where(whereClause),
-    ]);
-
-    const totalCount = totalResult[0]?.count ?? 0;
-    return {
-      leads: allLeads,
-      totalCount,
-      page,
-      totalPages: Math.ceil(totalCount / limit),
-    };
+    return this.reads.listLeads(orgId, filters);
   }
 
   async getBoard(orgId: string, opts?: BoardOpts) {
-    return this.boardService.getBoard(orgId, opts);
+    return this.reads.getBoard(orgId, opts);
   }
 
   async getStats(orgId: string, filters?: StatsFilters) {
-    return this.boardService.getStats(orgId, filters);
+    return this.reads.getStats(orgId, filters);
   }
 
   async getLead(orgId: string, id: number) {
-    return this.db.query.leads.findFirst({
-      where: and(eq(leads.id, id), eq(leads.orgId, orgId), isNull(leads.deletedAt)),
-      with: {
-        assignedTo: { columns: { id: true, name: true, image: true, email: true } },
-        assignedBy: { columns: { id: true, name: true } },
-        campaign: { columns: { id: true, name: true } },
-        activities: {
-          with: { user: { columns: { id: true, name: true, image: true } } },
-          orderBy: [desc(leadActivities.date)],
-          limit: 50,
-        },
-      },
-    });
+    return this.reads.getLead(orgId, id);
   }
 
   async create(orgId: string, userId: string, input: CreateInput) {

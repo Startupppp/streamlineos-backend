@@ -1,8 +1,7 @@
 import { RecruitmentHandoffService } from "../recruitment-handoff.service";
 
 describe("RecruitmentHandoffService", () => {
-  it("reuses person by email and does not insert a second person", async () => {
-    const insertPeople = jest.fn();
+  it("reuses person by email, links canonical org person, and does not create a second hr_people row", async () => {
     let insertCall = 0;
 
     const tx = {
@@ -10,14 +9,19 @@ describe("RecruitmentHandoffService", () => {
         from: jest.fn().mockReturnValue({
           innerJoin: jest.fn().mockReturnValue({
             where: jest.fn().mockReturnValue({
-              limit: jest.fn().mockResolvedValue([]),
+              limit: jest.fn().mockReturnValue({
+                then: jest.fn().mockResolvedValue(null),
+              }),
             }),
           }),
         }),
       }),
       query: {
+        organizationPeople: {
+          findFirst: jest.fn().mockResolvedValue(null),
+        },
         hrPeople: {
-          findFirst: jest.fn().mockResolvedValue({ id: 7, userId: null }),
+          findFirst: jest.fn().mockResolvedValue({ id: 7, userId: null, organizationPersonId: null }),
         },
         hrEmployments: {
           findFirst: jest.fn().mockResolvedValue(null),
@@ -28,12 +32,23 @@ describe("RecruitmentHandoffService", () => {
       },
       update: jest.fn().mockReturnValue({
         set: jest.fn().mockReturnValue({
-          where: jest.fn().mockResolvedValue(undefined),
+          where: jest.fn().mockReturnValue({
+            catch: jest.fn().mockResolvedValue(undefined),
+          }),
         }),
       }),
       insert: jest.fn().mockImplementation(() => {
         insertCall += 1;
         if (insertCall === 1) {
+          return {
+            values: jest.fn().mockReturnValue({
+              returning: jest.fn().mockReturnValue({
+                then: jest.fn().mockResolvedValue("op-1"),
+              }),
+            }),
+          };
+        }
+        if (insertCall === 2) {
           return {
             values: jest.fn().mockReturnValue({
               returning: jest.fn().mockResolvedValue([{ id: 50 }]),
@@ -74,7 +89,7 @@ describe("RecruitmentHandoffService", () => {
 
     await service.handleOfferAccepted("org-1", 99, 12);
 
-    expect(insertPeople).not.toHaveBeenCalled();
+    expect(tx.query.organizationPeople.findFirst).toHaveBeenCalled();
     expect(tx.insert).toHaveBeenCalled();
     expect(audit.log).toHaveBeenCalledWith(
       expect.objectContaining({

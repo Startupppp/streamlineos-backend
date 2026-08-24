@@ -29,7 +29,7 @@ describe("AblyService capabilities", () => {
   let service: AblyService;
 
   beforeEach(() => {
-    service = new AblyService();
+    service = new AblyService({ ABLY_API_KEY: undefined });
     Reflect.set(service, "apiKey", "app.key:secret");
   });
 
