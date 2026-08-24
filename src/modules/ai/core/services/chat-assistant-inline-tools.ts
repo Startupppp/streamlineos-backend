@@ -3,7 +3,7 @@ import { and, eq, ilike, isNull, ne } from "drizzle-orm";
 import { z } from "zod";
 import { projects } from "../../../../db/schema";
 import { type Db } from "../../../../db/drizzle.module";
-import { KbAskService } from "../../../kb/kb-ask.service";
+import { KbAskService } from "../../../kb/retrieval/kb-ask.service";
 import { ToolAccessService } from "../tool-access.service";
 import { ProjectsAiService } from "./projects-ai.service";
 import { ModuleRef } from "@nestjs/core";

@@ -3,8 +3,8 @@ import { InsufficientAiCreditsException } from "../../../common/http/api-excepti
 import { Test } from "@nestjs/testing";
 import { SupportKbGapService } from "./support-kb-gap.service";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
-import { KbArticlesService } from "../../kb/kb-articles.service";
-import { KbEventsService } from "../../kb/kb-events.service";
+import { KbArticlesService } from "../../kb/help-centre/kb-articles.service";
+import { KbEventsService } from "../../kb/core/kb-events.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { SupportKnowledgeGapStatus } from "../../../db/schema/support/support-kb-gap";

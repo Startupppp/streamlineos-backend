@@ -10,7 +10,7 @@ import {
   journalLines,
 } from "../../../db/schema";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
-import { extractAttachmentText } from "../../kb/kb-attachment-extract.util";
+import { extractAttachmentText } from "../../kb/retrieval/kb-attachment-extract.util";
 import type { VarianceExplainInput, ReconciliationExplainInput, ExtractDocumentInput } from "./dto/accounting-ai.dto";
 
 const FactorSchema = z.object({

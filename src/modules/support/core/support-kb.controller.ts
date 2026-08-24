@@ -18,8 +18,8 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { SupportKbService } from "./support-kb.service";
-import { KbAskService } from "../../kb/kb-ask.service";
-import { KbIndexingService } from "../../kb/kb-indexing.service";
+import { KbAskService } from "../../kb/retrieval/kb-ask.service";
+import { KbIndexingService } from "../../kb/retrieval/kb-indexing.service";
 import {
   createKbArticleSchema,
   createKbAttachmentSchema,

@@ -6,7 +6,7 @@ import { type Db } from "../../db/drizzle.module";
 import { StorageService } from "../storage/storage.service";
 import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
 import { unwrapAiResult } from "../ai/core/services/gateway-result.util";
-import { extractAttachmentText } from "../kb/kb-attachment-extract.util";
+import { extractAttachmentText } from "../kb/retrieval/kb-attachment-extract.util";
 
 const SIGN_SUMMARIZE_FEATURE = "sign.summarize-document";
 const MAX_DOCS = 2;

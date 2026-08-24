@@ -8,7 +8,7 @@ import { Test, type TestingModule } from "@nestjs/testing";
 import { AccountingAiService } from "./accounting-ai.service";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
-import { extractAttachmentText } from "../../kb/kb-attachment-extract.util";
+import { extractAttachmentText } from "../../kb/retrieval/kb-attachment-extract.util";
 
 const mockExtractAttachmentText = extractAttachmentText as jest.Mock;
 
