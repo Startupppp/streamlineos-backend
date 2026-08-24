@@ -1,13 +1,18 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { deals, dealActivities, dealStageTransitions, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { ActivitiesService } from "../activities/activities.service";
+import { activityKindFor, subjectFor } from "./deal-activity-kind";
 import type { LogActivityInput, PatchCustomDataInput } from "./dto/deals.schemas";
 
 @Injectable()
 export class DealsActivitiesService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly activities: ActivitiesService,
+  ) {}
 
   /**
    * Every move this deal made, and what moved it.
@@ -50,6 +55,17 @@ export class DealsActivitiesService {
       .limit(50);
   }
 
+  /**
+   * A call, email, meeting or note logged against a deal.
+   *
+   * Written to the one activity model rather than to `deal_activities`, so the
+   * deal's timeline is the same surface as a party's and a subject's. Ticket 09
+   * exists because a call was recorded differently depending on which module the
+   * record entered through; leaving this write on the deal-only table would have
+   * kept exactly that.
+   *
+   * `lastContactDate` still moves, because the pipeline reads it.
+   */
   async addActivity(orgId: string, userId: string, dealId: number, input: LogActivityInput) {
     const [deal] = await this.db
       .select({ id: deals.id })
@@ -57,20 +73,24 @@ export class DealsActivitiesService {
       .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)));
     if (!deal) throw new NotFoundException("Deal not found");
 
-    const [activity] = await this.db
-      .insert(dealActivities)
-      .values({
-        orgId,
-        dealId,
-        type: input.type,
-        subject: input.subject ?? null,
-        notes: input.notes ?? null,
-        duration: input.duration ?? null,
-        previousValue: input.previousValue ?? null,
-        newValue: input.newValue ?? null,
-        userId,
-      })
-      .returning();
+    const kind = activityKindFor(input.type);
+    if (!kind)
+      throw new BadRequestException({
+        code: "NOT_AN_ACTIVITY",
+        message: `"${input.type}" is not something the timeline records.`,
+      });
+
+    const activity = await this.activities.create(
+      orgId,
+      { kind: "human", userId },
+      {
+        kind,
+        dealId: String(dealId),
+        subject: subjectFor(input.type, input.subject) ?? undefined,
+        body: input.notes ?? undefined,
+        participants: [],
+      },
+    );
 
     await this.db
       .update(deals)

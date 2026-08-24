@@ -274,6 +274,18 @@ export const CRM_PERMISSIONS: Permission[] = [
       "View Customer 360 aggregated profile (respects per-module permissions)",
   },
   {
+    name: "crm:activities:view",
+    resource: "crm:activities",
+    action: "view",
+    description: "Read the unified timeline of calls, emails, meetings, notes and tasks",
+  },
+  {
+    name: "crm:activities:manage",
+    resource: "crm:activities",
+    action: "manage",
+    description: "Log, edit, complete and remove activities on the timeline",
+  },
+  {
     name: "crm:settings:view",
     resource: "crm:settings",
     action: "view",

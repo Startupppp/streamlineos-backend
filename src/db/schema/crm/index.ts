@@ -1,3 +1,7 @@
+export * from "./activities";
+export * from "./inbound-events";
+export * from "./autonomous-decisions";
+export * from "./autonomy-switches";
 export * from "./campaigns";
 export * from "./leads";
 export * from "./contacts";
