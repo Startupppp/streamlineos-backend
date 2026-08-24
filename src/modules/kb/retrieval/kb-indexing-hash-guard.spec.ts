@@ -150,18 +150,26 @@ describe("KbIndexingService — a chunk carries the ACL it is filtered by", () =
 
   it("writes the page's visibility, project and author onto every chunk", async () => {
     const values = await indexPageAt(1);
-    const rows = values.mock.calls[0]?.[0] as { visibility: string; projectId: number | null; createdById: string }[];
+    const rows = values.mock.calls[0]?.[0] as {
+      pageVisibility: string;
+      pageProjectId: number | null;
+      pageCreatedById: string;
+    }[];
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) {
-      expect(row).toMatchObject({ visibility: "org", projectId: 1, createdById: "user-7" });
+      expect(row).toMatchObject({
+        pageVisibility: "org",
+        pageProjectId: 1,
+        pageCreatedById: "user-7",
+      });
     }
   });
 
   it("moves the chunk with the page when the page changes project", async () => {
-    const rowsBefore = (await indexPageAt(1)).mock.calls[0]?.[0] as { projectId: number | null }[];
-    const rowsAfter = (await indexPageAt(2)).mock.calls[0]?.[0] as { projectId: number | null }[];
+    const rowsBefore = (await indexPageAt(1)).mock.calls[0]?.[0] as { pageProjectId: number | null }[];
+    const rowsAfter = (await indexPageAt(2)).mock.calls[0]?.[0] as { pageProjectId: number | null }[];
 
-    expect(rowsBefore[0]?.projectId).toBe(1);
-    expect(rowsAfter[0]?.projectId).toBe(2);
+    expect(rowsBefore[0]?.pageProjectId).toBe(1);
+    expect(rowsAfter[0]?.pageProjectId).toBe(2);
   });
 });
