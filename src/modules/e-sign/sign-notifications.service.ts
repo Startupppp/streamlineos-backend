@@ -71,7 +71,7 @@ ${renderButton("View status", envelopeViewUrl)}`,
       recipientEmail,
       recipientName,
       envelopeTitle,
-      `${appUrl}/sign/envelopes/${envelopeId}/final-pdf`,
+      `${appUrl()}/sign/envelopes/${envelopeId}/final-pdf`,
     );
   }
 
@@ -89,7 +89,7 @@ ${renderButton("View status", envelopeViewUrl)}`,
       envelopeTitle,
       declinedByName,
       reason,
-      `${appUrl}/sign/envelopes/${envelopeId}`,
+      `${appUrl()}/sign/envelopes/${envelopeId}`,
     );
   }
 
@@ -116,7 +116,7 @@ ${renderButton("View status", envelopeViewUrl)}`,
       totalCount,
       successCount,
       failedCount,
-      `${appUrl}/sign/bulk-send/${jobId}`,
+      `${appUrl()}/sign/bulk-send/${jobId}`,
     );
   }
 }

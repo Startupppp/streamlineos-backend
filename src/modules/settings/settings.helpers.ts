@@ -52,7 +52,7 @@ export function maskSecret(secret: string): string {
 }
 
 export function gitWebhookUrl(connectionId: number): string {
-  return `${appUrl}/api/integrations/git/webhook?connectionId=${connectionId}`;
+  return `${appUrl()}/api/integrations/git/webhook?connectionId=${connectionId}`;
 }
 
 export function parseOrgFeatureFlags(

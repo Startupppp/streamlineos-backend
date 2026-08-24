@@ -98,7 +98,7 @@ export class CronBillingService {
         if (soonExpiring.length === 0) continue;
 
         await this.email
-          .sendTrialReminderEmail(owner.email, owner.orgName ?? "Your Organization", days, `${appUrl}/billing?tab=plan`)
+          .sendTrialReminderEmail(owner.email, owner.orgName ?? "Your Organization", days, `${appUrl()}/billing?tab=plan`)
           .catch((err: unknown) => logger.warn("[billing-cron] email send failed", { err }));
         reminded++;
       }
@@ -246,7 +246,7 @@ export class CronBillingService {
                 title: "Subscription suspended due to non-payment",
                 message:
                   "Your subscription has been suspended because an outstanding payment could not be collected. Your data is safe. Please update your payment method to restore full access.",
-                link: `${appUrl}/billing`,
+                link: `${appUrl()}/billing`,
                 priority: "CRITICAL",
               })
               .catch((err: unknown) =>
@@ -286,7 +286,7 @@ export class CronBillingService {
                   targetUserIds: [owner.userId],
                   title: `Payment overdue — action required (day ${day})`,
                   message: `Your subscription payment remains outstanding. Please update your payment method within ${daysRemaining} day(s) to avoid suspension.`,
-                  link: `${appUrl}/billing`,
+                  link: `${appUrl()}/billing`,
                   priority: "HIGH",
                 })
                 .catch((err: unknown) =>

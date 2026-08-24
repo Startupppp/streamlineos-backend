@@ -19,7 +19,7 @@ export const hrExpenseTemplates: Record<string, TemplateEntry> = {
         "Travel",
         "1,500",
         "Mumbai to Pune cab",
-        `${BASE_URL}/hr/expenses`,
+        `${BASE_URL()}/hr/expenses`,
       ),
   },
   "expense.approved": {

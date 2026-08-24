@@ -29,7 +29,7 @@ export const recruitmentTemplates: Record<string, TemplateEntry> = {
         orgName: "Acme Corp",
         designation: "Senior Frontend Engineer",
         deadlineLabel: "Fri, 18 Jul 2026",
-        offerLink: `${BASE_URL}/offer/accept?token=test`,
+        offerLink: `${BASE_URL()}/offer/accept?token=test`,
       }).html,
   },
   "recruitment.no_show_reschedule": {
@@ -46,8 +46,8 @@ export const recruitmentTemplates: Record<string, TemplateEntry> = {
       getCandidateDocumentRolloutEmail({
         candidateName: "Arjun Kapoor",
         documentLinks: [
-          { title: "Offer Letter", url: `${BASE_URL}/docs/offer-letter` },
-          { title: "NDA Agreement", url: `${BASE_URL}/docs/nda` },
+          { title: "Offer Letter", url: `${BASE_URL()}/docs/offer-letter` },
+          { title: "NDA Agreement", url: `${BASE_URL()}/docs/nda` },
         ],
       }).html,
   },

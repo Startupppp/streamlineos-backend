@@ -232,7 +232,7 @@ export class RecruitmentCandidateDocsService {
       const candidateName = `${candidate.firstName} ${candidate.lastName}`;
       const documentLinks = generatedDocs.map((doc) => ({
         title: doc.title,
-        url: `${appUrl}/api/hr/recruitment/candidates/${candidateId}/documents/${doc.id}/view`,
+        url: `${appUrl()}/api/hr/recruitment/candidates/${candidateId}/documents/${doc.id}/view`,
       }));
       const { subject, html: emailHtml } = getCandidateDocumentRolloutEmail({
         candidateName,

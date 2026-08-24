@@ -28,10 +28,10 @@ export class SignTokensService {
   }
 
   buildSigningUrl(token: string): string {
-    return `${appUrl}/sign/${token}`;
+    return `${appUrl()}/sign/${token}`;
   }
 
   buildPublicFormUrl(slug: string): string {
-    return `${appUrl}/sign/forms/${slug}`;
+    return `${appUrl()}/sign/forms/${slug}`;
   }
 }

@@ -1,3 +1,5 @@
+let cached: string | null = null;
+
 function resolveAppUrl(): string {
   const url = (process.env.EMAIL_APP_URL ?? process.env.APP_URL)?.trim();
   if (!url) {
@@ -14,4 +16,8 @@ function resolveAppUrl(): string {
   return normalized;
 }
 
-export const appUrl = resolveAppUrl();
+/** Resolved on first call, not at import: a module-scope constant reads the environment before the container exists. */
+export function appUrl(): string {
+  cached ??= resolveAppUrl();
+  return cached;
+}

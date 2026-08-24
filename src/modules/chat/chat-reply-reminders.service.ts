@@ -14,8 +14,9 @@ import { forEachOrg } from "../../common/tenant/for-each-org";
 import { EmailService } from "../email/email.service";
 import { getChatReplyReminderEmail } from "../email/templates/chat";
 import { logger } from "../../common/logger/logger.service";
+import { APP_CONFIG } from "../../config/config.module";
+import type { AppConfig } from "../../config/env.validation";
 
-const REPLY_REMINDER_MS = Number(process.env.CHAT_REPLY_REMINDER_MINUTES ?? 15) * 60 * 1000;
 const REMINDER_INSERT_BATCH_SIZE = 500;
 
 @Injectable()
@@ -23,7 +24,12 @@ export class ChatReplyRemindersService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly email: EmailService,
-  ) {}
+    @Inject(APP_CONFIG) config: AppConfig,
+  ) {
+    this.replyReminderMs = (config.CHAT_REPLY_REMINDER_MINUTES ?? 15) * 60 * 1000;
+  }
+
+  private readonly replyReminderMs: number;
 
   async scheduleForMessage(
     orgId: string,
@@ -31,7 +37,7 @@ export class ChatReplyRemindersService {
     messageId: number,
     senderId: string,
   ): Promise<void> {
-    const remindAt = new Date(Date.now() + REPLY_REMINDER_MS);
+    const remindAt = new Date(Date.now() + this.replyReminderMs);
 
     await this.cancelPendingForRecipientInChannel(senderId, channelId);
 

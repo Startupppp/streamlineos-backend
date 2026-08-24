@@ -13,6 +13,8 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { buildInterviewIcs } from "./ics.util";
+import { APP_CONFIG } from "../../../config/config.module";
+import type { AppConfig } from "../../../config/env.validation";
 import type {
   InterviewListInput,
   SelfInterviewListInput,
@@ -48,7 +50,10 @@ export interface AssignedInterviewsPage {
 
 @Injectable()
 export class HrInterviewsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
+  ) {}
 
   async list(orgId: string, query: InterviewListInput) {
     const conditions = [eq(interviews.orgId, orgId)];
@@ -383,6 +388,7 @@ export class HrInterviewsService {
       interviewerName: interviewer?.name ?? null,
       interviewerEmail: interviewer?.email ?? null,
       orgName: org?.name ?? "StreamlineOS",
+      fallbackOrganizerEmail: this.config.NOREPLY_EMAIL,
     });
   }
 

@@ -22,7 +22,7 @@ describe("ChatReplyRemindersService", () => {
       })),
       insert: jest.fn(() => ({ values })),
     };
-    const service = new ChatReplyRemindersService(db as never, {} as never);
+    const service = new ChatReplyRemindersService(db as never, {} as never, { CHAT_REPLY_REMINDER_MINUTES: 15 } as never);
 
     await service.scheduleForMessage("org-1", 42, 84, "sender");
 
@@ -56,7 +56,7 @@ describe("ChatReplyRemindersService", () => {
       })),
       insert: jest.fn(),
     };
-    const service = new ChatReplyRemindersService(db as never, {} as never);
+    const service = new ChatReplyRemindersService(db as never, {} as never, { CHAT_REPLY_REMINDER_MINUTES: 15 } as never);
 
     await service.scheduleForMessage("org-1", 42, 84, "sender");
 

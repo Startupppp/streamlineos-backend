@@ -55,7 +55,7 @@ export class SignIntegrationsService {
       entityId: envelope.sourceEntityId ?? String(envelope.id),
       title: "SignOS",
       message: EVENT_MESSAGES[key](envelope.title),
-      link: `${appUrl}/sign/envelopes/${envelope.id}`,
+      link: `${appUrl()}/sign/envelopes/${envelope.id}`,
     });
   }
 
@@ -83,7 +83,7 @@ export class SignIntegrationsService {
       entityId: String(jobId),
       title: "SignOS",
       message: `Bulk send job #${jobId} completed: ${stats.successCount}/${stats.totalCount} sent, ${stats.failedCount} failed`,
-      link: `${appUrl}/sign/bulk-send`,
+      link: `${appUrl()}/sign/bulk-send`,
     });
   }
 }

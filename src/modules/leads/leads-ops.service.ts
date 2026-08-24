@@ -73,7 +73,7 @@ export class LeadsOpsService {
         recipientName: sp.name ?? "Team Member",
         assignerName,
         leadCount: assignedLeads.length,
-        leadsUrl: `${appUrl}/crm/leads`,
+        leadsUrl: `${appUrl()}/crm/leads`,
       });
       try {
         await this.email.sendEmail({ to: sp.email, subject, html });

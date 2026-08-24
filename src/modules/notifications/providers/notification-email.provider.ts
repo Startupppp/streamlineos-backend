@@ -26,7 +26,7 @@ function unsubscribeHeaders(input: ProviderSendInput): Record<string, string> | 
     scopeKey: "",
   });
   if (!token) return undefined;
-  const url = `${appUrl}/notifications/unsubscribe/${token}`;
+  const url = `${appUrl()}/notifications/unsubscribe/${token}`;
   return {
     "List-Unsubscribe": `<${url}>`,
     "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",

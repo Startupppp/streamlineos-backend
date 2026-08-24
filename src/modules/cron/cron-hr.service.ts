@@ -213,7 +213,7 @@ export class CronHrService {
           doc.type ?? "Document",
           expiryLabel,
           daysRemaining,
-          `${appUrl}/hr/documents`,
+          `${appUrl()}/hr/documents`,
         );
 
         try {

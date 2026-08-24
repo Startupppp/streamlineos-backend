@@ -179,7 +179,7 @@ export class SupportMacrosService {
       "ticket.id": String(ticket.id),
       "agent.name": agent?.name ?? "Support",
       "company.name": org?.name ?? "our team",
-      "portal.link": `${appUrl}/support/portal/tickets/${ticket.id}`,
+      "portal.link": `${appUrl()}/support/portal/tickets/${ticket.id}`,
     };
 
     return body.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (match, key: string) => variables[key] ?? match);

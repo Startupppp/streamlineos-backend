@@ -23,7 +23,7 @@ export const hrLeaveTemplates: Record<string, TemplateEntry> = {
         "Mon, 20 Apr 2026",
         "Wed, 22 Apr 2026",
         "Attending a family function.",
-        `${BASE_URL}/hr/leaves`,
+        `${BASE_URL()}/hr/leaves`,
       ),
   },
   "hr.leave_approved": {
@@ -79,7 +79,7 @@ export const hrLeaveTemplates: Record<string, TemplateEntry> = {
         "Identity",
         "30 Apr 2026",
         14,
-        `${BASE_URL}/hr/documents`,
+        `${BASE_URL()}/hr/documents`,
       ),
   },
   "hr.resignation_submitted": {
@@ -95,7 +95,7 @@ export const hrLeaveTemplates: Record<string, TemplateEntry> = {
         "Fri, 12 Jun 2026",
         60,
         "Pursuing a new opportunity.",
-        `${BASE_URL}/hr/exit`,
+        `${BASE_URL()}/hr/exit`,
       ),
   },
   "hr.resignation_approved": {
@@ -109,7 +109,7 @@ export const hrLeaveTemplates: Record<string, TemplateEntry> = {
         "Fri, 12 Jun 2026",
         60,
         "Mon, 12 Apr 2026",
-        `${BASE_URL}/hr/exit`,
+        `${BASE_URL()}/hr/exit`,
       ),
   },
   "hr.termination": {

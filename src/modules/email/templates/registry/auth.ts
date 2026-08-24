@@ -14,20 +14,20 @@ export const authTemplates: Record<string, TemplateEntry> = {
     category: "Auth",
     name: "Email Verification",
     subject: "Verify your email address",
-    generateHtml: () => getVerificationEmailTemplate(`${BASE_URL}/verify-email?token=test-token`),
+    generateHtml: () => getVerificationEmailTemplate(`${BASE_URL()}/verify-email?token=test-token`),
   },
   "auth.magic_link": {
     category: "Auth",
     name: "Magic Link Sign-In",
     subject: "Your sign-in link",
-    generateHtml: () => getMagicLinkEmailTemplate(`${BASE_URL}/magic-link?token=test-token`),
+    generateHtml: () => getMagicLinkEmailTemplate(`${BASE_URL()}/magic-link?token=test-token`),
   },
   "auth.welcome": {
     category: "Auth",
     name: "Welcome / Account Created",
     subject: `Your ${BRAND} account is ready`,
     generateHtml: () =>
-      getWelcomeEmailTemplate("Priya Sharma", "priya@acme.in", `${BASE_URL}/setup?token=test-token`),
+      getWelcomeEmailTemplate("Priya Sharma", "priya@acme.in", `${BASE_URL()}/setup?token=test-token`),
   },
   "auth.account_deactivated": {
     category: "Auth",

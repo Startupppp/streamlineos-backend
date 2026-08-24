@@ -20,7 +20,7 @@ export function getTaskAssignedEmailTemplate(
     <p class="email-text">Hi ${escapeHtml(assigneeName)},</p>
     <p class="email-text">A task has been assigned to you by ${escapeHtml(creatorName)}.</p>
     ${renderKeyValueRows(rows)}
-    ${renderButton("Open task", `${appUrl}/crm/tasks`)}
+    ${renderButton("Open task", `${appUrl()}/crm/tasks`)}
   `;
   return getEmailTemplate({
     title: `Task assigned: ${escapeHtml(taskTitle)}`,
@@ -49,7 +49,7 @@ export function getDealStageChangeEmailTemplate(
     <p class="email-text">Hi ${escapeHtml(recipientName)},</p>
     <p class="email-text">The stage for deal <strong>${escapeHtml(dealName)}</strong> has been updated.</p>
     ${renderKeyValueRows(rows)}
-    ${renderButton("Open deal", `${appUrl}/crm/deals/${dealId}`)}
+    ${renderButton("Open deal", `${appUrl()}/crm/deals/${dealId}`)}
   `;
   return getEmailTemplate({
     title: `Deal stage updated: ${escapeHtml(dealName)}`,
@@ -76,7 +76,7 @@ export function getLeadAssignedEmailTemplate(
     <p class="email-text">Hi ${escapeHtml(repName)},</p>
     <p class="email-text">A lead has been assigned to you. Priority: ${badge}</p>
     ${renderKeyValueRows(rows)}
-    ${renderButton("Open lead", `${appUrl}/crm/leads`)}
+    ${renderButton("Open lead", `${appUrl()}/crm/leads`)}
   `;
   return getEmailTemplate({
     title: `Lead assigned: ${escapeHtml(leadName)}`,
@@ -99,7 +99,7 @@ export function getReviewAssignedEmailTemplate(
     <p class="email-text">Hi ${escapeHtml(employeeName)},</p>
     <p class="email-text">A performance review has been assigned to you.</p>
     ${renderKeyValueRows(rows)}
-    ${renderButton("Start review", `${appUrl}/hr/performance`)}
+    ${renderButton("Start review", `${appUrl()}/hr/performance`)}
   `;
   return getEmailTemplate({
     title: "Performance review assigned",
@@ -123,7 +123,7 @@ export function getAssetAssignedEmailTemplate(
     <p class="email-text">Hi ${escapeHtml(employeeName)},</p>
     <p class="email-text">A company asset has been assigned to you.</p>
     ${renderKeyValueRows(rows)}
-    ${renderButton("View my assets", `${appUrl}/hr/assets`)}
+    ${renderButton("View my assets", `${appUrl()}/hr/assets`)}
   `;
   return getEmailTemplate({
     title: `Asset assigned: ${escapeHtml(assetName)}`,

@@ -68,7 +68,7 @@ export class EmailService extends EmailSendersBase {
         category,
         amount,
         description,
-        `${appUrl}/hr/expenses`,
+        `${appUrl()}/hr/expenses`,
       ),
     });
   }
@@ -193,7 +193,7 @@ export class EmailService extends EmailSendersBase {
         memberName,
         projectName,
         projectKey,
-        `${appUrl}/projects/${projectId}`,
+        `${appUrl()}/projects/${projectId}`,
         assignedBy,
       ),
     });
@@ -219,7 +219,7 @@ export class EmailService extends EmailSendersBase {
         ticketType,
         ticketPriority,
         projectName,
-        `${appUrl}/projects/${projectId}?ticket=${ticketId}`,
+        `${appUrl()}/projects/${projectId}?ticket=${ticketId}`,
         createdBy,
       ),
     });
@@ -244,7 +244,7 @@ export class EmailService extends EmailSendersBase {
         ticketTitle,
         ticketType,
         projectName,
-        `${appUrl}/projects/${projectId}?ticket=${ticketId}`,
+        `${appUrl()}/projects/${projectId}?ticket=${ticketId}`,
         completedBy,
         comment,
       ),
@@ -268,7 +268,7 @@ export class EmailService extends EmailSendersBase {
         assigneeName,
         ticketTitle,
         projectName,
-        `${appUrl}/projects/${projectId}?ticket=${ticketId}`,
+        `${appUrl()}/projects/${projectId}?ticket=${ticketId}`,
         reviewerName,
         comment,
       ),

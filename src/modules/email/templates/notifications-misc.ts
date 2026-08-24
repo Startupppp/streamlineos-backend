@@ -19,7 +19,7 @@ export function getOnboardingWelcomeEmailTemplate(
     <p class="email-text">Hi ${escapeHtml(employeeName)},</p>
     <p class="email-text">Welcome — your onboarding starts on ${escapeHtml(joiningDate)}.</p>
     ${renderKeyValueRows(rows)}
-    ${renderButton("Start onboarding", `${appUrl}/hr/onboarding/my-tasks`)}
+    ${renderButton("Start onboarding", `${appUrl()}/hr/onboarding/my-tasks`)}
   `;
   return getEmailTemplate({
     title: `Welcome to ${brand}`,
@@ -44,7 +44,7 @@ export function getOnboardingTaskEmailTemplate(
     <p class="email-text">Hi ${escapeHtml(recipientName)},</p>
     <p class="email-text">Onboarding tasks have been assigned to you for ${escapeHtml(employeeName)}.</p>
     ${renderKeyValueRows(rows)}
-    ${renderButton("View tasks", `${appUrl}/hr/onboarding`)}
+    ${renderButton("View tasks", `${appUrl()}/hr/onboarding`)}
   `;
   return getEmailTemplate({
     title: "Onboarding tasks assigned to you",
@@ -59,7 +59,7 @@ export function getOnboardingCompleteEmployeeEmailTemplate(
   const content = `
     <p class="email-text">Hi ${escapeHtml(employeeName)},</p>
     <p class="email-text">You have completed all your onboarding tasks. Your account is fully set up.</p>
-    ${renderButton("Go to dashboard", `${appUrl}/dashboard`)}
+    ${renderButton("Go to dashboard", `${appUrl()}/dashboard`)}
   `;
   return getEmailTemplate({
     title: "Onboarding complete",
@@ -86,7 +86,7 @@ export function getOnboardingCompleteHrEmailTemplate(
     <p class="email-text">Hi ${escapeHtml(hrName)},</p>
     <p class="email-text">${escapeHtml(employeeName)} has completed all onboarding tasks.</p>
     ${renderKeyValueRows(rows)}
-    ${renderButton("View onboarding", `${appUrl}/hr/onboarding`)}
+    ${renderButton("View onboarding", `${appUrl()}/hr/onboarding`)}
   `;
   return getEmailTemplate({
     title: `${escapeHtml(employeeName)} completed onboarding`,
@@ -112,7 +112,7 @@ export function getTicketCreatedEmailTemplate(
     <p class="email-text">Hi ${escapeHtml(assigneeName)},</p>
     <p class="email-text">A new support ticket has been assigned to you. Priority: ${badge}</p>
     ${renderKeyValueRows(rows)}
-    ${renderButton("Open ticket", `${appUrl}/support/${ticketId}`)}
+    ${renderButton("Open ticket", `${appUrl()}/support/${ticketId}`)}
   `;
   return getEmailTemplate({
     title: `New support ticket: ${escapeHtml(ticketTitle)}`,
@@ -133,7 +133,7 @@ export function getTicketReplyEmailTemplate(
     <p class="email-text">Hi ${escapeHtml(recipientName)},</p>
     <p class="email-text">${escapeHtml(authorName)} replied on ticket #${ticketId} — ${escapeHtml(ticketTitle)}.</p>
     ${renderCallout(preview, "info")}
-    ${renderButton("View conversation", `${appUrl}/support/${ticketId}`)}
+    ${renderButton("View conversation", `${appUrl()}/support/${ticketId}`)}
   `;
   return getEmailTemplate({
     title: `New reply on ticket #${ticketId}`,
@@ -159,7 +159,7 @@ export function getTicketStatusEmailTemplate(
   const content = `
     <p class="email-text">Hi ${escapeHtml(recipientName)},</p>
     <p class="email-text">Ticket #${ticketId} — <strong>${escapeHtml(ticketTitle)}</strong> has been updated: ${badge}</p>
-    ${renderButton("View ticket", `${appUrl}/support/${ticketId}`)}
+    ${renderButton("View ticket", `${appUrl()}/support/${ticketId}`)}
   `;
   return getEmailTemplate({
     title: `Ticket #${ticketId} status: ${escapeHtml(newStatus)}`,
@@ -192,7 +192,7 @@ export function getTicketEscalationEmailTemplate(
   const content = `
     <p class="email-text">Hi ${escapeHtml(recipientName)},</p>
     <p class="email-text">Ticket #${ticketId} — <strong>${escapeHtml(ticketTitle)}</strong> needs attention: ${badge}</p>
-    ${renderButton("View ticket", `${appUrl}/support/${ticketId}`)}
+    ${renderButton("View ticket", `${appUrl()}/support/${ticketId}`)}
   `;
   return getEmailTemplate({
     title: `SLA alert: ticket #${ticketId}`,
@@ -219,7 +219,7 @@ export function getHelpdeskTicketEmailTemplate(
     <p class="email-text">Hi ${escapeHtml(recipientName)},</p>
     <p class="email-text">A new helpdesk ticket has been submitted. Priority: ${badge}</p>
     ${renderKeyValueRows(rows)}
-    ${renderButton("View ticket", `${appUrl}/hr/helpdesk`)}
+    ${renderButton("View ticket", `${appUrl()}/hr/helpdesk`)}
   `;
   return getEmailTemplate({
     title: `New helpdesk ticket: ${escapeHtml(ticketTitle)}`,
@@ -263,7 +263,7 @@ export function getWorkLogRejectedEmailTemplate(
     <p class="email-text">Hi ${escapeHtml(employeeName)},</p>
     <p class="email-text">Your work log for ${escapeHtml(date)} needs changes.</p>
     ${renderCallout(calloutText, "warning")}
-    ${renderButton("Edit work log", `${appUrl}/hr/work-logs`)}
+    ${renderButton("Edit work log", `${appUrl()}/hr/work-logs`)}
   `;
   return getEmailTemplate({
     title: "Your work log needs changes",
@@ -280,7 +280,7 @@ export function getOnboardingReminderEmailTemplate(
   const content = `
     <p class="email-text">Hi ${escapeHtml(employeeName)},</p>
     <p class="email-text">You have <strong>${pendingTasks}</strong> pending onboarding task${pendingTasks !== 1 ? "s" : ""} out of <strong>${totalTasks}</strong> total. Log in and complete your remaining tasks to finish your onboarding.</p>
-    ${renderButton("Complete tasks", `${appUrl}/hr/onboarding/my-tasks`)}
+    ${renderButton("Complete tasks", `${appUrl()}/hr/onboarding/my-tasks`)}
   `;
   return getEmailTemplate({
     title: "Onboarding reminder",
