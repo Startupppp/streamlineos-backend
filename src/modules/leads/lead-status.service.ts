@@ -24,6 +24,7 @@ import { CrmMetadataService } from "../crm/metadata/crm-metadata.service";
 import { CrmBlueprintsService } from "../crm/metadata/crm-blueprints.service";
 import { resolveLeadStatusSemantics } from "./lead-status-semantics";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
+import { toMinorUnits } from "../deals/deal-stage-ledger";
 import type { TransitionLeadStatusInput } from "./dto/lead-mutations.schemas";
 
 type LeadRow = typeof leads.$inferSelect;
@@ -103,7 +104,8 @@ export class LeadStatusService {
       orgId,
       leadId: lead.id,
       name: `${lead.name}${lead.company ? " - " + lead.company : ""}`,
-      value: lead.potentialValue || lead.investmentInterest || "0",
+      // `value` is generated from this column now, so writing it would error.
+      valueMinor: toMinorUnits(lead.potentialValue || lead.investmentInterest),
       stage: "LEAD",
       contactPerson: lead.name,
       contactEmail: lead.email,

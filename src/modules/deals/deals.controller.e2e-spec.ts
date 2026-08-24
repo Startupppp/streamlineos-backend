@@ -42,6 +42,7 @@ describe("Deals auth/RBAC (e2e)", () => {
     ["post", "/deals/1/clone"],
     ["get", "/deals/1/activities"],
     ["post", "/deals/1/activities"],
+    ["get", "/deals/1/transitions"],
     ["patch", "/deals/1/custom-data"],
     ["get", "/deals/1/meetings"],
     ["post", "/deals/1/meetings"],
@@ -99,6 +100,9 @@ describe("Deals auth/RBAC (e2e)", () => {
     "/deals/win-loss",
     "/deals/approval-rules",
     "/deals/approvals",
+    // The stage ledger is the accountability record, so it is read-gated like
+    // the deal itself rather than left open.
+    "/deals/1/transitions",
   ];
 
   it.each(readGatedGetRoutes)(

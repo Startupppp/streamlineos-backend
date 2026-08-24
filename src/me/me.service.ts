@@ -10,10 +10,15 @@ import {
 } from "../modules/hr/onboarding/core/crypto.helpers";
 import type { UpdateProfileInput } from "./dto/me.schemas";
 import { withClientInfo } from "../common/http/parse-user-agent";
+import { readOrgDisplay, type OrgDisplay } from "./org-display";
 
 @Injectable()
 export class MeService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+
+  getOrgDisplay(organizationId: string): Promise<OrgDisplay> {
+    return readOrgDisplay(this.db, organizationId);
+  }
 
   async getProfile(userId: string) {
     const user = await this.db.query.users.findFirst({

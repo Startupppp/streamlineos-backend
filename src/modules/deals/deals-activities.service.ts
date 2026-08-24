@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, isNull } from "drizzle-orm";
-import { deals, dealActivities } from "../../db/schema";
+import { deals, dealActivities, dealStageTransitions, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { LogActivityInput, PatchCustomDataInput } from "./dto/deals.schemas";
@@ -8,6 +8,38 @@ import type { LogActivityInput, PatchCustomDataInput } from "./dto/deals.schemas
 @Injectable()
 export class DealsActivitiesService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+
+  /**
+   * Every move this deal made, and what moved it.
+   *
+   * Separate from `listActivities` on purpose: that is a display log a person
+   * reads, this is the accountable record a reviewer audits, and ticket 13's
+   * review feed will read the same rows. The actor's name is resolved here so no
+   * caller is left rendering an identifier.
+   */
+  listStageTransitions(orgId: string, dealId: number) {
+    return this.db
+      .select({
+        dealStageTransitionId: dealStageTransitions.dealStageTransitionId,
+        fromStage: dealStageTransitions.fromStage,
+        toStage: dealStageTransitions.toStage,
+        actorKind: dealStageTransitions.actorKind,
+        actorLabel: dealStageTransitions.actorLabel,
+        actorName: users.name,
+        reason: dealStageTransitions.reason,
+        occurredAt: dealStageTransitions.occurredAt,
+      })
+      .from(dealStageTransitions)
+      .leftJoin(users, eq(users.id, dealStageTransitions.actorUserId))
+      .where(
+        and(
+          eq(dealStageTransitions.organizationId, orgId),
+          eq(dealStageTransitions.dealId, dealId),
+        ),
+      )
+      .orderBy(desc(dealStageTransitions.occurredAt))
+      .limit(100);
+  }
 
   listActivities(orgId: string, dealId: number) {
     return this.db

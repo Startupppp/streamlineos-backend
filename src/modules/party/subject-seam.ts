@@ -24,10 +24,15 @@ export interface ResolvedSubject {
   readonly organizationId: string;
   readonly subjectTypeId: string;
   readonly typeKey: string;
+  /** The type's own singular noun, so a caller can label the record. */
+  readonly typeSingular: string;
   readonly title: string;
+  readonly reference: string | null;
   readonly status: string | null;
   readonly fields: SubjectFieldDefinition[];
   readonly customFields: Record<string, unknown> | null;
+  /** The detail view labels the record with it, so the projection carries it. */
+  readonly createdAt: Date;
   /** Present only when resolution started from a link. */
   readonly linkedPartyId: string | null;
   readonly resolvedVia: "subject-record" | "link-record";
@@ -52,9 +57,12 @@ const SELECTION = {
   organizationId: subjects.organizationId,
   subjectTypeId: subjects.subjectTypeId,
   title: subjects.title,
+  reference: subjects.reference,
   status: subjects.status,
   customFields: subjects.customFields,
+  createdAt: subjects.createdAt,
   typeKey: subjectTypes.key,
+  typeSingular: subjectTypes.singular,
   fields: subjectTypes.fields,
 } as const;
 

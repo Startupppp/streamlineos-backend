@@ -42,5 +42,8 @@ import { BillingModule } from "../billing/core/billing.module";
     DealsCompetitorsService,
     DealsStakeholdersService,
   ],
+  // Ticket 12 advances a stage through the same path a person does, so the
+  // ledger, the blueprint check and the cache invalidation all still happen.
+  exports: [DealsService],
 })
 export class DealsModule {}

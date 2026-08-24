@@ -138,6 +138,17 @@ export class DealsController {
     return this.deals.listActivities(u.orgId, dealId);
   }
 
+  /** Every move this deal made through the pipeline, and what moved it. */
+  @Get(":dealId/transitions")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("crm:deals:read")
+  async listStageTransitions(
+    @Param("dealId", ParseIntPipe) dealId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return { data: await this.deals.listStageTransitions(u.orgId, dealId) };
+  }
+
   @Post(":dealId/activities")
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:update")

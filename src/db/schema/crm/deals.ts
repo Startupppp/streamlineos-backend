@@ -9,6 +9,7 @@ import {
   decimal,
   date,
   integer,
+  bigint,
   index,
   uniqueIndex,
   foreignKey,
@@ -48,8 +49,36 @@ export const deals = pgTable(
       onDelete: "set null",
     }),
     name: text("name").notNull(),
-    value: decimal("value", { precision: 15, scale: 2 }).default("0").notNull(),
+    /**
+     * The deal's worth, in the organisation's currency's minor units.
+     *
+     * Money is integer minor units platform-wide; `value` was decimal, which is
+     * where rounding drift and half-cent totals come from on a forecast that
+     * sums thousands of rows.
+     */
+    valueMinor: bigint("value_minor", { mode: "number" }).default(0).notNull(),
+    /**
+     * The legacy decimal, now GENERATED from `value_minor` and unwritable.
+     *
+     * Fifteen modules read this column. Rather than change every one of them and
+     * leave a second writable source of the same number, Postgres derives it —
+     * so the two cannot disagree, and a caller that tries to write it gets an
+     * error rather than silently winning.
+     */
+    value: decimal("value", { precision: 15, scale: 2 })
+      .generatedAlwaysAs(sql`(value_minor::numeric / 100)`)
+      .notNull(),
     stage: text("stage").default("LEAD").notNull(),
+    /**
+     * The party this deal is with, once the CRM speaks Party.
+     *
+     * Nullable and additive: `lead_id` and `client_id` still carry every
+     * existing deal, and the modules reading them are explicitly out of scope
+     * for phase 1.
+     */
+    partyId: text("party_id"),
+    /** What is being transacted, where the tenant models one. */
+    subjectId: text("subject_id"),
     probability: integer("probability").default(0).notNull(),
     contactPerson: text("contact_person"),
     contactEmail: text("contact_email"),
@@ -97,6 +126,57 @@ export const deals = pgTable(
       table.stage,
     ),
     unique("uniq_deals_org_id").on(table.orgId, table.id),
+    index("idx_deals_org_party").on(table.orgId, table.partyId),
+    index("idx_deals_org_subject").on(table.orgId, table.subjectId),
+  ],
+);
+
+/**
+ * Every move a deal made through the pipeline, and what moved it.
+ *
+ * The existing record of a stage change is a `deal_activities` row whose
+ * `user_id` is NOT NULL and references `users` — so a change the SYSTEM made is
+ * not representable, and `bulkUpdate` writes no row at all. Ticket 08 exists so
+ * the pipeline can later be advanced autonomously without becoming
+ * unaccountable, and that requires an actor that may be a machine, a reason that
+ * survives, and a write in the same transaction as the deal's own update.
+ */
+export const dealStageTransitions = pgTable(
+  "deal_stage_transitions",
+  {
+    dealStageTransitionId: text("deal_stage_transition_id")
+      .primaryKey()
+      .$defaultFn(() => randomUUID()),
+    organizationId: text("organization_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
+    dealId: integer("deal_id").notNull(),
+    pipelineId: text("pipeline_id"),
+    /** Null on the first transition, where the deal had no prior stage. */
+    fromStage: text("from_stage"),
+    toStage: text("to_stage").notNull(),
+    /** `human` or `system` — constrained by a CHECK alongside the actor column. */
+    actorKind: text("actor_kind").notNull(),
+    /** Set when a person moved it; null when the system did. */
+    actorUserId: text("actor_user_id"),
+    /** What did it, when that was not a person — an automation, a model version. */
+    actorLabel: text("actor_label"),
+    reason: text("reason"),
+    occurredAt: timestamp("occurred_at").defaultNow().notNull(),
+  },
+  (table) => [
+    // The read is one deal's history, newest first.
+    index("idx_deal_stage_transitions_deal").on(
+      table.organizationId,
+      table.dealId,
+      table.occurredAt,
+    ),
+    // And the review feed's read: everything the system did, newest first.
+    index("idx_deal_stage_transitions_actor").on(
+      table.organizationId,
+      table.actorKind,
+      table.occurredAt,
+    ),
   ],
 );
 
