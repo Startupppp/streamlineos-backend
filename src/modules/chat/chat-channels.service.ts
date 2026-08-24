@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
 import { and, count, desc, eq, gt, inArray, isNotNull, isNull } from "drizzle-orm";
 import {
   chatChannelMembers,
@@ -207,7 +207,7 @@ export class ChatChannelsService {
       logger.error(archived ? "[chat.getArchivedChannels]" : "[chat.getMyChannels]", {
         error: error instanceof Error ? error.message : "Unknown error",
       });
-      return [];
+      throw new InternalServerErrorException("Failed to load channels");
     }
   }
 

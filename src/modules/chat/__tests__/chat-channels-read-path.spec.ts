@@ -59,9 +59,35 @@ function makeEntities(title: string) {
   };
 }
 
+function makeFailingDb(error: Error) {
+  return {
+    update: jest.fn(),
+    select: jest.fn(() => {
+      throw error;
+    }),
+    selectDistinctOn: jest.fn(),
+    query: {
+      chatChannels: { findMany: jest.fn(), findFirst: jest.fn() },
+      chatChannelMembers: { findMany: jest.fn() },
+    },
+  };
+}
+
 describe("ChatChannelsService — the channel list is a read", () => {
   beforeEach(() => {
     jest.spyOn(logger, "error").mockImplementation(() => undefined);
+  });
+
+  it("surfaces a db failure as an exception, not an empty channel list", async () => {
+    const db = makeFailingDb(new Error("DB connection lost"));
+    const service = new ChatChannelsService(
+      db as never,
+      { assertWithinLimit: jest.fn() } as never,
+      { cachedVersioned: jest.fn() } as never,
+      makeEntities("title") as never,
+    );
+
+    await expect(service.getMyChannels(actor)).rejects.toThrow();
   });
 
   it("issues no write while listing channels whose entity has been renamed", async () => {
