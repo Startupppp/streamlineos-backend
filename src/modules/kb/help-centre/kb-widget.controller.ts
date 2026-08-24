@@ -1,10 +1,20 @@
-import { Controller, Get, Param, Res } from "@nestjs/common";
+import { Controller, Get, Inject, Param, Res } from "@nestjs/common";
 import type { Response } from "express";
 import { Public } from "../../../common/auth/public.decorator";
+import { APP_CONFIG } from "../../../config/config.module";
+import type { AppConfig } from "../../../config/env.validation";
 
 @Public()
 @Controller("public/kb/widget")
 export class KbWidgetController {
+  constructor(
+    @Inject(APP_CONFIG) private readonly appConfig: Pick<AppConfig, "APP_URL">,
+  ) {}
+
+  private get appUrl(): string {
+    return this.appConfig.APP_URL.replace(/\/$/, "");
+  }
+
   @Get(":orgId")
   config(@Param("orgId") orgId: string): {
     orgId: string;
@@ -15,7 +25,7 @@ export class KbWidgetController {
   } {
     return {
       orgId,
-      helpCenterUrl: `${(process.env.APP_URL ?? "").replace(/\/$/, "")}/help/${orgId}`,
+      helpCenterUrl: `${this.appUrl}/help/${orgId}`,
       buttonLabel: "Help",
       primaryColor: "#6366f1",
       position: "bottom-right",
@@ -24,7 +34,7 @@ export class KbWidgetController {
 
   @Get(":orgId/script")
   script(@Param("orgId") orgId: string, @Res() res: Response): void {
-    const helpUrl = `${(process.env.APP_URL ?? "").replace(/\/$/, "")}/help/${encodeURIComponent(orgId)}`;
+    const helpUrl = `${this.appUrl}/help/${encodeURIComponent(orgId)}`;
     const snippet = `(function () {
   if (document.getElementById('sleos-help-widget')) return;
   var btn = document.createElement('button');

@@ -92,7 +92,6 @@ export default tseslint.config(
       "src/modules/hr/onboarding/core/crypto.helpers.ts",
       "src/modules/hr/payroll/lib/encryption.ts",
       "src/modules/hr/recruitment/recruitment-jobs.service.ts",
-      "src/modules/kb/kb-widget.controller.ts",
       "src/modules/mfa/mfa.service.ts",
       "src/modules/organization/setup/org-setup.service.ts",
       "src/modules/portal/auth/portal-token.service.ts",
