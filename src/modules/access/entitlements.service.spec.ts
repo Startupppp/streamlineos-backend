@@ -3,7 +3,7 @@ import { EntitlementsService } from "./entitlements.service";
 import type { Db } from "../../db/drizzle.module";
 import type { CacheService } from "../../common/cache/cache.service";
 import type { PlanLimitsService } from "../billing/core/plan-limits.service";
-import { MODULE_CATALOG } from "../../common/rbac/module-vocabulary";
+import { ADMINISTRABLE_MODULES, MODULE_CATALOG } from "../../common/rbac/module-vocabulary";
 
 type DeepPartial<T> = {
   [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K];
@@ -396,7 +396,7 @@ describe("EntitlementsService", () => {
 
       const result = await buildService(db, cache).listModules("org-1");
 
-      expect(result).toHaveLength(MODULE_CATALOG.length);
+      expect(result).toHaveLength(ADMINISTRABLE_MODULES.length);
       expect(
         result
           .filter((r) => r.enabled)
@@ -435,7 +435,7 @@ describe("EntitlementsService", () => {
 
       const result = await buildService(db, cache).listModules("org-1");
 
-      expect(result).toHaveLength(MODULE_CATALOG.length);
+      expect(result).toHaveLength(ADMINISTRABLE_MODULES.length);
       expect(result.find((r) => r.moduleKey === "hr")?.enabled).toBe(true);
       expect(result.find((r) => r.moduleKey === "crm")?.enabled).toBe(false);
       expect(result.find((r) => r.moduleKey === "build")?.enabled).toBe(true);
@@ -451,7 +451,7 @@ describe("EntitlementsService", () => {
 
       const result = await buildService(db, cache).listModules("org-1");
 
-      expect(result).toHaveLength(MODULE_CATALOG.length);
+      expect(result).toHaveLength(ADMINISTRABLE_MODULES.length);
       expect(result.find((r) => r.moduleKey === "kb")).toMatchObject({ enabled: true, core: true });
       expect(result.find((r) => r.moduleKey === "blog")).toBeUndefined();
       expect(result.find((r) => r.moduleKey === "hr")?.enabled).toBe(false);

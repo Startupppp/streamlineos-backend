@@ -15,8 +15,8 @@ import { PLAN_LOCKED_MODULES } from "../billing/core/plan-entitlements.constants
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
-import { MODULE_CATALOG } from "../../common/rbac/module-vocabulary";
-import { moduleIdFromStored } from "../../common/rbac/module-registry";
+import { ADMINISTRABLE_MODULES, MODULE_CATALOG } from "../../common/rbac/module-vocabulary";
+import { coreModuleIds, moduleIdFromStored } from "../../common/rbac/module-registry";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { ACCESS_MANAGED_MODULES } from "../rbac/permissions";
 import { assignModuleOwnerRole } from "../ownership/module-owner-role.helper";
@@ -54,24 +54,12 @@ interface ModuleMapEntry {
 
 const MODULE_MAP_LOCAL_TTL_MS = 15_000;
 
-const FALLBACK_CORE_MODULE_KEYS: ReadonlySet<string> = new Set<string>([
-  "kb",
-  "home",
-  "chat",
-  "mail",
-  "calendar",
-  "notifications",
-  "workflows",
-  "blog",
-  "directory",
-]);
-
 @Injectable()
 export class EntitlementsService implements OnModuleInit {
   private missingTableLogged = false;
   private moduleTableUnavailable = false;
   private readonly moduleMapCache = new Map<string, ModuleMapEntry>();
-  private coreModuleKeys: ReadonlySet<string> = FALLBACK_CORE_MODULE_KEYS;
+  private coreModuleKeys: ReadonlySet<string> = new Set(coreModuleIds());
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
@@ -87,10 +75,16 @@ export class EntitlementsService implements OnModuleInit {
         where: eq(modulesCatalog.isCore, true),
         columns: { moduleKey: true },
       });
-      this.coreModuleKeys = new Set([
-        ...FALLBACK_CORE_MODULE_KEYS,
-        ...rows.map((r) => r.moduleKey),
-      ]);
+      const declared = new Set(coreModuleIds());
+      const stored = new Set(rows.map((r) => r.moduleKey));
+      const missingFromCatalog = [...declared].filter((key) => !stored.has(key));
+      const extraInCatalog = [...stored].filter((key) => !declared.has(key));
+      if (missingFromCatalog.length > 0 || extraInCatalog.length > 0)
+        logger.warn(
+          "entitlements: modules_catalog disagrees with the module registry about which modules are core",
+          { missingFromCatalog, extraInCatalog },
+        );
+      this.coreModuleKeys = declared;
     } catch {
       logger.warn("entitlements: modules_catalog unavailable at init, using compile-time core fallback");
     }
@@ -269,7 +263,7 @@ export class EntitlementsService implements OnModuleInit {
   async getEffectiveModuleMap(orgId: string): Promise<Record<string, boolean>> {
     const map = await this.getModuleMap(orgId);
     const effective: Record<string, boolean> = {};
-    for (const moduleKey of MODULE_CATALOG) {
+    for (const moduleKey of ADMINISTRABLE_MODULES) {
       effective[moduleKey] = this.coreModuleKeys.has(moduleKey)
         ? true
         : (map[moduleKey] ??
@@ -281,7 +275,7 @@ export class EntitlementsService implements OnModuleInit {
 
   async listModules(orgId: string): Promise<ModuleStatus[]> {
     const effective = await this.getEffectiveModuleMap(orgId);
-    return MODULE_CATALOG.map((moduleKey): ModuleStatus =>
+    return ADMINISTRABLE_MODULES.map((moduleKey): ModuleStatus =>
       this.coreModuleKeys.has(moduleKey)
         ? { moduleKey, enabled: true, core: true }
         : { moduleKey, enabled: effective[moduleKey] ?? false },

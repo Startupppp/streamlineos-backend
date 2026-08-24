@@ -1,13 +1,17 @@
 import {
   additionalNamespaces,
+  administrableModuleIds,
   planGatedModuleIds,
   type PlanGatedModuleId,
 } from "./module-registry";
 
 export type ModuleKey = PlanGatedModuleId;
 
-/** Computed from the registry. Nothing here is authored twice. */
+/** Plan gating, and only that. What the screens list is ADMINISTRABLE_MODULES. */
 export const MODULE_CATALOG: readonly ModuleKey[] = planGatedModuleIds();
+
+/** What the modules and per-person access screens list, core modules included. */
+export const ADMINISTRABLE_MODULES: readonly string[] = administrableModuleIds();
 
 const PLAN_GATED_MODULES: ReadonlySet<string> = new Set<string>(MODULE_CATALOG);
 

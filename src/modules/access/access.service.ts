@@ -29,6 +29,7 @@ import { accessVersionChannel } from "../../common/rbac/access-version-channel";
 import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
 import type { AccessSnapshot, DataScope } from "./access.types";
 import { EntitlementsService, MODULE_CATALOG } from "./entitlements.service";
+import { ADMINISTRABLE_MODULES } from "../../common/rbac/module-vocabulary";
 import { MfaPolicyService } from "./mfa-policy.service";
 import {
   broadest,
@@ -450,7 +451,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       throw new NotFoundException("User is not a member of this organization");
     }
     const denied = await this.getUserDeniedModules(orgId, userId);
-    return MODULE_CATALOG.map((moduleKey) => ({
+    return ADMINISTRABLE_MODULES.map((moduleKey) => ({
       moduleKey,
       enabled: !denied.has(moduleKey),
       core: this.entitlements.isCoreModule(moduleKey),

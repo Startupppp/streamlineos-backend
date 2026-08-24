@@ -7,6 +7,8 @@ import {
   moduleIds,
   planGatedModuleIds,
   storedModuleKey,
+  coreModuleIds,
+  administrableModuleIds,
 } from "./module-registry";
 import { MODULE_CATALOG, isPlanGatedModule } from "./module-vocabulary";
 import { ACCESS_MANAGED_MODULES } from "../../modules/rbac/permissions";
@@ -99,5 +101,42 @@ describe("stored module keys", () => {
   it("translates the stored uppercase form to a module the registry knows", () => {
     for (const id of moduleIds())
       expect(moduleDefinition(moduleIdFromStored(storedModuleKey(id)))).toBeDefined();
+  });
+});
+
+describe("money and surface are two facts, not one", () => {
+  const TODAYS_CORE = ["kb","home","chat","mail","calendar","notifications","workflows","blog","directory"];
+
+  it("derives exactly the nine keys that were compiled into the service", () => {
+    expect(coreModuleIds().sort()).toEqual([...TODAYS_CORE].sort());
+  });
+
+  it("still lists kb and chat on the screens even though they are free", () => {
+    for (const id of ["kb", "chat"]) {
+      expect(administrableModuleIds()).toContain(id);
+      expect(coreModuleIds()).toContain(id);
+    }
+  });
+
+  it("keeps delegable-and-free modules core rather than plan-gating them", () => {
+    for (const id of ["workflows", "blog", "directory"]) expect(coreModuleIds()).toContain(id);
+  });
+
+  it("excludes billing, which is free to nobody and administers nothing on the screen", () => {
+    expect(coreModuleIds()).not.toContain("billing");
+    expect(administrableModuleIds()).not.toContain("billing");
+  });
+
+  // The mutation check: a field has teeth only when changing it changes the answer.
+  it("stops calling a module core the moment it becomes plan-gated", () => {
+    const core = (e: { planGated: boolean; ladder: string; id: string }[]) =>
+      e.filter((x) => !x.planGated && x.ladder !== "platform-admin").map((x) => x.id);
+    expect(core([{ id: "chat", planGated: false, ladder: "universal" }])).toEqual(["chat"]);
+    expect(core([{ id: "chat", planGated: true, ladder: "universal" }])).toEqual([]);
+    expect(core([{ id: "billing", planGated: false, ladder: "platform-admin" }])).toEqual([]);
+  });
+
+  it("keeps the two sets genuinely different, which is the point of splitting them", () => {
+    expect(administrableModuleIds().sort()).not.toEqual(coreModuleIds().sort());
   });
 });

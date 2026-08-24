@@ -26,14 +26,16 @@ describe("what makes a module always available", () => {
     expect(missing.sort()).toEqual(["blog", "directory", "workflows"]);
   });
 
-  it("planGated does not decide always-on either, and disagrees in both directions", () => {
+  // Was a pin on the contradiction; now an assertion that it is gone. Billing is the one
+  // free module that is not always-on, and its platform-admin ladder is what excludes it.
+  it("now agrees with planGated in both directions, billing aside", () => {
     const alwaysOnButPlanGated = ALWAYS_ON_AT_RUNTIME.filter(
       (id) => !notPlanGated.includes(id),
     );
     const alwaysOn: string[] = [...ALWAYS_ON_AT_RUNTIME];
     const notPlanGatedButNotAlwaysOn = notPlanGated.filter((id) => !alwaysOn.includes(id));
 
-    expect(alwaysOnButPlanGated.sort()).toEqual(["chat", "kb"]);
+    expect(alwaysOnButPlanGated).toEqual([]);
     expect(notPlanGatedButNotAlwaysOn.sort()).toEqual(["billing"]);
   });
 
