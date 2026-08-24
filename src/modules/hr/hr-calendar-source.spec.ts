@@ -296,6 +296,61 @@ describe("HrCalendarSource", () => {
     expect(event?.color).toBe("green");
   });
 
+  it("has no per-source module gate — CalendarSourceRegistry gates on source.module before calling load (see calendar-source.registry.spec.ts)", async () => {
+    const source = await buildSource(buildDb(emptyWith({})));
+    expect(source.module).toBe("hr");
+  });
+
+  // OVER-BROAD QUERY: the leave query predicates on orgId + APPROVED + date range only; userId is
+  // NOT a predicate. Every org member's approved absence is visible to every other caller. Reason
+  // masking is applied in the projection layer (non-self reasons become null), not in SQL.
+  it("leave query is org-wide — all approved org leaves in the date range surface, not only the caller's", async () => {
+    const leaveRows = [
+      {
+        id: 30,
+        userId: "other-user",
+        startDate: "2026-08-14",
+        endDate: "2026-08-14",
+        reason: "PRIVATE",
+        userName: "Colleague",
+        isHalfDay: false,
+        halfDayPeriod: null,
+      },
+      {
+        id: 31,
+        userId: "user-1",
+        startDate: "2026-08-15",
+        endDate: "2026-08-15",
+        reason: "Mine",
+        userName: "Alice",
+        isHalfDay: false,
+        halfDayPeriod: null,
+      },
+    ];
+    const source = await buildSource(buildDb(emptyWith({ 0: leaveRows })));
+    const result = await source.load(ctx);
+
+    expect(result.find((e) => e.id === "leave-30")).toBeDefined();
+    expect(result.find((e) => e.id === "leave-31")).toBeDefined();
+  });
+
+  it("attendance query is caller-scoped — only the caller's records are fetched via eq(attendance.userId, userId)", async () => {
+    const attendanceRow = {
+      id: 88,
+      date: "2026-08-06",
+      checkIn: new Date("2026-08-06T09:00:00.000Z"),
+      checkOut: new Date("2026-08-06T17:00:00.000Z"),
+      status: "PRESENT",
+      workHours: "8",
+      breakHours: "0",
+      createdAt: new Date("2026-08-06T17:00:00.000Z"),
+    };
+    const source = await buildSource(buildDb(emptyWith({ 3: [attendanceRow], 9: ACTIVE_JOIN })));
+    const result = await source.load(ctx);
+
+    expect(result.find((e) => e.id === "attendance-88")).toBeDefined();
+  });
+
   it("generates a WFH attendance event for an approved WFH day with no attendance record on a past weekday", async () => {
     const wfhRow = { id: 99, date: "2026-08-03" };
     const source = await buildSource(buildDb(emptyWith({ 4: [wfhRow], 9: ACTIVE_JOIN })));

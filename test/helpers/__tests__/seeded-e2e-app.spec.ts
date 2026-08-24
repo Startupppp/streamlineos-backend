@@ -1,6 +1,11 @@
 import request from "supertest";
-import { sql } from "drizzle-orm";
-import { roles } from "src/db/schema";
+import { and, eq, sql } from "drizzle-orm";
+import {
+  organizationMembers,
+  projectMembers,
+  roles,
+  subscriptions,
+} from "src/db/schema";
 import { DRIZZLE } from "src/db/drizzle.constants";
 import type { Db } from "src/db/drizzle.module";
 import {
@@ -114,6 +119,51 @@ describe(`${SEEDED_HARNESS} harness self-tests`, () => {
         }).toMatchObject({ status: 404 });
       } finally {
         await Promise.all([fixtureA.teardown(), fixtureB.teardown()]);
+      }
+    },
+    60_000,
+  );
+
+  it(
+    `${SEEDED_HARNESS} standing, plan tier and projects reach the database`,
+    async () => {
+      const fixture = await seedOrg(seededApp.seedDb)
+        .addMember("dana", { standing: "OWNER" })
+        .addMember("erin")
+        .onPlan("PAID")
+        .addProject("apollo", { key: "APOLLO" })
+        .addProjectMember("apollo", "erin")
+        .build();
+      try {
+        const dana = fixture.members["dana"];
+        const erin = fixture.members["erin"];
+        const apollo = fixture.projects["apollo"];
+        if (!dana || !erin || !apollo) throw new Error("fixture entries missing");
+
+        const ownerRow = await seededApp.seedDb.query.organizationMembers.findFirst({
+          where: eq(organizationMembers.id, dana.membershipId),
+          columns: { isOwner: true, role: true },
+        });
+        expect(ownerRow).toMatchObject({ isOwner: true, role: "OWNER" });
+
+        const planRow = await seededApp.seedDb.query.subscriptions.findFirst({
+          where: eq(subscriptions.orgId, fixture.orgId),
+          columns: { plan: true },
+        });
+        expect(planRow).toMatchObject({ plan: "STARTER" });
+
+        const projectMemberRows = await seededApp.seedDb
+          .select({ userId: projectMembers.userId })
+          .from(projectMembers)
+          .where(
+            and(
+              eq(projectMembers.projectId, apollo.projectId),
+              eq(projectMembers.orgId, fixture.orgId),
+            ),
+          );
+        expect(projectMemberRows).toEqual([{ userId: erin.userId }]);
+      } finally {
+        await fixture.teardown();
       }
     },
     60_000,

@@ -99,6 +99,11 @@ describe("TasksCalendarSource", () => {
     expect(denyResult).toHaveLength(0);
   });
 
+  it("has no per-source module gate — CalendarSourceRegistry gates on source.module before calling load (see calendar-source.registry.spec.ts)", () => {
+    const source = new TasksCalendarSource(null as never, { register: jest.fn() } as never);
+    expect(source.module).toBe("tasks");
+  });
+
   it("task projection satisfies the full CalendarEventProjection contract", async () => {
     const dueDate = new Date("2026-08-18");
     const source = await buildSource(buildDb([{ id: 5, title: "Deploy now", dueDate, status: "open" }]));

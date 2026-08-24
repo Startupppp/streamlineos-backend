@@ -111,6 +111,11 @@ describe("BuildCalendarSource", () => {
     expect(denyResult).toHaveLength(0);
   });
 
+  it("has no per-source module gate — CalendarSourceRegistry gates on source.module before calling load (see calendar-source.registry.spec.ts)", () => {
+    const source = new BuildCalendarSource(null as never, { register: jest.fn() } as never);
+    expect(source.module).toBe("build");
+  });
+
   it("ticket projection includes correct start, end and color fields", async () => {
     const source = await buildSource(
       buildDb([
