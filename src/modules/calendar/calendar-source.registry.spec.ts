@@ -2,6 +2,9 @@ import { Test } from "@nestjs/testing";
 import { CalendarSourceRegistry } from "./calendar-source.registry";
 import type { CalendarEventProjection, CalendarEventSource, CalendarSourceContext } from "./calendar-event-source";
 import { EntitlementsService } from "../access/entitlements.service";
+import { AccessService } from "../access/access.service";
+
+const ALL_SOURCE_MODULES: string[] = ["hr", "build", "tasks", "alpha", "beta"];
 
 const ctx: CalendarSourceContext = {
   orgId: "org-1",
@@ -31,8 +34,18 @@ async function buildRegistry(
       {
         provide: EntitlementsService,
         useValue: {
-          isModuleEnabled: jest.fn().mockImplementation((_: string, m: string) => Promise.resolve(isEnabled(m))),
+          isCoreModule: () => false,
+          getModuleMap: jest.fn().mockImplementation(() =>
+            Promise.resolve(
+              Object.fromEntries(ALL_SOURCE_MODULES.map((m) => [m, isEnabled(m)])),
+            ),
+          ),
+          getPlanLockedModules: jest.fn().mockResolvedValue([]),
         },
+      },
+      {
+        provide: AccessService,
+        useValue: { getUserDeniedModules: jest.fn().mockResolvedValue(new Set<string>()) },
       },
     ],
   }).compile();

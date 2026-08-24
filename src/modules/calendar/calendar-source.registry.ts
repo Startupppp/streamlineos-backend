@@ -1,6 +1,11 @@
 import { Injectable } from "@nestjs/common";
 import type { CalendarEventProjection, CalendarEventSource, CalendarSourceContext } from "./calendar-event-source";
 import { EntitlementsService } from "../access/entitlements.service";
+import { AccessService } from "../access/access.service";
+import {
+  moduleAvailability,
+  moduleAvailabilityResolver,
+} from "../../common/rbac/module-availability";
 
 export interface CalendarSourceOutput {
   events: CalendarEventProjection[];
@@ -12,7 +17,10 @@ export interface CalendarSourceOutput {
 export class CalendarSourceRegistry {
   private readonly sources = new Set<CalendarEventSource>();
 
-  constructor(private readonly entitlements: EntitlementsService) {}
+  constructor(
+    private readonly entitlements: EntitlementsService,
+    private readonly access: AccessService,
+  ) {}
 
   register(source: CalendarEventSource): void {
     this.sources.add(source);
@@ -25,8 +33,15 @@ export class CalendarSourceRegistry {
     const available = (
       await Promise.all(
         sources.map(async (s) => {
-          const enabled = await this.entitlements.isModuleEnabled(ctx.orgId, s.module);
-          return enabled ? s : null;
+          // moduleAvailability, not isModuleEnabled: the latter takes no userId, so a
+          // person denied a module still received its events.
+          const availability = await moduleAvailability(
+            moduleAvailabilityResolver(this.entitlements, this.access),
+            ctx.orgId,
+            ctx.userId,
+            s.module,
+          );
+          return availability.available ? s : null;
         }),
       )
     ).filter((s): s is CalendarEventSource => s !== null);

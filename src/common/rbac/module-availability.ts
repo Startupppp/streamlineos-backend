@@ -50,3 +50,28 @@ export async function moduleAvailability(
   if (locked.includes(moduleKey)) return { available: false, reason: "not-in-plan" };
   return { available: false, reason: "org-disabled" };
 }
+
+export interface ModuleAvailabilitySources {
+  isCoreModule(moduleKey: string): boolean;
+  getModuleMap(orgId: string): Promise<Record<string, boolean>>;
+  getPlanLockedModules(orgId: string): Promise<readonly string[]>;
+}
+
+export interface UserModuleDenies {
+  getUserDeniedModules(orgId: string, userId: string): Promise<Set<string>>;
+}
+
+/** One resolver, so a second caller cannot answer availability a fourth way. */
+export function moduleAvailabilityResolver(
+  entitlements: ModuleAvailabilitySources,
+  denies?: UserModuleDenies,
+): ModuleAvailabilityResolver {
+  return {
+    isCoreModule: (key) => entitlements.isCoreModule(key),
+    getModuleMap: (orgId) => entitlements.getModuleMap(orgId),
+    getUserDeniedModules: denies
+      ? (orgId, userId) => denies.getUserDeniedModules(orgId, userId)
+      : async () => new Set<string>(),
+    getPlanLockedModules: (orgId) => entitlements.getPlanLockedModules(orgId),
+  };
+}

@@ -8,7 +8,11 @@ import type { CurrentUserContext } from "../auth/backend-claims";
 import { EntitlementsService } from "../../modules/access/entitlements.service";
 import { AccessService } from "../../modules/access/access.service";
 import { moduleIdFromStored } from "./module-registry";
-import { moduleAvailability, type ModuleAvailabilityResolver } from "./module-availability";
+import {
+  moduleAvailability,
+  moduleAvailabilityResolver,
+  type ModuleAvailabilityResolver,
+} from "./module-availability";
 
 @Injectable()
 export class ModuleGuard implements CanActivate {
@@ -18,15 +22,8 @@ export class ModuleGuard implements CanActivate {
     @Optional() private readonly accessSvc?: AccessService,
   ) {}
 
-  private buildResolver(moduleKey: string): ModuleAvailabilityResolver {
-    return {
-      isCoreModule: (key) => this.entitlements.isCoreModule(key),
-      getModuleMap: (orgId) => this.entitlements.getModuleMap(orgId),
-      getUserDeniedModules: this.accessSvc
-        ? (orgId, uid) => this.accessSvc!.getUserDeniedModules(orgId, uid)
-        : async () => new Set<string>(),
-      getPlanLockedModules: (orgId) => this.entitlements.getPlanLockedModules(orgId),
-    };
+  private buildResolver(): ModuleAvailabilityResolver {
+    return moduleAvailabilityResolver(this.entitlements, this.accessSvc);
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -58,7 +55,7 @@ export class ModuleGuard implements CanActivate {
     );
     for (const moduleKey of moduleKeys) {
       const avail = await moduleAvailability(
-        this.buildResolver(moduleKey),
+        this.buildResolver(),
         user.orgId,
         user.userId,
         moduleKey,
