@@ -179,6 +179,8 @@ export class KbIndexingService {
         visibility: true,
         deletedAt: true,
         contentText: true,
+        projectId: true,
+        createdById: true,
       },
     });
 
@@ -232,6 +234,9 @@ export class KbIndexingService {
         tokens: Math.ceil(chunk.length / 4),
         embedding: embeddings[index],
         embeddingModel: EMBEDDING_MODEL,
+        visibility: page.visibility,
+        projectId: page.projectId,
+        createdById: page.createdById,
       }));
 
       await tx.insert(kbArticleChunks).values(valuesToInsert);

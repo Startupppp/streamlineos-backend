@@ -5,7 +5,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { KbAccessService } from "./kb-access.service";
 import { KbEventsService } from "./kb-events.service";
-import { pageVisibleTo } from "./kb-page-visibility";
+import { pageVisibleTo, visibleTo } from "./kb-page-visibility";
 import { EmbeddingsService } from "../ai/core/providers/embeddings.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { SearchInput } from "./dto/kb-ai.schemas";
@@ -147,7 +147,21 @@ export class KbSearchService {
         : Promise.resolve<number[]>([]),
       this.pageKeywordCandidates(user.orgId, q, pool, pageVisibility),
       vectorLiteral
-        ? this.pageVectorCandidates(user.orgId, vectorLiteral, pool, pageVisibility)
+        ? this.pageVectorCandidates(
+            user.orgId,
+            vectorLiteral,
+            pool,
+            visibleTo(
+              {
+                orgId: kbArticleChunks.orgId,
+                visibility: kbArticleChunks.visibility,
+                projectId: kbArticleChunks.projectId,
+                createdById: kbArticleChunks.createdById,
+              },
+              user,
+              projectIds,
+            ),
+          )
         : Promise.resolve<number[]>([]),
     ]);
 
@@ -319,26 +333,18 @@ export class KbSearchService {
     orgId: string,
     vector: string,
     pool: number,
-    pageVisibility: SQL,
+    chunkVisibility: SQL,
   ): Promise<number[]> {
     try {
       const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
       const rows = await this.db
         .select({ pageId: kbArticleChunks.pageId })
         .from(kbArticleChunks)
-        .innerJoin(
-          kbPages,
-          and(
-            eq(kbPages.id, kbArticleChunks.pageId),
-            isNull(kbPages.deletedAt),
-            pageVisibility,
-          ),
-        )
         .where(
           and(
             eq(kbArticleChunks.orgId, orgId),
             isNotNull(kbArticleChunks.pageId),
-            eq(kbPages.orgId, orgId),
+            chunkVisibility,
           ),
         )
         .orderBy(distance)

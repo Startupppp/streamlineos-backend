@@ -45,6 +45,10 @@ export const kbArticleChunks = pgTable(
       dimensions: KB_EMBEDDING_DIMENSIONS,
     }).notNull(),
     embeddingModel: text("embedding_model").notNull(),
+    // Copied from the page at index time so retrieval filters without joining it.
+    visibility: text("visibility"),
+    projectId: integer("project_id"),
+    createdById: text("created_by_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [

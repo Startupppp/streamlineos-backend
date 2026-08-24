@@ -1513,6 +1513,13 @@
       "when": 1786701790560,
       "tag": "0460_chat_identity_primary_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 217,
+      "version": "7",
+      "when": 1786701791560,
+      "tag": "0461_kb_chunk_acl_columns",
+      "breakpoints": true
     }
   ]
 }
