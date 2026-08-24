@@ -3,6 +3,10 @@ export const AI_FEATURE_COSTS: Readonly<Record<string, number>> = {
   // Ticket 12: one small-model call per inbound activity, reading a capped
   // conversation and returning a next step plus a stage inference.
   "crm.autonomy-extract": 1,
+  // Ticket 15: the second opinion. Registered so its spend is attributed and
+  // capped like any other feature -- an unregistered key silently reserves one
+  // credit, which is a quiet under-reserve rather than an error.
+  "crm.autonomy-shadow-score": 1,
   "crm.predict-deal": 1,
   "crm.churn-risk": 1,
   "crm.next-action": 1,

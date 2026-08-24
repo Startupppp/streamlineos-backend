@@ -10,6 +10,7 @@ import { AccessService } from "../access/access.service";
 import { isScopable } from "../rbac/permissions";
 import type { DataScope } from "../access/access.types";
 import { AutonomyReviewService } from "./autonomy-review.service";
+import { AutonomyScoringService } from "./autonomy-scoring.service";
 import {
   listDecisionsQuerySchema,
   reverseDecisionSchema,
@@ -17,6 +18,12 @@ import {
   type ListDecisionsQuery,
   type ReverseDecisionInput,
   type SetSwitchInput,
+  scoreboardQuerySchema,
+  reviewQueueQuerySchema,
+  updateAutonomySettingsSchema,
+  type ScoreboardQuery,
+  type ReviewQueueQuery,
+  type UpdateAutonomySettingsInput,
 } from "./dto/autonomy-review.schemas";
 
 const REVIEW_PERMISSION = "crm:autonomy:view";
@@ -26,6 +33,7 @@ const REVIEW_PERMISSION = "crm:autonomy:view";
 export class AutonomyReviewController {
   constructor(
     private readonly svc: AutonomyReviewService,
+    private readonly scoring: AutonomyScoringService,
     private readonly access: AccessService,
   ) {}
 
@@ -77,6 +85,59 @@ export class AutonomyReviewController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.setSwitch(u.orgId, u.userId, body);
+  }
+
+  /**
+   * How often the system is right, per action type, as numbers that move.
+   *
+   * Not gated behind the manage key: an evidence-based decision about whether to
+   * enable an action type is exactly what a reader of the feed is trying to
+   * make, and hiding the evidence behind the control would invert that.
+   */
+  @Get("scoreboard")
+  @RequirePermission(REVIEW_PERMISSION)
+  scoreboard(
+    @Query(new ZodValidationPipe(scoreboardQuerySchema)) query: ScoreboardQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.scoring.scoreboard(u.orgId, query.days);
+  }
+
+  /** What a second pass disagreed with and nobody has looked at yet. */
+  @Get("review-queue")
+  @RequirePermission(REVIEW_PERMISSION)
+  reviewQueue(
+    @Query(new ZodValidationPipe(reviewQueueQuerySchema)) query: ReviewQueueQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.scoring.reviewQueue(u.orgId, query.limit);
+  }
+
+  @Post("review-queue/:shadowScoreId/reviewed")
+  @Idempotent("crm.autonomy.reviewed")
+  @RequirePermission(REVIEW_PERMISSION)
+  markReviewed(
+    @Param("shadowScoreId") shadowScoreId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.scoring.markReviewed(u.orgId, u.userId, shadowScoreId);
+  }
+
+  @Get("settings")
+  @RequirePermission(REVIEW_PERMISSION)
+  settings(@CurrentUser() u: CurrentUserContext) {
+    return this.scoring.settingsFor(u.orgId);
+  }
+
+  /** Sampling rate, its daily cap, and the hold window. */
+  @Patch("settings")
+  @Idempotent("crm.autonomy.settings")
+  @RequirePermission("crm:autonomy:manage")
+  updateSettings(
+    @Body(new ZodValidationPipe(updateAutonomySettingsSchema)) body: UpdateAutonomySettingsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.scoring.updateSettings(u.orgId, body);
   }
 
   /**

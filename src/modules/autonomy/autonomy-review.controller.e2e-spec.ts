@@ -29,6 +29,8 @@ describe("Autonomy review auth/RBAC (e2e)", () => {
       ["one entry", "get", "/crm/autonomy/decisions/d-1"],
       ["a reversal", "post", "/crm/autonomy/decisions/d-1/reverse"],
       ["the switches", "get", "/crm/autonomy/switches"],
+      ["the scoreboard", "get", "/crm/autonomy/scoreboard"],
+      ["the review queue", "get", "/crm/autonomy/review-queue"],
       ["setting a switch", "patch", "/crm/autonomy/switches"],
     ];
 
@@ -69,6 +71,33 @@ describe("Autonomy review auth/RBAC (e2e)", () => {
       .patch("/crm/autonomy/switches")
       .set("Authorization", await bearer(["crm:autonomy:view"]))
       .send({ kind: "stage.advanced", enabled: false });
+    expect(res.status).toBe(403);
+  });
+
+  it("403 reading the scoreboard without the view key", async () => {
+    const res = await server()
+      .get("/crm/autonomy/scoreboard")
+      .set("Authorization", await bearer([]));
+    expect(res.status).toBe(403);
+  });
+
+  /**
+   * The scoreboard is evidence for deciding whether to enable an action type, so
+   * it sits behind the view key rather than the manage key. Hiding the evidence
+   * behind the control would invert the decision it exists to inform.
+   */
+  it("does not require the manage key to read the scoreboard", async () => {
+    const res = await server()
+      .get("/crm/autonomy/scoreboard")
+      .set("Authorization", await bearer(["crm:autonomy:view"]));
+    expect(res.status).not.toBe(403);
+  });
+
+  it("403 changing the sampling rate or hold window with the view key alone", async () => {
+    const res = await server()
+      .patch("/crm/autonomy/settings")
+      .set("Authorization", await bearer(["crm:autonomy:view"]))
+      .send({ shadowSampleRate: 1 });
     expect(res.status).toBe(403);
   });
 

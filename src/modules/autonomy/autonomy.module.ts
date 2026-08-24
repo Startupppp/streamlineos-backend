@@ -4,6 +4,7 @@ import { DealsModule } from "../deals/deals.module";
 import { AccessModule } from "../access/access.module";
 import { AutonomyService } from "./autonomy.service";
 import { AutonomyReviewService } from "./autonomy-review.service";
+import { AutonomyScoringService } from "./autonomy-scoring.service";
 import { AutonomyReviewController } from "./autonomy-review.controller";
 
 /**
@@ -21,7 +22,7 @@ import { AutonomyReviewController } from "./autonomy-review.controller";
 @Module({
   imports: [AiGatewayModule, DealsModule, AccessModule],
   controllers: [AutonomyReviewController],
-  providers: [AutonomyService, AutonomyReviewService],
-  exports: [AutonomyService, AutonomyReviewService],
+  providers: [AutonomyService, AutonomyReviewService, AutonomyScoringService],
+  exports: [AutonomyService, AutonomyReviewService, AutonomyScoringService],
 })
 export class AutonomyModule {}

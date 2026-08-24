@@ -60,3 +60,41 @@ export const setSwitchSchema = z
   .strict();
 
 export type SetSwitchInput = z.infer<typeof setSwitchSchema>;
+
+export const scoreboardQuerySchema = z
+  .object({
+    /** Window in days. Capped so a scoreboard cannot become a full-table scan. */
+    days: z.coerce.number().int().min(1).max(365).default(30),
+  })
+  .strict();
+
+export type ScoreboardQuery = z.infer<typeof scoreboardQuerySchema>;
+
+export const reviewQueueQuerySchema = z
+  .object({ limit: z.coerce.number().int().min(1).max(100).default(25) })
+  .strict();
+
+export type ReviewQueueQuery = z.infer<typeof reviewQueueQuerySchema>;
+
+export const updateAutonomySettingsSchema = z
+  .object({
+    /**
+     * Bounded here as well as in the database. The CHECK is the last line; a
+     * caller deserves a 400 that names the field rather than a 500 from a
+     * constraint they cannot see.
+     */
+    shadowSampleRate: z.number().min(0).max(1).optional(),
+    shadowDailyCap: z.number().int().min(0).max(100_000).optional(),
+    /**
+     * A zero-second hold is not a hold, it is autonomy with a misleading name.
+     * The ceiling stops a "hold" nobody will see expire, which would quietly
+     * become the approval queue this product exists to remove.
+     */
+    holdWindowSeconds: z.number().int().min(10).max(86_400).optional(),
+  })
+  .strict()
+  .refine((patch) => Object.keys(patch).length > 0, {
+    message: "Nothing to update",
+  });
+
+export type UpdateAutonomySettingsInput = z.infer<typeof updateAutonomySettingsSchema>;

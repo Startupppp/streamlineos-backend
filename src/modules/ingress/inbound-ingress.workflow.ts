@@ -13,6 +13,7 @@ import { WorkflowRegistry } from "../../common/workflow";
 import type { StepContext, WorkflowRunContext } from "../../common/workflow";
 import { getRegionRegistry, hasRegionRegistry } from "../../common/region/region-registry";
 import { AutonomyService } from "../autonomy/autonomy.service";
+import { AutonomyScoringService } from "../autonomy/autonomy-scoring.service";
 import { buildDecision } from "../autonomy/decision-record";
 import { INBOUND_WORKFLOW } from "./inbound-ingress.service";
 import {
@@ -24,6 +25,9 @@ import {
   threadIdentity,
   type InboundCommunicationEvent,
 } from "./inbound-event";
+
+/** One activity produces at most a task and a stage move; the cap is a backstop. */
+const MAX_SCORED_PER_RUN = 10;
 
 /**
  * What happens after a communication arrives.
@@ -50,6 +54,8 @@ export class InboundIngressWorkflow implements OnModuleInit {
      * concern, and the ingress path must not stop working if that is unwired.
      */
     @Optional() private readonly autonomy?: AutonomyService,
+    /** Optional for the same reason as `autonomy`: measurement must not gate filing. */
+    @Optional() private readonly scoring?: AutonomyScoringService,
   ) {}
 
   onModuleInit(): void {
@@ -232,6 +238,46 @@ export class InboundIngressWorkflow implements OnModuleInit {
       if (!this.autonomy) return null;
       await this.autonomy.processActivity(context.organizationId, activity.activityId);
       return null;
+    });
+
+    /**
+     * The second opinion, as its own step again.
+     *
+     * After the decisions exist, never alongside them. Scoring is another
+     * provider call, and putting it inside `extract-and-act` would mean a
+     * scorer outage retried the extraction — spending twice and risking a
+     * second set of writes to undo the first ones.
+     *
+     * It never throws outward. A decision that went unscored is a gap in a
+     * measurement; a workflow that fails because the measurement failed would
+     * be a gap in the product.
+     */
+    await step.run("shadow-score", async () => {
+      if (!this.scoring) return null;
+
+      const decisions = await this.db
+        .select({ id: autonomousDecisions.autonomousDecisionId })
+        .from(autonomousDecisions)
+        .where(
+          and(
+            eq(autonomousDecisions.organizationId, context.organizationId),
+            eq(autonomousDecisions.triggerType, "activity"),
+            eq(autonomousDecisions.triggerId, activity.activityId),
+          ),
+        )
+        .limit(MAX_SCORED_PER_RUN);
+
+      for (const decision of decisions) {
+        try {
+          await this.scoring.scoreDecision(context.organizationId, decision.id);
+        } catch (error) {
+          this.logger.warn(
+            `shadow score failed for ${decision.id}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
+
+      return { scored: decisions.length };
     });
 
     await step.run("mark-processed", async () => {

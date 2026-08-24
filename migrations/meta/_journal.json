@@ -1688,6 +1688,13 @@
       "when": 1787650353441,
       "tag": "0226_repair_crm_module_role_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 241,
+      "version": "7",
+      "when": 1787653953441,
+      "tag": "0227_autonomy_shadow_scoring",
+      "breakpoints": true
     }
   ]
 }

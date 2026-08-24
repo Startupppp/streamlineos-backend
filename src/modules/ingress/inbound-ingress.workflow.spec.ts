@@ -241,6 +241,11 @@ describe("inbound ingress, end to end from a fixture", () => {
       // Ticket 12's inference is its own step so a provider failure retries the
       // reasoning without re-creating the party and activity beneath it.
       "extract-and-act",
+      // Its own step, after the decisions exist. Scoring is another provider
+      // call, and folding it into extract-and-act would mean a scorer outage
+      // retried the extraction — spending twice and risking a second set of
+      // writes to undo the first.
+      "shadow-score",
       "mark-processed",
     ]);
   });
