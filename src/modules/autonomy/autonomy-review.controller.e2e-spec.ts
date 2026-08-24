@@ -39,7 +39,7 @@ describe("Autonomy review auth/RBAC (e2e)", () => {
     });
   });
 
-  it("403 reading the feed without crm:autonomy:review", async () => {
+  it("403 reading the feed without crm:autonomy:view", async () => {
     const res = await server()
       .get("/crm/autonomy/decisions")
       .set("Authorization", await bearer([]));
@@ -55,7 +55,7 @@ describe("Autonomy review auth/RBAC (e2e)", () => {
   it("403 reversing with the review key alone", async () => {
     const res = await server()
       .post("/crm/autonomy/decisions/d-1/reverse")
-      .set("Authorization", await bearer(["crm:autonomy:review"]))
+      .set("Authorization", await bearer(["crm:autonomy:view"]))
       .send({});
     expect(res.status).toBe(403);
   });
@@ -67,7 +67,7 @@ describe("Autonomy review auth/RBAC (e2e)", () => {
   it("403 setting a switch with the review key alone", async () => {
     const res = await server()
       .patch("/crm/autonomy/switches")
-      .set("Authorization", await bearer(["crm:autonomy:review"]))
+      .set("Authorization", await bearer(["crm:autonomy:view"]))
       .send({ kind: "stage.advanced", enabled: false });
     expect(res.status).toBe(403);
   });

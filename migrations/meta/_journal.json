@@ -1681,6 +1681,13 @@
       "when": 1787646753441,
       "tag": "0225_backfill_autonomy_review_permissions",
       "breakpoints": true
+    },
+    {
+      "idx": 240,
+      "version": "7",
+      "when": 1787650353441,
+      "tag": "0226_repair_crm_module_role_grants",
+      "breakpoints": true
     }
   ]
 }

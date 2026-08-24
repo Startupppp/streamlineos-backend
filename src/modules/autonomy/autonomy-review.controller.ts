@@ -19,7 +19,7 @@ import {
   type SetSwitchInput,
 } from "./dto/autonomy-review.schemas";
 
-const REVIEW_PERMISSION = "crm:autonomy:review";
+const REVIEW_PERMISSION = "crm:autonomy:view";
 
 @Controller("crm/autonomy")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -48,7 +48,7 @@ export class AutonomyReviewController {
   }
 
   /**
-   * Undo one. Separate from `crm:autonomy:review` because reading the feed and
+   * Undo one. Separate from `crm:autonomy:view` because reading the feed and
    * changing records are different authorities — a reviewer who may audit
    * everything is not necessarily one who may reach into a rep's pipeline.
    */
@@ -71,7 +71,7 @@ export class AutonomyReviewController {
 
   @Patch("switches")
   @Idempotent("crm.autonomy.switch")
-  @RequirePermission("crm:autonomy:configure")
+  @RequirePermission("crm:autonomy:manage")
   setSwitch(
     @Body(new ZodValidationPipe(setSwitchSchema)) body: SetSwitchInput,
     @CurrentUser() u: CurrentUserContext,
