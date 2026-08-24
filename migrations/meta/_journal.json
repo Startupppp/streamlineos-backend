@@ -1478,6 +1478,27 @@
       "when": 1787482522735,
       "tag": "0210_backfill_party_role_permissions",
       "breakpoints": true
+    },
+    {
+      "idx": 211,
+      "version": "7",
+      "when": 1787482924853,
+      "tag": "0211_subjects",
+      "breakpoints": true
+    },
+    {
+      "idx": 212,
+      "version": "7",
+      "when": 1787483238639,
+      "tag": "0212_backfill_subject_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 213,
+      "version": "7",
+      "when": 1787483537086,
+      "tag": "0213_party_roles_merges_rls",
+      "breakpoints": true
     }
   ]
 }
