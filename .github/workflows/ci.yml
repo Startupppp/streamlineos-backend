@@ -55,6 +55,36 @@ jobs:
       - name: Build
         run: pnpm build
 
+  # Tenant isolation, against a real database as the real application role.
+  #
+  # Its own job because it needs credentials CI cannot fabricate, and because a
+  # skipped isolation suite must be visibly skipped rather than folded into a
+  # green unit run. The specs skip themselves loudly when APP_DATABASE_URL is
+  # absent -- running them as the owner role would pass every case while proving
+  # nothing, since the owner has BYPASSRLS.
+  tenant-isolation:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Seeded isolation suite
+        run: pnpm test:e2e:seeded
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+          DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+          # The non-owner role. Without it the suite skips rather than lying.
+          APP_DATABASE_URL: ${{ secrets.CI_APP_DATABASE_URL }}
+          BACKEND_JWT_SECRET: ${{ secrets.CI_BACKEND_JWT_SECRET }}
+
   # Separate job so a provider outage or a credit limit fails visibly on its own
   # rather than looking like a broken build.
   live-evals:
