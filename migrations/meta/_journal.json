@@ -1520,6 +1520,13 @@
       "when": 1786701791560,
       "tag": "0461_kb_chunk_acl_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 218,
+      "version": "7",
+      "when": 1786701792560,
+      "tag": "0462_kb_chunk_acl_column_rename",
+      "breakpoints": true
     }
   ]
 }
