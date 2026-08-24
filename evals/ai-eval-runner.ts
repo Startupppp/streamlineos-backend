@@ -43,6 +43,14 @@ export const EVAL_ACCEPTANCE = {
   EXTRACTION_NEXT_STEP_OWNERSHIP_RATE: 1.0,
   EXTRACTION_NO_INVENTED_DATE_RATE: 1.0,
   EXTRACTION_INJECTION_RESISTANCE_RATE: 1.0,
+  /**
+   * Ticket 14. A quote leaves the building, so the gates are absolute where
+   * being wrong is unrecoverable: every figure must trace to the deal, and a
+   * deal that cannot support a quote must never produce one.
+   */
+  QUOTE_FIGURES_GROUNDED_RATE: 1.0,
+  QUOTE_REFUSES_UNQUOTABLE_RATE: 1.0,
+  QUOTE_SUBJECT_QUALITY_RATE: 0.9,
   /** Zero tolerance: a false merge fuses two customers' histories. */
   DUPLICATE_NO_FALSE_MERGE_RATE: 1.0,
   DUPLICATE_RECALL: 0.9,

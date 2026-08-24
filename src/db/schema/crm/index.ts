@@ -4,6 +4,7 @@ export * from "./autonomous-decisions";
 export * from "./autonomy-switches";
 export * from "./autonomy-corrections";
 export * from "./autonomy-scoring";
+export * from "./autonomy-holds";
 export * from "./campaigns";
 export * from "./leads";
 export * from "./contacts";

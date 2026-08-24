@@ -5,6 +5,11 @@ import { AccessModule } from "../access/access.module";
 import { AutonomyService } from "./autonomy.service";
 import { AutonomyReviewService } from "./autonomy-review.service";
 import { AutonomyScoringService } from "./autonomy-scoring.service";
+import { AutonomyHoldService } from "./autonomy-hold.service";
+import { AutonomyHoldWorkflow } from "./autonomy-hold.workflow";
+import { QuotesModule } from "../quotes/quotes.module";
+import { NotificationsModule } from "../notifications/notifications.module";
+import { WorkflowModule } from "../../common/workflow/workflow.module";
 import { AutonomyReviewController } from "./autonomy-review.controller";
 
 /**
@@ -20,9 +25,15 @@ import { AutonomyReviewController } from "./autonomy-review.controller";
  * modules agreeing on what a decision means.
  */
 @Module({
-  imports: [AiGatewayModule, DealsModule, AccessModule],
+  imports: [AiGatewayModule, DealsModule, AccessModule, QuotesModule, NotificationsModule, WorkflowModule],
   controllers: [AutonomyReviewController],
-  providers: [AutonomyService, AutonomyReviewService, AutonomyScoringService],
-  exports: [AutonomyService, AutonomyReviewService, AutonomyScoringService],
+  providers: [
+    AutonomyService,
+    AutonomyReviewService,
+    AutonomyScoringService,
+    AutonomyHoldService,
+    AutonomyHoldWorkflow,
+  ],
+  exports: [AutonomyService, AutonomyReviewService, AutonomyScoringService, AutonomyHoldService],
 })
 export class AutonomyModule {}

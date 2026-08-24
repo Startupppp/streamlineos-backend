@@ -1695,6 +1695,13 @@
       "when": 1787653953441,
       "tag": "0227_autonomy_shadow_scoring",
       "breakpoints": true
+    },
+    {
+      "idx": 242,
+      "version": "7",
+      "when": 1787657553441,
+      "tag": "0228_autonomy_holds",
+      "breakpoints": true
     }
   ]
 }

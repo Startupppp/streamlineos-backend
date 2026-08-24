@@ -11,6 +11,7 @@ import { isScopable } from "../rbac/permissions";
 import type { DataScope } from "../access/access.types";
 import { AutonomyReviewService } from "./autonomy-review.service";
 import { AutonomyScoringService } from "./autonomy-scoring.service";
+import { AutonomyHoldService } from "./autonomy-hold.service";
 import {
   listDecisionsQuerySchema,
   reverseDecisionSchema,
@@ -21,9 +22,11 @@ import {
   scoreboardQuerySchema,
   reviewQueueQuerySchema,
   updateAutonomySettingsSchema,
+  cancelHoldSchema,
   type ScoreboardQuery,
   type ReviewQueueQuery,
   type UpdateAutonomySettingsInput,
+  type CancelHoldInput,
 } from "./dto/autonomy-review.schemas";
 
 const REVIEW_PERMISSION = "crm:autonomy:view";
@@ -34,6 +37,7 @@ export class AutonomyReviewController {
   constructor(
     private readonly svc: AutonomyReviewService,
     private readonly scoring: AutonomyScoringService,
+    private readonly holds: AutonomyHoldService,
     private readonly access: AccessService,
   ) {}
 
@@ -121,6 +125,32 @@ export class AutonomyReviewController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.scoring.markReviewed(u.orgId, u.userId, shadowScoreId);
+  }
+
+  /**
+   * What is about to leave the building, and how long is left.
+   *
+   * Behind the view key rather than the cancel key: seeing that something is
+   * about to send is exactly what makes a person decide to stop it, and hiding
+   * it from everyone who cannot cancel would shrink the audience the window
+   * exists for.
+   */
+  @Get("holds")
+  @RequirePermission(REVIEW_PERMISSION)
+  liveHolds(@CurrentUser() u: CurrentUserContext) {
+    return this.holds.liveHolds(u.orgId);
+  }
+
+  /** Stop one before it leaves. Nobody ever approves; they only cancel. */
+  @Post("holds/:holdId/cancel")
+  @Idempotent("crm.autonomy.cancel-hold")
+  @RequirePermission("crm:autonomy:reverse")
+  cancelHold(
+    @Param("holdId") holdId: string,
+    @Body(new ZodValidationPipe(cancelHoldSchema)) body: CancelHoldInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.holds.cancelHold(u.orgId, u.userId, holdId, body.reason);
   }
 
   @Get("settings")

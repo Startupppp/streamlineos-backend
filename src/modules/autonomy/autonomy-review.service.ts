@@ -1,4 +1,12 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  ConflictException,
+  forwardRef,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from "@nestjs/common";
 import { and, desc, eq, isNotNull, isNull, notInArray, sql, type SQL } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
@@ -15,6 +23,7 @@ import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
 import { DealsService } from "../deals/deals.service";
+import { AutonomyHoldService } from "./autonomy-hold.service";
 import { planReversal, type TargetState } from "./reversal-plan";
 import { resolveSwitch, switchesFor, type SwitchRow } from "./kill-switch";
 import { ROUTINE_KINDS, type ListDecisionsQuery, type ReverseDecisionInput, type SetSwitchInput } from "./dto/autonomy-review.schemas";
@@ -28,9 +37,18 @@ import { ROUTINE_KINDS, type ListDecisionsQuery, type ReverseDecisionInput, type
  */
 @Injectable()
 export class AutonomyReviewService {
+  private readonly logger = new Logger("AutonomyReview");
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly dealsService: DealsService,
+    /**
+     * Circular by nature: the hold service reads settings this module owns, and
+     * the kill switch here has to reach into holds already in flight.
+     */
+    @Optional()
+    @Inject(forwardRef(() => AutonomyHoldService))
+    private readonly holds?: AutonomyHoldService,
   ) {}
 
   // ── The feed ──────────────────────────────────────────────────────────────
@@ -450,6 +468,22 @@ export class AutonomyReviewService {
           updatedAt: new Date(),
         },
       });
+
+    /**
+     * Turning something off also stops what it already decided to do.
+     *
+     * Blocking new holds alone would leave the more dangerous half running: the
+     * messages the system has already committed to and is merely waiting to
+     * send. An operator killing quote sending at noon must not watch a hold
+     * placed at nine leave at one.
+     */
+    if (!input.enabled && this.holds) {
+      const cancelled = await this.holds.cancelInFlight(organizationId, userId, input.kind);
+      if (cancelled > 0)
+        this.logger.warn(
+          `kill switch on ${input.kind} cancelled ${cancelled} hold(s) already in flight`,
+        );
+    }
 
     return this.listSwitches(organizationId);
   }

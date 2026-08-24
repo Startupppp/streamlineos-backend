@@ -98,3 +98,11 @@ export const updateAutonomySettingsSchema = z
   });
 
 export type UpdateAutonomySettingsInput = z.infer<typeof updateAutonomySettingsSchema>;
+
+export const cancelHoldSchema = z
+  .object({
+    reason: z.string().trim().min(1).max(500).optional(),
+  })
+  .strict();
+
+export type CancelHoldInput = z.infer<typeof cancelHoldSchema>;
