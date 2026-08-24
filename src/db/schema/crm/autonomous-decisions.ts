@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { pgTable, text, timestamp, jsonb, doublePrecision, index } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, jsonb, doublePrecision, index, unique } from "drizzle-orm/pg-core";
 import { organizations } from "../common/auth";
 
 /**
@@ -115,5 +115,12 @@ export const autonomousDecisions = pgTable(
     // What is still reversible, and what a person already took back.
     index("idx_autonomous_decisions_reversed").on(t.organizationId, t.reversedAt),
     index("idx_autonomous_decisions_deal").on(t.organizationId, t.dealId, t.decidedAt),
+    /**
+     * The composite tenant key `autonomy_corrections` points at (migration
+     * 0224). Postgres will not accept a composite foreign key without a unique
+     * constraint covering exactly its referenced columns, and this table's
+     * primary key is the id alone.
+     */
+    unique("uniq_autonomous_decisions_org_id").on(t.organizationId, t.autonomousDecisionId),
   ],
 );

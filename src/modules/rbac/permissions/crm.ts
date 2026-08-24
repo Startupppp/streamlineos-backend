@@ -364,4 +364,25 @@ export const CRM_PERMISSIONS: Permission[] = [
     action: "delete",
     description: "Delete CRM offer → Inventory SKU fulfillment mappings",
   },
+  {
+    name: "crm:autonomy:review",
+    resource: "crm:autonomy",
+    action: "review",
+    description: "Review what the CRM decided and did on its own",
+    // Scopable so a rep restricted to their own deals sees only the actions
+    // taken on those, matching how the deals list narrows.
+    scopable: true,
+  },
+  {
+    name: "crm:autonomy:reverse",
+    resource: "crm:autonomy",
+    action: "reverse",
+    description: "Reverse an autonomous CRM action",
+  },
+  {
+    name: "crm:autonomy:configure",
+    resource: "crm:autonomy",
+    action: "configure",
+    description: "Turn autonomous CRM action types on or off for the organisation",
+  },
 ];

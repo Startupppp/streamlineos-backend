@@ -1,0 +1,94 @@
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
+import { CurrentUser } from "../../common/auth/current-user.decorator";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
+import { AccessService } from "../access/access.service";
+import { isScopable } from "../rbac/permissions";
+import type { DataScope } from "../access/access.types";
+import { AutonomyReviewService } from "./autonomy-review.service";
+import {
+  listDecisionsQuerySchema,
+  reverseDecisionSchema,
+  setSwitchSchema,
+  type ListDecisionsQuery,
+  type ReverseDecisionInput,
+  type SetSwitchInput,
+} from "./dto/autonomy-review.schemas";
+
+const REVIEW_PERMISSION = "crm:autonomy:review";
+
+@Controller("crm/autonomy")
+@UseGuards(JwtAuthGuard, PermissionGuard)
+export class AutonomyReviewController {
+  constructor(
+    private readonly svc: AutonomyReviewService,
+    private readonly access: AccessService,
+  ) {}
+
+  @Get("decisions")
+  @RequirePermission(REVIEW_PERMISSION)
+  async listDecisions(
+    @Query(new ZodValidationPipe(listDecisionsQuerySchema)) query: ListDecisionsQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.listDecisions(u.orgId, u.userId, query, await this.readScope(u));
+  }
+
+  @Get("decisions/:decisionId")
+  @RequirePermission(REVIEW_PERMISSION)
+  getDecision(
+    @Param("decisionId") decisionId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.getDecision(u.orgId, decisionId);
+  }
+
+  /**
+   * Undo one. Separate from `crm:autonomy:review` because reading the feed and
+   * changing records are different authorities — a reviewer who may audit
+   * everything is not necessarily one who may reach into a rep's pipeline.
+   */
+  @Post("decisions/:decisionId/reverse")
+  @Idempotent("crm.autonomy.reverse")
+  @RequirePermission("crm:autonomy:reverse")
+  reverseDecision(
+    @Param("decisionId") decisionId: string,
+    @Body(new ZodValidationPipe(reverseDecisionSchema)) body: ReverseDecisionInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.reverseDecision(u.orgId, u.userId, decisionId, body);
+  }
+
+  @Get("switches")
+  @RequirePermission(REVIEW_PERMISSION)
+  listSwitches(@CurrentUser() u: CurrentUserContext) {
+    return this.svc.listSwitches(u.orgId);
+  }
+
+  @Patch("switches")
+  @Idempotent("crm.autonomy.switch")
+  @RequirePermission("crm:autonomy:configure")
+  setSwitch(
+    @Body(new ZodValidationPipe(setSwitchSchema)) body: SetSwitchInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.setSwitch(u.orgId, u.userId, body);
+  }
+
+  /**
+   * The same narrowing the deals list applies, resolved from the review key.
+   *
+   * A rep restricted to their own deals must not see, in the feed, the actions
+   * the system took on everybody else's.
+   */
+  private async readScope(u: CurrentUserContext): Promise<DataScope> {
+    if (u.isOrgOwner) return "all";
+    if (!isScopable(REVIEW_PERMISSION)) return "all";
+    const resolved = await this.access.resolveUserPermissions(u.orgId, u.userId);
+    return resolved.get(REVIEW_PERMISSION) ?? "none";
+  }
+}

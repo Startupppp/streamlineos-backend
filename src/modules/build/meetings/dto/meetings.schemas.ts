@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { meetingTypeEnum, projectMeetingStatusEnum, actionItemStatusEnum } from "../../../../db/schema";
+import { queryBoolean } from "../../../../common/validation/query-boolean";
 
 const SYMBOL_ONLY_RE = /^[^a-zA-Z0-9]+$/;
 
@@ -78,8 +79,8 @@ export const listMeetingsQuerySchema = z.object({
   dateFilter: z.enum(["today", "this_week", "upcoming", "past"]).optional(),
   hostId: z.string().optional(),
   attendeeId: z.string().optional(),
-  hasActionItems: z.coerce.boolean().optional(),
-  hasUnresolvedActionItems: z.coerce.boolean().optional(),
+  hasActionItems: queryBoolean.optional(),
+  hasUnresolvedActionItems: queryBoolean.optional(),
 });
 
 export const addAttendeeSchema = z.object({

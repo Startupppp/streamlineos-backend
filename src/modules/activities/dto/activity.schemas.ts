@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ACTIVITY_KINDS } from "../../../db/schema/crm/activities";
+import { queryBoolean } from "../../../common/validation/query-boolean";
 
 const anchorFields = {
   partyId: z.string().trim().min(1).optional(),
@@ -67,7 +68,7 @@ export const timelineQuerySchema = z
 
 export const myTasksQuerySchema = z
   .object({
-    includeCompleted: z.coerce.boolean().default(false),
+    includeCompleted: queryBoolean.default(false),
     cursor: z.string().optional(),
     limit: z.coerce.number().int().min(1).max(100).default(25),
   })

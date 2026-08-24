@@ -5,6 +5,7 @@ import type { Db } from "../../db/drizzle.types";
 import {
   activities,
   activityParticipants,
+  autonomousDecisions,
   businessParties,
   inboundEvents,
 } from "../../db/schema";
@@ -12,6 +13,7 @@ import { WorkflowRegistry } from "../../common/workflow";
 import type { StepContext, WorkflowRunContext } from "../../common/workflow";
 import { getRegionRegistry, hasRegionRegistry } from "../../common/region/region-registry";
 import { AutonomyService } from "../autonomy/autonomy.service";
+import { buildDecision } from "../autonomy/decision-record";
 import { INBOUND_WORKFLOW } from "./inbound-ingress.service";
 import {
   activityKindFor,
@@ -124,6 +126,31 @@ export class InboundIngressWorkflow implements OnModuleInit {
         .returning({ partyId: businessParties.partyId });
 
       if (!created) throw new Error("inbound: could not create a party for the sender");
+
+      /**
+       * Recorded here rather than by the extractor, because this is an
+       * autonomous write in its own right — nobody filled in a form. Writing it
+       * inside the step means it commits in the same tenant transaction as the
+       * party and as the memo that the step ran, so a crash cannot leave a party
+       * that the review feed has no entry for.
+       *
+       * No model, no confidence: this decision was deterministic, and recording
+       * a score for it would invent one.
+       */
+      await this.db.insert(autonomousDecisions).values(
+        buildDecision({
+          organizationId: context.organizationId,
+          kind: "party.created",
+          outcome: "applied",
+          triggerType: "inbound-event",
+          triggerId: inboundEventId,
+          partyId: created.partyId,
+          inputs: { address, channel: event.channel },
+          decision: { partyId: created.partyId, name: partyNameFor(sender) },
+          summary: `Created a record for ${address}, who was not on file, after they made contact by ${event.channel}.`,
+        }),
+      );
+
       return { partyId: created.partyId, created: true };
     });
 
@@ -147,6 +174,29 @@ export class InboundIngressWorkflow implements OnModuleInit {
         .returning({ activityId: activities.activityId });
 
       if (!row) throw new Error("inbound: could not log the activity");
+
+      /**
+       * Filing a communication is deterministic and effectively always right,
+       * so the feed hides this kind by default — but it is still recorded, for
+       * two reasons. The audit trail is meant to be complete rather than
+       * interesting, and the correction rate needs a denominator that includes
+       * the actions nobody ever had to correct.
+       */
+      await this.db.insert(autonomousDecisions).values(
+        buildDecision({
+          organizationId: context.organizationId,
+          kind: "activity.logged",
+          outcome: "applied",
+          triggerType: "inbound-event",
+          triggerId: inboundEventId,
+          partyId: party.partyId,
+          activityId: row.activityId,
+          inputs: { channel: event.channel, provider: event.provider },
+          decision: { activityId: row.activityId, threadId: threadIdentity(event) },
+          summary: `Filed a ${event.channel} message${event.subject ? ` — "${event.subject}"` : ""} against the party's timeline.`,
+        }),
+      );
+
       return { activityId: row.activityId };
     });
 

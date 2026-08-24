@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { queryBoolean } from "../../../../common/validation/query-boolean";
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD");
 const gstinRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
@@ -10,7 +11,7 @@ export const listAccountsQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
   q: z.string().trim().max(200).optional(),
   type: accountTypeSchema.optional(),
-  activeOnly: z.coerce.boolean().optional(),
+  activeOnly: queryBoolean.optional(),
 });
 
 export const createAccountSchema = z.object({
@@ -88,7 +89,7 @@ export const listCustomersOutstandingQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
   q: z.string().trim().max(200).optional(),
-  onlyOutstanding: z.coerce.boolean().optional(),
+  onlyOutstanding: queryBoolean.optional(),
 });
 
 export const gstr1QuerySchema = z.object({ from: isoDate, to: isoDate });
