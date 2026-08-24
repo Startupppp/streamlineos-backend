@@ -1,8 +1,6 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
 import type { CalendarEventProjection, CalendarEventSource, CalendarSourceContext } from "./calendar-event-source";
 import { EntitlementsService } from "../access/entitlements.service";
-
-export const CALENDAR_SOURCE_TOKEN: unique symbol = Symbol("CalendarEventSource");
 
 export interface CalendarSourceOutput {
   events: CalendarEventProjection[];
@@ -12,18 +10,21 @@ export interface CalendarSourceOutput {
 
 @Injectable()
 export class CalendarSourceRegistry {
-  constructor(
-    @Inject(CALENDAR_SOURCE_TOKEN)
-    private readonly sources: CalendarEventSource[],
-    private readonly entitlements: EntitlementsService,
-  ) {}
+  private readonly sources = new Set<CalendarEventSource>();
+
+  constructor(private readonly entitlements: EntitlementsService) {}
+
+  register(source: CalendarEventSource): void {
+    this.sources.add(source);
+  }
 
   async loadAll(ctx: CalendarSourceContext): Promise<CalendarSourceOutput> {
-    const toggleList = this.sources.map((s) => ({ key: s.key, label: s.label, module: s.module }));
+    const sources = [...this.sources];
+    const toggleList = sources.map((s) => ({ key: s.key, label: s.label, module: s.module }));
 
     const available = (
       await Promise.all(
-        this.sources.map(async (s) => {
+        sources.map(async (s) => {
           const enabled = await this.entitlements.isModuleEnabled(ctx.orgId, s.module);
           return enabled ? s : null;
         }),

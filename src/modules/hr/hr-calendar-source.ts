@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, type OnModuleInit } from "@nestjs/common";
 import { and, desc, eq, exists, gte, lte, or } from "drizzle-orm";
 import { formatInTimeZone } from "date-fns-tz";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -22,6 +22,7 @@ import type {
   CalendarEventSource,
   CalendarSourceContext,
 } from "../calendar/calendar-event-source";
+import { CalendarSourceRegistry } from "../calendar/calendar-source.registry";
 
 const WEEKDAY_NAMES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 
@@ -45,7 +46,7 @@ function enumerateDates(start: string, end: string): string[] {
 }
 
 @Injectable()
-export class HrCalendarSource implements CalendarEventSource {
+export class HrCalendarSource implements CalendarEventSource, OnModuleInit {
   readonly key = "hr";
   readonly label = "HR";
   readonly module = "hr";
@@ -53,7 +54,12 @@ export class HrCalendarSource implements CalendarEventSource {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly attendancePolicy: AttendancePolicyService,
+    private readonly registry: CalendarSourceRegistry,
   ) {}
+
+  onModuleInit(): void {
+    this.registry.register(this);
+  }
 
   async load(ctx: CalendarSourceContext): Promise<CalendarEventProjection[]> {
     const { orgId, userId, start, end } = ctx;

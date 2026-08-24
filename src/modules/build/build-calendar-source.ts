@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, type OnModuleInit } from "@nestjs/common";
 import { and, eq, gte, isNotNull, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -8,18 +8,26 @@ import type {
   CalendarEventSource,
   CalendarSourceContext,
 } from "../calendar/calendar-event-source";
+import { CalendarSourceRegistry } from "../calendar/calendar-source.registry";
 
 function dateOnly(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
 @Injectable()
-export class BuildCalendarSource implements CalendarEventSource {
+export class BuildCalendarSource implements CalendarEventSource, OnModuleInit {
   readonly key = "build";
   readonly label = "Build";
   readonly module = "build";
 
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly registry: CalendarSourceRegistry,
+  ) {}
+
+  onModuleInit(): void {
+    this.registry.register(this);
+  }
 
   async load(ctx: CalendarSourceContext): Promise<CalendarEventProjection[]> {
     const { orgId, userId, start, end } = ctx;

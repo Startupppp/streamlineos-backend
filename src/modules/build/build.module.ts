@@ -15,8 +15,10 @@ import { BuildPortfoliosModule } from "./portfolios/build-portfolios.module";
 import { BuildQaModule } from "./qa/build-qa.module";
 import { BuildTeamsModule } from "./teams/build-teams.module";
 import { BuildWorkflowModule } from "./workflow/build-workflow.module";
+import { BuildCalendarModule } from "./build-calendar.module";
 
 const BUILD_MODULES = [
+  BuildCalendarModule,
   ProjectsModule,
   BuildApprovalsModule,
   BuildClientPortalModule,
