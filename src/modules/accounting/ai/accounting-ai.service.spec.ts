@@ -1,4 +1,4 @@
-jest.mock("../../kb/kb-attachment-extract.util", () => ({
+jest.mock("../../kb/retrieval/kb-attachment-extract.util", () => ({
   extractAttachmentText: jest.fn(),
   isExtractableMime: jest.fn(),
 }));
