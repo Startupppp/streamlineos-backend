@@ -1,5 +1,5 @@
 import { Test } from "@nestjs/testing";
-import { CalendarSourceRegistry, CALENDAR_SOURCE_TOKEN } from "./calendar-source.registry";
+import { CalendarSourceRegistry } from "./calendar-source.registry";
 import type { CalendarEventProjection, CalendarEventSource, CalendarSourceContext } from "./calendar-event-source";
 import { EntitlementsService } from "../access/entitlements.service";
 
@@ -34,10 +34,11 @@ async function buildRegistry(
           isModuleEnabled: jest.fn().mockImplementation((_: string, m: string) => Promise.resolve(isEnabled(m))),
         },
       },
-      { provide: CALENDAR_SOURCE_TOKEN, useValue: sources },
     ],
   }).compile();
-  return module.get(CalendarSourceRegistry);
+  const registry = module.get(CalendarSourceRegistry);
+  for (const source of sources) registry.register(source);
+  return registry;
 }
 
 describe("CalendarSourceRegistry", () => {

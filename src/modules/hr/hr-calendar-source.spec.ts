@@ -1,6 +1,7 @@
 import { HrCalendarSource } from "./hr-calendar-source";
 import type { CalendarSourceContext } from "../calendar/calendar-event-source";
 import { DRIZZLE } from "../../db/drizzle.constants";
+import { CalendarSourceRegistry } from "../calendar/calendar-source.registry";
 import { Test } from "@nestjs/testing";
 import { AttendancePolicyService } from "./time/attendance-policy.service";
 
@@ -61,6 +62,7 @@ async function buildSource(
     providers: [
       HrCalendarSource,
       { provide: DRIZZLE, useValue: db },
+      { provide: CalendarSourceRegistry, useValue: { register: jest.fn() } },
       {
         provide: AttendancePolicyService,
         useValue: attendancePolicy ?? buildAttendancePolicy(),

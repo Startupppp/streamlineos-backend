@@ -1,6 +1,7 @@
 import { TasksCalendarSource } from "./tasks-calendar-source";
 import type { CalendarSourceContext } from "../calendar/calendar-event-source";
 import { DRIZZLE } from "../../db/drizzle.constants";
+import { CalendarSourceRegistry } from "../calendar/calendar-source.registry";
 import { Test } from "@nestjs/testing";
 
 const ctx: CalendarSourceContext = {
@@ -26,6 +27,7 @@ async function buildSource(db: unknown): Promise<TasksCalendarSource> {
     providers: [
       TasksCalendarSource,
       { provide: DRIZZLE, useValue: db },
+      { provide: CalendarSourceRegistry, useValue: { register: jest.fn() } },
     ],
   }).compile();
   return module.get(TasksCalendarSource);
@@ -33,7 +35,7 @@ async function buildSource(db: unknown): Promise<TasksCalendarSource> {
 
 describe("TasksCalendarSource", () => {
   it("has the expected key, label and module", () => {
-    const source = new TasksCalendarSource(null as never);
+    const source = new TasksCalendarSource(null as never, { register: jest.fn() } as never);
     expect(source.key).toBe("tasks");
     expect(source.label).toBe("Tasks");
     expect(source.module).toBe("tasks");
