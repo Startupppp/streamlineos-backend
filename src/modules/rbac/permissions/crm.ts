@@ -274,6 +274,14 @@ export const CRM_PERMISSIONS: Permission[] = [
       "View Customer 360 aggregated profile (respects per-module permissions)",
   },
   {
+    // The seam every provider adapter posts into. Gated because an open ingress
+    // writes parties and activities into any tenant that can be named.
+    name: "crm:ingress:submit",
+    resource: "crm:ingress",
+    action: "submit",
+    description: "Deliver a normalised inbound communication event into the CRM",
+  },
+  {
     name: "crm:activities:view",
     resource: "crm:activities",
     action: "view",

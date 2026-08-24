@@ -83,6 +83,7 @@ import { MailModule } from "./modules/mail/mail.module";
 import { DirectoryModule } from "./modules/directory/directory.module";
 import { PartyModule } from "./modules/party/party.module";
 import { ActivitiesModule } from "./modules/activities/activities.module";
+import { IngressModule } from "./modules/ingress/ingress.module";
 import { PortalModule } from "./modules/portal/portal.module";
 import { ModuleAccessModule } from "./modules/module-access/module-access.module";
 import { IdempotencyModule } from "./common/idempotency/idempotency.module";
@@ -146,6 +147,7 @@ import { ZodValidationInterceptor } from "./common/validation/zod-validation.int
     DirectoryModule,
     PartyModule,
     ActivitiesModule,
+    IngressModule,
     PortalModule,
     ModuleAccessModule,
     IdempotencyModule,

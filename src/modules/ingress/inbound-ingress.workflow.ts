@@ -1,0 +1,216 @@
+import { Inject, Injectable, Logger, Optional, type OnModuleInit } from "@nestjs/common";
+import { and, eq, isNull } from "drizzle-orm";
+import { DRIZZLE } from "../../db/drizzle.constants";
+import type { Db } from "../../db/drizzle.types";
+import {
+  activities,
+  activityParticipants,
+  businessParties,
+  inboundEvents,
+} from "../../db/schema";
+import { WorkflowRegistry } from "../../common/workflow";
+import type { StepContext, WorkflowRunContext } from "../../common/workflow";
+import { getRegionRegistry, hasRegionRegistry } from "../../common/region/region-registry";
+import { AutonomyService } from "../autonomy/autonomy.service";
+import { INBOUND_WORKFLOW } from "./inbound-ingress.service";
+import {
+  activityKindFor,
+  externalParticipants,
+  normaliseAddress,
+  partyNameFor,
+  senderOf,
+  threadIdentity,
+  type InboundCommunicationEvent,
+} from "./inbound-event";
+
+/**
+ * What happens after a communication arrives.
+ *
+ * Written as a durable workflow rather than a request handler because every step
+ * has an external consequence and the whole thing has to survive a deploy, a
+ * provider timeout and a database blip without repeating the half it already
+ * did. Each `step.run` records its result, so a retry resumes rather than
+ * re-creates — which is what stops a retried delivery from producing a second
+ * party for the same sender.
+ */
+@Injectable()
+export class InboundIngressWorkflow implements OnModuleInit {
+  private readonly logger = new Logger("InboundIngress");
+
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly registry: WorkflowRegistry,
+    /**
+     * Optional so the seam stands on its own.
+     *
+     * Ticket 10's whole point is that a communication is filed correctly with no
+     * human involved; whether the system then reasons about it is ticket 12's
+     * concern, and the ingress path must not stop working if that is unwired.
+     */
+    @Optional() private readonly autonomy?: AutonomyService,
+  ) {}
+
+  onModuleInit(): void {
+    this.registry.register({
+      name: INBOUND_WORKFLOW,
+      maxAttempts: 5,
+      handler: (step, context) => this.handle(step, context),
+    });
+  }
+
+  private async handle(step: StepContext, context: WorkflowRunContext): Promise<void> {
+    const inboundEventId = String(context.input.inboundEventId ?? "");
+    if (!inboundEventId) throw new Error("inbound: run started without an inboundEventId");
+
+    /**
+     * Read outside a step, deliberately.
+     *
+     * The runtime's rule is that anything with an effect belongs in a step; a
+     * read has none, so re-reading on each attempt is both correct and cheaper
+     * than memoising a whole payload into the step log. It also means a retry
+     * sees the current receipt rather than a snapshot of it.
+     */
+    const event = await this.loadEvent(inboundEventId);
+
+    /**
+     * Resolve the placement before touching tenant data.
+     *
+     * Every tenant transaction runs against the organisation's own region, and a
+     * background continuation has no ambient request to inherit it from — so it
+     * is resolved explicitly and recorded, which also makes it visible in the
+     * run's steps when a delivery lands in the wrong place.
+     */
+    await step.run("resolve-region", async () => {
+      if (!hasRegionRegistry()) return { region: "primary" };
+      const region = await getRegionRegistry().regionForOrg(context.organizationId);
+      return { region: region ?? "primary" };
+    });
+
+    const party = await step.run("resolve-party", async () => {
+      const sender = senderOf(event);
+      if (!sender) throw new Error("inbound: event has no sender");
+
+      const address = normaliseAddress(sender.address);
+
+      /**
+       * A known sender matches; an unknown one becomes a party.
+       *
+       * Matched on the normalised address, which is why the seam lower-cases it —
+       * `Priya@Example.com` and `priya@example.com` are one person, and matching
+       * on the raw string is how the same customer becomes three records.
+       */
+      const [existing] = await this.db
+        .select({ partyId: businessParties.partyId })
+        .from(businessParties)
+        .where(
+          and(
+            eq(businessParties.organizationId, context.organizationId),
+            eq(businessParties.email, address),
+            isNull(businessParties.deletedAt),
+          ),
+        )
+        .limit(1);
+
+      if (existing) return { partyId: existing.partyId, created: false };
+
+      const [created] = await this.db
+        .insert(businessParties)
+        .values({
+          organizationId: context.organizationId,
+          name: partyNameFor(sender),
+          email: address,
+          partyType: "CUSTOMER",
+        })
+        .returning({ partyId: businessParties.partyId });
+
+      if (!created) throw new Error("inbound: could not create a party for the sender");
+      return { partyId: created.partyId, created: true };
+    });
+
+    const activity = await step.run("log-activity", async () => {
+      const [row] = await this.db
+        .insert(activities)
+        .values({
+          organizationId: context.organizationId,
+          kind: activityKindFor(event.channel),
+          occurredAt: new Date(event.occurredAt),
+          subject: event.subject ?? null,
+          body: event.body ?? null,
+          threadId: threadIdentity(event),
+          partyId: party.partyId,
+          // Nobody typed this. Recording it as the system is what lets a reader
+          // tell, and what ticket 13's review feed reads.
+          actorKind: "system",
+          actorLabel: `ingress:${event.channel}`,
+          source: event.provider,
+        })
+        .returning({ activityId: activities.activityId });
+
+      if (!row) throw new Error("inbound: could not log the activity");
+      return { activityId: row.activityId };
+    });
+
+    await step.run("record-participants", async () => {
+      const external = externalParticipants(event, []);
+      if (external.length === 0) return null;
+
+      await this.db.insert(activityParticipants).values(
+        external.map((participant) => ({
+          organizationId: context.organizationId,
+          activityId: activity.activityId,
+          // Only the sender is resolved to a party in this ticket; the rest keep
+          // their address, which is exactly what the nullable columns are for.
+          partyId: participant.role === "from" ? party.partyId : null,
+          address: normaliseAddress(participant.address),
+          role: participant.role,
+        })),
+      );
+
+      return null;
+    });
+
+    /**
+     * The autonomous half, as its own step.
+     *
+     * Separate from logging the activity on purpose: extraction calls a provider
+     * and a provider is the thing most likely to fail here. Its own step means a
+     * retry re-runs the inference without creating a second party and a second
+     * activity first — and a permanent extraction failure still leaves the
+     * communication filed correctly, which is the half that must never be lost.
+     */
+    await step.run("extract-and-act", async () => {
+      if (!this.autonomy) return null;
+      await this.autonomy.processActivity(context.organizationId, activity.activityId);
+      return null;
+    });
+
+    await step.run("mark-processed", async () => {
+      await this.db
+        .update(inboundEvents)
+        .set({
+          status: "PROCESSED",
+          processedAt: new Date(),
+          partyId: party.partyId,
+          activityId: activity.activityId,
+        })
+        .where(eq(inboundEvents.inboundEventId, inboundEventId));
+
+      return null;
+    });
+
+    this.logger.log(
+      `inbound ${event.channel} processed — party ${party.created ? "created" : "matched"}`,
+    );
+  }
+
+  private async loadEvent(inboundEventId: string): Promise<InboundCommunicationEvent> {
+    const [row] = await this.db
+      .select({ payload: inboundEvents.payload })
+      .from(inboundEvents)
+      .where(eq(inboundEvents.inboundEventId, inboundEventId))
+      .limit(1);
+
+    if (!row) throw new Error(`inbound: receipt ${inboundEventId} not found`);
+    return row.payload as unknown as InboundCommunicationEvent;
+  }
+}
