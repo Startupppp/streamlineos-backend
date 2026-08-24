@@ -73,6 +73,35 @@ export class KbIndexingService {
     return existing.contentHash === this.sha256(newText);
   }
 
+  private async getPageChunkState(
+    orgId: string,
+    pageId: number,
+  ): Promise<{
+    contentHash: string | null;
+    pageVisibility: string | null;
+    pageProjectId: number | null;
+    pageCreatedById: string | null;
+  } | null> {
+    const [existing] = await this.db
+      .select({
+        contentHash: kbArticleChunks.contentHash,
+        pageVisibility: kbArticleChunks.pageVisibility,
+        pageProjectId: kbArticleChunks.pageProjectId,
+        pageCreatedById: kbArticleChunks.pageCreatedById,
+      })
+      .from(kbArticleChunks)
+      .where(
+        and(
+          eq(kbArticleChunks.orgId, orgId),
+          eq(kbArticleChunks.pageId, pageId),
+          eq(kbArticleChunks.source, "page_body"),
+        ),
+      )
+      .limit(1);
+
+    return existing ?? null;
+  }
+
   private chunkText(text: string): string[] {
     const chunkSize = 1500;
     const overlapSize = 200;
@@ -194,16 +223,35 @@ export class KbIndexingService {
       return;
     }
 
-    const unchanged = await this.isContentUnchanged(
-      orgId,
-      { pageId },
-      "page_body",
-      page.contentText,
-    );
-    if (unchanged) return;
+    const stored = await this.getPageChunkState(orgId, pageId);
+    const contentHash = this.sha256(page.contentText);
+
+    if (stored !== null && stored.contentHash === contentHash) {
+      const aclChanged =
+        stored.pageVisibility !== page.visibility ||
+        stored.pageProjectId !== page.projectId ||
+        stored.pageCreatedById !== page.createdById;
+
+      if (!aclChanged) return;
+
+      await this.db
+        .update(kbArticleChunks)
+        .set({
+          pageVisibility: page.visibility,
+          pageProjectId: page.projectId,
+          pageCreatedById: page.createdById,
+        })
+        .where(
+          and(
+            eq(kbArticleChunks.pageId, pageId),
+            eq(kbArticleChunks.orgId, orgId),
+            eq(kbArticleChunks.source, "page_body"),
+          ),
+        );
+      return;
+    }
 
     const chunks = this.chunkText(page.contentText);
-    const contentHash = this.sha256(page.contentText);
 
     await this.db.transaction(async (tx) => {
       await tx

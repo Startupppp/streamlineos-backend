@@ -28,9 +28,25 @@ const makeTx = (): MockTx => ({
   values: jest.fn().mockResolvedValue(undefined),
 });
 
-const makeDb = (storedHash: string | null, tx?: MockTx) => {
+interface StoredAcl {
+  pageVisibility: string | null;
+  pageProjectId: number | null;
+  pageCreatedById: string | null;
+}
+
+const makeDb = (storedHash: string | null, tx?: MockTx, storedAcl?: StoredAcl) => {
   const txObj = tx ?? makeTx();
-  const hashRows = storedHash === null ? [] : [{ contentHash: storedHash }];
+  const hashRows =
+    storedHash === null
+      ? []
+      : [
+          {
+            contentHash: storedHash,
+            pageVisibility: storedAcl?.pageVisibility ?? null,
+            pageProjectId: storedAcl?.pageProjectId ?? null,
+            pageCreatedById: storedAcl?.pageCreatedById ?? null,
+          },
+        ];
 
   return {
     db: {
@@ -39,6 +55,11 @@ const makeDb = (storedHash: string | null, tx?: MockTx) => {
           where: jest.fn().mockReturnValue({
             limit: jest.fn().mockResolvedValue(hashRows),
           }),
+        }),
+      }),
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({
+          where: jest.fn().mockResolvedValue(undefined),
         }),
       }),
       transaction: jest.fn().mockImplementation(async (fn: (t: MockTx) => unknown) => fn(txObj)),
@@ -108,14 +129,20 @@ describe("KbIndexingService — content-hash guard", () => {
     expect(embeddings.embedQuery).toHaveBeenCalled();
   });
 
-  it("skips re-embedding for pages when the stored hash matches", async () => {
+  it("skips re-embedding for pages when content and ACL are both unchanged", async () => {
     const text = "page content that has not changed";
-    const { db } = makeDb(sha256(text));
+    const { db } = makeDb(sha256(text), undefined, {
+      pageVisibility: "org",
+      pageProjectId: null,
+      pageCreatedById: null,
+    });
     (db.query.kbPages.findFirst as jest.Mock).mockResolvedValue({
       status: "published",
       visibility: "org",
       deletedAt: null,
       contentText: text,
+      projectId: null,
+      createdById: null,
     });
 
     const embeddings = makeEmbeddings();
@@ -123,6 +150,37 @@ describe("KbIndexingService — content-hash guard", () => {
     await svc.indexPage("org-1", 1);
 
     expect(embeddings.embedQuery).not.toHaveBeenCalled();
+    expect(db.update as jest.Mock).not.toHaveBeenCalled();
+  });
+
+  it("updates chunk ACL without re-embedding when page moves to a different project", async () => {
+    const text = "unchanged page body";
+    const { db } = makeDb(sha256(text), undefined, {
+      pageVisibility: "org",
+      pageProjectId: 1,
+      pageCreatedById: "user-7",
+    });
+
+    (db.query.kbPages.findFirst as jest.Mock).mockResolvedValue({
+      status: "published",
+      visibility: "org",
+      deletedAt: null,
+      contentText: text,
+      projectId: 2,
+      createdById: "user-7",
+    });
+
+    const embeddings = makeEmbeddings();
+    const svc = new KbIndexingService(db as never, embeddings as never, makeStorage() as never);
+    await svc.indexPage("org-1", 99);
+
+    expect(embeddings.embedQuery).not.toHaveBeenCalled();
+    expect(db.transaction as jest.Mock).not.toHaveBeenCalled();
+    expect(db.update as jest.Mock).toHaveBeenCalled();
+    const setMock = ((db.update as jest.Mock).mock.results[0]?.value as { set: jest.Mock }).set;
+    expect(setMock).toHaveBeenCalledWith(
+      expect.objectContaining({ pageProjectId: 2, pageVisibility: "org", pageCreatedById: "user-7" }),
+    );
   });
 });
 
