@@ -27,7 +27,7 @@ if (!SECRET) {
 /** GET endpoints grouped by the domain they belong to. */
 const SUITE = [
   ["Access", ["/me/access", "/access/org-modules", "/rbac/access-snapshot"]],
-  ["RBAC", ["/rbac/permissions", "/rbac/role-permissions", "/rbac/user-permissions", "/rbac/discovery/permissions", "/rbac/discovery/grantable", "/roles"]],
+  ["RBAC", ["/rbac/permissions", "/rbac/discovery/permissions", "/rbac/discovery/grantable", "/rbac/discovery/templates", "/roles"]],
   ["Module access", ["/module-access/hr/catalog", "/module-access/hr/roles", "/module-access/hr/groups", "/module-access/hr/members", "/module-access/hr/me/permissions", "/module-access/hr/ownership"]],
   ["Invitations", ["/users/invitations"]],
   ["Users", ["/users", "/users/stats"]],
