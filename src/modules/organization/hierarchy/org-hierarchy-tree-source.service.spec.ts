@@ -69,12 +69,17 @@ function closureQuery(result: unknown) {
 
 describe("OrgHierarchyTreeSourceService", () => {
   let selectQuery: jest.Mock;
+  let executeQuery: jest.Mock;
   let service: OrgHierarchyTreeSourceService;
 
+  // The service asks the catalog whether a relation exists before querying it, so
+  // every case here must say which relations are deployed. Default: both are.
   beforeEach(() => {
     selectQuery = jest.fn();
+    executeQuery = jest.fn().mockResolvedValue([{ present: true }]);
     service = new OrgHierarchyTreeSourceService({
       select: selectQuery,
+      execute: executeQuery,
     } as unknown as Db);
   });
 
@@ -90,7 +95,24 @@ describe("OrgHierarchyTreeSourceService", () => {
   });
 
   it("uses adjacency when the profile relation has not been deployed", async () => {
-    selectQuery.mockReturnValue(profileFailureQuery({ code: "42P01" }));
+    executeQuery.mockResolvedValue([{ present: false }]);
+
+    await expect(service.resolveReadProfile(orgId)).resolves.toEqual({
+      mode: "ADJACENCY",
+      revision: 0,
+    });
+    // The point of the catalog probe: the absent table is never queried, so the
+    // surrounding tenant transaction is never aborted.
+    expect(selectQuery).not.toHaveBeenCalled();
+  });
+
+  // The shape production actually throws: Drizzle wraps the driver error, so the
+  // SQLSTATE is on `cause`. Asserting only the bare shape let a live 500 through.
+  it("uses adjacency when the driver error arrives wrapped by Drizzle", async () => {
+    const wrapped = Object.assign(new Error("Failed query: select ..."), {
+      cause: { name: "PostgresError", code: "42P01" },
+    });
+    selectQuery.mockReturnValue(profileFailureQuery(wrapped));
 
     await expect(service.resolveReadProfile(orgId)).resolves.toEqual({
       mode: "ADJACENCY",

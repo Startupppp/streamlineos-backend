@@ -1,7 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, inArray, isNull, ne } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { getPostgresErrorCode } from "../../../common/db/postgres-error";
 import type { Db } from "../../../db/drizzle.module";
 import { orgUnitClosure } from "../../../db/schema/common/org-unit-closure";
 import { orgUnits } from "../../../db/schema/common/organization";
@@ -59,17 +60,38 @@ type ClosureTreeRow = OrgTreeRow & {
   closureParentId: string | null;
 };
 
+// Drizzle wraps the driver error, so the SQLSTATE rides on `cause`, not the top level.
 function isMissingRelation(error: unknown): boolean {
-  if (typeof error !== "object" || error === null || !("code" in error))
-    return false;
-  return error.code === "42P01";
+  return getPostgresErrorCode(error) === "42P01";
 }
+
+const PROFILE_RELATION = "hrms_migration_profiles";
+const CLOSURE_RELATION = "org_unit_closure";
 
 @Injectable()
 export class OrgHierarchyTreeSourceService {
+  private readonly presentRelations = new Set<string>();
+
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
+  /**
+   * Asking the catalog costs one cheap lookup; asking the table costs the whole
+   * request. A 42P01 aborts the surrounding tenant transaction, so every later
+   * query dies 25P02 and catching the original error cannot rescue it.
+   */
+  private async relationExists(relation: string): Promise<boolean> {
+    if (this.presentRelations.has(relation)) return true;
+    const rows = await this.db.execute(
+      sql`SELECT to_regclass(${relation}) IS NOT NULL AS present`,
+    );
+    const present = rows[0]?.["present"] === true;
+    if (present) this.presentRelations.add(relation);
+    return present;
+  }
+
   async resolveReadProfile(orgId: string): Promise<HierarchyTreeReadProfile> {
+    if (!(await this.relationExists(PROFILE_RELATION)))
+      return { mode: "ADJACENCY", revision: 0 };
     try {
       const [profile] = await this.db
         .select({
@@ -99,6 +121,8 @@ export class OrgHierarchyTreeSourceService {
       profile.mode === "SHADOW_CLOSURE"
         ? await this.loadAdjacencyRows(orgId)
         : null;
+    if (!(await this.relationExists(CLOSURE_RELATION)))
+      return adjacencyRows ?? this.loadAdjacencyRows(orgId);
     try {
       const closureRows = await this.loadClosureRows(orgId);
       if (!this.isCompleteProjection(closureRows))
