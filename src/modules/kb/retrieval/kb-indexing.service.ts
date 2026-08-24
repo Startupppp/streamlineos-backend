@@ -234,9 +234,9 @@ export class KbIndexingService {
         tokens: Math.ceil(chunk.length / 4),
         embedding: embeddings[index],
         embeddingModel: EMBEDDING_MODEL,
-        visibility: page.visibility,
-        projectId: page.projectId,
-        createdById: page.createdById,
+        pageVisibility: page.visibility,
+        pageProjectId: page.projectId,
+        pageCreatedById: page.createdById,
       }));
 
       await tx.insert(kbArticleChunks).values(valuesToInsert);
