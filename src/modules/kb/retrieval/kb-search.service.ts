@@ -5,6 +5,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { KbAccessService } from "../core/kb-access.service";
 import { KbEventsService } from "../core/kb-events.service";
+import { chunkVisibleTo } from "./kb-chunk-visibility";
 import { pageVisibleTo, visibleTo } from "./kb-page-visibility";
 import { EmbeddingsService } from "../../ai/core/providers/embeddings.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -151,16 +152,7 @@ export class KbSearchService {
             user.orgId,
             vectorLiteral,
             pool,
-            visibleTo(
-              {
-                orgId: kbArticleChunks.orgId,
-                visibility: kbArticleChunks.visibility,
-                projectId: kbArticleChunks.projectId,
-                createdById: kbArticleChunks.createdById,
-              },
-              user,
-              projectIds,
-            ),
+            chunkVisibleTo(user, projectIds),
           )
         : Promise.resolve<number[]>([]),
     ]);
