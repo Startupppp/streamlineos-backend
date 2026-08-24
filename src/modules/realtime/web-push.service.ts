@@ -66,6 +66,7 @@ export class WebPushService {
   }
 
   async sendToChannelMembers(
+    orgId: string,
     channelId: number,
     senderUserId: string,
     payload: PushPayload,
@@ -77,6 +78,7 @@ export class WebPushService {
       .from(chatChannelMembers)
       .where(
         and(
+          eq(chatChannelMembers.orgId, orgId),
           eq(chatChannelMembers.channelId, channelId),
           ne(chatChannelMembers.userId, senderUserId),
         ),

@@ -58,7 +58,7 @@ export class ChatMessageFanoutService {
 
     const tasks: Promise<void>[] = [
       this.webPush
-        .sendToChannelMembers(channelId, message.senderId, { category: "CHAT" })
+        .sendToChannelMembers(orgId, channelId, message.senderId, { category: "CHAT" })
         .catch((err: unknown) => {
           logger.error("chat: push fan-out failed", {
             orgId,
