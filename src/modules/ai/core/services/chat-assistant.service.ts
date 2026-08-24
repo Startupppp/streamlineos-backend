@@ -14,7 +14,7 @@ import {
   type AiCreditLedger,
 } from "../gateway/credit-ledger.interface";
 import { getReserveEstimateMilli } from "../billing/ai-cost-catalog";
-import { computeTokenCharge } from "../billing/ai-model-pricing.constants";
+import { settleStream } from "../gateway/ai-gateway-credit.helper";
 import { AiUsageService } from "./ai-usage.service";
 import { ProjectsAiService } from "./projects-ai.service";
 import { ChatHistoryService } from "./chat-history.service";
@@ -151,30 +151,16 @@ export class ChatAssistantService {
         onFinish: async ({ text, usage }) => {
           const promptTokens = usage?.inputTokens ?? 0;
           const completionTokens = usage?.outputTokens ?? 0;
-          const { costUsd, milliCredits } = computeTokenCharge(
-            modelId,
-            promptTokens,
-            completionTokens,
-          );
           try {
             await runInNewTenantTransaction(this.db, orgId, async () => {
-              await this.ledger.settle(reservationId, {
-                orgId,
-                actualMilli: milliCredits,
+              await settleStream(this.ledger, this.usageSvc, {
+                reservationId,
                 model: modelId,
                 promptTokens,
                 completionTokens,
-                totalTokens: promptTokens + completionTokens,
-                costUsd,
-              });
-              await this.usageSvc.track({
                 orgId,
                 userId,
                 feature: CHAT_FEATURE,
-                model: modelId,
-                promptTokens,
-                completionTokens,
-                creditsMilli: milliCredits,
               });
               if (conversationId !== undefined) {
                 await this.history.appendToConversation(

@@ -5,6 +5,7 @@ import { AiUsageService } from "../services/ai-usage.service";
 import { AuditService } from "../../../../common/audit/audit.service";
 import { logger } from "../../../../common/logger/logger.service";
 import { type AiCreditLedger } from "./credit-ledger.interface";
+import { computeTokenCharge } from "../billing/ai-model-pricing.constants";
 import type {
   AiInvokeResult,
   AiInvokeFailure,
@@ -19,6 +20,44 @@ export type ReserveResult =
       kind: AiInvokeFailure["kind"];
       message: string;
     };
+
+export interface StreamSettlement {
+  reservationId: number;
+  model: string;
+  promptTokens: number;
+  completionTokens: number;
+  orgId: string;
+  userId: string;
+  feature: string;
+}
+
+export async function settleStream(
+  ledger: AiCreditLedger,
+  usageSvc: Pick<AiUsageService, "track">,
+  settlement: StreamSettlement,
+): Promise<void> {
+  const { reservationId, model, promptTokens, completionTokens, orgId, userId, feature } =
+    settlement;
+  const { costUsd, milliCredits } = computeTokenCharge(model, promptTokens, completionTokens);
+  await ledger.settle(reservationId, {
+    orgId,
+    actualMilli: milliCredits,
+    model,
+    promptTokens,
+    completionTokens,
+    totalTokens: promptTokens + completionTokens,
+    costUsd,
+  });
+  await usageSvc.track({
+    orgId,
+    userId,
+    feature,
+    model,
+    promptTokens,
+    completionTokens,
+    creditsMilli: milliCredits,
+  });
+}
 
 export class AiGatewayCreditHelper {
   constructor(
