@@ -1,5 +1,9 @@
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { isPersonalTokenPermissionDelegable } from "../../common/rbac/personal-token-policy";
+import {
+  moduleAvailability,
+  moduleAvailabilityResolver,
+} from "../../common/rbac/module-availability";
 import type { AccessSnapshot, DataScope } from "./access.types";
 import {
   allCatalogScopes,
@@ -55,7 +59,11 @@ export class AccessSnapshotResolver {
       }
       return {
         scopes,
-        modules: await this.resolveModuleFlags(orgId, EMPTY_DENIED_MODULES),
+        modules: await this.resolveModuleFlags(
+          orgId,
+          userId,
+          EMPTY_DENIED_MODULES,
+        ),
         isOrgOwner: currentUserContext.isOrgOwner,
         canManageOrganizationMembership: true,
         mfa,
@@ -79,7 +87,7 @@ export class AccessSnapshotResolver {
       this.getUserDeniedModules(orgId, userId),
       this.canManageOrganizationMembership(orgId, userId),
     ]);
-    const modules = await this.resolveModuleFlags(orgId, denied);
+    const modules = await this.resolveModuleFlags(orgId, userId, denied);
 
     return {
       scopes,
@@ -91,21 +99,33 @@ export class AccessSnapshotResolver {
     };
   }
 
-  /** Module on/off flags for the access snapshot. */
+  /** Same inputs `authorize` uses, so the snapshot cannot promise what a request then refuses. */
   private async resolveModuleFlags(
     orgId: string,
+    userId: string,
     denied: ReadonlySet<string>,
   ): Promise<Record<string, boolean>> {
+    const deniedModules = new Set(denied);
     const effective = await this.entitlements.getEffectiveModuleMap(orgId);
+    const resolver = moduleAvailabilityResolver(
+      {
+        isCoreModule: (moduleKey) =>
+          !isPlanGatedModule(moduleKey) || !(moduleKey in effective),
+        getModuleMap: async () => effective,
+        getPlanLockedModules: async () => [],
+      },
+      { getUserDeniedModules: async () => deniedModules },
+    );
+
     const modules: Record<string, boolean> = {};
     for (const moduleKey of CATALOG_MODULES) {
-      if (!isPlanGatedModule(moduleKey)) {
-        modules[moduleKey] = true;
-        continue;
-      }
-      const orgEnabled =
-        moduleKey in effective ? effective[moduleKey] === true : true;
-      modules[moduleKey] = orgEnabled && !denied.has(moduleKey);
+      const availability = await moduleAvailability(
+        resolver,
+        orgId,
+        userId,
+        moduleKey,
+      );
+      modules[moduleKey] = availability.available;
     }
     return modules;
   }

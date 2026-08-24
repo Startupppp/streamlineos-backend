@@ -3,6 +3,7 @@ import type { AccessSnapshot, DataScope } from "../access.types";
 import type { EntitlementsService } from "../entitlements.service";
 import { makeMfaPolicyStub } from "../../../../test/helpers/mfa-policy-stub";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { CATALOG_MODULES, isPlanGatedModule } from "../access-policy";
 
 const ORG = "org-test";
 const USER = "user-test";
@@ -83,5 +84,63 @@ describe("AccessSnapshotResolver.computeAccessSnapshot — org owner", () => {
     expect(snap.scopes["hr:employees:view"]).toBeDefined();
     expect(snap.isOrgOwner).toBe(true);
     expect(resolveUserPermissions).not.toHaveBeenCalled();
+  });
+});
+
+describe("AccessSnapshotResolver — module flags", () => {
+  const makeFlagResolver = (
+    effective: Record<string, boolean>,
+    denied: Set<string>,
+  ) =>
+    new AccessSnapshotResolver(
+      {
+        getEffectiveModuleMap: jest.fn().mockResolvedValue(effective),
+      } as unknown as EntitlementsService,
+      makeMfaPolicyStub(),
+      jest.fn().mockResolvedValue(1),
+      jest.fn().mockResolvedValue(new Map<string, DataScope>()),
+      jest.fn().mockResolvedValue(denied),
+      jest.fn().mockResolvedValue(false),
+    );
+
+  it("leaves every non-plan-gated namespace available whatever the module map says", async () => {
+    const ungated = CATALOG_MODULES.filter((key) => !isPlanGatedModule(key));
+    expect(ungated.length).toBeGreaterThan(0);
+
+    const snap = await makeFlagResolver({}, new Set()).computeAccessSnapshot(
+      ORG,
+      USER,
+      NON_OWNER_CTX,
+    );
+
+    for (const moduleKey of ungated) expect(snap.modules[moduleKey]).toBe(true);
+  });
+
+  it("follows the effective map for a plan-gated module", async () => {
+    const snap = await makeFlagResolver(
+      { hr: true, payroll: false },
+      new Set(),
+    ).computeAccessSnapshot(ORG, USER, NON_OWNER_CTX);
+
+    expect(snap.modules["hr"]).toBe(true);
+    expect(snap.modules["payroll"]).toBe(false);
+  });
+
+  it("lets a per-user deny remove an enabled plan-gated module", async () => {
+    const snap = await makeFlagResolver(
+      { hr: true },
+      new Set(["hr"]),
+    ).computeAccessSnapshot(ORG, USER, NON_OWNER_CTX);
+
+    expect(snap.modules["hr"]).toBe(false);
+  });
+
+  it("keeps an enabled plan-gated module for an owner, who carries no denies", async () => {
+    const snap = await makeFlagResolver(
+      { hr: true },
+      new Set(["hr"]),
+    ).computeAccessSnapshot(ORG, USER, OWNER_CTX);
+
+    expect(snap.modules["hr"]).toBe(true);
   });
 });
