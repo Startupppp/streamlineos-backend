@@ -1,9 +1,11 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, and, or, ilike, isNull, sql, type SQL } from "drizzle-orm";
-import { leads, users } from "../../db/schema";
+import { eq, and, or, ilike, sql, type SQL } from "drizzle-orm";
+import { users } from "../../db/schema";
+import { businessParties, leadPartyMap } from "../../db/schema/party";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { findDuplicateLeads } from "./duplicate-leads";
+import { LEAD_PARTY_COLUMNS, LEAD_PARTY_JOIN, leadPartyScope } from "./lead-party-reader";
 import type { CheckDuplicatesQuery, ExportQuery } from "./dto/lead-reports.schemas";
 
 @Injectable()
@@ -22,14 +24,14 @@ export class LeadsExportsService {
 
     const conditions: SQL[] = [];
     if (query.email) {
-      conditions.push(ilike(leads.email, query.email.trim()));
+      conditions.push(ilike(businessParties.email, query.email.trim()));
     }
     if (query.phone) {
       const normalized = query.phone.replace(/[\s\-+()]/g, "");
       const last10 = normalized.slice(-10);
       if (last10.length >= 10) {
         conditions.push(
-          sql`REPLACE(REPLACE(REPLACE(${leads.phone}, ' ', ''), '-', ''), '+', '') LIKE ${"%" + last10}`,
+          sql`REPLACE(REPLACE(REPLACE(${businessParties.phone}, ' ', ''), '-', ''), '+', '') LIKE ${"%" + last10}`,
         );
       }
     }
@@ -40,47 +42,56 @@ export class LeadsExportsService {
 
     const duplicates = await this.db
       .select({
-        id: leads.id,
-        name: leads.name,
-        email: leads.email,
-        phone: leads.phone,
-        company: leads.company,
-        status: leads.status,
-        createdAt: leads.createdAt,
+        id: LEAD_PARTY_COLUMNS.id,
+        name: LEAD_PARTY_COLUMNS.name,
+        email: LEAD_PARTY_COLUMNS.email,
+        phone: LEAD_PARTY_COLUMNS.phone,
+        company: LEAD_PARTY_COLUMNS.company,
+        status: LEAD_PARTY_COLUMNS.status,
+        createdAt: LEAD_PARTY_COLUMNS.createdAt,
       })
-      .from(leads)
-      .where(and(eq(leads.orgId, orgId), or(...conditions)))
+      .from(leadPartyMap)
+      .innerJoin(businessParties, LEAD_PARTY_JOIN)
+      // Deleted records included, as this read has always included them: the
+      // question is "has this person been entered before", and a deleted
+      // duplicate is still a duplicate the person entering it should see.
+      .where(and(...leadPartyScope(orgId, { includeDeleted: true }), or(...conditions)))
       .limit(5);
 
     return { duplicates };
   }
 
   async exportCsv(orgId: string, filters: ExportQuery) {
-    const conditions = [eq(leads.orgId, orgId), isNull(leads.deletedAt)];
-    if (filters.status) conditions.push(eq(leads.status, filters.status));
-    if (filters.priority) conditions.push(eq(leads.priority, filters.priority));
-    if (filters.assigneeId) conditions.push(eq(leads.assignedToId, filters.assigneeId));
+    const conditions = leadPartyScope(orgId);
+    if (filters.status) conditions.push(eq(LEAD_PARTY_COLUMNS.status, filters.status));
+    if (filters.priority) conditions.push(eq(LEAD_PARTY_COLUMNS.priority, filters.priority));
+    if (filters.assigneeId)
+      conditions.push(eq(LEAD_PARTY_COLUMNS.assignedToId, filters.assigneeId));
 
     const rows = await this.db
       .select({
-        id: leads.id,
-        name: leads.name,
-        email: leads.email,
-        phone: leads.phone,
-        company: leads.company,
-        city: leads.city,
-        status: leads.status,
-        priority: leads.priority,
-        score: leads.score,
-        source: leads.source,
-        potentialValue: leads.potentialValue,
-        createdAt: leads.createdAt,
+        id: LEAD_PARTY_COLUMNS.id,
+        name: LEAD_PARTY_COLUMNS.name,
+        email: LEAD_PARTY_COLUMNS.email,
+        phone: LEAD_PARTY_COLUMNS.phone,
+        company: LEAD_PARTY_COLUMNS.company,
+        city: LEAD_PARTY_COLUMNS.city,
+        status: LEAD_PARTY_COLUMNS.status,
+        priority: LEAD_PARTY_COLUMNS.priority,
+        score: LEAD_PARTY_COLUMNS.score,
+        source: LEAD_PARTY_COLUMNS.source,
+        potentialValue: LEAD_PARTY_COLUMNS.potentialValue,
+        createdAt: LEAD_PARTY_COLUMNS.createdAt,
         assigneeName: users.name,
       })
-      .from(leads)
-      .leftJoin(users, eq(leads.assignedToId, users.id))
+      .from(leadPartyMap)
+      .innerJoin(businessParties, LEAD_PARTY_JOIN)
+      .leftJoin(users, eq(LEAD_PARTY_COLUMNS.assignedToId, users.id))
       .where(and(...conditions))
-      .orderBy(leads.createdAt);
+      // The lead id breaks ties: two leads created in the same transaction share
+      // a timestamp, and an export that returns them in an arbitrary order
+      // returns a different file each time it is run.
+      .orderBy(LEAD_PARTY_COLUMNS.createdAt, LEAD_PARTY_COLUMNS.id);
 
     const header = toRow([
       "ID",

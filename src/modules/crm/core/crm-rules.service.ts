@@ -1,6 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, count, desc, eq, inArray, isNull, notInArray } from "drizzle-orm";
-import { leadAssignmentRules, leadScoringRules, crmEmailTemplates, leads } from "../../../db/schema";
+import { leadAssignmentRules, leadScoringRules, crmEmailTemplates } from "../../../db/schema";
+import { businessParties, leadPartyMap } from "../../../db/schema/party";
+import { PARTY_OF_LEAD, leadStatus } from "../crm-party-reads";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -207,17 +209,18 @@ export class CrmRulesService {
       if (candidates.length === 0) return null;
 
       const rows = await this.db
-        .select({ assignedToId: leads.assignedToId, cnt: count() })
-        .from(leads)
+        .select({ assignedToId: businessParties.ownerUserId, cnt: count() })
+        .from(leadPartyMap)
+        .innerJoin(businessParties, PARTY_OF_LEAD)
         .where(
           and(
-            eq(leads.orgId, orgId),
-            inArray(leads.assignedToId, candidates),
-            notInArray(leads.status, ["CONVERTED", "LOST"]),
-            isNull(leads.deletedAt),
+            eq(leadPartyMap.organizationId, orgId),
+            inArray(businessParties.ownerUserId, candidates),
+            notInArray(leadStatus, ["CONVERTED", "LOST"]),
+            isNull(businessParties.deletedAt),
           ),
         )
-        .groupBy(leads.assignedToId);
+        .groupBy(businessParties.ownerUserId);
 
       const counts = new Map<string, number>(rows.map((r) => [r.assignedToId ?? "", Number(r.cnt)]));
       let minCount = Infinity;

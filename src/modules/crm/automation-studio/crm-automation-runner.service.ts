@@ -7,10 +7,11 @@ import {
   crmAutomationRuns,
   crmSequenceEnrollments,
   tasks,
-  leads,
   deals,
   organizationMembers,
 } from "../../../db/schema";
+import { businessParties, leadPartyMap } from "../../../db/schema/party";
+import { PARTY_OF_LEAD } from "../crm-party-reads";
 import type { CrmAutomationCondition, AutomationGraphNode } from "../../../db/schema/crm/automation-rules";
 import { logger } from "../../../common/logger/logger.service";
 import { NotificationsService } from "../../notifications/notifications.service";
@@ -360,8 +361,9 @@ export class CrmAutomationRunnerService {
    *
    * The array operator wrote `leads.tags` without ever reading it, which the
    * mirror cannot follow: the party is the canonical copy and its tags are what
-   * the legacy column is derived from. `FOR UPDATE` on the lead row keeps two
-   * concurrent tag edits serialised, which is what the atomic operator bought.
+   * the legacy column is derived from. `FOR UPDATE` keeps two concurrent tag
+   * edits serialised, which is what the atomic operator bought — taken on the
+   * party row now that the party is what the next statement writes.
    */
   private async changeLeadTags(
     orgId: string,
@@ -371,11 +373,12 @@ export class CrmAutomationRunnerService {
     if (!Number.isInteger(leadId)) return;
     await this.db.transaction(async (tx) => {
       const [row] = await tx
-        .select({ tags: leads.tags })
-        .from(leads)
-        .where(and(eq(leads.orgId, orgId), eq(leads.id, leadId)))
+        .select({ tags: businessParties.tags })
+        .from(leadPartyMap)
+        .innerJoin(businessParties, PARTY_OF_LEAD)
+        .where(and(eq(leadPartyMap.organizationId, orgId), eq(leadPartyMap.leadId, leadId)))
         .limit(1)
-        .for("update");
+        .for("update", { of: businessParties });
       if (!row) return;
       await updateMirroredLeads(tx, orgId, [leadId], { tags: change(row.tags ?? []) });
     });

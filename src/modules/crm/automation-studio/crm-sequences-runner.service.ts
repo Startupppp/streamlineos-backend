@@ -2,7 +2,9 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, isNull, isNotNull, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import { crmSequenceEnrollments, crmSequenceSteps, crmSequences, tasks, leads } from "../../../db/schema";
+import { crmSequenceEnrollments, crmSequenceSteps, crmSequences, tasks } from "../../../db/schema";
+import { businessParties, leadPartyMap } from "../../../db/schema/party";
+import { PARTY_OF_LEAD } from "../crm-party-reads";
 import { logger } from "../../../common/logger/logger.service";
 import { CrmOutboundEmailService } from "../consent/crm-outbound-email.service";
 
@@ -26,12 +28,13 @@ export class CrmSequencesRunnerService {
     if (stopOn["converted"] === true) {
       if (enrollment.entityType === "lead") {
         const [row] = await this.db
-          .select({ convertedAt: leads.convertedAt })
-          .from(leads)
+          .select({ convertedAt: businessParties.convertedAt })
+          .from(leadPartyMap)
+          .innerJoin(businessParties, PARTY_OF_LEAD)
           .where(and(
-            eq(leads.orgId, enrollment.orgId),
-            eq(leads.id, parseInt(enrollment.entityId, 10)),
-            isNotNull(leads.convertedAt),
+            eq(leadPartyMap.organizationId, enrollment.orgId),
+            eq(leadPartyMap.leadId, parseInt(enrollment.entityId, 10)),
+            isNotNull(businessParties.convertedAt),
           ))
           .limit(1);
         if (row) return { stop: true, reason: "stopOn_converted" };

@@ -2,7 +2,9 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { clients, deals } from "../../../db/schema";
+import { deals } from "../../../db/schema";
+import { businessParties, clientPartyMap } from "../../../db/schema/party";
+import { PARTY_OF_CLIENT } from "../crm-party-reads";
 import { AccessService } from "../../access/access.service";
 import type { DataScope } from "../../access/access.types";
 import { applyScope } from "../../access/apply-scope";
@@ -100,20 +102,23 @@ export class CrmEntityAdapter implements EntityAdapter {
     scope: DataScope,
   ) {
     const { orgId, userId } = actor;
+    // No `deleted_at` predicate, because `clients` has none to inherit: a
+    // soft-deleted party still answers here exactly as its client row did.
     const rows = await this.db
       .select({
-        id: clients.id,
-        name: clients.name,
-        company: clients.company,
-        status: clients.status,
+        id: clientPartyMap.clientId,
+        name: businessParties.name,
+        company: businessParties.companyName,
+        status: businessParties.status,
       })
-      .from(clients)
+      .from(clientPartyMap)
+      .innerJoin(businessParties, PARTY_OF_CLIENT)
       .where(
         and(
-          eq(clients.orgId, orgId),
-          inArray(clients.id, ids),
+          eq(clientPartyMap.organizationId, orgId),
+          inArray(clientPartyMap.clientId, ids),
           applyScope(scope, orgId, userId, {
-            ownerColumn: clients.accountManagerId,
+            ownerColumn: businessParties.ownerUserId,
           }),
         ),
       )

@@ -1,6 +1,8 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, eq, inArray, isNull, sql } from "drizzle-orm";
-import { crmCampaigns, crmOptions, crmPipelineStages, leads, deals } from "../../../db/schema";
+import { crmCampaigns, crmOptions, crmPipelineStages, deals } from "../../../db/schema";
+import { businessParties, leadPartyMap } from "../../../db/schema/party";
+import { PARTY_OF_LEAD, leadPriority, leadSource, leadStatus } from "../crm-party-reads";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { resolveLeadStatusSemantics } from "../../leads/lead-status-semantics";
@@ -97,17 +99,24 @@ export class CrmCampaignsService {
     const wonStageKeys = wonStagesRows.length ? wonStagesRows.map((s) => s.key) : ["WON", "Closed Won"];
 
     const [leadCounts, revenueResult] = await Promise.all([
-      this.db.select({ status: leads.status, cnt: count() })
-        .from(leads)
-        .where(and(eq(leads.orgId, orgId), eq(leads.campaignId, campaignId)))
-        .groupBy(leads.status),
+      this.db.select({ status: leadStatus, cnt: count() })
+        .from(leadPartyMap)
+        .innerJoin(businessParties, PARTY_OF_LEAD)
+        .where(and(
+          eq(leadPartyMap.organizationId, orgId),
+          eq(businessParties.acquisitionCampaignId, campaignId),
+        ))
+        .groupBy(leadStatus),
 
       this.db.select({ total: sql<number>`COALESCE(SUM(${deals.value}::numeric), 0)::float` })
         .from(deals)
-        .innerJoin(leads, and(
-          eq(deals.leadId, leads.id),
-          eq(leads.campaignId, campaignId),
-          eq(leads.orgId, orgId),
+        .innerJoin(leadPartyMap, and(
+          eq(deals.leadId, leadPartyMap.leadId),
+          eq(leadPartyMap.organizationId, orgId),
+        ))
+        .innerJoin(businessParties, and(
+          PARTY_OF_LEAD,
+          eq(businessParties.acquisitionCampaignId, campaignId),
         ))
         .where(and(
           eq(deals.orgId, orgId), isNull(deals.deletedAt),
@@ -142,30 +151,43 @@ export class CrmCampaignsService {
     const [items, [{ total }]] = await Promise.all([
       this.db
         .select({
-          id: leads.id,
-          orgId: leads.orgId,
-          name: leads.name,
-          email: leads.email,
-          phone: leads.phone,
-          source: leads.source,
-          campaignId: leads.campaignId,
-          status: leads.status,
-          priority: leads.priority,
-          potentialValue: leads.potentialValue,
-          assignedToId: leads.assignedToId,
-          company: leads.company,
-          score: leads.score,
-          followUpDate: leads.followUpDate,
-          convertedAt: leads.convertedAt,
-          createdAt: leads.createdAt,
-          updatedAt: leads.updatedAt,
+          id: leadPartyMap.leadId,
+          orgId: businessParties.organizationId,
+          name: businessParties.name,
+          email: businessParties.email,
+          phone: businessParties.phone,
+          source: leadSource,
+          campaignId: businessParties.acquisitionCampaignId,
+          status: leadStatus,
+          priority: leadPriority,
+          potentialValue: businessParties.expectedValue,
+          assignedToId: businessParties.ownerUserId,
+          company: businessParties.companyName,
+          score: businessParties.qualificationScore,
+          followUpDate: businessParties.nextFollowUpAt,
+          convertedAt: businessParties.convertedAt,
+          createdAt: businessParties.createdAt,
+          updatedAt: businessParties.updatedAt,
         })
-        .from(leads)
-        .where(and(eq(leads.orgId, orgId), eq(leads.campaignId, campaignId)))
+        .from(leadPartyMap)
+        .innerJoin(businessParties, PARTY_OF_LEAD)
+        .where(and(
+          eq(leadPartyMap.organizationId, orgId),
+          eq(businessParties.acquisitionCampaignId, campaignId),
+        ))
+        // The legacy read had no ORDER BY and leaned on the heap order of a
+        // serial primary key. Reading through the map changes what that order
+        // is, so the page says what it is ordered by rather than inheriting one.
+        .orderBy(leadPartyMap.leadId)
         .limit(safeLimit)
         .offset(offset),
-      this.db.select({ total: count() }).from(leads)
-        .where(and(eq(leads.orgId, orgId), eq(leads.campaignId, campaignId))),
+      this.db.select({ total: count() })
+        .from(leadPartyMap)
+        .innerJoin(businessParties, PARTY_OF_LEAD)
+        .where(and(
+          eq(leadPartyMap.organizationId, orgId),
+          eq(businessParties.acquisitionCampaignId, campaignId),
+        )),
     ]);
 
     return { items, total, page, limit: safeLimit };

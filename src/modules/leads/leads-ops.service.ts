@@ -1,8 +1,7 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { and, eq, gte, inArray, isNull, lte, or, type SQL } from "drizzle-orm";
+import { and, eq, gte, inArray, lte } from "drizzle-orm";
 import { AccessService } from "../access/access.service";
 import {
-  leads,
   leadActivities,
   leadNotes,
   leadTasks,
@@ -19,22 +18,15 @@ import { logger } from "../../common/logger/logger.service";
 import { EmailService } from "../email/email.service";
 import { appUrl } from "../email/app-url";
 import { getLeadDistributionEmailTemplate } from "../email/templates/crm";
-import { CrmValidationService } from "../crm/metadata/crm-validation.service";
-import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import type {
   BulkDeleteInput,
   BulkUpdateInput,
   DistributeInput,
-  ImportInput,
   TopMergeInput,
 } from "./dto/lead-mutations.schemas";
-import {
-  createMirroredLeads,
-  softDeleteMirroredLeads,
-  updateMirroredLeads,
-} from "../party/party-legacy-leads";
-
-type LeadRow = typeof leads.$inferSelect;
+import { softDeleteMirroredLeads, updateMirroredLeads } from "../party/party-legacy-leads";
+import type { LeadInsert, LeadRow } from "../party/party-legacy-writer";
+import { INCLUDE_DELETED, loadLeadViews, type LeadView } from "./lead-party-reader";
 
 type OverrideField = keyof TopMergeInput["overrides"];
 
@@ -55,15 +47,13 @@ export class LeadsOpsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly email: EmailService,
-    private readonly crmValidation: CrmValidationService,
-    private readonly planLimits: PlanLimitsService,
     private readonly access: AccessService,
   ) {}
 
   private async sendDistributionEmails(
     actorId: string,
     salesPeople: { id: string; name: string | null; email: string | null }[],
-    assignments: Map<string, LeadRow[]>,
+    assignments: Map<string, LeadView[]>,
   ): Promise<void> {
     const actor = await this.db.query.users.findFirst({
       where: eq(users.id, actorId),
@@ -102,7 +92,7 @@ export class LeadsOpsService {
 
   async bulkUpdate(orgId: string, userId: string, input: BulkUpdateInput) {
     const { leadIds, update } = input;
-    const setData: Partial<typeof leads.$inferInsert> = {
+    const setData: Partial<LeadInsert> = {
       updatedAt: new Date(),
     };
 
@@ -151,14 +141,13 @@ export class LeadsOpsService {
       return { ok: false, reason: "self" };
     }
 
-    const [winner, loser] = await Promise.all([
-      this.db.query.leads.findFirst({
-        where: and(eq(leads.id, winnerId), eq(leads.orgId, orgId)),
-      }),
-      this.db.query.leads.findFirst({
-        where: and(eq(leads.id, loserId), eq(leads.orgId, orgId)),
-      }),
-    ]);
+    const pair = new Map(
+      (await loadLeadViews(this.db, orgId, [winnerId, loserId], INCLUDE_DELETED)).map(
+        (lead) => [lead.id, lead],
+      ),
+    );
+    const winner = pair.get(winnerId);
+    const loser = pair.get(loserId);
 
     if (!winner) return { ok: false, reason: "winner_not_found" };
     if (!loser) return { ok: false, reason: "loser_not_found" };
@@ -166,7 +155,7 @@ export class LeadsOpsService {
     const pick = <T>(field: OverrideField, winVal: T, loseVal: T): T =>
       overrides[field] === "loser" ? loseVal : winVal;
 
-    const mergedFields: Partial<typeof leads.$inferInsert> = {
+    const mergedFields: Partial<LeadInsert> = {
       name: pick("name", winner.name, loser.name),
       email: pick("email", winner.email, loser.email),
       phone: pick("phone", winner.phone, loser.phone),
@@ -188,8 +177,8 @@ export class LeadsOpsService {
       mergedFields.score = loser.score;
     }
 
-    await this.db.transaction(async (tx) => {
-      await updateMirroredLeads(tx, orgId, [winnerId], mergedFields);
+    const merged = await this.db.transaction(async (tx) => {
+      const [winnerRow] = await updateMirroredLeads(tx, orgId, [winnerId], mergedFields);
       await updateMirroredLeads(tx, orgId, [loserId], {
         deletedAt: new Date(),
         mergedIntoId: winnerId,
@@ -211,6 +200,7 @@ export class LeadsOpsService {
         .update(leadEmails)
         .set({ leadId: winnerId })
         .where(eq(leadEmails.leadId, loserId));
+      return winnerRow;
     });
 
     this.audit.log({
@@ -228,236 +218,11 @@ export class LeadsOpsService {
       },
     });
 
-    const updatedWinner = await this.db.query.leads.findFirst({
-      where: eq(leads.id, winnerId),
-    });
-
-    return { ok: true, winner: updatedWinner };
-  }
-
-  async importLeads(orgId: string, userId: string, input: ImportInput) {
-    await this.planLimits.assertWithinLimit(
-      orgId,
-      "crmLeads",
-      input.leads.length,
-    );
-
-    const CHUNK_SIZE = 100;
-
-    const importEmails = input.leads
-      .map((l) => l.email)
-      .filter((e): e is string => !!e && e !== "");
-    const importPhones = input.leads
-      .map((l) => l.phone)
-      .filter((p): p is string => !!p);
-
-    const dedupeParts: SQL[] = [];
-    if (importEmails.length > 0)
-      dedupeParts.push(inArray(leads.email, importEmails));
-    if (importPhones.length > 0)
-      dedupeParts.push(inArray(leads.phone, importPhones));
-
-    const existingLeads =
-      dedupeParts.length > 0
-        ? await this.db.query.leads.findMany({
-            where: and(eq(leads.orgId, orgId), or(...dedupeParts)),
-            columns: { id: true, email: true, phone: true },
-          })
-        : [];
-
-    const dupEmails = new Set(
-      existingLeads
-        .map((l) => l.email?.toLowerCase())
-        .filter((e): e is string => !!e),
-    );
-    const dupPhones = new Set(
-      existingLeads.map((l) => l.phone).filter((p): p is string => !!p),
-    );
-
-    let imported = 0;
-    let skipped = 0;
-    let updated = 0;
-    const importedLeadIds: number[] = [];
-    const errors: { row: number; message: string }[] = [];
-
-    for (let i = 0; i < input.leads.length; i += CHUNK_SIZE) {
-      const chunk = input.leads.slice(i, i + CHUNK_SIZE);
-      const toInsert: typeof chunk = [];
-
-      for (let j = 0; j < chunk.length; j++) {
-        const lead = chunk[j];
-        const rowNum = i + j + 2;
-        const isDuplicate =
-          (lead.email && dupEmails.has(lead.email.toLowerCase())) ||
-          (lead.phone && dupPhones.has(lead.phone));
-
-        if (isDuplicate) {
-          if (input.duplicateAction === "skip") {
-            skipped++;
-            errors.push({
-              row: rowNum,
-              message: `Duplicate (${lead.email || lead.phone})`,
-            });
-            continue;
-          } else if (input.duplicateAction === "update") {
-            const matchField =
-              lead.email && dupEmails.has(lead.email.toLowerCase())
-                ? eq(leads.email, lead.email)
-                : lead.phone
-                  ? eq(leads.phone, lead.phone)
-                  : undefined;
-            if (!matchField) {
-              errors.push({
-                row: rowNum,
-                message: "Failed to update duplicate",
-              });
-              continue;
-            }
-            try {
-              // Resolved to ids first: the mirror is written per record, and a
-              // predicate match cannot say which parties to move.
-              const matches = await this.db
-                .select({ id: leads.id })
-                .from(leads)
-                .where(and(eq(leads.orgId, orgId), matchField));
-              await updateMirroredLeads(
-                this.db,
-                orgId,
-                matches.map((row) => row.id),
-                {
-                  name: lead.name,
-                  company: lead.company || null,
-                  notes: lead.notes || null,
-                  updatedAt: new Date(),
-                },
-              );
-              updated++;
-            } catch {
-              errors.push({
-                row: rowNum,
-                message: "Failed to update duplicate",
-              });
-            }
-            continue;
-          }
-        }
-        const rowRecord: Record<string, unknown> = {
-          name: lead.name,
-          email: lead.email ?? null,
-          phone: lead.phone ?? null,
-          source: lead.source ?? "other",
-          priority: lead.priority ?? "WARM",
-        };
-        const rowValidation = await this.crmValidation.evaluate(
-          orgId,
-          "lead",
-          rowRecord,
-          {
-            sourceKey: lead.source ?? "other",
-          },
-        );
-        if (!rowValidation.valid) {
-          errors.push({
-            row: rowNum,
-            message: rowValidation.errors.map((e) => e.message).join("; "),
-          });
-          skipped++;
-          continue;
-        }
-
-        toInsert.push(lead);
-      }
-
-      if (toInsert.length > 0) {
-        try {
-          const values = toInsert.map((lead) => ({
-            orgId,
-            name: lead.name,
-            email: lead.email || null,
-            phone: lead.phone || null,
-            company: lead.company || null,
-            source: lead.source || ("other" as const),
-            notes: lead.notes || null,
-            city: lead.city || null,
-            designation: lead.designation || null,
-            referredBy: lead.referredBy || null,
-            potentialValue: lead.potentialValue || null,
-            investmentInterest: lead.investmentInterest || null,
-            whatsappNumber: lead.whatsappNumber || null,
-            website: lead.website || null,
-            priority: lead.priority || ("WARM" as const),
-            tags: lead.tags || null,
-            status: "NEW" as const,
-            assignedById: userId,
-          }));
-          const result = await createMirroredLeads(this.db, orgId, values, {
-            linkedBy: "leads:import",
-          });
-          imported += result.length;
-          importedLeadIds.push(...result.map((r) => r.id));
-        } catch (insertErr) {
-          errors.push({
-            row: i + 2,
-            message: `Chunk insert failed: ${insertErr instanceof Error ? insertErr.message : "unknown error"}`,
-          });
-        }
-      }
-    }
-
-    let distributed = 0;
-    let salesPeopleCount = 0;
-
-    if (input.autoDistribute && importedLeadIds.length > 0) {
-      try {
-        const permittedMembers = await this.access.membersWithPermission(orgId, "crm:leads:assign", { limit: 500 });
-        const permittedUserIds = permittedMembers.map((m) => m.userId);
-        const salesPeople = permittedUserIds.length > 0
-          ? await this.db
-              .select({ id: users.id, name: users.name })
-              .from(users)
-              .where(and(
-                inArray(users.id, permittedUserIds),
-                eq(users.isActive, true),
-              ))
-          : [];
-
-        if (salesPeople.length > 0) {
-          salesPeopleCount = salesPeople.length;
-          const now = new Date();
-          const assignmentMap = new Map<string, number[]>();
-          for (const sp of salesPeople) assignmentMap.set(sp.id, []);
-          for (let k = 0; k < importedLeadIds.length; k++) {
-            const sp = salesPeople[k % salesPeople.length];
-            const bucket = assignmentMap.get(sp.id);
-            if (bucket) bucket.push(importedLeadIds[k]);
-          }
-          for (const [salesPersonId, leadIds] of assignmentMap) {
-            if (leadIds.length === 0) continue;
-            await updateMirroredLeads(this.db, orgId, leadIds, {
-              assignedToId: salesPersonId,
-              assignedById: userId,
-              assignedAt: now,
-              updatedAt: now,
-            });
-            distributed += leadIds.length;
-          }
-        }
-      } catch (distErr) {
-        logger.error("Auto-distribute failed after bulk import", {
-          error: distErr,
-        });
-      }
-    }
-
-    return {
-      imported,
-      skipped,
-      updated,
-      errors,
-      duplicatesFound: existingLeads.length,
-      distributed,
-      salesPeopleCount,
-    };
+    // The winner comes back from the write that produced it rather than from a
+    // read afterwards. The read it replaces was `WHERE id = winnerId` with no
+    // organisation predicate at all, and re-reading a row the transaction just
+    // returned only widens the window in which it can disagree.
+    return { ok: true, winner: merged };
   }
 
   async distribute(
@@ -514,15 +279,13 @@ export class LeadsOpsService {
       }
     }
 
-    const leadsToDistribute = await this.db.query.leads.findMany({
-      where: and(inArray(leads.id, input.leadIds), eq(leads.orgId, orgId), isNull(leads.deletedAt)),
-    });
+    const leadsToDistribute = await loadLeadViews(this.db, orgId, input.leadIds);
 
     if (leadsToDistribute.length === 0) {
       return { ok: false, reason: "no_leads" };
     }
 
-    const assignments = new Map<string, LeadRow[]>();
+    const assignments = new Map<string, LeadView[]>();
     for (const sp of availableSalesPeople) assignments.set(sp.id, []);
 
     for (let i = 0; i < leadsToDistribute.length; i++) {

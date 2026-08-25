@@ -1,25 +1,12 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { and, count, eq, inArray, isNull, sql } from "drizzle-orm";
-import { AccessService } from "../access/access.service";
-import {
-  leads,
-  deals,
-  projects,
-  tickets,
-  clients,
-  clientAccounts,
-  users,
-  crmPipelines,
-} from "../../db/schema";
+import { and, count, eq, isNull } from "drizzle-orm";
+import { deals, tickets, crmPipelines } from "../../db/schema";
+import { businessParties } from "../../db/schema/party";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
-import { EmailService } from "../email/email.service";
-import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
-import { appUrl } from "../email/app-url";
-import { getLeadStatusChangeEmailTemplate } from "../email/templates/crm";
 import { CrmMetadataService } from "../crm/metadata/crm-metadata.service";
 import { CrmBlueprintsService } from "../crm/metadata/crm-blueprints.service";
 import { resolveLeadStatusSemantics } from "./lead-status-semantics";
@@ -27,9 +14,10 @@ import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { toMinorUnits } from "../deals/deal-stage-ledger";
 import type { TransitionLeadStatusInput } from "./dto/lead-mutations.schemas";
 import { updateMirroredLeads } from "../party/party-legacy-leads";
-import { createMirroredClient } from "../party/party-legacy-clients";
-
-type LeadRow = typeof leads.$inferSelect;
+import { isLegacyResolved, resolveLegacyParty } from "../party/party-legacy-seam";
+import type { LeadInsert, LeadRow } from "../party/party-legacy-writer";
+import { LeadConversionService } from "./lead-conversion.service";
+import { LEAD_MIRROR_DEFAULTS, loadLeadView } from "./lead-party-reader";
 
 export type TransitionLeadStatusResult =
   | { ok: true; lead: LeadRow }
@@ -41,12 +29,10 @@ export class LeadStatusService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly audit: AuditService,
-    private readonly dispatch: NotificationDispatchService,
-    private readonly email: EmailService,
     private readonly crmMetadata: CrmMetadataService,
     private readonly blueprints: CrmBlueprintsService,
     private readonly planLimits: PlanLimitsService,
-    private readonly access: AccessService,
+    private readonly conversion: LeadConversionService,
   ) {}
 
   private async getSemantics(orgId: string) {
@@ -59,41 +45,6 @@ export class LeadStatusService {
         metadata: o.metadata as Record<string, unknown> | null,
       })),
     );
-  }
-
-  private async getNextCrmAssignee(orgId: string): Promise<string | null> {
-    const csMembers = await this.access.membersWithPermission(orgId, "support:tickets:manage");
-
-    if (csMembers.length === 0) return null;
-
-    const memberIds = csMembers.map((m) => m.userId);
-    const grouped = await this.db
-      .select({ userId: clientAccounts.assignedCrmId, load: count() })
-      .from(clientAccounts)
-      .where(
-        and(
-          eq(clientAccounts.orgId, orgId),
-          inArray(clientAccounts.assignedCrmId, memberIds),
-          sql`${clientAccounts.status} != 'INVESTED'`,
-        ),
-      )
-      .groupBy(clientAccounts.assignedCrmId);
-
-    const loadByUser = new Map<string, number>();
-    for (const row of grouped) {
-      if (row.userId) loadByUser.set(row.userId, Number(row.load));
-    }
-
-    let minCount = Infinity;
-    let assignee: string | null = null;
-    for (const m of csMembers) {
-      const load = loadByUser.get(m.userId) ?? 0;
-      if (load < minCount) {
-        minCount = load;
-        assignee = m.userId;
-      }
-    }
-    return assignee;
   }
 
   private async ensureDealForLead(orgId: string, lead: LeadRow): Promise<void> {
@@ -116,170 +67,6 @@ export class LeadStatusService {
     });
   }
 
-  private async convertLeadToClient(
-    orgId: string,
-    userId: string,
-    lead: LeadRow,
-    input: TransitionLeadStatusInput,
-    crmAssigneeId: string | null,
-  ): Promise<void> {
-    await this.db.transaction(async (tx) => {
-      const existingClient = await tx.query.clients.findFirst({
-        where: and(eq(clients.leadId, lead.id), eq(clients.orgId, orgId)),
-      });
-      if (!existingClient) {
-        await createMirroredClient(
-          tx,
-          orgId,
-          {
-            orgId,
-            leadId: lead.id,
-            name: lead.name,
-            email: lead.email,
-            phone: lead.phone,
-            company: lead.company,
-            designation: lead.designation,
-            city: lead.city,
-            investmentValue: lead.potentialValue,
-            accountManagerId: lead.assignedToId,
-            status: "active",
-          },
-          { linkedBy: "leads:convert" },
-        );
-      }
-
-      const existingClientAccount = await tx.query.clientAccounts.findFirst({
-        where: and(
-          eq(clientAccounts.leadId, lead.id),
-          eq(clientAccounts.orgId, orgId),
-        ),
-      });
-      if (!existingClientAccount) {
-        await tx.insert(clientAccounts).values({
-          orgId,
-          leadId: lead.id,
-          salesRepId: lead.assignedToId ?? userId,
-          assignedCrmId: crmAssigneeId,
-          clientName: lead.name,
-          clientEmail: lead.email,
-          clientPhone: lead.phone,
-          clientWhatsapp: lead.whatsappNumber,
-          estimatedInvestment:
-            input.estimatedInvestment ||
-            lead.potentialValue ||
-            lead.investmentInterest ||
-            null,
-          status: "ACCOUNT_OPENING",
-          convertedAt: new Date(),
-        });
-      }
-
-      if (input.conversionNotes || input.estimatedInvestment) {
-        await updateMirroredLeads(tx, orgId, [lead.id], {
-          ...(input.conversionNotes ? { notes: input.conversionNotes } : {}),
-          ...(input.estimatedInvestment
-            ? {
-                potentialValue: input.estimatedInvestment,
-                investmentInterest: input.estimatedInvestment,
-              }
-            : {}),
-        });
-      }
-    });
-  }
-
-  private async dispatchConversionSideEffects(
-    orgId: string,
-    userId: string,
-    lead: LeadRow,
-    crmAssigneeId: string | null,
-  ): Promise<void> {
-    try {
-      const firstProject = await this.db.query.projects.findFirst({
-        where: and(eq(projects.orgId, orgId), isNull(projects.deletedAt)),
-      });
-      if (firstProject) {
-        const ticketCountResult = await this.db
-          .select({ count: count() })
-          .from(tickets)
-          .where(eq(tickets.projectId, firstProject.id));
-        const nextTicketNumber = (ticketCountResult[0]?.count ?? 0) + 1;
-
-        await this.db.insert(tickets).values({
-          orgId,
-          title: `Onboard converted lead: ${lead.name}`,
-          description: `Lead "${lead.name}" has been converted.\nCompany: ${lead.company || "N/A"}\nEmail: ${lead.email || "N/A"}\nPhone: ${lead.phone || "N/A"}`,
-          type: "TASK",
-          status: "TODO",
-          priority: "HIGH",
-          projectId: firstProject.id,
-          ticketNumber: nextTicketNumber,
-          reporterId: userId,
-        });
-      }
-
-      await this.dispatch.emit({
-        eventKey: "crm.lead.converted",
-        orgId,
-        actorUserId: userId,
-        targetUserIds: [lead.assignedToId || userId],
-        entityType: "lead",
-        entityId: String(lead.id),
-        title: "Lead Converted",
-        message: `Lead "${lead.name}" has been converted to a client.${crmAssigneeId ? " A CRM executive has been assigned." : ""}`,
-        link: `/crm/clients`,
-      });
-
-      if (crmAssigneeId)
-        await this.dispatch.emit({
-          eventKey: "crm.client.assigned",
-          orgId,
-          actorUserId: userId,
-          targetUserIds: [crmAssigneeId],
-          entityType: "lead",
-          entityId: String(lead.id),
-          title: "New Client Assigned",
-          message: `Client "${lead.name}" has been assigned to you for onboarding. Estimated investment: ${lead.potentialValue ?? "N/A"}.`,
-          link: `/crm/clients`,
-        });
-
-      const salesRepId = lead.assignedToId || userId;
-      const idsToFetch = [...new Set([salesRepId, ...(crmAssigneeId ? [crmAssigneeId] : [])])];
-      const userRows = await this.db
-        .select({ id: users.id, email: users.email, name: users.name })
-        .from(users)
-        .where(inArray(users.id, idsToFetch));
-      const userMap = new Map(userRows.map((u) => [u.id, u]));
-
-      const salesRep = userMap.get(salesRepId);
-      if (salesRep?.email) {
-        const { subject, html } = getLeadStatusChangeEmailTemplate({
-          recipientName: salesRep.name ?? "Team Member",
-          leadName: lead.name,
-          fromStatus: null,
-          toStatus: "Converted",
-          leadUrl: `${appUrl()}/crm/clients`,
-        });
-        await this.email.sendEmail({ to: salesRep.email, subject, html });
-      }
-
-      if (crmAssigneeId) {
-        const crmUser = userMap.get(crmAssigneeId);
-        if (crmUser?.email) {
-          const { subject, html } = getLeadStatusChangeEmailTemplate({
-            recipientName: crmUser.name ?? "Team Member",
-            leadName: lead.name,
-            fromStatus: null,
-            toStatus: "Converted",
-            leadUrl: `${appUrl()}/crm/clients`,
-          });
-          await this.email.sendEmail({ to: crmUser.email, subject, html });
-        }
-      }
-    } catch {
-      return;
-    }
-  }
 
   async transitionLeadStatus(
     orgId: string,
@@ -291,9 +78,7 @@ export class LeadStatusService {
     const isConverted = semantics.convertedKeys.includes(input.status);
     const isLost = semantics.lostKeys.includes(input.status);
 
-    const existing = await this.db.query.leads.findFirst({
-      where: and(eq(leads.id, leadId), eq(leads.orgId, orgId), isNull(leads.deletedAt)),
-    });
+    const existing = await loadLeadView(this.db, orgId, leadId);
 
     if (isConverted && existing && semantics.convertedKeys.includes(existing.status)) {
       return { ok: false, reason: "already_converted" };
@@ -333,33 +118,51 @@ export class LeadStatusService {
       }
     }
 
-    const updateData: Partial<typeof leads.$inferInsert> = {
+    const updateData: Partial<LeadInsert> = {
       status: input.status,
       updatedAt: new Date(),
     };
     if (isConverted) updateData.convertedAt = new Date();
     if (isLost && input.lostReason) updateData.lostReason = input.lostReason;
 
-    const conditions = [eq(leads.id, leadId), eq(leads.orgId, orgId), isNull(leads.deletedAt)];
-    if (input.expectedStatus)
-      conditions.push(eq(leads.status, input.expectedStatus));
-
     /*
-     * The optimistic check moved from the UPDATE's predicate to a locking SELECT,
-     * because the write itself now goes through the party first and a mirrored
+     * The optimistic check is a locking SELECT rather than the UPDATE's own
+     * predicate, because the write goes through the party first and a mirrored
      * write is addressed by id. `FOR UPDATE` holds the row for the rest of the
      * transaction, so two concurrent transitions still serialise and the loser
      * still sees `stale_or_missing` rather than silently overwriting.
+     *
+     * The row it locks is the party's, not the mirror's: locking the record the
+     * write does not address would leave two transitions free to interleave on
+     * the one it does.
      */
     const updated = await this.db.transaction(async (tx) => {
+      const resolved = await resolveLegacyParty(tx, orgId, {
+        kind: "LEAD",
+        legacyId: leadId,
+      });
+      if (!isLegacyResolved(resolved)) return undefined;
+
       const [claimed] = await tx
-        .select({ id: leads.id })
-        .from(leads)
-        .where(and(...conditions))
+        .select({ stage: businessParties.lifecycleStage })
+        .from(businessParties)
+        .where(
+          and(
+            eq(businessParties.partyId, resolved.party.partyId),
+            eq(businessParties.organizationId, orgId),
+            isNull(businessParties.deletedAt),
+          ),
+        )
         .limit(1)
         .for("update");
       if (!claimed) return undefined;
-      const [row] = await updateMirroredLeads(tx, orgId, [claimed.id], updateData);
+      if (
+        input.expectedStatus &&
+        (claimed.stage ?? LEAD_MIRROR_DEFAULTS.status) !== input.expectedStatus
+      )
+        return undefined;
+
+      const [row] = await updateMirroredLeads(tx, orgId, [leadId], updateData);
       return row;
     });
 
@@ -374,22 +177,7 @@ export class LeadStatusService {
       await this.ensureDealForLead(orgId, updated);
     }
 
-    if (isConverted) {
-      const crmAssigneeId = await this.getNextCrmAssignee(orgId);
-      await this.convertLeadToClient(
-        orgId,
-        userId,
-        updated,
-        input,
-        crmAssigneeId,
-      );
-      void this.dispatchConversionSideEffects(
-        orgId,
-        userId,
-        updated,
-        crmAssigneeId,
-      );
-    }
+    if (isConverted) await this.conversion.convert(orgId, userId, updated, input);
 
     return { ok: true, lead: updated };
   }

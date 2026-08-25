@@ -1,6 +1,7 @@
-import { eq, and, isNull } from "drizzle-orm";
-import { leads } from "../../db/schema";
+import { and } from "drizzle-orm";
+import { businessParties, leadPartyMap } from "../../db/schema/party";
 import type { Db } from "../../db/drizzle.module";
+import { LEAD_PARTY_COLUMNS, LEAD_PARTY_JOIN, leadPartyScope } from "./lead-party-reader";
 
 function normalize(s: string | null | undefined): string {
   if (!s) return "";
@@ -40,17 +41,18 @@ export interface DuplicateGroup {
 export async function findDuplicateLeads(db: Db, orgId: string): Promise<DuplicateGroup[]> {
   const allLeads = await db
     .select({
-      id: leads.id,
-      name: leads.name,
-      email: leads.email,
-      phone: leads.phone,
-      company: leads.company,
-      status: leads.status,
-      source: leads.source,
-      createdAt: leads.createdAt,
+      id: LEAD_PARTY_COLUMNS.id,
+      name: LEAD_PARTY_COLUMNS.name,
+      email: LEAD_PARTY_COLUMNS.email,
+      phone: LEAD_PARTY_COLUMNS.phone,
+      company: LEAD_PARTY_COLUMNS.company,
+      status: LEAD_PARTY_COLUMNS.status,
+      source: LEAD_PARTY_COLUMNS.source,
+      createdAt: LEAD_PARTY_COLUMNS.createdAt,
     })
-    .from(leads)
-    .where(and(eq(leads.orgId, orgId), isNull(leads.deletedAt)));
+    .from(leadPartyMap)
+    .innerJoin(businessParties, LEAD_PARTY_JOIN)
+    .where(and(...leadPartyScope(orgId)));
 
   const groups: DuplicateGroup[] = [];
   const paired = new Set<string>();
