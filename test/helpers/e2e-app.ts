@@ -9,6 +9,7 @@ import { MembershipStateService } from "src/common/auth/membership-state.service
 import { EntitlementsService } from "src/modules/access/entitlements.service";
 import { AccessService } from "src/modules/access/access.service";
 import type { DataScope } from "src/modules/access/access.types";
+import { moduleAvailabilityResolver } from "src/common/rbac/module-availability";
 import { RegionRegistry, setRegionRegistry } from "src/common/region/region-registry";
 import type { RegionDefinition } from "src/common/region/region.config";
 import type { Db } from "src/db/drizzle.types";
@@ -96,6 +97,28 @@ const accessStub = {
     new Map(current().permissions.map((key) => [key, "all" as DataScope])),
   isModuleEnabled: entitlementsStub.isModuleEnabled,
   getUserDeniedModules: async (): Promise<ReadonlySet<string>> => new Set<string>(),
+  // Keep the E2E fixture on AccessService's canonical resolver surface. The
+  // calendar source registry and PermissionGuard both consume these methods;
+  // resolving them from the token preserves the fixture's existing semantics.
+  getModuleState: async (_orgId: string, moduleKey: string): Promise<boolean | undefined> =>
+    current().enabledModules.includes(moduleKey.toLowerCase()) ? true : undefined,
+  scopeFor: async (_user: unknown, permissionKey: string): Promise<DataScope> =>
+    current().permissions.includes(permissionKey) ? "all" : "none",
+  holds: async (_user: unknown, permissionKey: string): Promise<boolean> =>
+    current().permissions.includes(permissionKey),
+  buildModuleAvailabilityResolver: (
+    getModuleMap: (orgId: string) => Promise<Record<string, boolean>>,
+  ) =>
+    moduleAvailabilityResolver(
+      {
+        isCoreModule: entitlementsStub.isCoreModule,
+        getModuleMap,
+        getPlanLockedModules: entitlementsStub.getPlanLockedModules,
+      },
+      {
+        getUserDeniedModules: async () => new Set<string>(),
+      },
+    ),
 };
 
 /**
