@@ -126,6 +126,39 @@ export function createLifecycleStore(db: Db): RunLifecycleStore {
  * queueing behind them. An expired lease is claimable again, which is how a run
  * abandoned by a killed process comes back.
  */
+/**
+ * How far behind the drain is, if anything is driving it.
+ *
+ * The runtime deliberately does not schedule itself — the module comment says so
+ * — which means it is entirely dependent on something outside calling
+ * `/cron/workflow-tick`. When nothing does, a durable workflow claims nothing,
+ * runs nothing and reports nothing: a quote sits in its hold window forever, an
+ * inbound message is never filed, and every surface says the job is in progress.
+ *
+ * That is the worst shape a failure can take, because it is indistinguishable
+ * from work still happening. This turns it into a number somebody can alert on.
+ * It observes and never claims, so calling it cannot itself advance a run and
+ * mask the problem it exists to report.
+ */
+export interface DrainBacklog {
+  /** Runs that are due right now and nobody has taken. */
+  readonly due: number;
+  /** How long the oldest of them has been waiting. Null when nothing is due. */
+  readonly oldestDueSeconds: number | null;
+}
+
+export async function drainBacklog(db: Db): Promise<DrainBacklog> {
+  const rows = await db.execute(sql`
+    SELECT count(*)::int AS due,
+           COALESCE(EXTRACT(EPOCH FROM (now() - min(run_after)))::int, 0) AS oldest
+    FROM workflow_runs
+    WHERE ${CLAIMABLE}
+  `);
+  const row = ([...rows][0] ?? {}) as Record<string, unknown>;
+  const due = Number(row.due ?? 0);
+  return { due, oldestDueSeconds: due > 0 ? Number(row.oldest ?? 0) : null };
+}
+
 export async function claimDueRuns(db: Db, limit: number): Promise<RunRecord[]> {
   const lease = leaseExpiry(new Date());
 
