@@ -79,6 +79,7 @@ export class WebPushService {
     channelId: number,
     senderUserId: string,
     payload: PushPayload,
+    idempotencyKey?: string,
   ): Promise<void> {
     if (!this.configured) return;
 
@@ -95,7 +96,12 @@ export class WebPushService {
 
     if (members.length === 0) return;
 
-    const results = await Promise.allSettled(members.map((m) => this.sendToUser(m.userId, payload)));
+    const results = await Promise.allSettled(
+      members.map((m) => this.sendToUser(
+        m.userId,
+        idempotencyKey ? { ...payload, idempotencyKey: `${idempotencyKey}:${m.userId}` } : payload,
+      )),
+    );
     const failures = results
       .filter((result): result is PromiseRejectedResult => result.status === "rejected")
       .map((result) => result.reason);

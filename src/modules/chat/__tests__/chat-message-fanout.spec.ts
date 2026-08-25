@@ -183,6 +183,26 @@ describe("ChatMessageFanoutService", () => {
     expect(payload).toMatchObject({ senderName: "Alice", senderImage: "https://cdn.example.com/alice.jpg" });
   });
 
+  it("uses a deterministic effect key for every deferred adapter on replay", async () => {
+    const { service, webPush, notifications } = makeFanout();
+    await service.dispatchDeferred({ ...input, channelType: "DIRECT" } as never);
+
+    expect(webPush.sendToChannelMembers).toHaveBeenCalledWith(
+      "org-1",
+      1,
+      "sender",
+      { category: "CHAT" },
+      "chat-message:org-1:1:push",
+    );
+    expect(notifications.publishNewMessageNotification).toHaveBeenCalledWith(
+      "org-1",
+      1,
+      { id: 1, senderId: "sender", senderName: "Sender" },
+      "DIRECT",
+      "chat-message:org-1:1:dm_notification",
+    );
+  });
+
   it("keeps notifying when push fails", async () => {
     const { service, webPush, notifications } = makeFanout();
     jest.spyOn(logger, "error").mockImplementation(() => undefined);

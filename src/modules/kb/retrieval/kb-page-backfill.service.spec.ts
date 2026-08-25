@@ -321,6 +321,16 @@ describe("KbPageBackfillService — backfillAll", () => {
     expect(result.organizations).toBe(3);
     expect(result.processed).toBe(2);
     expect(result.totalIndexed).toBe(1);
+    expect(result.totalFailed).toBe(1);
+    expect(result.details).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          orgId: "org-a",
+          failed: 1,
+          error: "fatal org error",
+        }),
+      ]),
+    );
   });
 });
 

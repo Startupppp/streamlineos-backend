@@ -90,6 +90,10 @@ describe("ChatFanoutOutboxConsumer", () => {
         senderName: "Alice",
         senderImage: "https://cdn.example.com/alice.jpg",
       }),
+      {
+        idempotencyKey: "outbox:event-1:chat-message:org-1:1",
+        producerEventId: "event-1",
+      },
     );
     expect(dispatchRealtime).not.toHaveBeenCalled();
   });
@@ -120,5 +124,28 @@ describe("ChatFanoutOutboxConsumer", () => {
     );
 
     await expect(consumer.handle(makeEvent())).rejects.toThrow("provider down");
+  });
+
+  it("reuses the same idempotency key when a worker crashes before inbox completion", async () => {
+    const db = makeDb();
+    const dispatchDeferred = jest
+      .fn()
+      .mockRejectedValueOnce(new Error("worker crashed after provider call"))
+      .mockResolvedValueOnce(undefined);
+    const consumer = new ChatFanoutOutboxConsumer(
+      db as never,
+      { dispatchDeferred } as never,
+      new OutboxConsumerRegistry(),
+    );
+
+    await expect(consumer.handle(makeEvent())).rejects.toThrow("worker crashed");
+    await expect(consumer.handle(makeEvent())).resolves.toBeUndefined();
+
+    expect(dispatchDeferred).toHaveBeenCalledTimes(2);
+    expect(dispatchDeferred.mock.calls[0]?.[1]).toEqual(dispatchDeferred.mock.calls[1]?.[1]);
+    expect(dispatchDeferred.mock.calls[1]?.[1]).toEqual({
+      idempotencyKey: "outbox:event-1:chat-message:org-1:1",
+      producerEventId: "event-1",
+    });
   });
 });

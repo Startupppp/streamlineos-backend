@@ -13,7 +13,11 @@ import {
   chatMessageFanoutPayloadSchema,
   fanoutInputFromPayload,
 } from "./chat-fanout-outbox";
-import { ChatMessageFanoutService } from "./chat-message-fanout.service";
+import {
+  MESSAGE_FANOUT_PROVIDER,
+  messageFanoutIdempotencyKey,
+  type MessageFanoutProvider,
+} from "./message-fanout.interface";
 
 const CONSUMER_NAME = "chat:message-fanout";
 
@@ -23,7 +27,7 @@ export class ChatFanoutOutboxConsumer implements OutboxEventConsumer, OnModuleIn
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly fanout: ChatMessageFanoutService,
+    @Inject(MESSAGE_FANOUT_PROVIDER) private readonly fanout: MessageFanoutProvider,
     private readonly registry: OutboxConsumerRegistry,
   ) {}
 
@@ -60,7 +64,11 @@ export class ChatFanoutOutboxConsumer implements OutboxEventConsumer, OnModuleIn
     // Realtime is published once by ChatMessagesService's post-commit hook.
     // The durable relay only retries the non-realtime effects; replaying the
     // whole fan-out here would duplicate the message on lease expiry.
-    await this.fanout.dispatchDeferred(fanoutInputFromPayload(parsed.data));
+    const input = fanoutInputFromPayload(parsed.data);
+    await this.fanout.dispatchDeferred(input, {
+      producerEventId: event.eventId,
+      idempotencyKey: `outbox:${event.eventId}:${messageFanoutIdempotencyKey(input)}`,
+    });
     await inbox.markProcessed(CONSUMER_NAME, event.eventId, "COMPLETED");
   }
 }

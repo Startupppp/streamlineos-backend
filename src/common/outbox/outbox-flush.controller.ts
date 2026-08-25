@@ -3,6 +3,7 @@ import { Public } from "../auth/public.decorator";
 import { assertCronSecret } from "../../modules/cron/cron-secret";
 import { OutboxPublisherService, type OutboxFlushResult } from "./outbox-publisher.service";
 
+/** Legacy scheduler endpoint retained for source compatibility; CronModule owns the active worker route. */
 @Public()
 @Controller("cron")
 export class OutboxFlushController {

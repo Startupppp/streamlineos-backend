@@ -55,6 +55,7 @@ export class ChatNotificationsService {
     channelId: number,
     message: { id: number; senderId: string; senderName: string | null },
     channelType: string,
+    idempotencyKey?: string,
   ) {
     const members = await this.db
       .select({
@@ -84,6 +85,7 @@ export class ChatNotificationsService {
         senderId: message.senderId,
         senderName: message.senderName,
         channelType,
+        ...(idempotencyKey ? { idempotencyKey: `${idempotencyKey}:${userId}` } : {}),
       }),
     );
     reportFailures("notification:message", channelId, delivered);
@@ -94,6 +96,7 @@ export class ChatNotificationsService {
     channelId: number,
     message: { id: number; senderId: string; senderName: string },
     mentionedUserIds: string[],
+    idempotencyKey?: string,
   ) {
     if (mentionedUserIds.length === 0) return;
 
@@ -126,6 +129,7 @@ export class ChatNotificationsService {
         messageId: message.id,
         senderId: message.senderId,
         senderName: message.senderName,
+        ...(idempotencyKey ? { idempotencyKey: `${idempotencyKey}:${userId}` } : {}),
       }),
     );
     reportFailures("notification:mention", channelId, delivered);

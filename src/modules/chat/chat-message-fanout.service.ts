@@ -4,14 +4,19 @@ import { AuditService } from "../../common/audit/audit.service";
 import { AblyService } from "../realtime/ably.service";
 import { WebPushService } from "../realtime/web-push.service";
 import { ChatNotificationsService } from "./chat-notifications.service";
-import type { FanoutInput, MessageFanout } from "./message-fanout.interface";
+import {
+  messageFanoutIdempotencyKey,
+  type FanoutDeliveryContext,
+  type FanoutInput,
+  type MessageFanoutProvider,
+} from "./message-fanout.interface";
 
 export type { FanoutInput };
 
 type FanoutChannel = "push" | "dm_notification" | "mention_notification";
 
 @Injectable()
-export class ChatMessageFanoutService implements MessageFanout {
+export class ChatMessageFanoutService implements MessageFanoutProvider {
   constructor(
     private readonly ably: AblyService,
     private readonly webPush: WebPushService,
@@ -19,16 +24,16 @@ export class ChatMessageFanoutService implements MessageFanout {
     private readonly audit: AuditService,
   ) {}
 
-  async dispatch(input: FanoutInput): Promise<void> {
-    await this.dispatchRealtime(input);
-    await this.dispatchDeferred(input);
+  async dispatch(input: FanoutInput, context?: FanoutDeliveryContext): Promise<void> {
+    await this.dispatchRealtime(input, context);
+    await this.dispatchDeferred(input, context);
   }
 
   /**
    * Realtime delivery is the latency-sensitive part of sending a message. It runs once from the
    * post-commit send hook; the durable outbox consumer deliberately does not repeat it.
    */
-  async dispatchRealtime(input: FanoutInput): Promise<void> {
+  async dispatchRealtime(input: FanoutInput, context?: FanoutDeliveryContext): Promise<void> {
     const {
       orgId,
       channelId,
@@ -51,6 +56,7 @@ export class ChatMessageFanoutService implements MessageFanout {
       metadata: strippedMetadata,
       messageType: message.messageType,
       attachments,
+      idempotencyKey: context?.idempotencyKey ?? messageFanoutIdempotencyKey(input),
     });
   }
 
@@ -59,7 +65,7 @@ export class ChatMessageFanoutService implements MessageFanout {
    * calls this method, so a rejected task causes the event to be retried or dead-lettered by the
    * common relay instead of being lost behind a log line.
    */
-  async dispatchDeferred(input: FanoutInput): Promise<void> {
+  async dispatchDeferred(input: FanoutInput, context?: FanoutDeliveryContext): Promise<void> {
     const {
       orgId,
       channelId,
@@ -70,9 +76,10 @@ export class ChatMessageFanoutService implements MessageFanout {
     } = input;
 
     const failures: unknown[] = [];
+    const idempotencyKey = context?.idempotencyKey ?? messageFanoutIdempotencyKey(input);
     const tasks: Promise<void>[] = [
       this.webPush
-        .sendToChannelMembers(orgId, channelId, message.senderId, { category: "CHAT" })
+        .sendToChannelMembers(orgId, channelId, message.senderId, { category: "CHAT" }, `${idempotencyKey}:push`)
         .catch((err: unknown) => {
           logger.error("chat: push fan-out failed", {
             orgId,
@@ -92,6 +99,7 @@ export class ChatMessageFanoutService implements MessageFanout {
             channelId,
             { id: message.id, senderId: message.senderId, senderName },
             channelType,
+            `${idempotencyKey}:dm_notification`,
           )
           .catch((err: unknown) => {
             logger.error("chat: DM notification failed", {
@@ -112,6 +120,7 @@ export class ChatMessageFanoutService implements MessageFanout {
             channelId,
             { id: message.id, senderId: message.senderId, senderName: senderName ?? "" },
             mentionedUserIds,
+            `${idempotencyKey}:mention_notification`,
           )
           .catch((err: unknown) => {
             logger.error("chat: mention notification failed", {
