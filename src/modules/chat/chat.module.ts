@@ -34,6 +34,7 @@ import { EntityReferenceModule } from "../entity-reference/entity-reference.modu
 import { OutboxModule } from "../../common/outbox/outbox.module";
 import { ChatFanoutOutboxConsumer } from "./chat-fanout-outbox.consumer";
 import { MESSAGE_FANOUT_PROVIDER } from "./message-fanout.interface";
+import { OutboxBackedMessageFanoutProvider } from "./outbox-backed-message-fanout.provider";
 
 @Module({
   imports: [BillingModule, RealtimeModule, EntityReferenceModule, OutboxModule],
@@ -55,7 +56,8 @@ import { MESSAGE_FANOUT_PROVIDER } from "./message-fanout.interface";
   ],
   providers: [
     ChatMessageFanoutService,
-    { provide: MESSAGE_FANOUT_PROVIDER, useExisting: ChatMessageFanoutService },
+    OutboxBackedMessageFanoutProvider,
+    { provide: MESSAGE_FANOUT_PROVIDER, useExisting: OutboxBackedMessageFanoutProvider },
     ChatFanoutOutboxConsumer,
     ChatChannelsService,
     ChatChannelMembersService,

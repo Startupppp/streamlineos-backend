@@ -26,7 +26,6 @@ export interface FanoutDeliveryContext {
 }
 
 export interface MessageFanoutProvider {
-  dispatch(input: FanoutInput, context?: FanoutDeliveryContext): Promise<void>;
   dispatchRealtime(input: FanoutInput, context?: FanoutDeliveryContext): Promise<void>;
   dispatchDeferred(input: FanoutInput, context?: FanoutDeliveryContext): Promise<void>;
 }
