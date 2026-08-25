@@ -1,6 +1,5 @@
 import { randomBytes } from "node:crypto";
 import { Inject, Injectable } from "@nestjs/common";
-import { lte, sql } from "drizzle-orm";
 import { APP_CONFIG } from "../../config/config.module";
 import type { AppConfig } from "../../config/env.validation";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -28,7 +27,6 @@ const DEFAULT_NOTIFICATION_EMAILS = [
 export interface WaitlistJoinResult {
   ok: true;
   reference: string;
-  position: number;
   alreadyJoined: boolean;
 }
 
@@ -52,7 +50,7 @@ export class WaitlistService {
     /*
      * A second submission from the same address is the same request restated,
      * not a conflict the visitor can act on — so the later answers win and the
-     * original reference and queue position are kept.
+     * original reference is kept.
      */
     const [row] = await this.db
       .insert(platformWaitlist)
@@ -88,13 +86,11 @@ export class WaitlistService {
     if (!row) throw new Error("Waitlist row was not returned by the insert");
 
     const alreadyJoined = row.publicCode !== reference;
-    const position = await this.getPosition(row.id);
     const receivedAt = new Date().toISOString();
 
     await this.notify({
       input,
       reference: row.publicCode,
-      position,
       receivedAt,
       alreadyJoined,
     });
@@ -102,18 +98,10 @@ export class WaitlistService {
     return {
       ok: true,
       reference: row.publicCode,
-      position,
       alreadyJoined,
     };
   }
 
-  private async getPosition(id: number): Promise<number> {
-    const [row] = await this.db
-      .select({ n: sql<number>`count(*)::int` })
-      .from(platformWaitlist)
-      .where(lte(platformWaitlist.id, id));
-    return row?.n ?? 1;
-  }
 
   private getNotificationEmails(): string[] {
     const configured = this.config.WAITLIST_NOTIFICATION_EMAILS?.split(",")
@@ -130,11 +118,10 @@ export class WaitlistService {
   private async notify(params: {
     input: WaitlistJoinInput;
     reference: string;
-    position: number;
     receivedAt: string;
     alreadyJoined: boolean;
   }): Promise<void> {
-    const { input, reference, position, receivedAt, alreadyJoined } = params;
+    const { input, reference, receivedAt, alreadyJoined } = params;
 
     try {
       const admin = getWaitlistAdminNotificationEmail({
@@ -142,7 +129,6 @@ export class WaitlistService {
         email: input.email,
         reference,
         receivedAt,
-        position,
         organization: input.organization,
         role: input.role,
         teamSize: input.teamSize,
@@ -163,7 +149,6 @@ export class WaitlistService {
       const confirmation = getWaitlistConfirmationEmail({
         name: input.name,
         reference,
-        position,
       });
       await this.email.sendEmail({
         to: input.email,
