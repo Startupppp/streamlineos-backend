@@ -184,10 +184,27 @@ export class AllExceptionsFilter implements ExceptionFilter {
     });
 
     // The logger has the record either way; this is the copy a human gets paged on.
-    reportError(exception, request);
+    // Health probes are polled continuously by the platform, so a database
+    // blip becomes thousands of identical reports and buries everything else.
+    // They still log, and the probe still fails — this only keeps the tracker
+    // readable, which is the whole point of having one.
+    if (!isHealthProbe(request)) reportError(exception, request);
     res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       code: "INTERNAL_ERROR",
       message: "An unexpected error occurred",
     } satisfies ApiErrorEnvelope);
   }
+}
+
+/**
+ * The unauthenticated health surface, which stays unauthenticated.
+ *
+ * Matched on the path rather than on a decorator because this filter sees the
+ * raw request; `/health`, `/health/ready` and `/health/db` are the whole set.
+ */
+function isHealthProbe(request: unknown): boolean {
+  const url = (request as { url?: unknown } | null)?.url;
+  if (typeof url !== "string") return false;
+  const path = url.split("?")[0] ?? "";
+  return path === "/health" || path.startsWith("/health/");
 }

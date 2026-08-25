@@ -17,3 +17,4 @@ export {
 export { ObservabilityEnrichmentInterceptor } from "./observability-enrichment.interceptor";
 export { redact, truncateForLog } from "./redact";
 export { structuredNestLogger } from "./nest-logger.adapter";
+export * from "./tracing";

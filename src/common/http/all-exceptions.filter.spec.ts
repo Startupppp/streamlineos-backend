@@ -7,6 +7,7 @@ import {
   type ErrorReport,
 } from "../observability/error-reporter";
 import { runWithObservabilityContext } from "../observability/observability-context";
+import { resetErrorReporter, setErrorReporter } from "../observability/error-reporter";
 
 function hostWith(): { host: ArgumentsHost; json: jest.Mock; status: jest.Mock } {
   const json = jest.fn();
@@ -24,6 +25,24 @@ function hostWith(): { host: ArgumentsHost; json: jest.Mock; status: jest.Mock }
     getType: () => "http",
   } as ArgumentsHost;
   return { host, json, status };
+}
+
+/** The same host, addressed at a chosen route. */
+function hostFor(url: string): ArgumentsHost {
+  const json = jest.fn();
+  const status = jest.fn((): { json: jest.Mock } => ({ json }));
+  return {
+    getArgs: () => [],
+    getArgByIndex: () => undefined,
+    switchToHttp: () => ({
+      getResponse: () => ({ status }),
+      getRequest: () => ({ method: "GET", url }),
+      getNext: () => undefined,
+    }),
+    switchToRpc: () => ({} as ReturnType<ArgumentsHost["switchToRpc"]>),
+    switchToWs: () => ({} as ReturnType<ArgumentsHost["switchToWs"]>),
+    getType: () => "http",
+  } as ArgumentsHost;
 }
 
 describe("AllExceptionsFilter", () => {
@@ -192,5 +211,47 @@ describe("AllExceptionsFilter", () => {
       expect(written).toContain("email");
       expect(written).toContain("duplicate key value violates unique constraint");
     });
+  });
+});
+
+describe("health probes and error noise", () => {
+  /**
+   * Probes are polled continuously by the platform, so a database blip becomes
+   * thousands of identical reports and buries everything else. They still log,
+   * and the probe still fails — this only keeps the tracker readable.
+   */
+  it("does not report a failing health probe to the tracker", () => {
+    const reported: unknown[] = [];
+    setErrorReporter({ report: (r) => reported.push(r) });
+
+    for (const url of ["/health", "/health/ready", "/health/db", "/health/db?verbose=1"]) {
+      const filter = new AllExceptionsFilter();
+      filter.catch(new Error("database unreachable"), hostFor(url));
+    }
+
+    expect(reported).toHaveLength(0);
+    resetErrorReporter();
+  });
+
+  it("still reports an ordinary route failing", () => {
+    const reported: unknown[] = [];
+    setErrorReporter({ report: (r) => reported.push(r) });
+
+    const filter = new AllExceptionsFilter();
+    filter.catch(new Error("boom"), hostFor("/crm/deals"));
+
+    expect(reported).toHaveLength(1);
+    resetErrorReporter();
+  });
+
+  it("is not fooled by a route that merely starts with the word", () => {
+    const reported: unknown[] = [];
+    setErrorReporter({ report: (r) => reported.push(r) });
+
+    const filter = new AllExceptionsFilter();
+    filter.catch(new Error("boom"), hostFor("/healthcare/claims"));
+
+    expect(reported).toHaveLength(1);
+    resetErrorReporter();
   });
 });
