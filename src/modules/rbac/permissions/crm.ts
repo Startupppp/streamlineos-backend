@@ -65,6 +65,21 @@ export const CRM_PERMISSIONS: Permission[] = [
     description: "View CRM data quality dashboard",
   },
   {
+    // Triage. Separate from resolving because deciding whose job a finding is
+    // and changing four hundred customer records are different authorities.
+    name: "crm:data-quality:assign",
+    resource: "crm:data-quality",
+    action: "assign",
+    description: "Assign data quality findings to a person, or hand them back to the queue",
+  },
+  {
+    name: "crm:data-quality:resolve",
+    resource: "crm:data-quality",
+    action: "resolve",
+    description:
+      "Resolve or dismiss data quality findings in bulk, reverse a resolution, and run the producers",
+  },
+  {
     name: "crm:clients:read",
     resource: "crm:clients",
     action: "read",

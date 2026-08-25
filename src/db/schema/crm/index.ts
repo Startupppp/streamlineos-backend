@@ -25,3 +25,4 @@ export * from "./pricebooks";
 export * from "./metadata";
 export * from "./automation-studio";
 export * from "./attribution";
+export * from "./data-quality";
