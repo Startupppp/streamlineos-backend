@@ -28,6 +28,7 @@ describe("HealthController", () => {
     if (originalSecret === undefined) delete process.env.INTERNAL_API_SECRET;
     else process.env.INTERNAL_API_SECRET = originalSecret;
     poolTelemetry.reset();
+    jest.useRealTimers();
   });
 
   it("returns ready when the database is reachable", async () => {
@@ -73,5 +74,50 @@ describe("HealthController", () => {
     });
     expect(result.pool.inFlight).toBe(0);
     expect(result.pool.waiting).toBe(0);
+  });
+
+  describe("shutdown sequencing", () => {
+    it("ready returns 503 after beforeApplicationShutdown fires", async () => {
+      jest.useFakeTimers();
+      const controller = await createController(jest.fn().mockResolvedValue(undefined));
+
+      const hookPromise = controller.beforeApplicationShutdown("SIGTERM");
+      jest.runAllTimers();
+      await hookPromise;
+
+      await expect(controller.ready()).rejects.toBeInstanceOf(ServiceUnavailableException);
+    });
+
+    it("health returns ok during shutdown so the orchestrator does not kill the process mid-drain", async () => {
+      jest.useFakeTimers();
+      const controller = await createController(jest.fn().mockResolvedValue(undefined));
+
+      const hookPromise = controller.beforeApplicationShutdown("SIGTERM");
+      jest.runAllTimers();
+      await hookPromise;
+
+      expect(controller.health()).toEqual({ status: "ok" });
+    });
+
+    it("ready is healthy before shutdown begins", async () => {
+      const controller = await createController(jest.fn().mockResolvedValue(undefined));
+
+      await expect(controller.ready()).resolves.toEqual({ status: "ready" });
+    });
+
+    it("beforeApplicationShutdown resolves only after the settling delay", async () => {
+      jest.useFakeTimers();
+      const controller = await createController(jest.fn().mockResolvedValue(undefined));
+
+      let settled = false;
+      const hookPromise = controller.beforeApplicationShutdown().then(() => {
+        settled = true;
+      });
+
+      expect(settled).toBe(false);
+      jest.runAllTimers();
+      await hookPromise;
+      expect(settled).toBe(true);
+    });
   });
 });

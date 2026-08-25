@@ -2,6 +2,9 @@ import { Inject, Injectable } from "@nestjs/common";
 import { APP_CONFIG } from "../../../config/config.module";
 import type { AppConfig } from "../../../config/env.validation";
 import { logger } from "../../../common/logger/logger.service";
+import { outboundRequest } from "../../../common/http/outbound-request";
+
+const TWILIO_TIMEOUT_MS = 15_000;
 
 interface TwilioSendParams {
   to: string;
@@ -57,7 +60,9 @@ export class TwilioGateway {
     const credentials = Buffer.from(`${accountSid}:${authToken}`).toString("base64");
 
     try {
-      const res = await fetch(endpoint, {
+      const res = await outboundRequest(endpoint, {
+        provider: "twilio",
+        timeoutMs: TWILIO_TIMEOUT_MS,
         method: "POST",
         headers: {
           Authorization: `Basic ${credentials}`,

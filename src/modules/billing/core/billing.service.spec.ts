@@ -1,15 +1,11 @@
-import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ServiceUnavailableException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { BillingService } from "./billing.service";
 import { AiCreditsService } from "./ai-credits.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { PlanLimitsService } from "./plan-limits.service";
-import { APP_CONFIG } from "../../../config/config.module";
-import {
-  PaymentProviderAdapterRegistry,
-  type PaymentProviderAdapter,
-} from "../payments/payment-provider-adapter.interface";
+import { PaymentProviderResolver, type OrganizationPaymentProvider } from "../payments/payment-provider-resolver.service";
 import {
   FakeProviderAdapter,
   FAKE_VALID_PAYMENT_SIG,
@@ -26,10 +22,22 @@ const VALID_INPUT = {
 
 const WRONG_SIG_INPUT = { ...VALID_INPUT, razorpay_signature: "forged-signature" };
 
-function makeRegistry(withAdapter = true) {
-  const registry = new PaymentProviderAdapterRegistry();
-  if (withAdapter) registry.register(new FakeProviderAdapter());
-  return registry;
+function makeProvider(withAdapter = true, providerKey = "razorpay"): OrganizationPaymentProvider | undefined {
+  if (!withAdapter) return undefined;
+  const adapter = new FakeProviderAdapter(providerKey);
+  return {
+    providerKey,
+    environment: "test",
+    isReady: () => adapter.isReady(),
+    publicKeyId: () => adapter.publicKeyId(),
+    createOrder: (params) => adapter.createOrder({ ...params, keyId: "fake-public", keySecret: "fake-private" }),
+    verifyPaymentSignature: (params) => adapter.verifyPaymentSignature({ ...params, keySecret: "fake-private" }),
+    verifyWebhookSignature: (params) => adapter.verifyWebhookSignature({ ...params, webhookSecret: "fake-webhook-secret-at-least-32chars" }),
+  };
+}
+
+function makeResolver(withAdapter = true, providerKey = "razorpay") {
+  return { resolve: jest.fn().mockResolvedValue(makeProvider(withAdapter, providerKey)) } as unknown as PaymentProviderResolver;
 }
 
 function makeAiCredits() {
@@ -45,14 +53,6 @@ function makeAudit() {
 
 function makePlanLimits() {
   return { bust: jest.fn(), resolveTier: jest.fn().mockResolvedValue({ plan: "STARTER" }) };
-}
-
-function makeConfig() {
-  return {
-    RAZORPAY_KEY_ID: "rzp_test_key_id",
-    RAZORPAY_KEY_SECRET: "rzp_test_key_secret",
-    RAZORPAY_WEBHOOK_SECRET: "test-webhook-secret",
-  };
 }
 
 function makeSuccessDb() {
@@ -82,8 +82,7 @@ function makeSuccessDb() {
 
 async function buildService(
   db: unknown,
-  registry: PaymentProviderAdapterRegistry,
-  config?: Record<string, unknown>,
+  providers: PaymentProviderResolver,
   aiCredits?: ReturnType<typeof makeAiCredits>,
 ): Promise<BillingService> {
   const module = await Test.createTestingModule({
@@ -93,8 +92,7 @@ async function buildService(
       { provide: AiCreditsService, useValue: aiCredits ?? makeAiCredits() },
       { provide: AuditService, useValue: makeAudit() },
       { provide: PlanLimitsService, useValue: makePlanLimits() },
-      { provide: PaymentProviderAdapterRegistry, useValue: registry },
-      { provide: APP_CONFIG, useValue: config ?? makeConfig() },
+      { provide: PaymentProviderResolver, useValue: providers },
     ],
   }).compile();
   return module.get(BillingService);
@@ -102,7 +100,7 @@ async function buildService(
 
 describe("BillingService.verifyAndActivate — goes through the registry", () => {
   it("happy path — returns success when transaction commits", async () => {
-    const svc = await buildService(makeSuccessDb(), makeRegistry());
+    const svc = await buildService(makeSuccessDb(), makeResolver());
     const result = await svc.verifyAndActivate("org1", "user1", VALID_INPUT);
     expect(result).toEqual({ success: true, plan: "STARTER", status: "ACTIVE" });
   });
@@ -111,7 +109,7 @@ describe("BillingService.verifyAndActivate — goes through the registry", () =>
     const conflictDb = {
       transaction: jest.fn().mockRejectedValue({ code: "23505" }),
     };
-    const svc = await buildService(conflictDb, makeRegistry());
+    const svc = await buildService(conflictDb, makeResolver());
     const result = await svc.verifyAndActivate("org1", "user1", VALID_INPUT);
     expect(conflictDb.transaction).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ success: true, plan: "STARTER", status: "ACTIVE" });
@@ -121,42 +119,41 @@ describe("BillingService.verifyAndActivate — goes through the registry", () =>
     const errDb = {
       transaction: jest.fn().mockRejectedValue(new Error("deadlock detected")),
     };
-    const svc = await buildService(errDb, makeRegistry());
+    const svc = await buildService(errDb, makeResolver());
     await expect(svc.verifyAndActivate("org1", "user1", VALID_INPUT)).rejects.toThrow("deadlock detected");
   });
 
   it("wrong signature — throws BadRequestException", async () => {
-    const svc = await buildService(makeSuccessDb(), makeRegistry());
+    const svc = await buildService(makeSuccessDb(), makeResolver());
     await expect(svc.verifyAndActivate("org1", "user1", WRONG_SIG_INPUT)).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it("wrong signature — NO partial record written (transaction never called)", async () => {
     const db = makeSuccessDb();
-    const svc = await buildService(db, makeRegistry());
+    const svc = await buildService(db, makeResolver());
     await expect(svc.verifyAndActivate("org1", "user1", WRONG_SIG_INPUT)).rejects.toBeInstanceOf(BadRequestException);
     expect(db.transaction).not.toHaveBeenCalled();
   });
 
   it("no configured provider — throws ServiceUnavailableException before any DB write", async () => {
     const db = makeSuccessDb();
-    const svc = await buildService(db, makeRegistry(false));
+    const svc = await buildService(db, makeResolver(false));
     await expect(svc.verifyAndActivate("org1", "user1", VALID_INPUT)).rejects.toBeInstanceOf(ServiceUnavailableException);
     expect(db.transaction).not.toHaveBeenCalled();
   });
 
   it("no configured provider — error message does not leak key or secret", async () => {
-    const config = makeConfig();
-    const svc = await buildService(makeSuccessDb(), makeRegistry(false), config);
+    const svc = await buildService(makeSuccessDb(), makeResolver(false));
     const error = await svc.verifyAndActivate("org1", "user1", VALID_INPUT).catch((e: unknown) => e);
     const message = (error as { message?: string }).message ?? "";
-    expect(message).not.toContain(config.RAZORPAY_KEY_SECRET);
-    expect(message).not.toContain(config.RAZORPAY_KEY_ID);
+    expect(message).not.toContain("fake-private");
+    expect(message).not.toContain("fake-public");
   });
 });
 
 describe("BillingService.createOrder — goes through the registry", () => {
   it("configured adapter — creates an order and returns providerOrderId and publicKeyId", async () => {
-    const svc = await buildService({}, makeRegistry());
+    const svc = await buildService({}, makeResolver());
     const result = await svc.createOrder("org1", "user1", "STARTER");
     expect(result.orderId).toBe(FAKE_PROVIDER_ORDER_ID);
     expect(result.keyId).toBe(FAKE_PUBLIC_KEY_ID);
@@ -166,24 +163,23 @@ describe("BillingService.createOrder — goes through the registry", () => {
   });
 
   it("configured adapter annual cycle — computes discounted amount", async () => {
-    const svc = await buildService({}, makeRegistry());
+    const svc = await buildService({}, makeResolver());
     const result = await svc.createOrder("org1", "user1", "STARTER", "annual");
     expect(result.billingCycle).toBe("annual");
     expect(result.orderId).toBe(FAKE_PROVIDER_ORDER_ID);
   });
 
   it("no configured provider — throws ServiceUnavailableException", async () => {
-    const svc = await buildService({}, makeRegistry(false));
+    const svc = await buildService({}, makeResolver(false));
     await expect(svc.createOrder("org1", "user1", "STARTER")).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 
   it("no configured provider — error message does not contain key or secret", async () => {
-    const config = makeConfig();
-    const svc = await buildService({}, makeRegistry(false), config);
+    const svc = await buildService({}, makeResolver(false));
     const error = await svc.createOrder("org1", "user1", "STARTER").catch((e: unknown) => e);
     const message = (error as { message?: string }).message ?? "";
-    expect(message).not.toContain(config.RAZORPAY_KEY_SECRET);
-    expect(message).not.toContain(config.RAZORPAY_KEY_ID);
+    expect(message).not.toContain("fake-private");
+    expect(message).not.toContain("fake-public");
   });
 });
 
@@ -192,7 +188,7 @@ describe("BillingService.getSubscription — reads through the adapter", () => {
     const db = {
       query: { subscriptions: { findFirst: jest.fn().mockResolvedValue(null) } },
     };
-    const svc = await buildService(db, makeRegistry());
+    const svc = await buildService(db, makeResolver());
     const result = await svc.getSubscription("org1");
     expect(result.isConfigured).toBe(true);
     expect(result.razorpayKeyId).toBe(FAKE_PUBLIC_KEY_ID);
@@ -202,7 +198,7 @@ describe("BillingService.getSubscription — reads through the adapter", () => {
     const db = {
       query: { subscriptions: { findFirst: jest.fn().mockResolvedValue(null) } },
     };
-    const svc = await buildService(db, makeRegistry(false));
+    const svc = await buildService(db, makeResolver(false));
     const result = await svc.getSubscription("org1");
     expect(result.isConfigured).toBe(false);
     expect(result.razorpayKeyId).toBeNull();
@@ -232,32 +228,123 @@ describe("BillingService.getSummary — isConfigured reads through the adapter",
   }
 
   it("configured adapter — isConfigured is true", async () => {
-    const svc = await buildService(makeSummaryDb(), makeRegistry());
+    const svc = await buildService(makeSummaryDb(), makeResolver());
     const result = await svc.getSummary("org1");
     expect(result.isConfigured).toBe(true);
   });
 
   it("no adapter — isConfigured is false", async () => {
-    const svc = await buildService(makeSummaryDb(), makeRegistry(false));
+    const svc = await buildService(makeSummaryDb(), makeResolver(false));
     const result = await svc.getSummary("org1");
     expect(result.isConfigured).toBe(false);
   });
 });
 
-class FixedKeyRegistry extends PaymentProviderAdapterRegistry {
-  constructor(private readonly fixedAdapter: PaymentProviderAdapter) {
-    super();
+describe("BillingService.verifyAndActivate — coupon redemption enforcement", () => {
+  function makeCouponTxMock(coupon: { usedCount: number; maxUses: number | null }) {
+    const selectChain = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      for: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([{ id: 42, maxUses: coupon.maxUses, usedCount: coupon.usedCount }]),
+    };
+    return {
+      query: {
+        subscriptions: {
+          findFirst: jest.fn().mockResolvedValue({ id: 1, orgId: "org1", plan: "STARTER", status: "ACTIVE" }),
+        },
+      },
+      update: jest.fn().mockReturnThis(),
+      set: jest.fn().mockReturnThis(),
+      where: jest.fn().mockResolvedValue([]),
+      insert: jest.fn().mockReturnThis(),
+      values: jest.fn().mockResolvedValue([]),
+      select: jest.fn().mockReturnValue(selectChain),
+    };
   }
 
-  override get(_key: string): PaymentProviderAdapter | undefined {
-    return this.fixedAdapter;
-  }
-}
+  it("concurrent same-org redemption — unique constraint violation becomes ConflictException, not a silent replay", async () => {
+    const couponConflict = Object.assign(new Error("duplicate key"), {
+      code: "23505",
+      constraint: "uq_coupon_redemptions_coupon_org",
+    });
+    const db = { transaction: jest.fn().mockRejectedValue(couponConflict) };
+    const svc = await buildService(db, makeResolver());
+    await expect(
+      svc.verifyAndActivate("org1", "user1", { ...VALID_INPUT, couponId: 1 }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it("unrelated 23505 (payment replay) still returns success even when couponId is present", async () => {
+    const paymentConflict = Object.assign(new Error("duplicate key"), {
+      code: "23505",
+      constraint: "uniq_subscription_payments_razorpay_payment",
+    });
+    const db = { transaction: jest.fn().mockRejectedValue(paymentConflict) };
+    const svc = await buildService(db, makeResolver());
+    const result = await svc.verifyAndActivate("org1", "user1", { ...VALID_INPUT, couponId: 1 });
+    expect(result).toEqual({ success: true, plan: "STARTER", status: "ACTIVE" });
+  });
+
+  it("coupon at maxUses — throws BadRequestException before the redemption row is inserted", async () => {
+    const txMock = makeCouponTxMock({ usedCount: 3, maxUses: 3 });
+    const db = {
+      transaction: jest.fn().mockImplementation((fn: (tx: typeof txMock) => Promise<unknown>) => fn(txMock)),
+    };
+    const svc = await buildService(db, makeResolver());
+    await expect(
+      svc.verifyAndActivate("org1", "user1", { ...VALID_INPUT, couponId: 42 }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(txMock.insert).toHaveBeenCalledTimes(1);
+  });
+
+  it("valid coupon — redemption inserted and counter incremented in the same transaction that activates the subscription", async () => {
+    const txMock = makeCouponTxMock({ usedCount: 0, maxUses: 5 });
+    const db = {
+      transaction: jest.fn().mockImplementation((fn: (tx: typeof txMock) => Promise<unknown>) => fn(txMock)),
+    };
+    const svc = await buildService(db, makeResolver());
+    const result = await svc.verifyAndActivate("org1", "user1", { ...VALID_INPUT, couponId: 42 });
+    expect(result).toEqual({ success: true, plan: "STARTER", status: "ACTIVE" });
+    expect(txMock.insert).toHaveBeenCalledTimes(2);
+    expect(txMock.update).toHaveBeenCalledTimes(2);
+    expect(txMock.select).toHaveBeenCalledTimes(1);
+  });
+
+  it("coupon not found or inactive — redemption skipped, subscription still activates", async () => {
+    const selectChain = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      for: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([]),
+    };
+    const txMock = {
+      query: {
+        subscriptions: {
+          findFirst: jest.fn().mockResolvedValue({ id: 1, orgId: "org1", plan: "STARTER", status: "ACTIVE" }),
+        },
+      },
+      update: jest.fn().mockReturnThis(),
+      set: jest.fn().mockReturnThis(),
+      where: jest.fn().mockResolvedValue([]),
+      insert: jest.fn().mockReturnThis(),
+      values: jest.fn().mockResolvedValue([]),
+      select: jest.fn().mockReturnValue(selectChain),
+    };
+    const db = {
+      transaction: jest.fn().mockImplementation((fn: (tx: typeof txMock) => Promise<unknown>) => fn(txMock)),
+    };
+    const svc = await buildService(db, makeResolver());
+    const result = await svc.verifyAndActivate("org1", "user1", { ...VALID_INPUT, couponId: 99 });
+    expect(result).toEqual({ success: true, plan: "STARTER", status: "ACTIVE" });
+    expect(txMock.insert).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("BillingService — provider-substitution seam proof", () => {
   it("'razorpay' fake produces a successful order with its provider identifier", async () => {
     const adapter = new FakeProviderAdapter();
-    const svc = await buildService({}, new FixedKeyRegistry(adapter));
+    const svc = await buildService({}, makeResolver(true, adapter.providerKey));
     const result = await svc.createOrder("org1", "user1", "STARTER");
     expect(result.orderId).toBe(FAKE_PROVIDER_ORDER_ID);
     expect(result.keyId).toBe(FAKE_PUBLIC_KEY_ID);
@@ -266,7 +353,7 @@ describe("BillingService — provider-substitution seam proof", () => {
 
   it("'stripe' fake produces the same domain outcome with a different provider identifier", async () => {
     const adapter = new FakeProviderAdapter("stripe");
-    const svc = await buildService({}, new FixedKeyRegistry(adapter));
+    const svc = await buildService({}, makeResolver(true, adapter.providerKey));
     const result = await svc.createOrder("org1", "user1", "STARTER");
     expect(result.orderId).toBe(FAKE_PROVIDER_ORDER_ID);
     expect(result.keyId).toBe(FAKE_PUBLIC_KEY_ID);

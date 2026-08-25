@@ -1,6 +1,7 @@
 import { Injectable, BadGatewayException, OnModuleInit, Optional, Inject } from "@nestjs/common";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
+import { outboundRequest } from "../../../../common/http/outbound-request";
 import { PaymentProviderAdapterRegistry, type PaymentCredentialWarning, type PaymentProviderAdapter } from "../payment-provider-adapter.interface";
 import { APP_CONFIG } from "../../../../config/config.module";
 
@@ -30,11 +31,6 @@ function constantTimeEquals(expected: string, provided: string): boolean {
   }
 }
 
-// Mirrors src/modules/billing/razorpay.service.ts's HMAC/order logic, parameterized by
-// per-org encrypted credentials instead of platform-wide env vars — that service and its
-// /billing/razorpay + /webhooks/razorpay endpoints are untouched (StreamlineOS billing tenants
-// for their own SaaS plan, a separate concern). This adapter is for tenants charging their own
-// customers via their own connected Razorpay account.
 @Injectable()
 export class RazorpayAdapter implements PaymentProviderAdapter, OnModuleInit {
   readonly providerKey = "razorpay";
@@ -90,7 +86,9 @@ export class RazorpayAdapter implements PaymentProviderAdapter, OnModuleInit {
     notes?: Record<string, string>;
   }): Promise<{ providerOrderId: string; raw: unknown }> {
     const auth = Buffer.from(`${params.keyId}:${params.keySecret}`).toString("base64");
-    const response = await fetch("https://api.razorpay.com/v1/orders", {
+    const response = await outboundRequest("https://api.razorpay.com/v1/orders", {
+      provider: "razorpay-tenant",
+      timeoutMs: 10_000,
       method: "POST",
       headers: {
         "Content-Type": "application/json",

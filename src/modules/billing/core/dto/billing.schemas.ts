@@ -24,6 +24,7 @@ export const verifyPaymentSchema = z.object({
   razorpay_payment_id: z.string(),
   razorpay_signature: z.string(),
   plan: planSchema,
+  couponId: z.number().int().positive().optional(),
 });
 export type VerifyPaymentInput = z.infer<typeof verifyPaymentSchema>;
 

@@ -53,6 +53,7 @@ import { CronBuildRetentionService } from "./cron-build-retention.service";
 import { CronBuildSnapshotsService } from "./cron-build-snapshots.service";
 import { CronOrganizationService } from "./cron-organization.service";
 import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
+import { CronLeaseService } from "./cron-lease.service";
 import { ProjectsModule } from "../build/core/projects.module";
 import { CrmModule } from "../crm/core/crm.module";
 
@@ -118,6 +119,7 @@ import { CrmModule } from "../crm/core/crm.module";
     CronBuildSnapshotsService,
     CronOrganizationService,
     CronOrgPurgeWorkerService,
+    CronLeaseService,
   ],
 })
 export class CronModule {}

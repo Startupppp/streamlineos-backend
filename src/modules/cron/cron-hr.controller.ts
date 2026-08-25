@@ -18,6 +18,7 @@ import { CronHrService } from "./cron-hr.service";
 import { CronHrEnginesService } from "./cron-hr-engines.service";
 import { CronRecruitmentService } from "./cron-recruitment.service";
 import { CronWeeklyRecapService } from "./cron-weekly-recap.service";
+import { CronLeaseService } from "./cron-lease.service";
 
 @Public()
 @Controller("cron")
@@ -31,6 +32,7 @@ export class CronHrController {
     private readonly hr: CronHrService,
     private readonly hrEngines: CronHrEnginesService,
     private readonly weeklyRecap: CronWeeklyRecapService,
+    private readonly cronLease: CronLeaseService,
   ) {}
 
   @Get("auto-checkout")
@@ -174,8 +176,11 @@ export class CronHrController {
   private async runAutoCheckout(authorization?: string) {
     assertCronSecret(authorization);
     try {
-      const result = await this.attendance.processAutoCheckout();
-      return { success: true, ...result };
+      const outcome = await this.cronLease.withLease("auto-checkout", 300, () =>
+        this.attendance.processAutoCheckout(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "auto-checkout already running" };
+      return { success: true, ...outcome.result };
     } catch (error) {
       logger.error("Auto-checkout cron failed", error);
       throw new InternalServerErrorException("Internal server error");
@@ -185,7 +190,11 @@ export class CronHrController {
   private async runMonthlyLeaveReset(authorization?: string) {
     assertCronSecret(authorization);
     try {
-      const result = await this.leave.runMonthlyLeaveReset();
+      const outcome = await this.cronLease.withLease("monthly-leave-reset", 300, () =>
+        this.leave.runMonthlyLeaveReset(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "monthly-leave-reset already running" };
+      const result = outcome.result;
       return {
         success: true,
         monthlyExpiry: result.monthlyExpiry,
@@ -200,7 +209,11 @@ export class CronHrController {
   private async runDailyNotifications(authorization?: string) {
     assertCronSecret(authorization);
     try {
-      const result = await this.notifications.sendDailyNotifications();
+      const outcome = await this.cronLease.withLease("daily-notifications", 300, () =>
+        this.notifications.sendDailyNotifications(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "daily-notifications already running" };
+      const result = outcome.result;
       return {
         success: true,
         message: `Daily notifications sent: ${result.birthdayCount} birthdays, ${result.leaveCount} on-leave, ${result.anniversaryCount} anniversaries`,
@@ -215,7 +228,11 @@ export class CronHrController {
   private async runHolidayNotifications(authorization?: string) {
     assertCronSecret(authorization);
     try {
-      const result = await this.holiday.sendHolidayNotifications();
+      const outcome = await this.cronLease.withLease("holiday-notifications", 300, () =>
+        this.holiday.sendHolidayNotifications(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "holiday-notifications already running" };
+      const result = outcome.result;
       if ("error" in result) {
         throw new InternalServerErrorException(result.error);
       }
@@ -234,7 +251,11 @@ export class CronHrController {
   private async runOfferDeadlineReminders(authorization?: string) {
     assertCronSecret(authorization);
     try {
-      const result = await this.recruitment.sendOfferDeadlineReminders();
+      const outcome = await this.cronLease.withLease("offer-deadline-reminders", 300, () =>
+        this.recruitment.sendOfferDeadlineReminders(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "offer-deadline-reminders already running" };
+      const result = outcome.result;
       return {
         success: true,
         message: `Sent ${result.remindedCount} offer deadline reminders`,
@@ -249,7 +270,11 @@ export class CronHrController {
   private async runInterviewNoShows(authorization?: string) {
     assertCronSecret(authorization);
     try {
-      const result = await this.recruitment.processInterviewNoShows();
+      const outcome = await this.cronLease.withLease("interview-no-shows", 300, () =>
+        this.recruitment.processInterviewNoShows(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "interview-no-shows already running" };
+      const result = outcome.result;
       return {
         success: true,
         message: `Processed ${result.processedCount} interview no-shows`,
@@ -264,7 +289,11 @@ export class CronHrController {
   private async runCertificationExpiry(authorization?: string) {
     assertCronSecret(authorization);
     try {
-      const result = await this.hr.processCertificationExpiry();
+      const outcome = await this.cronLease.withLease("certification-expiry", 300, () =>
+        this.hr.processCertificationExpiry(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "certification-expiry already running" };
+      const result = outcome.result;
       return {
         success: true,
         message: `Processed ${result.fired} certification expiry reminders`,
@@ -279,7 +308,11 @@ export class CronHrController {
   private async runOnboardingSweep(authorization?: string) {
     assertCronSecret(authorization);
     try {
-      const result = await this.hr.processOnboardingCompletionSweep();
+      const outcome = await this.cronLease.withLease("onboarding-sweep", 300, () =>
+        this.hr.processOnboardingCompletionSweep(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "onboarding-sweep already running" };
+      const result = outcome.result;
       return {
         success: true,
         message: `Dispatched ${result.fired} onboarding completion events`,
@@ -294,8 +327,11 @@ export class CronHrController {
   private async runWeeklyExecRecap(authorization?: string) {
     assertCronSecret(authorization);
     try {
-      const result = await this.weeklyRecap.sendWeeklyExecRecaps();
-      return { success: true, ...result };
+      const outcome = await this.cronLease.withLease("weekly-exec-recap", 600, () =>
+        this.weeklyRecap.sendWeeklyExecRecaps(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "weekly-exec-recap already running" };
+      return { success: true, ...outcome.result };
     } catch (error) {
       logger.error("Weekly FINAL recap cron failed", error);
       throw new InternalServerErrorException("Internal server error");
@@ -305,7 +341,11 @@ export class CronHrController {
   private async runDocumentExpiry(authorization?: string) {
     assertCronSecret(authorization);
     try {
-      const result = await this.hr.processDocumentExpiry();
+      const outcome = await this.cronLease.withLease("document-expiry", 300, () =>
+        this.hr.processDocumentExpiry(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "document-expiry already running" };
+      const result = outcome.result;
       return {
         success: true,
         message: `Processed ${result.fired} document expiry reminders`,
@@ -320,7 +360,11 @@ export class CronHrController {
   private async runHrEnginesSweep(authorization?: string) {
     assertCronSecret(authorization);
     try {
-      const result = await this.hrEngines.runAll();
+      const outcome = await this.cronLease.withLease("hr-engines-sweep", 600, () =>
+        this.hrEngines.runAll(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "hr-engines-sweep already running" };
+      const result = outcome.result;
       return {
         success: true,
         message: `HR engines sweep complete: ${result.succeeded} succeeded, ${result.failed} failed across ${result.orgsProcessed} orgs`,
@@ -339,11 +383,16 @@ export class CronHrController {
     assertCronSecret(authorization);
     try {
       if (sweepName === "workflow-sla") {
-        const result = await this.hrEngines.sweepWorkflowSlaEscalations();
+        const outcome = await this.cronLease.withLease(
+          `hr-engines-sweep.workflow-sla`,
+          300,
+          () => this.hrEngines.sweepWorkflowSlaEscalations(),
+        );
+        if (!outcome.ran) return { success: true, skipped: true, message: "hr-engines-sweep/workflow-sla already running" };
         return {
           success: true,
-          message: `Swept ${result.swept} overdue workflow steps`,
-          ...result,
+          message: `Swept ${outcome.result.swept} overdue workflow steps`,
+          ...outcome.result,
         };
       }
       return {

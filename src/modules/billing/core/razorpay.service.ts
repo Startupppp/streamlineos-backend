@@ -1,5 +1,6 @@
 import { HttpException, HttpStatus, Inject, Injectable } from "@nestjs/common";
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { outboundRequest } from "../../../common/http/outbound-request";
 import { APP_CONFIG } from "../../../config/config.module";
 import type { AppConfig } from "../../../config/env.validation";
 import {
@@ -40,7 +41,9 @@ export class RazorpayService {
 
   async createOrder(params: CreateOrderParams): Promise<RazorpayOrder> {
     const auth = Buffer.from(`${this.keyId}:${this.keySecret}`).toString("base64");
-    const response = await fetch("https://api.razorpay.com/v1/orders", {
+    const response = await outboundRequest("https://api.razorpay.com/v1/orders", {
+      provider: "razorpay-platform",
+      timeoutMs: 10_000,
       method: "POST",
       headers: {
         "Content-Type": "application/json",

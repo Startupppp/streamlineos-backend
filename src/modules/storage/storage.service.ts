@@ -61,10 +61,27 @@ const PRIVATE_HR_FOLDERS = new Set([
 
 @Injectable()
 export class StorageService {
+  private readonly client: S3Client;
+
   constructor(
     private readonly compression: MediaCompressionService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
-  ) {}
+  ) {
+    const cfg = this.getConfig();
+    this.client = new S3Client({
+      region: cfg.region,
+      endpoint: cfg.endpoint,
+      credentials:
+        cfg.accessKeyId && cfg.secretAccessKey
+          ? { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey }
+          : undefined,
+      requestHandler: {
+        connectionTimeout: 5_000,
+        requestTimeout: 120_000,
+        throwOnRequestTimeout: true,
+      },
+    });
+  }
 
   private static toR2Config(storage: RegionStorageConfig): R2Config {
     return {
@@ -76,15 +93,6 @@ export class StorageService {
     };
   }
 
-  /**
-   * The primary region's bucket.
-   *
-   * Reads through the region topology rather than the environment, so bucket
-   * configuration has one source and a second region is a matter of adding a
-   * definition. Callers that know whose data they are touching should prefer
-   * `configForOrg`; this remains correct while there is one region, and is the
-   * path the module migrations will replace.
-   */
   private getConfig(): R2Config {
     if (hasRegionRegistry()) {
       const registry = getRegionRegistry();
@@ -93,8 +101,6 @@ export class StorageService {
       );
     }
 
-    // No topology configured: the flat single-region variables, read through the
-    // validated config rather than process.env so a missing one fails at boot.
     return {
       region: this.config.R2_REGION ?? "auto",
       bucketName: this.config.R2_BUCKET_NAME,
@@ -104,10 +110,6 @@ export class StorageService {
     };
   }
 
-  /**
-   * The bucket holding this organisation's files, resolved through the same
-   * placement as its database. Fails closed for an unplaced organisation.
-   */
   async configForOrg(orgId: string): Promise<R2Config> {
     return StorageService.toR2Config(await getRegionRegistry().storageForOrg(orgId));
   }
@@ -117,18 +119,6 @@ export class StorageService {
     return Boolean(
       config.bucketName && config.accessKeyId && config.secretAccessKey && config.endpoint,
     );
-  }
-
-  private getClient(): S3Client {
-    const config = this.getConfig();
-    return new S3Client({
-      region: config.region,
-      endpoint: config.endpoint,
-      credentials:
-        config.accessKeyId && config.secretAccessKey
-          ? { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }
-          : undefined,
-    });
   }
 
   private requireBucket(): string {
@@ -163,7 +153,7 @@ export class StorageService {
     const sanitizedName = fileName.replace(/[^a-zA-Z0-9.-]/g, "-");
     const key = `${folder}/${randomUUID()}-${sanitizedName}`;
 
-    await this.getClient().send(
+    await this.client.send(
       new PutObjectCommand({
         Bucket: bucketName,
         Key: key,
@@ -193,7 +183,7 @@ export class StorageService {
     const sanitizedName = fileName.replace(/[^a-zA-Z0-9.-]/g, "-");
     const key = `${folder}/${randomUUID()}-${sanitizedName}`;
 
-    await this.getClient().send(
+    await this.client.send(
       new PutObjectCommand({
         Bucket: bucketName,
         Key: key,
@@ -233,19 +223,19 @@ export class StorageService {
   async getFileUrl(key: string, expiresIn = 3600): Promise<string> {
     const bucketName = this.requireBucket();
     const command = new GetObjectCommand({ Bucket: bucketName, Key: key });
-    return getSignedUrl(this.getClient(), command, { expiresIn });
+    return getSignedUrl(this.client, command, { expiresIn });
   }
 
   async deleteFile(key: string): Promise<void> {
     const bucketName = this.requireBucket();
-    await this.getClient().send(new DeleteObjectCommand({ Bucket: bucketName, Key: key }));
+    await this.client.send(new DeleteObjectCommand({ Bucket: bucketName, Key: key }));
   }
 
   async fileExists(key: string): Promise<boolean> {
     const { bucketName } = this.getConfig();
     if (!bucketName) return false;
     try {
-      await this.getClient().send(new HeadObjectCommand({ Bucket: bucketName, Key: key }));
+      await this.client.send(new HeadObjectCommand({ Bucket: bucketName, Key: key }));
       return true;
     } catch {
       return false;
@@ -254,7 +244,7 @@ export class StorageService {
 
   async getFileStream(key: string): Promise<FileStreamResult> {
     const bucketName = this.requireBucket();
-    const response = await this.getClient().send(
+    const response = await this.client.send(
       new GetObjectCommand({ Bucket: bucketName, Key: key }),
     );
     const body = response.Body;

@@ -24,9 +24,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { logger } from "../../../common/logger/logger.service";
 import { AiCreditsService } from "./ai-credits.service";
 import { PlanLimitsService } from "./plan-limits.service";
-import { PaymentProviderAdapterRegistry } from "../payments/payment-provider-adapter.interface";
-import { APP_CONFIG } from "../../../config/config.module";
-import type { AppConfig } from "../../../config/env.validation";
+import { PaymentProviderResolver, type OrganizationPaymentProvider } from "../payments/payment-provider-resolver.service";
 import {
   webhookEventSchema,
   type BillingCycle,
@@ -59,8 +57,7 @@ export class BillingService {
     private readonly audit: AuditService,
     private readonly aiCredits: AiCreditsService,
     private readonly planLimits: PlanLimitsService,
-    private readonly registry: PaymentProviderAdapterRegistry,
-    @Inject(APP_CONFIG) private readonly config: AppConfig,
+    private readonly providers: PaymentProviderResolver,
   ) {}
 
   async getSubscription(orgId: string) {
@@ -74,7 +71,7 @@ export class BillingService {
       },
     });
 
-    const adapter = this.registry.get("razorpay");
+    const adapter = await this.providers.resolve(orgId, "razorpay");
     return {
       subscription: subscription ?? null,
       razorpayKeyId: adapter?.publicKeyId() ?? null,
@@ -83,7 +80,7 @@ export class BillingService {
   }
 
   async createOrder(orgId: string, userId: string, plan: Plan, billingCycle: BillingCycle = "monthly", couponId?: number) {
-    const adapter = this.registry.get("razorpay");
+    const adapter = await this.providers.resolve(orgId, "razorpay");
     if (adapter === undefined || !adapter.isReady()) {
       throw new ServiceUnavailableException("Payment gateway not configured. Contact support.");
     }
@@ -110,8 +107,6 @@ export class BillingService {
     }
 
     const { providerOrderId } = await adapter.createOrder({
-      keyId: this.config.RAZORPAY_KEY_ID ?? "",
-      keySecret: this.config.RAZORPAY_KEY_SECRET ?? "",
       amount: String(amount),
       currency: "INR",
       receipt: `sub_${orgId.slice(-8)}_${Date.now().toString().slice(-8)}`,
@@ -130,7 +125,7 @@ export class BillingService {
   }
 
   async verifyAndActivate(orgId: string, userId: string, input: VerifyPaymentInput) {
-    const adapter = this.registry.get("razorpay");
+    const adapter = await this.providers.resolve(orgId, "razorpay");
     if (adapter === undefined || !adapter.isReady()) {
       throw new ServiceUnavailableException("Payment gateway not configured. Contact support.");
     }
@@ -139,7 +134,6 @@ export class BillingService {
       orderId: input.razorpay_order_id,
       paymentId: input.razorpay_payment_id,
       signature: input.razorpay_signature,
-      keySecret: this.config.RAZORPAY_KEY_SECRET ?? "",
     });
     if (!valid) {
       throw new BadRequestException("Payment verification failed: invalid signature");
@@ -193,9 +187,43 @@ export class BillingService {
           status: "captured",
           paidAt: now,
         });
+
+        if (input.couponId !== undefined) {
+          const [lockedCoupon] = await tx
+            .select({
+              id: coupons.id,
+              maxUses: coupons.maxUses,
+              usedCount: coupons.usedCount,
+            })
+            .from(coupons)
+            .where(and(eq(coupons.id, input.couponId), eq(coupons.isActive, true)))
+            .for("update")
+            .limit(1);
+
+          if (lockedCoupon) {
+            if (lockedCoupon.maxUses !== null && lockedCoupon.usedCount >= lockedCoupon.maxUses) {
+              throw new BadRequestException("This coupon has reached its usage limit");
+            }
+
+            await tx
+              .update(coupons)
+              .set({ usedCount: sql`${coupons.usedCount} + 1` })
+              .where(eq(coupons.id, input.couponId));
+
+            await tx.insert(couponRedemptions).values({
+              couponId: input.couponId,
+              orgId,
+              userId,
+            });
+          }
+        }
       });
     } catch (err: unknown) {
-      if ((err as { code?: string }).code === "23505") {
+      const pgErr = err as { code?: string; constraint?: string };
+      if (pgErr.code === "23505") {
+        if (pgErr.constraint === "uq_coupon_redemptions_coupon_org") {
+          throw new ConflictException("This coupon has already been used by your organization");
+        }
         return { success: true, plan: input.plan, status: "ACTIVE" };
       }
       throw err;
@@ -278,14 +306,13 @@ export class BillingService {
     };
   }
 
-  async handleRazorpayWebhook(rawBody: string, signature: string): Promise<WebhookResult> {
-    const adapter = this.registry.get("razorpay");
+  async handleRazorpayWebhook(orgId: string, rawBody: string, signature: string): Promise<WebhookResult> {
+    const adapter = await this.providers.resolve(orgId, "razorpay");
     if (!adapter) {
       logger.warn("[billing] no payment provider registered for webhook verification");
       return { status: 503, body: { ok: false } };
     }
-    const webhookSecret = this.config.RAZORPAY_WEBHOOK_SECRET ?? "";
-    if (!adapter.verifyWebhookSignature({ rawBody, signature, webhookSecret })) {
+    if (!adapter.verifyWebhookSignature({ rawBody, signature })) {
       logger.warn("[razorpay] invalid webhook signature");
       return { status: 401, body: { ok: false } };
     }
@@ -309,9 +336,14 @@ export class BillingService {
     }
 
     const org = await this.findOrgFromNotes(payment.notes);
+    if (org && org.id !== orgId) {
+      logger.warn("[razorpay] webhook organization does not match endpoint organization");
+      return { status: 400, body: { ok: false, error: "organization mismatch" } };
+    }
+    const resolvedOrg = org ?? { id: orgId };
 
     try {
-      await this.persistPayment(payment, org?.id ?? null);
+      await this.persistPayment(payment, resolvedOrg.id);
     } catch (error) {
       logger.error("[razorpay] failed to persist payment", { error });
       return { status: 500, body: { ok: false } };
@@ -321,15 +353,15 @@ export class BillingService {
       event.event === "payment.captured" &&
       payment.status === "captured" &&
       payment.notes?.packId &&
-      org
+      resolvedOrg
     ) {
       const packId = parseInt(String(payment.notes.packId), 10);
       if (!isNaN(packId)) {
         this.aiCredits
-          .grantAiPackCreditsFromWebhook(org.id, packId, payment.id)
+          .grantAiPackCreditsFromWebhook(resolvedOrg.id, packId, payment.id)
           .catch((err: unknown) =>
             logger.warn("[razorpay] ai pack credit grant failed (non-fatal)", {
-              orgId: org.id,
+              orgId: resolvedOrg.id,
               packId,
               paymentId: payment.id,
               err,
@@ -338,10 +370,10 @@ export class BillingService {
       }
     }
 
-    if (event.event === "payment.failed" && payment.status === "failed" && org) {
-      this.transitionToPastDue(org.id, payment.id).catch((err: unknown) =>
+    if (event.event === "payment.failed" && payment.status === "failed" && resolvedOrg) {
+      this.transitionToPastDue(resolvedOrg.id, payment.id).catch((err: unknown) =>
         logger.warn("[razorpay] PAST_DUE transition failed (non-fatal)", {
-          orgId: org.id,
+          orgId: resolvedOrg.id,
           paymentId: payment.id,
           err,
         }),
@@ -447,13 +479,11 @@ export class BillingService {
       const packs = await this.aiCredits.listPacks();
       const pack = packs.find((p) => p.id === packId);
       if (!pack) throw new BadRequestException("AI credit pack not found");
-      const addonAdapter = this.registry.get("razorpay");
+      const addonAdapter = await this.providers.resolve(orgId, "razorpay");
       if (addonAdapter === undefined || !addonAdapter.isReady()) {
         throw new ServiceUnavailableException("Payment gateway not configured. Contact support.");
       }
       const { providerOrderId: addonOrderId } = await addonAdapter.createOrder({
-        keyId: this.config.RAZORPAY_KEY_ID ?? "",
-        keySecret: this.config.RAZORPAY_KEY_SECRET ?? "",
         amount: String(pack.priceInPaise * quantity),
         currency: "INR",
         receipt: `aip_${packId}_${orgId.slice(-8)}_${Date.now().toString().slice(-8)}`,
@@ -664,7 +694,7 @@ export class BillingService {
         failed: 0,
         voided: 0,
       },
-      isConfigured: this.registry.get("razorpay")?.isReady() ?? false,
+      isConfigured: (await this.providers.resolve(orgId, "razorpay"))?.isReady() ?? false,
     };
   }
 }

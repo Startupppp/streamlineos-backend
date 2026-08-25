@@ -12,6 +12,7 @@ import { assertCronSecret } from "./cron-secret";
 import { CronKbService } from "./cron-kb.service";
 import { CronSupportService } from "./cron-support.service";
 import { SupportKbGapService } from "../support/kb-gap/support-kb-gap.service";
+import { CronLeaseService } from "./cron-lease.service";
 
 @Public()
 @Controller("cron")
@@ -20,6 +21,7 @@ export class CronSupportController {
     private readonly kb: CronKbService,
     private readonly support: CronSupportService,
     private readonly supportKbGap: SupportKbGapService,
+    private readonly cronLease: CronLeaseService,
   ) {}
 
   @Get("support-sla-escalations")
@@ -69,7 +71,11 @@ export class CronSupportController {
   private async runSupportSlaEscalations(authorization?: string) {
     assertCronSecret(authorization);
     try {
-      const result = await this.support.runSlaEscalations();
+      const outcome = await this.cronLease.withLease("support-sla-escalations", 300, () =>
+        this.support.runSlaEscalations(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "support-sla-escalations already running" };
+      const result = outcome.result;
       return {
         success: true,
         message: `Checked ${result.checked} tickets across ${result.orgsProcessed} orgs, escalated ${result.escalated}`,
@@ -84,7 +90,11 @@ export class CronSupportController {
   private async runSupportUnsnooze(authorization?: string) {
     assertCronSecret(authorization);
     try {
-      const result = await this.support.runUnsnooze();
+      const outcome = await this.cronLease.withLease("support-unsnooze", 120, () =>
+        this.support.runUnsnooze(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "support-unsnooze already running" };
+      const result = outcome.result;
       return {
         success: true,
         message: `Unsnoozed ${result.unsnoozed} tickets`,
@@ -99,7 +109,11 @@ export class CronSupportController {
   private async runKbTrashPurge(authorization?: string) {
     assertCronSecret(authorization);
     try {
-      const result = await this.kb.purgeExpiredTrash();
+      const outcome = await this.cronLease.withLease("kb-trash-purge", 300, () =>
+        this.kb.purgeExpiredTrash(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "kb-trash-purge already running" };
+      const result = outcome.result;
       return {
         success: true,
         message: `Purged ${result.purgedCount} KB pages across ${result.orgsProcessed} orgs`,
@@ -114,7 +128,11 @@ export class CronSupportController {
   private async runSupportKbGapDetect(authorization?: string) {
     assertCronSecret(authorization);
     try {
-      const result = await this.supportKbGap.runDetectAllOrgs();
+      const outcome = await this.cronLease.withLease("support-kb-gap-detect", 600, () =>
+        this.supportKbGap.runDetectAllOrgs(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "support-kb-gap-detect already running" };
+      const result = outcome.result;
       return {
         success: true,
         message: `Support KB gap detect: processed ${result.processed} orgs, ${result.errors} errors`,
