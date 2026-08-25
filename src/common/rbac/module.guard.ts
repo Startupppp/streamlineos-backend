@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, Injectable, Optional } from "@nestjs/common";
+import { CanActivate, ExecutionContext, Injectable } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
 import { REQUIRE_MODULE } from "./require-module.decorator";
@@ -8,23 +8,15 @@ import type { CurrentUserContext } from "../auth/backend-claims";
 import { EntitlementsService } from "../../modules/access/entitlements.service";
 import { AccessService } from "../../modules/access/access.service";
 import { moduleIdFromStored } from "./module-registry";
-import {
-  moduleAvailability,
-  moduleAvailabilityResolver,
-  type ModuleAvailabilityResolver,
-} from "./module-availability";
+import { moduleAvailability } from "./module-availability";
 
 @Injectable()
 export class ModuleGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly entitlements: EntitlementsService,
-    @Optional() private readonly accessSvc?: AccessService,
+    private readonly accessSvc: AccessService,
   ) {}
-
-  private buildResolver(): ModuleAvailabilityResolver {
-    return moduleAvailabilityResolver(this.entitlements, this.accessSvc);
-  }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const required = this.reflector.getAllAndOverride<
@@ -55,7 +47,9 @@ export class ModuleGuard implements CanActivate {
     );
     for (const moduleKey of moduleKeys) {
       const avail = await moduleAvailability(
-        this.buildResolver(),
+        this.accessSvc.buildModuleAvailabilityResolver(
+          (orgId) => this.entitlements.getModuleMap(orgId),
+        ),
         user.orgId,
         user.userId,
         moduleKey,

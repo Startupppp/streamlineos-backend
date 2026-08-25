@@ -149,6 +149,8 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
         this.getUserDeniedModules(organizationId, memberUserId),
       (organizationId, memberUserId) =>
         this.canManageOrganizationMembership(organizationId, memberUserId),
+      (getModuleMap, getDeniedModules) =>
+        this.buildModuleAvailabilityResolver(getModuleMap, getDeniedModules),
     );
   }
   onModuleInit(): void {
@@ -549,10 +551,14 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
   /** Build availability from the canonical entitlement facts plus user denies. */
   buildModuleAvailabilityResolver(
     getModuleMap: (orgId: string) => Promise<Record<string, boolean>>,
+    getDeniedModules?: (
+      orgId: string,
+      userId: string,
+    ) => Promise<Set<string>>,
   ): ModuleAvailabilityResolver {
     return this.entitlements.buildModuleAvailabilityResolver(
       getModuleMap,
-      (orgId, userId) => this.getUserDeniedModules(orgId, userId),
+      getDeniedModules ?? ((orgId, userId) => this.getUserDeniedModules(orgId, userId)),
     );
   }
 

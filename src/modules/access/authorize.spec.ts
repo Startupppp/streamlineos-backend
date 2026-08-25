@@ -48,12 +48,21 @@ function makeResolver(
     );
 
   return {
-    resolveUserPermissions: () => Promise.resolve(map),
-    isModuleEnabled: (_orgId, moduleKey) => Promise.resolve(enabledModules.includes(moduleKey)),
+    scopeFor: async (ctx, key) => {
+      if (
+        ctx.tokenScopes &&
+        !ctx.tokenScopes.includes(key)
+      ) return "none";
+      if (ctx.isOrgOwner) return "all";
+      return map.get(key) ?? "none";
+    },
+    getModuleState: async (_orgId, moduleKey) =>
+      enabledModules.includes(moduleKey)
+        ? true
+        : options.useModuleState
+          ? options.moduleState
+          : false,
     buildModuleAvailabilityResolver: availabilityResolver,
-    ...(options.useModuleState
-      ? { getModuleState: async () => options.moduleState }
-      : {}),
   };
 }
 
@@ -137,14 +146,20 @@ describe("authorize", () => {
     expect(result).toEqual({ allow: true, scope: "own" });
   });
 
-  it("BOLA: passes ctx.orgId to resolveUserPermissions (not from request params)", async () => {
+  it("BOLA: passes ctx.orgId to the capability seam (not from request params)", async () => {
     const capturedOrgIds: string[] = [];
     const resolver: AccessResolver = {
-      resolveUserPermissions: async (orgId) => {
-        capturedOrgIds.push(orgId);
-        return new Map([["hr:employees:view", "all" as DataScope]]);
+      scopeFor: async (ctx) => {
+        capturedOrgIds.push(ctx.orgId);
+        return "all";
       },
-      isModuleEnabled: async () => true,
+      getModuleState: async () => true,
+      buildModuleAvailabilityResolver: (getModuleMap) =>
+        moduleAvailabilityResolver({
+          isCoreModule: isCoreModuleKey,
+          getModuleMap,
+          getPlanLockedModules: async () => [],
+        }),
     };
     await authorize(resolver, makeCtx({ orgId: "org-legitimate" }), "hr:employees:view");
     expect(capturedOrgIds).toEqual(["org-legitimate"]);
@@ -212,7 +227,7 @@ describe("authorize", () => {
   });
 
   it("denies with FORBIDDEN when tokenScopes does not include the permission key, even for an org owner", async () => {
-    const resolver = makeResolver(new Map(), []);
+    const resolver = makeResolver(new Map(), ["hr"]);
     const result = await authorize(
       resolver,
       makeCtx({ isOrgOwner: true, tokenScopes: ["crm:leads:view"] }),

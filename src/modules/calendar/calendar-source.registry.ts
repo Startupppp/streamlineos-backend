@@ -4,7 +4,6 @@ import { EntitlementsService } from "../access/entitlements.service";
 import { AccessService } from "../access/access.service";
 import {
   moduleAvailability,
-  moduleAvailabilityResolver,
 } from "../../common/rbac/module-availability";
 import { CalendarSourcePreferencesService } from "./calendar-source-preferences.service";
 
@@ -43,7 +42,9 @@ export class CalendarSourceRegistry {
           // moduleAvailability, not isModuleEnabled: the latter takes no userId, so a
           // person denied a module still received its events.
           const availability = await moduleAvailability(
-            moduleAvailabilityResolver(this.entitlements, this.access),
+            this.access.buildModuleAvailabilityResolver(
+              (orgId) => this.entitlements.getModuleMap(orgId),
+            ),
             ctx.orgId,
             ctx.userId,
             s.module,

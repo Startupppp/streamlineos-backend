@@ -29,6 +29,12 @@ const makeResolver = (resolved: Map<string, DataScope>) =>
     async () => resolved,
     async () => new Set<string>(),
     async () => false,
+    () => ({
+      isCoreModule: () => false,
+      getModuleMap: async (): Promise<Record<string, boolean>> => ({}),
+      getUserDeniedModules: async (): Promise<Set<string>> => new Set<string>(),
+      getPlanLockedModules: async (): Promise<readonly string[]> => [],
+    }),
   );
 
 describe("the access snapshot", () => {

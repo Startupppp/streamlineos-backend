@@ -16,7 +16,11 @@ import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
 import { ADMINISTRABLE_MODULES, MODULE_CATALOG } from "../../common/rbac/module-vocabulary";
-import { coreModuleIds, moduleDefinition, moduleIdFromStored, MODULE_REGISTRY } from "../../common/rbac/module-registry";
+import {
+  coreModuleIds,
+  isCoreModuleKey,
+  moduleIdFromStored,
+} from "../../common/rbac/module-registry";
 import { moduleAvailabilityResolver, type ModuleAvailabilityResolver } from "../../common/rbac/module-availability";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { ACCESS_MANAGED_MODULES } from "../rbac/permissions";
@@ -26,35 +30,9 @@ import type { AppConfig } from "../../config/env.validation";
 
 export { MODULE_CATALOG };
 
-// AVAILABILITY, not delegability. `coreModuleIds()` answers "is this a free SURFACE" and
-// deliberately excludes billing — money and surface are two facts. Availability turns on
-// plan gating alone, so billing belongs here: no org carries an org_modules row for it and
-// its routes have no @RequireModule, so excluding it made billing unreachable for everyone.
-const CORE_KEYS: ReadonlySet<string> = new Set([
-  ...coreModuleIds(),
-  ...MODULE_REGISTRY.filter((definition) => !definition.planGated).map(
-    (definition) => definition.id,
-  ),
-]);
-
-/**
- * Single canonical definition of "is this module core".
- *
- * A module is core (always available, bypasses org rows and per-person denies) if:
- *   - it is not registered in MODULE_REGISTRY — unregistered namespaces like
- *     `settings` and `ownership` have no toggle path and are always reachable, OR
- *   - it is registered and is not plan-gated.
- *
- * `billing` IS core here. Its ladder is platform-admin, which governs delegability, not
- * availability — `assertPermissionsGrantable` is what keeps the billing namespace
- * undelegatable. Treating the ladder as an availability signal made billing unreachable
- * for every org, because none carries an org_modules row for it.
- */
-export function isCoreModuleKey(rawKey: string): boolean {
-  const key = moduleIdFromStored(rawKey);
-  const def = moduleDefinition(key);
-  return def === undefined || CORE_KEYS.has(key);
-}
+// Keep this export stable for existing callers while the registry owns the
+// implementation. Availability and delegation are deliberately separate facts.
+export { isCoreModuleKey } from "../../common/rbac/module-registry";
 
 const OWNERSHIP_MANAGED_MODULES = new Set<string>(ACCESS_MANAGED_MODULES);
 
@@ -90,8 +68,6 @@ export class EntitlementsService implements OnModuleInit {
   private missingTableLogged = false;
   private moduleTableUnavailable = false;
   private readonly moduleMapCache = new Map<string, ModuleMapEntry>();
-  private coreModuleKeys: ReadonlySet<string> = new Set(coreModuleIds());
-
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
@@ -115,7 +91,6 @@ export class EntitlementsService implements OnModuleInit {
           "entitlements: modules_catalog disagrees with the module registry about which modules are core",
           { missingFromCatalog, extraInCatalog },
         );
-      this.coreModuleKeys = declared;
     } catch {
       logger.warn("entitlements: modules_catalog unavailable at init, using compile-time core fallback");
     }
@@ -238,7 +213,7 @@ export class EntitlementsService implements OnModuleInit {
     enabled: boolean,
     enabledBy: string,
   ): Promise<void> {
-    if (this.coreModuleKeys.has(moduleKey)) {
+    if (this.isCoreModule(moduleKey)) {
       throw new BadRequestException(
         `Module "${moduleKey}" is always-on and cannot be toggled`,
       );
@@ -326,7 +301,7 @@ export class EntitlementsService implements OnModuleInit {
     const map = await this.getModuleMap(orgId);
     const effective: Record<string, boolean> = {};
     for (const moduleKey of ADMINISTRABLE_MODULES) {
-      effective[moduleKey] = this.coreModuleKeys.has(moduleKey)
+      effective[moduleKey] = this.isCoreModule(moduleKey)
         ? true
         : (map[moduleKey] ??
           (this.moduleTableUnavailable &&
@@ -338,7 +313,7 @@ export class EntitlementsService implements OnModuleInit {
   async listModules(orgId: string): Promise<ModuleStatus[]> {
     const effective = await this.getEffectiveModuleMap(orgId);
     return ADMINISTRABLE_MODULES.map((moduleKey): ModuleStatus =>
-      this.coreModuleKeys.has(moduleKey)
+      this.isCoreModule(moduleKey)
         ? { moduleKey, enabled: true, core: true }
         : { moduleKey, enabled: effective[moduleKey] ?? false },
     );

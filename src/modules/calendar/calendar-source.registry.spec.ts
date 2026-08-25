@@ -4,6 +4,7 @@ import type { CalendarEventProjection, CalendarEventSource, CalendarSourceContex
 import { EntitlementsService } from "../access/entitlements.service";
 import { AccessService } from "../access/access.service";
 import { CalendarSourcePreferencesService } from "./calendar-source-preferences.service";
+import { moduleAvailabilityResolver } from "../../common/rbac/module-availability";
 
 const ALL_SOURCE_MODULES: string[] = ["hr", "build", "tasks", "alpha", "beta"];
 
@@ -47,7 +48,17 @@ async function buildRegistry(
       },
       {
         provide: AccessService,
-        useValue: { getUserDeniedModules: jest.fn().mockResolvedValue(new Set<string>()) },
+        useValue: {
+          buildModuleAvailabilityResolver: (getModuleMap: (orgId: string) => Promise<Record<string, boolean>>) =>
+            moduleAvailabilityResolver(
+              {
+                isCoreModule: () => false,
+                getModuleMap,
+                getPlanLockedModules: jest.fn().mockResolvedValue([]),
+              },
+              { getUserDeniedModules: jest.fn().mockResolvedValue(new Set<string>()) },
+            ),
+        },
       },
       {
         provide: CalendarSourcePreferencesService,

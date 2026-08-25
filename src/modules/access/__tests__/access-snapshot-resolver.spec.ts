@@ -49,6 +49,17 @@ function makeResolver(
     resolveUserPermissions,
     jest.fn().mockResolvedValue(new Set<string>()),
     jest.fn().mockResolvedValue(false),
+    (getModuleMap, getDeniedModules) =>
+      moduleAvailabilityResolver(
+        {
+          isCoreModule: isCoreModuleKey,
+          getModuleMap,
+          getPlanLockedModules: async (): Promise<readonly string[]> => [],
+        },
+        getDeniedModules
+          ? { getUserDeniedModules: getDeniedModules }
+          : undefined,
+      ),
   );
 }
 
@@ -123,6 +134,17 @@ describe("AccessSnapshotResolver — module flags", () => {
       jest.fn().mockResolvedValue(new Map<string, DataScope>()),
       jest.fn().mockResolvedValue(denied),
       jest.fn().mockResolvedValue(false),
+      (getModuleMap, getDeniedModules) =>
+        moduleAvailabilityResolver(
+          {
+            isCoreModule: isCoreModuleKey,
+            getModuleMap,
+            getPlanLockedModules: async (): Promise<readonly string[]> => [],
+          },
+          getDeniedModules
+            ? { getUserDeniedModules: getDeniedModules }
+            : undefined,
+        ),
     );
 
   it("leaves every core namespace available whatever the module map says", async () => {
@@ -183,6 +205,17 @@ describe("AccessSnapshotResolver — module flags", () => {
       jest.fn().mockResolvedValue(new Map<string, DataScope>()),
       jest.fn().mockResolvedValue(new Set<string>()),
       jest.fn().mockResolvedValue(false),
+      (getModuleMap, getDeniedModules) =>
+        moduleAvailabilityResolver(
+          {
+            isCoreModule: isCoreModuleKey,
+            getModuleMap,
+            getPlanLockedModules,
+          },
+          getDeniedModules
+            ? { getUserDeniedModules: getDeniedModules }
+            : undefined,
+        ),
     );
 
     const snap = await resolver.computeAccessSnapshot(ORG, USER, NON_OWNER_CTX);

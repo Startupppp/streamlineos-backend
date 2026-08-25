@@ -1,6 +1,7 @@
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { isPersonalTokenPermissionDelegable } from "../../common/rbac/personal-token-policy";
 import { moduleAvailability } from "../../common/rbac/module-availability";
+import type { ModuleAvailabilityResolver } from "../../common/rbac/module-availability";
 import type { AccessSnapshot, DataScope } from "./access.types";
 import {
   allCatalogScopes,
@@ -27,6 +28,13 @@ export class AccessSnapshotResolver {
       orgId: string,
       userId: string,
     ) => Promise<boolean>,
+    private readonly buildModuleAvailabilityResolver: (
+      getModuleMap: (orgId: string) => Promise<Record<string, boolean>>,
+      getDeniedModules?: (
+        orgId: string,
+        userId: string,
+      ) => Promise<Set<string>>,
+    ) => ModuleAvailabilityResolver,
   ) {}
 
   async computeAccessSnapshot(
@@ -102,7 +110,7 @@ export class AccessSnapshotResolver {
   ): Promise<Record<string, boolean>> {
     const deniedModules = new Set(denied);
     const rawMap = await this.entitlements.getModuleMap(orgId);
-    const resolver = this.entitlements.buildModuleAvailabilityResolver(
+    const resolver = this.buildModuleAvailabilityResolver(
       async () => rawMap,
       async () => deniedModules,
     );

@@ -6,6 +6,8 @@ import { IS_PUBLIC } from "../auth/public.decorator";
 import { ModuleDisabledException } from "../http/api-exceptions";
 import type { CurrentUserContext } from "../auth/backend-claims";
 import type { EntitlementsService } from "../../modules/access/entitlements.service";
+import type { AccessService } from "../../modules/access/access.service";
+import { moduleAvailabilityResolver } from "./module-availability";
 
 function ctx(user: Partial<CurrentUserContext>): ExecutionContext {
   const req = {
@@ -56,6 +58,16 @@ describe("ModuleGuard", () => {
   const guard = new ModuleGuard(
     reflector,
     entitlements as unknown as EntitlementsService,
+    {
+      buildModuleAvailabilityResolver: (getModuleMap: (orgId: string) => Promise<Record<string, boolean>>) =>
+        moduleAvailabilityResolver(
+          {
+            isCoreModule: entitlements.isCoreModule,
+            getModuleMap,
+            getPlanLockedModules: entitlements.getPlanLockedModules,
+          },
+        ),
+    } as unknown as AccessService,
   );
 
   /**

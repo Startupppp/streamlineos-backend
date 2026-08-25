@@ -1,5 +1,6 @@
 import { CalendarSourceRegistry } from "./calendar-source.registry";
 import type { CalendarEventSource } from "./calendar-event-source";
+import { moduleAvailabilityResolver } from "../../common/rbac/module-availability";
 
 function makeSource(key: string, module: string): CalendarEventSource {
   return {
@@ -13,14 +14,26 @@ function makeSource(key: string, module: string): CalendarEventSource {
 }
 
 function makeRegistry(enabledModules: string[]) {
+  const entitlements = {
+    isCoreModule: () => false,
+    getModuleMap: async () =>
+      Object.fromEntries(enabledModules.map((key) => [key, true])),
+    getPlanLockedModules: async () => [],
+  };
+  const access = {
+    buildModuleAvailabilityResolver: (getModuleMap: (orgId: string) => Promise<Record<string, boolean>>) =>
+      moduleAvailabilityResolver(
+        {
+          isCoreModule: entitlements.isCoreModule,
+          getModuleMap,
+          getPlanLockedModules: entitlements.getPlanLockedModules,
+        },
+        { getUserDeniedModules: async () => new Set<string>() },
+      ),
+  };
   return new CalendarSourceRegistry(
-    {
-      isCoreModule: () => false,
-      getModuleMap: async () =>
-        Object.fromEntries(enabledModules.map((key) => [key, true])),
-      getPlanLockedModules: async () => [],
-    } as never,
-    { getUserDeniedModules: async () => new Set<string>() } as never,
+    entitlements as never,
+    access as never,
     { getDisabledKeys: async () => new Set<string>() } as never,
   );
 }
