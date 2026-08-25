@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, or, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
 import {
@@ -17,12 +17,21 @@ import { classifyDelivery } from "./deterministic";
 import {
   buildDecision,
   capText,
-  hasEligibleContext,
   RECORDED_CONVERSATION_CHARS,
   redactForModel,
   shouldAct,
 } from "./decision-record";
+import { judgeEligibility, refusalSummary } from "./eligibility";
 import { resolveSwitch, switchesFor, type SwitchRow } from "./kill-switch";
+import {
+  alreadyHandled,
+  buildThreadWindow,
+  windowMessages,
+  windowStart,
+  THREAD_WINDOW_MAX_MESSAGES,
+  type ThreadActivity,
+  type ThreadWindow,
+} from "./thread-window";
 import {
   buildExtractionPrompt,
   extractionSchema,
@@ -36,8 +45,13 @@ import {
 /** The label a decision wears when the system, not a person, made it. */
 const SYSTEM_ACTOR_LABEL = `extraction@${EXTRACTION_PROMPT_VERSION}`;
 
-/** Hard caps, so a long thread cannot become an unbounded context window. */
-const MAX_BODY_CHARS = 4_000;
+/**
+ * Hard caps, so a long thread cannot become an unbounded context window.
+ *
+ * The conversation's cap lives in `thread-window.ts` now, with the two bounds it
+ * has to be read alongside — a character budget stated apart from the count and
+ * time bounds it shares a window with is a number nobody can check.
+ */
 const MAX_STAGES = 40;
 
 @Injectable()
@@ -106,16 +120,32 @@ export class AutonomyService {
       return;
     }
 
-    const conversation = capText(
-      [activity.subject, activity.body].filter(Boolean).join("\n\n"),
-      MAX_BODY_CHARS,
-    );
+    /**
+     * The message, read with the messages around it.
+     *
+     * A burst of fragments is one decision and no single fragment carries it, so
+     * reading one activity at a time could not recover it however good the
+     * prompt was. `thread-window.ts` holds the three bounds and the reason for
+     * each; the one that matters to a bill is that the character bound is the
+     * cap a single message already had, so the ceiling has not moved.
+     */
+    const window = buildThreadWindow(activity, await this.loadThread(organizationId, activity));
+    const conversation = window.conversation;
 
-    // No provider call at all when there is nothing to work with — recorded all
-    // the same, for the reason in this method's docblock: a decision nobody wrote
-    // down is indistinguishable from one that never ran, and the correction rate
-    // needs a denominator that includes the messages there was nothing to do with.
-    if (!hasEligibleContext([conversation])) {
+    /**
+     * No provider call at all when there is nothing to work with — recorded all
+     * the same, for the reason in this method's docblock: a decision nobody wrote
+     * down is indistinguishable from one that never ran, and the correction rate
+     * needs a denominator that includes the messages there was nothing to do with.
+     *
+     * Judged over the window's messages rather than the joined text: "a fragment
+     * with nothing around it" is a fact about how many of them carry content,
+     * and joining them first throws it away. `eligibility.ts` has the argument
+     * for what replaced the twenty-character floor.
+     */
+    const eligibility = judgeEligibility(windowMessages(window));
+
+    if (!eligibility.eligible) {
       await this.record(
         buildDecision({
           organizationId,
@@ -126,7 +156,7 @@ export class AutonomyService {
           partyId: activity.partyId,
           dealId: activity.dealId,
           activityId,
-          summary: "Nothing to work with — the message was too short to extract anything from.",
+          summary: refusalSummary(eligibility.reason),
         }),
       );
       return;
@@ -199,9 +229,23 @@ export class AutonomyService {
     const inputs = {
       conversation: capText(conversation, RECORDED_CONVERSATION_CHARS),
       availableStages,
+      /**
+       * What the window actually cost, per decision.
+       *
+       * Recorded because a thread-shaped prompt is bigger than a message-shaped
+       * one and "bigger" is not a number anybody can act on. With this, the
+       * spend on the busiest channel is a query against the ledger rather than
+       * an argument, and a window that starts growing is visible before the
+       * invoice is.
+       */
+      threadWindow: {
+        messages: window.messages.length,
+        characters: conversation.length,
+        dropped: window.dropped,
+      },
     };
 
-    await this.applyNextStep(organizationId, activityId, activity, extraction, model, inputs);
+    await this.applyNextStep(organizationId, activityId, activity, window, extraction, model, inputs);
     if (deal)
       await this.applyStageAdvance(organizationId, activityId, deal.id, extraction, model, inputs, availableStages);
   }
@@ -211,7 +255,8 @@ export class AutonomyService {
   private async applyNextStep(
     organizationId: string,
     activityId: string,
-    activity: { partyId: string | null; dealId: string | null },
+    activity: { partyId: string | null; dealId: string | null; threadId: string | null },
+    window: ThreadWindow,
     extraction: Extraction,
     model: string,
     inputs: Record<string, unknown>,
@@ -247,7 +292,41 @@ export class AutonomyService {
           decision: { nextStep: step },
           summary: step.description
             ? `Next step found, but it is the customer's to do: ${step.description}`
-            : "No next step in this message.",
+            // "Conversation" rather than "message": what was read may be a
+            // thread, and a summary that says otherwise misreports what was
+            // looked at when somebody comes back to ask why nothing happened.
+            : "No next step in this conversation.",
+        }),
+      );
+      return;
+    }
+
+    /**
+     * The same next step, found twice, is still one next step.
+     *
+     * A window makes a request reachable from every message that follows it, so
+     * without this a burst would put a task on somebody's list per fragment —
+     * a defect introduced by the fix. Refused where the thread is known rather
+     * than left for whoever reads the list to notice, and recorded rather than
+     * dropped: "already done" is a different fact from "nothing ran".
+     */
+    if (alreadyHandled(window, step.description)) {
+      await this.record(
+        buildDecision({
+          organizationId,
+          kind: "task.extracted",
+          outcome: "skipped",
+          triggerType: "activity",
+          triggerId: activityId,
+          partyId: activity.partyId,
+          dealId: activity.dealId,
+          activityId,
+          model,
+          promptVersion: String(EXTRACTION_PROMPT_VERSION),
+          confidence: extraction.confidence,
+          inputs,
+          decision: { nextStep: step },
+          summary: `This thread already produced that next step: ${step.description}`,
         }),
       );
       return;
@@ -266,6 +345,11 @@ export class AutonomyService {
           kind: "task",
           occurredAt: new Date(),
           subject: step.description,
+          // The task belongs to the conversation it came out of: a reader
+          // following a thread finds what it caused, and the duplicate check
+          // above reads this column — a task with no thread is one the next
+          // message on the thread cannot see.
+          threadId: activity.threadId,
           partyId: activity.partyId,
           dealId: activity.dealId,
           actorKind: "system",
@@ -509,6 +593,14 @@ export class AutonomyService {
   private async loadActivity(organizationId: string, activityId: string) {
     const [row] = await this.db
       .select({
+        // The window needs the same shape a neighbour has, so the message being
+        // judged goes through the same rules as everything read beside it.
+        activityId: activities.activityId,
+        kind: activities.kind,
+        occurredAt: activities.occurredAt,
+        threadId: activities.threadId,
+        actorKind: activities.actorKind,
+        source: activities.source,
         subject: activities.subject,
         body: activities.body,
         partyId: activities.partyId,
@@ -534,6 +626,56 @@ export class AutonomyService {
       .limit(1);
 
     return row ?? null;
+  }
+
+  /**
+   * The last few things on this message's thread, and nothing older.
+   *
+   * The bounds are applied twice on purpose. Here, so the read itself is small:
+   * `idx_activities_thread_window` is ordered `(organization_id, thread_id,
+   * occurred_at desc, activity_id desc)`, so this is a range scan that stops
+   * after ten rows instead of fetching a whole thread and sorting it — and on a
+   * channel that threads on a pair of phone numbers forever, a whole thread is
+   * every message ever exchanged with that customer. And again in
+   * `buildThreadWindow`, which is the authority: the bounds are decided by a
+   * pure function that can be argued with, not by a query plan.
+   *
+   * The upper bound is a row comparison rather than a timestamp one because
+   * timestamps collide — an imported mail folder writes hundreds in the same
+   * second — and "before this message" has to mean something then too.
+   */
+  private async loadThread(
+    organizationId: string,
+    trigger: { activityId: string; threadId: string | null; occurredAt: Date },
+  ): Promise<ThreadActivity[]> {
+    // A message the seam could not thread has no neighbours by definition, and
+    // asking for them would scan every unthreaded activity in the organisation.
+    if (!trigger.threadId) return [];
+
+    const rows = await this.db
+      .select({
+        activityId: activities.activityId,
+        kind: activities.kind,
+        subject: activities.subject,
+        body: activities.body,
+        occurredAt: activities.occurredAt,
+        actorKind: activities.actorKind,
+        source: activities.source,
+      })
+      .from(activities)
+      .where(
+        and(
+          eq(activities.organizationId, organizationId),
+          eq(activities.threadId, trigger.threadId),
+          gte(activities.occurredAt, windowStart(trigger.occurredAt)),
+          sql`(${activities.occurredAt}, ${activities.activityId}) <= (${trigger.occurredAt}, ${trigger.activityId})`,
+          isNull(activities.deletedAt),
+        ),
+      )
+      .orderBy(desc(activities.occurredAt), desc(activities.activityId))
+      .limit(THREAD_WINDOW_MAX_MESSAGES);
+
+    return rows;
   }
 
   private async loadDeal(organizationId: string, dealId: string) {

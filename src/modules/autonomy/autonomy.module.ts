@@ -10,6 +10,7 @@ import { AutonomyHoldWorkflow } from "./autonomy-hold.workflow";
 import { QuotesModule } from "../quotes/quotes.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { WorkflowModule } from "../../common/workflow/workflow.module";
+import { DataQualityModule } from "../data-quality/data-quality.module";
 import { AutonomyReviewController } from "./autonomy-review.controller";
 
 /**
@@ -23,9 +24,24 @@ import { AutonomyReviewController } from "./autonomy-review.controller";
  * It also owns the review surface, because the feed is a reading of the same
  * decision ledger this module writes -- putting it elsewhere would mean two
  * modules agreeing on what a decision means.
+ *
+ * `DataQualityModule` is imported for one number. The scoreboard is where a
+ * tenant asks whether any of this is working, and how good the dataset is
+ * belongs in that answer rather than on a second surface nobody would think to
+ * open -- a rising correction rate and a rising dataset-health penalty are
+ * usually the same story. The dependency runs this way round because the queue
+ * knows nothing about autonomy and should not start to.
  */
 @Module({
-  imports: [AiGatewayModule, DealsModule, AccessModule, QuotesModule, NotificationsModule, WorkflowModule],
+  imports: [
+    AiGatewayModule,
+    DealsModule,
+    AccessModule,
+    QuotesModule,
+    NotificationsModule,
+    WorkflowModule,
+    DataQualityModule,
+  ],
   controllers: [AutonomyReviewController],
   providers: [
     AutonomyService,

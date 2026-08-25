@@ -15,6 +15,7 @@ import {
 } from "../../db/schema/crm/autonomy-scoring";
 import { DECISION_KINDS } from "../../db/schema/crm/autonomous-decisions";
 import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
+import { DataQualityHealthService } from "../data-quality/dataset-health.service";
 import { capText, RECORDED_CONVERSATION_CHARS } from "./decision-record";
 import {
   needsHumanReview,
@@ -46,6 +47,7 @@ export class AutonomyScoringService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly gateway: AiGatewayService,
+    private readonly datasetHealth: DataQualityHealthService,
   ) {}
 
   // ── Settings ──────────────────────────────────────────────────────────────
@@ -241,16 +243,25 @@ export class AutonomyScoringService {
   // ── The scoreboard ────────────────────────────────────────────────────────
 
   /**
-   * Real counts per action type, and the trend.
+   * Real counts per action type, the trend, and the state of the data all of it
+   * runs on.
    *
    * Corrections are counted from `autonomy_corrections`, which is attributed to
    * a specific decision — counting edits that merely happened near an action in
    * time gives a rate that looks real and is not.
+   *
+   * Dataset health is here rather than on a data-quality surface of its own, and
+   * that placement is the point. A correction rate and a dataset-health number
+   * are the same question asked twice: an autonomous system reading contradictory
+   * customer records will be corrected more often, and a manager looking at a
+   * rising correction rate needs to see, in the same glance, whether the cause is
+   * the model or the data underneath it. Two scoreboards would put those two
+   * halves in two habits, and nobody would hold them side by side.
    */
   async scoreboard(organizationId: string, days = 30) {
     const since = new Date(Date.now() - days * 86_400_000);
 
-    const [taken, corrected, shadow, spend] = await Promise.all([
+    const [taken, corrected, shadow, spend, dataset] = await Promise.all([
       this.db
         .select({ kind: autonomousDecisions.kind, n: count() })
         .from(autonomousDecisions)
@@ -303,6 +314,13 @@ export class AutonomyScoringService {
             sql`${aiUsageLogs.feature} LIKE 'crm.autonomy%'`,
           ),
         ),
+
+      /**
+       * The same window as everything else on this card, deliberately. A health
+       * trend over thirty days beside a correction rate over seven would invite
+       * a causal reading of two figures that do not cover the same period.
+       */
+      this.datasetHealth.trend(organizationId, days),
     ]);
 
     const takenBy = new Map(taken.map((r) => [r.kind, r.n]));
@@ -337,6 +355,7 @@ export class AutonomyScoringService {
       since: since.toISOString(),
       days,
       perKind,
+      dataset,
       spend: {
         calls: spend[0]?.calls ?? 0,
         totalTokens: spend[0]?.totalTokens ?? 0,

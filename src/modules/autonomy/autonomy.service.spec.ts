@@ -33,6 +33,12 @@ const extraction = (over: Partial<Extraction> = {}): Extraction => ({
 });
 
 interface ActivityFixture {
+  activityId: string;
+  kind: string;
+  occurredAt: Date;
+  threadId: string | null;
+  actorKind: string;
+  source: string;
   subject: string | null;
   body: string | null;
   dealId: string | null;
@@ -53,11 +59,14 @@ interface Recorder {
 }
 
 function query<T>(rows: T[]) {
-  return {
+  const chain = {
     then: (resolve: (value: T[]) => unknown, reject?: (error: unknown) => unknown) =>
       Promise.resolve(rows).then(resolve, reject),
     limit: async () => rows,
+    // The thread read orders before it limits; every other read here does not.
+    orderBy: () => chain,
   };
+  return chain;
 }
 
 function makeDb(
@@ -66,6 +75,8 @@ function makeDb(
   /** One entry per `loadDeal`; the last is reused once exhausted. */
   dealReads: (DealFixture | null)[],
   stages: string[],
+  /** What else is on this message's thread, newest first, as the read returns it. */
+  thread: ActivityFixture[] = [],
 ): Db {
   let dealRead = 0;
 
@@ -74,7 +85,11 @@ function makeDb(
       from: (table: unknown) => {
         if (table === activities)
           return {
+            // `loadActivity` joins the sender; `loadThread` does not. The two
+            // reads are told apart by that rather than by call order, so a
+            // reordering of the service does not silently swap the fixtures.
             leftJoin: () => ({ where: () => query(activity ? [activity] : []) }),
+            where: () => query(thread),
           };
 
         if (table === deals)
@@ -125,12 +140,52 @@ function makeService(
 
 const ok = (data: Extraction) => ({ ok: true, data, aiUsage: { model: "fast-1" } });
 
+/**
+ * The same service, with the provider call kept so a test can read what would
+ * have been sent. The window is only worth anything if it reaches the prompt.
+ */
+function makeServiceCapturingPrompt(db: Db, result: unknown, updateDeal = jest.fn()) {
+  const invoke = jest.fn().mockResolvedValue(result);
+  const gateway = { invokeStructuredWithUsage: invoke } as unknown as AiGatewayService;
+  const service = new AutonomyService(db, gateway, { updateDeal } as unknown as DealsService);
+
+  const conversationSent = (): string => {
+    const call = invoke.mock.calls[0]?.[0] as { prompt: { user: string } } | undefined;
+    return call?.prompt.user ?? "";
+  };
+
+  return { service, invoke, conversationSent };
+}
+
+const OCCURRED = new Date("2026-08-25T09:00:00.000Z");
+
 const REPLY: ActivityFixture = {
+  activityId: ACTIVITY,
+  kind: "email",
+  occurredAt: OCCURRED,
+  threadId: "thread-1",
+  actorKind: "system",
+  source: "gmail",
   subject: "Re: Q3 pricing",
   body: "That looks good, please send the proposal over and we will sign this week.",
   dealId: "7",
   fromAddress: "priya@example.com",
 };
+
+/** A neighbouring message on the same thread, `secondsBefore` the trigger. */
+const neighbour = (
+  activityId: string,
+  body: string,
+  secondsBefore: number,
+): ActivityFixture => ({
+  ...REPLY,
+  activityId,
+  kind: "note",
+  source: "whatsapp",
+  subject: null,
+  occurredAt: new Date(OCCURRED.getTime() - secondsBefore * 1_000),
+  body,
+});
 
 const DEAL: DealFixture = {
   id: 7,
@@ -207,7 +262,9 @@ describe("AutonomyService.processActivity", () => {
 
       expect(rec.decisions).toHaveLength(1);
       expect(rec.decisions[0]).toMatchObject({ kind: "task.extracted", outcome: "skipped" });
-      expect(String(rec.decisions[0]?.summary)).toContain("too short");
+      // The refusal now says which judgement refused it. It used to say "too
+      // short", which was true of the characters and never the reason.
+      expect(String(rec.decisions[0]?.summary)).toContain("acknowledged");
     });
 
     it("records a skip when the next step is the customer's to do", async () => {
@@ -355,5 +412,181 @@ describe("AutonomyService.processActivity", () => {
 
     expect(updateDeal).not.toHaveBeenCalled();
     expect(decisionsOfKind(rec, "stage.advanced")[0]).toMatchObject({ outcome: "skipped" });
+  });
+});
+
+/**
+ * Ticket 23. `processActivity` takes one activity id, and on a messaging channel
+ * a thought is not a message — five fragments in twenty seconds are one decision
+ * and no single one of them carries it. These are the cases that say the
+ * extractor is shown the thread, and the ones that say what the window costs.
+ */
+describe("AutonomyService reads a thread, not only an activity", () => {
+  const FRAGMENT: ActivityFixture = {
+    ...REPLY,
+    kind: "note",
+    source: "whatsapp",
+    subject: null,
+    body: "go ahead",
+    dealId: null,
+  };
+
+  it("puts the neighbouring messages on the same thread into the prompt", async () => {
+    const rec: Recorder = { decisions: [], createdTasks: [] };
+    const trigger: ActivityFixture = {
+      ...FRAGMENT,
+      body: "can you send the contract over today",
+    };
+    const db = makeDb(rec, trigger, [], [], [
+      trigger,
+      neighbour("burst-2", "so we're good to go ahead", 7),
+      neighbour("burst-1", "we got sign off on the budget yesterday", 15),
+    ]);
+    const { service, conversationSent } = makeServiceCapturingPrompt(db, ok(extraction()));
+
+    await service.processActivity(ORG, ACTIVITY);
+
+    const sent = conversationSent();
+    expect(sent).toContain("we got sign off on the budget yesterday");
+    expect(sent).toContain("so we're good to go ahead");
+    expect(sent).toContain("can you send the contract over today");
+    // Oldest first, so a later message reads as answering an earlier one.
+    expect(sent.indexOf("sign off")).toBeLessThan(sent.indexOf("send the contract"));
+  });
+
+  /**
+   * The finding ticket 12 could not gate on: a deadline is not invented, it is
+   * lost, so no gate goes red while the date goes missing. Whether the model
+   * attaches it is the eval's question; this is the half that is this service's
+   * — that both halves reach one prompt at all.
+   */
+  it("shows a request and the deadline stated after it in the same conversation", async () => {
+    const rec: Recorder = { decisions: [], createdTasks: [] };
+    const trigger: ActivityFixture = {
+      ...FRAGMENT,
+      body: "by friday the 4th of september please",
+    };
+    const db = makeDb(rec, trigger, [], [], [
+      trigger,
+      neighbour("split-1", "can you send over the updated quote", 6),
+    ]);
+    const { service, conversationSent } = makeServiceCapturingPrompt(db, ok(extraction()));
+
+    await service.processActivity(ORG, ACTIVITY);
+
+    expect(conversationSent()).toContain(
+      "can you send over the updated quote\n\nby friday the 4th of september please",
+    );
+  });
+
+  it("records what the window cost, so the spend is a query rather than an argument", async () => {
+    const rec: Recorder = { decisions: [], createdTasks: [] };
+    const trigger: ActivityFixture = { ...FRAGMENT, body: "can you send the contract over today" };
+    const db = makeDb(rec, trigger, [], [], [
+      trigger,
+      neighbour("burst-2", "so we're good to go ahead", 7),
+    ]);
+    const service = makeService(db, ok(extraction()), jest.fn());
+
+    await service.processActivity(ORG, ACTIVITY);
+
+    const inputs = decisionsOfKind(rec, "task.extracted")[0]?.inputs as {
+      threadWindow: { messages: number; characters: number; dropped: number };
+    };
+    // Both messages and the separator between them — 25 + 2 + 36. The number is
+    // written out because it is the thing this record exists to make checkable.
+    expect(inputs.threadWindow).toEqual({ messages: 2, characters: 63, dropped: 0 });
+  });
+
+  describe("the fragment that used to be stopped by a character count", () => {
+    it("spends nothing on a fragment with no conversation around it", async () => {
+      const rec: Recorder = { decisions: [], createdTasks: [] };
+      const db = makeDb(rec, FRAGMENT, [], [], [FRAGMENT]);
+      const { service, invoke } = makeServiceCapturingPrompt(db, ok(extraction()));
+
+      await service.processActivity(ORG, ACTIVITY);
+
+      expect(invoke).not.toHaveBeenCalled();
+      expect(String(rec.decisions[0]?.summary)).toContain("fragment");
+    });
+
+    /**
+     * And the same eight characters, read with the four messages that make sense
+     * of them, is a decision worth paying for. That is the whole difference
+     * between a length rule and a judgement.
+     */
+    it("reads the same fragment once the thread gives it a meaning", async () => {
+      const rec: Recorder = { decisions: [], createdTasks: [] };
+      const db = makeDb(rec, FRAGMENT, [], [], [
+        FRAGMENT,
+        neighbour("burst-2", "so we're good to go ahead", 7),
+        neighbour("burst-1", "we got sign off on the budget yesterday", 15),
+      ]);
+      const { service, invoke } = makeServiceCapturingPrompt(db, ok(extraction()));
+
+      await service.processActivity(ORG, ACTIVITY);
+
+      expect(invoke).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("one request is one task, however many messages can see it", () => {
+    const already: ActivityFixture = {
+      ...FRAGMENT,
+      activityId: "task-earlier",
+      kind: "task",
+      source: "extraction",
+      subject: "Send the revised pricing",
+      body: null,
+    };
+
+    it("refuses a next step this thread already produced, and records why", async () => {
+      const rec: Recorder = { decisions: [], createdTasks: [] };
+      const trigger: ActivityFixture = { ...FRAGMENT, body: "any update on that quote" };
+      const db = makeDb(rec, trigger, [], [], [
+        trigger,
+        { ...already, occurredAt: new Date(OCCURRED.getTime() - 60_000) },
+      ]);
+      const service = makeService(db, ok(extraction()), jest.fn());
+
+      await service.processActivity(ORG, ACTIVITY);
+
+      expect(rec.createdTasks).toHaveLength(0);
+      const decision = decisionsOfKind(rec, "task.extracted")[0];
+      expect(decision).toMatchObject({ outcome: "skipped" });
+      expect(String(decision?.summary)).toContain("already produced");
+    });
+
+    it("files the task on the thread it came out of, so the next message can see it", async () => {
+      const rec: Recorder = { decisions: [], createdTasks: [] };
+      const trigger: ActivityFixture = { ...FRAGMENT, body: "can you send the revised pricing" };
+      const db = makeDb(rec, trigger, [], [], [trigger]);
+      const service = makeService(db, ok(extraction()), jest.fn());
+
+      await service.processActivity(ORG, ACTIVITY);
+
+      expect(rec.createdTasks[0]).toMatchObject({
+        threadId: "thread-1",
+        source: "extraction",
+        subject: "Send the revised pricing",
+      });
+    });
+  });
+
+  /**
+   * A message the seam could not thread has no neighbours by definition, and
+   * asking for them would scan every unthreaded activity in the organisation.
+   */
+  it("asks for no neighbours when the message was never threaded", async () => {
+    const rec: Recorder = { decisions: [], createdTasks: [] };
+    const trigger: ActivityFixture = { ...REPLY, threadId: null, dealId: null };
+    const db = makeDb(rec, trigger, [], [], [
+      neighbour("other", "a message on somebody else's thread", 10),
+    ]);
+    const { service, conversationSent } = makeServiceCapturingPrompt(db, ok(extraction()));
+
+    await service.processActivity(ORG, ACTIVITY);
+
+    expect(conversationSent()).not.toContain("somebody else's thread");
   });
 });

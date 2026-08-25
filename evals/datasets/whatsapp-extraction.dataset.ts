@@ -15,11 +15,14 @@ import type { ChannelExpectation } from "../channel-extraction";
  * gates fold over the list. A single message is a list of one, and the scorers
  * reduce to the email suite's expressions for it.
  *
- * The other thing this dataset is here to expose is the eligibility floor.
- * `hasEligibleContext` needs twenty characters, which is a sensible rule written
- * for mail and is longer than most WhatsApp messages — so several of the
- * fragments below never reach a model at all, and the burst case is scored
- * knowing that.
+ * The other thing this dataset is here to expose is what stops a message
+ * reaching a model at all. It was a twenty-character floor — a sensible rule
+ * written for mail and longer than most WhatsApp messages — and ticket 23
+ * replaced it with a judgement about meaning, because a length rule cannot tell
+ * an acknowledgement from a request once a fragment is read with its
+ * neighbours. Several of the fragments below still never reach a model, and the
+ * burst case is scored knowing that; what changed is that the reason can now be
+ * stated.
  */
 
 export interface WhatsAppCase {
@@ -62,8 +65,9 @@ export const WHATSAPP_EXTRACTION_DATASET: readonly WhatsAppCase[] = [
      * so. This is the case the WhatsApp recall figure is about, and it is in the
      * dataset precisely so the number records it rather than hides it.
      *
-     * Two of the five are also under the twenty-character eligibility floor, so
-     * they never reach a model whatever the model is.
+     * Two of the five say nothing that can be extracted on their own — one
+     * acknowledges, one is a fragment with only an acknowledgement before it —
+     * so they never reach a model whatever the model is.
      */
     name: "a-burst-that-is-one-thought",
     messages: [
@@ -103,11 +107,40 @@ export const WHATSAPP_EXTRACTION_DATASET: readonly WhatsAppCase[] = [
   },
   {
     /**
+     * A request that is not a request yet.
+     *
+     * Read one message at a time, the last fragment is a plain ask and the
+     * pipeline files a task we owe. Read with the two before it, the ask is
+     * conditional on a decision the customer has not taken — and a task nobody
+     * agreed to is worse than no task, because somebody works it.
+     *
+     * Nothing here is tuned to the fixture: the conditional and the ask are both
+     * phrases the email-tuned rules already carry, and what changes between the
+     * two readings is only how much of the thread the extractor was given.
+     */
+    name: "a-burst-whose-ask-is-conditional",
+    messages: [
+      text("cond1", "still comparing you against two others", 0),
+      text("cond2", "if we go with you in the end", 6),
+      text("cond3", "can you do the onboarding in january", 13),
+    ],
+    expectation: {
+      expectedStage: null,
+      expectedOwner: "unclear",
+      hasStatedDate: false,
+      injection: null,
+    },
+  },
+  {
+    /**
      * Eight characters, and one of the two readings advances a deal.
      *
-     * The floor is what saves it here rather than the extractor, which is worth
-     * knowing: the protection is a length check written for mail, not a
-     * judgement about what "go ahead" means.
+     * What saves it is still not the extractor — but it is no longer a length.
+     * Ticket 23 replaced the floor with a judgement: this is a fragment with no
+     * conversation around it, and a fragment means something in a conversation
+     * and nothing by itself. The same eight characters arriving inside the burst
+     * above are read, which is the whole difference. The name is kept so the
+     * case's history is findable.
      */
     name: "a-fragment-below-the-eligibility-floor",
     messages: [text("fragment", "go ahead")],

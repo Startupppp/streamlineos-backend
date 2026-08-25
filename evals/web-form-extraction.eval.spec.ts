@@ -204,15 +204,26 @@ describe("web form extraction evals", () => {
    *
    * Nothing below this line is a failure of the extractor and no accuracy figure
    * — separate or blended — covers it: the adapter refuses a submitter with no
-   * email address, because the resolver below the seam matches and creates on
-   * `business_parties.email` alone. A "request a callback" form is the commonest
-   * shape there is, and this channel currently ingests none of them. Ticket 22.
+   * email address, because the resolver below the seam matched and created on
+   * `business_parties.email` alone — a "request a callback" form is the
+   * commonest shape there is, and this channel ingested none of them.
+   *
+   * Ticket 22 fixed it, and this assertion was written to go red the day it did.
+   * The adapter now states the identifier *kind*, so the resolver matches a
+   * phone against a phone rather than writing one into the email column.
+   * Anonymous feedback stays refused: a submission with nothing identifying in
+   * it is not a person we can file against, and relaxing that because form data
+   * feels friendly is how a CRM fills with parties nobody can contact.
    */
-  it("never even reaches the extractor for a submitter with no email address", () => {
-    expect(webFormToInboundEvent(CALLBACK_REQUEST, CONTEXT)).toEqual({
-      ok: false,
-      reason: "unresolvable-identity",
-    });
+  it("ingests a submitter who left only a phone number, and still refuses an anonymous one", () => {
+    const callback = webFormToInboundEvent(CALLBACK_REQUEST, CONTEXT);
+    expect(callback.ok).toBe(true);
+
+    const from = callback.ok
+      ? callback.event.participants.find((participant) => participant.role === "from")
+      : undefined;
+    expect(from?.identifierKind).toBe("phone");
+
     expect(webFormToInboundEvent(ANONYMOUS_FEEDBACK, CONTEXT)).toEqual({
       ok: false,
       reason: "no-identity",

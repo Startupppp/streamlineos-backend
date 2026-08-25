@@ -3,6 +3,7 @@ import type {
   DecisionOutcome,
   ReversibilityClass,
 } from "../../db/schema/crm/autonomous-decisions";
+import { judgeEligibility } from "./eligibility";
 
 /**
  * Deciding, recording, and refusing to send the wrong thing to a provider.
@@ -254,12 +255,20 @@ export function capRows<T>(rows: readonly T[], maxRows: number): T[] {
 export const RECORDED_CONVERSATION_CHARS = 500;
 
 /**
- * Whether there is anything worth paying a provider for.
+ * Whether there is anything worth paying a provider for, as a plain yes or no.
  *
  * The platform rule is to short-circuit before any provider call when there is
- * no eligible context — this is that check, stated once so every caller uses the
- * same definition of "nothing to work with".
+ * no eligible context, and this is that check for callers holding the pieces of
+ * ONE message — a subject and a body, a form's fields — which is why the parts
+ * are joined before they are judged. A caller holding a thread asks
+ * `judgeEligibility` directly, message by message, because "is this a fragment
+ * standing on its own" is a question about the window rather than the text.
+ *
+ * The rule it used to state — twenty characters — is gone. `eligibility.ts` has
+ * the whole reasoning; the short version is that a length written for mail was
+ * silently doing the safety work of stopping a two-word fragment advancing a
+ * deal, and that job is now done on purpose.
  */
 export function hasEligibleContext(parts: ReadonlyArray<string | null | undefined>): boolean {
-  return parts.some((part) => (part ?? "").trim().length >= 20);
+  return judgeEligibility([parts.filter(Boolean).join("\n\n")]).eligible;
 }
