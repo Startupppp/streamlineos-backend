@@ -407,7 +407,7 @@ export class KbSearchService {
   }
 
   async retrieveAttachmentSnippets(
-    orgId: string,
+    user: CurrentUserContext,
     query: string,
     articleIds: number[],
     pageIds: number[] = [],
@@ -419,14 +419,26 @@ export class KbSearchService {
       const vector = this.embeddings.toVectorLiteral(await this.embeddings.embedQuery(query));
       const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
       const scope: SQL[] = [];
-      if (articleIds.length > 0) scope.push(inArray(kbArticleChunks.articleId, articleIds));
-      if (pageIds.length > 0) scope.push(inArray(kbArticleChunks.pageId, pageIds));
+      if (articleIds.length > 0) {
+        // Article ids are produced by the article retrieval path, which applies
+        // its own restriction predicate. Keep that path unchanged here.
+        scope.push(inArray(kbArticleChunks.articleId, articleIds));
+      }
+      if (pageIds.length > 0) {
+        const projectIds = await this.access.getAccessibleProjectIds(user);
+        const pageScope = and(
+          inArray(kbArticleChunks.pageId, pageIds),
+          pageVisibleTo(user, projectIds),
+        );
+        if (pageScope) scope.push(pageScope);
+      }
       const rows = await this.db
         .select({ content: kbArticleChunks.content })
         .from(kbArticleChunks)
+        .leftJoin(kbPages, eq(kbPages.id, kbArticleChunks.pageId))
         .where(
           and(
-            eq(kbArticleChunks.orgId, orgId),
+            eq(kbArticleChunks.orgId, user.orgId),
             eq(kbArticleChunks.source, "attachment"),
             or(...scope),
           ),

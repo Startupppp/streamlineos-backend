@@ -153,6 +153,31 @@ describe("ChatMessagesService", () => {
     });
   });
 
+  describe("sendSystemMessage", () => {
+    it("uses the sender identity read in the message transaction", async () => {
+      mockDb.limit
+        .mockResolvedValueOnce([{ id: 1 }])
+        .mockResolvedValueOnce([{ name: "Alice" }]);
+      mockDb.returning.mockResolvedValueOnce([{
+        id: 7,
+        channelId: 1,
+        senderId: "user1",
+        content: "system update",
+        createdAt: new Date(),
+        replyToId: null,
+      }]);
+
+      await service.sendSystemMessage(1, "user1", "org1", "system update", {});
+
+      expect(mockAbly.publishChatMessage).toHaveBeenCalledWith(
+        "org1",
+        1,
+        expect.objectContaining({ senderName: "Alice" }),
+      );
+      expect(mockDb.limit).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe("edit", () => {
     it("throws NotFoundException if message does not exist", async () => {
       mockDb.query.chatMessages.findFirst.mockResolvedValue(null);

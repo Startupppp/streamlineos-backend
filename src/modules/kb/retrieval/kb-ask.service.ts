@@ -74,7 +74,7 @@ export class KbAskService {
       .filter((source) => source.kind === "page")
       .map((source) => source.id);
     const attachmentContext = await this.search.retrieveAttachmentSnippets(
-      user.orgId,
+      user,
       input.question,
       articleIds,
       pageIds,

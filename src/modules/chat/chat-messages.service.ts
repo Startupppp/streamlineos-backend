@@ -431,7 +431,7 @@ export class ChatMessagesService {
     content: string,
     metadata: Record<string, unknown>,
   ): Promise<void> {
-    const [message] = await this.db.transaction(async (tx) => {
+    const { message, senderName } = await this.db.transaction(async (tx) => {
       const [channel] = await tx
         .select({ id: chatChannels.id })
         .from(chatChannels)
@@ -439,6 +439,12 @@ export class ChatMessagesService {
         .limit(1);
 
       if (!channel) throw new NotFoundException("Channel not found");
+
+      const [senderRow] = await tx
+        .select({ name: users.name })
+        .from(users)
+        .where(eq(users.id, senderId))
+        .limit(1);
 
       const [created] = await tx
         .insert(chatMessages)
@@ -457,15 +463,8 @@ export class ChatMessagesService {
         .set({ lastMessageAt: new Date(), updatedAt: new Date() })
         .where(eq(chatChannels.id, channelId));
 
-      return [created];
+      return { message: created, senderName: senderRow?.name ?? null };
     });
-
-    const [senderRow] = await this.db
-      .select({ name: users.name })
-      .from(users)
-      .where(eq(users.id, senderId))
-      .limit(1);
-    const senderName = senderRow?.name ?? null;
 
     void this.ably
       .publishChatMessage(orgId, channelId, {
