@@ -86,7 +86,7 @@ describe("CalendarEventsAggregateService — partial failures", () => {
     const service = module.get(CalendarEventsAggregateService);
     const result = await service.getEvents("org-1", "user-1", new Date(), new Date());
 
-    const failure = result.failures[0] as Record<string, unknown> | undefined;
+    const failure = result.failures[0];
     expect(failure).toBeDefined();
     expect(Object.keys(failure ?? {})).toEqual(["key", "label"]);
     expect(JSON.stringify(failure)).not.toContain("internal db secret");
