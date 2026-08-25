@@ -33,14 +33,6 @@ describe("the legacy identity tables gain no new readers", () => {
   const KNOWN_READERS = [
   "src/modules/accounting/core/accounting-payables-query.service.ts",
   "src/modules/accounting/core/accounting-receivables.service.ts",
-  "src/modules/ai/core/crm-copilot-tools.ts",
-  "src/modules/ai/core/services/chat-assistant-context.ts",
-  "src/modules/ai/core/services/crm-brief.service.ts",
-  "src/modules/ai/core/services/crm-copilot.service.ts",
-  "src/modules/ai/core/services/crm-pipeline.service.ts",
-  "src/modules/ai/core/services/crm-scoring.service.ts",
-  "src/modules/ai/core/services/crm-tasks.service.ts",
-  "src/modules/clients/client-opportunities.service.ts",
   "src/modules/clients/clients.service.ts",
   "src/modules/contacts/contact-roles.service.ts",
   "src/modules/contacts/contacts.service.ts",
@@ -74,6 +66,7 @@ describe("the legacy identity tables gain no new readers", () => {
   "src/modules/party/party-mirror-fields.ts",
   "src/modules/search/search.service.ts",
   ];
+
 
 
   /** Import of the Drizzle table symbol, which is how a read actually begins. */
