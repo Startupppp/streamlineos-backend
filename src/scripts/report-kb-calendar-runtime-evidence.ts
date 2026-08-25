@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 import { ArchitectureEvidenceModule } from "./architecture-evidence.module";
 import { DRIZZLE } from "../db/drizzle.constants";
 import type { Db } from "../db/drizzle.module";
+import { forEachOrg } from "../common/tenant/for-each-org";
 
 type Row = Record<string, unknown>;
 
@@ -26,14 +27,15 @@ async function main(): Promise<void> {
 
   try {
     const db = app.get<Db>(DRIZZLE);
-    const evidence = await db.transaction(async (tx) => {
+    const organizations: Array<{ kb: Row; calendar: Row }> = [];
+    const sweep = await forEachOrg(db, "kb-calendar-runtime-evidence", async (tx, orgId) => {
       await tx.execute(sql`SET TRANSACTION READ ONLY`);
 
       const [kb] = rows(await tx.execute(sql`
         WITH eligible AS (
           SELECT id, org_id, visibility, project_id, created_by_id
           FROM kb_pages
-          WHERE deleted_at IS NULL AND status <> 'archived'
+          WHERE org_id = ${orgId} AND deleted_at IS NULL AND status <> 'archived'
         ),
         indexed AS (
           SELECT DISTINCT c.page_id
@@ -49,12 +51,12 @@ async function main(): Promise<void> {
              OR c.page_created_by_id IS DISTINCT FROM p.created_by_id
         )
         SELECT
-          (SELECT count(*) FROM kb_pages) AS total_pages,
+          (SELECT count(*) FROM kb_pages WHERE org_id = ${orgId}) AS total_pages,
           (SELECT count(*) FROM eligible) AS eligible_pages,
           (SELECT count(*) FROM indexed) AS indexed_eligible_pages,
           (SELECT count(*) FROM eligible e LEFT JOIN indexed i ON i.page_id = e.id WHERE i.page_id IS NULL) AS eligible_without_chunk,
           (SELECT count(*) FROM acl_mismatches) AS chunk_acl_mismatches,
-          (SELECT count(*) FROM kb_article_chunks c LEFT JOIN kb_pages p ON p.id = c.page_id AND p.org_id = c.org_id WHERE p.id IS NULL) AS orphan_chunks
+          (SELECT count(*) FROM kb_article_chunks c LEFT JOIN kb_pages p ON p.id = c.page_id AND p.org_id = c.org_id WHERE c.org_id = ${orgId} AND p.id IS NULL) AS orphan_chunks
       `));
 
       const [calendar] = rows(await tx.execute(sql`
@@ -70,32 +72,51 @@ async function main(): Promise<void> {
           count(*) FILTER (WHERE org_id IS NULL OR user_id IS NULL) AS invalid_owner_rows
         FROM calendar_source_preferences p
         LEFT JOIN known k ON k.source_key = p.source_key
+        WHERE p.org_id = ${orgId}
       `));
 
-      const [dbInfo] = rows(await tx.execute(sql`
-        SELECT current_database() AS database_name, current_setting('transaction_read_only') AS transaction_read_only
-      `));
-
-      return {
-        generatedAt: new Date().toISOString(),
-        database: dbInfo,
-        c1: kb,
-        c2: calendar,
-        interpretation: {
-          c1: [
-            "eligible_without_chunk=0 is required for complete index coverage of live pages",
-            "chunk_acl_mismatches=0 is required for page/chunk visibility metadata parity",
-            "orphan_chunks=0 is required for referential retrieval hygiene",
-            "These are read-only database invariants; they do not replace a seeded end-to-end viewer parity run.",
-          ],
-          c2: [
-            "unknown_source_keys=0 and invalid_owner_rows=0 are required for preference integrity",
-            "preference_scopes proves persisted rows are keyed by both organization and user",
-            "This command does not mutate preferences and does not claim HTTP/controller proof.",
-          ],
-        },
-      };
+      organizations.push({ kb, calendar });
     });
+
+    const sum = (field: string, source: "kb" | "calendar") =>
+      organizations.reduce((total, item) => total + Number(item[source][field] ?? 0), 0);
+
+    const evidence = {
+      generatedAt: new Date().toISOString(),
+      organizations: sweep.organizations,
+      succeeded: sweep.succeeded,
+      failed: sweep.failed,
+      readOnly: true,
+      c1: {
+        totalPages: sum("total_pages", "kb"),
+        eligiblePages: sum("eligible_pages", "kb"),
+        indexedEligiblePages: sum("indexed_eligible_pages", "kb"),
+        eligibleWithoutChunk: sum("eligible_without_chunk", "kb"),
+        chunkAclMismatches: sum("chunk_acl_mismatches", "kb"),
+        orphanChunks: sum("orphan_chunks", "kb"),
+      },
+      c2: {
+        preferenceRows: sum("preference_rows", "calendar"),
+        preferenceScopes: sum("preference_scopes", "calendar"),
+        disabledRows: sum("disabled_rows", "calendar"),
+        enabledRows: sum("enabled_rows", "calendar"),
+        unknownSourceKeys: sum("unknown_source_keys", "calendar"),
+        invalidOwnerRows: sum("invalid_owner_rows", "calendar"),
+      },
+      interpretation: {
+        c1: [
+          "eligibleWithoutChunk=0 is required for complete index coverage of live pages",
+          "chunkAclMismatches=0 is required for page/chunk visibility metadata parity",
+          "orphanChunks=0 is required for referential retrieval hygiene",
+          "These are read-only database invariants; they do not replace a seeded end-to-end viewer parity run.",
+        ],
+        c2: [
+          "unknownSourceKeys=0 and invalidOwnerRows=0 are required for preference integrity",
+          "preferenceScopes proves persisted rows are keyed by both organization and user",
+          "This command does not mutate preferences and does not claim HTTP/controller proof.",
+        ],
+      },
+    };
 
     console.log(JSON.stringify(evidence, null, 2));
   } finally {
