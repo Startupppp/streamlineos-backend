@@ -136,8 +136,21 @@ export const activities = pgTable(
       .on(t.organizationId, t.assigneeUserId, t.dueAt)
       .where(sql`kind = 'task' and completed_at is null and deleted_at is null`),
 
-    /** A thread, gathered. */
-    index("idx_activities_thread").on(t.organizationId, t.threadId),
+    /**
+     * A thread, gathered — and gathered in order.
+     *
+     * The ordering columns are not decoration. The extractor reads the last few
+     * messages on a thread before it judges one of them, and without them the
+     * plan finds the thread and then sorts all of it before the LIMIT can throw
+     * it away. On a messaging channel a thread is every message ever exchanged
+     * with that customer, so that is the difference between a bounded read and
+     * an unbounded one. Partial for the same reason the three timeline indexes
+     * above are: the window excludes deleted activities exactly as a timeline
+     * does. See migration 0270, which replaced the unordered version.
+     */
+    index("idx_activities_thread_window")
+      .on(t.organizationId, t.threadId, t.occurredAt.desc(), t.activityId.desc())
+      .where(sql`deleted_at is null`),
 
     /** The tenant key a participant's composite foreign key points at. */
     uniqueIndex("uniq_activities_org_id").on(t.organizationId, t.activityId),

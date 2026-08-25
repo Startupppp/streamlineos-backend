@@ -29,7 +29,7 @@ import { telephonyCallToInboundEvent } from "../src/modules/ingress/adapters/tel
  * The call is put through `telephonyCallToInboundEvent` and then through the
  * pipeline's own steps rather than being handed to the extractor as a string.
  * That is what makes the untranscribed call scoreable: the adapter returns an
- * event with a null body, the eligibility floor stops the pipeline, and nothing
+ * event with a null body, the eligibility judgement stops the pipeline, and nothing
  * is spent and nothing is written.
  */
 
