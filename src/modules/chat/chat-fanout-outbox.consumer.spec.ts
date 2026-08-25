@@ -75,29 +75,31 @@ function makeEvent(overrides: Partial<OutboxEventRow> = {}): OutboxEventRow {
 describe("ChatFanoutOutboxConsumer", () => {
   it("registers and dispatches the persisted sender identity", async () => {
     const db = makeDb();
-    const dispatch = jest.fn().mockResolvedValue(undefined);
+    const dispatchDeferred = jest.fn().mockResolvedValue(undefined);
+    const dispatchRealtime = jest.fn().mockResolvedValue(undefined);
     const registry = new OutboxConsumerRegistry();
-    const consumer = new ChatFanoutOutboxConsumer(db as never, { dispatch } as never, registry);
+    const consumer = new ChatFanoutOutboxConsumer(db as never, { dispatchDeferred, dispatchRealtime } as never, registry);
 
     consumer.onModuleInit();
     await consumer.handle(makeEvent());
 
     expect(registry.get(CHAT_MESSAGE_FANOUT_EVENT)).toBe(consumer);
-    expect(dispatch).toHaveBeenCalledWith(
+    expect(dispatchDeferred).toHaveBeenCalledWith(
       expect.objectContaining({
         orgId: "org-1",
         senderName: "Alice",
         senderImage: "https://cdn.example.com/alice.jpg",
       }),
     );
+    expect(dispatchRealtime).not.toHaveBeenCalled();
   });
 
   it("rejects a payload that tries to fan out in another tenant", async () => {
     const db = makeDb();
-    const dispatch = jest.fn().mockResolvedValue(undefined);
+    const dispatchDeferred = jest.fn().mockResolvedValue(undefined);
     const consumer = new ChatFanoutOutboxConsumer(
       db as never,
-      { dispatch } as never,
+      { dispatchDeferred } as never,
       new OutboxConsumerRegistry(),
     );
 
@@ -106,14 +108,14 @@ describe("ChatFanoutOutboxConsumer", () => {
         payload: { ...(makeEvent().payload as Record<string, unknown>), orgId: "org-2" },
       })),
     ).resolves.toBeUndefined();
-    expect(dispatch).not.toHaveBeenCalled();
+    expect(dispatchDeferred).not.toHaveBeenCalled();
   });
 
   it("propagates a side-effect failure so the outbox retries it", async () => {
     const db = makeDb();
     const consumer = new ChatFanoutOutboxConsumer(
       db as never,
-      { dispatch: jest.fn().mockRejectedValue(new Error("provider down")) } as never,
+      { dispatchDeferred: jest.fn().mockRejectedValue(new Error("provider down")) } as never,
       new OutboxConsumerRegistry(),
     );
 

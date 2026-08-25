@@ -319,7 +319,7 @@ describe("KbPageBackfillService — backfillAll", () => {
     const result = await svc.backfillAll({ delayMs: 0 });
 
     expect(result.organizations).toBe(3);
-    expect(result.processed).toBe(1);
+    expect(result.processed).toBe(2);
     expect(result.totalIndexed).toBe(1);
   });
 });

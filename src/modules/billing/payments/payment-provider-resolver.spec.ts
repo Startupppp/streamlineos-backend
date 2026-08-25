@@ -48,4 +48,35 @@ describe("PaymentProviderResolver", () => {
     expect(await resolver.resolve("org-b", "razorpay")).toBeUndefined();
     expect(setup.getDecryptedSecret).not.toHaveBeenCalled();
   });
+
+  it("resolves the organisation primary provider without a hard-coded provider key", async () => {
+    const adapter = new FakeProviderAdapter("stripe");
+    const registry = new PaymentProviderAdapterRegistry();
+    registry.register(adapter);
+    const findMany = jest.fn().mockResolvedValue([
+      { id: 8, orgId: "org-a", providerKey: "stripe", environment: "test", status: "test_mode_ready", isPrimary: true },
+    ]);
+    const findFirst = jest.fn().mockResolvedValue({
+      id: 8,
+      orgId: "org-a",
+      providerKey: "stripe",
+      environment: "test",
+      status: "test_mode_ready",
+    });
+    const db = { query: { paymentProviders: { findMany, findFirst } } };
+    const setup = {
+      getDecryptedSecret: jest.fn().mockResolvedValue({
+        keyId: "stripe_public",
+        secret: "stripe_private",
+        webhookSecret: "stripe_webhook",
+      }),
+    };
+    const resolver = new PaymentProviderResolver(db as never, registry, setup as never);
+
+    const provider = await resolver.resolveConfigured("org-a");
+
+    expect(provider?.providerKey).toBe("stripe");
+    expect(findMany).toHaveBeenCalled();
+    expect(setup.getDecryptedSecret).toHaveBeenCalledWith("org-a", 8, "test");
+  });
 });

@@ -273,6 +273,31 @@ export class ChatMessagesService {
           error: error instanceof Error ? error.message : "Unknown error",
         });
       });
+
+    const realtime = () =>
+      Promise.resolve(this.ably.publishChatMessage(orgId, channelId, {
+          id: message.id,
+          channelId: message.channelId,
+          senderId: message.senderId,
+          senderName,
+          senderImage,
+          content: message.content,
+          createdAt: message.createdAt,
+          replyToId: message.replyToId,
+          metadata: strippedReferenceMetadata(message.metadata),
+          messageType: message.messageType,
+          attachments: insertedAttachments,
+        }))
+        .catch((error: unknown) => {
+          logger.error("chat realtime publish failed", {
+            orgId,
+            channelId,
+            messageId: message.id,
+            error: error instanceof Error ? error.message : "Unknown error",
+          });
+        });
+
+    if (!registerAfterCommit(realtime)) void realtime();
     if (!registerAfterCommit(deferred)) void deferred();
 
     return message;

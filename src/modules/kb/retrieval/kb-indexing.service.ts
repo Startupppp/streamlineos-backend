@@ -195,7 +195,7 @@ export class KbIndexingService {
     });
   }
 
-  async indexPage(orgId: string, pageId: number): Promise<void> {
+  async indexPage(orgId: string, pageId: number): Promise<number> {
     const page = await this.db.query.kbPages.findFirst({
       where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)),
       columns: {
@@ -215,7 +215,7 @@ export class KbIndexingService {
       !this.embeddings.isConfigured()
     ) {
       await this.removePageChunks(orgId, pageId);
-      return;
+      return 0;
     }
 
     const stored = await this.getPageChunkState(orgId, pageId);
@@ -227,7 +227,7 @@ export class KbIndexingService {
         stored.pageProjectId !== page.projectId ||
         stored.pageCreatedById !== page.createdById;
 
-      if (!aclChanged) return;
+      if (!aclChanged) return 0;
 
       await this.db
         .update(kbArticleChunks)
@@ -242,8 +242,8 @@ export class KbIndexingService {
             eq(kbArticleChunks.orgId, orgId),
             eq(kbArticleChunks.source, "page_body"),
           ),
-        );
-      return;
+      );
+      return 0;
     }
 
     const chunks = this.chunkText(page.contentText);
@@ -284,6 +284,8 @@ export class KbIndexingService {
 
       await tx.insert(kbArticleChunks).values(valuesToInsert);
     });
+
+    return chunks.length;
   }
 
   async removeArticleChunks(orgId: string, articleId: number): Promise<void> {

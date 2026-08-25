@@ -32,6 +32,15 @@ export interface OutboxMetrics {
   oldestPendingAt: Date | null;
 }
 
+export interface OutboxOrganizationReport {
+  organizationId: string;
+  pending: number;
+  inFlight: number;
+  dead: number;
+  oldestPendingAt: Date | null;
+  distinctEventTypes: number;
+}
+
 /**
  * Drains the transactional outbox: leases a batch of due PENDING events per organisation (each in
  * its own tenant transaction via forEachOrg — a cross-org sweep has no ambient GUC and is denied
@@ -120,6 +129,32 @@ export class OutboxPublisherService {
     return result;
   }
 
+  /** Capture the row-count evidence required before changing the outbox ledger policy. */
+  async reportByOrganization(): Promise<OutboxOrganizationReport[]> {
+    const reports: OutboxOrganizationReport[] = [];
+    await forEachOrg(this.db, "outbox-events-report", async (tx, organizationId) => {
+      const rows = await tx
+        .select({
+          pending: sql<number>`count(*) filter (where ${outboxEvents.deliveryState} = 'PENDING')`,
+          inFlight: sql<number>`count(*) filter (where ${outboxEvents.deliveryState} = 'IN_FLIGHT')`,
+          dead: sql<number>`count(*) filter (where ${outboxEvents.deliveryState} = 'DEAD')`,
+          oldestPendingAt: sql<Date | null>`min(${outboxEvents.createdAt}) filter (where ${outboxEvents.deliveryState} = 'PENDING')`,
+          distinctEventTypes: sql<number>`count(distinct ${outboxEvents.eventType})`,
+        })
+        .from(outboxEvents);
+      const row = rows[0];
+      reports.push({
+        organizationId,
+        pending: Number(row?.pending ?? 0),
+        inFlight: Number(row?.inFlight ?? 0),
+        dead: Number(row?.dead ?? 0),
+        oldestPendingAt: row?.oldestPendingAt ?? null,
+        distinctEventTypes: Number(row?.distinctEventTypes ?? 0),
+      });
+    });
+    return reports;
+  }
+
   private async claimBatch(): Promise<OutboxEventRow[]> {
     const now = new Date();
     const leaseUntil = new Date(now.getTime() + LEASE_MS);
@@ -159,14 +194,16 @@ export class OutboxPublisherService {
   private async readOrgLifecycle(
     organizationId: string,
   ): Promise<{ found: boolean; status: string }> {
-    const rows = await this.db
-      .select({ status: organizations.status })
-      .from(organizations)
-      .where(eq(organizations.id, organizationId))
-      .limit(1);
-    const row = rows[0];
-    if (!row) return { found: false, status: "PURGED" };
-    return { found: true, status: row.status ?? "ACTIVE" };
+    return runInNewTenantTransaction(this.db, organizationId, async (tx) => {
+      const rows = await tx
+        .select({ status: organizations.status })
+        .from(organizations)
+        .where(eq(organizations.id, organizationId))
+        .limit(1);
+      const row = rows[0];
+      if (!row) return { found: false, status: "PURGED" };
+      return { found: true, status: row.status ?? "ACTIVE" };
+    });
   }
 
   private async deliver(event: OutboxEventRow): Promise<void> {

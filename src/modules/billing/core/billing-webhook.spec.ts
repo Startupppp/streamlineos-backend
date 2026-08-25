@@ -75,7 +75,10 @@ function makeResolver(adapter?: FakeProviderAdapter, webhookSecret = FAKE_WEBHOO
         verifyWebhookSignature: (params) => adapter.verifyWebhookSignature({ ...params, webhookSecret }),
       }
     : undefined;
-  return { resolve: jest.fn().mockResolvedValue(provider) } as unknown as PaymentProviderResolver;
+  return {
+    resolve: jest.fn().mockResolvedValue(provider),
+    resolveConfigured: jest.fn().mockResolvedValue(provider),
+  } as unknown as PaymentProviderResolver;
 }
 
 function makeWebhookDb() {
@@ -216,7 +219,7 @@ describe("BillingService.handleRazorpayWebhook — provider resolved through reg
       expect(db._spies.onConflictDoUpdate).toHaveBeenCalledTimes(2);
     });
 
-    it("AI pack credit grant is not invoked when org cannot be resolved from notes", async () => {
+    it("uses the authenticated webhook tenant when notes omit the organisation", async () => {
       const aiCredits = makeAiCredits();
       const db = makeWebhookDb();
       const providers = makeResolver(new FakeProviderAdapter());
@@ -236,7 +239,11 @@ describe("BillingService.handleRazorpayWebhook — provider resolved through reg
       const result = await svc.handleRazorpayWebhook("org1", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
       expect(result.status).toBe(200);
-      expect(aiCredits.grantAiPackCreditsFromWebhook).not.toHaveBeenCalled();
+      expect(aiCredits.grantAiPackCreditsFromWebhook).toHaveBeenCalledWith(
+        "org1",
+        1,
+        "pay_test_002",
+      );
     });
   });
 

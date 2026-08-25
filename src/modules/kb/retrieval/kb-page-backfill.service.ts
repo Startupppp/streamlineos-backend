@@ -15,6 +15,7 @@ export interface OrgBackfillResult {
   failed: number;
   scanned: number;
   nextPageId: number | null;
+  error?: string;
 }
 
 export interface BackfillAllResult {
@@ -147,12 +148,15 @@ export class KbPageBackfillService {
         attempted += 1;
         scanned += 1;
         try {
-          await withTenant(this.db, { orgId, audience: "INTERNAL" }, (tx) =>
+          const written = await withTenant(this.db, { orgId, audience: "INTERNAL" }, (tx) =>
             runWithTenantContext({ orgId, audience: "INTERNAL", tx }, () =>
               this.indexing.indexPage(orgId, page.id),
             ),
           );
-          indexed += 1;
+          // Older/test doubles may not return a count; a resolved call still
+          // represents a successful indexing attempt in that case. The real
+          // service returns zero when embeddings are unavailable.
+          if (written === undefined || written > 0) indexed += 1;
           cursor = page.id;
         } catch (err) {
           failed += 1;
@@ -213,9 +217,20 @@ export class KbPageBackfillService {
       try {
         result = await this.backfillOrg(org.id, options);
       } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
         this.logger.error(
-          `[kb-page-backfill] org ${org.id} fatal: ${err instanceof Error ? err.message : String(err)}`,
+          `[kb-page-backfill] org ${org.id} fatal: ${message}`,
         );
+        details.push({
+          orgId: org.id,
+          before: 0,
+          after: 0,
+          indexed: 0,
+          failed: 1,
+          scanned: 0,
+          nextPageId: null,
+          error: message,
+        });
         continue;
       }
 

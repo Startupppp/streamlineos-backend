@@ -99,8 +99,8 @@ function forEachOrgWithRow(row: OutboxEventRow) {
 beforeEach(() => {
   jest.clearAllMocks();
   mockRunInNewTenantTransaction.mockImplementation(
-    async (_db: unknown, _orgId: string, fn: (tx: ReturnType<typeof makeTxMock>) => Promise<unknown>) =>
-      fn(makeTxMock()),
+    async (db: ReturnType<typeof makeDb>, _orgId: string, fn: (tx: ReturnType<typeof makeTxMock>) => Promise<unknown>) =>
+      fn({ ...makeTxMock(), select: db.select } as ReturnType<typeof makeTxMock>),
   );
 });
 
@@ -181,6 +181,7 @@ describe("OutboxPublisherService.flush — unconsumed event types", () => {
           return { where: jest.fn().mockResolvedValue(undefined) };
         });
         tx.update = jest.fn().mockReturnValue(tx);
+        (tx as typeof tx & { select: typeof db.select }).select = db.select;
         return fn(tx);
       },
     );
@@ -204,6 +205,7 @@ describe("OutboxPublisherService.flush — unconsumed event types", () => {
           return { where: jest.fn().mockResolvedValue(undefined) };
         });
         tx.update = jest.fn().mockReturnValue(tx);
+        (tx as typeof tx & { select: typeof db.select }).select = db.select;
         return fn(tx);
       },
     );
@@ -249,8 +251,9 @@ describe("OutboxPublisherService.flush — delivery and failure paths", () => {
         tx.set = jest.fn().mockImplementation((patch: { deliveryState?: string }) => {
           if (patch.deliveryState) states.push(patch.deliveryState);
           return { where: jest.fn().mockResolvedValue(undefined) };
-        });
+      });
         tx.update = jest.fn().mockReturnValue(tx);
+        (tx as typeof tx & { select: typeof db.select }).select = db.select;
         return fn(tx);
       },
     );
@@ -273,8 +276,9 @@ describe("OutboxPublisherService.flush — delivery and failure paths", () => {
         tx.set = jest.fn().mockImplementation((patch: { deliveryState?: string }) => {
           if (patch.deliveryState) states.push(patch.deliveryState);
           return { where: jest.fn().mockResolvedValue(undefined) };
-        });
+      });
         tx.update = jest.fn().mockReturnValue(tx);
+        (tx as typeof tx & { select: typeof db.select }).select = db.select;
         return fn(tx);
       },
     );
@@ -300,8 +304,9 @@ describe("OutboxPublisherService.flush — delivery and failure paths", () => {
         tx.set = jest.fn().mockImplementation((patch: { deliveryState?: string }) => {
           if (patch.deliveryState) states.push(patch.deliveryState);
           return { where: jest.fn().mockResolvedValue(undefined) };
-        });
+      });
         tx.update = jest.fn().mockReturnValue(tx);
+        (tx as typeof tx & { select: typeof db.select }).select = db.select;
         return fn(tx);
       },
     );

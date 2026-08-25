@@ -37,7 +37,11 @@ function makeProvider(withAdapter = true, providerKey = "razorpay"): Organizatio
 }
 
 function makeResolver(withAdapter = true, providerKey = "razorpay") {
-  return { resolve: jest.fn().mockResolvedValue(makeProvider(withAdapter, providerKey)) } as unknown as PaymentProviderResolver;
+  const provider = makeProvider(withAdapter, providerKey);
+  return {
+    resolve: jest.fn().mockResolvedValue(provider),
+    resolveConfigured: jest.fn().mockResolvedValue(provider),
+  } as unknown as PaymentProviderResolver;
 }
 
 function makeAiCredits() {

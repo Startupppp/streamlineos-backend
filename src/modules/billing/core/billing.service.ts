@@ -71,7 +71,7 @@ export class BillingService {
       },
     });
 
-    const adapter = await this.providers.resolve(orgId, "razorpay");
+    const adapter = await this.providers.resolveConfigured(orgId);
     return {
       subscription: subscription ?? null,
       razorpayKeyId: adapter?.publicKeyId() ?? null,
@@ -80,7 +80,7 @@ export class BillingService {
   }
 
   async createOrder(orgId: string, userId: string, plan: Plan, billingCycle: BillingCycle = "monthly", couponId?: number) {
-    const adapter = await this.providers.resolve(orgId, "razorpay");
+    const adapter = await this.providers.resolveConfigured(orgId);
     if (adapter === undefined || !adapter.isReady()) {
       throw new ServiceUnavailableException("Payment gateway not configured. Contact support.");
     }
@@ -125,7 +125,7 @@ export class BillingService {
   }
 
   async verifyAndActivate(orgId: string, userId: string, input: VerifyPaymentInput) {
-    const adapter = await this.providers.resolve(orgId, "razorpay");
+    const adapter = await this.providers.resolveConfigured(orgId);
     if (adapter === undefined || !adapter.isReady()) {
       throw new ServiceUnavailableException("Payment gateway not configured. Contact support.");
     }
@@ -307,7 +307,7 @@ export class BillingService {
   }
 
   async handleRazorpayWebhook(orgId: string, rawBody: string, signature: string): Promise<WebhookResult> {
-    const adapter = await this.providers.resolve(orgId, "razorpay");
+    const adapter = await this.providers.resolveConfigured(orgId);
     if (!adapter) {
       logger.warn("[billing] no payment provider registered for webhook verification");
       return { status: 503, body: { ok: false } };
@@ -479,7 +479,7 @@ export class BillingService {
       const packs = await this.aiCredits.listPacks();
       const pack = packs.find((p) => p.id === packId);
       if (!pack) throw new BadRequestException("AI credit pack not found");
-      const addonAdapter = await this.providers.resolve(orgId, "razorpay");
+    const addonAdapter = await this.providers.resolveConfigured(orgId);
       if (addonAdapter === undefined || !addonAdapter.isReady()) {
         throw new ServiceUnavailableException("Payment gateway not configured. Contact support.");
       }
@@ -694,7 +694,7 @@ export class BillingService {
         failed: 0,
         voided: 0,
       },
-      isConfigured: (await this.providers.resolve(orgId, "razorpay"))?.isReady() ?? false,
+      isConfigured: (await this.providers.resolveConfigured(orgId))?.isReady() ?? false,
     };
   }
 }

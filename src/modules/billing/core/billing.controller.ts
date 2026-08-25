@@ -253,7 +253,7 @@ export class BillingController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (body.paymentId) {
-      const adapter = await this.providers.resolve(u.orgId, "razorpay");
+      const adapter = await this.providers.resolveConfigured(u.orgId);
       const valid =
         adapter?.verifyPaymentSignature({
           orderId: body.orderId ?? "",
@@ -263,7 +263,7 @@ export class BillingController {
       if (!valid) throw new BadRequestException("Invalid payment signature");
       return this.aiCredits.purchaseCreditsDirectly(u.orgId, u.userId, body.packId, false, body.paymentId);
     }
-    if ((await this.providers.resolve(u.orgId, "razorpay"))?.isReady() ?? false) {
+    if ((await this.providers.resolveConfigured(u.orgId))?.isReady() ?? false) {
       return this.billing.purchaseAddon(u.orgId, `ai_pack_${body.packId}`, 1);
     }
     return this.aiCredits.purchaseCreditsDirectly(u.orgId, u.userId, body.packId);

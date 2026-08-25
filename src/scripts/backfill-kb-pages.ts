@@ -46,6 +46,7 @@ async function main(): Promise<void> {
     const backfill = app.get(KbPageBackfillService);
     const result = await backfill.backfillAll(options);
     console.log(JSON.stringify(result, null, 2));
+    if (result.totalFailed > 0) process.exitCode = 1;
   } finally {
     await app.close();
   }

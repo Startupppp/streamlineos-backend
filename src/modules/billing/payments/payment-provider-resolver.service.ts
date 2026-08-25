@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { paymentProviders } from "../../../db/schema";
@@ -54,6 +54,24 @@ export class PaymentProviderResolver {
     const environment = requestedEnvironment ?? provider.environment;
     const credentials = await this.setup.getDecryptedSecret(orgId, provider.id, environment);
     return createOrganizationProvider(adapter, providerKey, environment, credentials);
+  }
+
+  /** Resolve the organisation's enabled primary provider without making callers choose a key. */
+  async resolveConfigured(
+    orgId: string,
+    requestedEnvironment?: PaymentEnvironment,
+  ): Promise<OrganizationPaymentProvider | undefined> {
+    const providers = await this.db.query.paymentProviders.findMany({
+      where: eq(paymentProviders.orgId, orgId),
+      orderBy: [desc(paymentProviders.isPrimary), asc(paymentProviders.id)],
+    });
+
+    for (const provider of providers) {
+      if (provider.status === "disabled") continue;
+      const resolved = await this.resolve(orgId, provider.providerKey, requestedEnvironment);
+      if (resolved) return resolved;
+    }
+    return undefined;
   }
 }
 
