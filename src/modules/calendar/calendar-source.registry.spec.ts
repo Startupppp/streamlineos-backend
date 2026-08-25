@@ -1,12 +1,8 @@
 import { Test } from "@nestjs/testing";
 import { CalendarSourceRegistry } from "./calendar-source.registry";
 import type { CalendarEventProjection, CalendarEventSource, CalendarSourceContext } from "./calendar-event-source";
-import { EntitlementsService } from "../access/entitlements.service";
 import { AccessService } from "../access/access.service";
 import { CalendarSourcePreferencesService } from "./calendar-source-preferences.service";
-import { moduleAvailabilityResolver } from "../../common/rbac/module-availability";
-
-const ALL_SOURCE_MODULES: string[] = ["hr", "build", "tasks", "alpha", "beta"];
 
 const ctx: CalendarSourceContext = {
   orgId: "org-1",
@@ -36,29 +32,14 @@ async function buildRegistry(
     providers: [
       CalendarSourceRegistry,
       {
-        provide: EntitlementsService,
-        useValue: {
-          isCoreModule: () => false,
-          getModuleMap: jest.fn().mockImplementation(() =>
-            Promise.resolve(
-              Object.fromEntries(ALL_SOURCE_MODULES.map((m) => [m, isEnabled(m)])),
-            ),
-          ),
-          getPlanLockedModules: jest.fn().mockResolvedValue([]),
-        },
-      },
-      {
         provide: AccessService,
         useValue: {
-          buildModuleAvailabilityResolver: (getModuleMap: (orgId: string) => Promise<Record<string, boolean>>) =>
-            moduleAvailabilityResolver(
-              {
-                isCoreModule: () => false,
-                getModuleMap,
-                getPlanLockedModules: jest.fn().mockResolvedValue([]),
-              },
-              { getUserDeniedModules: jest.fn().mockResolvedValue(deniedModules) },
-            ),
+          moduleAvailabilityFor: jest.fn(
+            async (_orgId: string, _userId: string, moduleKey: string) =>
+              deniedModules.has(moduleKey) || !isEnabled(moduleKey)
+                ? { available: false, reason: "user-denied" }
+                : { available: true },
+          ),
         },
       },
       {

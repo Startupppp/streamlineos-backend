@@ -1,10 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import type { CalendarEventProjection, CalendarEventSource, CalendarSourceContext } from "./calendar-event-source";
-import { EntitlementsService } from "../access/entitlements.service";
 import { AccessService } from "../access/access.service";
-import {
-  moduleAvailability,
-} from "../../common/rbac/module-availability";
 import { CalendarSourcePreferencesService } from "./calendar-source-preferences.service";
 
 export interface ToggleEntry {
@@ -25,7 +21,6 @@ export class CalendarSourceRegistry {
   private readonly sources = new Set<CalendarEventSource>();
 
   constructor(
-    private readonly entitlements: EntitlementsService,
     private readonly access: AccessService,
     private readonly preferences: CalendarSourcePreferencesService,
   ) {}
@@ -41,10 +36,7 @@ export class CalendarSourceRegistry {
         sources.map(async (s) => {
           // moduleAvailability, not isModuleEnabled: the latter takes no userId, so a
           // person denied a module still received its events.
-          const availability = await moduleAvailability(
-            this.access.buildModuleAvailabilityResolver(
-              (orgId) => this.entitlements.getModuleMap(orgId),
-            ),
+          const availability = await this.access.moduleAvailabilityFor(
             ctx.orgId,
             ctx.userId,
             s.module,

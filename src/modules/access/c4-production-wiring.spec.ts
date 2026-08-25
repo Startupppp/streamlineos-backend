@@ -11,6 +11,8 @@ import { resolvePersonalDashboardModules } from "../dashboard/dashboard-scope";
 import { CalendarSourceRegistry } from "../calendar/calendar-source.registry";
 import type { CalendarEventSource } from "../calendar/calendar-event-source";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 const user: CurrentUserContext = {
   userId: "user-1",
@@ -62,6 +64,14 @@ function makeCanonicalWiring() {
         moduleKey,
       ),
     ),
+    moduleAvailabilityFor: jest.fn((orgId: string, userId: string, moduleKey: string) =>
+      moduleAvailability(
+        buildModuleAvailabilityResolver((id) => getModuleMap(id)),
+        orgId,
+        userId,
+        moduleKey,
+      ),
+    ),
   };
 
   return {
@@ -92,12 +102,24 @@ function executionContext(metadata: string, userContext = user) {
 }
 
 describe("c4 production access wiring", () => {
+  it("keeps guards and calendar sources on the person-aware availability seam", () => {
+    const productionCallers = [
+      resolve(__dirname, "../../common/rbac/module.guard.ts"),
+      resolve(__dirname, "../calendar/calendar-source.registry.ts"),
+    ];
+
+    for (const file of productionCallers) {
+      const source = readFileSync(file, "utf8");
+      expect(source).not.toContain("buildModuleAvailabilityResolver(");
+      expect(source).toMatch(/\.moduleAvailability(?:For)?\(/);
+    }
+  });
+
   it("routes ModuleGuard and PermissionGuard/authorize through the canonical resolver", async () => {
     const wiring = makeCanonicalWiring();
     const moduleContext = executionContext("build");
     const moduleGuard = new ModuleGuard(
       moduleContext.reflector,
-      wiring.entitlements as never,
       wiring.access as never,
     );
 
@@ -162,7 +184,6 @@ describe("c4 production access wiring", () => {
       load: sourceLoad,
     };
     const registry = new CalendarSourceRegistry(
-      wiring.entitlements as never,
       wiring.access as never,
       { getDisabledKeys: jest.fn().mockResolvedValue(new Set<string>()) } as never,
     );

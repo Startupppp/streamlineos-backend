@@ -5,16 +5,13 @@ import { REQUIRE_MODULE } from "./require-module.decorator";
 import { ModuleDisabledException } from "../http/api-exceptions";
 import { IS_PUBLIC } from "../auth/public.decorator";
 import type { CurrentUserContext } from "../auth/backend-claims";
-import { EntitlementsService } from "../../modules/access/entitlements.service";
 import { AccessService } from "../../modules/access/access.service";
 import { moduleIdFromStored } from "./module-registry";
-import { moduleAvailability } from "./module-availability";
 
 @Injectable()
 export class ModuleGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
-    private readonly entitlements: EntitlementsService,
     private readonly accessSvc: AccessService,
   ) {}
 
@@ -46,14 +43,7 @@ export class ModuleGuard implements CanActivate {
       moduleIdFromStored,
     );
     for (const moduleKey of moduleKeys) {
-      const avail = await moduleAvailability(
-        this.accessSvc.buildModuleAvailabilityResolver(
-          (orgId) => this.entitlements.getModuleMap(orgId),
-        ),
-        user.orgId,
-        user.userId,
-        moduleKey,
-      );
+      const avail = await this.accessSvc.moduleAvailability(user, moduleKey);
       if (!avail.available) throw new ModuleDisabledException(moduleKey);
     }
     return true;

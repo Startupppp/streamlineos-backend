@@ -578,10 +578,19 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     user: CurrentUserContext,
     moduleKey: string,
   ): Promise<ModuleAvailabilityResult> {
+    return this.moduleAvailabilityFor(user.orgId, user.userId, moduleKey);
+  }
+
+  /** Canonical person-aware module answer when only tenant identity is available. */
+  async moduleAvailabilityFor(
+    orgId: string,
+    userId: string,
+    moduleKey: string,
+  ): Promise<ModuleAvailabilityResult> {
     return moduleAvailability(
       this.buildModuleAvailabilityResolver((orgId) => this.entitlements.getModuleMap(orgId)),
-      user.orgId,
-      user.userId,
+      orgId,
+      userId,
       moduleKey,
     );
   }
