@@ -1,8 +1,11 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { crmDealStakeholders, contacts, deals } from "../../db/schema";
+import { crmDealStakeholders, deals } from "../../db/schema";
+import { businessParties, contactPartyMap } from "../../db/schema/party";
+import { PARTY_OF_CONTACT } from "../crm/crm-party-reads";
+import { isLegacyResolved, resolveLegacyParty } from "../party/party-legacy-seam";
 
 export interface CreateStakeholderInput {
   contactId: number;
@@ -44,26 +47,49 @@ export class DealsStakeholdersService {
         notes: crmDealStakeholders.notes,
         createdAt: crmDealStakeholders.createdAt,
         contact: {
-          id: contacts.id,
-          name: contacts.name,
-          email: contacts.email,
-          title: contacts.title,
-          company: contacts.company,
+          id: contactPartyMap.contactId,
+          name: businessParties.name,
+          email: businessParties.email,
+          title: businessParties.jobTitle,
+          company: businessParties.companyName,
         },
       })
       .from(crmDealStakeholders)
-      .innerJoin(contacts, eq(contacts.id, crmDealStakeholders.contactId))
+      /*
+       * The tenant is carried on both sides of both joins. The old join was
+       * `contacts.id = stakeholder.contact_id` and nothing else, so a stakeholder
+       * row holding another organisation's contact id rendered that contact's
+       * name, address and employer -- `contacts.id` is a global serial, and the
+       * only thing standing behind it was the check `createStakeholder` makes at
+       * write time.
+       */
+      .innerJoin(
+        contactPartyMap,
+        and(
+          eq(contactPartyMap.contactId, crmDealStakeholders.contactId),
+          eq(contactPartyMap.organizationId, crmDealStakeholders.orgId),
+        ),
+      )
+      .innerJoin(businessParties, PARTY_OF_CONTACT)
       .where(and(eq(crmDealStakeholders.orgId, orgId), eq(crmDealStakeholders.dealId, dealId)))
+      // A `LIMIT` with no `ORDER BY` returned an arbitrary hundred of whatever
+      // the heap handed back, and reading through the map changes that order.
+      // `id` is the unique tiebreaker `created_at` alone does not give.
+      .orderBy(asc(crmDealStakeholders.createdAt), asc(crmDealStakeholders.id))
       .limit(100);
   }
 
   async createStakeholder(orgId: string, dealId: number, input: CreateStakeholderInput) {
     await this.assertDealBelongsToOrg(orgId, dealId);
-    const contact = await this.db.query.contacts.findFirst({
-      where: and(eq(contacts.id, input.contactId), eq(contacts.orgId, orgId)),
-      columns: { id: true },
+    // Through the seam rather than `contacts`: the question is whether this
+    // organisation has a record for that contact id, and the map is what answers
+    // it once the legacy table is gone.
+    const contact = await resolveLegacyParty(this.db, orgId, {
+      kind: "CONTACT",
+      legacyId: input.contactId,
     });
-    if (!contact) throw new BadRequestException("Contact not found in this organization");
+    if (!isLegacyResolved(contact))
+      throw new BadRequestException("Contact not found in this organization");
 
     const [row] = await this.db
       .insert(crmDealStakeholders)

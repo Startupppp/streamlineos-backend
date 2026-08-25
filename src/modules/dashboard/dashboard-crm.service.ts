@@ -1,14 +1,15 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, eq, gte, isNull, lt, ne, sum } from "drizzle-orm";
+import { and, count, countDistinct, eq, gte, isNull, lt, ne, sum, type SQL } from "drizzle-orm";
 import {
   crmActivities,
   deals,
   jobPostings,
-  leads,
   organizationMembers,
   projects,
   users,
 } from "../../db/schema";
+import { businessParties, leadPartyMap } from "../../db/schema/party";
+import { PARTY_OF_LEAD, leadStatus } from "../crm/crm-party-reads";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -20,6 +21,36 @@ export class DashboardCrmService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
   ) {}
+
+  /**
+   * How many customers this organisation holds a lead record for.
+   *
+   * Distinct parties, not map rows, and that is the whole point of moving this
+   * read. A merge re-points the losing record's `lead_party_map` row onto the
+   * survivor and then refreshes every mapped legacy row from it, so two `leads`
+   * rows are left alive holding the same person's name and the loser's Party is
+   * the only thing marked deleted. `count(*) FROM leads` therefore counted that
+   * customer twice — on the total, on the conversion rate's denominator, and on
+   * the week's new leads. Counting the Party counts the customer.
+   *
+   * Deleted parties are excluded, which `count(*) FROM leads` never did either:
+   * the legacy reads here carried no `deleted_at` predicate at all, so a deleted
+   * lead still moved the executive dashboard.
+   */
+  private countLeadParties(orgId: string, ...conditions: SQL[]) {
+    return this.db
+      .select({ cnt: countDistinct(businessParties.partyId) })
+      .from(leadPartyMap)
+      .innerJoin(businessParties, PARTY_OF_LEAD)
+      .where(
+        and(
+          eq(leadPartyMap.organizationId, orgId),
+          eq(businessParties.organizationId, orgId),
+          isNull(businessParties.deletedAt),
+          ...conditions,
+        ),
+      );
+  }
 
   async getTodayActivities(orgId: string) {
     const todayStart = new Date();
@@ -94,12 +125,7 @@ export class DashboardCrmService {
             .where(
               and(eq(jobPostings.orgId, orgId), eq(jobPostings.status, "OPEN")),
             ),
-          this.db
-            .select({ cnt: count() })
-            .from(leads)
-            .where(
-              and(eq(leads.orgId, orgId), gte(leads.createdAt, weekStart)),
-            ),
+          this.countLeadParties(orgId, gte(businessParties.createdAt, weekStart)),
           this.db
             .select({ cnt: count() })
             .from(projects)
@@ -110,14 +136,8 @@ export class DashboardCrmService {
                 isNull(projects.deletedAt),
               ),
             ),
-          this.db
-            .select({ cnt: count() })
-            .from(leads)
-            .where(eq(leads.orgId, orgId)),
-          this.db
-            .select({ cnt: count() })
-            .from(leads)
-            .where(and(eq(leads.orgId, orgId), eq(leads.status, "CONVERTED"))),
+          this.countLeadParties(orgId),
+          this.countLeadParties(orgId, eq(leadStatus, "CONVERTED")),
         ]);
 
         const total = Number(totalLeadsRows[0]?.cnt ?? 0);

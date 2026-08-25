@@ -31,14 +31,6 @@ describe("the legacy identity tables gain no new readers", () => {
    * the start of Phase 2. Delete lines as each migrate batch lands; never add one.
    */
   const KNOWN_READERS = [
-  "src/modules/ai/core/crm-copilot-tools.ts",
-  "src/modules/ai/core/services/chat-assistant-context.ts",
-  "src/modules/ai/core/services/crm-brief.service.ts",
-  "src/modules/ai/core/services/crm-copilot.service.ts",
-  "src/modules/ai/core/services/crm-pipeline.service.ts",
-  "src/modules/ai/core/services/crm-scoring.service.ts",
-  "src/modules/ai/core/services/crm-tasks.service.ts",
-  "src/modules/clients/client-opportunities.service.ts",
   "src/modules/clients/clients.service.ts",
   "src/modules/contacts/contact-roles.service.ts",
   "src/modules/contacts/contacts.service.ts",
@@ -47,8 +39,6 @@ describe("the legacy identity tables gain no new readers", () => {
   "src/modules/crm/core/crm-org-merge.service.ts",
   "src/modules/crm/core/crm-organizations.service.ts",
   "src/modules/cron/cron-weekly-recap.service.ts",
-  "src/modules/dashboard/dashboard-crm.service.ts",
-  "src/modules/deals/deals-stakeholders.service.ts",
   "src/modules/inventory/returns/customer-returns.service.ts",
   "src/modules/leads/leads.controller.e2e-spec.ts",
   // The seam itself, plus what writes through it and what checks it. Not call
@@ -66,10 +56,10 @@ describe("the legacy identity tables gain no new readers", () => {
   "src/modules/party/party-legacy-writer.spec.ts",
   "src/modules/party/party-legacy-writer.ts",
   "src/modules/party/party-mirror-fields.ts",
-  "src/modules/platform/platform.service.ts",
-  "src/modules/sales/sales-analytics.service.ts",
+  // Global search reads every name, address and number it shows from Party;
+  // what is left here is `contacts.lead_id` and `contacts.deal_id`, the
+  // associations that scope a contact and that Party has no column for yet.
   "src/modules/search/search.service.ts",
-  "src/modules/surveys/survey-lead-automation.service.ts",
   ];
 
   /** Import of the Drizzle table symbol, which is how a read actually begins. */
