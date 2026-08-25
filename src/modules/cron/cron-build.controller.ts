@@ -11,7 +11,6 @@ import { logger } from "../../common/logger/logger.service";
 import { assertCronSecret } from "./cron-secret";
 import { CronProjectsService } from "./cron-projects.service";
 import { CrmSequencesRunnerService } from "../crm/automation-studio/crm-sequences-runner.service";
-import { CronFinanceService } from "./cron-finance.service";
 import { CronCrmTasksService } from "./cron-crm-tasks.service";
 import { CronBuildRetentionService } from "./cron-build-retention.service";
 import { CronBuildSnapshotsService } from "./cron-build-snapshots.service";
@@ -22,7 +21,6 @@ export class CronBuildController {
   constructor(
     private readonly cronProjects: CronProjectsService,
     private readonly crmSequencesRunner: CrmSequencesRunnerService,
-    private readonly cronFinance: CronFinanceService,
     private readonly crmTasks: CronCrmTasksService,
     private readonly buildRetention: CronBuildRetentionService,
     private readonly buildSnapshots: CronBuildSnapshotsService,
@@ -48,39 +46,6 @@ export class CronBuildController {
   @HttpCode(200)
   postCrmSequencesFlush(@Headers("authorization") authorization?: string) {
     return this.runCrmSequencesFlush(authorization);
-  }
-
-  @Get("finance-recurring-flush")
-  getFinanceRecurringFlush(@Headers("authorization") authorization?: string) {
-    return this.runFinanceRecurringFlush(authorization);
-  }
-
-  @Post("finance-recurring-flush")
-  @HttpCode(200)
-  postFinanceRecurringFlush(@Headers("authorization") authorization?: string) {
-    return this.runFinanceRecurringFlush(authorization);
-  }
-
-  @Get("finance-due-checks")
-  getFinanceDueChecks(@Headers("authorization") authorization?: string) {
-    return this.runFinanceDueChecks(authorization);
-  }
-
-  @Post("finance-due-checks")
-  @HttpCode(200)
-  postFinanceDueChecks(@Headers("authorization") authorization?: string) {
-    return this.runFinanceDueChecks(authorization);
-  }
-
-  @Get("finance-depreciation")
-  getFinanceDepreciation(@Headers("authorization") authorization?: string) {
-    return this.runFinanceDepreciation(authorization);
-  }
-
-  @Post("finance-depreciation")
-  @HttpCode(200)
-  postFinanceDepreciation(@Headers("authorization") authorization?: string) {
-    return this.runFinanceDepreciation(authorization);
   }
 
   @Get("crm-tasks-overdue-flush")
@@ -172,51 +137,6 @@ export class CronBuildController {
       };
     } catch (error) {
       logger.error("CRM sequences flush cron failed", error);
-      throw new InternalServerErrorException("Internal server error");
-    }
-  }
-
-  private async runFinanceRecurringFlush(authorization?: string) {
-    assertCronSecret(authorization);
-    try {
-      const result = await this.cronFinance.runRecurringFlush();
-      return {
-        success: true,
-        message: `Finance recurring flush: ${result.ran.join(", ")} — ${result.errors.length} error(s)`,
-        ...result,
-      };
-    } catch (error) {
-      logger.error("Finance recurring flush cron failed", error);
-      throw new InternalServerErrorException("Internal server error");
-    }
-  }
-
-  private async runFinanceDueChecks(authorization?: string) {
-    assertCronSecret(authorization);
-    try {
-      const result = await this.cronFinance.runDueChecks();
-      return {
-        success: true,
-        message: `Finance due checks: ${result.ran.join(", ")} — ${result.errors.length} error(s)`,
-        ...result,
-      };
-    } catch (error) {
-      logger.error("Finance due checks cron failed", error);
-      throw new InternalServerErrorException("Internal server error");
-    }
-  }
-
-  private async runFinanceDepreciation(authorization?: string) {
-    assertCronSecret(authorization);
-    try {
-      const result = await this.cronFinance.runDepreciation();
-      return {
-        success: true,
-        message: `Finance depreciation: ${result.ran.join(", ")} — ${result.errors.length} error(s)`,
-        ...result,
-      };
-    } catch (error) {
-      logger.error("Finance depreciation cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

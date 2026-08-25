@@ -21,7 +21,8 @@ import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { ReservationService } from "../stock-engine/reservation.service";
-import { JournalPostingService } from "../../accounting/posting/journal-posting.service";
+import { PostingCommandService } from "../../accounting/adapters/posting-command.service";
+import { AdapterRejection } from "../../accounting/adapters/posting-command.types";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 
 @Injectable()
@@ -34,7 +35,7 @@ export class SoLifecycleService {
     private readonly numSeq: NumberSequenceService,
     private readonly settingsService: InventorySettingsService,
     private readonly reservationService: ReservationService,
-    private readonly journalPosting: JournalPostingService,
+    private readonly posting: PostingCommandService,
     private readonly planLimits: PlanLimitsService,
   ) {}
 
@@ -180,30 +181,35 @@ export class SoLifecycleService {
       .set({ status: "INVOICED", invoiceId: invoice.id, updatedAt: new Date() })
       .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)));
 
-    await this.journalPosting.persistJournalEntry({
-      orgId,
-      entryDate: today,
-      description: `Invoice: ${invoiceNumber}`,
-      sourceType: "inv_sales_order",
-      sourceId: soId.toString(),
-      sourceEvent: "invoice",
-      status: "POSTED",
-      createdBy: userId,
-      lines: [
-        {
-          accountCode: "1200",
-          debit: Number(so.total),
-          credit: 0,
-          description: `AR - ${invoiceNumber}`,
-        },
-        {
-          accountCode: "4000",
-          debit: 0,
-          credit: Number(so.total),
-          description: `Sales Revenue - ${so.soNumber}`,
-        },
-      ],
-    });
+    // Gross-to-revenue, exactly as before: the sales order carries no tax
+    // determination, so splitting the total here would be inventing one.
+    const totalMinor = Math.round(Number(so.total) * 100);
+    try {
+      await this.posting.submit(orgId, userId, {
+        sourceType: "sales_invoice",
+        sourceId: String(invoice.id),
+        purpose: "issue",
+        journalDate: today,
+        memo: `Invoice: ${invoiceNumber}`,
+        lines: [
+          {
+            accountTag: "ar_control",
+            debitMinor: totalMinor,
+            description: `AR - ${invoiceNumber}`,
+          },
+          {
+            accountTag: "sales",
+            creditMinor: totalMinor,
+            description: `Sales Revenue - ${so.soNumber}`,
+          },
+        ],
+      });
+    } catch (error) {
+      // Accounting is opt-in; an org without a book has nowhere to post and
+      // must still be able to invoice a sales order.
+      if (!(error instanceof AdapterRejection && error.code === "BOOK_NOT_ENABLED")) throw error;
+      this.logger.debug(`Accounting is not enabled for org ${orgId}; ${invoiceNumber} was not posted`);
+    }
 
     await this.cache.del(CACHE_KEYS.invSoDetail(orgId, soId));
     await this.cache.invalidateNamespace(CACHE_KEYS.invSoNamespace(orgId));

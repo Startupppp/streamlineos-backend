@@ -1727,40 +1727,82 @@
     {
       "idx": 246,
       "version": "7",
+      "when": 1787671953441,
+      "tag": "0464_gl_kernel",
+      "breakpoints": true
+    },
+    {
+      "idx": 247,
+      "version": "7",
+      "when": 1787675553441,
+      "tag": "0465_accounting_documents",
+      "breakpoints": true
+    },
+    {
+      "idx": 248,
+      "version": "7",
+      "when": 1787679153441,
+      "tag": "0466_drop_legacy_accounting",
+      "breakpoints": true
+    },
+    {
+      "idx": 249,
+      "version": "7",
+      "when": 1787682753441,
+      "tag": "0467_restore_expense_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 250,
+      "version": "7",
       "when": 1787686353441,
       "tag": "0232_repair_crm_activity_grants",
       "breakpoints": true
     },
     {
-      "idx": 247,
+      "idx": 251,
       "version": "7",
       "when": 1787689953441,
       "tag": "0233_deals_value_not_null",
       "breakpoints": true
     },
     {
-      "idx": 248,
+      "idx": 252,
+      "version": "7",
+      "when": 1787693553441,
+      "tag": "0468_journal_source_expense_claim",
+      "breakpoints": true
+    },
+    {
+      "idx": 253,
       "version": "7",
       "when": 1787697153441,
       "tag": "0240_party_expand_legacy_fields",
       "breakpoints": true
     },
     {
-      "idx": 249,
+      "idx": 254,
       "version": "7",
       "when": 1787700753441,
       "tag": "0241_party_legacy_backfill",
       "breakpoints": true
     },
     {
-      "idx": 250,
+      "idx": 255,
+      "version": "7",
+      "when": 1787704353441,
+      "tag": "0244_party_mirror_divergence_permission",
+      "breakpoints": true
+    },
+    {
+      "idx": 256,
       "version": "7",
       "when": 1787707953441,
       "tag": "0250_data_quality_queue",
       "breakpoints": true
     },
     {
-      "idx": 251,
+      "idx": 257,
       "version": "7",
       "when": 1787711553441,
       "tag": "0251_backfill_data_quality_permissions",

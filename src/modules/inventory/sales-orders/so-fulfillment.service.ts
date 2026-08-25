@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Inject, Injectable, BadRequestException, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, Logger, BadRequestException, NotFoundException } from "@nestjs/common";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   invSalesOrders, invSoLines, invStockReservations, invPickLists, invPickListLines,
@@ -14,13 +14,16 @@ import { ReservationService } from "../stock-engine/reservation.service";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { INV_ERRORS } from "../stock-engine/stock-engine.types";
-import { JournalPostingService } from "../../accounting/posting/journal-posting.service";
+import { PostingCommandService } from "../../accounting/adapters/posting-command.service";
+import { AdapterRejection } from "../../accounting/adapters/posting-command.types";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { SoCoreService } from "./so-core.service";
 import type { ReserveSoInput, PickSoInput, PackSoInput, ShipSoInput } from "./dto/inv-sales-orders.schemas";
 
 @Injectable()
 export class SoFulfillmentService {
+  private readonly logger = new Logger(SoFulfillmentService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
@@ -28,7 +31,7 @@ export class SoFulfillmentService {
     private readonly reservationService: ReservationService,
     private readonly settingsService: InventorySettingsService,
     private readonly numSeq: NumberSequenceService,
-    private readonly journalPosting: JournalPostingService,
+    private readonly posting: PostingCommandService,
     private readonly soCore: SoCoreService,
   ) {}
 
@@ -441,20 +444,36 @@ export class SoFulfillmentService {
     }, 0);
 
     if (cogsTotal > 0) {
-      await this.journalPosting.persistJournalEntry({
-        orgId,
-        entryDate: data.shipDate,
-        description: `COGS: ${so.soNumber}`,
-        sourceType: "inv_sales_order",
-        sourceId: soId.toString(),
-        sourceEvent: "ship",
-        status: "POSTED",
-        createdBy: userId,
-        lines: [
-          { accountCode: "5000", debit: cogsTotal, credit: 0, description: `COGS - SO ${so.soNumber}` },
-          { accountCode: "1300", debit: 0, credit: cogsTotal, description: `Inventory deducted - ${so.soNumber}` },
-        ],
-      });
+      // Keyed on the shipment, not the sales order: a partially shipped SO
+      // ships more than once, and keying on the SO would make every shipment
+      // after the first an idempotent replay that silently posted no COGS.
+      const cogsMinor = Math.round(cogsTotal * 100);
+      try {
+        await this.posting.submit(orgId, userId, {
+          sourceType: "stock_move",
+          sourceId: String(shipment.id),
+          purpose: "ship",
+          journalDate: data.shipDate,
+          memo: `COGS: ${so.soNumber} (${shipmentNumber})`,
+          lines: [
+            {
+              accountTag: "cogs",
+              debitMinor: cogsMinor,
+              description: `COGS - SO ${so.soNumber}`,
+            },
+            {
+              accountTag: "inventory",
+              creditMinor: cogsMinor,
+              description: `Inventory deducted - ${so.soNumber}`,
+            },
+          ],
+        });
+      } catch (error) {
+        // Accounting is opt-in; an org without a book has nowhere to post and
+        // must still be able to ship. Anything else is a real failure.
+        if (!(error instanceof AdapterRejection && error.code === "BOOK_NOT_ENABLED")) throw error;
+        this.logger.debug(`Accounting is not enabled for org ${orgId}; COGS for ${shipmentNumber} was not posted`);
+      }
     }
 
     await this.cache.del(CACHE_KEYS.invSoDetail(orgId, soId));

@@ -26,7 +26,6 @@ import { SurveysModule } from "./modules/surveys/surveys.module";
 import { BlogModule } from "./modules/blog/blog.module";
 import { AuditLogModule } from "./modules/audit-log/audit-log.module";
 import { GoalsModule } from "./modules/goals/goals.module";
-import { ExpensesModule } from "./modules/expenses/expenses.module";
 import { TasksModule } from "./modules/tasks/tasks.module";
 import { PlatformModule } from "./modules/platform/platform.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
@@ -36,7 +35,6 @@ import { ReportsModule } from "./modules/reports/reports.module";
 import { SalesModule } from "./modules/sales/sales.module";
 import { CalendarModule } from "./modules/calendar/calendar.module";
 import { SettingsModule } from "./modules/settings/settings.module";
-import { InvoicesModule } from "./modules/invoices/invoices.module";
 import { CareersModule } from "./modules/careers/careers.module";
 import { WebhooksModule } from "./modules/webhooks/webhooks.module";
 import { ClientsModule } from "./modules/clients/clients.module";
@@ -55,6 +53,8 @@ import { SupportRootModule } from "./modules/support/support.module";
 import { ESignModule } from "./modules/e-sign/e-sign.module";
 import { KbModule } from "./modules/kb/kb.module";
 import { AccountingRootModule } from "./modules/accounting/accounting.module";
+import { ExpensesModule } from "./modules/expenses/expenses.module";
+import { InvoicesModule } from "./modules/invoices/invoices.module";
 import { ChatModule } from "./modules/chat/chat.module";
 import { HrModule } from "./modules/hr/hr.module";
 import { SearchModule } from "./modules/search/search.module";
@@ -77,7 +77,6 @@ import { WorkflowsModule } from "./modules/workflows/workflows.module";
 import { PayrollModule } from "./modules/payroll/payroll.module";
 import { TimesheetsRootModule } from "./modules/timesheets/timesheets.module";
 import { FeedbucketModule } from "./modules/feedbucket/feedbucket.module";
-import { FinanceModule } from "./modules/finance/finance.module";
 import { AgentAccessModule } from "./modules/agent-access/agent-access.module";
 import { MailModule } from "./modules/mail/mail.module";
 import { DirectoryModule } from "./modules/directory/directory.module";
@@ -86,6 +85,7 @@ import { ActivitiesModule } from "./modules/activities/activities.module";
 import { IngressModule } from "./modules/ingress/ingress.module";
 import { AutonomyModule } from "./modules/autonomy/autonomy.module";
 import { CrmImportModule } from "./modules/crm-import/crm-import.module";
+import { DataQualityModule } from "./modules/data-quality/data-quality.module";
 import { PortalModule } from "./modules/portal/portal.module";
 import { ModuleAccessModule } from "./modules/module-access/module-access.module";
 import { IdempotencyModule } from "./common/idempotency/idempotency.module";
@@ -95,7 +95,6 @@ import { MeController } from "./me/me.controller";
 import { MeService } from "./me/me.service";
 import { BuildModule } from "./modules/build/build.module";
 import { ZodValidationInterceptor } from "./common/validation/zod-validation.interceptor";
-import { DataQualityModule } from "./modules/data-quality/data-quality.module";
 
 @Module({
   imports: [
@@ -113,7 +112,6 @@ import { DataQualityModule } from "./modules/data-quality/data-quality.module";
     RateLimitModule,
     AuditLogModule,
     GoalsModule,
-    ExpensesModule,
     TasksModule,
     PlatformModule,
     NotificationsModule,
@@ -124,12 +122,10 @@ import { DataQualityModule } from "./modules/data-quality/data-quality.module";
     SalesModule,
     CalendarModule,
     SettingsModule,
-    InvoicesModule,
     CareersModule,
     WebhooksModule,
     ClientsModule,
     CrmRootModule,
-    FinanceModule,
     DashboardModule,
     PublicModule,
     RbacModule,
@@ -145,15 +141,17 @@ import { DataQualityModule } from "./modules/data-quality/data-quality.module";
     ESignModule,
     KbModule,
     AccountingRootModule,
+    ExpensesModule,
+    InvoicesModule,
     ChatModule,
     HrModule,
     DirectoryModule,
     PartyModule,
-    DataQualityModule,
     ActivitiesModule,
     IngressModule,
     AutonomyModule,
     CrmImportModule,
+    DataQualityModule,
     PortalModule,
     ModuleAccessModule,
     IdempotencyModule,

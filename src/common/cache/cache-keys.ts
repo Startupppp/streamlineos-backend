@@ -66,12 +66,6 @@ export const CACHE_KEYS = {
   executiveDashboard: (orgId: string) => `dashboard:executive:${orgId}`,
   announcementsList: (orgId: string) => `dashboard:announcements:${orgId}`,
 
-  invoicesList: (orgId: string, hash: string) =>
-    `invoices:list:${orgId}:${hash}`,
-  invoiceDetail: (orgId: string, id: number) =>
-    `invoices:detail:${orgId}:${id}`,
-  invoiceStats: (orgId: string) => `invoices:stats:${orgId}`,
-
   tasksList: (orgId: string, hash: string) => `tasks:list:${orgId}:${hash}`,
   taskDetail: (orgId: string, id: number) => `tasks:detail:${orgId}:${id}`,
 
@@ -168,6 +162,9 @@ export const CACHE_KEYS = {
   orgHierarchyNamespace: (orgId: string) => `org:hierarchy:${orgId}`,
   hrHeadcountNamespace: (orgId: string) => `hr:headcount:${orgId}`,
 
+  /** Employee expense claims (`modules/expenses`), versioned per organisation. */
+  expensesListNamespace: (orgId: string) => `expenses:list:${orgId}`,
+
   supportReportsOverview: (orgId: string) =>
     `support:reports:overview:${orgId}`,
 
@@ -190,66 +187,6 @@ export const CACHE_KEYS = {
   timesheetSettingsNamespace: (orgId: string) => `timesheets:settings:${orgId}`,
   timesheetRates: (orgId: string) => `timesheets:rates:${orgId}`,
   timesheetRatesNamespace: (orgId: string) => `timesheets:rates:${orgId}`,
-
-  finOverview: (orgId: string) => `fin:overview:${orgId}`,
-  finOverviewWithDates: (orgId: string, from: string, to: string) =>
-    `fin:overview:${orgId}:${from}:${to}`,
-  finVendorStatement: (
-    orgId: string,
-    vendorId: number,
-    from: string,
-    to: string,
-  ) => `fin:vendor-stmt:${orgId}:${vendorId}:${from}:${to}`,
-  finCustomerStatement: (
-    orgId: string,
-    clientId: number,
-    from: string,
-    to: string,
-  ) => `fin:customer-stmt:${orgId}:${clientId}:${from}:${to}`,
-  finSalesByCustomer: (orgId: string, from: string, to: string) =>
-    `fin:sales-by-customer:${orgId}:${from}:${to}`,
-  finSalesByItem: (orgId: string, from: string, to: string) =>
-    `fin:sales-by-item:${orgId}:${from}:${to}`,
-  finExpenseByCategory: (orgId: string, from: string, to: string) =>
-    `fin:expense-by-cat:${orgId}:${from}:${to}`,
-  finTaxSummary: (orgId: string, from: string, to: string) =>
-    `fin:tax-summary:${orgId}:${from}:${to}`,
-  finProjectProfitability: (orgId: string, from: string, to: string) =>
-    `fin:proj-profit:${orgId}:${from}:${to}`,
-  finDeptProfitability: (orgId: string, from: string, to: string) =>
-    `fin:dept-profit:${orgId}:${from}:${to}`,
-  finBudgetVsActual: (
-    orgId: string,
-    budgetId: number,
-    from: string,
-    to: string,
-  ) => `fin:bva:${orgId}:${budgetId}:${from}:${to}`,
-  finWorkingCapital: (orgId: string, asOf: string) =>
-    `fin:working-capital:${orgId}:${asOf}`,
-  finBurnRate: (orgId: string) => `fin:burn-rate:${orgId}`,
-  finCashRunway: (orgId: string, months: number) =>
-    `fin:cash-runway:${orgId}:${months}`,
-  finInsightsAnomalies: (orgId: string, from: string, to: string) =>
-    `fin:insights:anomalies:${orgId}:${from}:${to}`,
-  finInsightsDigest: (orgId: string) => `fin:insights:digest:${orgId}`,
-  finCategorizeSuggest: (orgId: string, merchant: string) =>
-    `fin:cat-suggest:${orgId}:${merchant}`,
-
-  expensesListNamespace: (orgId: string) => `hr:expenses:${orgId}`,
-  finAssetsListNamespace: (orgId: string) => `fin:assets:list:${orgId}`,
-  finAssetCategoriesNamespace: (orgId: string) =>
-    `fin:asset-categories:${orgId}`,
-  finTaxCodesNamespace: (orgId: string) => `fin:tax-codes:${orgId}`,
-  finTaxPaymentsNamespace: (orgId: string) => `fin:tax-payments:${orgId}`,
-  finTaxDashboardNamespace: (orgId: string) => `fin:tax-dashboard:${orgId}`,
-  finTaxReportsNamespace: (orgId: string) => `fin:tax-reports:${orgId}`,
-  finExpensePoliciesNamespace: (orgId: string) =>
-    `fin:expense-policies:${orgId}`,
-  finBankAccountsNamespace: (orgId: string) =>
-    `fin:banking:accounts:${orgId}`,
-  finForecastNamespace: (orgId: string) => `fin:forecast:${orgId}`,
-  finBvaNamespace: (orgId: string, budgetId: number) =>
-    `fin:bva:${orgId}:${budgetId}`,
 
   orgSettings: (orgId: string) => `org:settings:${orgId}`,
   orgProfileNamespace: (orgId: string) => `org:profile:${orgId}`,

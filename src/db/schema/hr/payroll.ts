@@ -21,7 +21,6 @@ import {
   fnfStatusEnum,
 } from "../common/enums";
 import { organizations, users } from "../common/auth";
-import { journalEntries, ledgerAccounts } from "../accounting/accounting";
 import { projects } from "../build";
 import { resignations } from "./offboarding";
 import { assets } from "./assets";
@@ -38,9 +37,10 @@ export const expenseCategories = pgTable(
     budgetLimit: decimal("budget_limit", { precision: 15, scale: 2 }),
     budgetPeriod: text("budget_period").default("MONTHLY").notNull(),
     isActive: boolean("is_active").default(true).notNull(),
-    ledgerAccountId: integer("ledger_account_id").references(
-      () => ledgerAccounts.id,
-    ),
+    // Formerly an FK into the retired `ledger_accounts` table. Kept as a plain
+    // column so historical values survive; the new accounting kernel resolves
+    // accounts by system tag, not by an id another module stores.
+    ledgerAccountId: integer("ledger_account_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
@@ -85,9 +85,8 @@ export const expenses = pgTable(
     paidAt: timestamp("paid_at"),
     transactionRef: text("transaction_ref"),
     reimbursementBatchId: integer("reimbursement_batch_id"),
-    postedJournalEntryId: integer("posted_journal_entry_id").references(
-      () => journalEntries.id,
-    ),
+    // Formerly an FK into the retired `journal_entries` table; see above.
+    postedJournalEntryId: integer("posted_journal_entry_id"),
     policyFlag: text("policy_flag"),
     expenseDate: date("expense_date").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -325,10 +324,6 @@ export const expensesRelations = relations(expenses, ({ one }) => ({
   project: one(projects, {
     fields: [expenses.projectId],
     references: [projects.id],
-  }),
-  postedJournalEntry: one(journalEntries, {
-    fields: [expenses.postedJournalEntryId],
-    references: [journalEntries.id],
   }),
 }));
 

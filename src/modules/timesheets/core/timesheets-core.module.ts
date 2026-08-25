@@ -31,9 +31,10 @@ import { ExceptionsDetectorService } from "./exceptions-detector.service";
 import { TimesheetsAiController } from "./timesheets-ai.controller";
 import { TimesheetsAiService } from "./timesheets-ai.service";
 import { AiModule } from "../../ai/core/ai.module";
+import { AccountingKernelModule } from "../../accounting/kernel/accounting-kernel.module";
 
 @Module({
-  imports: [AiModule],
+  imports: [AiModule, AccountingKernelModule],
   controllers: [
     EntriesController,
     TimerController,

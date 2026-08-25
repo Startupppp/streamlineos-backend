@@ -10,7 +10,8 @@ import { PaymentProviderSetupService } from "./payment-provider-setup.service";
 import { PaymentAuditService } from "./payment-audit.service";
 import { PaymentAnalyticsService } from "./payment-analytics.service";
 import { webhookEnvelopeSchema } from "./dto/webhook.schemas";
-import { ProviderBridgeService } from "../../finance/controls/provider-bridge.service";
+import { PostingCommandService } from "../../accounting/adapters/posting-command.service";
+import type { PostingCommandLine } from "../../accounting/adapters/posting-command.types";
 import type { RequestActorContext } from "../../../common/audit/actor-context";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 
@@ -41,7 +42,7 @@ export class PaymentWebhookHealthService {
     private readonly providers: PaymentProviderSetupService,
     private readonly audit: PaymentAuditService,
     private readonly paymentAnalytics: PaymentAnalyticsService,
-    private readonly providerBridge: ProviderBridgeService,
+    private readonly posting: PostingCommandService,
   ) {}
 
   private async findProvider(orgId: string, providerKey: string) {
@@ -272,14 +273,7 @@ export class PaymentWebhookHealthService {
     try {
       const paymentEntity = this.extractPaymentEntity(envelope.payload);
       if (paymentEntity && envelope.event.includes("payment") && typeof paymentEntity.amount === "number") {
-        await this.providerBridge.recordProviderPayment(params.orgId, "system", {
-          provider: params.providerKey,
-          providerEventId: providerEventId,
-          grossAmount: String(paymentEntity.amount / 100),
-          feeAmount: String(typeof paymentEntity.fee === "number" ? paymentEntity.fee / 100 : 0),
-          currency: typeof paymentEntity.currency === "string" ? paymentEntity.currency.toUpperCase() : "INR",
-          occurredAt: typeof paymentEntity.created_at === "number" ? new Date(paymentEntity.created_at * 1000) : new Date(),
-        });
+        await this.recordProviderPayment(params.orgId, params.providerKey, providerEventId, paymentEntity);
       }
     } catch (bridgeError) {
       this.logger.warn(`Provider bridge posting failed for event ${providerEventId}: ${bridgeError instanceof Error ? bridgeError.message : String(bridgeError)}`);
@@ -329,5 +323,74 @@ export class PaymentWebhookHealthService {
       }
     }
     return null;
+  }
+
+  /**
+   * A captured provider payment, offered to accounting.
+   *
+   *   payment gateway clearing   net     (debit)   — captured, not yet settled
+   *   payment processing fees    fee     (debit)
+   *   accounts receivable        gross   (credit)
+   *
+   * The provider reports amounts in the currency's smallest unit, which is
+   * exactly what the ledger wants, so nothing is converted through a float on
+   * the way in. Accounting resolves the three accounts from the org's own chart
+   * by system tag; billing never names a GL account and never writes a journal
+   * line itself.
+   *
+   * Rejections (accounting not enabled for the org, a currency the book cannot
+   * take without an FX rate) propagate to the caller, which logs and still
+   * acknowledges the webhook — a provider must never be told to retry because
+   * a bookkeeping entry did not land.
+   */
+  private async recordProviderPayment(
+    orgId: string,
+    providerKey: string,
+    providerEventId: string,
+    entity: Record<string, unknown>,
+  ): Promise<void> {
+    const grossMinor = typeof entity.amount === "number" ? Math.round(entity.amount) : 0;
+    const feeMinor = typeof entity.fee === "number" ? Math.round(entity.fee) : 0;
+    const netMinor = grossMinor - feeMinor;
+    if (grossMinor <= 0 || netMinor <= 0) return;
+
+    const currency = typeof entity.currency === "string" ? entity.currency.toUpperCase() : "INR";
+    const occurredAt =
+      typeof entity.created_at === "number" ? new Date(entity.created_at * 1000) : new Date();
+    const journalDate = occurredAt.toISOString().slice(0, 10);
+
+    const lines: PostingCommandLine[] = [
+      {
+        accountTag: "psp_clearing",
+        debitMinor: netMinor,
+        currency,
+        description: `${providerKey} settlement due`,
+      },
+      {
+        accountTag: "ar_control",
+        creditMinor: grossMinor,
+        currency,
+        description: `${providerKey} payment ${providerEventId}`,
+      },
+    ];
+    if (feeMinor > 0) {
+      lines.splice(1, 0, {
+        accountTag: "payment_fees",
+        debitMinor: feeMinor,
+        currency,
+        description: `${providerKey} processing fee`,
+      });
+    }
+
+    // No human actor: the webhook posts as the system, and the ledger records
+    // that honestly as a null poster rather than inventing a user id.
+    await this.posting.submit(orgId, null, {
+      sourceType: "payment",
+      sourceId: providerEventId,
+      purpose: "payment_received",
+      journalDate,
+      memo: `${providerKey} payment received (${currency}) event ${providerEventId}`,
+      lines,
+    });
   }
 }

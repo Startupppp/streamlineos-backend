@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   Inject,
   Injectable,
+  Logger,
   BadRequestException,
   NotFoundException,
 } from "@nestjs/common";
@@ -25,7 +26,11 @@ import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { INV_ERRORS } from "../stock-engine/stock-engine.types";
-import { JournalPostingService } from "../../accounting/posting/journal-posting.service";
+import { PostingCommandService } from "../../accounting/adapters/posting-command.service";
+import {
+  AdapterRejection,
+  type PostingCommand,
+} from "../../accounting/adapters/posting-command.types";
 import type {
   CreateGrnInput,
   ListGrnInput,
@@ -36,13 +41,15 @@ import { PoService } from "./po.service";
 
 @Injectable()
 export class GrnService {
+  private readonly logger = new Logger(GrnService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly engine: StockEngineService,
     private readonly settingsService: InventorySettingsService,
     private readonly numSeq: NumberSequenceService,
-    private readonly journalPosting: JournalPostingService,
+    private readonly posting: PostingCommandService,
     private readonly poService: PoService,
   ) {}
 
@@ -389,26 +396,25 @@ export class GrnService {
     }
 
     if (totalValue > 0) {
-      await this.journalPosting.persistJournalEntry({
-        orgId,
-        entryDate: data.receivedDate,
-        description: `Goods received: ${grnNumber}`,
-        sourceType: "inv_grn",
+      // Goods-received accrual. Accounting resolves the accounts from the org's
+      // own chart via system tags; inventory never names a GL account, and a
+      // redelivered receipt is idempotent on the GRN id.
+      const totalMinor = Math.round(totalValue * 100);
+      await this.postToLedger(orgId, userId, {
+        sourceType: "stock_move",
         sourceId: String(grnId),
-        sourceEvent: "receive",
-        status: "POSTED",
-        createdBy: userId,
+        purpose: "receive",
+        journalDate: data.receivedDate,
+        memo: `Goods received: ${grnNumber}`,
         lines: [
           {
-            credit: 0,
-            debit: totalValue,
-            accountCode: "1300",
+            accountTag: "inventory",
+            debitMinor: totalMinor,
             description: `Inventory received - ${grnNumber}`,
           },
           {
-            accountCode: "2000",
-            debit: 0,
-            credit: totalValue,
+            accountTag: "ap_control",
+            creditMinor: totalMinor,
             description: `AP - PO ${po.poNumber}`,
           },
         ],
@@ -610,5 +616,28 @@ export class GrnService {
     ]);
 
     return { reversed: true, grnId, transactionCount: txns.length };
+  }
+
+  /**
+   * Accounting is opt-in. An org that never enabled it has no book to post
+   * into, and that must not fail a goods receipt — every other rejection
+   * (a missing account role, an unbalanced total) still surfaces loudly.
+   */
+  private async postToLedger(
+    orgId: string,
+    userId: string,
+    command: PostingCommand,
+  ): Promise<void> {
+    try {
+      await this.posting.submit(orgId, userId, command);
+    } catch (error) {
+      if (error instanceof AdapterRejection && error.code === "BOOK_NOT_ENABLED") {
+        this.logger.debug(
+          `Accounting is not enabled for org ${orgId}; ${command.sourceType} ${command.sourceId} was not posted`,
+        );
+        return;
+      }
+      throw error;
+    }
   }
 }

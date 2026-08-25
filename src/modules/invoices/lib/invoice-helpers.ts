@@ -1,11 +1,65 @@
 import { eq } from "drizzle-orm";
-import { indianStates, organizations } from "../../../db/schema";
+import { organizations } from "../../../db/schema";
 import type { Db } from "../../../db/drizzle.module";
+import { allocate, money } from "../../accounting/kernel/money";
 
 export const GST_RATES = [0, 5, 12, 18, 28] as const;
 export type GstRate = (typeof GST_RATES)[number];
 
 export const round2 = (n: number): number => Math.round(n * 100) / 100;
+
+/**
+ * GST state codes, keyed by the state name an organisation stores on its
+ * address.
+ *
+ * This replaces the `indian_states` lookup table, which was dropped with the
+ * pre-rewrite accounting schema in 0466. The new tax engine works in opaque
+ * region codes supplied by the document (`place_of_supply_code`) and carries no
+ * name-to-code catalogue, so the mapping lives here as data rather than as a
+ * table nothing else reads. Codes are the GSTIN prefixes published by the GST
+ * Council; `97` is Other Territory.
+ */
+export const INDIAN_STATE_CODES: Readonly<Record<string, string>> = Object.freeze({
+  "jammu and kashmir": "01",
+  "himachal pradesh": "02",
+  punjab: "03",
+  chandigarh: "04",
+  uttarakhand: "05",
+  haryana: "06",
+  delhi: "07",
+  "rajasthan": "08",
+  "uttar pradesh": "09",
+  bihar: "10",
+  sikkim: "11",
+  "arunachal pradesh": "12",
+  nagaland: "13",
+  manipur: "14",
+  mizoram: "15",
+  tripura: "16",
+  meghalaya: "17",
+  assam: "18",
+  "west bengal": "19",
+  jharkhand: "20",
+  odisha: "21",
+  orissa: "21",
+  chhattisgarh: "22",
+  "madhya pradesh": "23",
+  gujarat: "24",
+  "dadra and nagar haveli and daman and diu": "26",
+  maharashtra: "27",
+  karnataka: "29",
+  goa: "30",
+  lakshadweep: "31",
+  kerala: "32",
+  "tamil nadu": "33",
+  puducherry: "34",
+  pondicherry: "34",
+  "andaman and nicobar islands": "35",
+  telangana: "36",
+  "andhra pradesh": "37",
+  ladakh: "38",
+  "other territory": "97",
+});
 
 export function normalizeGstRate(value: string): GstRate {
   const parsed = Number(value);
@@ -63,10 +117,33 @@ export async function resolveSupplierStateCode(
   });
   const stateName = org?.address?.state;
   if (!stateName) return "";
-  const match = await db
-    .select({ stateCode: indianStates.stateCode })
-    .from(indianStates)
-    .where(eq(indianStates.stateName, stateName))
-    .limit(1);
-  return match[0]?.stateCode ?? "";
+  return INDIAN_STATE_CODES[stateName.trim().toLowerCase()] ?? "";
+}
+
+/**
+ * Split a GST pool into CGST/SGST or IGST.
+ *
+ * Intra-state supply halves the pool; inter-state puts all of it on IGST. The
+ * half is split through the kernel's largest-remainder `allocate`, so an odd
+ * number of paise lands on CGST rather than vanishing — the two halves always
+ * sum back to the pool.
+ *
+ * An unknown supplier state and an unknown place of supply compare equal, which
+ * keeps the pre-rewrite behaviour: a domestic seller with no state on file
+ * still produces CGST/SGST rather than being silently treated as inter-state.
+ */
+export function gstSplit(
+  taxPool: number,
+  supplierStateCode: string,
+  placeOfSupplyStateCode: string,
+): { cgst: number; sgst: number; igst: number } {
+  const poolMinor = Math.round(round2(taxPool) * 100);
+  if (poolMinor <= 0) return { cgst: 0, sgst: 0, igst: 0 };
+
+  if (supplierStateCode !== placeOfSupplyStateCode) {
+    return { cgst: 0, sgst: 0, igst: poolMinor / 100 };
+  }
+
+  const [cgst, sgst] = allocate(money(poolMinor, "INR"), [1, 1]);
+  return { cgst: cgst.minor / 100, sgst: sgst.minor / 100, igst: 0 };
 }

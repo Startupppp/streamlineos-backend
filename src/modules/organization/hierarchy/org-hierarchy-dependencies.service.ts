@@ -4,7 +4,6 @@ import {
   clientAccounts,
   documents,
   employeeSalaryProfiles,
-  finBudgetLines,
   headcountRequests,
   hrCompBudgetPools,
   hrCompCycles,
@@ -17,7 +16,7 @@ import {
   incentives,
   invWarehouses,
   jobPostings,
-  journalLines,
+  glJournalLines,
   legalEntities,
   onboardingTemplates,
   orgUnitMembers,
@@ -287,17 +286,18 @@ export class OrgHierarchyDependenciesService {
             sql`${documents}`,
             sql`${documents.orgId} = ${orgId} AND ${documents.departmentId} = ${unitId}`,
           ),
-          countQuery(
-            "budget_lines",
-            "Finance budget lines",
-            sql`${finBudgetLines}`,
-            sql`${finBudgetLines.orgId} = ${orgId} AND ${finBudgetLines.departmentId} = ${unitId}`,
-          ),
+          // The ledger's branch dimension is an org_unit id, so this is the
+          // same question the retired `journal_lines.department_id` answered:
+          // has anything been *posted* against this department? Its FK is
+          // ON DELETE SET NULL, so without this check a hard delete would
+          // silently orphan the dimension on posted history instead of
+          // refusing. There is no budget-line equivalent — accounting v1 has
+          // no budgets — so that check is gone rather than re-pointed.
           countQuery(
             "journal_lines",
             "Accounting journal lines",
-            sql`${journalLines}`,
-            sql`${journalLines.orgId} = ${orgId} AND ${journalLines.departmentId} = ${unitId}`,
+            sql`${glJournalLines}`,
+            sql`${glJournalLines.orgId} = ${orgId} AND ${glJournalLines.dimensionBranchId} = ${unitId}`,
           ),
         );
       }

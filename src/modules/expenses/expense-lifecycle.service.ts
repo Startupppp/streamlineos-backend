@@ -2,27 +2,42 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { createHash } from "crypto";
-import {
-  expenses,
-  finExpensePolicies,
-  finApprovalPolicies,
-  finApprovalRequests,
-  expenseCategories,
-} from "../../db/schema";
+import { expenses, finExpensePolicies } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
-import { compareDecimals, formatDecimal } from "../accounting/core/money.util";
+import { fromDecimalString, money, toDecimalString } from "../accounting/kernel/money";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
-import { FinancePostingService } from "../accounting/posting/finance-posting.service";
-import type { PostJournalLine } from "../accounting/core/finance-posting.types";
+import { PostingCommandService } from "../accounting/adapters/posting-command.service";
+import { AdapterRejection } from "../accounting/adapters/posting-command.types";
+import { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+
+/**
+ * Expense rows carry decimal strings; the ledger kernel works in integer minor
+ * units. Everything crossing into accounting — and every policy comparison —
+ * converts here, once, so no two amounts are ever compared as floats.
+ *
+ * `expenses.currency` is free text that predates the currency catalogue, so an
+ * unrecognised code falls back to a two-decimal reading rather than throwing:
+ * refusing to submit an expense over a currency code is a worse answer than
+ * assuming the near-universal scale.
+ */
+function amountToMinor(amount: string | number, currency: string): number {
+  const text = typeof amount === "number" ? amount.toString() : amount.trim();
+  try {
+    return fromDecimalString(text, currency.toUpperCase()).minor;
+  } catch {
+    return fromDecimalString(Number(text).toFixed(2), "INR").minor;
+  }
+}
 
 function normalizeMerchant(merchant: string | null | undefined): string {
   if (!merchant) return "";
@@ -35,7 +50,10 @@ function buildReceiptHash(
   expenseDate: string,
   merchant: string | null | undefined,
 ): string {
-  const raw = `${orgId}|${formatDecimal(amount, 2)}|${expenseDate}|${normalizeMerchant(merchant)}`;
+  // Two decimals, exactly as the retired `formatDecimal(amount, 2)` produced,
+  // so hashes computed before the rewrite still match.
+  const normalizedAmount = toDecimalString(money(amountToMinor(amount, "INR"), "INR"));
+  const raw = `${orgId}|${normalizedAmount}|${expenseDate}|${normalizeMerchant(merchant)}`;
   return createHash("sha256").update(raw).digest("hex");
 }
 
@@ -47,18 +65,34 @@ interface PolicyEvalResult {
 
 interface ApprovalCheckResult {
   needsApproval: boolean;
-  approverUserId: string | null;
   policyId: number | null;
 }
 
+/**
+ * The expense claim lifecycle: submit, approve, reject.
+ *
+ * Approval posts an accrual to the general ledger through
+ * `PostingCommandService`, the accounting module's anti-corruption layer.
+ * Nothing here names a GL account: lines are tagged with a `GlSystemTag` and
+ * accounting resolves them against the organisation's own chart, so a tenant
+ * renumbering their accounts cannot break expense approval.
+ *
+ * Accounting is opt-in, and HR self-service is not. An organisation that never
+ * enabled accounting still approves expenses — the posting is skipped, not
+ * failed (the same contract `payroll-posting.service.ts` and `grn.service.ts`
+ * keep).
+ */
 @Injectable()
 export class ExpenseLifecycleService {
+  private readonly logger = new Logger(ExpenseLifecycleService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly audit: AuditService,
     private readonly dispatch: NotificationDispatchService,
-    private readonly posting: FinancePostingService,
+    private readonly posting: PostingCommandService,
+    private readonly access: AccessService,
   ) {}
 
   computeReceiptHash(
@@ -92,33 +126,42 @@ export class ExpenseLifecycleService {
   async evaluatePolicy(
     orgId: string,
     categoryId: number | null | undefined,
-    amount: number,
+    amount: number | string,
+    currency: string,
     hasReceipt: boolean,
   ): Promise<PolicyEvalResult> {
-    const conditions = [
-      eq(finExpensePolicies.orgId, orgId),
-      eq(finExpensePolicies.isActive, true),
-    ];
-
     const policies = await this.db
       .select()
       .from(finExpensePolicies)
-      .where(and(...conditions));
+      .where(
+        and(
+          eq(finExpensePolicies.orgId, orgId),
+          eq(finExpensePolicies.isActive, true),
+        ),
+      );
 
     const applicable = policies.filter(
       (p) => p.categoryId === null || p.categoryId === categoryId,
     );
 
+    const amountMinor = amountToMinor(amount, currency);
     let policyFlag: string | null = null;
 
     for (const policy of applicable) {
-      if (policy.maxAmount !== null && compareDecimals(amount.toString(), policy.maxAmount) > 0) {
-        return { policyFlag: "OVER_LIMIT", blocked: true, blockReason: `Amount exceeds policy limit of ${policy.maxAmount}` };
+      if (
+        policy.maxAmount !== null &&
+        amountMinor > amountToMinor(policy.maxAmount, currency)
+      ) {
+        return {
+          policyFlag: "OVER_LIMIT",
+          blocked: true,
+          blockReason: `Amount exceeds policy limit of ${policy.maxAmount}`,
+        };
       }
 
       if (
         policy.requiresReceiptAbove !== null &&
-        compareDecimals(amount.toString(), policy.requiresReceiptAbove) > 0 &&
+        amountMinor > amountToMinor(policy.requiresReceiptAbove, currency) &&
         !hasReceipt
       ) {
         policyFlag = "RECEIPT_REQUIRED";
@@ -128,35 +171,44 @@ export class ExpenseLifecycleService {
     return { policyFlag, blocked: false, blockReason: null };
   }
 
+  /**
+   * Whether this claim needs a second pair of eyes.
+   *
+   * The retired `fin_approval_policies` / `fin_approval_requests` pair went with
+   * the pre-rewrite accounting schema and has no successor — there is no
+   * org-wide approval table on the new kernel. The threshold now comes from
+   * `fin_expense_policies.requires_approval_above`, which is the column that was
+   * always meant to carry it, and the pending state is the expense's own
+   * `SUBMITTED` status rather than a parallel request row.
+   */
   async findApplicableApprovalPolicy(
     orgId: string,
-    amount: number,
+    categoryId: number | null | undefined,
+    amount: number | string,
+    currency: string,
   ): Promise<ApprovalCheckResult> {
     const policies = await this.db
       .select()
-      .from(finApprovalPolicies)
+      .from(finExpensePolicies)
       .where(
         and(
-          eq(finApprovalPolicies.orgId, orgId),
-          eq(finApprovalPolicies.recordType, "EXPENSE"),
-          eq(finApprovalPolicies.isActive, true),
+          eq(finExpensePolicies.orgId, orgId),
+          eq(finExpensePolicies.isActive, true),
         ),
       );
 
-    const applicable = policies.find((p) => {
-      if (p.minAmount === null) return true;
-      return compareDecimals(amount.toString(), p.minAmount) >= 0;
-    });
+    const amountMinor = amountToMinor(amount, currency);
+    const triggered = policies
+      .filter((p) => p.categoryId === null || p.categoryId === categoryId)
+      .find(
+        (p) =>
+          p.requiresApprovalAbove !== null &&
+          amountMinor > amountToMinor(p.requiresApprovalAbove, currency),
+      );
 
-    if (!applicable) {
-      return { needsApproval: false, approverUserId: null, policyId: null };
-    }
-
-    return {
-      needsApproval: true,
-      approverUserId: applicable.approverUserId ?? null,
-      policyId: applicable.id,
-    };
+    return triggered
+      ? { needsApproval: true, policyId: triggered.id }
+      : { needsApproval: false, policyId: null };
   }
 
   async submitExpense(
@@ -174,7 +226,7 @@ export class ExpenseLifecycleService {
       throw new BadRequestException(`Expense in status ${expense.status} cannot be submitted`);
     }
 
-    const amount = Number(expense.amount);
+    const currency = expense.currency || "INR";
     const hasReceipt = !!expense.receiptUrl;
 
     const hash = buildReceiptHash(u.orgId, expense.amount, expense.expenseDate, expense.merchant);
@@ -183,7 +235,8 @@ export class ExpenseLifecycleService {
     const policyResult = await this.evaluatePolicy(
       u.orgId,
       expense.categoryId ?? null,
-      amount,
+      expense.amount,
+      currency,
       hasReceipt,
     );
 
@@ -191,29 +244,22 @@ export class ExpenseLifecycleService {
       throw new BadRequestException(policyResult.blockReason ?? "Expense blocked by policy");
     }
 
-    const approvalResult = await this.findApplicableApprovalPolicy(u.orgId, amount);
+    const approvalResult = await this.findApplicableApprovalPolicy(
+      u.orgId,
+      expense.categoryId ?? null,
+      expense.amount,
+      currency,
+    );
 
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(expenses)
-        .set({
-          status: "SUBMITTED",
-          receiptHash: hash,
-          policyFlag: policyResult.policyFlag,
-          updatedAt: new Date(),
-        })
-        .where(and(eq(expenses.id, expenseId), eq(expenses.orgId, u.orgId)));
-
-      if (approvalResult.needsApproval) {
-        await tx.insert(finApprovalRequests).values({
-          orgId: u.orgId,
-          recordType: "EXPENSE",
-          recordId: expenseId,
-          status: "PENDING",
-          requestedBy: u.userId,
-        });
-      }
-    });
+    await this.db
+      .update(expenses)
+      .set({
+        status: "SUBMITTED",
+        receiptHash: hash,
+        policyFlag: policyResult.policyFlag,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(expenses.id, expenseId), eq(expenses.orgId, u.orgId)));
 
     this.audit.log({
       action: "expense.submitted",
@@ -221,18 +267,14 @@ export class ExpenseLifecycleService {
       orgId: u.orgId,
       targetId: String(expenseId),
       targetType: "expense",
+      metadata: { approvalRequired: approvalResult.needsApproval, policyId: approvalResult.policyId },
     });
 
-    if (approvalResult.approverUserId) {
-      void this.dispatch.emit({
-        eventKey: "accounting.expense.submitted",
-        orgId: u.orgId,
-        actorUserId: u.userId,
-        targetUserIds: [approvalResult.approverUserId],
-        entityType: "expense",
-        entityId: String(expenseId),
-        variables: { amount: expense.amount, category: expense.category },
-      });
+    if (approvalResult.needsApproval) {
+      // No approver column survives on the policy, so the claim goes to whoever
+      // actually holds the approval permission — the same set the submitted
+      // e-mail already targets.
+      void this.notifyApprovers(u, expenseId, expense.amount, expense.category);
     }
 
     await this.cache.invalidateNamespace(CACHE_KEYS.expensesListNamespace(u.orgId));
@@ -248,7 +290,7 @@ export class ExpenseLifecycleService {
   async approveExpense(
     u: CurrentUserContext,
     expenseId: number,
-  ): Promise<{ success: boolean; entryId: number | null }> {
+  ): Promise<{ success: boolean; journalId: string | null }> {
     const expense = await this.db.query.expenses.findFirst({
       where: and(eq(expenses.id, expenseId), eq(expenses.orgId, u.orgId)),
     });
@@ -260,72 +302,16 @@ export class ExpenseLifecycleService {
       throw new BadRequestException(`Expense in status ${expense.status} cannot be approved`);
     }
 
-    const openApprovalRequest = await this.db.query.finApprovalRequests.findFirst({
-      where: and(
-        eq(finApprovalRequests.orgId, u.orgId),
-        eq(finApprovalRequests.recordType, "EXPENSE"),
-        eq(finApprovalRequests.recordId, expenseId),
-        eq(finApprovalRequests.status, "PENDING"),
-      ),
-    });
+    const currency = (expense.currency || "INR").toUpperCase();
+    const totalMinor = amountToMinor(expense.amount, currency);
 
-    if (openApprovalRequest) {
-      if (!u.isOrgOwner) {
-        throw new BadRequestException("This expense requires a pending approval to be granted first");
-      }
-      await this.db
-        .update(finApprovalRequests)
-        .set({ status: "APPROVED", decidedBy: u.userId, decidedAt: new Date() })
-        .where(eq(finApprovalRequests.id, openApprovalRequest.id));
-    }
-
-    const categoryWithLedger = expense.categoryId
-      ? await this.db.query.expenseCategories.findFirst({
-          where: eq(expenseCategories.id, expense.categoryId),
-          columns: { id: true, name: true, ledgerAccountId: true },
-        })
-      : null;
-
-    const amount = Number(expense.amount);
-    const amountStr = amount.toFixed(2);
-    const taxAmount = expense.taxAmount ? Number(expense.taxAmount) : 0;
-    const expenseAmount = amount - taxAmount;
-
-    const lines: PostJournalLine[] = [
-      categoryWithLedger?.ledgerAccountId
-        ? {
-            accountId: categoryWithLedger.ledgerAccountId,
-            debit: expenseAmount.toFixed(2),
-            description: `Expense: ${expense.category}`,
-          }
-        : {
-            systemPurpose: "EXPENSE_CLEARING" as const,
-            debit: expenseAmount.toFixed(2),
-            description: `Expense: ${expense.category}`,
-          },
-    ];
-
-    if (taxAmount > 0) {
-      lines.push({
-        systemPurpose: "TAX_RECEIVABLE",
-        debit: taxAmount.toFixed(2),
-        description: "Tax receivable on expense",
-      });
-    }
-
-    lines.push({
-      systemPurpose: "REIMBURSEMENT_PAYABLE",
-      credit: amountStr,
-      description: "Reimbursement payable to employee",
-    });
-
-    const postResult = await this.posting.postJournal(u, {
-      entryDate: expense.expenseDate,
-      description: `Expense approved: ${expense.category} — ${expense.description ?? ""}`.trimEnd(),
-      sourceType: "EXPENSE",
-      sourceId: String(expenseId),
-      sourceEvent: "approved",
-      lines,
+    const journalId = await this.postApprovalAccrual(u, {
+      expenseId,
+      expenseDate: expense.expenseDate,
+      currency,
+      totalMinor,
+      category: expense.category,
+      description: expense.description,
     });
 
     await this.db
@@ -334,7 +320,6 @@ export class ExpenseLifecycleService {
         status: "REIMBURSEMENT_PENDING",
         approverId: u.userId,
         approvedAt: new Date(),
-        postedJournalEntryId: postResult.entryId,
         updatedAt: new Date(),
       })
       .where(and(eq(expenses.id, expenseId), eq(expenses.orgId, u.orgId)));
@@ -345,7 +330,7 @@ export class ExpenseLifecycleService {
       orgId: u.orgId,
       targetId: String(expenseId),
       targetType: "expense",
-      metadata: { journalEntryId: postResult.entryId },
+      metadata: { journalId },
     });
 
     void this.dispatch.emit({
@@ -360,7 +345,7 @@ export class ExpenseLifecycleService {
 
     await this.cache.invalidateNamespace(CACHE_KEYS.expensesListNamespace(u.orgId));
 
-    return { success: true, entryId: postResult.entryId };
+    return { success: true, journalId };
   }
 
   async rejectExpense(
@@ -390,18 +375,6 @@ export class ExpenseLifecycleService {
       })
       .where(and(eq(expenses.id, expenseId), eq(expenses.orgId, u.orgId)));
 
-    await this.db
-      .update(finApprovalRequests)
-      .set({ status: "REJECTED", decidedBy: u.userId, decidedAt: new Date(), decisionComment: rejectionReason })
-      .where(
-        and(
-          eq(finApprovalRequests.orgId, u.orgId),
-          eq(finApprovalRequests.recordType, "EXPENSE"),
-          eq(finApprovalRequests.recordId, expenseId),
-          eq(finApprovalRequests.status, "PENDING"),
-        ),
-      );
-
     this.audit.log({
       action: "expense.rejected",
       userId: u.userId,
@@ -424,5 +397,109 @@ export class ExpenseLifecycleService {
     await this.cache.invalidateNamespace(CACHE_KEYS.expensesListNamespace(u.orgId));
 
     return { success: true };
+  }
+
+  /* ------------------------------------------------------------ internals */
+
+  /**
+   * The accrual an approved claim creates:
+   *
+   *   operating expenses        gross   (debit)
+   *   employee payable          gross   (credit)
+   *
+   * Two deliberate differences from the retired posting service, both because
+   * the new kernel has no equivalent rather than for convenience:
+   *
+   * 1. The whole claim, tax included, debits `opex`. The old service split a
+   *    `TAX_RECEIVABLE` leg out, but a claim carries no tax code, no supplier
+   *    registration and no place of supply, so no input-tax credit can be
+   *    substantiated. Recoverable input tax is now determined by the tax engine
+   *    on AP documents; `expenses.tax_amount` is still recorded for reporting.
+   * 2. `expense_categories.ledger_account_id` is no longer honoured — it is a
+   *    legacy integer that cannot address a `gl_accounts` text id, and the
+   *    kernel resolves accounts by role, not by an id another module stores.
+   *
+   * The credit lands on `net_pay_clearing`: the kernel has no
+   * `reimbursement_payable` role, and that account is the employee-side
+   * liability a disbursement clears, which is exactly what a reimbursement is.
+   */
+  private async postApprovalAccrual(
+    u: CurrentUserContext,
+    claim: {
+      expenseId: number;
+      expenseDate: string;
+      currency: string;
+      totalMinor: number;
+      category: string;
+      description: string | null;
+    },
+  ): Promise<string | null> {
+    if (claim.totalMinor <= 0) return null;
+
+    const memo = `Expense approved: ${claim.category} — ${claim.description ?? ""}`.trimEnd();
+
+    try {
+      const result = await this.posting.submit(u.orgId, u.userId, {
+        // The kernel's `gl_journal_source` enum has no expense-claim member, so
+        // these post as `manual` with the expense id as the source id. Adding an
+        // `expense_claim` value would be the clean fix, but that is a change to
+        // the accounting kernel's schema, not to this module.
+        sourceType: "expense_claim",
+        sourceId: String(claim.expenseId),
+        purpose: "expense_approve",
+        journalDate: claim.expenseDate,
+        memo,
+        lines: [
+          {
+            accountTag: "opex",
+            debitMinor: claim.totalMinor,
+            currency: claim.currency,
+            description: `Expense: ${claim.category}`,
+          },
+          {
+            accountTag: "net_pay_clearing",
+            creditMinor: claim.totalMinor,
+            currency: claim.currency,
+            description: "Reimbursement payable to employee",
+          },
+        ],
+      });
+      return result.journalId;
+    } catch (error) {
+      if (error instanceof AdapterRejection && error.code === "BOOK_NOT_ENABLED") {
+        this.logger.debug(
+          `Accounting is not enabled for org ${u.orgId}; expense ${claim.expenseId} was approved without a ledger entry`,
+        );
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  private async notifyApprovers(
+    u: CurrentUserContext,
+    expenseId: number,
+    amount: string,
+    category: string,
+  ): Promise<void> {
+    try {
+      const approvers = await this.access.membersWithPermission(u.orgId, "hr:expenses:approve");
+      const targetUserIds = approvers.map((m) => m.userId).filter((id) => id !== u.userId);
+      if (targetUserIds.length === 0) return;
+
+      await this.dispatch.emit({
+        eventKey: "accounting.expense.submitted",
+        orgId: u.orgId,
+        actorUserId: u.userId,
+        targetUserIds,
+        entityType: "expense",
+        entityId: String(expenseId),
+        variables: { amount, category },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Could not notify expense approvers for ${expenseId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 }

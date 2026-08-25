@@ -1,5 +1,5 @@
 import { Module } from "@nestjs/common";
-import { AccountingGlModule } from "../../accounting/gl/accounting-gl.module";
+import { AccountingKernelModule } from "../../accounting/kernel/accounting-kernel.module";
 import { StockEngineService } from "./stock-engine.service";
 import { ReservationService } from "./reservation.service";
 import { NumberSequenceService } from "./number-sequence.service";
@@ -11,7 +11,7 @@ import { CostVisibilityService } from "./cost-visibility";
 import { MovementCostingService } from "./movement-costing.service";
 
 @Module({
-  imports: [AccountingGlModule],
+  imports: [AccountingKernelModule],
   providers: [
     StockEngineService,
     ReservationService,

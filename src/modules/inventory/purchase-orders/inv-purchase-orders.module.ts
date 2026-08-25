@@ -4,10 +4,10 @@ import { GrnController } from "./grn.controller";
 import { PoService } from "./po.service";
 import { GrnService } from "./grn.service";
 import { InvStockEngineModule } from "../stock-engine/inv-stock-engine.module";
-import { AccountingModule } from "../../accounting/core/accounting.module";
+import { AccountingAdaptersModule } from "../../accounting/adapters/accounting-adapters.module";
 
 @Module({
-  imports: [InvStockEngineModule, AccountingModule],
+  imports: [InvStockEngineModule, AccountingAdaptersModule],
   controllers: [InvPurchaseOrdersController, GrnController],
   providers: [PoService, GrnService],
   exports: [PoService, GrnService],

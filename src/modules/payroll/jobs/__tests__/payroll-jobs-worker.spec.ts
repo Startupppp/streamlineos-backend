@@ -82,6 +82,7 @@ describe("PayrollJobsWorkerService", () => {
       jobs,
       moduleRef as never,
       {} as never,
+      {} as never,
       handlers.generate as never,
       handlers.publishing as never,
       handlers.filings as never,
@@ -138,6 +139,7 @@ describe("PayrollJobsWorkerService", () => {
       jobs,
       { get: jest.fn() } as never,
       {} as never,
+      {} as never,
       generate as never,
       undefined,
       undefined,
@@ -172,6 +174,7 @@ describe("PayrollJobsWorkerService", () => {
     const worker = new PayrollJobsWorkerService(
       jobs,
       { get: jest.fn() } as never,
+      {} as never,
       {} as never,
       undefined,
       publishing as never,

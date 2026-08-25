@@ -15,12 +15,6 @@ import { HrWorkflowsModule } from "../hr/workflows/hr-workflows.module";
 import { HrCoreModule } from "../hr/core/hr-core.module";
 import { HrLifecycleModule } from "../hr/lifecycle/hr-lifecycle.module";
 import { HrGlobalModule } from "../hr/global/hr-global.module";
-import { AccountingGlModule } from "../accounting/gl/accounting-gl.module";
-import { InvoicesModule } from "../invoices/invoices.module";
-import { FinanceArModule } from "../finance/ar/finance-ar.module";
-import { FinanceApModule } from "../finance/ap/finance-ap.module";
-import { FinanceTaxModule } from "../finance/tax/finance-tax.module";
-import { FinanceAssetsModule } from "../finance/assets/finance-assets.module";
 import { AiJobsModule } from "../ai/jobs/ai-jobs.module";
 import { SupportKbGapModule } from "../support/kb-gap";
 import { TimesheetsCoreModule } from "../timesheets/core/timesheets-core.module";
@@ -46,7 +40,6 @@ import { CronRecruitmentService } from "./cron-recruitment.service";
 import { CronWeeklyRecapService } from "./cron-weekly-recap.service";
 import { CronEmailOutboxService } from "./cron-email-outbox.service";
 import { CronSupportService } from "./cron-support.service";
-import { CronFinanceService } from "./cron-finance.service";
 import { CronCrmTasksService } from "./cron-crm-tasks.service";
 import { CronIdempotencyService } from "./cron-idempotency.service";
 import { CronBuildRetentionService } from "./cron-build-retention.service";
@@ -74,12 +67,6 @@ import { CrmModule } from "../crm/core/crm.module";
     HrCoreModule,
     HrLifecycleModule,
     HrGlobalModule,
-    AccountingGlModule,
-    InvoicesModule,
-    FinanceArModule,
-    FinanceApModule,
-    FinanceTaxModule,
-    FinanceAssetsModule,
     CrmAutomationStudioModule,
     BillingModule,
     TimesheetsCoreModule,
@@ -111,7 +98,6 @@ import { CrmModule } from "../crm/core/crm.module";
     CronSupportService,
     CronNotificationDeliveryService,
     CronNotificationRetentionService,
-    CronFinanceService,
     CronCrmTasksService,
     CronIdempotencyService,
     CronBuildRetentionService,

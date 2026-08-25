@@ -1,6 +1,8 @@
 import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from "@nestjs/common";
 import { ModuleRef } from "@nestjs/core";
 import { and, eq, isNotNull, lt } from "drizzle-orm";
+import { APP_CONFIG } from "../../../config/config.module";
+import type { AppConfig } from "../../../config/env.validation";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { payrollJobs } from "../../../db/schema";
@@ -39,12 +41,14 @@ export class PayrollJobsWorkerService implements OnModuleInit, OnModuleDestroy {
     private readonly jobs: PayrollJobsService,
     private readonly moduleRef: ModuleRef,
     @Inject(DRIZZLE) private readonly db: Db,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Optional() private readonly generate?: GenerateService,
     @Optional() private readonly publishing?: PublishingService,
     @Optional() private readonly filings?: PayrollFilingsService,
   ) {}
 
   onModuleInit(): void {
+    if (this.config.PAYROLL_INPROCESS_WORKER === "false") return;
     // Lazy resolve to avoid circular DI hard-failures at bootstrap
     this.timer = setInterval(() => {
       void this.tick();
