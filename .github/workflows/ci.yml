@@ -106,5 +106,7 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=8192
           # Every eval spec in the repo gates its live block on this one var, so
-          # supplying it is what turns the six of them on.
+          # supplying it is what turns all of them on. Deliberately not a count:
+          # the last one that carried a number went stale the moment ticket 12
+          # added three more channel suites.
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
