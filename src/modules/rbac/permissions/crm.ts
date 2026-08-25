@@ -406,4 +406,29 @@ export const CRM_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Bring a CRM export into StreamlineOS, and take an import back out",
   },
+  {
+    name: "crm:issues:view",
+    resource: "crm:issues",
+    action: "view",
+    description: "View internal issues, internal tasks and customer complaints",
+    // Scopable so a member restricted to their own work sees the records they
+    // own rather than the organisation's, matching how `crm:deals:read` narrows.
+    scopable: true,
+  },
+  {
+    name: "crm:issues:manage",
+    resource: "crm:issues",
+    action: "manage",
+    description:
+      "Raise, edit and move internal issues, internal tasks and customer complaints",
+  },
+  {
+    // Separate from managing, because deciding that somebody's handling was not
+    // good enough is a different authority from working the record — and one
+    // that must be grantable without granting the other.
+    name: "crm:issues:escalate",
+    resource: "crm:issues",
+    action: "escalate",
+    description: "Escalate an issue, task or complaint above its owner",
+  },
 ];

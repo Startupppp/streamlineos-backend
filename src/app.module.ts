@@ -95,6 +95,7 @@ import { MeController } from "./me/me.controller";
 import { MeService } from "./me/me.service";
 import { BuildModule } from "./modules/build/build.module";
 import { ZodValidationInterceptor } from "./common/validation/zod-validation.interceptor";
+import { IssuesModule } from "./modules/issues/issues.module";
 
 @Module({
   imports: [
@@ -152,6 +153,7 @@ import { ZodValidationInterceptor } from "./common/validation/zod-validation.int
     AutonomyModule,
     CrmImportModule,
     DataQualityModule,
+    IssuesModule,
     PortalModule,
     ModuleAccessModule,
     IdempotencyModule,
