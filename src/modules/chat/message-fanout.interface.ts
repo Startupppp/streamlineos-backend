@@ -16,14 +16,3 @@ export interface FanoutInput {
 export interface MessageFanout {
   dispatch(input: FanoutInput): Promise<void>;
 }
-
-export interface FanoutDeferredTask {
-  orgId: string;
-  run(): Promise<void>;
-}
-
-export interface FanoutDeferralPort {
-  defer(task: FanoutDeferredTask): void;
-}
-
-export const FANOUT_DEFERRAL_PORT = "FANOUT_DEFERRAL_PORT";

@@ -10,20 +10,14 @@ export type { FanoutInput };
 
 type FanoutChannel = "push" | "dm_notification" | "mention_notification";
 
-export abstract class ChatMessageFanoutService implements MessageFanout {
-  abstract dispatch(input: FanoutInput): Promise<void>;
-}
-
 @Injectable()
-export class InProcessMessageFanout extends ChatMessageFanoutService {
+export class ChatMessageFanoutService implements MessageFanout {
   constructor(
     private readonly ably: AblyService,
     private readonly webPush: WebPushService,
     private readonly notifications: ChatNotificationsService,
     private readonly audit: AuditService,
-  ) {
-    super();
-  }
+  ) {}
 
   async dispatch(input: FanoutInput): Promise<void> {
     const {
