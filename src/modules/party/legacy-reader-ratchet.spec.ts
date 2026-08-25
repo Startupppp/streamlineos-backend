@@ -75,9 +75,22 @@ describe("the legacy identity tables gain no new readers", () => {
   "src/modules/leads/leads-reports.service.ts",
   "src/modules/leads/leads.controller.e2e-spec.ts",
   "src/modules/leads/leads.service.ts",
+  // The seam itself, plus what writes through it and what checks it. Not call
+  // sites to migrate -- they are what everything else migrates ONTO, and they
+  // import the legacy tables for the same reason `party-legacy-seam.ts` always
+  // has: something must name the table it is standing in for. When this list
+  // reaches only these, ticket 08 can drop the tables and these files with them.
+  "src/modules/party/party-divergence.service.ts",
+  "src/modules/party/party-legacy-clients.ts",
+  "src/modules/party/party-legacy-contacts.ts",
+  "src/modules/party/party-legacy-leads.ts",
+  "src/modules/party/party-legacy-mirror.spec.ts",
   "src/modules/party/party-legacy-seam.ts",
+  "src/modules/party/party-legacy-writer.db.spec.ts",
+  "src/modules/party/party-legacy-writer.spec.ts",
+  "src/modules/party/party-legacy-writer.ts",
+  "src/modules/party/party-mirror-fields.ts",
   "src/modules/platform/platform.service.ts",
-  "src/modules/public/crm.service.ts",
   "src/modules/sales/sales-analytics.service.ts",
   "src/modules/search/search.service.ts",
   "src/modules/surveys/survey-lead-automation.service.ts",
@@ -91,8 +104,17 @@ describe("the legacy identity tables gain no new readers", () => {
   const LEGACY_TABLES = new Set(["leads", "clients", "contacts"]);
 
   function readersInTree(): string[] {
-    // Tracked files only: a scratch file or a build artefact is not a call site.
-    const tracked = execSync("git ls-files 'src/**/*.ts'", { encoding: "utf8" })
+    /*
+     * Tracked files plus untracked ones git would accept, which is not the same
+     * as "tracked". A new call site is a new *file* as often as it is a new line,
+     * and a tracked-only scan cannot see one until it is committed -- by which
+     * point the ratchet reports it as a regression instead of preventing it. The
+     * exclusions keep build artefacts and ignored scratch out.
+     */
+    const tracked = execSync(
+      "git ls-files --cached --others --exclude-standard 'src/**/*.ts'",
+      { encoding: "utf8" },
+    )
       .split("\n")
       // Tracked-but-deleted paths are still listed, and another session is
       // mid-refactor in this tree, so existence is checked rather than assumed.

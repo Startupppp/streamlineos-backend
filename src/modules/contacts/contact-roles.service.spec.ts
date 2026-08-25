@@ -4,6 +4,22 @@ import { ContactRolesService } from "./contact-roles.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
+import { updateMirroredContacts } from "../party/party-legacy-contacts";
+
+/**
+ * The mirror writer is stubbed, not exercised.
+ *
+ * What this file is about is the merge's own decisions -- which scalar the
+ * primary keeps, which rows re-point, who is refused. The Party-first write
+ * itself has its own tests in `party-legacy-mirror.spec.ts` and
+ * `party-legacy-writer.db.spec.ts`, and threading a real Drizzle chain through
+ * this mock would only assert that the stub answers what it was told to.
+ */
+jest.mock("../party/party-legacy-contacts", () => ({
+  updateMirroredContacts: jest.fn().mockResolvedValue([]),
+}));
+
+const mirrorWrite = updateMirroredContacts as unknown as jest.Mock;
 
 const ORG_A = "org-a";
 const ORG_B = "org-b";
@@ -36,6 +52,7 @@ describe("ContactRolesService – mergeContacts", () => {
 
   beforeEach(async () => {
     db = makeDb();
+    mirrorWrite.mockClear();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -80,6 +97,20 @@ describe("ContactRolesService – mergeContacts", () => {
 
     const result = await svc.mergeContacts(ORG_A, { primaryId: 1, duplicateId: 2 }, "user-1");
     expect(result).toEqual({ success: true, primaryId: 1, mergedId: 2 });
+
+    // Both contact rows move through the party, never straight at `contacts`.
+    expect(mirrorWrite).toHaveBeenCalledWith(
+      expect.anything(),
+      ORG_A,
+      [1],
+      expect.objectContaining({ phone: "+91999", title: "CEO" }),
+    );
+    expect(mirrorWrite).toHaveBeenCalledWith(
+      expect.anything(),
+      ORG_A,
+      [2],
+      expect.objectContaining({ deletedAt: expect.any(Date), mergedIntoId: 1 }),
+    );
   });
 });
 

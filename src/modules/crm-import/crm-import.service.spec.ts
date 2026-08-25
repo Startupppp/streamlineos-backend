@@ -164,6 +164,11 @@ class FakeDb {
       if (statement.table === crmImports) return [{ id: IMPORT }];
     }
 
+    // A party update reads its row back: the legacy mirror is derived from what
+    // the party became, so the write cannot end at the UPDATE any more.
+    if (statement.kind === "update" && statement.table === businessParties)
+      return [{ partyId: "party-1", organizationId: ORG, ...statement.set }];
+
     return [];
   }
 }

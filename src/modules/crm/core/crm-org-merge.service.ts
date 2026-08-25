@@ -7,6 +7,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import type { MergeOrgsInput, OrgDuplicatesQueryInput } from "./dto/org-merge.schemas";
+import { updateMirroredContacts } from "../../party/party-legacy-contacts";
 
 @Injectable()
 export class CrmOrgMergeService {
@@ -92,10 +93,19 @@ export class CrmOrgMergeService {
           .where(and(eq(crmOrganizations.id, input.primaryId), eq(crmOrganizations.orgId, orgId)));
       }
 
-      await tx
-        .update(contacts)
-        .set({ organizationId: input.primaryId, updatedAt: new Date() })
+      // Re-pointed through the writer even though `contacts.organization_id` is a
+      // column Party does not own: keeping "no direct legacy write" absolute is
+      // what stops the next column added to this patch from being a mirrored one.
+      const reassigned = await tx
+        .select({ id: contacts.id })
+        .from(contacts)
         .where(and(eq(contacts.organizationId, input.duplicateId), eq(contacts.orgId, orgId)));
+      await updateMirroredContacts(
+        tx,
+        orgId,
+        reassigned.map((row) => row.id),
+        { organizationId: input.primaryId, updatedAt: new Date() },
+      );
 
       await tx
         .update(crmOrganizations)

@@ -13,6 +13,7 @@ import {
   type MappedColumn,
 } from "./column-mapping";
 import { blockingKeysFor, isPartyType, planImport, type BlockingKeys } from "./import-plan";
+import { softDeletePartyWithMirror, updatePartyWithMirror } from "../party/party-legacy-writer";
 
 /** A file this size is a paste, not a migration; the connectors are Phase 2. */
 const MAX_ROWS = 5_000;
@@ -350,42 +351,26 @@ export class CrmImportService {
       if (row.createdPartyId) {
         // Soft delete, as everywhere else: the row leaves the product without
         // leaving the database, so a wrong undo is itself recoverable.
-        await this.db
-          .update(businessParties)
-          .set({ deletedAt: new Date() })
-          .where(
-            and(
-              eq(businessParties.organizationId, organizationId),
-              eq(businessParties.partyId, row.createdPartyId),
-            ),
-          );
+        await softDeletePartyWithMirror(this.db, organizationId, row.createdPartyId);
         deleted += 1;
         continue;
       }
 
       if (row.previous && row.matchedPartyId) {
         const before = row.previous as Record<string, unknown>;
-        await this.db
-          .update(businessParties)
-          .set({
-            name: String(before.name ?? ""),
-            legalName: (before.legalName as string | null) ?? null,
-            displayName: (before.displayName as string | null) ?? null,
-            email: (before.email as string | null) ?? null,
-            phone: (before.phone as string | null) ?? null,
-            website: (before.website as string | null) ?? null,
-            taxNumber: (before.taxNumber as string | null) ?? null,
-            notes: (before.notes as string | null) ?? null,
-            customFields: (before.customFields as Record<string, unknown> | null) ?? null,
-            ...(isPartyType(before.partyType) ? { partyType: before.partyType } : {}),
-            ...(typeof before.status === "string" ? { status: before.status } : {}),
-          })
-          .where(
-            and(
-              eq(businessParties.organizationId, organizationId),
-              eq(businessParties.partyId, row.matchedPartyId),
-            ),
-          );
+        await updatePartyWithMirror(this.db, organizationId, row.matchedPartyId, {
+          name: String(before.name ?? ""),
+          legalName: (before.legalName as string | null) ?? null,
+          displayName: (before.displayName as string | null) ?? null,
+          email: (before.email as string | null) ?? null,
+          phone: (before.phone as string | null) ?? null,
+          website: (before.website as string | null) ?? null,
+          taxNumber: (before.taxNumber as string | null) ?? null,
+          notes: (before.notes as string | null) ?? null,
+          customFields: (before.customFields as Record<string, unknown> | null) ?? null,
+          ...(isPartyType(before.partyType) ? { partyType: before.partyType } : {}),
+          ...(typeof before.status === "string" ? { status: before.status } : {}),
+        });
         restored += 1;
       }
     }
@@ -494,18 +479,13 @@ export class CrmImportService {
       if (untouched) patch[key] = value;
     }
 
-    await tx
-      .update(businessParties)
-      .set({
-        ...patch,
-        customFields: { ...(before.customFields ?? {}), ...(row.customFields ?? {}) },
-      })
-      .where(
-        and(
-          eq(businessParties.organizationId, organizationId),
-          eq(businessParties.partyId, row.matchedPartyId),
-        ),
-      );
+    // The import matched an existing party, which may already answer for a lead,
+    // a client or a contact; those rows are derived from it and have to move with
+    // it inside this row's savepoint.
+    await updatePartyWithMirror(tx, organizationId, row.matchedPartyId, {
+      ...patch,
+      customFields: { ...(before.customFields ?? {}), ...(row.customFields ?? {}) },
+    });
 
     await this.markRowDone(tx, organizationId, row.crmImportRowId, {
       previous: before as unknown as Record<string, unknown>,

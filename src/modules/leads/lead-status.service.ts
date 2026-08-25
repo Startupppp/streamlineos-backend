@@ -26,6 +26,8 @@ import { resolveLeadStatusSemantics } from "./lead-status-semantics";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { toMinorUnits } from "../deals/deal-stage-ledger";
 import type { TransitionLeadStatusInput } from "./dto/lead-mutations.schemas";
+import { updateMirroredLeads } from "../party/party-legacy-leads";
+import { createMirroredClient } from "../party/party-legacy-clients";
 
 type LeadRow = typeof leads.$inferSelect;
 
@@ -126,19 +128,24 @@ export class LeadStatusService {
         where: and(eq(clients.leadId, lead.id), eq(clients.orgId, orgId)),
       });
       if (!existingClient) {
-        await tx.insert(clients).values({
+        await createMirroredClient(
+          tx,
           orgId,
-          leadId: lead.id,
-          name: lead.name,
-          email: lead.email,
-          phone: lead.phone,
-          company: lead.company,
-          designation: lead.designation,
-          city: lead.city,
-          investmentValue: lead.potentialValue,
-          accountManagerId: lead.assignedToId,
-          status: "active",
-        });
+          {
+            orgId,
+            leadId: lead.id,
+            name: lead.name,
+            email: lead.email,
+            phone: lead.phone,
+            company: lead.company,
+            designation: lead.designation,
+            city: lead.city,
+            investmentValue: lead.potentialValue,
+            accountManagerId: lead.assignedToId,
+            status: "active",
+          },
+          { linkedBy: "leads:convert" },
+        );
       }
 
       const existingClientAccount = await tx.query.clientAccounts.findFirst({
@@ -168,18 +175,15 @@ export class LeadStatusService {
       }
 
       if (input.conversionNotes || input.estimatedInvestment) {
-        await tx
-          .update(leads)
-          .set({
-            ...(input.conversionNotes ? { notes: input.conversionNotes } : {}),
-            ...(input.estimatedInvestment
-              ? {
-                  potentialValue: input.estimatedInvestment,
-                  investmentInterest: input.estimatedInvestment,
-                }
-              : {}),
-          })
-          .where(and(eq(leads.id, lead.id), eq(leads.orgId, orgId)));
+        await updateMirroredLeads(tx, orgId, [lead.id], {
+          ...(input.conversionNotes ? { notes: input.conversionNotes } : {}),
+          ...(input.estimatedInvestment
+            ? {
+                potentialValue: input.estimatedInvestment,
+                investmentInterest: input.estimatedInvestment,
+              }
+            : {}),
+        });
       }
     });
   }
@@ -340,11 +344,24 @@ export class LeadStatusService {
     if (input.expectedStatus)
       conditions.push(eq(leads.status, input.expectedStatus));
 
-    const [updated] = await this.db
-      .update(leads)
-      .set(updateData)
-      .where(and(...conditions))
-      .returning();
+    /*
+     * The optimistic check moved from the UPDATE's predicate to a locking SELECT,
+     * because the write itself now goes through the party first and a mirrored
+     * write is addressed by id. `FOR UPDATE` holds the row for the rest of the
+     * transaction, so two concurrent transitions still serialise and the loser
+     * still sees `stale_or_missing` rather than silently overwriting.
+     */
+    const updated = await this.db.transaction(async (tx) => {
+      const [claimed] = await tx
+        .select({ id: leads.id })
+        .from(leads)
+        .where(and(...conditions))
+        .limit(1)
+        .for("update");
+      if (!claimed) return undefined;
+      const [row] = await updateMirroredLeads(tx, orgId, [claimed.id], updateData);
+      return row;
+    });
 
     if (!updated) return { ok: false, reason: "stale_or_missing" };
 

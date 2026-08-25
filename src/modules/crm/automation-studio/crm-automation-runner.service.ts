@@ -17,6 +17,7 @@ import { NotificationsService } from "../../notifications/notifications.service"
 import { CrmOutboundEmailService } from "../consent/crm-outbound-email.service";
 import type { StudioEventPayload, RunStepLog } from "./types";
 import { evaluateConditions, type StudioCondition } from "./crm-automation-condition-evaluator";
+import { updateMirroredLeads } from "../../party/party-legacy-leads";
 
 const ALLOWLISTED_LEAD_FIELDS = ["status", "priority", "source", "assignedToId", "score"];
 const ALLOWLISTED_DEAL_FIELDS = ["stage", "priority", "assignedToId"];
@@ -270,8 +271,9 @@ export class CrmAutomationRunnerService {
             .limit(1);
           if (!membership) return { nodeId, type: actionKey, status: "error", message: "user_not_in_org", at };
           if (payload.entityType === "lead") {
-            await this.db.update(leads).set({ assignedToId: targetUserId })
-              .where(and(eq(leads.orgId, orgId), eq(leads.id, parseInt(payload.entityId, 10))));
+            await updateMirroredLeads(this.db, orgId, [parseInt(payload.entityId, 10)], {
+              assignedToId: targetUserId,
+            });
           } else if (payload.entityType === "deal") {
             await this.db.update(deals).set({ assignedToId: targetUserId })
               .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), eq(deals.id, parseInt(payload.entityId, 10))));
@@ -288,8 +290,12 @@ export class CrmAutomationRunnerService {
             if (!ALLOWLISTED_LEAD_FIELDS.includes(field)) {
               return { nodeId, type: actionKey, status: "error", message: "field_not_allowed", at };
             }
-            await this.db.update(leads).set({ [field]: value })
-              .where(and(eq(leads.orgId, orgId), eq(leads.id, parseInt(payload.entityId, 10))));
+            // Every allowlisted field is a mirrored `leads` column, so the writer
+            // translates the dynamic key into its party column rather than this
+            // switch needing a second copy of the mapping.
+            await updateMirroredLeads(this.db, orgId, [parseInt(payload.entityId, 10)], {
+              [field]: value,
+            });
           } else if (payload.entityType === "deal") {
             if (!ALLOWLISTED_DEAL_FIELDS.includes(field)) {
               return { nodeId, type: actionKey, status: "error", message: "field_not_allowed", at };
@@ -305,9 +311,9 @@ export class CrmAutomationRunnerService {
           const tag = typeof config["tag"] === "string" ? config["tag"].trim() : null;
           if (!tag) return { nodeId, type: actionKey, status: "skipped", message: "missing_tag", at };
           if (payload.entityType === "lead") {
-            await this.db.update(leads)
-              .set({ tags: sql`array_append(COALESCE(${leads.tags}, ARRAY[]::text[]), ${tag})` })
-              .where(and(eq(leads.orgId, orgId), eq(leads.id, parseInt(payload.entityId, 10))));
+            await this.changeLeadTags(orgId, parseInt(payload.entityId, 10), (tags) =>
+              tags.includes(tag) ? tags : [...tags, tag],
+            );
             return { nodeId, type: actionKey, status: "ok", at };
           }
           return { nodeId, type: actionKey, status: "skipped", message: "unsupported_entity", at };
@@ -316,9 +322,9 @@ export class CrmAutomationRunnerService {
           const tag = typeof config["tag"] === "string" ? config["tag"].trim() : null;
           if (!tag) return { nodeId, type: actionKey, status: "skipped", message: "missing_tag", at };
           if (payload.entityType === "lead") {
-            await this.db.update(leads)
-              .set({ tags: sql`array_remove(COALESCE(${leads.tags}, ARRAY[]::text[]), ${tag})` })
-              .where(and(eq(leads.orgId, orgId), eq(leads.id, parseInt(payload.entityId, 10))));
+            await this.changeLeadTags(orgId, parseInt(payload.entityId, 10), (tags) =>
+              tags.filter((existing) => existing !== tag),
+            );
             return { nodeId, type: actionKey, status: "ok", at };
           }
           return { nodeId, type: actionKey, status: "skipped", message: "unsupported_entity", at };
@@ -348,5 +354,30 @@ export class CrmAutomationRunnerService {
     });
     const matched = nodes.length === 0 || nodes.every((n) => n.result === "pass");
     return { matched, nodes };
+  }
+  /**
+   * A tag edit, read-modify-write instead of `array_append`.
+   *
+   * The array operator wrote `leads.tags` without ever reading it, which the
+   * mirror cannot follow: the party is the canonical copy and its tags are what
+   * the legacy column is derived from. `FOR UPDATE` on the lead row keeps two
+   * concurrent tag edits serialised, which is what the atomic operator bought.
+   */
+  private async changeLeadTags(
+    orgId: string,
+    leadId: number,
+    change: (tags: string[]) => string[],
+  ): Promise<void> {
+    if (!Number.isInteger(leadId)) return;
+    await this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .select({ tags: leads.tags })
+        .from(leads)
+        .where(and(eq(leads.orgId, orgId), eq(leads.id, leadId)))
+        .limit(1)
+        .for("update");
+      if (!row) return;
+      await updateMirroredLeads(tx, orgId, [leadId], { tags: change(row.tags ?? []) });
+    });
   }
 }

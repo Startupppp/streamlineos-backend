@@ -28,6 +28,11 @@ import type {
   ImportInput,
   TopMergeInput,
 } from "./dto/lead-mutations.schemas";
+import {
+  createMirroredLeads,
+  softDeleteMirroredLeads,
+  updateMirroredLeads,
+} from "../party/party-legacy-leads";
 
 type LeadRow = typeof leads.$inferSelect;
 
@@ -118,10 +123,7 @@ export class LeadsOpsService {
       setData.assignedById = userId;
     }
 
-    await this.db
-      .update(leads)
-      .set(setData)
-      .where(and(eq(leads.orgId, orgId), inArray(leads.id, leadIds)));
+    await updateMirroredLeads(this.db, orgId, leadIds, setData);
 
     return { updated: leadIds.length };
   }
@@ -133,17 +135,7 @@ export class LeadsOpsService {
    * ones) reported success for rows it never touched.
    */
   async bulkDelete(orgId: string, input: BulkDeleteInput) {
-    const deleted = await this.db
-      .update(leads)
-      .set({ deletedAt: new Date() })
-      .where(
-        and(
-          eq(leads.orgId, orgId),
-          inArray(leads.id, input.leadIds),
-          isNull(leads.deletedAt),
-        ),
-      )
-      .returning({ id: leads.id });
+    const deleted = await softDeleteMirroredLeads(this.db, orgId, input.leadIds);
 
     return { deleted: deleted.length, requested: input.leadIds.length };
   }
@@ -197,18 +189,12 @@ export class LeadsOpsService {
     }
 
     await this.db.transaction(async (tx) => {
-      await tx
-        .update(leads)
-        .set(mergedFields)
-        .where(and(eq(leads.id, winnerId), eq(leads.orgId, orgId)));
-      await tx
-        .update(leads)
-        .set({
-          deletedAt: new Date(),
-          mergedIntoId: winnerId,
-          updatedAt: new Date(),
-        })
-        .where(and(eq(leads.id, loserId), eq(leads.orgId, orgId)));
+      await updateMirroredLeads(tx, orgId, [winnerId], mergedFields);
+      await updateMirroredLeads(tx, orgId, [loserId], {
+        deletedAt: new Date(),
+        mergedIntoId: winnerId,
+        updatedAt: new Date(),
+      });
       await tx
         .update(leadActivities)
         .set({ leadId: winnerId })
@@ -328,15 +314,23 @@ export class LeadsOpsService {
               continue;
             }
             try {
-              await this.db
-                .update(leads)
-                .set({
+              // Resolved to ids first: the mirror is written per record, and a
+              // predicate match cannot say which parties to move.
+              const matches = await this.db
+                .select({ id: leads.id })
+                .from(leads)
+                .where(and(eq(leads.orgId, orgId), matchField));
+              await updateMirroredLeads(
+                this.db,
+                orgId,
+                matches.map((row) => row.id),
+                {
                   name: lead.name,
                   company: lead.company || null,
                   notes: lead.notes || null,
                   updatedAt: new Date(),
-                })
-                .where(and(eq(leads.orgId, orgId), matchField));
+                },
+              );
               updated++;
             } catch {
               errors.push({
@@ -396,10 +390,9 @@ export class LeadsOpsService {
             status: "NEW" as const,
             assignedById: userId,
           }));
-          const result = await this.db
-            .insert(leads)
-            .values(values)
-            .returning({ id: leads.id });
+          const result = await createMirroredLeads(this.db, orgId, values, {
+            linkedBy: "leads:import",
+          });
           imported += result.length;
           importedLeadIds.push(...result.map((r) => r.id));
         } catch (insertErr) {
@@ -440,15 +433,12 @@ export class LeadsOpsService {
           }
           for (const [salesPersonId, leadIds] of assignmentMap) {
             if (leadIds.length === 0) continue;
-            await this.db
-              .update(leads)
-              .set({
-                assignedToId: salesPersonId,
-                assignedById: userId,
-                assignedAt: now,
-                updatedAt: now,
-              })
-              .where(and(inArray(leads.id, leadIds), eq(leads.orgId, orgId)));
+            await updateMirroredLeads(this.db, orgId, leadIds, {
+              assignedToId: salesPersonId,
+              assignedById: userId,
+              assignedAt: now,
+              updatedAt: now,
+            });
             distributed += leadIds.length;
           }
         }
@@ -545,15 +535,12 @@ export class LeadsOpsService {
     for (const [salesPersonId, assignedLeads] of assignments) {
       if (assignedLeads.length === 0) continue;
       const leadIds = assignedLeads.map((l) => l.id);
-      await this.db
-        .update(leads)
-        .set({
-          assignedToId: salesPersonId,
-          assignedById: userId,
-          assignedAt: now,
-          updatedAt: now,
-        })
-        .where(and(inArray(leads.id, leadIds), eq(leads.orgId, orgId)));
+      await updateMirroredLeads(this.db, orgId, leadIds, {
+        assignedToId: salesPersonId,
+        assignedById: userId,
+        assignedAt: now,
+        updatedAt: now,
+      });
     }
 
     void this.sendDistributionEmails(userId, salesPeople, assignments).catch(
