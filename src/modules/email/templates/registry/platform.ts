@@ -59,7 +59,6 @@ export const platformTemplates: Record<string, TemplateEntry> = {
         email: "rohan@example.com",
         reference: "WL-2026-001",
         receivedAt: "Wed, 2 Jul 2026, 10:15 AM",
-        position: 42,
         organization: "Mehta Solutions",
         role: "Head of Operations",
         teamSize: "11-50",
@@ -74,7 +73,6 @@ export const platformTemplates: Record<string, TemplateEntry> = {
       getWaitlistConfirmationEmail({
         name: "Rohan Mehta",
         reference: "WL-2026-001",
-        position: 42,
       }).html,
   },
   "platform.trial_reminder": {

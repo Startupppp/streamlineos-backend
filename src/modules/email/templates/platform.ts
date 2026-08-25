@@ -160,7 +160,6 @@ export interface WaitlistAdminEmailParams {
   email: string;
   reference: string;
   receivedAt: string;
-  position: number;
   organization?: string;
   role?: string;
   teamSize?: string;
@@ -169,7 +168,7 @@ export interface WaitlistAdminEmailParams {
 }
 
 export function getWaitlistAdminNotificationEmail(params: WaitlistAdminEmailParams): { subject: string; html: string } {
-  const { name, email, reference, receivedAt, position, organization, role, teamSize, notes, returning } = params;
+  const { name, email, reference, receivedAt, organization, role, teamSize, notes, returning } = params;
   const subject = returning
     ? `Waitlist signup updated — ${name}`
     : `New waitlist signup — ${name}`;
@@ -182,7 +181,6 @@ export function getWaitlistAdminNotificationEmail(params: WaitlistAdminEmailPara
   if (organization) rows.push({ label: "Organization", value: organization });
   if (role) rows.push({ label: "Role", value: role });
   if (teamSize) rows.push({ label: "Team size", value: teamSize });
-  rows.push({ label: "Position", value: `#${position}` });
   rows.push({ label: "Received", value: receivedAt });
 
   const content = `
@@ -203,11 +201,10 @@ ${notes ? renderCallout(escapeHtml(notes).replace(/\n/g, "<br>"), "info") : ""}
 export interface WaitlistConfirmationEmailParams {
   name: string;
   reference: string;
-  position: number;
 }
 
 export function getWaitlistConfirmationEmail(params: WaitlistConfirmationEmailParams): { subject: string; html: string } {
-  const { name, reference, position } = params;
+  const { name, reference } = params;
   const brand = getBrandName();
   const subject = `You're on the ${brand} waitlist`;
   const firstName = escapeHtml(name.split(" ")[0] ?? name);
@@ -215,17 +212,14 @@ export function getWaitlistConfirmationEmail(params: WaitlistConfirmationEmailPa
   const content = `
 <h1 class="email-title">${escapeHtml(subject)}</h1>
 <p class="email-text">Hi ${firstName}, you're on the list. We're opening ${escapeHtml(brand)} to new teams in small batches, and we'll email you the moment your invite is ready.</p>
-${renderKeyValueRows([
-  { label: "Your reference", value: reference },
-  { label: "Position", value: `#${position}` },
-])}
+${renderKeyValueRows([{ label: "Your reference", value: reference }])}
 <p class="email-text">Reply to this email if you'd like to tell us more about what you're trying to run — teams that do tend to get in sooner.</p>
 `;
   return {
     subject,
     html: getEmailTemplate({
       title: subject,
-      preheader: `You're #${position} on the ${escapeHtml(brand)} waitlist.`,
+      preheader: `You're on the ${escapeHtml(brand)} waitlist — we'll email you when your invite is ready.`,
       content,
     }),
   };

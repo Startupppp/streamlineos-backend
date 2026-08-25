@@ -21,9 +21,7 @@ const input: WaitlistJoinInput = {
  * reference, so the one this call generated is not the one that comes back.
  * Omitting it echoes the generated code, which is the first-time case.
  */
-function makeDb(
-  row: { id: number; position: number; existingCode?: string },
-) {
+function makeDb(row: { id: number; existingCode?: string }) {
   let submitted: { publicCode?: string } = {};
   const returning = jest.fn().mockImplementation(() =>
     Promise.resolve([
@@ -40,10 +38,7 @@ function makeDb(
     return { onConflictDoUpdate };
   });
   const insert = jest.fn().mockReturnValue({ values });
-  const where = jest.fn().mockResolvedValue([{ n: row.position }]);
-  const from = jest.fn().mockReturnValue({ where });
-  const select = jest.fn().mockReturnValue({ from });
-  return { db: { insert, select }, insert, values, onConflictDoUpdate, returning };
+  return { db: { insert }, insert, values, onConflictDoUpdate, returning };
 }
 
 async function build(
@@ -64,13 +59,13 @@ async function build(
 }
 
 describe("WaitlistService", () => {
-  it("stores the signup and reports its queue position", async () => {
-    const { db, values } = makeDb({ id: 42, position: 42 });
+  it("stores the signup and returns its reference", async () => {
+    const { db, values } = makeDb({ id: 42 });
     const { service } = await build(db);
 
     const result = await service.join(input, { clientIp: "1.2.3.4", userAgent: "jest" });
 
-    expect(result).toMatchObject({ ok: true, position: 42, alreadyJoined: false });
+    expect(result).toMatchObject({ ok: true, alreadyJoined: false });
     expect(result.reference).toMatch(/^WL-[0-9A-F]{8}$/);
     expect(values).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -83,7 +78,7 @@ describe("WaitlistService", () => {
   });
 
   it("notifies the configured recipients and confirms to the signup", async () => {
-    const { db } = makeDb({ id: 7, position: 7 });
+    const { db } = makeDb({ id: 7 });
     const { service, sendEmail } = await build(db, {
       WAITLIST_NOTIFICATION_EMAILS: "a@example.com, b@example.com",
     });
@@ -99,7 +94,7 @@ describe("WaitlistService", () => {
   });
 
   it("falls back to the founder addresses when nothing is configured", async () => {
-    const { db } = makeDb({ id: 1, position: 1 });
+    const { db } = makeDb({ id: 1 });
     const { service, sendEmail } = await build(db);
 
     await service.join(input, {});
@@ -110,7 +105,7 @@ describe("WaitlistService", () => {
   });
 
   it("treats a repeat submission as the same request and keeps the original reference", async () => {
-    const { db } = makeDb({ id: 3, position: 3, existingCode: "WL-ORIGINAL" });
+    const { db } = makeDb({ id: 3, existingCode: "WL-ORIGINAL" });
     const { service } = await build(db);
 
     const result = await service.join(input, {});
@@ -120,15 +115,15 @@ describe("WaitlistService", () => {
   });
 
   it("keeps the signup when the notification provider is down", async () => {
-    const { db } = makeDb({ id: 9, position: 9 });
+    const { db } = makeDb({ id: 9 });
     const sendEmail = jest.fn().mockRejectedValue(new Error("provider down"));
     const { service } = await build(db, {}, sendEmail);
 
-    await expect(service.join(input, {})).resolves.toMatchObject({ ok: true, position: 9 });
+    await expect(service.join(input, {})).resolves.toMatchObject({ ok: true });
   });
 
   it("refuses a submission the bot check rejects", async () => {
-    const { db } = makeDb({ id: 1, position: 1 });
+    const { db } = makeDb({ id: 1 });
     const moduleRef = await Test.createTestingModule({
       providers: [
         WaitlistService,
