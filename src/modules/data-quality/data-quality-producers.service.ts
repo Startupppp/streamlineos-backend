@@ -11,6 +11,7 @@ import type {
 import { orderPair } from "../party/party-merge-plan";
 import { EmailSuppressionService } from "../email/email-suppression.service";
 import { ACTION_REVERSIBILITY } from "./finding-vocabulary";
+import { DataQualityHealthService } from "./dataset-health.service";
 import {
   duplicateGroupKey,
   duplicateSeverity,
@@ -69,6 +70,7 @@ export class DataQualityProducersService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly suppressions: EmailSuppressionService,
+    private readonly health: DataQualityHealthService,
   ) {}
 
   async sweep(organizationId: string, input: ScanInput) {
@@ -94,6 +96,13 @@ export class DataQualityProducersService {
       drafts.push(...(await this.staleness(organizationId, input.staleAfterDays)));
 
     const filed = await this.file(organizationId, drafts);
+
+    /**
+     * The other direction. A sweep is the only thing that makes the number
+     * worse, and recording only the resolutions would produce a trend that falls
+     * forever regardless of what the dataset is actually doing.
+     */
+    await this.health.captureQuietly(organizationId);
 
     return {
       producers: [...requested].sort(),

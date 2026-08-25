@@ -3,6 +3,7 @@ import type { Db } from "../../db/drizzle.types";
 import type { PartyMergeService } from "../party/party-merge.service";
 import type { DataQualityQueueService } from "./data-quality-queue.service";
 import { DataQualityResolutionService } from "./data-quality-resolution.service";
+import type { DataQualityHealthService } from "./dataset-health.service";
 
 /**
  * A Drizzle chain that answers with a scripted result.
@@ -105,6 +106,7 @@ describe("DataQualityResolutionService", () => {
   let db: FakeDb;
   let queue: { selectCandidates: jest.Mock; countOpenInGroup: jest.Mock };
   let merges: { merge: jest.Mock; revert: jest.Mock };
+  let health: { captureQuietly: jest.Mock };
   let service: DataQualityResolutionService;
 
   const build = () => {
@@ -112,6 +114,7 @@ describe("DataQualityResolutionService", () => {
       db.asDb(),
       queue as unknown as DataQualityQueueService,
       merges as unknown as PartyMergeService,
+      health as unknown as DataQualityHealthService,
     );
   };
 
@@ -119,6 +122,7 @@ describe("DataQualityResolutionService", () => {
     db = new FakeDb();
     queue = { selectCandidates: jest.fn(), countOpenInGroup: jest.fn().mockResolvedValue(12) };
     merges = { merge: jest.fn(), revert: jest.fn() };
+    health = { captureQuietly: jest.fn().mockResolvedValue(undefined) };
     build();
   });
 

@@ -6,6 +6,7 @@ import { dataQualityFindings, dataQualityResolutions } from "../../db/schema";
 import type { ReversibilityClass } from "../../db/schema/crm/autonomous-decisions";
 import { PartyMergeService } from "../party/party-merge.service";
 import { DataQualityQueueService } from "./data-quality-queue.service";
+import { DataQualityHealthService } from "./dataset-health.service";
 import { refuseIfContradicted } from "./merge-guard";
 import { withSavepoint } from "./savepoint";
 import { strictestReversibility } from "./finding-vocabulary";
@@ -53,6 +54,7 @@ export class DataQualityResolutionService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly queue: DataQualityQueueService,
     private readonly merges: PartyMergeService,
+    private readonly health: DataQualityHealthService,
   ) {}
 
   // ── One decision ──────────────────────────────────────────────────────────
@@ -144,6 +146,16 @@ export class DataQualityResolutionService {
           eq(dataQualityResolutions.resolutionId, resolution.resolutionId),
         ),
       );
+
+    /**
+     * The dataset-health number, re-read now that the queue is shorter.
+     *
+     * Here rather than on a schedule, because this is the moment it changed. A
+     * number captured nightly would credit a morning's triage to whatever else
+     * happened that day, and a tenant that worked its queue and looked would see
+     * nothing move — which is the exact failure the trend exists to rule out.
+     */
+    await this.health.captureQuietly(organizationId);
 
     return {
       resolutionId: resolution.resolutionId,
@@ -427,6 +439,11 @@ export class DataQualityResolutionService {
           eq(dataQualityResolutions.resolutionId, resolutionId),
         ),
       );
+
+    // An undo puts findings back in the queue, so the number goes back up. A
+    // trend that only ever recorded improvements would be a graph of decisions
+    // taken rather than of the dataset.
+    await this.health.captureQuietly(organizationId);
 
     return {
       reversed: true,

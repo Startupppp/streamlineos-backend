@@ -4,6 +4,7 @@ import { DataQualityController } from "./data-quality.controller";
 import { DataQualityQueueService } from "./data-quality-queue.service";
 import { DataQualityResolutionService } from "./data-quality-resolution.service";
 import { DataQualityProducersService } from "./data-quality-producers.service";
+import { DataQualityHealthService } from "./dataset-health.service";
 
 /**
  * One queue, many producers.
@@ -22,6 +23,13 @@ import { DataQualityProducersService } from "./data-quality-producers.service";
  * "are these the same company" that can disagree is worse than one answer that
  * is sometimes wrong.
  *
+ * `DataQualityHealthService` is exported because the dataset's health belongs on
+ * Phase 1's autonomy scoreboard rather than on a surface of its own — a tenant
+ * has one place it goes to ask "is this working", and a second scoreboard would
+ * split that habit in two. Exporting one small read-and-record service is what
+ * lets `AutonomyModule` show the number without acquiring the queue's cursors,
+ * its resolution machinery or its merge executor.
+ *
  * `PartyModule` is imported for `PartyMergeService`: merging is the one proposed
  * action with an executor, and it has one because `party_merges` snapshots both
  * rows, which is what makes the reversibility class this queue records true.
@@ -30,7 +38,12 @@ import { DataQualityProducersService } from "./data-quality-producers.service";
 @Module({
   imports: [PartyModule],
   controllers: [DataQualityController],
-  providers: [DataQualityQueueService, DataQualityResolutionService, DataQualityProducersService],
-  exports: [DataQualityQueueService, DataQualityProducersService],
+  providers: [
+    DataQualityQueueService,
+    DataQualityResolutionService,
+    DataQualityProducersService,
+    DataQualityHealthService,
+  ],
+  exports: [DataQualityQueueService, DataQualityProducersService, DataQualityHealthService],
 })
 export class DataQualityModule {}
