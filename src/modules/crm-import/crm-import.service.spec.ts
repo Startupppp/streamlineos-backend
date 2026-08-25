@@ -2,11 +2,19 @@ import { ConflictException, Logger } from "@nestjs/common";
 import type { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { Db } from "../../db/drizzle.types";
-import { businessParties, crmImportRows, crmImports } from "../../db/schema";
-import { CrmImportService } from "./crm-import.service";
+import type { WorkflowRunnerService } from "../../common/workflow";
+import {
+  businessParties,
+  crmImportRows,
+  crmImports,
+  dataQualityFindings,
+  partyIdentifiers,
+} from "../../db/schema";
+import { CrmImportService, REVERT_WINDOW_DAYS } from "./crm-import.service";
 
 const ORG = "org-1";
 const IMPORT = "import-1";
+const WHOLE_FILE = { fromRow: 1, toRow: 100 };
 
 interface Statement {
   kind: "select" | "insert" | "update";
@@ -14,7 +22,7 @@ interface Statement {
   values: Record<string, unknown>[];
   set: Record<string, unknown> | null;
   where: SQL | undefined;
-  /** The savepoint it ran in. 0 is the request's own transaction. */
+  /** The savepoint it ran in. 0 is the step's own transaction. */
   savepoint: number;
   rolledBack: boolean;
 }
@@ -25,6 +33,7 @@ function pgError(code: string, message: string): Error {
 
 interface FakeOptions {
   importStatus?: string;
+  revertDeadlineAt?: Date | null;
   rows?: Record<string, unknown>[];
   parties?: Record<string, unknown>[];
   /** The statement Postgres refuses. */
@@ -32,24 +41,32 @@ interface FakeOptions {
 }
 
 /**
- * A database that fails the way Postgres fails.
+ * A database that fails the way Postgres fails, and claims rows the way this
+ * service does.
  *
- * The defect these tests are for is not "an insert threw" — it is what the NEXT
- * statement does after one did. Postgres aborts the whole transaction on a
+ * The defect the savepoints are for is not "an insert threw" — it is what the
+ * NEXT statement does after one did. Postgres aborts the whole transaction on a
  * statement error, so every later statement in it raises 25P02 until something
  * rolls back; a savepoint is what gives a caller a smaller thing to roll back
- * to. A fake where the error-recording UPDATE simply succeeds cannot see the
- * bug at all, which is why this one models both halves.
+ * to. A fake where the error-recording UPDATE simply succeeds cannot see the bug
+ * at all, which is why this one models both halves.
  *
- * Each handle carries the savepoint it writes through, so a service that reached
- * for the ambient `this.db` inside a savepoint — leaving writes behind that a
- * rollback was supposed to take with it — shows up as a statement that survives.
+ * It also models the row CLAIM, which is the whole idempotence story of the
+ * durable importer: `UPDATE … SET committed_at = now() WHERE committed_at IS
+ * NULL RETURNING *` hands back a row the first time and nothing every time
+ * after. A claim taken inside a savepoint is released when that savepoint rolls
+ * back, exactly as Postgres would — without that, a failed row would look
+ * permanently done and be silently dropped from the import.
  */
 class FakeDb {
   readonly statements: Statement[] = [];
   private readonly aborted = new Set<number>();
   private nextSavepoint = 1;
   private createdParties = 0;
+  private filedFindings = 0;
+  /** Row id → the savepoint that claimed it, so a rollback can release it. */
+  private readonly committedRows = new Map<string, number>();
+  private readonly revertedRows = new Map<string, number>();
 
   constructor(private readonly options: FakeOptions = {}) {}
 
@@ -69,6 +86,8 @@ class FakeDb {
       select: () => this.builder(savepoint, "select"),
       insert: (table: unknown) => this.builder(savepoint, "insert", table),
       update: (table: unknown) => this.builder(savepoint, "update", table),
+      // `withTenant` sets its GUCs this way; nothing here depends on the result.
+      execute: () => Promise.resolve([]),
       transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => {
         const child = this.nextSavepoint++;
         const from = this.statements.length;
@@ -83,6 +102,10 @@ class FakeDb {
             const statement = this.statements[index];
             if (statement && statement.savepoint === child) statement.rolledBack = true;
           }
+          for (const [rowId, claimedBy] of [...this.committedRows])
+            if (claimedBy === child) this.committedRows.delete(rowId);
+          for (const [rowId, claimedBy] of [...this.revertedRows])
+            if (claimedBy === child) this.revertedRows.delete(rowId);
           throw error;
         }
       },
@@ -118,6 +141,8 @@ class FakeDb {
         return self;
       },
       returning: () => self,
+      onConflictDoNothing: () => self,
+      onConflictDoUpdate: () => self,
       orderBy: () => self,
       limit: () => self,
       for: () => self,
@@ -148,10 +173,31 @@ class FakeDb {
     return this.respond(statement);
   }
 
+  /** The row identifier named in a WHERE, found among its bound parameters. */
+  private rowIdIn(statement: Statement): string | null {
+    if (!statement.where) return null;
+    const { params } = new PgDialect().sqlToQuery(statement.where);
+    const known = new Set((this.options.rows ?? []).map((row) => String(row.crmImportRowId)));
+    for (const param of params) if (typeof param === "string" && known.has(param)) return param;
+    return null;
+  }
+
+  private rowById(rowId: string): Record<string, unknown> | undefined {
+    return (this.options.rows ?? []).find((row) => row.crmImportRowId === rowId);
+  }
+
   private respond(statement: Statement): unknown {
     if (statement.kind === "select") {
       if (statement.table === crmImports)
-        return [{ status: this.options.importStatus ?? "previewing" }];
+        return [
+          {
+            status: this.options.importStatus ?? "previewing",
+            sourceFilename: "zoho.csv",
+            workflowRunId: null,
+            revertWorkflowRunId: null,
+            revertDeadlineAt: this.options.revertDeadlineAt ?? null,
+          },
+        ];
       if (statement.table === crmImportRows) return this.options.rows ?? [];
       if (statement.table === businessParties) return this.options.parties ?? [];
     }
@@ -159,9 +205,40 @@ class FakeDb {
     if (statement.kind === "insert") {
       if (statement.table === businessParties) {
         this.createdParties += 1;
-        return [{ partyId: `party-${this.createdParties}` }];
+        return [{ partyId: `party-${String(this.createdParties)}`, ...statement.values[0] }];
       }
       if (statement.table === crmImports) return [{ id: IMPORT }];
+      if (statement.table === dataQualityFindings) {
+        this.filedFindings += 1;
+        return [{ findingId: `finding-${String(this.filedFindings)}` }];
+      }
+      if (statement.table === partyIdentifiers) return [];
+    }
+
+    if (statement.kind === "update" && statement.table === crmImportRows) {
+      const rowId = this.rowIdIn(statement);
+      if (!rowId) return [];
+
+      const claimsCommit =
+        statement.set?.committedAt !== undefined && statement.set.error === undefined;
+      const claimsRevert =
+        statement.set?.revertedAt !== undefined && statement.set.error === undefined;
+
+      if (claimsCommit) {
+        if (this.committedRows.has(rowId)) return [];
+        this.committedRows.set(rowId, statement.savepoint);
+        return [this.rowById(rowId) ?? []].flat();
+      }
+
+      if (claimsRevert) {
+        if (this.revertedRows.has(rowId)) return [];
+        const row = this.rowById(rowId);
+        if (!row?.committedAt) return [];
+        this.revertedRows.set(rowId, statement.savepoint);
+        return [row];
+      }
+
+      return [];
     }
 
     // A party update reads its row back: the legacy mirror is derived from what
@@ -181,23 +258,31 @@ function plannedRow(over: Partial<Record<string, unknown>> = {}): Record<string,
     values: { name: "Acme" },
     customFields: {},
     matchedPartyId: null,
+    match: null,
     committedAt: null,
+    revertedAt: null,
     ...over,
   };
 }
+
+const workflows = { start: jest.fn(() => Promise.resolve("run-1")) };
+const service = (fake: FakeDb) =>
+  new CrmImportService(fake.db, workflows as unknown as WorkflowRunnerService);
 
 beforeAll(() => {
   // The per-row failure is logged on purpose; the test output is not the place.
   jest.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined);
 });
 
-describe("commit", () => {
+beforeEach(() => workflows.start.mockClear());
+
+describe("commitBatch", () => {
   /**
-   * The scenario the per-row `catch` was written for and could not survive: one
-   * cell Postgres refuses, in the middle of a file, inside the request's own
-   * transaction. Before the savepoint, the transaction was already aborted by
-   * the time the `catch` ran, so recording the error raised 25P02, that throw
-   * escaped `commit`, every row rolled back and the import stayed `previewing`.
+   * The scenario the per-row savepoint was written for: one cell Postgres
+   * refuses, in the middle of a window. Without the savepoint the transaction is
+   * already aborted by the time the `catch` runs, so recording the error raises
+   * 25P02, that throw escapes the step, and the step's own rollback takes the
+   * whole batch with it.
    */
   const withOneBadCell = () =>
     new FakeDb({
@@ -220,12 +305,12 @@ describe("commit", () => {
           : null,
     });
 
-  it("imports the rest of the file when one row is rejected", async () => {
+  it("imports the rest of the batch when one row is rejected", async () => {
     const fake = withOneBadCell();
 
-    const result = await new CrmImportService(fake.db).commit(ORG, IMPORT);
+    const result = await service(fake).commitBatch(ORG, IMPORT, WHOLE_FILE);
 
-    expect(result).toMatchObject({ created: 2, failed: 1, complete: true });
+    expect(result).toMatchObject({ created: 2, failed: 1 });
     expect(fake.landed("insert", businessParties).map((s) => s.values[0]?.name)).toEqual([
       "Acme",
       "Initech",
@@ -235,7 +320,7 @@ describe("commit", () => {
   it("records the failure on the row that caused it", async () => {
     const fake = withOneBadCell();
 
-    await new CrmImportService(fake.db).commit(ORG, IMPORT);
+    await service(fake).commitBatch(ORG, IMPORT, WHOLE_FILE);
 
     const errors = fake
       .landed("update", crmImportRows)
@@ -249,27 +334,87 @@ describe("commit", () => {
     expect(errors[0]).not.toMatch(/25P02|transaction is aborted/);
   });
 
+  /**
+   * A row Postgres refused will be refused again. Left outstanding it would be
+   * retried by every later attempt and by every later batch step, and the import
+   * would never reach its own end.
+   */
+  it("marks the failed row done, so it does not hold the import open", async () => {
+    const fake = withOneBadCell();
+
+    await service(fake).commitBatch(ORG, IMPORT, WHOLE_FILE);
+
+    const failed = fake
+      .landed("update", crmImportRows)
+      .filter((statement) => typeof statement.set?.error === "string");
+
+    expect(failed[0]?.set?.committedAt).toBeInstanceOf(Date);
+  });
+
   it("leaves nothing behind from the row that failed", async () => {
     const fake = withOneBadCell();
 
-    await new CrmImportService(fake.db).commit(ORG, IMPORT);
+    await service(fake).commitBatch(ORG, IMPORT, WHOLE_FILE);
 
-    // A create and its `committed_at` share a savepoint, so a party is never
-    // left over without the record of how to undo it.
-    const done = fake
+    // A create and its claim share a savepoint, so a party is never left over
+    // without the record of how to undo it.
+    const created = fake
       .landed("update", crmImportRows)
-      .filter((statement) => statement.set?.committedAt !== undefined);
-    expect(done).toHaveLength(2);
+      .filter((statement) => statement.set?.createdPartyId !== undefined);
+    expect(created).toHaveLength(2);
   });
 
-  it("marks the import committed once it has been through the file", async () => {
-    const fake = withOneBadCell();
+  /**
+   * The constraint the whole durable design rests on: `step.run` re-runs a step
+   * whose previous attempt FAILED, and two runs can overlap after a dead-letter.
+   * A batch that is not idempotent turns either into a second copy of every
+   * party in it.
+   */
+  describe("running the same batch twice", () => {
+    it("writes nothing the second time", async () => {
+      const fake = new FakeDb({
+        rows: [
+          plannedRow({ crmImportRowId: "row-1", rowNumber: 1, values: { name: "Acme" } }),
+          plannedRow({ crmImportRowId: "row-2", rowNumber: 2, values: { name: "Globex" } }),
+        ],
+      });
 
-    await new CrmImportService(fake.db).commit(ORG, IMPORT);
+      const first = await service(fake).commitBatch(ORG, IMPORT, WHOLE_FILE);
+      const again = await service(fake).commitBatch(ORG, IMPORT, WHOLE_FILE);
 
-    expect(
-      fake.landed("update", crmImports).map((statement) => statement.set?.status),
-    ).toEqual(["committing", "committed"]);
+      expect(first).toMatchObject({ created: 2 });
+      expect(again).toMatchObject({ created: 0 });
+      expect(fake.landed("insert", businessParties)).toHaveLength(2);
+    });
+
+    it("does not count a row somebody else claimed", async () => {
+      // Two runs overlapping: the second finds the claim taken and reports it as
+      // nothing rather than as a failure, because it is neither.
+      const fake = new FakeDb({
+        rows: [plannedRow({ crmImportRowId: "row-1", rowNumber: 1 })],
+      });
+
+      await service(fake).commitBatch(ORG, IMPORT, WHOLE_FILE);
+      const again = await service(fake).commitBatch(ORG, IMPORT, WHOLE_FILE);
+
+      expect(again).toMatchObject({ created: 0, failed: 0, skipped: 0 });
+    });
+
+    it("releases the claim of a row that failed, so it is genuinely outstanding", async () => {
+      // The claim shares the row's savepoint with the write. A claim that
+      // outlived a rolled-back write would mark the row done for a party that
+      // was never created.
+      const fake = withOneBadCell();
+      await service(fake).commitBatch(ORG, IMPORT, WHOLE_FILE);
+
+      const claims = fake
+        .landed("update", crmImportRows)
+        .filter((statement) => statement.set?.committedAt !== undefined);
+
+      // Two rows claimed and written, one claim rolled back and replaced by the
+      // error record — never a fourth claim standing for work nobody did.
+      expect(claims.filter((statement) => statement.set?.error === undefined)).toHaveLength(2);
+    });
   });
 
   /**
@@ -282,7 +427,7 @@ describe("commit", () => {
       rows: [plannedRow({ values: { name: "Acme Supplies", partyType: "VENDOR", status: "prospect" } })],
     });
 
-    await new CrmImportService(fake.db).commit(ORG, IMPORT);
+    await service(fake).commitBatch(ORG, IMPORT, WHOLE_FILE);
 
     expect(fake.landed("insert", businessParties)[0]?.values[0]).toMatchObject({
       name: "Acme Supplies",
@@ -294,11 +439,28 @@ describe("commit", () => {
   it("leaves the column default alone when the file says nothing", async () => {
     const fake = new FakeDb({ rows: [plannedRow({ values: { name: "Acme" } })] });
 
-    await new CrmImportService(fake.db).commit(ORG, IMPORT);
+    await service(fake).commitBatch(ORG, IMPORT, WHOLE_FILE);
 
     const inserted = fake.landed("insert", businessParties)[0]?.values[0];
     expect(inserted?.partyType).toBeUndefined();
     expect(inserted?.status).toBeUndefined();
+  });
+
+  /**
+   * Ticket 22 made `party_identifiers` the thing every inbound channel resolves
+   * against, and `applyPartyPatch` claims on every update — but this insert
+   * writes `business_parties` directly and would otherwise be the one uncovered
+   * path. An imported party nothing had claimed matches no channel at all.
+   */
+  it("claims the identifiers of the party it creates", async () => {
+    const fake = new FakeDb({
+      rows: [plannedRow({ values: { name: "Acme", email: "ops@acme.example", phone: "+441234567890" } })],
+    });
+
+    await service(fake).commitBatch(ORG, IMPORT, WHOLE_FILE);
+
+    const claimed = fake.landed("insert", partyIdentifiers)[0]?.values ?? [];
+    expect(claimed.map((row) => row.kind)).toEqual(["email", "phone"]);
   });
 
   /**
@@ -326,7 +488,7 @@ describe("commit", () => {
       ],
     });
 
-    await new CrmImportService(fake.db).commit(ORG, IMPORT);
+    await service(fake).commitBatch(ORG, IMPORT, WHOLE_FILE);
 
     const patch = fake.landed("update", businessParties)[0]?.set;
     expect(patch).toMatchObject({ partyType: "VENDOR" });
@@ -346,74 +508,203 @@ describe("commit", () => {
       parties: [{ partyId: "party-9", name: "Acme", partyType: "CUSTOMER", customFields: null }],
     });
 
-    await new CrmImportService(fake.db).commit(ORG, IMPORT);
+    await service(fake).commitBatch(ORG, IMPORT, WHOLE_FILE);
 
     expect(fake.landed("update", businessParties)[0]?.set?.partyType).toBeUndefined();
   });
 
-  describe("when a request runs out of time", () => {
-    /**
-     * The commit runs inline in one HTTP request. Reporting what is left is
-     * what lets the caller finish the file in another call instead of retrying
-     * into the same wall — see the note in `crm-import.workflow`.
-     */
-    it("reports the rows it did not reach and leaves the import open", async () => {
+  it("writes nothing for a row folded into an earlier row of the same file", async () => {
+    // Its values went into the row it repeats while the plan was made.
+    const fake = new FakeDb({
+      rows: [plannedRow({ action: "merge", duplicateOfRow: 1, values: { name: "Acme" } })],
+    });
+
+    const result = await service(fake).commitBatch(ORG, IMPORT, WHOLE_FILE);
+
+    expect(result).toMatchObject({ merged: 1, created: 0 });
+    expect(fake.landed("insert", businessParties)).toHaveLength(0);
+  });
+});
+
+/**
+ * The criterion: rows the scorer was unsure about are not written speculatively.
+ * Phase 1 created a second record and left the duplicate queue to catch it,
+ * which at import scale silently doubles a customer list.
+ */
+describe("a row the scorer would not commit to", () => {
+  const held = () =>
+    new FakeDb({
+      rows: [
+        plannedRow({
+          action: "review",
+          matchedPartyId: "party-9",
+          match: { score: 0.55, signals: ["phone"], candidateName: "Acme Trading Ltd" },
+          values: { name: "Acme Trading", phone: "+441234567890" },
+          reason: "Looks like something you already have.",
+        }),
+      ],
+    });
+
+  it("creates no party", async () => {
+    const fake = held();
+    const result = await service(fake).commitBatch(ORG, IMPORT, WHOLE_FILE);
+
+    expect(result).toMatchObject({ review: 1, created: 0 });
+    expect(fake.landed("insert", businessParties)).toHaveLength(0);
+  });
+
+  it("files it in the data-quality queue instead", async () => {
+    const fake = held();
+    await service(fake).commitBatch(ORG, IMPORT, WHOLE_FILE);
+
+    const filed = fake.landed("insert", dataQualityFindings)[0]?.values[0];
+    expect(filed).toMatchObject({
+      organizationId: ORG,
+      producer: "import-uncertainty",
+      findingKind: "import-uncertainty.near-duplicate",
+      partyId: "party-9",
+      proposedAction: "none",
+      reversibility: "instant",
+    });
+    expect(filed?.evidence).toMatchObject({ rowNumber: 1, sourceFilename: "zoho.csv" });
+  });
+
+  it("remembers which finding it filed, so the undo can close it", async () => {
+    const fake = held();
+    await service(fake).commitBatch(ORG, IMPORT, WHOLE_FILE);
+
+    const recorded = fake
+      .landed("update", crmImportRows)
+      .map((statement) => statement.set?.dataQualityFindingId)
+      .filter(Boolean);
+
+    expect(recorded).toEqual(["finding-1"]);
+  });
+
+  it("fails the row rather than filing a question with nothing in it", async () => {
+    const fake = new FakeDb({
+      rows: [plannedRow({ action: "review", matchedPartyId: null, match: null })],
+    });
+
+    const result = await service(fake).commitBatch(ORG, IMPORT, WHOLE_FILE);
+
+    expect(result).toMatchObject({ review: 0, failed: 1 });
+    expect(fake.landed("insert", dataQualityFindings)).toHaveLength(0);
+  });
+});
+
+describe("finishing and taking back", () => {
+  it("stamps the window the import promised", async () => {
+    const fake = new FakeDb({ importStatus: "committing" });
+    const before = Date.now();
+
+    await service(fake).finishCommit(ORG, IMPORT);
+
+    const set = fake.landed("update", crmImports)[0]?.set;
+    expect(set?.status).toBe("committed");
+    const deadline = set?.revertDeadlineAt as Date;
+    const days = (deadline.getTime() - before) / (24 * 60 * 60 * 1000);
+    expect(Math.round(days)).toBe(REVERT_WINDOW_DAYS);
+  });
+
+  it("refuses an undo after the window has passed", async () => {
+    const fake = new FakeDb({
+      importStatus: "committed",
+      revertDeadlineAt: new Date(Date.now() - 1000),
+    });
+
+    await expect(service(fake).startRevert(ORG, "user-1", IMPORT)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(workflows.start).not.toHaveBeenCalled();
+  });
+
+  it("starts the undo inside the window", async () => {
+    const fake = new FakeDb({
+      importStatus: "committed",
+      revertDeadlineAt: new Date(Date.now() + 1000),
+    });
+
+    await expect(service(fake).startRevert(ORG, "user-1", IMPORT)).resolves.toBe("run-1");
+  });
+
+  it("refuses to commit an import that has already been committed", async () => {
+    const fake = new FakeDb({ importStatus: "committed" });
+
+    await expect(service(fake).startCommit(ORG, IMPORT)).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  describe("revertBatch", () => {
+    it("takes back what it created and puts back what it overwrote", async () => {
       const fake = new FakeDb({
+        importStatus: "reverting",
         rows: [
-          plannedRow({ crmImportRowId: "row-1", rowNumber: 1 }),
-          plannedRow({ crmImportRowId: "row-2", rowNumber: 2 }),
-          plannedRow({ crmImportRowId: "row-3", rowNumber: 3 }),
+          plannedRow({
+            crmImportRowId: "row-1",
+            rowNumber: 1,
+            committedAt: new Date(),
+            createdPartyId: "party-1",
+          }),
+          plannedRow({
+            crmImportRowId: "row-2",
+            rowNumber: 2,
+            action: "update",
+            matchedPartyId: "party-9",
+            committedAt: new Date(),
+            previous: { name: "Acme", email: "curated@acme.example" },
+          }),
         ],
       });
 
-      // Fifteen seconds pass on every reading of the clock, so the budget
-      // survives the first row and not the second. A deadline that had expired
-      // before any work would be a deadlock rather than a deadline.
-      const start = Date.now();
-      let readings = 0;
-      const clock = jest.spyOn(Date, "now").mockImplementation(() => {
-        readings += 1;
-        return start + (readings - 1) * 15_000;
-      });
+      const result = await service(fake).revertBatch(ORG, IMPORT, WHOLE_FILE);
 
-      try {
-        const result = await new CrmImportService(fake.db).commit(ORG, IMPORT);
-        expect(result).toMatchObject({ created: 1, remaining: 2, complete: false });
-      } finally {
-        clock.mockRestore();
-      }
-
-      expect(
-        fake.landed("update", crmImports).map((statement) => statement.set?.status),
-      ).toEqual(["committing"]);
+      expect(result).toMatchObject({ deleted: 1, restored: 1 });
+      const patches = fake.landed("update", businessParties).map((statement) => statement.set);
+      expect(patches.some((patch) => patch?.deletedAt instanceof Date)).toBe(true);
+      expect(patches.some((patch) => patch?.email === "curated@acme.example")).toBe(true);
     });
 
-    it("carries on from where it stopped", async () => {
-      // Only the outstanding rows come back, and `committing` is resumable
-      // rather than a wall.
+    it("closes the question a held row asked", async () => {
       const fake = new FakeDb({
-        importStatus: "committing",
-        rows: [plannedRow({ crmImportRowId: "row-3", rowNumber: 3 })],
+        importStatus: "reverting",
+        rows: [
+          plannedRow({
+            action: "review",
+            committedAt: new Date(),
+            dataQualityFindingId: "finding-1",
+          }),
+        ],
       });
 
-      const result = await new CrmImportService(fake.db).commit(ORG, IMPORT);
+      const result = await service(fake).revertBatch(ORG, IMPORT, WHOLE_FILE);
 
-      expect(result).toMatchObject({ created: 1, remaining: 0, complete: true });
+      expect(result).toMatchObject({ dismissed: 1 });
+      expect(fake.landed("update", dataQualityFindings)[0]?.set).toMatchObject({
+        status: "dismissed",
+      });
     });
-  });
 
-  it("refuses an import that has already been committed", async () => {
-    const fake = new FakeDb({ importStatus: "committed" });
+    it("puts a row back exactly once", async () => {
+      // The same claim the commit takes, for the same reasons: a batch step
+      // re-runs after a failure, and an undo applied twice would soft-delete a
+      // party the tenant re-created in between.
+      const fake = new FakeDb({
+        importStatus: "reverting",
+        rows: [plannedRow({ committedAt: new Date(), createdPartyId: "party-1" })],
+      });
 
-    await expect(new CrmImportService(fake.db).commit(ORG, IMPORT)).rejects.toBeInstanceOf(
-      ConflictException,
-    );
+      const first = await service(fake).revertBatch(ORG, IMPORT, WHOLE_FILE);
+      const again = await service(fake).revertBatch(ORG, IMPORT, WHOLE_FILE);
+
+      expect(first).toMatchObject({ deleted: 1 });
+      expect(again).toMatchObject({ deleted: 0 });
+    });
   });
 });
 
 describe("preview", () => {
   const preview = (fake: FakeDb, over: Record<string, unknown> = {}) =>
-    new CrmImportService(fake.db).preview({
+    service(fake).preview({
       organizationId: ORG,
       userId: "user-1",
       headers: ["Company Name", "Email"],
@@ -496,5 +787,30 @@ describe("preview", () => {
         (statement) => statement.kind === "select" && statement.table === businessParties,
       ),
     ).toHaveLength(0);
+  });
+
+  it("stores what the scorer saw, so the commit need not re-derive it", async () => {
+    const fake = new FakeDb({
+      parties: [
+        {
+          partyId: "party-9",
+          name: "Acme Trading Group",
+          legalName: null,
+          email: null,
+          phone: "+441234567890",
+          taxNumber: null,
+          website: null,
+        },
+      ],
+    });
+
+    await preview(fake, {
+      headers: ["Company Name", "Phone"],
+      rows: [["Acme Trading", "+441234567890"]],
+    });
+
+    const planned = fake.landed("insert", crmImportRows)[0]?.values[0];
+    expect(planned?.action).toBe("review");
+    expect(planned?.match).toMatchObject({ candidateName: "Acme Trading Group" });
   });
 });
