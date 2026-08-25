@@ -34,6 +34,7 @@
     "backfill:crm-metadata": "node --env-file=.env -r ts-node/register src/scripts/backfill-crm-metadata.ts",
     "backfill:person-employment": "node --env-file=.env -r ts-node/register src/scripts/backfill-person-employment.ts",
     "backfill:kb-pages": "node --env-file=.env -r ts-node/register src/scripts/backfill-kb-pages.ts",
+    "convert:kb-articles": "node --env-file=.env -r ts-node/register src/scripts/convert-kb-articles.ts",
     "report:kb-article-migration": "node --env-file=.env -r ts-node/register src/scripts/report-kb-article-migration.ts",
     "report:kb-calendar-runtime": "node --env-file=.env -r ts-node/register src/scripts/report-kb-calendar-runtime-evidence.ts",
     "report:outbox-events": "node --env-file=.env -r ts-node/register src/scripts/report-outbox-events.ts",
