@@ -1,6 +1,10 @@
 import { mapColumns } from "./column-mapping";
-import { planImport, type PlanInput } from "./import-plan";
-import type { PartyFingerprint } from "../party/party-duplicates";
+import { blockingKeysFor, planImport, type PlanInput } from "./import-plan";
+import {
+  assessDuplicate,
+  REVIEW_THRESHOLD,
+  type PartyFingerprint,
+} from "../party/party-duplicates";
 
 const HEADERS = ["Company Name", "Email", "Phone", "GSTIN", "Territory"];
 const columns = mapColumns(HEADERS);
@@ -130,6 +134,91 @@ describe("planImport", () => {
       const { create, update, skip, total } = result.summary;
       expect(create + update + skip).toBe(total);
       expect(total).toBe(4);
+    });
+  });
+
+  /**
+   * `partyType` is an enum column, so the file's spelling of it has to become
+   * one of the enum's values while the row is READ — the preview shows what
+   * the commit will write, and a coercion only the commit knew about would put
+   * the divergence back.
+   */
+  describe("fields with a shape of their own", () => {
+    const typed = mapColumns(["Company Name", "Type", "Status"]);
+    const readTyped = (cells: string[]) =>
+      planImport({ columns: typed, rows: [cells], existing: [] }).rows[0];
+
+    it("reads what another product calls a party type", () => {
+      expect(readTyped(["Acme", "Supplier", ""])?.values).toMatchObject({ partyType: "VENDOR" });
+      expect(readTyped(["Acme", "vendor", ""])?.values).toMatchObject({ partyType: "VENDOR" });
+      expect(readTyped(["Acme", "Customer & Vendor", ""])?.values).toMatchObject({
+        partyType: "BOTH",
+      });
+    });
+
+    it("does not guess at a word it does not know", () => {
+      const row = readTyped(["Acme", "Enterprise", ""]);
+      expect(row?.values.partyType).toBeUndefined();
+      // Nor does it drop the cell: a column the user can see in their file and
+      // cannot find afterwards is data loss they discover months later.
+      expect(row?.customFields).toMatchObject({ type: "Enterprise" });
+    });
+
+    it("passes a status through, because the column is free text", () => {
+      expect(readTyped(["Acme", "", "prospect"])?.values).toMatchObject({ status: "prospect" });
+    });
+  });
+
+  /**
+   * Candidates are fetched by identifier rather than as an arbitrary slice of
+   * the tenant, and these four keys are enough because of the weights in
+   * `party-duplicates` — which is an assumption worth a test of its own.
+   */
+  describe("the identifiers a file could match on", () => {
+    it("normalises the file's spelling, the way a comparison would", () => {
+      const keys = blockingKeysFor(columns, [
+        ["Acme", "OPS@Acme.Example", "+44 (0)1234 567890", "gst-42", ""],
+      ]);
+
+      expect(keys.emails).toEqual(["ops@acme.example"]);
+      expect(keys.phones).toEqual(["1234567890"]);
+      expect(keys.taxNumbers).toEqual(["GST42"]);
+    });
+
+    it("collects nothing from a file with no identifier in it", () => {
+      expect(blockingKeysFor(columns, [["Acme", "", "", "", "North"]])).toEqual({
+        taxNumbers: [],
+        emails: [],
+        phones: [],
+        hosts: [],
+      });
+    });
+
+    it("cannot miss a match, because a name alone never reaches the threshold", () => {
+      // The best a pair can do while sharing none of those four: an identical
+      // name and a shared e-mail domain. If a weight ever changes so that this
+      // reaches the review threshold, fetching by identifier starts missing
+      // duplicates silently — so it is pinned here rather than assumed.
+      const best = assessDuplicate(
+        {
+          partyId: "a",
+          name: "Acme Trading",
+          email: "one@acme.example",
+          phone: null,
+          taxNumber: null,
+          website: null,
+        },
+        {
+          partyId: "b",
+          name: "Acme Trading",
+          email: "two@acme.example",
+          phone: null,
+          taxNumber: null,
+          website: null,
+        },
+      );
+
+      expect(best.score).toBeLessThan(REVIEW_THRESHOLD);
     });
   });
 

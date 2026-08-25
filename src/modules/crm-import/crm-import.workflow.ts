@@ -16,6 +16,27 @@ export const IMPORT_WORKFLOW = "crm.import-commit";
  * The rows themselves carry the finer-grained resumption: `commit` only reads
  * rows with no `committed_at`, so even a crash inside the step re-reads only
  * what is genuinely outstanding rather than starting the file again.
+ *
+ * ── Nothing starts this run. ──────────────────────────────────────────────
+ *
+ * Registered and unreachable: the shipped path is `POST /imports/:id/commit`,
+ * which calls `commit` inline. Said plainly here because a registration reads
+ * like a wiring, and the next person to look at a slow import should not have
+ * to grep for the enqueue that is missing.
+ *
+ * Connecting it is more than a `startRun`, and the missing part is this file's:
+ * the whole commit is ONE step, so it is one transaction, and a step whose
+ * transaction times out rolls back every `committed_at` it just wrote. The
+ * per-row resumption above only pays off across attempts that COMMITTED, so as
+ * written a retry would redo the file from the start and hit the same ceiling
+ * three times. Durability here means committing the file in chunks — a step per
+ * batch of rows, named deterministically so a resumed run skips the batches
+ * already memoised — plus an accepted-and-poll contract at the controller, since
+ * the caller can no longer be handed a result. That is a ticket, not a line.
+ *
+ * Until then `commit` carries the file inline and returns `complete: false` with
+ * the rows outstanding when a request runs out of budget, so a large import
+ * finishes across several calls instead of dying in one.
  */
 @Injectable()
 export class CrmImportWorkflow implements OnModuleInit {

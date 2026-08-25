@@ -2,13 +2,13 @@ import {
   Body,
   Controller,
   Get,
-  Header,
   Param,
   Post,
   Query,
   Res,
   UseGuards,
 } from "@nestjs/common";
+import { once } from "node:events";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
@@ -18,7 +18,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { CrmImportService } from "./crm-import.service";
-import { CrmExportService, toCsv, type ExportEntity } from "./crm-export.service";
+import { CrmExportService, type ExportEntity } from "./crm-export.service";
 import {
   exportQuerySchema,
   previewImportSchema,
@@ -87,36 +87,74 @@ export class CrmImportController {
    * Gated on reading the data, not on a plan or an export-specific right.
    * Making departure easy is the argument against incumbents who make it hard,
    * and anybody who may read these records may take them with them.
+   *
+   * Written to the socket as it is read rather than assembled first, so the
+   * answer is bounded by what the tenant has rather than by what fits in
+   * memory. That is also why these handlers take the response itself: a
+   * streamed body never reaches the global response interceptor.
    */
   @Get("export")
   @RequirePermission("party:parties:view")
   async exportEntity(
     @Query(new ZodValidationPipe(exportQuerySchema)) query: ExportQuery,
     @CurrentUser() u: CurrentUserContext,
-    @Res({ passthrough: true }) res: Response,
-  ) {
-    const rows = await this.exports.rowsFor(u.orgId, query.entity as ExportEntity);
+    @Res() res: Response,
+  ): Promise<void> {
+    const entity = query.entity as ExportEntity;
     const stamp = new Date().toISOString().slice(0, 10);
+    const json = query.format === "json";
 
-    if (query.format === "json") {
-      res.setHeader("Content-Type", "application/json; charset=utf-8");
-      res.setHeader("Content-Disposition", `attachment; filename="${query.entity}-${stamp}.json"`);
-      return rows;
-    }
+    res.setHeader(
+      "Content-Type",
+      json ? "application/json; charset=utf-8" : "text/csv; charset=utf-8",
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${entity}-${stamp}.${json ? "json" : "csv"}"`,
+    );
 
-    res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader("Content-Disposition", `attachment; filename="${query.entity}-${stamp}.csv"`);
-    res.send(toCsv(rows));
-    return undefined;
+    await writeAll(
+      res,
+      json ? envelope(this.exports.jsonChunks(u.orgId, entity)) : this.exports.csvChunks(u.orgId, entity),
+    );
   }
 
   /** Every entity at once, as one document. */
   @Get("export/archive")
   @RequirePermission("party:parties:view")
-  @Header("Content-Type", "application/json; charset=utf-8")
-  async archive(@CurrentUser() u: CurrentUserContext, @Res({ passthrough: true }) res: Response) {
+  async archive(@CurrentUser() u: CurrentUserContext, @Res() res: Response): Promise<void> {
     const stamp = new Date().toISOString().slice(0, 10);
+
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="crm-archive-${stamp}.json"`);
-    return this.exports.archive(u.orgId);
+
+    await writeAll(res, envelope(this.exports.archiveChunks(u.orgId)));
   }
+}
+
+/**
+ * The `{ success, data }` shape every other response carries.
+ *
+ * `ResponseTransformInterceptor` adds it to whatever a handler returns, and a
+ * streamed body is written past it. Written here so a caller does not have to
+ * parse this one endpoint differently from the rest of the API.
+ */
+async function* envelope(body: AsyncGenerator<string>): AsyncGenerator<string> {
+  yield '{"success":true,"data":';
+  yield* body;
+  yield "}";
+}
+
+/**
+ * Writes a stream to the response, waiting when the socket is full.
+ *
+ * Without the drain, a fast query and a slow connection queue the whole export
+ * in Node's memory — which is the problem streaming was for.
+ */
+async function writeAll(res: Response, chunks: AsyncGenerator<string>): Promise<void> {
+  for await (const chunk of chunks) {
+    if (res.destroyed) return;
+    if (!res.write(chunk)) await once(res, "drain");
+  }
+  res.end();
 }

@@ -1,10 +1,15 @@
+import { partyTypeEnum } from "../../db/schema";
 import {
   assessDuplicate,
   AUTO_MERGE_THRESHOLD,
+  normaliseEmail,
+  normaliseHost,
+  normalisePhone,
+  normaliseTaxNumber,
   REVIEW_THRESHOLD,
   type PartyFingerprint,
 } from "../party/party-duplicates";
-import type { MappedColumn } from "./column-mapping";
+import { customKeyFor, normaliseHeader, type ImportField, type MappedColumn } from "./column-mapping";
 
 /**
  * Deciding what an import would do, before it does any of it.
@@ -50,6 +55,72 @@ export interface PlanInput {
   readonly existing: readonly PartyFingerprint[];
 }
 
+/** The party types the column actually accepts, named by the schema that owns them. */
+export type PartyType = (typeof partyTypeEnum.enumValues)[number];
+
+export function isPartyType(value: unknown): value is PartyType {
+  return typeof value === "string" && (partyTypeEnum.enumValues as readonly string[]).includes(value);
+}
+
+/**
+ * What another product's export calls each of our party types.
+ *
+ * `party_type` is a database enum, so a file saying "Supplier" cannot be written
+ * through unchanged — and a file saying "Supplier" plainly means VENDOR. The
+ * list is deliberately short: a word not on it is not guessed at, because
+ * guessing a party's type wrongly is how a supplier list arrives as customers.
+ */
+const PARTY_TYPE_WORDS: Readonly<Record<string, PartyType>> = {
+  customer: "CUSTOMER",
+  client: "CUSTOMER",
+  buyer: "CUSTOMER",
+  vendor: "VENDOR",
+  supplier: "VENDOR",
+  seller: "VENDOR",
+  partner: "PARTNER",
+  reseller: "PARTNER",
+  affiliate: "PARTNER",
+  both: "BOTH",
+  "customer and vendor": "BOTH",
+  "customer and supplier": "BOTH",
+  "customer vendor": "BOTH",
+  "customer supplier": "BOTH",
+};
+
+/** As much status as the party API itself accepts; `status` is free text. */
+const MAX_STATUS = 50;
+
+/**
+ * The value a field can actually hold, or `null` if this cell cannot be one.
+ *
+ * Applied while the row is read rather than at commit time, so the preview shows
+ * the value that will be written instead of the value the file happened to
+ * spell. That is the whole point of planning once: `Type = "Supplier"` has to
+ * read as VENDOR in the preview *and* land as VENDOR, and a coercion that only
+ * the commit knows about re-opens the divergence this module exists to close.
+ */
+function coerceValue(field: ImportField, cell: string): string | null {
+  if (field === "partyType") {
+    const upper = cell.trim().toUpperCase();
+    if (isPartyType(upper)) return upper;
+
+    const normalised = cell
+      .trim()
+      .toLowerCase()
+      .replace(/&/g, " and ")
+      .replace(/[_\-/]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    return PARTY_TYPE_WORDS[normalised] ?? null;
+  }
+
+  // Free text in the schema, so the only question is whether it fits.
+  if (field === "status") return cell.length <= MAX_STATUS ? cell : null;
+
+  return cell;
+}
+
 /** Read one spreadsheet row into named values, per the confirmed mapping. */
 function readRow(
   columns: readonly MappedColumn[],
@@ -62,13 +133,74 @@ function readRow(
     const cell = (cells[index] ?? "").trim();
     if (!cell) return;
 
-    if (column.mapping.kind === "mapped") values[column.mapping.field] = cell;
-    else if (column.mapping.kind === "custom") customFields[column.mapping.key] = cell;
+    if (column.mapping.kind === "mapped") {
+      const value = coerceValue(column.mapping.field, cell);
+      if (value !== null) values[column.mapping.field] = value;
+      // A cell that cannot be the field it was mapped to still came out of the
+      // user's file, and a column they can see and cannot find afterwards is
+      // data loss they discover months later. It keeps its own header's key.
+      else customFields[customKeyFor(normaliseHeader(column.header))] = cell;
+    } else if (column.mapping.kind === "custom") customFields[column.mapping.key] = cell;
     // `ambiguous` and `unmapped` contribute nothing: an unanswered question must
     // not quietly become an answer.
   });
 
   return { values, customFields };
+}
+
+/**
+ * The identifiers a file could possibly match an existing party on.
+ *
+ * Used to fetch candidates instead of reading an arbitrary slice of the tenant:
+ * "the first ten thousand parties Postgres happened to return" is not a stable
+ * set, so the same file previewed twice could plan a row as `update` once and
+ * `create` the next time, and quietly grow a second copy of a customer.
+ *
+ * These four keys are enough, and that is a property of the weights in
+ * `party-duplicates`, not a hope. Without a shared tax number, e-mail address,
+ * phone number or website host, the most a pair can score is a matching e-mail
+ * DOMAIN (0.12) plus an exactly equal name (0.3) — 0.42, below the 0.45 review
+ * threshold and far below the 0.85 at which a row becomes an update. So a party
+ * sharing none of these four cannot change any row's action, and not fetching it
+ * costs nothing. `import-plan.spec` pins that arithmetic, because raising a name
+ * weight past it would make this blocking unsound silently.
+ */
+export interface BlockingKeys {
+  readonly taxNumbers: readonly string[];
+  readonly emails: readonly string[];
+  readonly phones: readonly string[];
+  readonly hosts: readonly string[];
+}
+
+export function blockingKeysFor(
+  columns: readonly MappedColumn[],
+  rows: readonly (readonly string[])[],
+): BlockingKeys {
+  const taxNumbers = new Set<string>();
+  const emails = new Set<string>();
+  const phones = new Set<string>();
+  const hosts = new Set<string>();
+
+  const add = (into: Set<string>, key: string): void => {
+    if (key) into.add(key);
+  };
+
+  for (const cells of rows) {
+    // Read through the same mapping the plan uses, so the keys come from the
+    // columns the user confirmed rather than from wherever the file put them.
+    const { values } = readRow(columns, cells);
+    add(taxNumbers, normaliseTaxNumber(values.taxNumber));
+    add(emails, normaliseEmail(values.email));
+    add(phones, normalisePhone(values.phone));
+    add(hosts, normaliseHost(values.website));
+  }
+
+  return {
+    taxNumbers: [...taxNumbers],
+    emails: [...emails],
+    phones: [...phones],
+    hosts: [...hosts],
+  };
 }
 
 function fingerprintOf(rowNumber: number, values: Record<string, string>): PartyFingerprint {

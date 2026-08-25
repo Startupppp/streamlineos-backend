@@ -27,6 +27,18 @@ export const IMPORT_FIELDS = [
 ] as const;
 export type ImportField = (typeof IMPORT_FIELDS)[number];
 
+/**
+ * Narrows a string a person sent us to a field this import can land on.
+ *
+ * The override DTO already enumerates these, so today every answer that reaches
+ * `applyOverrides` is valid — but "valid because one caller happens to validate
+ * it" is a coupling that breaks silently the moment a second caller appears.
+ * Narrowed here instead, where the list lives.
+ */
+export function isImportField(value: string): value is ImportField {
+  return (IMPORT_FIELDS as readonly string[]).includes(value);
+}
+
 export type ColumnMapping =
   | { readonly kind: "mapped"; readonly field: ImportField; readonly confidence: number }
   | { readonly kind: "custom"; readonly key: string }
@@ -207,6 +219,33 @@ export function mapColumns(headers: readonly string[]): MappedColumn[] {
 
     return { header, mapping };
   });
+}
+
+/**
+ * The fields claimed by more than one column, with the headers claiming them.
+ *
+ * `mapColumns` enforces this on the automatic path by turning the second
+ * claimant ambiguous, but that guard runs before a person's overrides are
+ * applied — and an override names a field outright, so it can re-create exactly
+ * the collision the guard exists to prevent. Reported rather than resolved:
+ * which of two columns the user meant is the question they were being asked,
+ * and picking the rightmost silently is the failure, not the fix.
+ */
+export function duplicateFieldAssignments(
+  columns: readonly MappedColumn[],
+): { field: ImportField; headers: string[] }[] {
+  const byField = new Map<ImportField, string[]>();
+
+  for (const column of columns) {
+    if (column.mapping.kind !== "mapped") continue;
+    const headers = byField.get(column.mapping.field) ?? [];
+    headers.push(column.header);
+    byField.set(column.mapping.field, headers);
+  }
+
+  return [...byField.entries()]
+    .filter(([, headers]) => headers.length > 1)
+    .map(([field, headers]) => ({ field, headers }));
 }
 
 /**

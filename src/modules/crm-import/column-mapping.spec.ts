@@ -1,4 +1,11 @@
-import { mapColumn, mapColumns, needsConfirmation, normaliseHeader } from "./column-mapping";
+import {
+  duplicateFieldAssignments,
+  isImportField,
+  mapColumn,
+  mapColumns,
+  needsConfirmation,
+  normaliseHeader,
+} from "./column-mapping";
 
 describe("normaliseHeader", () => {
   it("folds the punctuation a spreadsheet adds", () => {
@@ -83,6 +90,38 @@ describe("mapColumns", () => {
     expect(byHeader["Description"]).toMatchObject({ field: "notes" });
     expect(byHeader["Record ID"]).toEqual({ kind: "unmapped" });
     expect(byHeader["Territory"]).toEqual({ kind: "custom", key: "territory" });
+  });
+});
+
+describe("duplicateFieldAssignments", () => {
+  /**
+   * `mapColumns` prevents this on the automatic path, but it runs before a
+   * person's answers are applied — and an answer names a field outright, so it
+   * can re-create the collision the guard exists to prevent. Reported so the
+   * caller can refuse rather than let the rightmost column win every row.
+   */
+  it("reports the field two columns both claim", () => {
+    expect(
+      duplicateFieldAssignments([
+        { header: "Company", mapping: { kind: "mapped", field: "name", confidence: 1 } },
+        { header: "Account Name", mapping: { kind: "mapped", field: "name", confidence: 1 } },
+        { header: "Email", mapping: { kind: "mapped", field: "email", confidence: 1 } },
+      ]),
+    ).toEqual([{ field: "name", headers: ["Company", "Account Name"] }]);
+  });
+
+  it("finds nothing in a mapping where each field comes from one column", () => {
+    expect(duplicateFieldAssignments(mapColumns(["Company Name", "Email", "Phone"]))).toEqual([]);
+  });
+});
+
+describe("isImportField", () => {
+  it("accepts a field this import can fill and refuses anything else", () => {
+    expect(isImportField("name")).toBe(true);
+    expect(isImportField("partyType")).toBe(true);
+    // A column of the table is not automatically a field of the import.
+    expect(isImportField("partyId")).toBe(false);
+    expect(isImportField("__ignore__")).toBe(false);
   });
 });
 
