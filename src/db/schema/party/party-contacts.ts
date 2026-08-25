@@ -1,5 +1,6 @@
 import {
   pgTable,
+  jsonb,
   text,
   boolean,
   timestamp,
@@ -27,6 +28,7 @@ export const partyContacts = pgTable(
     phone: text("phone"),
     title: text("title"),
     isPrimary: boolean("is_primary").default(false).notNull(),
+    customFields: jsonb("custom_fields").$type<Record<string, unknown>>(),
     deletedAt: timestamp("deleted_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")

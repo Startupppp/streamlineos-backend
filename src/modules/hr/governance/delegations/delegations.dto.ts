@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { queryBoolean } from "../../../../common/validation/query-boolean";
 
 export const paginationSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -18,7 +19,7 @@ export const updateProxySchema = createProxySchema.partial();
 
 export const listProxiesSchema = paginationSchema.extend({
   scope: z.enum(["approvals", "hr_admin", "manager_tasks"]).optional(),
-  active: z.coerce.boolean().optional(),
+  active: queryBoolean.optional(),
 });
 
 export type CreateProxyInput = z.infer<typeof createProxySchema>;

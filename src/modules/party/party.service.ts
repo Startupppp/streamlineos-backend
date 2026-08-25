@@ -1,9 +1,10 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, eq, ilike, isNull, or } from "drizzle-orm";
-import { businessParties, partyContacts } from "../../db/schema/party";
+import { and, count, desc, eq, exists, ilike, isNull, or, sql } from "drizzle-orm";
+import { businessParties, partyContacts, partyRoles } from "../../db/schema/party";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
+import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
 import type {
   ListPartiesQuery,
   CreatePartyInput,
@@ -18,6 +19,25 @@ type PartyRow = typeof businessParties.$inferSelect;
 type PartyPatch = Partial<typeof businessParties.$inferInsert>;
 type ContactRow = typeof partyContacts.$inferSelect;
 type ContactPatch = Partial<typeof partyContacts.$inferInsert>;
+
+/**
+ * One shape for both paging strategies.
+ *
+ * `total` and `totalPages` are optional because the cursor branch deliberately
+ * skips the count query — on a large tenant that count is the expensive half of
+ * the request, and a keyset reader does not need it.
+ */
+interface PartyListPage {
+  data: PartyRow[];
+  pagination: {
+    page: number;
+    limit: number;
+    total?: number;
+    totalPages?: number;
+    nextCursor: string | null;
+    hasMore: boolean;
+  };
+}
 
 @Injectable()
 export class PartyService {
@@ -58,9 +78,10 @@ export class PartyService {
     return row;
   }
 
-  async listParties(organizationId: string, query: ListPartiesQuery) {
-    const { page, limit, partyType, search } = query;
+  async listParties(organizationId: string, query: ListPartiesQuery): Promise<PartyListPage> {
+    const { page, limit, partyType, search, cursor, role } = query;
     const offset = (page - 1) * limit;
+    const position = decodeCursor(cursor);
 
     const searchCondition = search
       ? or(
@@ -74,27 +95,80 @@ export class PartyService {
       eq(businessParties.organizationId, organizationId),
       isNull(businessParties.deletedAt),
       partyType ? eq(businessParties.partyType, partyType) : undefined,
+      // A semi-join rather than a join: a party holding a role twice must not
+      // appear twice in the list.
+      role
+        ? exists(
+            this.db
+              .select({ one: sql`1` })
+              .from(partyRoles)
+              .where(
+                and(
+                  eq(partyRoles.organizationId, businessParties.organizationId),
+                  eq(partyRoles.partyId, businessParties.partyId),
+                  eq(partyRoles.role, role),
+                  isNull(partyRoles.removedAt),
+                ),
+              ),
+          )
+        : undefined,
       searchCondition,
     );
+
+    if (position) {
+      // Row-value comparison, matching the index order exactly, so the scan
+      // starts at the cursor instead of reading and discarding earlier rows.
+      const keyset = and(
+        conditions,
+        sql`(${businessParties.createdAt}, ${businessParties.partyId}) < (${new Date(position.sortValue)}, ${position.id})`,
+      );
+
+      const rows = await this.db
+        .select()
+        .from(businessParties)
+        .where(keyset)
+        .orderBy(desc(businessParties.createdAt), desc(businessParties.partyId))
+        .limit(limit + 1);
+
+      const keysetPage = buildCursorPage(rows, limit, (row) => ({
+        sortValue: row.createdAt.toISOString(),
+        id: row.partyId,
+      }));
+
+      return {
+        data: keysetPage.data,
+        pagination: { page, ...keysetPage.pagination },
+      };
+    }
 
     const [rows, [totalRow]] = await Promise.all([
       this.db
         .select()
         .from(businessParties)
         .where(conditions)
-        .limit(limit)
+        .orderBy(desc(businessParties.createdAt), desc(businessParties.partyId))
+        .limit(limit + 1)
         .offset(offset),
       this.db.select({ total: count() }).from(businessParties).where(conditions),
     ]);
 
     const total = Number(totalRow?.total ?? 0);
+    const cursorPage = buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: row.partyId,
+    }));
+
+    // Both shapes: existing callers keep their page numbers, and a caller that
+    // wants stable scrolling can follow nextCursor from the first response.
     return {
-      data: rows,
+      data: cursorPage.data,
       pagination: {
         page,
         limit,
         total,
         totalPages: Math.ceil(total / limit),
+        nextCursor: cursorPage.pagination.nextCursor,
+        hasMore: cursorPage.pagination.hasMore,
       },
     };
   }

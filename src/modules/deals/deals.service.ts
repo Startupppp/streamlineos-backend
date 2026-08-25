@@ -1,7 +1,7 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import { deals, dealActivities, dealApprovals, chatChannels, chatChannelMembers, users } from "../../db/schema";
+import { deals, dealActivities, dealApprovals, dealStageTransitions, chatChannels, chatChannelMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { OutboxWriter } from "../../common/outbox/outbox-writer";
@@ -18,6 +18,12 @@ import { CrmAutomationBusService } from "../crm/automation-studio/crm-automation
 import { DealsCrudService } from "./deals-crud.service";
 import { DealsActivitiesService } from "./deals-activities.service";
 import { DealsImportExportService } from "./deals-import-export.service";
+import {
+  toMinorUnits,
+  toTransitionRow,
+  type StageActor,
+  type StageTransitionRow,
+} from "./deal-stage-ledger";
 import type { DataScope } from "../access/access.types";
 import type {
   BulkImportDealsInput,
@@ -85,6 +91,10 @@ export class DealsService {
 
   listActivities(orgId: string, dealId: number) {
     return this.activities.listActivities(orgId, dealId);
+  }
+
+  listStageTransitions(orgId: string, dealId: number) {
+    return this.activities.listStageTransitions(orgId, dealId);
   }
 
   addActivity(orgId: string, userId: string, dealId: number, input: LogActivityInput) {
@@ -193,11 +203,23 @@ export class DealsService {
     );
   }
 
-  async updateDeal(orgId: string, userId: string, dealId: number, input: UpdateDealInput): Promise<UpdateDealOutcome> {
+  /**
+   * @param actor who is moving the deal. Defaults to the calling human; ticket
+   * 12 passes a system actor so an autonomous stage advance is recorded as one
+   * rather than wearing the name of whoever last touched the record.
+   */
+  async updateDeal(
+    orgId: string,
+    userId: string,
+    dealId: number,
+    input: UpdateDealInput,
+    actor: StageActor = { kind: "human", userId },
+  ): Promise<UpdateDealOutcome> {
     const updateData: Partial<typeof deals.$inferInsert> = { updatedAt: new Date() };
     let stageChanged = false;
     let previousStage: string | null = null;
     let wonStageDetected = false;
+    let transitionRow: StageTransitionRow | null = null;
 
     if (input.stage !== undefined) {
       const existing = await this.db.query.deals.findFirst({
@@ -253,6 +275,20 @@ export class DealsService {
       if (existing.stage !== input.stage) {
         stageChanged = true;
         previousStage = existing.stage ?? null;
+
+        // Prepared here, written inside the transaction below. The activity row
+        // beside it is the legacy display log and stays for the surfaces that
+        // read it; the ledger is the accountable record.
+        transitionRow = toTransitionRow({
+          organizationId: orgId,
+          dealId,
+          pipelineId: pipelineId ?? null,
+          fromStage: previousStage,
+          toStage: input.stage,
+          actor,
+          reason: input.stageChangeReason ?? null,
+        });
+
         await this.db.insert(dealActivities).values({
           orgId, dealId, type: "stage_change", previousValue: existing.stage, newValue: input.stage,
           subject: `Stage changed from ${existing.stage} to ${input.stage}`, userId,
@@ -279,7 +315,8 @@ export class DealsService {
     }
 
     if (input.name !== undefined) updateData.name = input.name;
-    if (input.value !== undefined) updateData.value = String(input.value);
+    // `value` is generated from this column now, so writing it would error.
+    if (input.value !== undefined) updateData.valueMinor = toMinorUnits(input.value);
     if (input.stage !== undefined) updateData.stage = input.stage;
     if (input.probability !== undefined) updateData.probability = input.probability;
     if (input.contactPerson !== undefined) updateData.contactPerson = input.contactPerson;
@@ -290,6 +327,8 @@ export class DealsService {
     if (input.actualCloseDate !== undefined) updateData.actualCloseDate = input.actualCloseDate;
     if (input.lostReason !== undefined) updateData.lostReason = input.lostReason;
     if (input.notes !== undefined) updateData.notes = input.notes;
+    if (input.partyId !== undefined) updateData.partyId = input.partyId;
+    if (input.subjectId !== undefined) updateData.subjectId = input.subjectId;
 
     const updated = await this.db.transaction(async (tx) => {
       const [row] = await (tx as Db)
@@ -298,6 +337,11 @@ export class DealsService {
         .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)))
         .returning();
       if (!row) return undefined;
+
+      // In the same transaction as the move it records. A ledger written outside
+      // it can survive a rolled-back update, which is the one failure that makes
+      // the whole record untrustworthy.
+      if (transitionRow) await (tx as Db).insert(dealStageTransitions).values(transitionRow);
 
       if (wonStageDetected && stageChanged) {
         await OutboxWriter.emit(tx, {

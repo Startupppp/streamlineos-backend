@@ -17,6 +17,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { PartyService } from "./party.service";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import {
   listPartiesQuerySchema,
   createPartySchema,
@@ -45,6 +46,7 @@ export class PartyController {
   }
 
   @Post("parties")
+  @Idempotent("party.create")
   @HttpCode(201)
   @RequirePermission("party:parties:create")
   createParty(
@@ -64,6 +66,7 @@ export class PartyController {
   }
 
   @Patch("parties/:partyId")
+  @Idempotent("party.update")
   @RequirePermission("party:parties:update")
   updateParty(
     @Param("partyId") partyId: string,
@@ -74,6 +77,7 @@ export class PartyController {
   }
 
   @Delete("parties/:partyId")
+  @Idempotent("party.delete")
   @HttpCode(204)
   @RequirePermission("party:parties:delete")
   deleteParty(
@@ -93,6 +97,7 @@ export class PartyController {
   }
 
   @Post("parties/:partyId/contacts")
+  @Idempotent("party.contact.create")
   @HttpCode(201)
   @RequirePermission("party:contacts:manage")
   createContact(
@@ -104,6 +109,7 @@ export class PartyController {
   }
 
   @Patch("contacts/:partyContactId")
+  @Idempotent("party.contact.update")
   @RequirePermission("party:contacts:manage")
   updateContact(
     @Param("partyContactId") partyContactId: string,
@@ -114,6 +120,7 @@ export class PartyController {
   }
 
   @Delete("contacts/:partyContactId")
+  @Idempotent("party.contact.delete")
   @HttpCode(204)
   @RequirePermission("party:contacts:manage")
   deleteContact(

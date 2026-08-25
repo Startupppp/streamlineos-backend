@@ -40,6 +40,7 @@ import {
   getTrialDays,
   TRIAL_PLAN,
 } from "../../billing/core/plan-entitlements.constants";
+import { regionForNewOrg } from "../../../common/region/region-registry";
 
 export { DEFAULT_SKIP_MODULES, provisionOrgModules };
 
@@ -343,6 +344,7 @@ export class OrgSetupService {
       }
       await tx.insert(organizations).values({
         id: orgId,
+        region: regionForNewOrg(),
         name: orgName,
         slug: this.slugify(orgName),
         ownerMembershipId,

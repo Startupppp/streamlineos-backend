@@ -26,7 +26,18 @@ const NONE: readonly string[] = [];
 
 export const MODULE_REGISTRY = [
   { id: "hr", displayName: "HR", planGated: true, administrable: true, ladder: "delegable", administersNamespaces: NONE },
-  { id: "crm", displayName: "CRM", planGated: true, administrable: true, ladder: "delegable", administersNamespaces: NONE },
+  {
+    id: "crm",
+    displayName: "CRM",
+    planGated: true,
+    administrable: true,
+    ladder: "delegable",
+    // The party ladder is not a product of its own: a CRM administrator has to
+    // be able to manage the customers their deals point at. Without this,
+    // `moduleScopedPermissions("crm")` skips every `party:` key and those
+    // endpoints are reachable only by an organisation admin.
+    administersNamespaces: ["party"],
+  },
   { id: "build", displayName: "Build", planGated: true, administrable: true, ladder: "delegable", administersNamespaces: NONE },
   { id: "accounting", displayName: "Accounting", planGated: true, administrable: true, ladder: "delegable", administersNamespaces: NONE },
   { id: "inventory", displayName: "Inventory", planGated: true, administrable: true, ladder: "delegable", administersNamespaces: NONE },

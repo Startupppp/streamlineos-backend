@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { queryBoolean } from "../../../../common/validation/query-boolean";
 
 const WAREHOUSE_NAME_RE = /^[\p{L}\p{N}\s\-&.,()'/]+$/u;
 const WAREHOUSE_CODE_RE = /^[A-Z0-9][A-Z0-9\-_]*$/;
@@ -82,7 +83,7 @@ export type ListWarehouseStockInput = z.infer<typeof listWarehouseStockSchema>;
 export const listWarehousesSchema = z.object({
   q: z.string().trim().max(100).optional(),
   status: z.enum(["all", "active", "inactive"]).optional(),
-  isDefault: z.coerce.boolean().optional(),
+  isDefault: queryBoolean.optional(),
   country: z.string().trim().max(100).optional(),
   city: z.string().trim().max(100).optional(),
   page: z.coerce.number().int().min(1).default(1),

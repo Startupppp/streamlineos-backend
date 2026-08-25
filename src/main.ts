@@ -12,6 +12,7 @@ import { AppModule } from "./app.module";
 import { validateEnv } from "./config/env.validation";
 import { AllExceptionsFilter } from "./common/http/all-exceptions.filter";
 import { correlationIdMiddleware } from "./common/http/correlation-id.middleware";
+import { structuredNestLogger } from "./common/observability";
 import { ResponseTransformInterceptor } from "./common/interceptors/response-transform.interceptor";
 import { logger } from "./common/logger/logger.service";
 
@@ -48,6 +49,11 @@ async function bootstrap(): Promise<void> {
     bufferLogs: false,
     logger: logLevels,
   });
+
+  // Routes the framework's own output, and the ~70 modules that construct a Nest
+  // `Logger`, through the structured logger so every line is JSON and carries the
+  // request's correlation id.
+  app.useLogger(structuredNestLogger);
 
   app.use(helmet());
   app.use(compression());

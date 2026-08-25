@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { queryBoolean } from "../../../../common/validation/query-boolean";
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD");
 
@@ -83,7 +84,7 @@ export const updateRecurringBillSchema = createRecurringBillSchema.partial();
 export const listRecurringBillsQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
-  isActive: z.coerce.boolean().optional(),
+  isActive: queryBoolean.optional(),
 });
 
 export const createPaymentRunSchema = z.object({

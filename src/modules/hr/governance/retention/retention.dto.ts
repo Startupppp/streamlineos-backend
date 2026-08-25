@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { queryBoolean } from "../../../../common/validation/query-boolean";
 
 export const paginationSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -17,7 +18,7 @@ export const updateRetentionPolicySchema = createRetentionPolicySchema.partial()
 
 export const listRetentionPoliciesSchema = paginationSchema.extend({
   recordType: z.enum(["employee", "document", "case", "attendance", "payroll"]).optional(),
-  active: z.coerce.boolean().optional(),
+  active: queryBoolean.optional(),
 });
 
 export const createDataRequestSchema = z.object({

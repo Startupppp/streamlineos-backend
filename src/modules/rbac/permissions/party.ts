@@ -37,4 +37,42 @@ export const PARTY_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Create, update, and delete contacts for a business party",
   },
+  {
+    name: "party:roles:manage",
+    resource: "party:roles",
+    action: "manage",
+    description: "Assign and remove the roles a party holds",
+  },
+  {
+    name: "party:duplicates:view",
+    resource: "party:duplicates",
+    action: "view",
+    description: "See parties the system believes may be the same organisation",
+  },
+  {
+    name: "party:merges:manage",
+    resource: "party:merges",
+    action: "manage",
+    description: "Merge two parties, and reverse a merge",
+  },
+  {
+    name: "party:subjects:view",
+    resource: "party:subjects",
+    action: "view",
+    description: "View the things the business transacts, and their declared types",
+  },
+  {
+    name: "party:subjects:manage",
+    resource: "party:subjects",
+    action: "manage",
+    description: "Create, update and delete subjects, and link them to parties",
+  },
+  {
+    // Separate from managing records: changing a declaration reshapes every
+    // record of that type, which is a different act from editing one of them.
+    name: "party:subject-types:manage",
+    resource: "party:subject-types",
+    action: "manage",
+    description: "Declare and change the subject types the organisation transacts",
+  },
 ];

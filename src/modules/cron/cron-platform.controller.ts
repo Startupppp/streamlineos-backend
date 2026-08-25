@@ -18,6 +18,7 @@ import { CronOrganizationService } from "./cron-organization.service";
 import { OwnershipTransfersService } from "../ownership/ownership-transfers.service";
 import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
 import { CronIdempotencyService } from "./cron-idempotency.service";
+import { CronWorkflowService } from "./cron-workflow.service";
 import { ChatReplyRemindersService } from "../chat/chat-reply-reminders.service";
 import { ExceptionsDetectorService } from "../timesheets/core/exceptions-detector.service";
 import { BuildDueSweepService } from "../build/core/build-due-sweep.service";
@@ -30,6 +31,7 @@ export class CronPlatformController {
   constructor(
     private readonly chatReplyReminders: ChatReplyRemindersService,
     private readonly emailOutbox: CronEmailOutboxService,
+    private readonly workflow: CronWorkflowService,
     private readonly notificationDelivery: CronNotificationDeliveryService,
     private readonly cronOrganization: CronOrganizationService,
     private readonly ownershipTransfers: OwnershipTransfersService,
@@ -53,6 +55,44 @@ export class CronPlatformController {
   @HttpCode(200)
   postNotificationTimeSweeps(@Headers("authorization") authorization?: string) {
     return this.runNotificationTimeSweeps(authorization);
+  }
+
+  /**
+   * Advances the durable workflow runtime.
+   *
+   * Nothing else drives it: a run that suspends for three days, and a run whose
+   * step failed and is waiting out its backoff, both become due only when this
+   * is called. Without a scheduler pointed here they simply never resume.
+   *
+   * Should run at least every minute. The interval is the floor on how late a
+   * sleeping workflow wakes.
+   */
+  private async runWorkflowTick(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const { relay, drain } = await this.workflow.tick();
+      return {
+        ok: true,
+        relayed: relay.started,
+        scanned: relay.scanned,
+        claimed: drain.claimed,
+        outcomes: drain.outcomes,
+      };
+    } catch (error) {
+      logger.error("cron workflow tick failed", { error });
+      throw new InternalServerErrorException("workflow tick failed");
+    }
+  }
+
+  @Get("workflow-tick")
+  async workflowTickGet(@Headers("authorization") authorization?: string) {
+    return this.runWorkflowTick(authorization);
+  }
+
+  @Post("workflow-tick")
+  @HttpCode(200)
+  async workflowTickPost(@Headers("authorization") authorization?: string) {
+    return this.runWorkflowTick(authorization);
   }
 
   /**

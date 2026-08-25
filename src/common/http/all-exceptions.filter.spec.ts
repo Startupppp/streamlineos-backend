@@ -1,6 +1,13 @@
 import { ArgumentsHost, BadRequestException, HttpException, NotFoundException } from "@nestjs/common";
 import { ZodError, z } from "zod";
 import { AllExceptionsFilter } from "./all-exceptions.filter";
+import {
+  resetErrorReporter,
+  setErrorReporter,
+  type ErrorReport,
+} from "../observability/error-reporter";
+import { runWithObservabilityContext } from "../observability/observability-context";
+import { resetErrorReporter, setErrorReporter } from "../observability/error-reporter";
 
 function hostWith(): { host: ArgumentsHost; json: jest.Mock; status: jest.Mock } {
   const json = jest.fn();
@@ -18,6 +25,24 @@ function hostWith(): { host: ArgumentsHost; json: jest.Mock; status: jest.Mock }
     getType: () => "http",
   } as ArgumentsHost;
   return { host, json, status };
+}
+
+/** The same host, addressed at a chosen route. */
+function hostFor(url: string): ArgumentsHost {
+  const json = jest.fn();
+  const status = jest.fn((): { json: jest.Mock } => ({ json }));
+  return {
+    getArgs: () => [],
+    getArgByIndex: () => undefined,
+    switchToHttp: () => ({
+      getResponse: () => ({ status }),
+      getRequest: () => ({ method: "GET", url }),
+      getNext: () => undefined,
+    }),
+    switchToRpc: () => ({} as ReturnType<ArgumentsHost["switchToRpc"]>),
+    switchToWs: () => ({} as ReturnType<ArgumentsHost["switchToWs"]>),
+    getType: () => "http",
+  } as ArgumentsHost;
 }
 
 describe("AllExceptionsFilter", () => {
@@ -122,5 +147,111 @@ describe("AllExceptionsFilter", () => {
       code: "HTTP_502",
       message: "Delivery failed.",
     });
+  });
+
+  describe("operational reporting", () => {
+    let reports: ErrorReport[];
+
+    beforeEach(() => {
+      reports = [];
+      setErrorReporter({ report: (r) => reports.push(r) });
+    });
+    afterEach(() => resetErrorReporter());
+
+    it("reports an unhandled error so a human is told, not just a log file", () => {
+      const { host } = hostWith();
+      const boom = new Error("boom");
+
+      filter.catch(boom, host);
+
+      expect(reports).toHaveLength(1);
+      expect(reports[0].error).toBe(boom);
+      expect(reports[0].extra).toMatchObject({ method: "GET", url: "/x" });
+    });
+
+    it("attaches the correlation identity so the report joins the request's logs", async () => {
+      const { host } = hostWith();
+
+      await runWithObservabilityContext(
+        { correlationId: "c-1", orgId: "org-1" },
+        async () => filter.catch(new Error("boom"), host),
+      );
+
+      expect(reports[0].context).toMatchObject({ correlationId: "c-1", orgId: "org-1" });
+    });
+
+    it("does not report an expected client error", () => {
+      const { host } = hostWith();
+      filter.catch(new NotFoundException("Deal not found"), host);
+      expect(reports).toHaveLength(0);
+    });
+
+    it("keeps driver diagnostics that quote the offending row out of the log", () => {
+      const { host } = hostWith();
+      const stderr = jest.spyOn(process.stderr, "write").mockReturnValue(true);
+
+      // A real 23505 populates `detail` far more often than `query`.
+      const dbError = Object.assign(new Error("duplicate key value violates unique constraint"), {
+        code: "23505",
+        detail: "Key (email)=(ada@example.com) already exists.",
+        hint: "Try a different address for ada@example.com",
+        query: "insert into parties (email) values ('ada@example.com')",
+        table_name: "parties",
+        column_name: "email",
+      });
+      filter.catch(dbError, host);
+
+      const written = stderr.mock.calls.map((call) => String(call[0])).join("");
+      stderr.mockRestore();
+
+      expect(written).not.toContain("ada@example.com");
+      expect(written).toContain("[redacted]");
+      // The non-sensitive diagnostics survive, or the redaction is useless.
+      expect(written).toContain("parties");
+      expect(written).toContain("email");
+      expect(written).toContain("duplicate key value violates unique constraint");
+    });
+  });
+});
+
+describe("health probes and error noise", () => {
+  /**
+   * Probes are polled continuously by the platform, so a database blip becomes
+   * thousands of identical reports and buries everything else. They still log,
+   * and the probe still fails — this only keeps the tracker readable.
+   */
+  it("does not report a failing health probe to the tracker", () => {
+    const reported: unknown[] = [];
+    setErrorReporter({ report: (r) => reported.push(r) });
+
+    for (const url of ["/health", "/health/ready", "/health/db", "/health/db?verbose=1"]) {
+      const filter = new AllExceptionsFilter();
+      filter.catch(new Error("database unreachable"), hostFor(url));
+    }
+
+    expect(reported).toHaveLength(0);
+    resetErrorReporter();
+  });
+
+  it("still reports an ordinary route failing", () => {
+    const reported: unknown[] = [];
+    setErrorReporter({ report: (r) => reported.push(r) });
+
+    const filter = new AllExceptionsFilter();
+    filter.catch(new Error("boom"), hostFor("/crm/deals"));
+
+    expect(reported).toHaveLength(1);
+    resetErrorReporter();
+  });
+
+  it("is not fooled by a route that merely starts with the word", () => {
+    const reported: unknown[] = [];
+    setErrorReporter({ report: (r) => reported.push(r) });
+
+    const filter = new AllExceptionsFilter();
+    filter.catch(new Error("boom"), hostFor("/healthcare/claims"));
+
+    expect(reported).toHaveLength(1);
+    resetErrorReporter();
   });
 });

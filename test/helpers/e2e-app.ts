@@ -9,6 +9,10 @@ import { MembershipStateService } from "src/common/auth/membership-state.service
 import { EntitlementsService } from "src/modules/access/entitlements.service";
 import { AccessService } from "src/modules/access/access.service";
 import type { DataScope } from "src/modules/access/access.types";
+import { RegionRegistry, setRegionRegistry } from "src/common/region/region-registry";
+import type { RegionDefinition } from "src/common/region/region.config";
+import type { Db } from "src/db/drizzle.types";
+import { DRIZZLE } from "src/db/drizzle.constants";
 
 /**
  * Controller e2e specs assert the guard chain — 401 / 402 / 403 — and every one
@@ -94,6 +98,41 @@ const accessStub = {
   getUserDeniedModules: async (): Promise<ReadonlySet<string>> => new Set<string>(),
 };
 
+/**
+ * Places the fixture organisation.
+ *
+ * `signToken` mints tokens for `org_1`, which is not a row in `organizations` —
+ * so `regionForOrg` correctly fails closed and every request that reaches a
+ * handler dies with an unmapped 500 before the handler runs. Guards run before
+ * interceptors, so the 401/403 suites never noticed; only a test asserting a
+ * decision made *inside* a handler did.
+ *
+ * Stubbing the placement is the same move the harness already makes for
+ * membership, entitlements and access: production keeps failing closed for an
+ * unplaced tenant, which is the behaviour ticket 03 exists to guarantee.
+ */
+function installFixtureRegionRegistry(db: Db): void {
+  const definition: RegionDefinition = {
+    key: "primary",
+    databaseUrl: process.env.DATABASE_URL ?? "",
+    storage: {
+      region: "auto",
+      bucket: "fixture",
+      accessKeyId: undefined,
+      secretAccessKey: undefined,
+      endpoint: undefined,
+    } as RegionDefinition["storage"],
+  };
+
+  setRegionRegistry(
+    new RegionRegistry(
+      { primary: "primary", regions: { primary: definition } },
+      new Map([["primary", { definition, db }]]),
+      async () => "primary",
+    ),
+  );
+}
+
 export interface E2eAppOptions {
   /** Extra provider overrides — services the controller under test injects. */
   overrides?: ReadonlyArray<{ provide: unknown; useValue: unknown }>;
@@ -115,6 +154,7 @@ export async function createE2eApp(options: E2eAppOptions = {}): Promise<INestAp
     builder = builder.overrideProvider(override.provide).useValue(override.useValue);
 
   const ref = await builder.compile();
+  installFixtureRegionRegistry(ref.get<Db>(DRIZZLE));
   const app = ref.createNestApplication();
   app.use((req: Request, _res: Response, next: NextFunction) =>
     storage.run(fixtureFromToken(req.headers.authorization), next),

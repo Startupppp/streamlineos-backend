@@ -901,71 +901,71 @@
     {
       "idx": 128,
       "version": "7",
+      "when": 1786415616285,
+      "tag": "0137_add_voter_ip_hash",
+      "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "7",
       "when": 1786415676285,
       "tag": "0399_inv_uom_conversions",
       "breakpoints": true
     },
     {
-      "idx": 129,
+      "idx": 130,
       "version": "7",
       "when": 1786415736285,
       "tag": "0400_inv_valuation_grain",
       "breakpoints": true
     },
     {
-      "idx": 130,
+      "idx": 131,
       "version": "7",
       "when": 1786415796285,
       "tag": "0401_inv_cogs_ledger",
       "breakpoints": true
     },
     {
-      "idx": 131,
+      "idx": 132,
       "version": "7",
       "when": 1786415856285,
       "tag": "0402_inv_standard_costs",
       "breakpoints": true
     },
     {
-      "idx": 132,
+      "idx": 133,
       "version": "7",
       "when": 1786415916285,
       "tag": "0403_inv_location_scoping",
       "breakpoints": true
     },
     {
-      "idx": 133,
+      "idx": 134,
       "version": "7",
       "when": 1786415976285,
       "tag": "0404_inv_posting_date",
       "breakpoints": true
     },
     {
-      "idx": 134,
+      "idx": 135,
       "version": "7",
       "when": 1786416036285,
       "tag": "0405_inv_reservation_idempotency",
       "breakpoints": true
     },
     {
-      "idx": 135,
+      "idx": 136,
       "version": "7",
       "when": 1786416096285,
       "tag": "0406_inv_barcodes",
       "breakpoints": true
     },
     {
-      "idx": 136,
+      "idx": 137,
       "version": "7",
       "when": 1786416156285,
       "tag": "0407_inv_stock_policy",
-      "breakpoints": true
-    },
-    {
-      "idx": 137,
-      "version": "7",
-      "when": 1786415616285,
-      "tag": "0137_add_voter_ip_hash",
       "breakpoints": true
     },
     {
@@ -1459,87 +1459,318 @@
       "breakpoints": true
     },
     {
-      "idx": 209,
+      "idx": 208,
       "version": "7",
       "when": 1786701783560,
       "tag": "0453_kb_article_fts_function",
       "breakpoints": true
     },
     {
-      "idx": 210,
+      "idx": 209,
       "version": "7",
       "when": 1786701784560,
       "tag": "0454_lead_company_search_function",
       "breakpoints": true
     },
     {
-      "idx": 211,
+      "idx": 210,
       "version": "7",
       "when": 1786701785560,
       "tag": "0455_email_canonical_uniqueness",
       "breakpoints": true
     },
     {
-      "idx": 212,
+      "idx": 211,
       "version": "7",
       "when": 1786701786560,
       "tag": "0456_chat_deal_channel_entity_backfill",
       "breakpoints": true
     },
     {
-      "idx": 213,
+      "idx": 212,
       "version": "7",
       "when": 1786701787560,
       "tag": "0457_sign_envelope_view_scope",
       "breakpoints": true
     },
     {
-      "idx": 214,
+      "idx": 213,
       "version": "7",
       "when": 1786701788560,
       "tag": "0458_hr_relational_tables_rls",
       "breakpoints": true
     },
     {
-      "idx": 215,
+      "idx": 214,
       "version": "7",
       "when": 1786701789560,
       "tag": "0459_chat_invite_token_at_rest",
       "breakpoints": true
     },
     {
-      "idx": 216,
+      "idx": 215,
       "version": "7",
       "when": 1786701790560,
       "tag": "0460_chat_identity_primary_keys",
       "breakpoints": true
     },
     {
-      "idx": 217,
+      "idx": 216,
       "version": "7",
       "when": 1786701791560,
       "tag": "0461_kb_chunk_acl_columns",
       "breakpoints": true
     },
     {
-      "idx": 218,
+      "idx": 217,
       "version": "7",
       "when": 1786701792560,
       "tag": "0462_kb_chunk_acl_column_rename",
       "breakpoints": true
     },
     {
-      "idx": 219,
+      "idx": 218,
       "version": "7",
       "when": 1786701793560,
       "tag": "0463_modules_catalog_core_reconcile",
       "breakpoints": true
     },
     {
-      "idx": 220,
+      "idx": 219,
       "version": "7",
       "when": 1786701794560,
       "tag": "0464_calendar_source_preferences",
+      "breakpoints": true
+    },
+    {
+      "idx": 220,
+      "version": "7",
+      "when": 1787471892600,
+      "tag": "0205_organizations_region",
+      "breakpoints": true
+    },
+    {
+      "idx": 221,
+      "version": "7",
+      "when": 1787473928922,
+      "tag": "0206_party_custom_fields_and_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 222,
+      "version": "7",
+      "when": 1787474325964,
+      "tag": "0207_backfill_crm_party_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 223,
+      "version": "7",
+      "when": 1787477893400,
+      "tag": "0208_workflow_runtime",
+      "breakpoints": true
+    },
+    {
+      "idx": 224,
+      "version": "7",
+      "when": 1787482151985,
+      "tag": "0209_party_roles_and_merges",
+      "breakpoints": true
+    },
+    {
+      "idx": 225,
+      "version": "7",
+      "when": 1787482522735,
+      "tag": "0210_backfill_party_role_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 226,
+      "version": "7",
+      "when": 1787482924853,
+      "tag": "0211_subjects",
+      "breakpoints": true
+    },
+    {
+      "idx": 227,
+      "version": "7",
+      "when": 1787483238639,
+      "tag": "0212_backfill_subject_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 228,
+      "version": "7",
+      "when": 1787483537086,
+      "tag": "0213_party_roles_merges_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 229,
+      "version": "7",
+      "when": 1787484048289,
+      "tag": "0214_deal_transitions_money_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 230,
+      "version": "7",
+      "when": 1787484335630,
+      "tag": "0215_activities",
+      "breakpoints": true
+    },
+    {
+      "idx": 231,
+      "version": "7",
+      "when": 1787484622971,
+      "tag": "0216_backfill_activity_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 232,
+      "version": "7",
+      "when": 1787484924848,
+      "tag": "0217_inbound_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 233,
+      "version": "7",
+      "when": 1787485226725,
+      "tag": "0218_backfill_ingress_permission",
+      "breakpoints": true
+    },
+    {
+      "idx": 234,
+      "version": "7",
+      "when": 1787485561637,
+      "tag": "0219_autonomous_decisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 235,
+      "version": "7",
+      "when": 1787485838191,
+      "tag": "0220_autonomy_switches",
+      "breakpoints": true
+    },
+    {
+      "idx": 236,
+      "version": "7",
+      "when": 1787551117723,
+      "tag": "0221_repair_party_permission_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 237,
+      "version": "7",
+      "when": 1787553153441,
+      "tag": "0222_backfill_deal_activities_into_timeline",
+      "breakpoints": true
+    },
+    {
+      "idx": 238,
+      "version": "7",
+      "when": 1787639553441,
+      "tag": "0223_autonomy_actor_refs_survive_user_purge",
+      "breakpoints": true
+    },
+    {
+      "idx": 239,
+      "version": "7",
+      "when": 1787643153441,
+      "tag": "0224_autonomy_corrections",
+      "breakpoints": true
+    },
+    {
+      "idx": 240,
+      "version": "7",
+      "when": 1787646753441,
+      "tag": "0225_backfill_autonomy_review_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 241,
+      "version": "7",
+      "when": 1787650353441,
+      "tag": "0226_repair_crm_module_role_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 242,
+      "version": "7",
+      "when": 1787653953441,
+      "tag": "0227_autonomy_shadow_scoring",
+      "breakpoints": true
+    },
+    {
+      "idx": 243,
+      "version": "7",
+      "when": 1787657553441,
+      "tag": "0228_autonomy_holds",
+      "breakpoints": true
+    },
+    {
+      "idx": 244,
+      "version": "7",
+      "when": 1787661153441,
+      "tag": "0229_crm_imports",
+      "breakpoints": true
+    },
+    {
+      "idx": 245,
+      "version": "7",
+      "when": 1787664753441,
+      "tag": "0230_backfill_import_permission",
+      "breakpoints": true
+    },
+    {
+      "idx": 246,
+      "version": "7",
+      "when": 1787668353441,
+      "tag": "0231_crm_mailbox_sync",
+      "breakpoints": true
+    },
+    {
+      "idx": 247,
+      "version": "7",
+      "when": 1787686353441,
+      "tag": "0232_repair_crm_activity_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 248,
+      "version": "7",
+      "when": 1787689953441,
+      "tag": "0233_deals_value_not_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 249,
+      "version": "7",
+      "when": 1787697153441,
+      "tag": "0240_party_expand_legacy_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 250,
+      "version": "7",
+      "when": 1787700753441,
+      "tag": "0241_party_legacy_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 251,
+      "version": "7",
+      "when": 1787707953441,
+      "tag": "0250_data_quality_queue",
+      "breakpoints": true
+    },
+    {
+      "idx": 252,
+      "version": "7",
+      "when": 1787711553441,
+      "tag": "0251_backfill_data_quality_permissions",
       "breakpoints": true
     }
   ]

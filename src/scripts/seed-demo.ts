@@ -12,6 +12,7 @@ import {
 } from "../db/schema/common/auth";
 import { orgUnits } from "../db/schema/common/organization";
 import { subscriptions, auditLogs } from "../db/schema/common/shared";
+import { DEFAULT_REGION } from "../common/region/region-registry";
 
 type Db = PostgresJsDatabase<typeof schema>;
 
@@ -146,6 +147,7 @@ async function seed(db: Db): Promise<SeedSummary> {
     .insert(organizations)
     .values({
       id: DEMO_ORG_ID,
+      region: DEFAULT_REGION,
       ownerMembershipId,
       name: "Demo Workspace",
       slug: DEMO_ORG_SLUG,

@@ -14,6 +14,7 @@ import {
 import type { Db } from "src/db/drizzle.module";
 import { bumpPermissionsVersion } from "src/common/rbac/access-invalidate";
 import { ORG_MEMBER_ROLES, type OrgMemberRole } from "src/common/rbac/org-roles";
+import { regionForNewOrg } from "src/common/region/region-registry";
 
 export interface SeededMember {
   userId: string;
@@ -120,7 +121,20 @@ export class SeedBuilder {
       if (!Number.isInteger(ownerMembershipId))
         throw new Error(`seed: could not allocate owner membership id for ${orgId}`);
 
-      await tx.insert(organizations).values({ id: orgId, name: orgId, slug: orgId, ownerMembershipId });
+      /**
+       * Placed, like every organisation the product itself creates.
+       *
+       * All three real creation paths call `regionForNewOrg()`; only this
+       * fixture did not, so a seeded org was unreachable the moment any code
+       * resolved its region — which every tenant transaction does.
+       */
+      await tx.insert(organizations).values({
+        id: orgId,
+        name: orgId,
+        slug: orgId,
+        ownerMembershipId,
+        region: regionForNewOrg(),
+      });
 
       if (ownerAliasEntry) {
         const [alias, spec] = ownerAliasEntry;

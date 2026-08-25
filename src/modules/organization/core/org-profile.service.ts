@@ -33,6 +33,7 @@ import {
 } from "../../../common/org/provision-org-modules";
 import { provisionEmployeeSelfService } from "../../../common/org/provision-employee-self-service";
 import { withIdentity } from "../../../common/tenant/with-identity";
+import { regionForNewOrg } from "../../../common/region/region-registry";
 
 @Injectable()
 export class OrgProfileService {
@@ -176,6 +177,7 @@ export class OrgProfileService {
       }
       await tx.insert(organizations).values({
         id: orgId,
+        region: regionForNewOrg(),
         name: input.name,
         slug: input.slug,
         billingEmail,

@@ -2,7 +2,7 @@ import { BadRequestException, Inject, Injectable, NotFoundException } from "@nes
 import { and, desc, eq, inArray, isNull, type SQL } from "drizzle-orm";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
-import { deals, organizationMembers } from "../../db/schema";
+import { deals, dealStageTransitions, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -11,6 +11,7 @@ import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { CrmValidationService } from "../crm/metadata/crm-validation.service";
 import { CrmAutomationBusService } from "../crm/automation-studio/crm-automation-bus.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
+import { toMinorUnits, toTransitionRow } from "./deal-stage-ledger";
 import type {
   CreateDealInput,
   DealBulkDeleteInput,
@@ -88,7 +89,8 @@ export class DealsCrudService {
       .values({
         orgId,
         name: input.name,
-        value: String(input.value ?? 0),
+        // `value` is generated from this column now, so writing it would error.
+        valueMinor: toMinorUnits(input.value),
         stage: input.stage,
         probability: input.probability ?? 0,
         contactPerson: input.contactPerson || null,
@@ -99,6 +101,8 @@ export class DealsCrudService {
         notes: input.notes || null,
         leadId: input.leadId || null,
         clientId: input.clientId || null,
+        partyId: input.partyId || null,
+        subjectId: input.subjectId || null,
       })
       .returning();
 
@@ -179,17 +183,63 @@ export class DealsCrudService {
       setData.assignedToId = input.update.assignedToId;
     }
 
-    const updated = await this.db
-      .update(deals)
-      .set(setData)
-      .where(
-        and(
-          eq(deals.orgId, orgId),
-          inArray(deals.id, input.dealIds),
-          isNull(deals.deletedAt),
-        ),
-      )
-      .returning({ id: deals.id });
+    /**
+     * A bulk stage change is still a stage change.
+     *
+     * This path used to move any number of deals with no transition recorded at
+     * all, so the pipeline's own history depended on which screen a person
+     * happened to use. The prior stages are read and the ledger written inside
+     * the same transaction as the update, so a rolled-back move leaves no row
+     * claiming it happened.
+     */
+    const updated = await this.db.transaction(async (tx) => {
+      const before =
+        setData.stage === undefined
+          ? []
+          : await (tx as Db)
+              .select({ id: deals.id, stage: deals.stage, pipelineId: deals.pipelineId })
+              .from(deals)
+              .where(
+                and(
+                  eq(deals.orgId, orgId),
+                  inArray(deals.id, input.dealIds),
+                  isNull(deals.deletedAt),
+                ),
+              );
+
+      const rows = await (tx as Db)
+        .update(deals)
+        .set(setData)
+        .where(
+          and(
+            eq(deals.orgId, orgId),
+            inArray(deals.id, input.dealIds),
+            isNull(deals.deletedAt),
+          ),
+        )
+        .returning({ id: deals.id });
+
+      const toStage = setData.stage;
+      if (toStage !== undefined) {
+        const moved = before.filter((deal) => deal.stage !== toStage);
+        if (moved.length > 0)
+          await (tx as Db).insert(dealStageTransitions).values(
+            moved.map((deal) =>
+              toTransitionRow({
+                organizationId: orgId,
+                dealId: deal.id,
+                pipelineId: deal.pipelineId ?? null,
+                fromStage: deal.stage ?? null,
+                toStage,
+                actor: { kind: "human", userId },
+                reason: "Bulk stage change",
+              }),
+            ),
+          );
+      }
+
+      return rows;
+    });
 
     await this.invalidateDealCaches(orgId);
     this.audit.log({
@@ -251,8 +301,10 @@ export class DealsCrudService {
         leadId: existing.leadId,
         clientId: existing.clientId,
         name: `${existing.name} (Copy)`,
-        value: existing.value ?? "0",
+        valueMinor: existing.valueMinor,
         stage: "LEAD",
+        partyId: existing.partyId,
+        subjectId: existing.subjectId,
         probability: existing.probability ?? 0,
         contactPerson: existing.contactPerson,
         contactEmail: existing.contactEmail,

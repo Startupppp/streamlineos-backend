@@ -36,6 +36,7 @@ import {
   getTrialDays,
   TRIAL_PLAN,
 } from "../billing/core/plan-entitlements.constants";
+import { regionForNewOrg } from "../../common/region/region-registry";
 
 function slugify(name: string): string {
   return (
@@ -86,6 +87,7 @@ export class AuthService {
 
       await tx.insert(organizations).values({
         id: orgId,
+        region: regionForNewOrg(),
         ownerMembershipId,
         name: input.companyName,
         slug: slugify(input.companyName),

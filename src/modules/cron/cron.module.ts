@@ -34,6 +34,7 @@ import { CronNotificationDeliveryService } from "./cron-notification-delivery.se
 import { CronNotificationRetentionService } from "./cron-notification-retention.service";
 import { CronAttendanceService } from "./cron-attendance.service";
 import { CronBillingService } from "./cron-billing.service";
+import { CronWorkflowService } from "./cron-workflow.service";
 import { CronHolidayService } from "./cron-holiday.service";
 import { CronHrService } from "./cron-hr.service";
 import { CronHrEnginesService } from "./cron-hr-engines.service";
@@ -96,6 +97,7 @@ import { CrmModule } from "../crm/core/crm.module";
   providers: [
     CronAttendanceService,
     CronBillingService,
+    CronWorkflowService,
     CronLeaveService,
     CronNotificationsService,
     CronHolidayService,

@@ -1,10 +1,11 @@
 import { z } from "zod";
+import { queryBoolean } from "../../../../common/validation/query-boolean";
 
 export const listTaxCodesQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(50),
   taxType: z.enum(["GST", "CGST_SGST", "IGST", "VAT", "TDS", "TCS", "EXEMPT", "ZERO_RATED"]).optional(),
-  isActive: z.coerce.boolean().optional(),
+  isActive: queryBoolean.optional(),
 });
 
 export const createTaxCodeSchema = z.object({

@@ -6,6 +6,7 @@ import { ZodValidationPipe } from "../common/pipes/zod-validation.pipe";
 import { AccessService } from "../modules/access/access.service";
 import type { AccessSnapshot } from "../modules/access/access.types";
 import { MeService } from "./me.service";
+import type { OrgDisplay } from "./org-display";
 import { updateProfileSchema, type UpdateProfileInput } from "./dto/me.schemas";
 
 @Controller("me")
@@ -25,6 +26,16 @@ export class MeController {
   @AllowWithoutMfa()
   getAccess(@CurrentUser() u: CurrentUserContext): Promise<AccessSnapshot> {
     return this.access.getAccessSnapshot(u.orgId, u.userId, u);
+  }
+
+  /**
+   * Ungated on purpose: every member sees money somewhere, and the currency it
+   * renders in is not something a permission should withhold. See org-display.ts.
+   */
+  @Get("org-display")
+  @AllowWithoutMfa()
+  getOrgDisplay(@CurrentUser() user: CurrentUserContext): Promise<OrgDisplay> {
+    return this.meService.getOrgDisplay(user.orgId);
   }
 
   @Get("profile")

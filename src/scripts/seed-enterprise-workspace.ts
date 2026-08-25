@@ -32,6 +32,7 @@ import {
   hrWorkflowStepActions,
 } from "../db/schema/hr/workflow-engine";
 import { PERMISSIONS, ROLE_DEFAULT_PERMISSIONS } from "../modules/rbac/permissions";
+import { DEFAULT_REGION } from "../common/region/region-registry";
 
 type Db = PostgresJsDatabase<typeof schema>;
 
@@ -122,6 +123,7 @@ async function seed(db: Db): Promise<Record<string, unknown>> {
 
   await db.insert(organizations).values({
     id: ORG_ID,
+    region: DEFAULT_REGION,
     ownerMembershipId,
     name: "Enterprise Demo Co",
     slug: ORG_SLUG,

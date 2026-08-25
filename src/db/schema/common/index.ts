@@ -14,6 +14,7 @@ export * from "./notifications-delivery";
 export * from "./user-management";
 export * from "./idempotency";
 export * from "./outbox";
+export * from "./workflow-runs";
 export * from "./permission-scopes";
 export * from "./modules";
 export * from "./ownership";

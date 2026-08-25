@@ -65,6 +65,21 @@ export const CRM_PERMISSIONS: Permission[] = [
     description: "View CRM data quality dashboard",
   },
   {
+    // Triage. Separate from resolving because deciding whose job a finding is
+    // and changing four hundred customer records are different authorities.
+    name: "crm:data-quality:assign",
+    resource: "crm:data-quality",
+    action: "assign",
+    description: "Assign data quality findings to a person, or hand them back to the queue",
+  },
+  {
+    name: "crm:data-quality:resolve",
+    resource: "crm:data-quality",
+    action: "resolve",
+    description:
+      "Resolve or dismiss data quality findings in bulk, reverse a resolution, and run the producers",
+  },
+  {
     name: "crm:clients:read",
     resource: "crm:clients",
     action: "read",
@@ -274,6 +289,26 @@ export const CRM_PERMISSIONS: Permission[] = [
       "View Customer 360 aggregated profile (respects per-module permissions)",
   },
   {
+    // The seam every provider adapter posts into. Gated because an open ingress
+    // writes parties and activities into any tenant that can be named.
+    name: "crm:ingress:submit",
+    resource: "crm:ingress",
+    action: "submit",
+    description: "Deliver a normalised inbound communication event into the CRM",
+  },
+  {
+    name: "crm:activities:view",
+    resource: "crm:activities",
+    action: "view",
+    description: "Read the unified timeline of calls, emails, meetings, notes and tasks",
+  },
+  {
+    name: "crm:activities:manage",
+    resource: "crm:activities",
+    action: "manage",
+    description: "Log, edit, complete and remove activities on the timeline",
+  },
+  {
     name: "crm:settings:view",
     resource: "crm:settings",
     action: "view",
@@ -343,5 +378,32 @@ export const CRM_PERMISSIONS: Permission[] = [
     resource: "crm:offer-fulfillment",
     action: "delete",
     description: "Delete CRM offer → Inventory SKU fulfillment mappings",
+  },
+  {
+    name: "crm:autonomy:view",
+    resource: "crm:autonomy",
+    action: "view",
+    description: "Review what the CRM decided and did on its own",
+    // Scopable so a rep restricted to their own deals sees only the actions
+    // taken on those, matching how the deals list narrows.
+    scopable: true,
+  },
+  {
+    name: "crm:autonomy:reverse",
+    resource: "crm:autonomy",
+    action: "reverse",
+    description: "Reverse an autonomous CRM action",
+  },
+  {
+    name: "crm:autonomy:manage",
+    resource: "crm:autonomy",
+    action: "manage",
+    description: "Turn autonomous CRM action types on or off for the organisation",
+  },
+  {
+    name: "crm:imports:manage",
+    resource: "crm:imports",
+    action: "manage",
+    description: "Bring a CRM export into StreamlineOS, and take an import back out",
   },
 ];

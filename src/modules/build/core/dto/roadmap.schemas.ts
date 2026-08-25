@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { queryBoolean } from "../../../../common/validation/query-boolean";
 
 export const roadmapListQuerySchema = z.object({
   status: z
@@ -42,7 +43,7 @@ export const feedbackListQuerySchema = z.object({
     .enum(["open", "planned", "in_progress", "completed", "declined"])
     .optional(),
   search: z.string().trim().min(1).optional(),
-  includeMerged: z.coerce.boolean().default(false),
+  includeMerged: queryBoolean.default(false),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });

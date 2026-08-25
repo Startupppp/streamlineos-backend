@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { queryBoolean } from "../../../../common/validation/query-boolean";
 
 export const createBankAccountSchema = z.object({
   name: z.string().min(1).max(200),
@@ -25,7 +26,7 @@ export const updateBankAccountSchema = z.object({
 export const bankAccountsQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
-  isActive: z.coerce.boolean().optional(),
+  isActive: queryBoolean.optional(),
   q: z.string().max(200).optional(),
 });
 

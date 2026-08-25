@@ -37,6 +37,26 @@ const OUTLOOK_SELECT_FIELDS = [
 
 const OUTLOOK_DETAIL_FIELDS = [...OUTLOOK_SELECT_FIELDS, "body"];
 
+export interface OutlookMessageWithLabels extends MailMessageSummary {
+  /**
+   * The message's categories, or `null` when the response did not carry the
+   * field at all.
+   *
+   * The distinction is the whole point: an empty array is "this person applied
+   * none", `null` is "the provider did not say", and a caller deciding whether
+   * a message is private has to treat the second as a refusal rather than as a
+   * yes.
+   */
+  labels: string[] | null;
+}
+
+function readCategories(item: unknown): string[] | null {
+  if (item === null || typeof item !== "object") return null;
+  const categories = (item as Record<string, unknown>).categories;
+  if (!Array.isArray(categories)) return null;
+  return categories.filter((category): category is string => typeof category === "string");
+}
+
 @Injectable()
 export class OutlookMailProvider {
   constructor(private readonly gateway: ComposioGateway) {}
@@ -92,6 +112,65 @@ export class OutlookMailProvider {
     }).filter((m): m is MailMessageSummary => m !== null);
 
     const nextSkip = messages.length === limit ? skip + limit : null;
+    return { messages, nextSkip };
+  }
+
+  /**
+   * The inbox as a CRM ingress sweep needs to see it.
+   *
+   * Two differences from `listMessages`, and the CRM depends on both.
+   *
+   * It never takes the search path. `listMessages` routes any `query` to
+   * OUTLOOK_OUTLOOK_SEARCH_MESSAGES, which is a keyword search — so a caller
+   * handing it an OData `$filter` searched the mailbox for the literal text
+   * "receivedDateTime ge 2026-08-25T…", matched nothing, and reported a
+   * perfectly healthy sweep that had never ingested a single message. A sweep
+   * bounds itself by date against the `receivedDateTime` on what comes back
+   * instead, which the descending order makes cheap.
+   *
+   * And it selects `categories`, so the caller can see the labels a person put
+   * on a message. Nothing else in the product needs them, which is why the
+   * shared `MailMessageSummary` does not carry them — ingress needs them
+   * because a message somebody categorised `Private` must never become a
+   * customer record, and a sweep that cannot see the categories has to refuse
+   * to file anything rather than assume there were none.
+   */
+  async listMessagesForIngress(
+    userId: string,
+    conn: NormalizerConnectionMeta,
+    folder: MailFolder,
+    limit: number,
+    skip: number,
+  ): Promise<{ messages: OutlookMessageWithLabels[]; nextSkip: number | null }> {
+    const raw = await this.gateway.executeTool(
+      "OUTLOOK_OUTLOOK_LIST_MESSAGES",
+      userId,
+      {
+        user_id: "me",
+        folder: folderToWellKnownName(folder),
+        top: limit,
+        skip,
+        select: [...OUTLOOK_SELECT_FIELDS, "categories"],
+        orderby: ["receivedDateTime desc"],
+      },
+      conn.composioAccountId,
+    );
+
+    const data = unwrapComposioData(raw);
+    const parsed = outlookListResponseSchema.safeParse(data);
+    const items = parsed.success ? (parsed.data.value ?? []) : [];
+
+    const messages = items.map((item) => {
+      try {
+        return { ...normalizeOutlookMessage(item, conn, false), labels: readCategories(item) };
+      } catch {
+        return null;
+      }
+    }).filter((m): m is OutlookMessageWithLabels => m !== null);
+
+    // Counted against what the server returned rather than what normalised, so
+    // one unparseable message does not silently end the pagination.
+    const nextSkip = items.length === limit ? skip + limit : null;
     return { messages, nextSkip };
   }
 

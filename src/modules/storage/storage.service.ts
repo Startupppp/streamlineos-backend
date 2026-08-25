@@ -13,6 +13,8 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { MediaCompressionService } from "../../common/media/media-compression.service";
 import { APP_CONFIG } from "../../config/config.module";
 import type { AppConfig } from "../../config/env.validation";
+import { getRegionRegistry, hasRegionRegistry } from "../../common/region/region-registry";
+import type { RegionStorageConfig } from "../../common/region/region.config";
 
 interface R2Config {
   region: string;
@@ -64,7 +66,35 @@ export class StorageService {
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
+  private static toR2Config(storage: RegionStorageConfig): R2Config {
+    return {
+      region: storage.region,
+      bucketName: storage.bucket,
+      accessKeyId: storage.accessKeyId,
+      secretAccessKey: storage.secretAccessKey,
+      endpoint: storage.endpoint,
+    };
+  }
+
+  /**
+   * The primary region's bucket.
+   *
+   * Reads through the region topology rather than the environment, so bucket
+   * configuration has one source and a second region is a matter of adding a
+   * definition. Callers that know whose data they are touching should prefer
+   * `configForOrg`; this remains correct while there is one region, and is the
+   * path the module migrations will replace.
+   */
   private getConfig(): R2Config {
+    if (hasRegionRegistry()) {
+      const registry = getRegionRegistry();
+      return StorageService.toR2Config(
+        registry.bindingFor(registry.primary).definition.storage,
+      );
+    }
+
+    // No topology configured: the flat single-region variables, read through the
+    // validated config rather than process.env so a missing one fails at boot.
     return {
       region: this.config.R2_REGION ?? "auto",
       bucketName: this.config.R2_BUCKET_NAME,
@@ -72,6 +102,14 @@ export class StorageService {
       secretAccessKey: this.config.R2_SECRET_ACCESS_KEY,
       endpoint: this.config.R2_ENDPOINT,
     };
+  }
+
+  /**
+   * The bucket holding this organisation's files, resolved through the same
+   * placement as its database. Fails closed for an unplaced organisation.
+   */
+  async configForOrg(orgId: string): Promise<R2Config> {
+    return StorageService.toR2Config(await getRegionRegistry().storageForOrg(orgId));
   }
 
   isConfigured(): boolean {

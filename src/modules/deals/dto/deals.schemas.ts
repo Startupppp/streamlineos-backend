@@ -22,6 +22,10 @@ export const createDealSchema = z.object({
   notes: z.string().optional(),
   leadId: z.number().optional(),
   clientId: z.number().optional(),
+  /** The party this deal is with, once the CRM speaks Party. */
+  partyId: z.string().min(1).optional(),
+  /** What is being transacted, where the tenant models one. */
+  subjectId: z.string().min(1).optional(),
 });
 
 /** Matches the CRM deals CSV import dialog payload. */
@@ -54,6 +58,15 @@ export const updateDealSchema = z.object({
   lostReason: z.string().optional(),
   notes: z.string().optional(),
   version: z.string().datetime().optional(),
+  partyId: z.string().min(1).nullable().optional(),
+  subjectId: z.string().min(1).nullable().optional(),
+  /**
+   * Why the deal moved.
+   *
+   * Recorded on the transition rather than the deal, because it explains one
+   * move and not the record's current state.
+   */
+  stageChangeReason: z.string().trim().max(500).optional(),
 });
 
 export const resolveApprovalSchema = z.object({

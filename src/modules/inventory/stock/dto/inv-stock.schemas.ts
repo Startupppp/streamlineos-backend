@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { queryBoolean } from "../../../../common/validation/query-boolean";
 
 export const listStockLevelsSchema = z.object({
   warehouseId: z.coerce.number().int().positive().optional(),
@@ -7,8 +8,8 @@ export const listStockLevelsSchema = z.object({
   variantId: z.coerce.number().int().positive().optional(),
   lotId: z.coerce.number().int().positive().optional(),
   serialId: z.coerce.number().int().positive().optional(),
-  lowStock: z.coerce.boolean().optional(),
-  negative: z.coerce.boolean().optional(),
+  lowStock: queryBoolean.optional(),
+  negative: queryBoolean.optional(),
   search: z.string().max(200).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),

@@ -22,7 +22,7 @@ import {
 /**
  * Namespaces that own permissions without being modules anyone enables,
  * delegates or is billed for. They administer themselves, so nothing redirects
- * to a ghost — but they are pinned here because a sixteenth appearing is a
+ * to a ghost — but they are pinned here because a new one appearing is a
  * decision someone should make on purpose rather than discover later.
  */
 const NON_MODULE_NAMESPACES = [
@@ -34,7 +34,9 @@ const NON_MODULE_NAMESPACES = [
   "integrations",
   "onboarding",
   "ownership",
-  "party",
+  // `party` is deliberately absent: CRM administers it (see module-registry).
+  // A CRM administrator has to be able to manage the customers their deals
+  // point at, so the party keys belong to the CRM ladder rather than to nobody.
   "payments",
   "reports",
   "sales",

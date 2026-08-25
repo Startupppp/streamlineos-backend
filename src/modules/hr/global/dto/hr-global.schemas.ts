@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { queryBoolean } from "../../../../common/validation/query-boolean";
 
 export const paginationSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -44,7 +45,7 @@ export const updateComplianceRequirementSchema = createComplianceRequirementSche
 export const listComplianceRequirementSchema = paginationSchema.extend({
   countryCode: z.string().optional(),
   category: z.enum(["statutory_filing", "registration", "posting", "training", "audit", "other"]).optional(),
-  active: z.coerce.boolean().optional(),
+  active: queryBoolean.optional(),
 });
 
 export const listComplianceEventsSchema = paginationSchema.extend({

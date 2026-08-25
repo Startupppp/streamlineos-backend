@@ -1,3 +1,12 @@
+export * from "./activities";
+export * from "./inbound-events";
+export * from "./autonomous-decisions";
+export * from "./autonomy-switches";
+export * from "./autonomy-corrections";
+export * from "./autonomy-scoring";
+export * from "./autonomy-holds";
+export * from "./imports";
+export * from "./mailbox-sync";
 export * from "./campaigns";
 export * from "./leads";
 export * from "./contacts";
@@ -16,3 +25,4 @@ export * from "./pricebooks";
 export * from "./metadata";
 export * from "./automation-studio";
 export * from "./attribution";
+export * from "./data-quality";

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { PAYROLL_TOGGLE_KEYS, PAYROLL_TEMPLATE_KEYS } from "../../payroll.types";
+import { queryBoolean } from "../../../../common/validation/query-boolean";
 
 export const toggleOverridesSchema = z
   .record(z.string(), z.boolean())
@@ -104,7 +105,7 @@ export type CreatePolicyVersionInput = z.infer<typeof createPolicyVersionSchema>
 
 export const listComponentsSchema = z.object({
   type: z.string().trim().optional(),
-  active: z.coerce.boolean().optional(),
+  active: queryBoolean.optional(),
   search: z.string().trim().max(200).optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(50),

@@ -7,6 +7,9 @@ import {
 import { Reflector } from "@nestjs/core";
 
 import { DeprecationInterceptor } from "./common/deprecation/deprecation.interceptor";
+import { ObservabilityEnrichmentInterceptor } from "./common/observability";
+import { RegionModule } from "./common/region/region.module";
+import { WorkflowModule } from "./common/workflow";
 import { ConfigModule } from "./config/config.module";
 import { JwtAuthGuard } from "./common/auth/jwt-auth.guard";
 import { AuthContextModule } from "./common/auth/auth-context.module";
@@ -79,6 +82,10 @@ import { AgentAccessModule } from "./modules/agent-access/agent-access.module";
 import { MailModule } from "./modules/mail/mail.module";
 import { DirectoryModule } from "./modules/directory/directory.module";
 import { PartyModule } from "./modules/party/party.module";
+import { ActivitiesModule } from "./modules/activities/activities.module";
+import { IngressModule } from "./modules/ingress/ingress.module";
+import { AutonomyModule } from "./modules/autonomy/autonomy.module";
+import { CrmImportModule } from "./modules/crm-import/crm-import.module";
 import { PortalModule } from "./modules/portal/portal.module";
 import { ModuleAccessModule } from "./modules/module-access/module-access.module";
 import { IdempotencyModule } from "./common/idempotency/idempotency.module";
@@ -88,9 +95,12 @@ import { MeController } from "./me/me.controller";
 import { MeService } from "./me/me.service";
 import { BuildModule } from "./modules/build/build.module";
 import { ZodValidationInterceptor } from "./common/validation/zod-validation.interceptor";
+import { DataQualityModule } from "./modules/data-quality/data-quality.module";
 
 @Module({
   imports: [
+    RegionModule,
+    WorkflowModule,
     ConfigModule,
     DrizzleModule,
     CacheModule,
@@ -139,6 +149,11 @@ import { ZodValidationInterceptor } from "./common/validation/zod-validation.int
     HrModule,
     DirectoryModule,
     PartyModule,
+    DataQualityModule,
+    ActivitiesModule,
+    IngressModule,
+    AutonomyModule,
+    CrmImportModule,
     PortalModule,
     ModuleAccessModule,
     IdempotencyModule,
@@ -174,6 +189,8 @@ import { ZodValidationInterceptor } from "./common/validation/zod-validation.int
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: MfaGuard },
     { provide: APP_GUARD, useClass: ModuleGuard },
+    // First interceptor to run, so everything after it logs under a known caller.
+    { provide: APP_INTERCEPTOR, useClass: ObservabilityEnrichmentInterceptor },
     { provide: APP_INTERCEPTOR, useClass: DeprecationInterceptor },
     { provide: APP_INTERCEPTOR, useClass: ZodValidationInterceptor },
     { provide: APP_INTERCEPTOR, useClass: TenantContextInterceptor },
