@@ -44,6 +44,30 @@ ALTER TABLE "deal_stage_transitions" ADD CONSTRAINT "fk_deal_stage_transitions_o
 ALTER TABLE "deal_stage_transitions" VALIDATE CONSTRAINT "fk_deal_stage_transitions_org";
 
 --> statement-breakpoint
+/*
+ * The composite FK below needs a unique constraint on exactly ("org_id", "id"),
+ * and nothing in this repository creates one — `uniq_deals_org_id` exists only
+ * as a Drizzle declaration. It is present in every database built or touched by
+ * `drizzle-kit push`, which is why this series applied cleanly; a database built
+ * purely by running migrations in order would abort here with
+ * `42830: there is no unique constraint matching given keys`, taking the whole
+ * 0205-0233 series down with it.
+ *
+ * Promotes an existing unique index rather than duplicating it, following
+ * `0324_recon_directory_party_fks.sql`.
+ */
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uniq_deals_org_id') THEN
+    IF EXISTS (SELECT 1 FROM pg_class WHERE relname = 'uniq_deals_org_id' AND relkind = 'i') THEN
+      ALTER TABLE "deals" ADD CONSTRAINT "uniq_deals_org_id" UNIQUE USING INDEX "uniq_deals_org_id";
+    ELSE
+      ALTER TABLE "deals" ADD CONSTRAINT "uniq_deals_org_id" UNIQUE ("org_id", "id");
+    END IF;
+  END IF;
+END $$;
+
+--> statement-breakpoint
 -- Composite tenant key, so a transition cannot reference another organisation's
 -- deal and still satisfy referential integrity. `uniq_deals_org_id` is the target.
 ALTER TABLE "deal_stage_transitions" ADD CONSTRAINT "fk_deal_stage_transitions_deal"

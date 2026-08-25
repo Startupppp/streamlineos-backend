@@ -90,6 +90,30 @@ ALTER TABLE "autonomy_holds" ADD CONSTRAINT "fk_autonomy_holds_decision"
 ALTER TABLE "autonomy_holds" VALIDATE CONSTRAINT "fk_autonomy_holds_decision";
 
 --> statement-breakpoint
+/*
+ * The composite FK below needs a unique constraint on exactly ("org_id", "id"),
+ * and nothing in this repository creates one — `uniq_quotes_org_id` exists only
+ * as a Drizzle declaration. It is present in every database built or touched by
+ * `drizzle-kit push`, which is why this series applied cleanly; a database built
+ * purely by running migrations in order would abort here with
+ * `42830: there is no unique constraint matching given keys`, taking the whole
+ * 0205-0233 series down with it.
+ *
+ * Promotes an existing unique index rather than duplicating it, following
+ * `0324_recon_directory_party_fks.sql`.
+ */
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uniq_quotes_org_id') THEN
+    IF EXISTS (SELECT 1 FROM pg_class WHERE relname = 'uniq_quotes_org_id' AND relkind = 'i') THEN
+      ALTER TABLE "quotes" ADD CONSTRAINT "uniq_quotes_org_id" UNIQUE USING INDEX "uniq_quotes_org_id";
+    ELSE
+      ALTER TABLE "quotes" ADD CONSTRAINT "uniq_quotes_org_id" UNIQUE ("org_id", "id");
+    END IF;
+  END IF;
+END $$;
+
+--> statement-breakpoint
 ALTER TABLE "autonomy_holds" ADD CONSTRAINT "fk_autonomy_holds_quote"
   FOREIGN KEY ("organization_id", "quote_id")
   REFERENCES "quotes"("org_id", "id") ON DELETE CASCADE NOT VALID;

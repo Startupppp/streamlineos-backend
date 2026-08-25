@@ -126,8 +126,21 @@ export const deals = pgTable(
       table.stage,
     ),
     unique("uniq_deals_org_id").on(table.orgId, table.id),
-    index("idx_deals_org_party").on(table.orgId, table.partyId),
-    index("idx_deals_org_subject").on(table.orgId, table.subjectId),
+    /**
+     * Partial, matching what `0214` actually creates. The predicate is not
+     * decoration: `deals` is soft-deleted and every read filters on it, so a
+     * full index would both be larger and lose the planner's ability to treat
+     * the index as covering the filter. Declared here because a schema
+     * reconciliation acts on `deals` — unlike the new tables it is already in
+     * the Drizzle snapshot — and would otherwise recreate both as full indexes,
+     * silently discarding the predicate.
+     */
+    index("idx_deals_org_party")
+      .on(table.orgId, table.partyId)
+      .where(sql`deleted_at is null`),
+    index("idx_deals_org_subject")
+      .on(table.orgId, table.subjectId)
+      .where(sql`deleted_at is null`),
   ],
 );
 

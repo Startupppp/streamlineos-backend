@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { pgTable, text, timestamp, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations } from "../common/auth";
 
 /**
  * One thing that happened, whatever kind of thing it was.
@@ -70,14 +70,30 @@ export const activities = pgTable(
 
     /** `human` or `system` — constrained by a CHECK alongside the actor column. */
     actorKind: text("actor_kind").$type<ActivityActorKind>().notNull(),
-    actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+    /**
+     * Deliberately *not* a foreign key to `users`, like every other actor column
+     * in this series. `0215` creates it as plain `text`; this declaration used
+     * to disagree, which is a landmine rather than a mismatch — the first
+     * `drizzle-kit push` or schema reconciliation would have created the edge.
+     *
+     * Two independent reasons, either sufficient. `scripts/purge-user.mjs`
+     * deletes every row whose column references `users` without consulting the
+     * delete rule, so offboarding one sales rep would erase every call, email,
+     * meeting and note that person ever logged, from every customer's timeline.
+     * And `ON DELETE SET NULL` contradicts `chk_activities_actor`, which
+     * requires this to be NOT NULL whenever `actor_kind = 'human'` — the cascade
+     * would raise 23514 rather than nulling it. See migration 0223, which
+     * removed exactly this pair of edges from `autonomous_decisions`.
+     */
+    actorUserId: text("actor_user_id"),
     /** What did it, when that was not a person — an adapter, a model version. */
     actorLabel: text("actor_label"),
 
     /** Set on a task; null on everything else. */
     dueAt: timestamp("due_at"),
     completedAt: timestamp("completed_at"),
-    assigneeUserId: text("assignee_user_id").references(() => users.id, { onDelete: "set null" }),
+    /** No FK to `users`, for the reason on `actorUserId` above — see 0223. */
+    assigneeUserId: text("assignee_user_id"),
 
     /**
      * Where it came from — `manual`, or the adapter that produced it.
@@ -155,7 +171,12 @@ export const activityParticipants = pgTable(
      * has never seen.
      */
     partyId: text("party_id"),
-    userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+    /**
+     * No FK to `users` — see `activities.actorUserId`. The purge script would
+     * otherwise delete a participant row and silently rewrite who was on a
+     * thread, which is a record of what happened, not a link to a live account.
+     */
+    userId: text("user_id"),
     address: text("address"),
 
     /** `from` · `to` · `cc` · `attendee` · `organiser`. */
