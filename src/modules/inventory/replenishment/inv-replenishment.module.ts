@@ -3,11 +3,14 @@ import { InvReplenishmentController } from "./inv-replenishment.controller";
 import { InvForecastingController } from "./inv-forecasting.controller";
 import { InvReplenishmentService } from "./inv-replenishment.service";
 import { InvStockEngineModule } from "../stock-engine/inv-stock-engine.module";
+import { OutboxModule } from "../../../common/outbox/outbox.module";
+import { NotificationsModule } from "../../notifications/notifications.module";
+import { InvStockLowConsumerService } from "./inv-stock-low-consumer.service";
 
 @Module({
-  imports: [InvStockEngineModule],
+  imports: [InvStockEngineModule, OutboxModule, NotificationsModule],
   controllers: [InvReplenishmentController, InvForecastingController],
-  providers: [InvReplenishmentService],
+  providers: [InvReplenishmentService, InvStockLowConsumerService],
   exports: [InvReplenishmentService],
 })
 export class InvReplenishmentModule {}
