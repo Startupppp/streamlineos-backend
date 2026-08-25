@@ -61,14 +61,23 @@ export class ChatFanoutOutboxConsumer implements OutboxEventConsumer, OnModuleIn
       return;
     }
 
-    // Realtime is published once by ChatMessagesService's post-commit hook.
-    // The durable relay only retries the non-realtime effects; replaying the
-    // whole fan-out here would duplicate the message on lease expiry.
     const input = fanoutInputFromPayload(parsed.data);
-    await this.fanout.dispatchDeferred(input, {
+    const context = {
       producerEventId: event.eventId,
       idempotencyKey: `outbox:${event.eventId}:${messageFanoutIdempotencyKey(input)}`,
-    });
-    await inbox.markProcessed(CONSUMER_NAME, event.eventId, "COMPLETED");
+    };
+    try {
+      await this.fanout.dispatchRealtime(input, context);
+      await this.fanout.dispatchDeferred(input, context);
+      await inbox.markProcessed(CONSUMER_NAME, event.eventId, "COMPLETED");
+    } catch (error: unknown) {
+      await inbox.markProcessed(
+        CONSUMER_NAME,
+        event.eventId,
+        "FAILED",
+        error instanceof Error ? error.message : String(error),
+      );
+      throw error;
+    }
   }
 }

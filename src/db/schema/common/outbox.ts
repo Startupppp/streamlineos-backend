@@ -119,3 +119,44 @@ export const inboxRecords = pgTable(
     ),
   ],
 );
+
+/**
+ * Durable journal for external side effects. A completed row suppresses retries after the
+ * provider result has been recorded. An expired IN_FLIGHT row is deliberately reclaimable:
+ * that closes worker-loss liveness, but the previous provider outcome is uncertain and may
+ * duplicate unless the provider itself enforces the stable idempotency key.
+ */
+export const externalEffectLedger = pgTable(
+  "external_effect_ledger",
+  {
+    externalEffectId: bigint("external_effect_id", { mode: "number" })
+      .primaryKey()
+      .generatedAlwaysAsIdentity(),
+    organizationId: text("organization_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
+    producerEventId: text("producer_event_id").notNull(),
+    effectKey: text("effect_key").notNull(),
+    effectType: text("effect_type").notNull(),
+    providerIdempotency: text("provider_idempotency")
+      .$type<"NONE" | "STABLE_KEY_PROPAGATED" | "PROVIDER_ENFORCED">()
+      .notNull(),
+    state: text("state")
+      .$type<"PENDING" | "IN_FLIGHT" | "SUCCEEDED" | "FAILED">()
+      .default("PENDING")
+      .notNull(),
+    attemptToken: text("attempt_token"),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    attemptCount: integer("attempt_count").default(0).notNull(),
+    uncertainRetryCount: integer("uncertain_retry_count").default(0).notNull(),
+    lastError: text("last_error"),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("uniq_external_effect_key").on(t.organizationId, t.effectKey),
+    index("idx_external_effect_recovery").on(t.organizationId, t.state, t.leaseExpiresAt),
+    index("idx_external_effect_event").on(t.organizationId, t.producerEventId),
+  ],
+);

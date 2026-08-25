@@ -95,7 +95,13 @@ describe("ChatFanoutOutboxConsumer", () => {
         producerEventId: "event-1",
       },
     );
-    expect(dispatchRealtime).not.toHaveBeenCalled();
+    expect(dispatchRealtime).toHaveBeenCalledWith(
+      expect.objectContaining({ orgId: "org-1" }),
+      {
+        idempotencyKey: "outbox:event-1:chat-message:org-1:1",
+        producerEventId: "event-1",
+      },
+    );
   });
 
   it("rejects a payload that tries to fan out in another tenant", async () => {
@@ -103,7 +109,7 @@ describe("ChatFanoutOutboxConsumer", () => {
     const dispatchDeferred = jest.fn().mockResolvedValue(undefined);
     const consumer = new ChatFanoutOutboxConsumer(
       db as never,
-      { dispatchDeferred } as never,
+      { dispatchDeferred, dispatchRealtime: jest.fn().mockResolvedValue(undefined) } as never,
       new OutboxConsumerRegistry(),
     );
 
@@ -119,7 +125,7 @@ describe("ChatFanoutOutboxConsumer", () => {
     const db = makeDb();
     const consumer = new ChatFanoutOutboxConsumer(
       db as never,
-      { dispatchDeferred: jest.fn().mockRejectedValue(new Error("provider down")) } as never,
+      { dispatchDeferred: jest.fn().mockRejectedValue(new Error("provider down")), dispatchRealtime: jest.fn().mockResolvedValue(undefined) } as never,
       new OutboxConsumerRegistry(),
     );
 
@@ -134,7 +140,7 @@ describe("ChatFanoutOutboxConsumer", () => {
       .mockResolvedValueOnce(undefined);
     const consumer = new ChatFanoutOutboxConsumer(
       db as never,
-      { dispatchDeferred } as never,
+      { dispatchDeferred, dispatchRealtime: jest.fn().mockResolvedValue(undefined) } as never,
       new OutboxConsumerRegistry(),
     );
 

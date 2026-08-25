@@ -62,12 +62,15 @@ export class AblyService {
     orgId: string,
     channelId: number,
     payload: ChatMessagePayload,
+    options?: { requireConfigured?: boolean },
   ): Promise<void> {
-    if (!this.apiKey) return;
+    if (!this.apiKey) {
+      if (options?.requireConfigured) throw new Error("Ably is not configured");
+      return;
+    }
     await this.rest()
       .channels.get(this.channelName(orgId, channelId))
-      .publish("message", payload)
-      .catch(() => undefined);
+      .publish("message", payload);
   }
 
   async publishChatEvent(
@@ -114,12 +117,15 @@ export class AblyService {
     userId: string,
     event: string,
     data: unknown,
+    options?: { requireConfigured?: boolean },
   ): Promise<void> {
-    if (!this.apiKey) return;
+    if (!this.apiKey) {
+      if (options?.requireConfigured) throw new Error("Ably is not configured");
+      return;
+    }
     await this.rest()
       .channels.get(`notifications:${orgId}:${userId}`)
-      .publish(event, data)
-      .catch(() => undefined);
+      .publish(event, data);
   }
 
   supportChannelName(orgId: string, ticketId: number): string {

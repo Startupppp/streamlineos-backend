@@ -34,6 +34,7 @@ import type {
 } from "../entity-reference/entity-reference.types";
 import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { CHAT_MESSAGE_FANOUT_EVENT } from "./chat-fanout-outbox";
+import { MESSAGE_FANOUT_PROVIDER, type MessageFanoutProvider } from "./message-fanout.interface";
 
 
 /**
@@ -64,6 +65,7 @@ export class ChatMessagesService {
     private readonly replyReminders: ChatReplyRemindersService,
     private readonly orgSettings: ChatOrgSettingsService,
     private readonly entities: EntityReferenceService,
+    @Inject(MESSAGE_FANOUT_PROVIDER) private readonly fanout: MessageFanoutProvider,
   ) {}
 
   private async isMember(channelId: number, userId: string): Promise<boolean> {
@@ -179,7 +181,8 @@ export class ChatMessagesService {
       mentionedUserIds: body?.mentionedUserIds,
     });
 
-    const { message, insertedAttachments, senderName, senderImage } = await this.db.transaction(async (tx) => {
+    const fanoutEventId = randomUUID();
+    const { message, insertedAttachments, senderName, senderImage, channelType } = await this.db.transaction(async (tx) => {
       const [channel] = await tx
         .select({ id: chatChannels.id, type: chatChannels.type })
         .from(chatChannels)
@@ -232,7 +235,7 @@ export class ChatMessagesService {
         .where(eq(chatChannelMembers.channelId, channelId));
 
       await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
+        eventId: fanoutEventId,
         organizationId: orgId,
         aggregateType: "chat.message",
         aggregateId: String(created.id),
@@ -253,7 +256,7 @@ export class ChatMessagesService {
         },
       });
 
-      return { message: created, insertedAttachments: attachmentRows, senderName: senderRow?.name ?? null, senderImage: senderRow?.image ?? null };
+      return { message: created, insertedAttachments: attachmentRows, senderName: senderRow?.name ?? null, senderImage: senderRow?.image ?? null, channelType: channel.type ?? null };
     });
 
     const deferred = () =>
@@ -275,19 +278,21 @@ export class ChatMessagesService {
       });
 
     const realtime = () =>
-      Promise.resolve(this.ably.publishChatMessage(orgId, channelId, {
-          id: message.id,
-          channelId: message.channelId,
-          senderId: message.senderId,
+      this.fanout.dispatchRealtime({
+          orgId,
+          channelId,
+          channelType,
+          message,
+          content: body?.content ?? null,
+          mentionedUserIds,
+          attachments: insertedAttachments,
+          strippedMetadata: strippedReferenceMetadata(message.metadata),
           senderName,
           senderImage,
-          content: message.content,
-          createdAt: message.createdAt,
-          replyToId: message.replyToId,
-          metadata: strippedReferenceMetadata(message.metadata),
-          messageType: message.messageType,
-          attachments: insertedAttachments,
-        }))
+        }, {
+          producerEventId: fanoutEventId,
+          idempotencyKey: `outbox:${fanoutEventId}:chat-message:${orgId}:${message.id}`,
+        })
         .catch((error: unknown) => {
           logger.error("chat realtime publish failed", {
             orgId,

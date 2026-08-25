@@ -118,3 +118,29 @@ describe("AblyService capabilities", () => {
     expect(Object.keys(capability)).toEqual([]);
   });
 });
+
+describe("AblyService durable publish contract", () => {
+  it("rejects a durable publish when Ably is not configured", async () => {
+    const service = new AblyService({ ABLY_API_KEY: undefined });
+    await expect(service.publishChatMessage("org-1", 1, {} as never, {
+      requireConfigured: true,
+    })).rejects.toThrow("Ably is not configured");
+  });
+
+  it("propagates provider rejection so the outbox can retry", async () => {
+    const service = new AblyService({ ABLY_API_KEY: "app.key:secret" });
+    Reflect.set(service, "restClient", {
+      channels: {
+        get: () => ({ publish: jest.fn().mockRejectedValue(new Error("ably unavailable")) }),
+      },
+    });
+
+    await expect(service.publishToUser(
+      "org-1",
+      "user-1",
+      "notification:message",
+      {},
+      { requireConfigured: true },
+    )).rejects.toThrow("ably unavailable");
+  });
+});

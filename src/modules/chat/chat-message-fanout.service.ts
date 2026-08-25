@@ -1,6 +1,10 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { logger } from "../../common/logger/logger.service";
 import { AuditService } from "../../common/audit/audit.service";
+import { ExternalEffectLedger } from "../../common/outbox/external-effect-ledger";
+import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import { DRIZZLE } from "../../db/drizzle.constants";
+import type { Db } from "../../db/drizzle.module";
 import { AblyService } from "../realtime/ably.service";
 import { WebPushService } from "../realtime/web-push.service";
 import { ChatNotificationsService } from "./chat-notifications.service";
@@ -18,10 +22,12 @@ type FanoutChannel = "push" | "dm_notification" | "mention_notification";
 @Injectable()
 export class ChatMessageFanoutService implements MessageFanoutProvider {
   constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
     private readonly ably: AblyService,
     private readonly webPush: WebPushService,
     private readonly notifications: ChatNotificationsService,
     private readonly audit: AuditService,
+    private readonly effects: ExternalEffectLedger,
   ) {}
 
   async dispatch(input: FanoutInput, context?: FanoutDeliveryContext): Promise<void> {
@@ -44,7 +50,7 @@ export class ChatMessageFanoutService implements MessageFanoutProvider {
       senderImage,
     } = input;
 
-    await this.ably.publishChatMessage(orgId, channelId, {
+    const send = () => this.ably.publishChatMessage(orgId, channelId, {
       id: message.id,
       channelId: message.channelId,
       senderId: message.senderId,
@@ -57,7 +63,15 @@ export class ChatMessageFanoutService implements MessageFanoutProvider {
       messageType: message.messageType,
       attachments,
       idempotencyKey: context?.idempotencyKey ?? messageFanoutIdempotencyKey(input),
-    });
+    }, { requireConfigured: true });
+    if (!context?.producerEventId) return send();
+    await this.effects.execute({
+      organizationId: orgId,
+      producerEventId: context.producerEventId,
+      effectKey: `${context.idempotencyKey}:realtime`,
+      effectType: "chat.realtime",
+      providerIdempotency: "STABLE_KEY_PROPAGATED",
+    }, send);
   }
 
   /**
@@ -77,9 +91,18 @@ export class ChatMessageFanoutService implements MessageFanoutProvider {
 
     const failures: unknown[] = [];
     const idempotencyKey = context?.idempotencyKey ?? messageFanoutIdempotencyKey(input);
+    const producerEventId = context?.producerEventId ?? idempotencyKey;
+    const runEffect = (channel: FanoutChannel, send: () => Promise<void>) =>
+      this.effects.execute({
+        organizationId: orgId,
+        producerEventId,
+        effectKey: `${idempotencyKey}:${channel}`,
+        effectType: `chat.${channel}`,
+        providerIdempotency: "STABLE_KEY_PROPAGATED",
+      }, () => runInNewTenantTransaction(this.db, orgId, async () => send())).then(() => undefined);
     const tasks: Promise<void>[] = [
-      this.webPush
-        .sendToChannelMembers(orgId, channelId, message.senderId, { category: "CHAT" }, `${idempotencyKey}:push`)
+      runEffect("push", () => this.webPush
+        .sendToChannelMembers(orgId, channelId, message.senderId, { category: "CHAT" }, `${idempotencyKey}:push`))
         .catch((err: unknown) => {
           logger.error("chat: push fan-out failed", {
             orgId,
@@ -93,14 +116,14 @@ export class ChatMessageFanoutService implements MessageFanoutProvider {
 
     if (channelType === "DIRECT")
       tasks.push(
-        this.notifications
+        runEffect("dm_notification", () => this.notifications
           .publishNewMessageNotification(
             orgId,
             channelId,
             { id: message.id, senderId: message.senderId, senderName },
             channelType,
             `${idempotencyKey}:dm_notification`,
-          )
+          ))
           .catch((err: unknown) => {
             logger.error("chat: DM notification failed", {
               orgId,
@@ -114,14 +137,14 @@ export class ChatMessageFanoutService implements MessageFanoutProvider {
 
     if (mentionedUserIds && mentionedUserIds.length > 0)
       tasks.push(
-        this.notifications
+        runEffect("mention_notification", () => this.notifications
           .publishMentionNotification(
             orgId,
             channelId,
             { id: message.id, senderId: message.senderId, senderName: senderName ?? "" },
             mentionedUserIds,
             `${idempotencyKey}:mention_notification`,
-          )
+          ))
           .catch((err: unknown) => {
             logger.error("chat: mention notification failed", {
               orgId,

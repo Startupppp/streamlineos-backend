@@ -3,6 +3,7 @@ import { ChatNotificationsService } from "./chat-notifications.service";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { AblyService } from "../realtime/ably.service";
+import { ExternalEffectLedger } from "../../common/outbox/external-effect-ledger";
 
 const mockDb = {
   select: jest.fn().mockReturnThis(),
@@ -14,6 +15,12 @@ const mockAbly = { publishToUser: jest.fn().mockResolvedValue(undefined) };
 
 const mockOrgSettings = {
   getSettings: jest.fn().mockResolvedValue({ defaultNotificationPreference: "ALL" }),
+};
+const mockEffects = {
+  execute: jest.fn(async (_effect: unknown, send: () => Promise<void>) => {
+    await send();
+    return "EXECUTED";
+  }),
 };
 
 const baseMessage = {
@@ -34,6 +41,7 @@ describe("ChatNotificationsService", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AblyService, useValue: mockAbly },
         { provide: ChatOrgSettingsService, useValue: mockOrgSettings },
+        { provide: ExternalEffectLedger, useValue: mockEffects },
       ],
     }).compile();
     service = module.get(ChatNotificationsService);
@@ -119,6 +127,31 @@ describe("ChatNotificationsService", () => {
       ]);
       await service.publishNewMessageNotification("org1", 1, baseMessage, "GROUP");
       expect(mockAbly.publishToUser).not.toHaveBeenCalled();
+    });
+
+    it("journals each recipient separately when delivery is retryable", async () => {
+      mockDb.where.mockResolvedValueOnce([
+        { userId: "user2", mutedUntil: null, notificationPreference: "ALL" },
+        { userId: "user3", mutedUntil: null, notificationPreference: "ALL" },
+      ]);
+
+      await service.publishNewMessageNotification(
+        "org1",
+        1,
+        baseMessage,
+        "GROUP",
+        "event-1:dm",
+      );
+
+      expect(mockEffects.execute).toHaveBeenCalledTimes(2);
+      expect(mockEffects.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ effectKey: "event-1:dm:user2" }),
+        expect.any(Function),
+      );
+      expect(mockEffects.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ effectKey: "event-1:dm:user3" }),
+        expect.any(Function),
+      );
     });
   });
 

@@ -7,6 +7,7 @@ import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import { and, eq, inArray } from "drizzle-orm";
 import { boundedMap } from "../../common/async/bounded-map";
 import { logger } from "../../common/logger/logger.service";
+import { ExternalEffectLedger } from "../../common/outbox/external-effect-ledger";
 
 const SUPPRESSED_GENERAL_PREFERENCES = new Set(["NOTHING", "MENTIONS"]);
 
@@ -48,6 +49,7 @@ export class ChatNotificationsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly ably: AblyService,
     private readonly orgSettings: ChatOrgSettingsService,
+    private readonly effects: ExternalEffectLedger,
   ) {}
 
   async publishNewMessageNotification(
@@ -78,16 +80,28 @@ export class ChatNotificationsService {
       return !SUPPRESSED_GENERAL_PREFERENCES.has(effectivePreference);
     });
 
-    const delivered = await boundedMap(recipients, PUBLISH_CONCURRENCY, ({ userId }) =>
-      this.ably.publishToUser(orgId, userId, "notification:message", {
+    const delivered = await boundedMap(recipients, PUBLISH_CONCURRENCY, ({ userId }) => {
+      const payload = {
         channelId,
         messageId: message.id,
         senderId: message.senderId,
         senderName: message.senderName,
         channelType,
         ...(idempotencyKey ? { idempotencyKey: `${idempotencyKey}:${userId}` } : {}),
-      }),
-    );
+      };
+      const send = () => idempotencyKey
+        ? this.ably.publishToUser(orgId, userId, "notification:message", payload, { requireConfigured: true })
+        : this.ably.publishToUser(orgId, userId, "notification:message", payload);
+      return idempotencyKey
+        ? this.effects.execute({
+            organizationId: orgId,
+            producerEventId: idempotencyKey,
+            effectKey: `${idempotencyKey}:${userId}`,
+            effectType: "chat.notification.message",
+            providerIdempotency: "STABLE_KEY_PROPAGATED",
+          }, send).then(() => undefined)
+        : send();
+    });
     reportFailures("notification:message", channelId, delivered);
   }
 
@@ -123,15 +137,27 @@ export class ChatNotificationsService {
       return (pref !== "DEFAULT" ? pref : defaultPreference) !== "NOTHING";
     });
 
-    const delivered = await boundedMap(recipients, PUBLISH_CONCURRENCY, (userId) =>
-      this.ably.publishToUser(orgId, userId, "notification:mention", {
+    const delivered = await boundedMap(recipients, PUBLISH_CONCURRENCY, (userId) => {
+      const payload = {
         channelId,
         messageId: message.id,
         senderId: message.senderId,
         senderName: message.senderName,
         ...(idempotencyKey ? { idempotencyKey: `${idempotencyKey}:${userId}` } : {}),
-      }),
-    );
+      };
+      const send = () => idempotencyKey
+        ? this.ably.publishToUser(orgId, userId, "notification:mention", payload, { requireConfigured: true })
+        : this.ably.publishToUser(orgId, userId, "notification:mention", payload);
+      return idempotencyKey
+        ? this.effects.execute({
+            organizationId: orgId,
+            producerEventId: idempotencyKey,
+            effectKey: `${idempotencyKey}:${userId}`,
+            effectType: "chat.notification.mention",
+            providerIdempotency: "STABLE_KEY_PROPAGATED",
+          }, send).then(() => undefined)
+        : send();
+    });
     reportFailures("notification:mention", channelId, delivered);
   }
 }

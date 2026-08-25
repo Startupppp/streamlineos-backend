@@ -3,6 +3,10 @@ import { ChatMessagesService } from "../chat-messages.service";
 import { ChatMessageFanoutService } from "../chat-message-fanout.service";
 import type { PersistedMessage } from "../chat-message.types";
 
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInNewTenantTransaction: async (_db: unknown, _orgId: string, fn: (tx: unknown) => Promise<unknown>) => fn({}),
+}));
+
 const persisted: PersistedMessage = {
   id: 1,
   channelId: 1,
@@ -40,6 +44,7 @@ const flushDeferred = () => new Promise((resolve) => setImmediate(resolve));
 
 function makeService() {
   const db = makeDb();
+  const fanout = { dispatchRealtime: jest.fn().mockResolvedValue(undefined), dispatchDeferred: jest.fn() };
   return { service: new ChatMessagesService(
     db as never,
     { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as never,
@@ -47,7 +52,8 @@ function makeService() {
     { scheduleForMessage: jest.fn().mockResolvedValue(undefined) } as never,
     { getSettings: jest.fn().mockResolvedValue({ maxAttachmentSizeMb: 10 }) } as never,
     { resolve: jest.fn().mockResolvedValue([]) } as never,
-  ), db };
+    fanout as never,
+  ), db, fanout };
 }
 
 function queuedFanout(db: Record<string, unknown>) {
@@ -139,6 +145,7 @@ describe("ChatMessageFanoutService", () => {
   const message: PersistedMessage = { ...persisted };
 
   function makeFanout() {
+    const db = { transaction: jest.fn(async (cb: (tx: unknown) => Promise<unknown>) => cb({})) };
     const ably = { configured: true, publishChatMessage: jest.fn().mockResolvedValue(undefined) };
     const webPush = { configured: true, sendToChannelMembers: jest.fn().mockResolvedValue(undefined) };
     const notifications = {
@@ -146,13 +153,16 @@ describe("ChatMessageFanoutService", () => {
       publishMentionNotification: jest.fn().mockResolvedValue(undefined),
     };
     const audit = { log: jest.fn() };
+    const effects = { execute: jest.fn(async (_effect: unknown, send: () => Promise<void>) => { await send(); return "EXECUTED"; }) };
     const service = new ChatMessageFanoutService(
+      db as never,
       ably as never,
       webPush as never,
       notifications as never,
       audit as never,
+      effects as never,
     );
-    return { service, ably, webPush, notifications, audit };
+    return { service, ably, webPush, notifications, audit, effects };
   }
 
   const input = {
