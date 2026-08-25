@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 /**
  * Which attachments are worth keeping, and where they belong.
  *
@@ -29,7 +31,10 @@ export const MAX_TOTAL_BYTES = 50 * 1024 * 1024;
 
 export type AttachmentDecision =
   | { readonly capture: true; readonly key: string }
-  | { readonly capture: false; readonly reason: "inline" | "too-large" | "budget-spent" | "no-name" };
+  | {
+      readonly capture: false;
+      readonly reason: "inline" | "too-large" | "budget-spent" | "no-name" | "size-unknown";
+    };
 
 /**
  * The storage key for one attachment.
@@ -45,10 +50,19 @@ export function attachmentKey(
   attachmentId: string,
   fileName: string,
 ): string {
+  /**
+   * The organisation goes through the same sanitiser as the rest.
+   *
+   * It is the tenant isolation boundary of this key, and `organizations.id` is
+   * a bare `text` primary key with no format guaranteed by the column — so
+   * interpolating it raw made the one segment that must never be escapable the
+   * only one nothing was done to.
+   */
+  const safeOrganization = sanitiseSegment(organizationId, 64);
   const safeName = sanitiseSegment(fileName, 120);
   const safeMessage = sanitiseSegment(providerMessageId, 120);
   const safeAttachment = sanitiseSegment(attachmentId, 80);
-  return `crm-mail/${organizationId}/${safeMessage}/${safeAttachment}-${safeName}`;
+  return `crm-mail/${safeOrganization}/${safeMessage}/${safeAttachment}-${safeName}`;
 }
 
 /**
@@ -61,11 +75,29 @@ export function attachmentKey(
  * leading dots stops a segment that is nothing but them.
  */
 function sanitiseSegment(value: string, max: number): string {
-  return value
+  const safe = value
     .replace(/[^a-zA-Z0-9._-]/g, "-")
     .replace(/\.{2,}/g, ".")
     .replace(/^\.+/, "")
     .slice(0, max);
+
+  /**
+   * A segment that sanitises away entirely becomes a hash of what it was.
+   *
+   * Everything made only of dots — `.`, `..`, `...` — comes out of the three
+   * steps above as the empty string, and so does an empty input. That produced
+   * a key with an empty path segment in the middle of it (`crm-mail/org-1//-`)
+   * and, worse, the *same* key for every one of them: distinct messages
+   * colliding onto one object, which is exactly what this function's contract
+   * says must not happen. The hash is of the raw value, so distinct degenerate
+   * ids stay distinct and a re-delivery of the same one still lands on the same
+   * key.
+   */
+  return safe || shortHash(value);
+}
+
+function shortHash(value: string): string {
+  return createHash("sha256").update(value, "utf8").digest("hex").slice(0, 16);
 }
 
 /**
@@ -89,7 +121,24 @@ export function decideAttachment(
 
   if (!attachment.fileName?.trim()) return { capture: false, reason: "no-name" };
 
-  const size = attachment.sizeBytes ?? 0;
+  /**
+   * No declared size is unknown, never zero.
+   *
+   * Counting an absent size as zero meant it passed the per-file ceiling, spent
+   * none of the message's budget, and let every following attachment through
+   * as well — so a provider that simply omits `sizeBytes` (Gmail's attachment
+   * list omits it for every attachment it returns) turned the 25MB hard ceiling
+   * off entirely. Refused rather than guessed: a decision made on a number
+   * nobody supplied is not a decision.
+   *
+   * And whoever wires this up: the size here is the provider's own metadata
+   * about a file somebody else sent. Both caps have to be enforced against the
+   * actual byte stream during the download as well — abort the transfer when it
+   * passes the ceiling — because a declaration is a claim, not a measurement.
+   */
+  const size = attachment.sizeBytes;
+  if (size === null || size === undefined) return { capture: false, reason: "size-unknown" };
+
   if (size > MAX_ATTACHMENT_BYTES) return { capture: false, reason: "too-large" };
   if (spentBytes + size > MAX_TOTAL_BYTES) return { capture: false, reason: "budget-spent" };
 
@@ -99,7 +148,13 @@ export function decideAttachment(
   };
 }
 
-/** Total bytes a set of decisions would store, for the caller's budget. */
+/**
+ * Total declared bytes for a set, as a starting budget.
+ *
+ * An undeclared size counts as nothing here because `decideAttachment` refuses
+ * it outright — nothing undeclared is ever stored, so nothing undeclared can
+ * contribute to what storing it would cost.
+ */
 export function bytesFor(attachments: readonly MailAttachment[]): number {
   return attachments.reduce((total, a) => total + (a.sizeBytes ?? 0), 0);
 }

@@ -63,11 +63,18 @@ describe("advanceWatermark", () => {
   });
 
   /**
-   * Never past what was seen. Advancing to "now" would claim everything up to
-   * this instant had been read, so anything the provider had not yet indexed
-   * would be skipped permanently — the exact gap this exists to close.
+   * Never backwards. A sweep that read only older mail than a previous one has
+   * not undone that previous one's progress.
+   *
+   * The other half of the rule — never past what was read — cannot be violated
+   * by this function at all: it can only return one of the two dates it was
+   * given. It is violated by what a caller passes as `newestSeen`, which is why
+   * naming it here gave the coverage away for free exactly where the risk lives.
+   * `crm-mailbox.service.spec.ts` holds it against the caller instead: a
+   * truncated page must not hand over a newest, and an estimated timestamp must
+   * not either.
    */
-  it("never moves backwards, and never past what was read", () => {
+  it("never moves backwards", () => {
     expect(advanceWatermark(later, earlier)).toBe(later);
   });
 

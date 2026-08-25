@@ -25,6 +25,26 @@ describe("signatureMatches", () => {
   it("rejects a missing signature", () => {
     expect(signatureMatches(good, undefined)).toBe(false);
   });
+
+  /**
+   * The length check counts characters; `timingSafeEqual` counts bytes. A
+   * header of 64 multibyte characters is 64 characters long and 128 or 192
+   * bytes long, so it passed the check and threw `RangeError` out of an
+   * endpoint that is unauthenticated by nature — a 500 and a stack trace where
+   * this deliberately says nothing at all.
+   */
+  it("rejects a signature whose characters are not its bytes, without throwing", () => {
+    for (const provided of ["é".repeat(64), "中".repeat(64), "🙈".repeat(32)]) {
+      expect(() => signatureMatches(good, provided)).not.toThrow();
+      expect(signatureMatches(good, provided)).toBe(false);
+    }
+  });
+
+  /** Nothing but a hex digest is a signature, so nothing else is compared. */
+  it("rejects anything that is not a 64-character hex digest", () => {
+    for (const provided of [good.toUpperCase(), `${good}0`, good.slice(0, 63), "", " ".repeat(64)])
+      expect(signatureMatches(good, provided)).toBe(false);
+  });
 });
 
 describe("readPush", () => {

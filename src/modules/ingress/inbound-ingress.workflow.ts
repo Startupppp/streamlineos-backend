@@ -11,6 +11,7 @@ import {
 } from "../../db/schema";
 import { WorkflowRegistry } from "../../common/workflow";
 import type { StepContext, WorkflowRunContext } from "../../common/workflow";
+import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { getRegionRegistry, hasRegionRegistry } from "../../common/region/region-registry";
 import { AutonomyService } from "../autonomy/autonomy.service";
 import { AutonomyScoringService } from "../autonomy/autonomy-scoring.service";
@@ -71,14 +72,25 @@ export class InboundIngressWorkflow implements OnModuleInit {
     if (!inboundEventId) throw new Error("inbound: run started without an inboundEventId");
 
     /**
-     * Read outside a step, deliberately.
+     * Read outside a step, deliberately — but inside a tenant transaction.
      *
      * The runtime's rule is that anything with an effect belongs in a step; a
      * read has none, so re-reading on each attempt is both correct and cheaper
      * than memoising a whole payload into the step log. It also means a retry
      * sees the current receipt rather than a snapshot of it.
+     *
+     * The transaction is not optional, though, and it is the half that was
+     * missing. Only a `step.run` body gets an ambient tenant context, so a read
+     * in the workflow body falls through the tenant-aware proxy to the raw pool
+     * with no `app.organization_id` set. `inbound_events.organization_id` is NOT
+     * NULL, so its policy still calls `app.current_org_id()`, which raises
+     * 42501 with no GUC — invisible in dev, where `DATABASE_URL` connects as an
+     * owner with BYPASSRLS, and five failed attempts and a dead-lettered
+     * delivery in production.
      */
-    const event = await this.loadEvent(inboundEventId);
+    const event = await runInNewTenantTransaction(this.db, context.organizationId, () =>
+      this.loadEvent(context.organizationId, inboundEventId),
+    );
 
     /**
      * Resolve the placement before touching tenant data.
@@ -289,7 +301,16 @@ export class InboundIngressWorkflow implements OnModuleInit {
           partyId: party.partyId,
           activityId: activity.activityId,
         })
-        .where(eq(inboundEvents.inboundEventId, inboundEventId));
+        // Scoped by tenant as well as by id. RLS would refuse another
+        // organisation's receipt anyway, but a write that relies on the policy
+        // to be correct is a write that stops being correct the day the policy
+        // is relaxed — and every other statement in this workflow says so too.
+        .where(
+          and(
+            eq(inboundEvents.organizationId, context.organizationId),
+            eq(inboundEvents.inboundEventId, inboundEventId),
+          ),
+        );
 
       return null;
     });
@@ -299,11 +320,26 @@ export class InboundIngressWorkflow implements OnModuleInit {
     );
   }
 
-  private async loadEvent(inboundEventId: string): Promise<InboundCommunicationEvent> {
+  /**
+   * The receipt, scoped to the organisation the run belongs to.
+   *
+   * The tenant predicate is stated rather than left to RLS: the run's
+   * organisation is the authority on what this run may read, and a receipt id
+   * that does not belong to it is "not found" here rather than at the policy.
+   */
+  private async loadEvent(
+    organizationId: string,
+    inboundEventId: string,
+  ): Promise<InboundCommunicationEvent> {
     const [row] = await this.db
       .select({ payload: inboundEvents.payload })
       .from(inboundEvents)
-      .where(eq(inboundEvents.inboundEventId, inboundEventId))
+      .where(
+        and(
+          eq(inboundEvents.organizationId, organizationId),
+          eq(inboundEvents.inboundEventId, inboundEventId),
+        ),
+      )
       .limit(1);
 
     if (!row) throw new Error(`inbound: receipt ${inboundEventId} not found`);

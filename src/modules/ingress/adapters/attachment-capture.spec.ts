@@ -50,6 +50,29 @@ describe("decideAttachment", () => {
     expect(decideAttachment(each, "org-1", "msg-1", 0).capture).toBe(true);
   });
 
+  /**
+   * A size nobody declared is unknown, not zero. Counting it as zero let it
+   * past the per-file ceiling, spend none of the message's budget, and carry
+   * every following attachment through with it — so the 25MB hard ceiling was
+   * enforced against nothing at all for any provider that omits the field, as
+   * Gmail's attachment list does for every attachment it returns.
+   */
+  it("refuses one whose size the provider did not declare", () => {
+    for (const sizeBytes of [null, undefined]) {
+      expect(decideAttachment(file({ sizeBytes }), "org-1", "msg-1", 0)).toEqual({
+        capture: false,
+        reason: "size-unknown",
+      });
+    }
+  });
+
+  it("does not let undeclared sizes spend the message budget", () => {
+    // The failure this replaces: every unsized attachment captured, none of the
+    // 50MB spent, so nothing after them was ever refused either.
+    const unsized = file({ sizeBytes: null });
+    expect(decideAttachment(unsized, "org-1", "msg-1", MAX_TOTAL_BYTES - 1).capture).toBe(false);
+  });
+
   it("skips one with no name to store it under", () => {
     expect(decideAttachment(file({ fileName: "  " }), "org-1", "msg-1", 0)).toEqual({
       capture: false,
@@ -90,10 +113,51 @@ describe("attachmentKey", () => {
   it("bounds a filename somebody made absurdly long", () => {
     expect(attachmentKey("org-1", "m", "a", "x".repeat(500)).length).toBeLessThan(300);
   });
+
+  /**
+   * Everything made only of dots sanitised to the empty string, so `.`, `..`
+   * and `...` were one key with an empty path segment in the middle of it —
+   * distinct messages colliding onto a single object, which is the one thing
+   * this key exists to prevent.
+   */
+  it("keeps degenerate identifiers distinct instead of collapsing them onto one key", () => {
+    const keys = [".", "..", "...", ".....", ""].map((id) =>
+      attachmentKey("org-1", id, "att-1", "contract.pdf"),
+    );
+
+    expect(new Set(keys).size).toBe(keys.length);
+    for (const key of keys) {
+      expect(key).not.toContain("//");
+      expect(key).not.toContain("..");
+    }
+  });
+
+  it("is still stable for a degenerate identifier, so a replay overwrites", () => {
+    expect(attachmentKey("org-1", "..", "att-1", "f.pdf")).toBe(
+      attachmentKey("org-1", "..", "att-1", "f.pdf"),
+    );
+  });
+
+  /**
+   * The organisation is the tenant boundary of this key and `organizations.id`
+   * is a bare `text` column, so it goes through the same sanitiser as anything
+   * else somebody could have written.
+   */
+  it("sanitises the organisation, not just the parts that came from the email", () => {
+    const key = attachmentKey("../../other-org", "msg-1", "att-1", "contract.pdf");
+    expect(key.startsWith("crm-mail/")).toBe(true);
+    expect(key).not.toContain("..");
+    expect(key).not.toContain("//");
+    expect(key).not.toBe(attachmentKey("other-org", "msg-1", "att-1", "contract.pdf"));
+  });
 });
 
 describe("bytesFor", () => {
-  it("totals a set, treating an unknown size as nothing", () => {
+  /**
+   * Nothing undeclared is ever stored — `decideAttachment` refuses it — so
+   * nothing undeclared contributes to what storing the set would cost.
+   */
+  it("totals the declared sizes, which is all that can be stored", () => {
     expect(bytesFor([file({ sizeBytes: 100 }), file({ sizeBytes: null })])).toBe(100);
   });
 });

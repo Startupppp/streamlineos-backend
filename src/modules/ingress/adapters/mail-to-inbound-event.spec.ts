@@ -20,6 +20,7 @@ const context: MailIngressContext = {
   organizationId: "org-1",
   provider: "gmail",
   mailboxAddress: "rep@ourcompany.example",
+  privateLabelRule: "message-labels",
 };
 
 const message = (over: Partial<MailMessageForIngress> = {}): MailMessageForIngress => ({
@@ -30,6 +31,7 @@ const message = (over: Partial<MailMessageForIngress> = {}): MailMessageForIngre
   subject: "Re: Quote for Q3",
   bodyText: "Looks good, please send the contract.",
   date: "2026-08-25T10:00:00.000Z",
+  labels: [],
   ...over,
 });
 
@@ -103,6 +105,43 @@ describe("mailToInboundEvent", () => {
         expect(mailToInboundEvent(message({ labels: [folder] }), context).ok).toBe(false);
     });
 
+    /**
+     * The half a `as unknown as` cast used to hide. The provider type the sweep
+     * handed over had no labels at all, so the private check ran against
+     * `undefined`, answered "not private", and filed the message anyway.
+     *
+     * Unknown is not permission. A provider whose labels cannot be read yet
+     * ingests nothing until it can, which is visible and recoverable; a private
+     * message in a shared CRM is neither.
+     */
+    it("refuses a message whose labels the provider did not disclose", () => {
+      expect(mailToInboundEvent(message({ labels: null }), context)).toEqual({
+        ok: false,
+        reason: "labels-unknown",
+      });
+    });
+
+    /**
+     * Unless the provider was asked to withhold the labelled mail itself, which
+     * is what Gmail's query does — then absent labels are not a gap.
+     */
+    it("accepts unlabelled messages when the provider did the excluding", () => {
+      const result = mailToInboundEvent(message({ labels: null }), {
+        ...context,
+        privateLabelRule: "provider-query",
+      });
+      expect(result.ok).toBe(true);
+    });
+
+    /** And still checks any labels that do come through, either way. */
+    it("refuses a private message even when the provider was meant to have filtered it", () => {
+      const result = mailToInboundEvent(message({ labels: ["Private"] }), {
+        ...context,
+        privateLabelRule: "provider-query",
+      });
+      expect(result).toEqual({ ok: false, reason: "private" });
+    });
+
     it("skips a message with no sender, which cannot be attributed", () => {
       expect(mailToInboundEvent(message({ from: null }), context)).toEqual({
         ok: false,
@@ -140,10 +179,60 @@ describe("mailToInboundEvent", () => {
 
     it("falls back to now rather than emitting an invalid date", () => {
       // Wrong by minutes beats losing when the conversation happened entirely.
-      for (const date of [null, undefined, "not a date"]) {
+      for (const date of [null, "not a date"]) {
         const event = ok(mailToInboundEvent(message({ date }), context));
         expect(Number.isNaN(new Date(event.occurredAt).getTime())).toBe(false);
       }
+    });
+
+    /**
+     * And says so, because `occurredAt` moves a mailbox watermark. One
+     * malformed `Date:` header would otherwise set "everything up to now has
+     * been read" and skip whatever the provider had not yet indexed — the exact
+     * gap the watermark exists to close.
+     */
+    it("reports a fallback timestamp as estimated, and a real one as not", () => {
+      for (const date of [null, "not a date"]) {
+        const result = mailToInboundEvent(message({ date }), context);
+        expect(result).toMatchObject({ ok: true, occurredAtEstimated: true });
+      }
+
+      expect(mailToInboundEvent(message(), context)).toMatchObject({
+        ok: true,
+        occurredAtEstimated: false,
+      });
+    });
+  });
+
+  describe("the body", () => {
+    /**
+     * A timeline entry made of 160-character previews is a poor record of a
+     * conversation and a worse input to anything that reads it afterwards.
+     */
+    it("flattens HTML when that is the only body the provider has", () => {
+      const event = ok(
+        mailToInboundEvent(
+          message({
+            bodyText: null,
+            snippet: "Looks good, please s",
+            bodyHtml: "<style>p{color:red}</style><p>Looks good.</p><p>Send the contract.</p>",
+          }),
+          context,
+        ),
+      );
+
+      // The stylesheet is gone rather than flattened into the text with it.
+      expect(event.body).toBe("Looks good.\nSend the contract.");
+    });
+
+    it("still prefers a real text body, and the snippet only when there is neither", () => {
+      expect(ok(mailToInboundEvent(message({ bodyHtml: "<p>markup</p>" }), context)).body).toBe(
+        "Looks good, please send the contract.",
+      );
+      expect(
+        ok(mailToInboundEvent(message({ bodyText: null, bodyHtml: null, snippet: "short" }), context))
+          .body,
+      ).toBe("short");
     });
   });
 });

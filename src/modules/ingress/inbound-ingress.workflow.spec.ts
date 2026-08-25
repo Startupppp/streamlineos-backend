@@ -1,3 +1,20 @@
+/**
+ * The tenant transaction is substituted, and recorded.
+ *
+ * A workflow body gets no ambient tenant context, so the receipt has to be read
+ * inside one it opens itself — otherwise the query falls through to the raw
+ * pool with no `app.organization_id`, and an RLS policy on a NOT NULL tenant
+ * column raises 42501. Dev never sees it because `DATABASE_URL` connects as an
+ * owner with BYPASSRLS, so the only place this can be held is here.
+ */
+const mockTenantTransactions: string[] = [];
+jest.mock("../../common/tenant/run-in-tenant-transaction", () => ({
+  runInNewTenantTransaction: (db: unknown, orgId: string, fn: (tx: unknown) => Promise<unknown>) => {
+    mockTenantTransactions.push(orgId);
+    return fn(db);
+  },
+}));
+
 import { createStepContext } from "../../common/workflow/step-context";
 import type { RecordedStep, WorkflowStepStore } from "../../common/workflow/workflow.types";
 import { WorkflowRegistry } from "../../common/workflow";
@@ -144,6 +161,10 @@ function insertsInto(recorder: Recorder, table: string): Record<string, unknown>
 }
 
 describe("inbound ingress, end to end from a fixture", () => {
+  beforeEach(() => {
+    mockTenantTransactions.length = 0;
+  });
+
   it("registers itself, so a run is not dead-lettered for want of a handler", () => {
     const registry = new WorkflowRegistry();
     new InboundIngressWorkflow(makeDb({ inserts: [], updates: [] }, null), registry).onModuleInit();
@@ -227,6 +248,15 @@ describe("inbound ingress, end to end from a fixture", () => {
     expect(first.inserts.length).toBeGreaterThan(0);
     expect(second.inserts).toHaveLength(0);
     expect(second.updates).toHaveLength(0);
+  });
+
+  /**
+   * The read that happens before the first step, which is the one place in this
+   * file with no tenant context of its own.
+   */
+  it("reads the receipt inside a tenant transaction for the run's organisation", async () => {
+    await runWorkflow(makeDb({ inserts: [], updates: [] }, null), memoryStore());
+    expect(mockTenantTransactions).toEqual(["org-1"]);
   });
 
   it("records each stage as its own step, so a stuck delivery says where it stopped", async () => {
