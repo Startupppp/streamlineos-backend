@@ -1,6 +1,7 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull, sql, desc } from "drizzle-orm";
+import { and, eq, sql, desc } from "drizzle-orm";
 import { contacts, crmContactRoles, surveyParticipants } from "../../db/schema";
+import { businessParties, contactPartyMap } from "../../db/schema/party";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
@@ -8,6 +9,12 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { CONTACT_ROLE_DEFAULTS, type ContactRoleCreateInput, type DuplicatesQueryInput, type MergeContactsInput } from "./dto/contact-roles.schemas";
 import { updateMirroredContacts } from "../party/party-legacy-contacts";
+import {
+  CONTACT_PARTY_COLUMNS,
+  CONTACT_PARTY_JOIN,
+  contactIdIs,
+  contactPartyScope,
+} from "./contact-party-reader";
 
 function isDbConflict(err: unknown): boolean {
   return (
@@ -112,28 +119,48 @@ export class ContactRolesService {
     const limit = query.limit;
     const offset = (query.page - 1) * query.limit;
 
+    /*
+     * The pair search now compares parties, reached through `contact_party_map`
+     * so the numeric ids the merge endpoint takes stay selectable. The tenant is
+     * asserted on both map rows and carried across both joins, which is stronger
+     * than the `c1.org_id = c2.org_id` the legacy self-join relied on -- that one
+     * only required the two contacts to agree, not to agree with the caller.
+     *
+     * The comparison itself is unchanged, deliberately: raw string equality on
+     * the display columns. `party_identifiers` is the real matcher now and finds
+     * the pairs this cannot -- `Ops@Acme.example` against `ops@acme.example`, a
+     * number written with a country code against one without -- so this list
+     * should converge on `partiesSharingIdentifiers`. Doing that here would
+     * change which duplicates the screen reports, which is its own ticket.
+     */
     const rows = await this.db.execute(
       sql`
-        SELECT c1.id AS id1, c1.name AS name1, c1.email AS email1, c1.phone AS phone1,
-               c2.id AS id2, c2.name AS name2, c2.email AS email2, c2.phone AS phone2,
+        SELECT m1.contact_id AS id1, p1.name AS name1, p1.email AS email1, p1.phone AS phone1,
+               m2.contact_id AS id2, p2.name AS name2, p2.email AS email2, p2.phone AS phone2,
                CASE
-                 WHEN c1.email IS NOT NULL AND c1.email = c2.email THEN 'email'
-                 WHEN c1.phone IS NOT NULL AND c1.phone = c2.phone THEN 'phone'
+                 WHEN p1.email IS NOT NULL AND p1.email = p2.email THEN 'email'
+                 WHEN p1.phone IS NOT NULL AND p1.phone = p2.phone THEN 'phone'
                  ELSE 'name'
                END AS match_reason
-        FROM contacts c1
-        JOIN contacts c2
-          ON c1.org_id = c2.org_id
-         AND c1.id < c2.id
-         AND c1.deleted_at IS NULL
-         AND c2.deleted_at IS NULL
-         AND (
-               (c1.email IS NOT NULL AND c1.email = c2.email)
-            OR (c1.phone IS NOT NULL AND c1.phone = c2.phone)
-            OR (c1.name ILIKE c2.name)
-         )
-        WHERE c1.org_id = ${orgId}
-        ORDER BY c1.id, c2.id
+        FROM contact_party_map m1
+        JOIN business_parties p1
+          ON p1.party_id = m1.party_id
+         AND p1.organization_id = m1.organization_id
+        JOIN contact_party_map m2
+          ON m2.organization_id = m1.organization_id
+         AND m2.contact_id > m1.contact_id
+        JOIN business_parties p2
+          ON p2.party_id = m2.party_id
+         AND p2.organization_id = m2.organization_id
+        WHERE m1.organization_id = ${orgId}
+          AND p1.deleted_at IS NULL
+          AND p2.deleted_at IS NULL
+          AND (
+                (p1.email IS NOT NULL AND p1.email = p2.email)
+             OR (p1.phone IS NOT NULL AND p1.phone = p2.phone)
+             OR (p1.name ILIKE p2.name)
+          )
+        ORDER BY m1.contact_id, m2.contact_id
         LIMIT ${limit}
         OFFSET ${offset}
       `,
@@ -157,15 +184,8 @@ export class ContactRolesService {
   }
 
   async mergeContacts(orgId: string, input: MergeContactsInput, actorId: string) {
-    const [primary] = await this.db
-      .select()
-      .from(contacts)
-      .where(and(eq(contacts.id, input.primaryId), eq(contacts.orgId, orgId), isNull(contacts.deletedAt)));
-
-    const [duplicate] = await this.db
-      .select()
-      .from(contacts)
-      .where(and(eq(contacts.id, input.duplicateId), eq(contacts.orgId, orgId), isNull(contacts.deletedAt)));
+    const [primary] = await this.mergeCandidate(orgId, input.primaryId);
+    const [duplicate] = await this.mergeCandidate(orgId, input.duplicateId);
 
     if (!primary) throw new NotFoundException("Primary contact not found in this org");
     if (!duplicate) throw new NotFoundException("Duplicate contact not found in this org");
@@ -223,11 +243,50 @@ export class ContactRolesService {
     return { success: true, primaryId: input.primaryId, mergedId: input.duplicateId };
   }
 
+  /**
+   * The scalars the merge decides on, read from the party.
+   *
+   * `organization_id` is the exception and comes from the legacy row: it points
+   * at `crm_organizations`, and a party's employer cannot point at one until
+   * that table converges -- `party-mirror-fields.ts` records it as legacy-owned.
+   * An id, never a name, which is why this file stays on the reader ratchet.
+   */
+  private mergeCandidate(orgId: string, contactId: number) {
+    return this.db
+      .select({
+        id: CONTACT_PARTY_COLUMNS.id,
+        orgId: CONTACT_PARTY_COLUMNS.orgId,
+        name: CONTACT_PARTY_COLUMNS.name,
+        email: CONTACT_PARTY_COLUMNS.email,
+        phone: CONTACT_PARTY_COLUMNS.phone,
+        title: CONTACT_PARTY_COLUMNS.title,
+        company: CONTACT_PARTY_COLUMNS.company,
+        department: CONTACT_PARTY_COLUMNS.department,
+        avatarUrl: CONTACT_PARTY_COLUMNS.avatarUrl,
+        linkedinUrl: CONTACT_PARTY_COLUMNS.linkedinUrl,
+        twitterUrl: CONTACT_PARTY_COLUMNS.twitterUrl,
+        organizationId: contacts.organizationId,
+      })
+      .from(contactPartyMap)
+      .innerJoin(businessParties, CONTACT_PARTY_JOIN)
+      // Tenant on both sides; `contacts` has a `(org_id, id)` unique constraint,
+      // so this cannot multiply the row the map produced.
+      .innerJoin(
+        contacts,
+        and(
+          eq(contacts.id, contactPartyMap.contactId),
+          eq(contacts.orgId, contactPartyMap.organizationId),
+        ),
+      )
+      .where(and(...contactPartyScope(orgId), contactIdIs(contactId)));
+  }
+
   private async assertContactAccess(orgId: string, contactId: number) {
     const [row] = await this.db
-      .select({ id: contacts.id })
-      .from(contacts)
-      .where(and(eq(contacts.id, contactId), eq(contacts.orgId, orgId), isNull(contacts.deletedAt)));
+      .select({ id: CONTACT_PARTY_COLUMNS.id })
+      .from(contactPartyMap)
+      .innerJoin(businessParties, CONTACT_PARTY_JOIN)
+      .where(and(...contactPartyScope(orgId), contactIdIs(contactId)));
     if (!row) throw new NotFoundException("Contact not found");
   }
 }

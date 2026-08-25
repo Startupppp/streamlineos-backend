@@ -1,13 +1,21 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { tool } from "ai";
 import { z } from "zod";
-import { and, desc, eq, ilike } from "drizzle-orm";
-import { leads, tasks } from "../../../db/schema";
+import { and, asc, desc, eq, ilike } from "drizzle-orm";
+import { tasks } from "../../../db/schema";
+import { businessParties, leadPartyMap } from "../../../db/schema/party";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { ToolAccessService } from "./tool-access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { updateMirroredLeads } from "../../party/party-legacy-leads";
+import {
+  INCLUDE_DELETED,
+  LEAD_PARTY_COLUMNS,
+  LEAD_PARTY_JOIN,
+  leadIdIs,
+  leadPartyScope,
+} from "../../leads/lead-party-reader";
 
 export interface CrmCopilotContext {
   actor: CurrentUserContext;
@@ -37,14 +45,35 @@ export class CrmCopilotTools {
           if (deny) return { denied: true, reason: deny };
 
           const isNumeric = /^\d+$/.test(leadIdentifier.trim());
-          const lead = await this.db.query.leads.findFirst({
-            where: isNumeric
-              ? and(eq(leads.id, Number(leadIdentifier)), eq(leads.orgId, orgId))
-              : and(eq(leads.orgId, orgId), ilike(leads.name, `%${leadIdentifier}%`)),
-          });
+          // Through `lead_party_map`, so the values are the party's rather than
+          // the mirror's copy of them. Deleted leads stay matchable: this tool
+          // has always found one, and hiding it here would be a behaviour change
+          // dressed as a migration -- recorded as a finding instead.
+          const [lead] = await this.db
+            .select({
+              id: LEAD_PARTY_COLUMNS.id,
+              name: LEAD_PARTY_COLUMNS.name,
+              status: LEAD_PARTY_COLUMNS.status,
+              priority: LEAD_PARTY_COLUMNS.priority,
+            })
+            .from(leadPartyMap)
+            .innerJoin(businessParties, LEAD_PARTY_JOIN)
+            .where(
+              and(
+                ...leadPartyScope(orgId, INCLUDE_DELETED),
+                isNumeric
+                  ? leadIdIs(Number(leadIdentifier))
+                  : ilike(LEAD_PARTY_COLUMNS.name, `%${leadIdentifier}%`),
+              ),
+            )
+            // A name match can hit several leads and the old read took whichever
+            // the heap offered first; reading through the map changes that order,
+            // so the pick is stated rather than inherited.
+            .orderBy(asc(LEAD_PARTY_COLUMNS.id))
+            .limit(1);
           if (!lead) return { success: false, message: `Lead "${leadIdentifier}" not found.` };
 
-          const updateData: Partial<{ status: typeof lead.status; priority: typeof lead.priority }> = {};
+          const updateData: Partial<{ status: string; priority: string }> = {};
           if (status) updateData.status = status;
           if (priority) updateData.priority = priority;
           if (Object.keys(updateData).length === 0) {
@@ -101,16 +130,28 @@ export class CrmCopilotTools {
           const deny = await this.toolAccess.denyReason(orgId, userId, "crm:leads:view");
           if (deny) return { denied: true, reason: deny };
 
-          const results = await this.db.query.leads.findMany({
-            where: and(
-              eq(leads.orgId, orgId),
-              ilike(leads.name, `%${query}%`),
-              status ? eq(leads.status, status) : undefined,
-            ),
-            columns: { id: true, name: true, status: true, priority: true, company: true, potentialValue: true },
-            orderBy: [desc(leads.createdAt)],
-            limit,
-          });
+          const results = await this.db
+            .select({
+              id: LEAD_PARTY_COLUMNS.id,
+              name: LEAD_PARTY_COLUMNS.name,
+              status: LEAD_PARTY_COLUMNS.status,
+              priority: LEAD_PARTY_COLUMNS.priority,
+              company: LEAD_PARTY_COLUMNS.company,
+              potentialValue: LEAD_PARTY_COLUMNS.potentialValue,
+            })
+            .from(leadPartyMap)
+            .innerJoin(businessParties, LEAD_PARTY_JOIN)
+            .where(
+              and(
+                ...leadPartyScope(orgId, INCLUDE_DELETED),
+                ilike(LEAD_PARTY_COLUMNS.name, `%${query}%`),
+                status ? eq(LEAD_PARTY_COLUMNS.status, status) : undefined,
+              ),
+            )
+            // `created_at` is not unique, so the id breaks the tie and a second
+            // page of the same search cannot repeat or skip a lead.
+            .orderBy(desc(LEAD_PARTY_COLUMNS.createdAt), desc(LEAD_PARTY_COLUMNS.id))
+            .limit(limit);
           if (results.length === 0) return { results: [], message: `No leads found matching "${query}".` };
           return { results, message: `Found ${results.length} lead(s).` };
         },

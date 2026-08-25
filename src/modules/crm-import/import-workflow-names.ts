@@ -10,3 +10,13 @@
 
 export const COMMIT_WORKFLOW = "crm.import-commit";
 export const REVERT_WORKFLOW = "crm.import-revert";
+
+/**
+ * Reading a connected CRM forward.
+ *
+ * A third name rather than a parameter on the commit, because it is a different
+ * shape of run: the commit walks fixed row windows of a file that already
+ * exists, and this walks pages of a collection whose size nobody knows until it
+ * ends.
+ */
+export const CONNECTOR_SYNC_WORKFLOW = "crm.connector-sync";

@@ -1,13 +1,20 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, asc, desc, eq, inArray, isNull, or, type SQL } from "drizzle-orm";
 import { clients, deals, dealActivities, leadActivities, users } from "../../db/schema";
+import { businessParties, clientPartyMap } from "../../db/schema/party";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
-import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
 import { toCsv } from "../inventory/import-export/csv.util";
+import {
+  CLIENT_PARTY_COLUMNS,
+  CLIENT_PARTY_JOIN,
+  clientIdIs,
+  clientPartyScope,
+  clientPartyViewScope,
+} from "./client-party-reader";
 
 export type ClientHealthFilter = "healthy" | "at_risk" | "critical";
 
@@ -29,10 +36,13 @@ export class ClientsService {
 
   listClients(orgId: string, userId: string, scope: DataScope): Promise<{ id: number; name: string | null }[]> {
     return this.db
-      .select({ id: clients.id, name: clients.name })
-      .from(clients)
-      .where(and(eq(clients.orgId, orgId), applyScope(scope, orgId, userId, { ownerColumn: clients.accountManagerId })))
-      .orderBy(clients.name)
+      .select({ id: CLIENT_PARTY_COLUMNS.id, name: CLIENT_PARTY_COLUMNS.name })
+      .from(clientPartyMap)
+      .innerJoin(businessParties, CLIENT_PARTY_JOIN)
+      .where(and(...clientPartyScope(orgId), clientPartyViewScope(orgId, userId, scope)))
+      // Names repeat, and a hundred of them is a truncation -- the id decides
+      // which hundred rather than the heap order the map join changes.
+      .orderBy(asc(CLIENT_PARTY_COLUMNS.name), asc(CLIENT_PARTY_COLUMNS.id))
       .limit(100);
   }
 
@@ -41,28 +51,37 @@ export class ClientsService {
     return this.cache.cached(
       cacheKey,
       async () => {
+        /*
+         * `health_status` is NOT NULL on the legacy row and nullable on the
+         * party -- a party that has never been a customer has no health -- so the
+         * filter compares the coalesced expression the mirror derives. Comparing
+         * the raw column would drop every client whose health has not been
+         * scored yet, which is exactly the set an "at risk" filter must not
+         * silently exclude.
+         */
         const conditions: SQL[] = [
-          eq(clients.orgId, orgId),
-          applyScope(scope, orgId, userId, { ownerColumn: clients.accountManagerId }),
+          ...clientPartyScope(orgId),
+          clientPartyViewScope(orgId, userId, scope),
         ];
-        if (status) conditions.push(eq(clients.healthStatus, status));
+        if (status) conditions.push(eq(CLIENT_PARTY_COLUMNS.healthStatus, status));
 
         const results = await this.db
           .select({
-            id: clients.id,
-            name: clients.name,
-            company: clients.company,
-            healthScore: clients.healthScore,
-            healthStatus: clients.healthStatus,
-            churnRiskScore: clients.churnRiskScore,
-            churnRiskReasoning: clients.churnRiskReasoning,
-            lastHealthCheck: clients.lastHealthCheck,
-            investmentValue: clients.investmentValue,
-            status: clients.status,
+            id: CLIENT_PARTY_COLUMNS.id,
+            name: CLIENT_PARTY_COLUMNS.name,
+            company: CLIENT_PARTY_COLUMNS.company,
+            healthScore: CLIENT_PARTY_COLUMNS.healthScore,
+            healthStatus: CLIENT_PARTY_COLUMNS.healthStatus,
+            churnRiskScore: CLIENT_PARTY_COLUMNS.churnRiskScore,
+            churnRiskReasoning: CLIENT_PARTY_COLUMNS.churnRiskReasoning,
+            lastHealthCheck: CLIENT_PARTY_COLUMNS.lastHealthCheck,
+            investmentValue: CLIENT_PARTY_COLUMNS.investmentValue,
+            status: CLIENT_PARTY_COLUMNS.status,
           })
-          .from(clients)
+          .from(clientPartyMap)
+          .innerJoin(businessParties, CLIENT_PARTY_JOIN)
           .where(and(...conditions))
-          .orderBy(asc(clients.healthScore))
+          .orderBy(asc(CLIENT_PARTY_COLUMNS.healthScore), asc(CLIENT_PARTY_COLUMNS.id))
           .limit(limit ?? 20);
 
         const summary = { healthy: 0, at_risk: 0, critical: 0 };
@@ -82,28 +101,34 @@ export class ClientsService {
       async () => {
         const atRiskClients = await this.db
           .select({
-            id: clients.id,
-            name: clients.name,
-            company: clients.company,
-            healthScore: clients.healthScore,
-            healthStatus: clients.healthStatus,
-            churnRiskScore: clients.churnRiskScore,
-            churnRiskReasoning: clients.churnRiskReasoning,
-            lastHealthCheck: clients.lastHealthCheck,
-            investmentValue: clients.investmentValue,
-            accountManagerId: clients.accountManagerId,
+            id: CLIENT_PARTY_COLUMNS.id,
+            name: CLIENT_PARTY_COLUMNS.name,
+            company: CLIENT_PARTY_COLUMNS.company,
+            healthScore: CLIENT_PARTY_COLUMNS.healthScore,
+            healthStatus: CLIENT_PARTY_COLUMNS.healthStatus,
+            churnRiskScore: CLIENT_PARTY_COLUMNS.churnRiskScore,
+            churnRiskReasoning: CLIENT_PARTY_COLUMNS.churnRiskReasoning,
+            lastHealthCheck: CLIENT_PARTY_COLUMNS.lastHealthCheck,
+            investmentValue: CLIENT_PARTY_COLUMNS.investmentValue,
+            accountManagerId: CLIENT_PARTY_COLUMNS.accountManagerId,
             accountManagerName: users.name,
           })
-          .from(clients)
-          .leftJoin(users, eq(clients.accountManagerId, users.id))
+          .from(clientPartyMap)
+          .innerJoin(businessParties, CLIENT_PARTY_JOIN)
+          .leftJoin(users, eq(CLIENT_PARTY_COLUMNS.accountManagerId, users.id))
           .where(
             and(
-              eq(clients.orgId, orgId),
-              applyScope(scope, orgId, userId, { ownerColumn: clients.accountManagerId }),
-              or(eq(clients.healthStatus, "at_risk"), eq(clients.healthStatus, "critical")),
+              ...clientPartyScope(orgId),
+              clientPartyViewScope(orgId, userId, scope),
+              or(
+                eq(CLIENT_PARTY_COLUMNS.healthStatus, "at_risk"),
+                eq(CLIENT_PARTY_COLUMNS.healthStatus, "critical"),
+              ),
             ),
           )
-          .orderBy(desc(clients.churnRiskScore))
+          // `churn_risk_score` is nullable and ties freely; the id says which
+          // twenty alerts an org sees.
+          .orderBy(desc(CLIENT_PARTY_COLUMNS.churnRiskScore), desc(CLIENT_PARTY_COLUMNS.id))
           .limit(20);
 
         const critical = atRiskClients.filter((c) => c.healthStatus === "critical").length;
@@ -115,10 +140,27 @@ export class ClientsService {
   }
 
   async getTimeline(orgId: string, clientId: number): Promise<{ events: TimelineEvent[]; total: number } | null> {
+    /*
+     * `clients.lead_id` is the one column here the party cannot answer for: a
+     * legacy-to-legacy pointer with no Party equivalent until `leads` is dropped,
+     * per `party-mirror-fields.ts`. So it is read from the legacy row and nothing
+     * else is -- an id, never a name. That association is why this file stays on
+     * the legacy-reader ratchet.
+     */
     const [client] = await this.db
-      .select({ id: clients.id, name: clients.name, convertedAt: clients.convertedAt, leadId: clients.leadId })
-      .from(clients)
-      .where(and(eq(clients.id, clientId), eq(clients.orgId, orgId)));
+      .select({
+        id: CLIENT_PARTY_COLUMNS.id,
+        name: CLIENT_PARTY_COLUMNS.name,
+        convertedAt: CLIENT_PARTY_COLUMNS.convertedAt,
+        leadId: clients.leadId,
+      })
+      .from(clientPartyMap)
+      .innerJoin(businessParties, CLIENT_PARTY_JOIN)
+      .innerJoin(
+        clients,
+        and(eq(clients.id, clientPartyMap.clientId), eq(clients.orgId, clientPartyMap.organizationId)),
+      )
+      .where(and(...clientPartyScope(orgId), clientIdIs(clientId)));
     if (!client) return null;
 
     const events: TimelineEvent[] = [];
@@ -214,21 +256,22 @@ export class ClientsService {
   async exportCsv(orgId: string): Promise<string> {
     const rows = await this.db
       .select({
-        id: clients.id,
-        name: clients.name,
-        email: clients.email,
-        phone: clients.phone,
-        company: clients.company,
-        city: clients.city,
-        status: clients.status,
-        healthScore: clients.healthScore,
-        healthStatus: clients.healthStatus,
-        investmentValue: clients.investmentValue,
-        createdAt: clients.createdAt,
+        id: CLIENT_PARTY_COLUMNS.id,
+        name: CLIENT_PARTY_COLUMNS.name,
+        email: CLIENT_PARTY_COLUMNS.email,
+        phone: CLIENT_PARTY_COLUMNS.phone,
+        company: CLIENT_PARTY_COLUMNS.company,
+        city: CLIENT_PARTY_COLUMNS.city,
+        status: CLIENT_PARTY_COLUMNS.status,
+        healthScore: CLIENT_PARTY_COLUMNS.healthScore,
+        healthStatus: CLIENT_PARTY_COLUMNS.healthStatus,
+        investmentValue: CLIENT_PARTY_COLUMNS.investmentValue,
+        createdAt: CLIENT_PARTY_COLUMNS.createdAt,
       })
-      .from(clients)
-      .where(eq(clients.orgId, orgId))
-      .orderBy(asc(clients.name));
+      .from(clientPartyMap)
+      .innerJoin(businessParties, CLIENT_PARTY_JOIN)
+      .where(and(...clientPartyScope(orgId)))
+      .orderBy(asc(CLIENT_PARTY_COLUMNS.name), asc(CLIENT_PARTY_COLUMNS.id));
 
     const headers = [
       "id",

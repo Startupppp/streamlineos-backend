@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { IMPORT_FIELDS } from "../column-mapping";
+import { CONNECTOR_PROVIDERS, CONNECTOR_STREAMS } from "../connectors/connector-source";
 import { EXPORT_ENTITIES } from "../crm-export.service";
 
 /** A paste, not a migration. The direct connectors are Phase 2. */
@@ -36,3 +37,21 @@ export const exportQuerySchema = z
   .strict();
 
 export type ExportQuery = z.infer<typeof exportQuerySchema>;
+
+/**
+ * Which connected account to read, and which of its collections.
+ *
+ * Both enums come from `connector-source` rather than being spelled again here.
+ * A second copy is how `IntegrationToolkit` ended up existing three times in
+ * three shapes, only two of which a compiler can keep in step.
+ */
+export const connectorSyncSchema = z
+  .object({
+    /** The `user_integration_connections` row, which is a `serial`. */
+    connectionId: z.number().int().positive(),
+    provider: z.enum([...CONNECTOR_PROVIDERS] as [string, ...string[]]),
+    stream: z.enum([...CONNECTOR_STREAMS] as [string, ...string[]]),
+  })
+  .strict();
+
+export type ConnectorSyncInput = z.infer<typeof connectorSyncSchema>;

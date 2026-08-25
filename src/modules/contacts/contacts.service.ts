@@ -1,6 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, and, sql, count, or, ilike, isNull, gt } from "drizzle-orm";
-import { contacts } from "../../db/schema";
+import { eq, and, asc, sql, count, or, ilike, gt, type SQL } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
+import { contacts, crmOrganizations, deals } from "../../db/schema";
+import { businessParties, contactPartyMap, leadPartyMap } from "../../db/schema/party";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -13,12 +15,59 @@ import {
   softDeleteMirroredContacts,
   updateMirroredContact,
 } from "../party/party-legacy-contacts";
+import {
+  CONTACT_PARTY_COLUMNS,
+  CONTACT_PARTY_JOIN,
+  contactIdIs,
+  contactPartyScope,
+} from "./contact-party-reader";
 import type {
   BulkImportContactsInput,
   CreateInput,
   ListInput,
   UpdateInput,
 } from "./dto/contact.schemas";
+
+/**
+ * The party behind the lead a contact came from.
+ *
+ * A second reference to `business_parties` in the same query, so it needs a name
+ * of its own. The lead's *name* is a party field now, and the card has always
+ * shown it -- so the association id comes from `contacts.lead_id` and the label
+ * comes from the party that id maps to, rather than from the `leads` mirror.
+ */
+const leadParty = alias(businessParties, "contact_lead_party");
+
+/**
+ * The legacy row behind a mapped contact, for its association columns only.
+ *
+ * `organization_id`, `lead_id` and `deal_id` are legacy-owned per
+ * `party-mirror-fields.ts` — a party's employer should be another party, and
+ * nothing gives `crm_organizations` parties to point at yet. Tenant on both
+ * sides: `contacts` carries a `(org_id, id)` unique constraint, so the join is
+ * one-to-one and cannot multiply the rows the map produced.
+ */
+const CONTACT_LEGACY_JOIN: SQL = and(
+  eq(contacts.id, contactPartyMap.contactId),
+  eq(contacts.orgId, contactPartyMap.organizationId),
+)!;
+
+/** What the list and the detail read share, shaped as the relations they replaced. */
+interface ContactAssociationRow {
+  leadId: number | null;
+  leadName: string | null;
+  dealId: number | null;
+  dealName: string | null;
+  organizationId: number | null;
+  crmOrganizationName: string | null;
+}
+
+function associationsOf(row: ContactAssociationRow) {
+  return {
+    lead: row.leadId !== null ? { id: row.leadId, name: row.leadName } : null,
+    deal: row.dealId !== null ? { id: row.dealId, name: row.dealName } : null,
+  };
+}
 
 @Injectable()
 export class ContactsService {
@@ -38,8 +87,65 @@ export class ContactsService {
     );
   }
 
-  private async queryContacts(orgId: string, filters: ListInput) {
-    const conditions = [eq(contacts.orgId, orgId), isNull(contacts.deletedAt)];
+  /**
+   * The base every contact read starts from.
+   *
+   * `contact_party_map` leads and the party is joined onto it, so the numeric id
+   * every URL and vCard still speaks stays selectable while every rendered field
+   * comes from `business_parties`. `contacts` is joined for its association
+   * columns only -- `organization_id`, `lead_id`, `deal_id` -- which the merged
+   * model has nowhere to put yet.
+   */
+  private contactBase(orgId: string) {
+    return this.db
+      .select({
+        id: CONTACT_PARTY_COLUMNS.id,
+        orgId: CONTACT_PARTY_COLUMNS.orgId,
+        name: CONTACT_PARTY_COLUMNS.name,
+        email: CONTACT_PARTY_COLUMNS.email,
+        phone: CONTACT_PARTY_COLUMNS.phone,
+        title: CONTACT_PARTY_COLUMNS.title,
+        department: CONTACT_PARTY_COLUMNS.department,
+        company: CONTACT_PARTY_COLUMNS.company,
+        linkedinUrl: CONTACT_PARTY_COLUMNS.linkedinUrl,
+        twitterUrl: CONTACT_PARTY_COLUMNS.twitterUrl,
+        websiteUrl: CONTACT_PARTY_COLUMNS.websiteUrl,
+        avatarUrl: CONTACT_PARTY_COLUMNS.avatarUrl,
+        tags: CONTACT_PARTY_COLUMNS.tags,
+        deletedAt: CONTACT_PARTY_COLUMNS.deletedAt,
+        createdAt: CONTACT_PARTY_COLUMNS.createdAt,
+        updatedAt: CONTACT_PARTY_COLUMNS.updatedAt,
+        organizationId: contacts.organizationId,
+        leadId: contacts.leadId,
+        dealId: contacts.dealId,
+        mergedIntoId: contacts.mergedIntoId,
+        leadName: leadParty.name,
+        dealName: deals.name,
+        crmOrganizationName: crmOrganizations.name,
+      })
+      .from(contactPartyMap)
+      .innerJoin(businessParties, CONTACT_PARTY_JOIN)
+      .innerJoin(contacts, CONTACT_LEGACY_JOIN)
+      // Every association join names the tenant as a literal rather than
+      // correlating it, so a numeric id shared across organisations cannot reach
+      // the wrong row and the planner can push the constant into each index.
+      .leftJoin(
+        leadPartyMap,
+        and(eq(leadPartyMap.leadId, contacts.leadId), eq(leadPartyMap.organizationId, orgId)),
+      )
+      .leftJoin(
+        leadParty,
+        and(eq(leadParty.partyId, leadPartyMap.partyId), eq(leadParty.organizationId, orgId)),
+      )
+      .leftJoin(deals, and(eq(deals.id, contacts.dealId), eq(deals.orgId, orgId)))
+      .leftJoin(
+        crmOrganizations,
+        and(eq(crmOrganizations.id, contacts.organizationId), eq(crmOrganizations.orgId, orgId)),
+      );
+  }
+
+  private listConditions(orgId: string, filters: ListInput): SQL[] {
+    const conditions: SQL[] = [...contactPartyScope(orgId)];
     if (filters.organizationId) {
       conditions.push(eq(contacts.organizationId, filters.organizationId));
     }
@@ -47,27 +153,39 @@ export class ContactsService {
       const s = `%${filters.search}%`;
       conditions.push(
         or(
-          sql`${contacts.name} ILIKE ${s}`,
-          sql`${contacts.email} ILIKE ${s}`,
-          sql`${contacts.company} ILIKE ${s}`,
+          sql`${CONTACT_PARTY_COLUMNS.name} ILIKE ${s}`,
+          sql`${CONTACT_PARTY_COLUMNS.email} ILIKE ${s}`,
+          sql`${CONTACT_PARTY_COLUMNS.company} ILIKE ${s}`,
         )!,
       );
     }
+    return conditions;
+  }
 
+  private async queryContacts(orgId: string, filters: ListInput) {
+    const conditions = this.listConditions(orgId, filters);
     const whereClause = and(...conditions);
-    const [totalResult, items] = await Promise.all([
-      this.db.select({ count: count() }).from(contacts).where(whereClause),
-      this.db.query.contacts.findMany({
-        where: whereClause,
-        with: {
-          lead: { columns: { id: true, name: true } },
-          deal: { columns: { id: true, name: true } },
-        },
-        orderBy: contacts.name,
-        limit: filters.limit ?? 50,
-        offset: filters.offset ?? 0,
-      }),
+    const [totalResult, rows] = await Promise.all([
+      this.db
+        .select({ count: count() })
+        .from(contactPartyMap)
+        .innerJoin(businessParties, CONTACT_PARTY_JOIN)
+        .innerJoin(contacts, CONTACT_LEGACY_JOIN)
+        .where(whereClause),
+      this.contactBase(orgId)
+        .where(whereClause)
+        // Names repeat, and this list pages by offset -- without a unique
+        // tiebreaker two people called "John Smith" can appear on both page one
+        // and page two while somebody else appears on neither.
+        .orderBy(asc(CONTACT_PARTY_COLUMNS.name), asc(CONTACT_PARTY_COLUMNS.id))
+        .limit(filters.limit ?? 50)
+        .offset(filters.offset ?? 0),
     ]);
+
+    const items = rows.map(({ leadName, dealName, crmOrganizationName, ...contact }) => ({
+      ...contact,
+      ...associationsOf({ ...contact, leadName, dealName, crmOrganizationName }),
+    }));
 
     return { items, total: totalResult[0]?.count ?? 0 };
   }
@@ -76,38 +194,49 @@ export class ContactsService {
     const q = `%${query}%`;
     return this.db
       .select({
-        id: contacts.id,
-        name: contacts.name,
-        email: contacts.email,
-        phone: contacts.phone,
-        company: contacts.company,
-        jobTitle: contacts.title,
-        image: contacts.avatarUrl,
+        id: CONTACT_PARTY_COLUMNS.id,
+        name: CONTACT_PARTY_COLUMNS.name,
+        email: CONTACT_PARTY_COLUMNS.email,
+        phone: CONTACT_PARTY_COLUMNS.phone,
+        company: CONTACT_PARTY_COLUMNS.company,
+        jobTitle: CONTACT_PARTY_COLUMNS.title,
+        image: CONTACT_PARTY_COLUMNS.avatarUrl,
       })
-      .from(contacts)
+      .from(contactPartyMap)
+      .innerJoin(businessParties, CONTACT_PARTY_JOIN)
       .where(
         and(
-          eq(contacts.orgId, orgId),
-          isNull(contacts.deletedAt),
+          ...contactPartyScope(orgId),
           or(
-            ilike(contacts.name, q),
-            ilike(contacts.email, q),
-            ilike(contacts.phone, q),
+            ilike(CONTACT_PARTY_COLUMNS.name, q),
+            ilike(CONTACT_PARTY_COLUMNS.email, q),
+            ilike(CONTACT_PARTY_COLUMNS.phone, q),
           ),
         ),
       )
+      // Twenty of however many matched; the id says which twenty rather than
+      // the heap order, which reading through the map changes.
+      .orderBy(asc(CONTACT_PARTY_COLUMNS.name), asc(CONTACT_PARTY_COLUMNS.id))
       .limit(20);
   }
 
-  getContact(orgId: string, id: number) {
-    return this.db.query.contacts.findFirst({
-      where: and(eq(contacts.id, id), eq(contacts.orgId, orgId), isNull(contacts.deletedAt)),
-      with: {
-        crmOrganization: { columns: { id: true, name: true } },
-        lead: { columns: { id: true, name: true } },
-        deal: { columns: { id: true, name: true } },
-      },
-    });
+  async getContact(orgId: string, id: number) {
+    const [row] = await this.contactBase(orgId)
+      .where(and(...contactPartyScope(orgId), contactIdIs(id)))
+      .limit(1);
+    if (!row) return undefined;
+
+    const { leadName, dealName, crmOrganizationName, ...contact } = row;
+    return {
+      ...contact,
+      // The three association objects the relational read used to hydrate, with
+      // the same two public columns each and nothing else.
+      crmOrganization:
+        contact.organizationId !== null
+          ? { id: contact.organizationId, name: crmOrganizationName }
+          : null,
+      ...associationsOf({ ...contact, leadName, dealName, crmOrganizationName }),
+    };
   }
 
   async create(orgId: string, input: CreateInput) {
@@ -228,24 +357,27 @@ export class ContactsService {
     for (;;) {
       const rows = await this.db
         .select({
-        id: contacts.id,
-        name: contacts.name,
-        email: contacts.email,
-        phone: contacts.phone,
-        title: contacts.title,
-        company: contacts.company,
-        department: contacts.department,
-        createdAt: contacts.createdAt,
+          id: CONTACT_PARTY_COLUMNS.id,
+          name: CONTACT_PARTY_COLUMNS.name,
+          email: CONTACT_PARTY_COLUMNS.email,
+          phone: CONTACT_PARTY_COLUMNS.phone,
+          title: CONTACT_PARTY_COLUMNS.title,
+          company: CONTACT_PARTY_COLUMNS.company,
+          department: CONTACT_PARTY_COLUMNS.department,
+          createdAt: CONTACT_PARTY_COLUMNS.createdAt,
         })
-        .from(contacts)
+        .from(contactPartyMap)
+        .innerJoin(businessParties, CONTACT_PARTY_JOIN)
         .where(
           and(
-            eq(contacts.orgId, orgId),
-            isNull(contacts.deletedAt),
-            gt(contacts.id, afterId),
+            ...contactPartyScope(orgId),
+            // The keyset stays on the map's own id: it is the primary key of
+            // `(organization_id, contact_id)`, so it is unique per tenant and a
+            // page can neither repeat nor skip.
+            gt(contactPartyMap.contactId, afterId),
           ),
         )
-        .orderBy(contacts.id)
+        .orderBy(asc(contactPartyMap.contactId))
         .limit(pageSize);
       if (rows.length === 0) return;
 

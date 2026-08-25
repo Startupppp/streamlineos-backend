@@ -22,26 +22,58 @@ jest.mock("../party/party-legacy-contacts", () => ({
 
 const mirrorCreate = createMirroredContacts as unknown as jest.Mock;
 
+/** A Drizzle chain that carries the joins the contact reads now issue. */
+function makeSelectChain(rows: unknown[]) {
+  const chain: Record<string, jest.Mock> = {
+    from: jest.fn(),
+    innerJoin: jest.fn(),
+    leftJoin: jest.fn(),
+    where: jest.fn(),
+    orderBy: jest.fn(),
+    offset: jest.fn(),
+    limit: jest.fn(),
+  };
+  for (const key of ["from", "innerJoin", "leftJoin", "where", "orderBy", "offset"])
+    chain[key]!.mockReturnValue(chain);
+  chain.limit!.mockResolvedValue(rows);
+  return { chain, db: { select: jest.fn().mockReturnValue(chain) } };
+}
+
 describe("ContactsService bulk import", () => {
+  /**
+   * The relational read is gone, and with it the `with: { columns: … }` this
+   * used to assert on. The property it was guarding is not: a contact's lead,
+   * deal and employer are exposed as an id and a name and nothing else. It is
+   * asserted on the result now, which is the thing a caller actually receives —
+   * and which no longer depends on Drizzle's relational API being asked nicely.
+   */
   it("projects only public identity fields from contact relations", async () => {
-    const findFirst = jest.fn().mockResolvedValue(undefined);
-    const service = new ContactsService(
-      { query: { contacts: { findFirst } } } as never,
-      {} as never,
-      {} as never,
-    );
+    const chain = makeSelectChain([
+      {
+        id: 42,
+        orgId: "org-1",
+        name: "Ada",
+        organizationId: 7,
+        leadId: 3,
+        dealId: 9,
+        leadName: "Ada (lead)",
+        dealName: "Renewal",
+        crmOrganizationName: "ACME",
+      },
+    ]);
+    const service = new ContactsService(chain.db as never, {} as never, {} as never);
 
-    await service.getContact("org-1", 42);
+    const contact = await service.getContact("org-1", 42);
 
-    expect(findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({
-        with: {
-          crmOrganization: { columns: { id: true, name: true } },
-          lead: { columns: { id: true, name: true } },
-          deal: { columns: { id: true, name: true } },
-        },
-      }),
-    );
+    expect(contact).toBeDefined();
+    expect(Object.keys(contact!.lead!)).toEqual(["id", "name"]);
+    expect(Object.keys(contact!.deal!)).toEqual(["id", "name"]);
+    expect(Object.keys(contact!.crmOrganization!)).toEqual(["id", "name"]);
+    // The joined-table columns are folded into those objects, never left loose
+    // on the contact itself.
+    expect(contact).not.toHaveProperty("leadName");
+    expect(contact).not.toHaveProperty("dealName");
+    expect(contact).not.toHaveProperty("crmOrganizationName");
   });
 
   it("streams export rows in bounded keyset pages with one CSV header", async () => {
@@ -61,11 +93,14 @@ describe("ContactsService bulk import", () => {
       .mockResolvedValueOnce([makeRow(501)]);
     const query = {
       from: jest.fn(),
+      // The export reads `business_parties` through `contact_party_map`.
+      innerJoin: jest.fn(),
       where: jest.fn(),
       orderBy: jest.fn(),
       limit,
     };
     query.from.mockReturnValue(query);
+    query.innerJoin.mockReturnValue(query);
     query.where.mockReturnValue(query);
     query.orderBy.mockReturnValue(query);
     const service = new ContactsService(

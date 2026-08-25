@@ -1,0 +1,50 @@
+{
+  "results": [
+    {
+      "id": "8412996701",
+      "properties": {
+        "annualrevenue": "1200000",
+        "city": "Pune",
+        "country": "India",
+        "createdate": "2024-02-11T06:22:41.117Z",
+        "description": "Inbound from the pricing page.",
+        "domain": "brightpath.example",
+        "industry": "COMPUTER_SOFTWARE",
+        "linkedin_company_page": null,
+        "name": "BrightPath Systems",
+        "numberofemployees": "45",
+        "phone": "+91 20 2550 8811",
+        "zip": "411004"
+      },
+      "createdAt": "2024-02-11T06:22:41.117Z",
+      "updatedAt": "2026-08-18T13:02:55.408Z",
+      "archived": false
+    },
+    {
+      "id": "8412996702",
+      "properties": {
+        "annualrevenue": null,
+        "city": null,
+        "country": null,
+        "createdate": "2025-11-02T10:00:00.000Z",
+        "description": null,
+        "domain": null,
+        "industry": null,
+        "linkedin_company_page": null,
+        "name": "Halcyon Interiors",
+        "numberofemployees": null,
+        "phone": "+44 20 7946 0918",
+        "zip": null
+      },
+      "createdAt": "2025-11-02T10:00:00.000Z",
+      "updatedAt": "2026-08-20T08:31:12.000Z",
+      "archived": false
+    }
+  ],
+  "paging": {
+    "next": {
+      "after": "8412996702",
+      "link": "https://api.hubapi.com/crm/v3/objects/companies?after=8412996702"
+    }
+  }
+}

@@ -1,9 +1,17 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, count, eq, isNull, sql, sum } from "drizzle-orm";
-import { crmDeals, leads, tasks, tickets, timesheets, users } from "../../../../db/schema";
+import { crmDeals, tasks, tickets, timesheets, users } from "../../../../db/schema";
+import { businessParties, leadPartyMap } from "../../../../db/schema/party";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
+import {
+  INCLUDE_DELETED,
+  LEAD_PARTY_COLUMNS,
+  LEAD_PARTY_JOIN,
+  leadIdIs,
+  leadPartyScope,
+} from "../../../leads/lead-party-reader";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
 
 import { PriorityResponseSchema } from "../dto/output.schemas";
@@ -67,18 +75,22 @@ export class CrmTasksService {
           let entityContext: Record<string, unknown> = {};
 
           if (t.entityType === "LEAD" && t.entityId) {
+            // A task can outlive the lead it was raised on, and the SLA line it
+            // carries is the reason it is still worth ranking -- so the deleted
+            // record is still read, exactly as it was before.
             const [lead] = await tx
               .select({
-                id: leads.id,
-                name: leads.name,
-                score: leads.score,
-                potentialValue: leads.potentialValue,
-                slaDeadline: leads.slaDeadline,
-                status: leads.status,
-                priority: leads.priority,
+                id: LEAD_PARTY_COLUMNS.id,
+                name: LEAD_PARTY_COLUMNS.name,
+                score: LEAD_PARTY_COLUMNS.score,
+                potentialValue: LEAD_PARTY_COLUMNS.potentialValue,
+                slaDeadline: LEAD_PARTY_COLUMNS.slaDeadline,
+                status: LEAD_PARTY_COLUMNS.status,
+                priority: LEAD_PARTY_COLUMNS.priority,
               })
-              .from(leads)
-              .where(and(eq(leads.id, t.entityId), eq(leads.orgId, orgId)))
+              .from(leadPartyMap)
+              .innerJoin(businessParties, LEAD_PARTY_JOIN)
+              .where(and(...leadPartyScope(orgId, INCLUDE_DELETED), leadIdIs(t.entityId)))
               .limit(1);
 
             if (lead) {
