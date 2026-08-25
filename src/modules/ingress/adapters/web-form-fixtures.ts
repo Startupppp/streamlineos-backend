@@ -83,8 +83,9 @@ export const INJECTION_ATTEMPT: WebFormSubmission = {
 /**
  * Somebody who left a phone number and no address.
  *
- * The commonest shape on a "request a callback" form, and the one the resolver
- * below the seam cannot yet do anything with.
+ * The commonest shape on a "request a callback" form: a real enquiry from a
+ * real person, carrying a telephone number and no address. It is the submission
+ * the resolver could not file before ticket 22 keyed it on identifiers.
  */
 export const CALLBACK_REQUEST: WebFormSubmission = {
   submissionId: "sub_callback",

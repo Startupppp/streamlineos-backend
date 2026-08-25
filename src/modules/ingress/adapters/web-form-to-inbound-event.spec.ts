@@ -89,7 +89,14 @@ describe("webFormToInboundEvent", () => {
     it("derives the participant from the submitted fields", () => {
       const event = ok(webFormToInboundEvent(CONTACT_ENQUIRY, context()));
       expect(event.participants).toEqual([
-        { address: "priya@example.com", displayName: "Priya Raman", role: "from" },
+        {
+          address: "priya@example.com",
+          displayName: "Priya Raman",
+          role: "from",
+          // A form arrives on the `message` channel, which WhatsApp also uses —
+          // so the adapter has to say which of the two kinds this address is.
+          identifierKind: "email",
+        },
       ]);
       expect(senderOf(event)?.address).toBe("priya@example.com");
     });
@@ -154,19 +161,26 @@ describe("webFormToInboundEvent", () => {
 
   describe("what it refuses", () => {
     /**
-     * The refusal this ticket turns on.
+     * The refusal this ticket turned on, now deleted rather than kept beside the
+     * new path.
      *
-     * A callback request is a real enquiry from a real person, and it still
-     * creates nothing — because the resolver below the seam matches on
-     * `business_parties.email`, so handing it a phone number would write a phone
-     * number into the email column. Named separately from "nobody at all"
-     * because it is a different fact: this one is a gap in the resolver, not an
-     * empty form.
+     * A callback request is a real enquiry from a real person, and it used to
+     * create nothing under the name `unresolvable-identity` — because the
+     * resolver matched on `business_parties.email`, so handing it a telephone
+     * number would have written a telephone number into the email column.
+     * Ticket 22 keyed the resolver on `party_identifiers`, so the number is now
+     * an identifier of kind `phone` and files exactly as an address does.
+     *
+     * Asserted here, in the block about refusals, on purpose: the point is that
+     * this is no longer one.
      */
-    it("creates nothing for a submitter it can identify but cannot resolve", () => {
-      expect(skip(webFormToInboundEvent(CALLBACK_REQUEST, context()))).toBe(
-        "unresolvable-identity",
-      );
+    it("files a submitter who left a number and no address, as a number", () => {
+      const event = ok(webFormToInboundEvent(CALLBACK_REQUEST, context()));
+      expect(event.participants[0]).toMatchObject({
+        address: "+1 (415) 555-0132",
+        identifierKind: "phone",
+        role: "from",
+      });
     });
 
     it("creates nothing for a submitter with no contact details at all", () => {

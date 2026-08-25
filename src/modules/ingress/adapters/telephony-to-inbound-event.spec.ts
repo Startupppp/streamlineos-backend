@@ -206,8 +206,15 @@ describe("telephonyCallToInboundEvent", () => {
     it("puts the caller on as the sender and our number as the recipient", () => {
       const { event } = ok(telephonyCallToInboundEvent(call(), context));
       expect(event.participants).toEqual([
-        { address: "+14155551212", displayName: "Priya Raman", role: "from" },
-        { address: "+14155559000", role: "to" },
+        {
+          address: "+14155551212",
+          displayName: "Priya Raman",
+          role: "from",
+          // Every address on a call is a telephone number, and the adapter says
+          // so rather than leaving the resolver to guess from the characters.
+          identifierKind: "phone",
+        },
+        { address: "+14155559000", role: "to", identifierKind: "phone" },
       ]);
     });
 
@@ -219,7 +226,11 @@ describe("telephonyCallToInboundEvent", () => {
 
     it("omits a caller ID name the carrier did not supply, rather than inventing one", () => {
       const { event } = ok(telephonyCallToInboundEvent(call({ callerName: null }), context));
-      expect(event.participants[0]).toEqual({ address: "+14155551212", role: "from" });
+      expect(event.participants[0]).toEqual({
+        address: "+14155551212",
+        role: "from",
+        identifierKind: "phone",
+      });
     });
   });
 

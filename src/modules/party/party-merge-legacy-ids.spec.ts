@@ -119,6 +119,10 @@ describe("PartyMergeService and legacy identifiers", () => {
         [{ id: 7 }], // loser's lead ids
         [], // loser's client ids
         [{ id: 9 }], // loser's contact ids
+        // Read before the identifiers move, which is the last moment the two
+        // sides still hold their own.
+        [], // survivor identifiers
+        [], // loser identifiers
       ],
       recorded,
     );
@@ -142,7 +146,7 @@ describe("PartyMergeService and legacy identifiers", () => {
 
   it("records what moved, so the revert has something to put back", async () => {
     const db = fakeDb(
-      [[survivor], [loser], [], [], [], [{ id: 7 }], [{ id: 8 }], []],
+      [[survivor], [loser], [], [], [], [{ id: 7 }], [{ id: 8 }], [], [], []],
       recorded,
     );
 
@@ -159,7 +163,7 @@ describe("PartyMergeService and legacy identifiers", () => {
   });
 
   it("writes nothing to the maps when the loser answered for no legacy id", async () => {
-    const db = fakeDb([[survivor], [loser], [], [], [], [], [], []], recorded);
+    const db = fakeDb([[survivor], [loser], [], [], [], [], [], [], [], []], recorded);
 
     await new PartyMergeService(db, audit).merge("org-1", {
       leftPartyId: "party-old",

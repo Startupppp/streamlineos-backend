@@ -6,6 +6,7 @@ import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
 import { softDeletePartyWithMirror, updatePartyWithMirror } from "./party-legacy-writer";
+import { claimIdentifiers, identifierClaimsOfColumns } from "./party-identifiers";
 import type {
   ListPartiesQuery,
   CreatePartyInput,
@@ -206,6 +207,16 @@ export class PartyService {
         throw err;
       });
     if (!row) throw new NotFoundException("Failed to create party");
+
+    /**
+     * Reachable from the moment it exists.
+     *
+     * `this.db` is the request's transaction, so the party and its identifiers
+     * commit together — a party with no identifier is one the next message from
+     * that customer would not match, and they would become a second record.
+     */
+    await claimIdentifiers(this.db, organizationId, row.partyId, identifierClaimsOfColumns(row));
+
     this.audit.log({
       action: "party.party.created",
       userId,

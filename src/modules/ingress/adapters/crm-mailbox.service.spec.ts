@@ -525,7 +525,11 @@ describe("the mailbox sweep", () => {
     await service.sync("org-1", "mailbox-1");
 
     expect(events[0]?.body).toBe("The whole message, not the preview.");
-    expect(events[0]?.participants).toContainEqual({ role: "cc", address: "boss@example.com" });
+    expect(events[0]?.participants).toContainEqual({
+      role: "cc",
+      address: "boss@example.com",
+      identifierKind: "email",
+    });
   });
 
   it("does not fetch the body of a message somebody marked private", async () => {

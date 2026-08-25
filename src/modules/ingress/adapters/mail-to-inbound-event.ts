@@ -148,11 +148,20 @@ export function isPrivateMessage(message: MailMessageForIngress): boolean {
 
 function addressOf(
   party: { readonly email?: string | null; readonly name?: string | null } | null | undefined,
-): { address: string; displayName?: string } | null {
+): { address: string; displayName?: string; identifierKind: "email" } | null {
   const address = party?.email?.trim().toLowerCase();
   if (!address) return null;
   const displayName = party?.name?.trim();
-  return displayName ? { address, displayName } : { address };
+  /**
+   * Stated even though the channel would imply it.
+   *
+   * `identifierKindOf` falls back to the channel only for events stored before
+   * adapters carried the kind. A live adapter that relies on the fallback is one
+   * whose participants stop being labelled the day the channel it uses gains a
+   * second meaning — which is exactly what happened to `message`.
+   */
+  const identifierKind = "email" as const;
+  return displayName ? { address, displayName, identifierKind } : { address, identifierKind };
 }
 
 /**

@@ -3,7 +3,11 @@ import {
   addressDomain,
   deduplicationKey,
   externalParticipants,
+  identifierKindForChannel,
+  identifierOf,
   normaliseAddress,
+  normaliseIdentifier,
+  type IdentifierKind,
   partyNameFor,
   senderOf,
   threadIdentity,
@@ -129,7 +133,21 @@ describe("senderOf and externalParticipants", () => {
     expect(external.map((participant) => participant.address)).toEqual(["Priya@Example.COM"]);
   });
 
-  it("drops participants with no resolvable domain rather than inventing one", () => {
+  /**
+   * The defect ticket 22 exists for, stated as an assertion.
+   *
+   * This filter used to require a resolvable domain, which requires an `@`. So
+   * `record-participants` wrote ZERO rows for every call and every WhatsApp
+   * message, and `AutonomyService.loadActivity` then left-joined
+   * `activity_participants` for a sender that could not be there — handing the
+   * bounce classifier an empty address for two whole channels.
+   *
+   * "External" means "not one of ours", and only a domain can establish that. A
+   * telephone number has none, so it cannot be shown to be internal and is
+   * therefore external, which is the right default on a channel where every
+   * caller is a stranger until they are resolved.
+   */
+  it("keeps participants of every kind, including ones with no domain", () => {
     const withPhone = event({
       participants: [
         { address: "priya@example.com", role: "from" },
@@ -138,7 +156,119 @@ describe("senderOf and externalParticipants", () => {
     });
     expect(externalParticipants(withPhone, []).map((p) => p.address)).toEqual([
       "priya@example.com",
+      "+44 7700 900123",
     ]);
+  });
+
+  it("still excludes an internal address while keeping a number beside it", () => {
+    const mixed = event({
+      participants: [
+        { address: "+44 7700 900123", role: "from" },
+        { address: "rep@acme-crm.test", role: "to" },
+      ],
+    });
+    expect(externalParticipants(mixed, ["acme-crm.test"]).map((p) => p.address)).toEqual([
+      "+44 7700 900123",
+    ]);
+  });
+});
+
+/**
+ * What an address IS, as opposed to what it looks like.
+ *
+ * Every rule here is one half of "one person must not become three parties".
+ * The other half is that nothing infers the kind from the characters — a guess
+ * is how `+1-555…` became an email address in `business_parties.email`.
+ */
+describe("identifier kinds and normalisation", () => {
+  it("lower-cases and trims an address, so one person is not three parties", () => {
+    expect(normaliseIdentifier("email", "  Priya@Example.COM ")).toBe("priya@example.com");
+  });
+
+  it("reduces one telephone line written four ways to one value", () => {
+    const written = ["+14155551212", "+1 (415) 555-1212", "+1-415-555-1212", "0014155551212"];
+    const normalised = new Set(written.map((value) => normaliseIdentifier("phone", value)));
+    expect([...normalised]).toEqual(["+14155551212"]);
+  });
+
+  /**
+   * The trade the telephony adapter made when it landed, now made once for
+   * every kind: a national number could belong to any of a dozen countries, and
+   * picking one would merge two strangers on the strength of a guess. It stays
+   * as it came — a visible duplicate rather than a silent wrong match.
+   */
+  it("does not invent a country code for a number that arrived without one", () => {
+    expect(normaliseIdentifier("phone", "415 555 1212")).toBe("4155551212");
+    expect(normaliseIdentifier("phone", "415 555 1212")).not.toBe(
+      normaliseIdentifier("phone", "+14155551212"),
+    );
+  });
+
+  it("normalises a WhatsApp number by the same rule as a telephone number", () => {
+    expect(normaliseIdentifier("whatsapp", "+44 20 7123 4567")).toBe(
+      normaliseIdentifier("phone", "+44 20 7123 4567"),
+    );
+  });
+
+  it("takes the kind from the adapter rather than from the string's shape", () => {
+    const call = event({
+      channel: "call",
+      participants: [{ address: "priya@example.com", role: "from", identifierKind: "email" }],
+    });
+    // The address looks like mail and the channel says telephone. The adapter
+    // read it, so the adapter wins — the alternative is a guess, and a guess is
+    // what this ticket removed.
+    expect(identifierOf(call, call.participants[0]!)).toEqual({
+      kind: "email",
+      value: "priya@example.com",
+      normalisedValue: "priya@example.com",
+    });
+  });
+
+  /**
+   * The fallback exists only for events already sitting in
+   * `inbound_events.payload`, which predate the field.
+   */
+  it("falls back to the channel for an event stored before the kind existed", () => {
+    const call = event({ channel: "call", participants: [{ address: "+1 415 555 1212", role: "from" }] });
+    expect(identifierOf(call, call.participants[0]!)?.kind).toBe("phone");
+  });
+
+  /**
+   * `message` carries WhatsApp AND web forms — a phone number and an email
+   * address — so the channel cannot answer for it. `handle` says "an opaque
+   * address on some channel", which is the truth, rather than asserting one of
+   * the two.
+   */
+  it("refuses to guess between the two things a message can be", () => {
+    expect(identifierKindForChannel("message")).toBe("handle");
+    expect(identifierKindForChannel("email")).toBe("email");
+    expect(identifierKindForChannel("calendar")).toBe("email");
+    expect(identifierKindForChannel("call")).toBe("phone");
+  });
+
+  /**
+   * Refused once here rather than five times and then dead-lettered: the seam
+   * is the last place an event can be rejected cheaply, and everything past it
+   * runs as a durable workflow with retries.
+   */
+  it("refuses a participant carrying a kind nothing knows how to normalise", () => {
+    const odd = event({
+      participants: [
+        { address: "priya@example.com", role: "from", identifierKind: "fax" as IdentifierKind },
+      ],
+    });
+    expect(validateInboundEvent(odd).map((problem) => problem.field)).toEqual([
+      "participants[0].identifierKind",
+    ]);
+  });
+
+  it("reports no identifier for an address that reduces to nothing", () => {
+    const empty = event({
+      channel: "call",
+      participants: [{ address: "  ", role: "from", identifierKind: "phone" }],
+    });
+    expect(identifierOf(empty, empty.participants[0]!)).toBeNull();
   });
 });
 
