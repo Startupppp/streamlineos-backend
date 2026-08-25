@@ -1723,6 +1723,20 @@
       "when": 1787668353441,
       "tag": "0231_crm_mailbox_sync",
       "breakpoints": true
+    },
+    {
+      "idx": 246,
+      "version": "7",
+      "when": 1787686353441,
+      "tag": "0232_repair_crm_activity_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 247,
+      "version": "7",
+      "when": 1787689953441,
+      "tag": "0233_deals_value_not_null",
+      "breakpoints": true
     }
   ]
 }
