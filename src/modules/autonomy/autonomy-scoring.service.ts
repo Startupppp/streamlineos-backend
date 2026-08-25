@@ -15,7 +15,7 @@ import {
 } from "../../db/schema/crm/autonomy-scoring";
 import { DECISION_KINDS } from "../../db/schema/crm/autonomous-decisions";
 import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
-import { capText } from "./decision-record";
+import { capText, RECORDED_CONVERSATION_CHARS } from "./decision-record";
 import {
   needsHumanReview,
   normaliseSampleRate,
@@ -30,8 +30,6 @@ import {
   SHADOW_SYSTEM_PROMPT,
   type ShadowVerdictResult,
 } from "./shadow-scorer.schemas";
-
-const MAX_CONVERSATION_CHARS = 2_000;
 
 /**
  * Measuring a system that acts without asking.
@@ -151,9 +149,17 @@ export class AutonomyScoringService {
 
     if (!sampling.score) return;
 
+    /**
+     * The same cap the writer applied, not a looser one.
+     *
+     * `RECORDED_CONVERSATION_CHARS` is the authority: the scorer can only ever
+     * see what was written to `inputs`, so a larger number here is not a more
+     * generous limit, it is a limit that never applies. This still runs, for the
+     * rows written before that cap existed and for anything hand-edited.
+     */
     const conversation = capText(
       String((decision.inputs as Record<string, unknown> | null)?.conversation ?? ""),
-      MAX_CONVERSATION_CHARS,
+      RECORDED_CONVERSATION_CHARS,
     );
 
     // No context, no provider call. There is nothing to second-guess.

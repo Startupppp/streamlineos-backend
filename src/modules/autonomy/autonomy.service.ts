@@ -4,6 +4,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
 import {
   activities,
+  activityParticipants,
   autonomousDecisions,
   autonomySwitches,
   crmPipelineStages,
@@ -17,6 +18,7 @@ import {
   buildDecision,
   capText,
   hasEligibleContext,
+  RECORDED_CONVERSATION_CHARS,
   redactForModel,
   shouldAct,
 } from "./decision-record";
@@ -67,9 +69,22 @@ export class AutonomyService {
      * A bounce read as engagement advances a deal on the strength of a mail
      * server saying the customer never received anything, and an out-of-office
      * does it with a robot's words. Neither costs a model call to recognise.
+     *
+     * Three of the five signals `classifyDelivery` decides on are headers —
+     * `Auto-Submitted`, `X-Autoreply`, `X-Failed-Recipients` — and none of them
+     * can be passed, because nothing persists them: `InboundCommunicationEvent`
+     * has no headers field, the mail adapter never reads one, and
+     * `inbound_events.payload` stores that same normalised event rather than the
+     * raw message. (`activities.metadata` would be the place, and its own
+     * contract says it is never read for a lifecycle decision.) So they are dead
+     * here until the seam carries them, and the cost of that is specific: a
+     * localised Exchange out-of-office ("Abwesenheitsnotiz: …") carrying
+     * `Auto-Submitted: auto-replied` still reads as `delivered` and reaches the
+     * model as a genuine reply. The sender prefix and the subject phrases — both
+     * of which this now actually supplies — catch the English-language majority.
      */
     const delivery = classifyDelivery({
-      fromAddress: "",
+      fromAddress: activity.fromAddress ?? "",
       subject: activity.subject,
       body: activity.body,
     });
@@ -96,8 +111,26 @@ export class AutonomyService {
       MAX_BODY_CHARS,
     );
 
-    // No provider call at all when there is nothing to work with.
-    if (!hasEligibleContext([conversation])) return;
+    // No provider call at all when there is nothing to work with — recorded all
+    // the same, for the reason in this method's docblock: a decision nobody wrote
+    // down is indistinguishable from one that never ran, and the correction rate
+    // needs a denominator that includes the messages there was nothing to do with.
+    if (!hasEligibleContext([conversation])) {
+      await this.record(
+        buildDecision({
+          organizationId,
+          kind: "task.extracted",
+          outcome: "skipped",
+          triggerType: "activity",
+          triggerId: activityId,
+          partyId: activity.partyId,
+          dealId: activity.dealId,
+          activityId,
+          summary: "Nothing to work with — the message was too short to extract anything from.",
+        }),
+      );
+      return;
+    }
 
     const deal = activity.dealId ? await this.loadDeal(organizationId, activity.dealId) : null;
     const availableStages = deal ? await this.loadStages(organizationId, deal.pipelineId) : [];
@@ -163,11 +196,14 @@ export class AutonomyService {
 
     const extraction = result.data;
     const model = result.aiUsage.model;
-    const inputs = { conversation: capText(conversation, 500), availableStages };
+    const inputs = {
+      conversation: capText(conversation, RECORDED_CONVERSATION_CHARS),
+      availableStages,
+    };
 
     await this.applyNextStep(organizationId, activityId, activity, extraction, model, inputs);
     if (deal)
-      await this.applyStageAdvance(organizationId, activityId, deal, extraction, model, inputs, availableStages);
+      await this.applyStageAdvance(organizationId, activityId, deal.id, extraction, model, inputs, availableStages);
   }
 
   // ── The two things it may do ──────────────────────────────────────────────
@@ -188,8 +224,34 @@ export class AutonomyService {
      * "They will send the contract" is a real next step for the customer and a
      * task nobody here can complete — creating it produces a to-do list full of
      * other people's work, which is how a list stops being read.
+     *
+     * Recorded rather than dropped: the extraction was paid for either way, and
+     * "the model found a next step and it was theirs" is a different fact from
+     * "nothing ran", which is exactly the distinction the ledger exists to keep.
      */
-    if (!step.description || step.owner !== "us") return;
+    if (!step.description || step.owner !== "us") {
+      await this.record(
+        buildDecision({
+          organizationId,
+          kind: "task.extracted",
+          outcome: "skipped",
+          triggerType: "activity",
+          triggerId: activityId,
+          partyId: activity.partyId,
+          dealId: activity.dealId,
+          activityId,
+          model,
+          promptVersion: String(EXTRACTION_PROMPT_VERSION),
+          confidence: extraction.confidence,
+          inputs,
+          decision: { nextStep: step },
+          summary: step.description
+            ? `Next step found, but it is the customer's to do: ${step.description}`
+            : "No next step in this message.",
+        }),
+      );
+      return;
+    }
 
     const allowed = await this.isAllowed(organizationId, "task.extracted");
     const act = allowed.allowed && shouldAct("task.extracted", extraction.confidence);
@@ -240,17 +302,56 @@ export class AutonomyService {
     );
   }
 
+  /**
+   * Move the deal, but never over the top of a person.
+   *
+   * Takes the deal id rather than the row read before the provider call. Seconds
+   * pass during that call, and a rep dragging the card in the meantime used to be
+   * silently overwritten — with the ledger then recording the *stale* stage as
+   * `fromStage` while `deal_stage_transitions`, which re-reads for itself,
+   * recorded the real one. Two ledgers disagreeing is bad on its own; it also
+   * disarmed the reversal guard, which compares `toStage` against the deal's
+   * current stage and so waved through a "reverse" that restored a stage the deal
+   * had not been in for days.
+   */
   private async applyStageAdvance(
     organizationId: string,
     activityId: string,
-    deal: { id: number; stage: string; name: string },
+    dealId: number,
     extraction: Extraction,
     model: string,
     inputs: Record<string, unknown>,
     availableStages: readonly string[],
   ): Promise<void> {
     const suggested = extraction.stage.suggestedStage;
-    if (!suggested || suggested === deal.stage) return;
+    if (!suggested) return;
+
+    // Re-read after the provider call, so every judgement below — "is this
+    // already the stage", the version passed for the write, and the `fromStage`
+    // written to the ledger — is made against what the deal is now.
+    const deal = await this.loadDeal(organizationId, String(dealId));
+
+    if (!deal) {
+      await this.record(
+        buildDecision({
+          organizationId,
+          kind: "stage.advanced",
+          outcome: "skipped",
+          triggerType: "activity",
+          triggerId: activityId,
+          dealId: String(dealId),
+          model,
+          promptVersion: String(EXTRACTION_PROMPT_VERSION),
+          confidence: extraction.confidence,
+          inputs,
+          decision: { suggestedStage: suggested },
+          summary: "The deal was deleted while the extraction was running.",
+        }),
+      );
+      return;
+    }
+
+    if (suggested === deal.stage) return;
 
     /**
      * A stage the tenant does not have is a rejected decision, not a new stage.
@@ -283,18 +384,67 @@ export class AutonomyService {
     const act = allowed.allowed && shouldAct("stage.advanced", extraction.confidence);
 
     let outcome: "applied" | "skipped" | "failed" = "skipped";
+    let fromStage = deal.stage;
+    let refusal: string | null = null;
 
     if (act) {
-      const moved = await this.dealsService.updateDeal(
-        organizationId,
-        // Carried for the legacy activity log only; the ledger records the
-        // system as the actor, which is the record that counts.
-        "system",
-        deal.id,
-        { stage: suggested, stageChangeReason: extraction.stage.evidence ?? undefined },
-        { kind: "system", label: SYSTEM_ACTOR_LABEL },
-      );
-      outcome = moved.ok ? "applied" : "failed";
+      try {
+        const moved = await this.dealsService.updateDeal(
+          organizationId,
+          // Carried for the legacy activity log only; the ledger records the
+          // system as the actor, which is the record that counts.
+          "system",
+          deal.id,
+          {
+            stage: suggested,
+            stageChangeReason: extraction.stage.evidence ?? undefined,
+            /**
+             * Optimistic concurrency, so a race is a refusal rather than a
+             * clobber. `updateDeal` compares this against the row's live
+             * `updated_at` and returns `version_conflict` if somebody wrote in
+             * between — which is the whole difference between losing a rep's
+             * move and declining to make one.
+             */
+            version: deal.updatedAt?.toISOString(),
+          },
+          { kind: "system", label: SYSTEM_ACTOR_LABEL },
+        );
+
+        if (!moved.ok) {
+          // A conflict is not a failure of this system; somebody got there
+          // first, which is the outcome the version was passed to produce.
+          outcome = moved.reason === "version_conflict" ? "skipped" : "failed";
+          refusal =
+            moved.reason === "version_conflict"
+              ? "Somebody moved the deal while the extraction was running, so it was left alone."
+              : "The deal was gone by the time the move was attempted.";
+        } else if (moved.approvalPending || !moved.stageChanged) {
+          /**
+           * `ok` is not the same as "it moved". A pipeline blueprint requiring
+           * approval returns success having only raised a request, and recording
+           * that as `applied` would put a move in the feed that never happened.
+           */
+          outcome = "skipped";
+          refusal = moved.approvalPending
+            ? "The pipeline requires approval for this move, so it was requested rather than made."
+            : "The deal was already in that stage.";
+        } else {
+          outcome = "applied";
+          // The authoritative from-stage: what `updateDeal` itself read, and what
+          // `deal_stage_transitions` recorded, so the two ledgers cannot disagree.
+          fromStage = moved.previousStage ?? deal.stage;
+        }
+      } catch (error) {
+        /**
+         * A blueprint rule can reject the transition outright. Recorded as a
+         * failed decision rather than allowed to propagate: thrown, it would
+         * retry the whole workflow five times and dead-letter it, having written
+         * no decision row at all — the one outcome this module treats as worse
+         * than a wrong answer.
+         */
+        outcome = "failed";
+        refusal = error instanceof Error ? error.message : String(error);
+      }
     }
 
     await this.record(
@@ -309,13 +459,14 @@ export class AutonomyService {
         promptVersion: String(EXTRACTION_PROMPT_VERSION),
         confidence: extraction.confidence,
         inputs,
-        decision: { fromStage: deal.stage, toStage: suggested, evidence: extraction.stage.evidence },
+        decision: { fromStage, toStage: suggested, evidence: extraction.stage.evidence },
         summary:
           outcome === "applied"
-            ? `Moved ${deal.name} from ${deal.stage} to ${suggested}. ${extraction.stage.evidence ?? ""}`.trim()
-            : allowed.allowed
-              ? `Stage change suggested but confidence ${extraction.confidence.toFixed(2)} was below the threshold.`
-              : `Stage advance is switched off (${allowed.decidedBy}).`,
+            ? `Moved ${deal.name} from ${fromStage} to ${suggested}. ${extraction.stage.evidence ?? ""}`.trim()
+            : (refusal ??
+              (allowed.allowed
+                ? `Stage change suggested but confidence ${extraction.confidence.toFixed(2)} was below the threshold.`
+                : `Stage advance is switched off (${allowed.decidedBy}).`)),
       }),
     );
   }
@@ -345,6 +496,16 @@ export class AutonomyService {
     await this.db.insert(autonomousDecisions).values(row);
   }
 
+  /**
+   * The activity, and who sent it.
+   *
+   * The sender lives on `activity_participants`, not on the activity, so reading
+   * the activity alone leaves `classifyDelivery` with an empty `fromAddress` and
+   * only its subject-phrase check alive — which is how a bounce from
+   * `mailer-daemon@` was read as a customer replying. Joined rather than fetched
+   * separately: it is one row either way, and this is on the path of every
+   * inbound message.
+   */
   private async loadActivity(organizationId: string, activityId: string) {
     const [row] = await this.db
       .select({
@@ -352,8 +513,17 @@ export class AutonomyService {
         body: activities.body,
         partyId: activities.partyId,
         dealId: activities.dealId,
+        fromAddress: activityParticipants.address,
       })
       .from(activities)
+      .leftJoin(
+        activityParticipants,
+        and(
+          eq(activityParticipants.organizationId, activities.organizationId),
+          eq(activityParticipants.activityId, activities.activityId),
+          eq(activityParticipants.role, "from"),
+        ),
+      )
       .where(
         and(
           eq(activities.organizationId, organizationId),
@@ -376,6 +546,8 @@ export class AutonomyService {
         name: deals.name,
         stage: deals.stage,
         pipelineId: deals.pipelineId,
+        // The optimistic-concurrency token `updateDeal` compares against.
+        updatedAt: deals.updatedAt,
       })
       .from(deals)
       .where(

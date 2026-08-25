@@ -8,6 +8,7 @@ import {
   deals,
   quotes,
 } from "../../db/schema";
+import { getOrgAdminUserIds } from "../../common/tenant/org-admin-recipients";
 import { startRun } from "../../common/workflow/workflow-store";
 import { NotificationsService } from "../notifications/notifications.service";
 import { buildDecision } from "./decision-record";
@@ -47,7 +48,6 @@ export class AutonomyHoldService {
   async holdQuoteSend(input: {
     organizationId: string;
     quoteId: number;
-    decidedBy: string;
     summary: string;
     confidence: number | null;
     model?: string | null;
@@ -132,7 +132,8 @@ export class AutonomyHoldService {
    *
    * A hold nobody hears about is a delay, not a safeguard. The notification goes
    * to whoever owns the deal — the person most likely to know the send is wrong
-   * and the one whose customer it is.
+   * and the one whose customer it is — and to the organisation's administrators
+   * when nobody owns it, because the hold sends either way.
    */
   private async notifyPending(
     organizationId: string,
@@ -147,30 +148,49 @@ export class AutonomyHoldService {
       .where(and(eq(quotes.orgId, organizationId), eq(quotes.id, quoteId)))
       .limit(1);
 
-    if (!row?.assignedToId) return;
+    /**
+     * Nobody owns the deal, so the org's administrators are told instead.
+     *
+     * Returning here was silent, and the hold sent sixty seconds later anyway —
+     * which is the failure this notification exists to prevent, arriving
+     * precisely on the quotes least likely to have been checked by a person. An
+     * unassigned deal is not a reason to send a customer a quote unannounced.
+     */
+    const recipients = row?.assignedToId
+      ? [row.assignedToId]
+      : await getOrgAdminUserIds(this.db, organizationId);
 
-    try {
-      await this.notifications.create({
-        orgId: organizationId,
-        userId: row.assignedToId,
-        type: "WARNING",
-        // High, because the whole value is that it is read before the window ends.
-        priority: "HIGH",
-        category: "SYSTEM",
-        sourceModule: "crm",
-        eventKey: "crm.autonomy.quote-holding",
-        entityType: "autonomy_hold",
-        entityId: holdId,
-        title: "A quote is about to send",
-        message: `"${row.quoteSubject ?? "A quote"}" sends in ${windowSeconds} seconds unless you stop it.`,
-        link: `/crm/autonomy?holdId=${holdId}`,
-      });
-    } catch (error) {
-      // A failed notification must not stop the hold from existing. The feed
-      // still shows it, and swallowing this silently is what §4 forbids.
-      this.logger.error(
-        `could not notify about hold ${holdId}: ${error instanceof Error ? error.message : String(error)}`,
+    if (recipients.length === 0) {
+      this.logger.warn(
+        `hold ${holdId} has no assignee and the organisation has no active admin to tell; it will send unannounced`,
       );
+      return;
+    }
+
+    for (const userId of recipients) {
+      try {
+        await this.notifications.create({
+          orgId: organizationId,
+          userId,
+          type: "WARNING",
+          // High, because the whole value is that it is read before the window ends.
+          priority: "HIGH",
+          category: "SYSTEM",
+          sourceModule: "crm",
+          eventKey: "crm.autonomy.quote-holding",
+          entityType: "autonomy_hold",
+          entityId: holdId,
+          title: "A quote is about to send",
+          message: `"${row?.quoteSubject ?? "A quote"}" sends in ${windowSeconds} seconds unless you stop it.`,
+          link: `/crm/autonomy?holdId=${holdId}`,
+        });
+      } catch (error) {
+        // A failed notification must not stop the hold from existing. The feed
+        // still shows it, and swallowing this silently is what §4 forbids.
+        this.logger.error(
+          `could not notify ${userId} about hold ${holdId}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
     }
   }
 
@@ -251,7 +271,6 @@ export class AutonomyHoldService {
     const held = await this.holdQuoteSend({
       organizationId: input.organizationId,
       quoteId,
-      decidedBy: "system",
       summary: `Drafted ${drafted.draft.subject} and decided to send it.`,
       confidence: input.confidence,
       dealId: String(input.dealId),

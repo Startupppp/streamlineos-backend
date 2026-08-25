@@ -39,7 +39,16 @@ describe("planReversal", () => {
     it("refuses one that is not instantly reversible, and says which kind of un-undoable it is", () => {
       const held = planReversal(decision({ reversibility: "hold" }), deal("NEGOTIATION"));
       expect(held).toMatchObject({ ok: false, reason: "not-reversible" });
-      expect((held as { explanation: string }).explanation).toContain("hold window");
+
+      /**
+       * True on both sides of the window, because this refusal is reached far
+       * more often after the send than during it: `quote.sent` keeps its `hold`
+       * class permanently, so a reversal clicked on last week's quote lands
+       * here and must not be told to go and cancel it in a window that closed.
+       */
+      const explanation = (held as { explanation: string }).explanation;
+      expect(explanation).toContain("hold window");
+      expect(explanation).toContain("sent");
 
       const gone = planReversal(decision({ reversibility: "irreversible" }), deal("NEGOTIATION"));
       expect((gone as { explanation: string }).explanation).toContain("left the building");

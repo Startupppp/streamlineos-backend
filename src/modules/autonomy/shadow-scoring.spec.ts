@@ -56,8 +56,27 @@ describe("shouldShadowScore", () => {
     expect(result).toEqual({ score: true, reason: "near-threshold" });
   });
 
-  it("leaves a confident decision to the sample", () => {
-    expect(shouldShadowScore(input({ confidence: 0.99 })).reason).toMatch(/sampled/);
+  /**
+   * Both halves of the dice roll, named for the branch each actually takes.
+   *
+   * The ids are chosen against `samplingFraction`, not guessed: "d-1" hashes to
+   * 0.1447 and "d-69" to 0.0039, so at a rate of 0.1 the first falls outside the
+   * sample and the second inside. A `toMatch(/sampled/)` here passed on
+   * "not-sampled" too, which made an assertion that could not fail.
+   */
+  it("leaves a confident decision outside the sample when its id falls above the rate", () => {
+    expect(samplingFraction("d-1")).toBeGreaterThan(settings.shadowSampleRate);
+    expect(shouldShadowScore(input({ decisionId: "d-1", confidence: 0.99 })).reason).toBe(
+      "not-sampled",
+    );
+  });
+
+  it("scores a confident decision whose id falls inside the rate", () => {
+    expect(samplingFraction("d-69")).toBeLessThan(settings.shadowSampleRate);
+    expect(shouldShadowScore(input({ decisionId: "d-69", confidence: 0.99 }))).toEqual({
+      score: true,
+      reason: "sampled",
+    });
   });
 
   it("scores everything at a rate of one", () => {

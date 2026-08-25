@@ -237,6 +237,23 @@ export function capRows<T>(rows: readonly T[], maxRows: number): T[] {
 }
 
 /**
+ * How much of a conversation a decision row keeps — and the authority on it.
+ *
+ * The model reads up to `MAX_BODY_CHARS`; this is what gets written to
+ * `autonomous_decisions.inputs` afterwards. The two numbers are deliberately
+ * different: the ledger is read by people and by the shadow scorer, and storing
+ * four thousand characters of somebody's mail on every decision buys neither of
+ * them anything the first five hundred do not.
+ *
+ * Stated here rather than at the writer because the shadow scorer caps the same
+ * field again on the way out, and the two had drifted — the scorer trimmed to
+ * two thousand characters of a string that could never exceed five hundred, so
+ * its constant read as a limit while being dead code. Whatever this says is what
+ * the scorer can ever see, which makes it the only figure that decides anything.
+ */
+export const RECORDED_CONVERSATION_CHARS = 500;
+
+/**
  * Whether there is anything worth paying a provider for.
  *
  * The platform rule is to short-circuit before any provider call when there is

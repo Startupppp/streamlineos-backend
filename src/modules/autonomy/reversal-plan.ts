@@ -88,11 +88,20 @@ export function planReversal(
       `Nothing to undo — this decision was ${decision.outcome}, so no record was changed.`,
     );
 
+  /**
+   * A `hold` decision is stoppable in its window and nowhere else.
+   *
+   * The message has to be true on both sides of that window, because this refusal
+   * is reached far more often after the send than during it: a `quote.sent`
+   * decision keeps its `hold` class permanently, so every reversal clicked on a
+   * quote from last week lands here. Telling that reader to "cancel it in the
+   * hold window" describes a button that is no longer there.
+   */
   if (decision.reversibility !== "instant")
     return refuse(
       "not-reversible",
       decision.reversibility === "hold"
-        ? "This is still inside its hold window — cancel it there instead of reversing it."
+        ? "This can only be stopped inside its hold window: cancel it from the hold while it is still waiting. Once it has sent it cannot be taken back — only corrected."
         : "This left the building and cannot be taken back; only a correction is possible.",
     );
 
