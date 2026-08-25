@@ -11,6 +11,7 @@ import type { Db } from "../../db/drizzle.module";
 import type { AssignmentConfig } from "../../db/schema/crm/leads";
 import { TerritoryMatchService } from "../crm/core/territory-match.service";
 import { resolveLeadStatusSemantics } from "./lead-status-semantics";
+import { updateMirroredLeads } from "../party/party-legacy-leads";
 
 async function advanceRoundRobinState(db: Db, ruleId: number, userIds: string[]): Promise<string> {
   const [state] = await db.select().from(assignmentRuleState).where(eq(assignmentRuleState.ruleId, ruleId));
@@ -144,10 +145,11 @@ export async function evaluateAssignmentRules(
     }
 
     if (assignedUserId) {
-      await db
-        .update(leads)
-        .set({ assignedToId: assignedUserId, assignedAt: new Date(), updatedAt: new Date() })
-        .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId)));
+      await updateMirroredLeads(db, orgId, [leadId], {
+        assignedToId: assignedUserId,
+        assignedAt: new Date(),
+        updatedAt: new Date(),
+      });
       return { assigned: true, userId: assignedUserId, ruleName: rule.name };
     }
   }
@@ -200,7 +202,7 @@ export async function recalculateLeadScore(
   const score = Math.max(0, Math.min(100, total));
   const changed = lead.score !== score;
 
-  await db.update(leads).set({ score, updatedAt: new Date() }).where(and(eq(leads.id, leadId), eq(leads.orgId, orgId)));
+  await updateMirroredLeads(db, orgId, [leadId], { score, updatedAt: new Date() });
 
   return { score, changed, dimensionBreakdown };
 }
@@ -233,7 +235,7 @@ export async function applySlaPolicy(
   const deadline = new Date(lead.createdAt);
   deadline.setHours(deadline.getHours() + policy.firstResponseHours);
 
-  await db.update(leads).set({ slaDeadline: deadline, updatedAt: new Date() }).where(and(eq(leads.id, leadId), eq(leads.orgId, orgId)));
+  await updateMirroredLeads(db, orgId, [leadId], { slaDeadline: deadline, updatedAt: new Date() });
 
   return { slaApplied: true, deadline };
 }

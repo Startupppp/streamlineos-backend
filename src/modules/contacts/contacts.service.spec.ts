@@ -1,5 +1,26 @@
 import { ContactsService } from "./contacts.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
+import { createMirroredContacts } from "../party/party-legacy-contacts";
+
+/**
+ * The import no longer issues one multi-row INSERT.
+ *
+ * Party is canonical from Phase 2 ticket 02, so each contact is now a party row
+ * written first and a `contacts` row derived from it, and a chunk is a loop
+ * inside one transaction rather than a single statement. The property the import
+ * actually depends on is unchanged and still asserted below: a chunk lands
+ * whole or not at all, and a rejected chunk bisects until only the bad row
+ * fails. What changed is the statement count, which is the cost of the mirror
+ * and is recorded here rather than hidden.
+ */
+jest.mock("../party/party-legacy-contacts", () => ({
+  createMirroredContact: jest.fn(),
+  createMirroredContacts: jest.fn(),
+  softDeleteMirroredContacts: jest.fn(),
+  updateMirroredContact: jest.fn(),
+}));
+
+const mirrorCreate = createMirroredContacts as unknown as jest.Mock;
 
 describe("ContactsService bulk import", () => {
   it("projects only public identity fields from contact relations", async () => {
@@ -83,13 +104,11 @@ describe("ContactsService bulk import", () => {
     );
   });
 
-  it("uses one bulk insert for a valid import", async () => {
-    const values = jest.fn().mockResolvedValue(undefined);
-    const tx = { insert: jest.fn(() => ({ values })) };
-    const db = { transaction: jest.fn((work: (client: typeof tx) => unknown) => work(tx)) };
+  it("writes a valid import as one mirrored chunk", async () => {
+    mirrorCreate.mockReset().mockResolvedValue([]);
     const cache = { invalidateNamespace: jest.fn().mockResolvedValue(undefined) };
     const limits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
-    const service = new ContactsService(db as never, cache as never, limits as never);
+    const service = new ContactsService({} as never, cache as never, limits as never);
 
     await expect(
       service.bulkImport("org-1", {
@@ -100,9 +119,12 @@ describe("ContactsService bulk import", () => {
       }),
     ).resolves.toEqual({ created: 2, failed: 0 });
 
-    expect(db.transaction).toHaveBeenCalledTimes(1);
-    expect(values).toHaveBeenCalledWith(
+    expect(mirrorCreate).toHaveBeenCalledTimes(1);
+    expect(mirrorCreate).toHaveBeenCalledWith(
+      expect.anything(),
+      "org-1",
       expect.arrayContaining([expect.objectContaining({ orgId: "org-1", name: "Ada" })]),
+      { linkedBy: "contacts:import" },
     );
     expect(cache.invalidateNamespace).toHaveBeenCalledWith(
       CACHE_KEYS.contactsListNamespace("org-1"),
@@ -111,22 +133,18 @@ describe("ContactsService bulk import", () => {
 
   it("bisects a rejected batch and retains partial-success counts", async () => {
     const inserted: string[] = [];
-    const db = {
-      transaction: jest.fn(async (work: (client: unknown) => unknown) => {
-        const tx = {
-          insert: () => ({
-            values: async (rows: Array<{ name: string }>) => {
-              if (rows.some((row) => row.name === "Invalid")) throw new Error("constraint");
-              inserted.push(...rows.map((row) => row.name));
-            },
-          }),
-        };
-        return work(tx);
-      }),
-    };
+    mirrorCreate
+      .mockReset()
+      .mockImplementation(async (_db: unknown, _orgId: string, rows: Array<{ name: string }>) => {
+        // A chunk is still all-or-nothing: the transaction the writer opens rolls
+        // back every party and every mirror row in it.
+        if (rows.some((row) => row.name === "Invalid")) throw new Error("constraint");
+        inserted.push(...rows.map((row) => row.name));
+        return [];
+      });
     const cache = { invalidateNamespace: jest.fn().mockResolvedValue(undefined) };
     const limits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
-    const service = new ContactsService(db as never, cache as never, limits as never);
+    const service = new ContactsService({} as never, cache as never, limits as never);
 
     await expect(
       service.bulkImport("org-1", {

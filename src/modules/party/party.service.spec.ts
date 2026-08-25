@@ -55,8 +55,18 @@ describe("PartyService", () => {
   let svc: PartyService;
   let mockDb: Record<string, unknown>;
 
-  function makeSelectChain(rows: unknown[]) {
-    const whereChain = { limit: jest.fn().mockResolvedValue(rows) };
+  /**
+   * `where` answers two shapes now, because the party writer asks two questions.
+   *
+   * A single-record load ends in `.limit(1)` and gets `rows`. The mirror refresh
+   * awaits `.where(...)` directly to ask which legacy ids a party answers for,
+   * and gets `legacyIds` -- empty by default, so a test that is not about the
+   * mirror sees no mirror writes.
+   */
+  function makeSelectChain(rows: unknown[], legacyIds: unknown[] = []) {
+    const whereChain = Object.assign(Promise.resolve(legacyIds), {
+      limit: jest.fn().mockResolvedValue(rows),
+    });
     const fromChain = { where: jest.fn().mockReturnValue(whereChain) };
     const selectChain = { from: jest.fn().mockReturnValue(fromChain) };
     return { selectChain, fromChain, whereChain };
@@ -70,6 +80,10 @@ describe("PartyService", () => {
       insert: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      // Party writes now open a savepoint so the row and its legacy mirror commit
+      // together. The callback must actually run, or every assertion inside it is
+      // silently void.
+      transaction: jest.fn((fn: (tx: unknown) => Promise<unknown>) => fn(mockDb)),
       query: {},
     };
 
@@ -254,7 +268,11 @@ describe("PartyService", () => {
       (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
 
       const setSpy = jest.fn().mockReturnValue({
-        where: jest.fn().mockResolvedValue(undefined),
+        where: jest.fn().mockReturnValue({
+          // The delete returns the row now: the mirror is derived from what the
+          // party became, not from what the caller asked for.
+          returning: jest.fn().mockResolvedValue([makeParty({ deletedAt: new Date() })]),
+        }),
       });
       (mockDb as { update: jest.Mock }).update.mockReturnValue({ set: setSpy });
 

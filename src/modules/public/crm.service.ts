@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { eq, sql } from "drizzle-orm";
-import { leads, npsResponses, npsSurveys, webLeadForms } from "../../db/schema";
+import { npsResponses, npsSurveys, webLeadForms } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { withPublicToken } from "../../common/tenant/with-public-token";
@@ -14,6 +14,7 @@ import { categoryForScore } from "./public.helpers";
 import type { LeadFormBody, NpsSubmitInput } from "./dto/public.schemas";
 import { CrmAutomationBusService } from "../crm/automation-studio/crm-automation-bus.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
+import { createMirroredLead } from "../party/party-legacy-leads";
 
 @Injectable()
 export class CrmService {
@@ -137,16 +138,21 @@ export class CrmService {
     const insertedLead = await runInTenantTransaction(
       this.db,
       async (tx) => {
-        const [lead] = await tx.insert(leads).values({
-          orgId: form.orgId,
-          name: leadName,
-          email: strField("email"),
-          phone: strField("phone"),
-          company: strField("company"),
-          notes: leadNotes,
-          source: "website",
-          customData: body,
-        }).returning({ id: leads.id });
+        const lead = await createMirroredLead(
+          tx,
+          form.orgId,
+          {
+            orgId: form.orgId,
+            name: leadName,
+            email: strField("email"),
+            phone: strField("phone"),
+            company: strField("company"),
+            notes: leadNotes,
+            source: "website",
+            customData: body,
+          },
+          { linkedBy: "public:web-form" },
+        );
 
         await tx
           .update(webLeadForms)

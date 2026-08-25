@@ -1762,12 +1762,19 @@
     {
       "idx": 251,
       "version": "7",
+      "when": 1787704353441,
+      "tag": "0244_party_mirror_divergence_permission",
+      "breakpoints": true
+    },
+    {
+      "idx": 252,
+      "version": "7",
       "when": 1787707953441,
       "tag": "0250_data_quality_queue",
       "breakpoints": true
     },
     {
-      "idx": 252,
+      "idx": 253,
       "version": "7",
       "when": 1787711553441,
       "tag": "0251_backfill_data_quality_permissions",

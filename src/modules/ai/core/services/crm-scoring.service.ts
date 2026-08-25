@@ -27,6 +27,8 @@ import {
   type EvidenceItem,
 } from "../dto/output.schemas";
 import { throwOnAiFailure } from "./gateway-result.util";
+import { updateMirroredLeads } from "../../../party/party-legacy-leads";
+import { updateMirroredClients } from "../../../party/party-legacy-clients";
 
 interface ChurnContext {
   openTickets?: number;
@@ -119,10 +121,7 @@ export class CrmScoringService {
     data.score = Math.max(0, Math.min(100, Math.round(data.score)));
 
     await runInTenantTransaction(this.db, async (tx) => {
-      await tx
-        .update(leads)
-        .set({ score: data.score, updatedAt: new Date() })
-        .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId)));
+      await updateMirroredLeads(tx, orgId, [leadId], { score: data.score, updatedAt: new Date() });
     }, { orgId });
 
     return data;
@@ -293,17 +292,14 @@ export class CrmScoringService {
     const healthScore = Math.max(0, 100 - data.churnRiskScore);
 
     await runInTenantTransaction(this.db, async (tx) => {
-      await tx
-        .update(clients)
-        .set({
-          healthScore,
-          healthStatus,
-          churnRiskScore: data.churnRiskScore,
-          churnRiskReasoning: data.reasoning,
-          lastHealthCheck: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(and(eq(clients.id, clientId), eq(clients.orgId, orgId)));
+      await updateMirroredClients(tx, orgId, [clientId], {
+        healthScore,
+        healthStatus,
+        churnRiskScore: data.churnRiskScore,
+        churnRiskReasoning: data.reasoning,
+        lastHealthCheck: new Date(),
+        updatedAt: new Date(),
+      });
     }, { orgId });
 
     return data;
