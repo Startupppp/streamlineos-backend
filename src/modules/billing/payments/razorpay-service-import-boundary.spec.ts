@@ -4,6 +4,7 @@ import { join, relative } from "node:path";
 const SRC_ROOT = join(__dirname, "../../../../");
 const ADAPTERS_DIR = join(__dirname, "adapters");
 const RAZORPAY_SERVICE_DEF = join(__dirname, "../core/razorpay.service.ts");
+const BILLING_SERVICE = join(__dirname, "../core/billing.service.ts");
 
 function walkTs(dir: string): string[] {
   const entries = readdirSync(dir);
@@ -48,6 +49,12 @@ describe("RazorpayService import boundary", () => {
   it("no production file outside billing/payments/adapters/ imports RazorpayService (test files excepted)", () => {
     const productionViolators = relativeViolators.filter((f) => !f.endsWith(".spec.ts") && !f.endsWith("-spec.ts"));
     expect(productionViolators).toEqual([]);
+  });
+
+  it("keeps provider credential fields out of BillingService", () => {
+    const billingSource = readFileSync(BILLING_SERVICE, "utf8");
+
+    expect(billingSource).not.toMatch(/\b(?:keySecret|webhookSecret|RAZORPAY_KEY_SECRET)\b/);
   });
 
   it("documents every current importer so regressions are visible", () => {

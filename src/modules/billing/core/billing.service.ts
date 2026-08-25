@@ -306,29 +306,42 @@ export class BillingService {
     };
   }
 
-  async handleRazorpayWebhook(orgId: string, rawBody: string, signature: string): Promise<WebhookResult> {
-    const adapter = await this.providers.resolveConfigured(orgId);
+  /**
+   * Provider-neutral webhook entry point. Provider-specific signature verification and envelope
+   * parsing stay inside the configured adapter; billing only applies the normalized event.
+   */
+  async handlePaymentProviderWebhook(
+    orgId: string,
+    providerKey: string,
+    rawBody: string,
+    signature: string,
+  ): Promise<WebhookResult> {
+    const adapter = await this.providers.resolve(orgId, providerKey);
     if (!adapter) {
       logger.warn("[billing] no payment provider registered for webhook verification");
       return { status: 503, body: { ok: false } };
     }
     if (!adapter.verifyWebhookSignature({ rawBody, signature })) {
-      logger.warn("[razorpay] invalid webhook signature");
+      logger.warn(`[billing:${providerKey}] invalid webhook signature`);
       return { status: 401, body: { ok: false } };
     }
 
-    let event: WebhookEvent;
-    try {
-      const raw: unknown = JSON.parse(rawBody);
-      const parsed = webhookEventSchema.safeParse(raw);
-      if (!parsed.success) {
-        logger.warn("[razorpay] webhook payload validation failed", { issues: parsed.error.issues });
-        return { status: 400, body: { ok: false, error: "invalid payload" } };
-      }
-      event = parsed.data;
-    } catch {
-      return { status: 400, body: { ok: false, error: "invalid JSON" } };
+    const normalized = adapter.normalizeWebhook(rawBody);
+    if (!normalized.ok) {
+      return {
+        status: 400,
+        body: { ok: false, error: normalized.error === "invalid_json" ? "invalid JSON" : "invalid payload" },
+      };
     }
+
+    const parsed = webhookEventSchema.safeParse({ event: normalized.eventType, payload: normalized.payload });
+    if (!parsed.success) {
+      logger.warn(`[billing:${providerKey}] normalized webhook payload validation failed`, {
+        issues: parsed.error.issues,
+      });
+      return { status: 400, body: { ok: false, error: "invalid payload" } };
+    }
+    const event: WebhookEvent = parsed.data;
 
     const payment = event.payload.payment?.entity;
     if (!payment) {
@@ -337,7 +350,7 @@ export class BillingService {
 
     const org = await this.findOrgFromNotes(payment.notes);
     if (org && org.id !== orgId) {
-      logger.warn("[razorpay] webhook organization does not match endpoint organization");
+      logger.warn(`[billing:${providerKey}] webhook organization does not match endpoint organization`);
       return { status: 400, body: { ok: false, error: "organization mismatch" } };
     }
     const resolvedOrg = org ?? { id: orgId };
@@ -345,7 +358,7 @@ export class BillingService {
     try {
       await this.persistPayment(payment, resolvedOrg.id);
     } catch (error) {
-      logger.error("[razorpay] failed to persist payment", { error });
+      logger.error(`[billing:${providerKey}] failed to persist payment`, { error });
       return { status: 500, body: { ok: false } };
     }
 
@@ -360,7 +373,7 @@ export class BillingService {
         this.aiCredits
           .grantAiPackCreditsFromWebhook(resolvedOrg.id, packId, payment.id)
           .catch((err: unknown) =>
-            logger.warn("[razorpay] ai pack credit grant failed (non-fatal)", {
+            logger.warn(`[billing:${providerKey}] ai pack credit grant failed (non-fatal)`, {
               orgId: resolvedOrg.id,
               packId,
               paymentId: payment.id,
@@ -372,7 +385,7 @@ export class BillingService {
 
     if (event.event === "payment.failed" && payment.status === "failed" && resolvedOrg) {
       this.transitionToPastDue(resolvedOrg.id, payment.id).catch((err: unknown) =>
-        logger.warn("[razorpay] PAST_DUE transition failed (non-fatal)", {
+        logger.warn(`[billing:${providerKey}] PAST_DUE transition failed (non-fatal)`, {
           orgId: resolvedOrg.id,
           paymentId: payment.id,
           err,
@@ -381,6 +394,11 @@ export class BillingService {
     }
 
     return { status: 200, body: { ok: true } };
+  }
+
+  /** Compatibility API for internal callers that still use the original method name. */
+  handleRazorpayWebhook(orgId: string, rawBody: string, signature: string): Promise<WebhookResult> {
+    return this.handlePaymentProviderWebhook(orgId, "razorpay", rawBody, signature);
   }
 
   private async persistPayment(payment: RazorpayPayment, orgId: string | null): Promise<void> {

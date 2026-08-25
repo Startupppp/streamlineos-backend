@@ -6,6 +6,7 @@ jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
 }));
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { BillingService } from "./billing.service";
+import { RazorpayWebhookController } from "./razorpay-webhook.controller";
 import { AiCreditsService } from "./ai-credits.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { PlanLimitsService } from "./plan-limits.service";
@@ -112,7 +113,7 @@ async function buildService(
   return module.get(BillingService);
 }
 
-describe("BillingService.handleRazorpayWebhook — provider resolved through registry", () => {
+describe("BillingService payment webhook — provider resolved through registry", () => {
   describe("valid signature — webhook is accepted", () => {
     it("returns 200 and { ok: true } when signature matches", async () => {
       const db = makeWebhookDb();
@@ -249,21 +250,53 @@ describe("BillingService.handleRazorpayWebhook — provider resolved through reg
   });
 
   describe("provider substitution — same billing flow, different adapter", () => {
-    it("a second fake adapter registered under a different key produces the same domain outcome", async () => {
+    it("resolves the provider named by the route and produces the same domain outcome", async () => {
       const db1 = makeWebhookDb();
       const db2 = makeWebhookDb();
 
       const providers1 = makeResolver(new FakeProviderAdapter("razorpay"));
-      const providers2 = makeResolver(new FakeProviderAdapter("razorpay"));
+      const providers2 = makeResolver(new FakeProviderAdapter("stripe"));
 
       const svc1 = await buildService(db1, providers1);
       const svc2 = await buildService(db2, providers2);
 
-      const result1 = await svc1.handleRazorpayWebhook("org1", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
-      const result2 = await svc2.handleRazorpayWebhook("org1", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      const result1 = await svc1.handlePaymentProviderWebhook("org1", "razorpay", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      const result2 = await svc2.handlePaymentProviderWebhook("org1", "stripe", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
       expect(result1.status).toBe(result2.status);
       expect(result1.body).toEqual(result2.body);
+      expect(providers1.resolve).toHaveBeenCalledWith("org1", "razorpay");
+      expect(providers2.resolve).toHaveBeenCalledWith("org1", "stripe");
     });
+  });
+});
+
+describe("legacy Razorpay webhook compatibility route", () => {
+  it("preserves the old URL contract while delegating to the provider-neutral handler", async () => {
+    const handlePaymentProviderWebhook = jest.fn().mockResolvedValue({
+      status: 200,
+      body: { ok: true },
+    });
+    const controller = new RazorpayWebhookController({
+      handlePaymentProviderWebhook,
+    } as unknown as BillingService);
+    const json = jest.fn();
+    const status = jest.fn().mockReturnValue({ json });
+
+    await controller.handle(
+      "org1",
+      { rawBody: Buffer.from(VALID_PAYMENT_BODY) } as never,
+      FAKE_VALID_WEBHOOK_SIG,
+      { status } as never,
+    );
+
+    expect(handlePaymentProviderWebhook).toHaveBeenCalledWith(
+      "org1",
+      "razorpay",
+      VALID_PAYMENT_BODY,
+      FAKE_VALID_WEBHOOK_SIG,
+    );
+    expect(status).toHaveBeenCalledWith(200);
+    expect(json).toHaveBeenCalledWith({ ok: true });
   });
 });
