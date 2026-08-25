@@ -17,6 +17,21 @@ export type PaymentWebhookNormalization =
       error: "invalid_json" | "invalid_payload";
     };
 
+/** The configured provider runtime. Credential values are intentionally absent. */
+export interface PaymentProviderRuntime {
+  isReady(): boolean;
+  publicKeyId(): string | null;
+  createOrder(params: {
+    amount: string;
+    currency: string;
+    receipt: string;
+    notes?: Record<string, string>;
+  }): Promise<{ providerOrderId: string; raw: unknown }>;
+  verifyPaymentSignature(params: { orderId: string; paymentId: string; signature: string }): boolean;
+  verifyWebhookSignature(params: { rawBody: string; signature: string }): boolean;
+  normalizeWebhook(rawBody: string): PaymentWebhookNormalization;
+}
+
 /**
  * Provider-specific behavior lives behind this interface so PaymentProviderSetupService,
  * webhook handling, and test transactions stay provider-agnostic. RazorpayAdapter is the first
@@ -29,49 +44,16 @@ export interface PaymentProviderAdapter {
   validateCredentialFormat?(environment: "test" | "live", keyId: string): PaymentCredentialWarning | null;
 
   /**
-   * Returns true when the provider has the credentials it needs to process payments.
-   * Used by callers that need to gate flows on provider availability without knowing
-   * which provider or which specific credential is missing.
+   * Binds decrypted provider configuration inside the concrete adapter. The value is opaque
+   * here: generic billing code cannot name, inspect, or forward provider secret fields.
    */
-  isReady(): boolean;
-
-  /**
-   * Returns the public key the browser must present to the provider to open the checkout
-   * UI (e.g. Razorpay's key_id), or null when the provider is not configured.
-   * This is the only piece of provider identity that legitimately crosses the seam:
-   * the key is public by design and the browser cannot open checkout without it.
-   * The private key and webhook secret never cross this boundary.
-   */
-  publicKeyId(): string | null;
-
-  createOrder(params: {
-    keyId: string;
-    keySecret: string;
-    amount: string;
-    currency: string;
-    receipt: string;
-    notes?: Record<string, string>;
-  }): Promise<{ providerOrderId: string; raw: unknown }>;
-
-  verifyPaymentSignature(params: {
-    orderId: string;
-    paymentId: string;
-    signature: string;
-    keySecret: string;
-  }): boolean;
-
-  verifyWebhookSignature(params: {
-    rawBody: string;
-    signature: string;
-    webhookSecret: string;
-  }): boolean;
+  configure(credentials: unknown): PaymentProviderRuntime;
 
   /**
    * Converts a provider's raw webhook into the small provider-neutral shape used by billing.
    * Parsing and provider-specific envelope knowledge stay in the adapter; callers never need
    * to know whether an event was nested under `payload`, `data`, or another provider envelope.
    */
-  normalizeWebhook(rawBody: string): PaymentWebhookNormalization;
 }
 
 @Injectable()

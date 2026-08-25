@@ -3,7 +3,7 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { paymentProviders } from "../../../db/schema";
-import { PaymentProviderAdapterRegistry, type PaymentProviderAdapter, type PaymentWebhookNormalization } from "./payment-provider-adapter.interface";
+import { PaymentProviderAdapterRegistry, type PaymentProviderAdapter, type PaymentProviderRuntime, type PaymentWebhookNormalization } from "./payment-provider-adapter.interface";
 import { PaymentProviderSetupService } from "./payment-provider-setup.service";
 
 export type PaymentEnvironment = "test" | "live";
@@ -80,29 +80,18 @@ function createOrganizationProvider(
   adapter: PaymentProviderAdapter,
   providerKey: string,
   environment: PaymentEnvironment,
-  credentials: { keyId: string | null; secret: string | null; webhookSecret: string | null } | null,
+  credentials: unknown,
 ): OrganizationPaymentProvider {
-  const keyId = credentials?.keyId ?? null;
-  const keySecret = credentials?.secret ?? null;
-  const webhookSecret = credentials?.webhookSecret ?? null;
+  const runtime: PaymentProviderRuntime = adapter.configure(credentials);
 
   return {
     providerKey,
     environment,
-    isReady: () => Boolean(keyId && keySecret),
-    publicKeyId: () => keyId,
-    createOrder: async (params) => {
-      if (!keyId || !keySecret) throw new Error("Payment provider credentials are not configured");
-      return adapter.createOrder({ ...params, keyId, keySecret });
-    },
-    verifyPaymentSignature: (params) => {
-      if (!keySecret) return false;
-      return adapter.verifyPaymentSignature({ ...params, keySecret });
-    },
-    verifyWebhookSignature: (params) => {
-      if (!webhookSecret) return false;
-      return adapter.verifyWebhookSignature({ ...params, webhookSecret });
-    },
-    normalizeWebhook: (rawBody) => adapter.normalizeWebhook(rawBody),
+    isReady: runtime.isReady,
+    publicKeyId: runtime.publicKeyId,
+    createOrder: runtime.createOrder,
+    verifyPaymentSignature: runtime.verifyPaymentSignature,
+    verifyWebhookSignature: runtime.verifyWebhookSignature,
+    normalizeWebhook: runtime.normalizeWebhook,
   };
 }
