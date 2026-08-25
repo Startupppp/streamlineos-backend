@@ -155,20 +155,20 @@ describe("OutboxPublisherService.flush — claimBatch uses forEachOrg", () => {
 });
 
 describe("OutboxPublisherService.flush — unconsumed event types", () => {
-  it("suppresses an event whose type has no registered consumer", async () => {
-    forEachOrgWithRow(makeRow({ eventType: "build.ticket.created" }));
+  it("retries an event whose type has no registered consumer", async () => {
+    forEachOrgWithRow(makeRow({ eventType: "build.ticket.created", retryCount: 0 }));
     const db = makeDb("ACTIVE");
     const service = makeService(db, makeConfig(true), makeRegistry());
 
     const result = await service.flush();
 
-    expect(result.suppressed).toBe(1);
+    expect(result.suppressed).toBe(0);
     expect(result.delivered).toBe(0);
-    expect(result.retried).toBe(0);
+    expect(result.retried).toBe(1);
     expect(result.dead).toBe(0);
   });
 
-  it("uses runInNewTenantTransaction to mark an unconsumed event SUPPRESSED, not this.db", async () => {
+  it("uses runInNewTenantTransaction to mark an unconsumed event PENDING, not this.db", async () => {
     const row = makeRow({ eventType: "build.ticket.created" });
     forEachOrgWithRow(row);
     const db = makeDb("ACTIVE");
@@ -189,11 +189,11 @@ describe("OutboxPublisherService.flush — unconsumed event types", () => {
     await service.flush();
 
     expect(mockRunInNewTenantTransaction).toHaveBeenCalledWith(db, "org-1", expect.any(Function));
-    expect(capturedState).toBe("SUPPRESSED");
+    expect(capturedState).toBe("PENDING");
   });
 
-  it("never marks an unconsumed event as DELIVERED", async () => {
-    forEachOrgWithRow(makeRow({ eventType: "build.ticket.created" }));
+  it("dead-letters an unconsumed event after the retry ceiling", async () => {
+    forEachOrgWithRow(makeRow({ eventType: "build.ticket.created", retryCount: 7 }));
     const db = makeDb("ACTIVE");
     const states: string[] = [];
     mockRunInNewTenantTransaction.mockImplementation(
@@ -212,7 +212,7 @@ describe("OutboxPublisherService.flush — unconsumed event types", () => {
     await service.flush();
 
     expect(states).not.toContain("DELIVERED");
-    expect(states).toContain("SUPPRESSED");
+    expect(states).toContain("DEAD");
   });
 });
 
@@ -315,5 +315,33 @@ describe("OutboxPublisherService.flush — delivery and failure paths", () => {
     expect(result.delivered).toBe(0);
     expect(states).toContain("DEAD");
     expect(states).not.toContain("DELIVERED");
+  });
+});
+
+describe("OutboxPublisherService.metrics", () => {
+  it("aggregates tenant-scoped pending, in-flight, dead, and age metrics", async () => {
+    const oldest = new Date("2026-08-24T00:00:00.000Z");
+    mockForEachOrg.mockImplementation(
+      async (_db: unknown, _sweep: string, fn: (tx: TenantTx, orgId: string) => Promise<void>) => {
+        const makeTx = (row: Record<string, unknown>) => ({
+          select: jest.fn().mockReturnValue({
+            from: jest.fn().mockResolvedValue([row]),
+          }),
+        });
+        await fn(makeTx({ pending: "2", inFlight: "1", dead: "0", oldestPendingAt: oldest }) as never, "org-1");
+        await fn(makeTx({ pending: "1", inFlight: "0", dead: "1", oldestPendingAt: null }) as never, "org-2");
+      },
+    );
+
+    const db = makeDb();
+    const service = makeService(db, makeConfig(true), makeRegistry());
+
+    await expect(service.metrics()).resolves.toEqual({
+      pending: 3,
+      inFlight: 1,
+      dead: 1,
+      oldestPendingAt: oldest,
+    });
+    expect(mockForEachOrg).toHaveBeenCalledWith(db, "outbox-events-metrics", expect.any(Function));
   });
 });

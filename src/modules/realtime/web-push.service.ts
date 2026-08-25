@@ -45,24 +45,33 @@ export class WebPushService {
 
     const expiredEndpoints: string[] = [];
 
-    await Promise.allSettled(
-      subs.map(async (sub) => {
-        try {
-          await webpush.sendNotification(
-            { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-            JSON.stringify(payload),
-          );
-        } catch (error) {
-          if (error instanceof webpush.WebPushError && EXPIRED_STATUS.has(error.statusCode))
-            expiredEndpoints.push(sub.endpoint);
-        }
-      }),
+    const results = await Promise.allSettled(
+      subs.map((sub) =>
+        webpush.sendNotification(
+          { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+          JSON.stringify(payload),
+        ),
+      ),
     );
+
+    const failures = results.flatMap((result, index) => {
+      if (result.status === "fulfilled") return [];
+      const error = result.reason;
+      if (error instanceof webpush.WebPushError && EXPIRED_STATUS.has(error.statusCode)) {
+        const endpoint = subs[index]?.endpoint;
+        if (endpoint) expiredEndpoints.push(endpoint);
+        return [];
+      }
+      return [error];
+    });
 
     if (expiredEndpoints.length > 0)
       await this.db
         .delete(pushSubscriptions)
         .where(inArray(pushSubscriptions.endpoint, expiredEndpoints));
+
+    if (failures.length > 0)
+      throw new AggregateError(failures, `push delivery failed for ${failures.length} subscription(s)`);
   }
 
   async sendToChannelMembers(
@@ -86,7 +95,12 @@ export class WebPushService {
 
     if (members.length === 0) return;
 
-    await Promise.allSettled(members.map((m) => this.sendToUser(m.userId, payload)));
+    const results = await Promise.allSettled(members.map((m) => this.sendToUser(m.userId, payload)));
+    const failures = results
+      .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+      .map((result) => result.reason);
+    if (failures.length > 0)
+      throw new AggregateError(failures, `push fan-out failed for ${failures.length} member(s)`);
   }
 
   private vapidSubject(): string {

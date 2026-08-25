@@ -25,14 +25,22 @@ export interface OutboxFlushResult {
   dead: number;
 }
 
+export interface OutboxMetrics {
+  pending: number;
+  inFlight: number;
+  dead: number;
+  oldestPendingAt: Date | null;
+}
+
 /**
  * Drains the transactional outbox: leases a batch of due PENDING events per organisation (each in
  * its own tenant transaction via forEachOrg — a cross-org sweep has no ambient GUC and is denied
  * 42501 by the outbox_events RLS policy), re-checks the owning organisation's lifecycle immediately
  * before delivery, then marks each DELIVERED or reschedules with bounded backoff / dead-letters past
- * the retry ceiling. Event types with no registered consumer are SUPPRESSED, not retried — "nobody
- * subscribed" is not a delivery failure; an event is never marked DELIVERED without a consumer
- * having handled it. All state mutations run in their own per-org tenant transaction.
+ * the retry ceiling. An event type with no registered consumer is a configuration failure and takes
+ * the same retry/dead-letter path as any other delivery failure; it is never silently discarded or
+ * marked DELIVERED. Lifecycle suppression is reserved for organizations that no longer exist or
+ * must not receive side effects. All state mutations run in their own per-org tenant transaction.
  */
 @Injectable()
 export class OutboxPublisherService {
@@ -46,7 +54,7 @@ export class OutboxPublisherService {
   ) {}
 
   private isDispatchConfigured(): boolean {
-    return this.config.OUTBOX_DISPATCH_ENABLED === "true";
+    return this.config.OUTBOX_DISPATCH_ENABLED !== "false";
   }
 
   async flush(): Promise<OutboxFlushResult> {
@@ -68,21 +76,14 @@ export class OutboxPublisherService {
     let dead = 0;
 
     for (const event of claimed) {
-      const lifecycle = await this.readOrgLifecycle(event.organizationId);
-      if (!lifecycle.found || shouldSuppressForLifecycle(lifecycle.status)) {
-        await this.mark(event, "SUPPRESSED");
-        suppressed++;
-        continue;
-      }
-      if (!this.registry.get(event.eventType)) {
-        this.logger.warn(
-          `outbox event ${event.eventId} type '${event.eventType}' has no registered consumer — suppressing`,
-        );
-        await this.mark(event, "SUPPRESSED");
-        suppressed++;
-        continue;
-      }
       try {
+        const lifecycle = await this.readOrgLifecycle(event.organizationId);
+        if (!lifecycle.found || shouldSuppressForLifecycle(lifecycle.status)) {
+          await this.mark(event, "SUPPRESSED");
+          suppressed++;
+          continue;
+        }
+
         await this.deliver(event);
         await this.mark(event, "DELIVERED", { publishedAt: new Date() });
         delivered++;
@@ -94,6 +95,29 @@ export class OutboxPublisherService {
     }
 
     return { claimed: claimed.length, delivered, suppressed, retried, dead };
+  }
+
+  async metrics(): Promise<OutboxMetrics> {
+    const result: OutboxMetrics = { pending: 0, inFlight: 0, dead: 0, oldestPendingAt: null };
+    await forEachOrg(this.db, "outbox-events-metrics", async (tx) => {
+      const rows = await tx
+        .select({
+          pending: sql<number>`count(*) filter (where ${outboxEvents.deliveryState} = 'PENDING')`,
+          inFlight: sql<number>`count(*) filter (where ${outboxEvents.deliveryState} = 'IN_FLIGHT')`,
+          dead: sql<number>`count(*) filter (where ${outboxEvents.deliveryState} = 'DEAD')`,
+          oldestPendingAt: sql<Date | null>`min(${outboxEvents.createdAt}) filter (where ${outboxEvents.deliveryState} = 'PENDING')`,
+        })
+        .from(outboxEvents);
+      const row = rows[0];
+      if (!row) return;
+      result.pending += Number(row.pending ?? 0);
+      result.inFlight += Number(row.inFlight ?? 0);
+      result.dead += Number(row.dead ?? 0);
+      if (row.oldestPendingAt && (!result.oldestPendingAt || row.oldestPendingAt < result.oldestPendingAt)) {
+        result.oldestPendingAt = row.oldestPendingAt;
+      }
+    });
+    return result;
   }
 
   private async claimBatch(): Promise<OutboxEventRow[]> {

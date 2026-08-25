@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Inject, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { AllowNoOrg } from "../../../common/auth/allow-no-org.decorator";
@@ -11,9 +11,7 @@ import { BillingService } from "./billing.service";
 import { MarketplaceService } from "./marketplace.service";
 import { AiCreditsService } from "./ai-credits.service";
 import { AiCreditsUsageService } from "./ai-credits-usage.service";
-import { PaymentProviderAdapterRegistry } from "../payments/payment-provider-adapter.interface";
-import { APP_CONFIG } from "../../../config/config.module";
-import type { AppConfig } from "../../../config/env.validation";
+import { PaymentProviderResolver } from "../payments/payment-provider-resolver.service";
 import { AffiliateService } from "./affiliate.service";
 import { ReferralService } from "./referral.service";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
@@ -57,8 +55,7 @@ export class BillingController {
     private readonly marketplace: MarketplaceService,
     private readonly aiCredits: AiCreditsService,
     private readonly aiCreditsUsage: AiCreditsUsageService,
-    private readonly registry: PaymentProviderAdapterRegistry,
-    @Inject(APP_CONFIG) private readonly config: AppConfig,
+    private readonly providers: PaymentProviderResolver,
     private readonly affiliate: AffiliateService,
     private readonly referral: ReferralService,
     private readonly analytics: RevenueAnalyticsService,
@@ -256,18 +253,17 @@ export class BillingController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (body.paymentId) {
-      const adapter = this.registry.get("razorpay");
+      const adapter = await this.providers.resolve(u.orgId, "razorpay");
       const valid =
         adapter?.verifyPaymentSignature({
           orderId: body.orderId ?? "",
           paymentId: body.paymentId,
           signature: body.signature ?? "",
-          keySecret: this.config.RAZORPAY_KEY_SECRET ?? "",
         }) ?? false;
       if (!valid) throw new BadRequestException("Invalid payment signature");
       return this.aiCredits.purchaseCreditsDirectly(u.orgId, u.userId, body.packId, false, body.paymentId);
     }
-    if (this.registry.get("razorpay")?.isReady() ?? false) {
+    if ((await this.providers.resolve(u.orgId, "razorpay"))?.isReady() ?? false) {
       return this.billing.purchaseAddon(u.orgId, `ai_pack_${body.packId}`, 1);
     }
     return this.aiCredits.purchaseCreditsDirectly(u.orgId, u.userId, body.packId);

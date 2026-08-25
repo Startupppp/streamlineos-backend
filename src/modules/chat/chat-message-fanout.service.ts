@@ -20,13 +20,20 @@ export class ChatMessageFanoutService implements MessageFanout {
   ) {}
 
   async dispatch(input: FanoutInput): Promise<void> {
+    await this.dispatchRealtime(input);
+    await this.dispatchDeferred(input);
+  }
+
+  /**
+   * Realtime delivery is the latency-sensitive part of sending a message. It runs once from the
+   * post-commit send hook; the durable outbox consumer deliberately does not repeat it.
+   */
+  async dispatchRealtime(input: FanoutInput): Promise<void> {
     const {
       orgId,
       channelId,
-      channelType,
       message,
       attachments,
-      mentionedUserIds,
       strippedMetadata,
       senderName,
       senderImage,
@@ -45,7 +52,24 @@ export class ChatMessageFanoutService implements MessageFanout {
       messageType: message.messageType,
       attachments,
     });
+  }
 
+  /**
+   * Push and notification delivery is intentionally retryable. The chat message outbox consumer
+   * calls this method, so a rejected task causes the event to be retried or dead-lettered by the
+   * common relay instead of being lost behind a log line.
+   */
+  async dispatchDeferred(input: FanoutInput): Promise<void> {
+    const {
+      orgId,
+      channelId,
+      channelType,
+      message,
+      mentionedUserIds,
+      senderName,
+    } = input;
+
+    const failures: unknown[] = [];
     const tasks: Promise<void>[] = [
       this.webPush
         .sendToChannelMembers(orgId, channelId, message.senderId, { category: "CHAT" })
@@ -56,6 +80,7 @@ export class ChatMessageFanoutService implements MessageFanout {
             error: err instanceof Error ? err.message : "unknown",
           });
           this.recordFailure(orgId, channelId, message.senderId, message.id, "push", err);
+          failures.push(err);
         }),
     ];
 
@@ -75,6 +100,7 @@ export class ChatMessageFanoutService implements MessageFanout {
               error: err instanceof Error ? err.message : "unknown",
             });
             this.recordFailure(orgId, channelId, message.senderId, message.id, "dm_notification", err);
+            failures.push(err);
           }),
       );
 
@@ -94,10 +120,14 @@ export class ChatMessageFanoutService implements MessageFanout {
               error: err instanceof Error ? err.message : "unknown",
             });
             this.recordFailure(orgId, channelId, message.senderId, message.id, "mention_notification", err);
+            failures.push(err);
           }),
       );
 
     await Promise.all(tasks);
+    if (failures.length > 0) {
+      throw new AggregateError(failures, `chat fan-out failed in ${failures.length} channel(s)`);
+    }
   }
 
   private recordFailure(

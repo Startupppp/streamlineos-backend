@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { PaymentsController } from "./payments.controller";
 import { PaymentWebhooksPublicController } from "./payment-webhooks-public.controller";
 import { PaymentProviderSetupService } from "./payment-provider-setup.service";
+import { PaymentProviderResolver } from "./payment-provider-resolver.service";
 import { PaymentAuditService } from "./payment-audit.service";
 import { PaymentProviderAdapterRegistry } from "./payment-provider-adapter.interface";
 import { RazorpayAdapter } from "./adapters/razorpay.adapter";
@@ -19,6 +20,7 @@ import { FinanceControlsModule } from "../../finance/controls/finance-controls.m
   controllers: [PaymentsController, PaymentWebhooksPublicController],
   providers: [
     PaymentProviderSetupService,
+    PaymentProviderResolver,
     PaymentAuditService,
     PaymentProviderAdapterRegistry,
     RazorpayAdapter,
@@ -28,6 +30,6 @@ import { FinanceControlsModule } from "../../finance/controls/finance-controls.m
     PaymentManualMethodsService,
     PaymentAnalyticsService,
   ],
-  exports: [PaymentProviderSetupService, PaymentAuditService, PaymentProviderAdapterRegistry],
+  exports: [PaymentProviderSetupService, PaymentProviderResolver, PaymentAuditService, PaymentProviderAdapterRegistry],
 })
 export class PaymentsModule {}

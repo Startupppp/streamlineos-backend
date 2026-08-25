@@ -31,9 +31,11 @@ import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import { ChatSummarizeService } from "./chat-summarize.service";
 import { RealtimeModule } from "../realtime/realtime.module";
 import { EntityReferenceModule } from "../entity-reference/entity-reference.module";
+import { OutboxModule } from "../../common/outbox/outbox.module";
+import { ChatFanoutOutboxConsumer } from "./chat-fanout-outbox.consumer";
 
 @Module({
-  imports: [BillingModule, RealtimeModule, EntityReferenceModule],
+  imports: [BillingModule, RealtimeModule, EntityReferenceModule, OutboxModule],
   controllers: [
     ChatActionsController,
     ChatEntityActionsController,
@@ -52,6 +54,7 @@ import { EntityReferenceModule } from "../entity-reference/entity-reference.modu
   ],
   providers: [
     ChatMessageFanoutService,
+    ChatFanoutOutboxConsumer,
     ChatChannelsService,
     ChatChannelMembersService,
     ChatMessagesService,

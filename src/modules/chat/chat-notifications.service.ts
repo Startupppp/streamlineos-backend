@@ -28,7 +28,10 @@ function reportFailures(
   channelId: number,
   results: PromiseSettledResult<unknown>[],
 ): void {
-  const failed = results.filter((result) => result.status === "rejected").length;
+  const failures = results
+    .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+    .map((result) => result.reason);
+  const failed = failures.length;
   if (failed === 0) return;
   logger.error("chat notification publish failed for some recipients", {
     event,
@@ -36,6 +39,7 @@ function reportFailures(
     failed,
     total: results.length,
   });
+  throw new AggregateError(failures, `${event} delivery failed for ${failed} recipient(s)`);
 }
 
 @Injectable()

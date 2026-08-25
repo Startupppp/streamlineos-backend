@@ -1,11 +1,15 @@
 import { Test } from "@nestjs/testing";
+import { jest } from "@jest/globals";
+
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: async (db: { insert: unknown }, fn: (tx: { insert: unknown }) => Promise<unknown>) => fn(db),
+}));
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { BillingService } from "./billing.service";
 import { AiCreditsService } from "./ai-credits.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { PlanLimitsService } from "./plan-limits.service";
-import { APP_CONFIG } from "../../../config/config.module";
-import { PaymentProviderAdapterRegistry } from "../payments/payment-provider-adapter.interface";
+import { PaymentProviderResolver, type OrganizationPaymentProvider } from "../payments/payment-provider-resolver.service";
 import {
   FakeProviderAdapter,
   FAKE_WEBHOOK_SECRET,
@@ -59,14 +63,19 @@ function makePlanLimits() {
   return { bust: jest.fn(), resolveTier: jest.fn().mockResolvedValue({ plan: "STARTER" }) };
 }
 
-function makeConfig(webhookSecret = FAKE_WEBHOOK_SECRET) {
-  return { RAZORPAY_WEBHOOK_SECRET: webhookSecret };
-}
-
-function makeRegistry(adapter?: FakeProviderAdapter) {
-  const registry = new PaymentProviderAdapterRegistry();
-  if (adapter) registry.register(adapter);
-  return registry;
+function makeResolver(adapter?: FakeProviderAdapter, webhookSecret = FAKE_WEBHOOK_SECRET) {
+  const provider: OrganizationPaymentProvider | undefined = adapter
+    ? {
+        providerKey: adapter.providerKey,
+        environment: "test",
+        isReady: () => adapter.isReady(),
+        publicKeyId: () => adapter.publicKeyId(),
+        createOrder: (params) => adapter.createOrder({ ...params, keyId: "fake-public", keySecret: "fake-private" }),
+        verifyPaymentSignature: (params) => adapter.verifyPaymentSignature({ ...params, keySecret: "fake-private" }),
+        verifyWebhookSignature: (params) => adapter.verifyWebhookSignature({ ...params, webhookSecret }),
+      }
+    : undefined;
+  return { resolve: jest.fn().mockResolvedValue(provider) } as unknown as PaymentProviderResolver;
 }
 
 function makeWebhookDb() {
@@ -84,8 +93,7 @@ function makeWebhookDb() {
 
 async function buildService(
   db: unknown,
-  registry: PaymentProviderAdapterRegistry,
-  configOverride?: Record<string, unknown>,
+  providers: PaymentProviderResolver,
 ): Promise<BillingService> {
   const module = await Test.createTestingModule({
     providers: [
@@ -94,8 +102,7 @@ async function buildService(
       { provide: AiCreditsService, useValue: makeAiCredits() },
       { provide: AuditService, useValue: makeAudit() },
       { provide: PlanLimitsService, useValue: makePlanLimits() },
-      { provide: PaymentProviderAdapterRegistry, useValue: registry },
-      { provide: APP_CONFIG, useValue: configOverride ?? makeConfig() },
+      { provide: PaymentProviderResolver, useValue: providers },
     ],
   }).compile();
   return module.get(BillingService);
@@ -105,10 +112,9 @@ describe("BillingService.handleRazorpayWebhook — provider resolved through reg
   describe("valid signature — webhook is accepted", () => {
     it("returns 200 and { ok: true } when signature matches", async () => {
       const db = makeWebhookDb();
-      const registry = makeRegistry(new FakeProviderAdapter());
-      const svc = await buildService(db, registry);
+      const svc = await buildService(db, makeResolver(new FakeProviderAdapter()));
 
-      const result = await svc.handleRazorpayWebhook(VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      const result = await svc.handleRazorpayWebhook("org1", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
       expect(result.status).toBe(200);
       expect(result.body).toMatchObject({ ok: true });
@@ -116,10 +122,9 @@ describe("BillingService.handleRazorpayWebhook — provider resolved through reg
 
     it("persists the payment row after a valid signature", async () => {
       const db = makeWebhookDb();
-      const registry = makeRegistry(new FakeProviderAdapter());
-      const svc = await buildService(db, registry);
+      const svc = await buildService(db, makeResolver(new FakeProviderAdapter()));
 
-      await svc.handleRazorpayWebhook(VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      await svc.handleRazorpayWebhook("org1", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
       expect(db._spies.insert).toHaveBeenCalledTimes(1);
       expect(db._spies.onConflictDoUpdate).toHaveBeenCalledTimes(1);
@@ -129,10 +134,9 @@ describe("BillingService.handleRazorpayWebhook — provider resolved through reg
   describe("forged body / wrong signature — no state change", () => {
     it("returns 401 when signature does not match", async () => {
       const db = makeWebhookDb();
-      const registry = makeRegistry(new FakeProviderAdapter());
-      const svc = await buildService(db, registry);
+      const svc = await buildService(db, makeResolver(new FakeProviderAdapter()));
 
-      const result = await svc.handleRazorpayWebhook(VALID_PAYMENT_BODY, "forged-signature");
+      const result = await svc.handleRazorpayWebhook("org1", VALID_PAYMENT_BODY, "forged-signature");
 
       expect(result.status).toBe(401);
       expect(result.body).toMatchObject({ ok: false });
@@ -140,10 +144,9 @@ describe("BillingService.handleRazorpayWebhook — provider resolved through reg
 
     it("performs NO DB write when signature is wrong — no state change", async () => {
       const db = makeWebhookDb();
-      const registry = makeRegistry(new FakeProviderAdapter());
-      const svc = await buildService(db, registry);
+      const svc = await buildService(db, makeResolver(new FakeProviderAdapter()));
 
-      await svc.handleRazorpayWebhook(VALID_PAYMENT_BODY, "forged-signature");
+      await svc.handleRazorpayWebhook("org1", VALID_PAYMENT_BODY, "forged-signature");
 
       expect(db._spies.insert).not.toHaveBeenCalled();
       expect(db._spies.onConflictDoUpdate).not.toHaveBeenCalled();
@@ -151,20 +154,18 @@ describe("BillingService.handleRazorpayWebhook — provider resolved through reg
 
     it("performs NO DB query when signature is wrong — org lookup never reached", async () => {
       const db = makeWebhookDb();
-      const registry = makeRegistry(new FakeProviderAdapter());
-      const svc = await buildService(db, registry);
+      const svc = await buildService(db, makeResolver(new FakeProviderAdapter()));
 
-      await svc.handleRazorpayWebhook(VALID_PAYMENT_BODY, "forged-signature");
+      await svc.handleRazorpayWebhook("org1", VALID_PAYMENT_BODY, "forged-signature");
 
       expect(db.query.organizations.findFirst).not.toHaveBeenCalled();
     });
 
     it("returns 401 when the webhook secret does not match the adapter's expectation", async () => {
       const db = makeWebhookDb();
-      const registry = makeRegistry(new FakeProviderAdapter());
-      const svc = await buildService(db, registry, { RAZORPAY_WEBHOOK_SECRET: "wrong-secret" });
+      const svc = await buildService(db, makeResolver(new FakeProviderAdapter(), "wrong-secret"));
 
-      const result = await svc.handleRazorpayWebhook(VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      const result = await svc.handleRazorpayWebhook("org1", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
       expect(result.status).toBe(401);
       expect(db._spies.insert).not.toHaveBeenCalled();
@@ -174,10 +175,9 @@ describe("BillingService.handleRazorpayWebhook — provider resolved through reg
   describe("no configured provider — fails without leaking key or secret", () => {
     it("returns 503 when no adapter is registered for razorpay", async () => {
       const db = makeWebhookDb();
-      const emptyRegistry = makeRegistry();
-      const svc = await buildService(db, emptyRegistry);
+      const svc = await buildService(db, makeResolver());
 
-      const result = await svc.handleRazorpayWebhook(VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      const result = await svc.handleRazorpayWebhook("org1", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
       expect(result.status).toBe(503);
       expect(result.body).toMatchObject({ ok: false });
@@ -185,20 +185,18 @@ describe("BillingService.handleRazorpayWebhook — provider resolved through reg
 
     it("performs no DB write when no provider is registered", async () => {
       const db = makeWebhookDb();
-      const emptyRegistry = makeRegistry();
-      const svc = await buildService(db, emptyRegistry);
+      const svc = await buildService(db, makeResolver());
 
-      await svc.handleRazorpayWebhook(VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      await svc.handleRazorpayWebhook("org1", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
       expect(db._spies.insert).not.toHaveBeenCalled();
     });
 
     it("response body does not contain key or secret names", async () => {
       const db = makeWebhookDb();
-      const emptyRegistry = makeRegistry();
-      const svc = await buildService(db, emptyRegistry);
+      const svc = await buildService(db, makeResolver());
 
-      const result = await svc.handleRazorpayWebhook(VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      const result = await svc.handleRazorpayWebhook("org1", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
       const body = JSON.stringify(result.body);
       expect(body).not.toContain("secret");
@@ -209,11 +207,10 @@ describe("BillingService.handleRazorpayWebhook — provider resolved through reg
   describe("idempotency — replayed webhook does not double-apply", () => {
     it("second call with the same payment upserts (onConflictDoUpdate) rather than inserting a new row", async () => {
       const db = makeWebhookDb();
-      const registry = makeRegistry(new FakeProviderAdapter());
-      const svc = await buildService(db, registry);
+      const svc = await buildService(db, makeResolver(new FakeProviderAdapter()));
 
-      await svc.handleRazorpayWebhook(VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
-      await svc.handleRazorpayWebhook(VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      await svc.handleRazorpayWebhook("org1", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      await svc.handleRazorpayWebhook("org1", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
       expect(db._spies.insert).toHaveBeenCalledTimes(2);
       expect(db._spies.onConflictDoUpdate).toHaveBeenCalledTimes(2);
@@ -222,7 +219,7 @@ describe("BillingService.handleRazorpayWebhook — provider resolved through reg
     it("AI pack credit grant is not invoked when org cannot be resolved from notes", async () => {
       const aiCredits = makeAiCredits();
       const db = makeWebhookDb();
-      const registry = makeRegistry(new FakeProviderAdapter());
+      const providers = makeResolver(new FakeProviderAdapter());
 
       const module = await Test.createTestingModule({
         providers: [
@@ -231,13 +228,12 @@ describe("BillingService.handleRazorpayWebhook — provider resolved through reg
           { provide: AiCreditsService, useValue: aiCredits },
           { provide: AuditService, useValue: makeAudit() },
           { provide: PlanLimitsService, useValue: makePlanLimits() },
-          { provide: PaymentProviderAdapterRegistry, useValue: registry },
-          { provide: APP_CONFIG, useValue: makeConfig() },
+          { provide: PaymentProviderResolver, useValue: providers },
         ],
       }).compile();
       const svc = module.get(BillingService);
 
-      const result = await svc.handleRazorpayWebhook(CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      const result = await svc.handleRazorpayWebhook("org1", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
       expect(result.status).toBe(200);
       expect(aiCredits.grantAiPackCreditsFromWebhook).not.toHaveBeenCalled();
@@ -249,14 +245,14 @@ describe("BillingService.handleRazorpayWebhook — provider resolved through reg
       const db1 = makeWebhookDb();
       const db2 = makeWebhookDb();
 
-      const registry1 = makeRegistry(new FakeProviderAdapter("razorpay"));
-      const registry2 = makeRegistry(new FakeProviderAdapter("razorpay"));
+      const providers1 = makeResolver(new FakeProviderAdapter("razorpay"));
+      const providers2 = makeResolver(new FakeProviderAdapter("razorpay"));
 
-      const svc1 = await buildService(db1, registry1);
-      const svc2 = await buildService(db2, registry2);
+      const svc1 = await buildService(db1, providers1);
+      const svc2 = await buildService(db2, providers2);
 
-      const result1 = await svc1.handleRazorpayWebhook(VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
-      const result2 = await svc2.handleRazorpayWebhook(VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      const result1 = await svc1.handleRazorpayWebhook("org1", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      const result2 = await svc2.handleRazorpayWebhook("org1", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
       expect(result1.status).toBe(result2.status);
       expect(result1.body).toEqual(result2.body);

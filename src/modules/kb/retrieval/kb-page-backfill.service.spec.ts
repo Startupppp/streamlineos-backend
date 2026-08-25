@@ -24,6 +24,7 @@ const makeDb = (orgRows: Array<{ id: string }> = []) => {
   const orgChain = {
     from: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockResolvedValue(orgRows),
   };
   return { select: jest.fn().mockReturnValue(orgChain) };
@@ -42,7 +43,7 @@ describe("KbPageBackfillService — backfillOrg", () => {
     const result = await svc.backfillOrg("org-1", { delayMs: 0 });
 
     expect(indexing.indexPage).not.toHaveBeenCalled();
-    expect(result).toEqual({ orgId: "org-1", before: 3, after: 3, indexed: 0, failed: 0 });
+    expect(result).toMatchObject({ orgId: "org-1", before: 3, after: 3, indexed: 0, failed: 0, scanned: 0, nextPageId: null });
   });
 
   it("calls indexPage once per eligible page", async () => {
@@ -63,6 +64,47 @@ describe("KbPageBackfillService — backfillOrg", () => {
     expect(indexing.indexPage).toHaveBeenCalledWith("org-1", 103);
     expect(result.indexed).toBe(3);
     expect(result.failed).toBe(0);
+    expect(result.scanned).toBe(3);
+  });
+
+  it("honours the batch and page bounds and returns a cursor for the next run", async () => {
+    const indexing = makeIndexingService();
+    const svc = new KbPageBackfillService(makeDb() as never, indexing as never);
+    const discovery = jest.spyOn(svc, "findEligibleUnindexedPages")
+      .mockResolvedValue([{ id: 11 }, { id: 12 }, { id: 13 }]);
+    jest.spyOn(svc, "countPageBodyChunks").mockResolvedValue(0);
+
+    const result = await svc.backfillOrg("org-1", {
+      delayMs: 0,
+      batchSize: 2,
+      maxPages: 2,
+      afterPageId: 10,
+    });
+
+    expect(discovery).toHaveBeenCalledWith("org-1", 10, 2);
+    expect(indexing.indexPage).toHaveBeenCalledTimes(2);
+    expect(result.scanned).toBe(2);
+    expect(result.nextPageId).toBe(12);
+  });
+
+  it("waits between page attempts when a rate-limit delay is configured", async () => {
+    jest.useFakeTimers();
+    try {
+      const indexing = makeIndexingService();
+      const svc = new KbPageBackfillService(makeDb() as never, indexing as never);
+      jest.spyOn(svc, "findEligibleUnindexedPages")
+        .mockResolvedValue([{ id: 21 }, { id: 22 }]);
+      jest.spyOn(svc, "countPageBodyChunks").mockResolvedValue(0);
+
+      const run = svc.backfillOrg("org-1", { delayMs: 100 });
+      await jest.runAllTimersAsync();
+      const result = await run;
+
+      expect(indexing.indexPage).toHaveBeenCalledTimes(2);
+      expect(result.indexed).toBe(2);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it("opens a fresh tenant transaction for discovery and for each page", async () => {
@@ -96,6 +138,7 @@ describe("KbPageBackfillService — backfillOrg", () => {
 
     expect(result.before).toBe(7);
     expect(result.after).toBe(9);
+    expect(result.nextPageId).toBeNull();
   });
 
   it("isolates a page failure and continues indexing the remaining pages", async () => {
@@ -115,6 +158,7 @@ describe("KbPageBackfillService — backfillOrg", () => {
 
     expect(result.indexed).toBe(2);
     expect(result.failed).toBe(1);
+    expect(result.nextPageId).toBe(0);
     expect(indexing.indexPage).toHaveBeenCalledTimes(3);
   });
 
@@ -147,6 +191,7 @@ describe("KbPageBackfillService — backfillOrg", () => {
     expect(result.before).toBe(12);
     expect(result.after).toBe(12);
     expect(result.indexed).toBe(0);
+    expect(result.nextPageId).toBeNull();
   });
 });
 
@@ -188,6 +233,8 @@ describe("KbPageBackfillService — backfillAll", () => {
       after: 0,
       indexed: 0,
       failed: 0,
+      scanned: 0,
+      nextPageId: null,
     } as OrgBackfillResult);
 
     await svc.backfillAll({ delayMs: 0 });
@@ -206,6 +253,8 @@ describe("KbPageBackfillService — backfillAll", () => {
       after: 0,
       indexed: 0,
       failed: 0,
+      scanned: 0,
+      nextPageId: null,
     });
 
     await svc.backfillAll({ delayMs: 0 });
@@ -242,8 +291,8 @@ describe("KbPageBackfillService — backfillAll", () => {
 
     jest
       .spyOn(svc, "backfillOrg")
-      .mockResolvedValueOnce({ orgId: "org-1", before: 2, after: 4, indexed: 2, failed: 0 })
-      .mockResolvedValueOnce({ orgId: "org-2", before: 3, after: 5, indexed: 1, failed: 1 });
+      .mockResolvedValueOnce({ orgId: "org-1", before: 2, after: 4, indexed: 2, failed: 0, scanned: 2, nextPageId: null })
+      .mockResolvedValueOnce({ orgId: "org-2", before: 3, after: 5, indexed: 1, failed: 1, scanned: 2, nextPageId: 10 });
 
     const result = await svc.backfillAll({ delayMs: 0 });
 
@@ -286,7 +335,8 @@ describe("KbPageBackfillService — findEligibleUnindexedPages SQL shape", () =>
         captured.push(cond);
         return chain;
       }),
-      orderBy: jest.fn().mockResolvedValue([]),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([]),
     };
     const db = { select: jest.fn().mockReturnValue(chain) };
 

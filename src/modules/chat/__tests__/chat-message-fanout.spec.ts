@@ -1,7 +1,6 @@
 import { logger } from "../../../common/logger/logger.service";
 import { ChatMessagesService } from "../chat-messages.service";
 import { ChatMessageFanoutService } from "../chat-message-fanout.service";
-import type { FanoutInput } from "../message-fanout.interface";
 import type { PersistedMessage } from "../chat-message.types";
 
 const persisted: PersistedMessage = {
@@ -39,37 +38,38 @@ function makeDb() {
 
 const flushDeferred = () => new Promise((resolve) => setImmediate(resolve));
 
-function makeService(fanout: { dispatch: jest.Mock }) {
+function makeService() {
   const db = makeDb();
-  return new ChatMessagesService(
+  return { service: new ChatMessagesService(
     db as never,
     { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as never,
     { configured: false, publishChatMessage: jest.fn() } as never,
-    { configured: false, sendToChannelMembers: jest.fn() } as never,
-    { publishNewMessageNotification: jest.fn(), publishMentionNotification: jest.fn() } as never,
     { scheduleForMessage: jest.fn().mockResolvedValue(undefined) } as never,
     { getSettings: jest.fn().mockResolvedValue({ maxAttachmentSizeMb: 10 }) } as never,
     { resolve: jest.fn().mockResolvedValue([]) } as never,
-    fanout as never,
-  );
+  ), db };
+}
+
+function queuedFanout(db: Record<string, unknown>) {
+  const values = db.values as jest.Mock;
+  return values.mock.calls.map(([value]) => value as { eventType?: string; payload?: Record<string, unknown> })
+    .find((value) => value.eventType === "chat.message.fanout");
 }
 
 describe("ChatMessagesService.send", () => {
   beforeEach(() => { jest.spyOn(logger, "error").mockImplementation(() => undefined); });
 
   it("dispatches exactly one fan-out for a message", async () => {
-    const dispatch = jest.fn().mockResolvedValue(undefined);
-    const service = makeService({ dispatch });
+    const { service, db } = makeService();
 
     await service.send(1, "sender", "org-1", { content: "hello @alex" } as never);
     await flushDeferred();
 
-    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(queuedFanout(db)).toBeDefined();
   });
 
   it("hands the composer's mention identities to the fan-out, checked against the roster", async () => {
-    const dispatch = jest.fn().mockResolvedValue(undefined);
-    const service = makeService({ dispatch });
+    const { service, db } = makeService();
 
     await service.send(1, "sender", "org-1", {
       content: "hello @alex",
@@ -77,26 +77,36 @@ describe("ChatMessagesService.send", () => {
     } as never);
     await flushDeferred();
 
-    expect(dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ mentionedUserIds: ["user-alex"] }),
+    expect(queuedFanout(db)?.payload).toEqual(expect.objectContaining({ mentionedUserIds: ["user-alex"] }));
+  });
+
+  it("persists sender identity in the outbox payload while the send transaction is open", async () => {
+    const { service, db } = makeService();
+    (db.limit as jest.Mock)
+      .mockResolvedValueOnce([{ id: 1, type: "PUBLIC" }])
+      .mockResolvedValueOnce([{ name: "Alice", image: "https://cdn.example.com/alice.jpg" }]);
+
+    await service.send(1, "sender", "org-1", { content: "hello" } as never);
+
+    expect(queuedFanout(db)?.payload).toEqual(
+      expect.objectContaining({
+        senderName: "Alice",
+        senderImage: "https://cdn.example.com/alice.jpg",
+      }),
     );
   });
 
   it("expands @everyone to the channel, which the send path previously never did", async () => {
-    const dispatch = jest.fn().mockResolvedValue(undefined);
-    const service = makeService({ dispatch });
+    const { service, db } = makeService();
 
     await service.send(1, "sender", "org-1", { content: "@everyone standup" } as never);
     await flushDeferred();
 
-    expect(dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ mentionedUserIds: ["user-alex", "user-alexander"] }),
-    );
+    expect(queuedFanout(db)?.payload).toEqual(expect.objectContaining({ mentionedUserIds: ["user-alex", "user-alexander"] }));
   });
 
   it("drops a claimed mention for someone who is not in the channel", async () => {
-    const dispatch = jest.fn().mockResolvedValue(undefined);
-    const service = makeService({ dispatch });
+    const { service, db } = makeService();
 
     await service.send(1, "sender", "org-1", {
       content: "hello @outsider",
@@ -104,19 +114,19 @@ describe("ChatMessagesService.send", () => {
     } as never);
     await flushDeferred();
 
-    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ mentionedUserIds: [] }));
+    expect(queuedFanout(db)?.payload).toEqual(expect.objectContaining({ mentionedUserIds: [] }));
   });
 
   it("returns the persisted message", async () => {
-    const service = makeService({ dispatch: jest.fn().mockResolvedValue(undefined) });
+    const { service } = makeService();
 
     const result = await service.send(1, "sender", "org-1", { content: "hello" } as never);
 
     expect(result).toMatchObject({ id: 1, channelId: 1 });
   });
 
-  it("still returns the message when the fan-out fails", async () => {
-    const service = makeService({ dispatch: jest.fn().mockRejectedValue(new Error("ably down")) });
+  it("returns the message after the fan-out is durably enqueued", async () => {
+    const { service } = makeService();
 
     const result = await service.send(1, "sender", "org-1", { content: "hello" } as never);
     await flushDeferred();
@@ -178,7 +188,7 @@ describe("ChatMessageFanoutService", () => {
     jest.spyOn(logger, "error").mockImplementation(() => undefined);
     webPush.sendToChannelMembers.mockRejectedValue(new Error("push down"));
 
-    await service.dispatch({ ...input, channelType: "DIRECT" } as never);
+    await expect(service.dispatch({ ...input, channelType: "DIRECT" } as never)).rejects.toThrow("chat fan-out failed");
 
     expect(notifications.publishNewMessageNotification).toHaveBeenCalledTimes(1);
   });
@@ -189,7 +199,7 @@ describe("ChatMessageFanoutService", () => {
     expect(notifications.publishNewMessageNotification).not.toHaveBeenCalled();
   });
 
-  it("records exactly one failure when the middle side effect rejects, completes the other two, and resolves dispatch", async () => {
+  it("records exactly one failure and rejects so the outbox retries the fan-out", async () => {
     jest.spyOn(logger, "error").mockImplementation(() => undefined);
 
     const { service, webPush, notifications, audit } = makeFanout();
@@ -197,11 +207,11 @@ describe("ChatMessageFanoutService", () => {
     notifications.publishNewMessageNotification.mockRejectedValue(new Error("dm down"));
     notifications.publishMentionNotification.mockResolvedValue(undefined);
 
-    await service.dispatch({
+    await expect(service.dispatch({
       ...input,
       channelType: "DIRECT",
       mentionedUserIds: ["user-1"],
-    } as never);
+    } as never)).rejects.toThrow("chat fan-out failed");
 
     expect(audit.log).toHaveBeenCalledTimes(1);
     expect(audit.log).toHaveBeenCalledWith(

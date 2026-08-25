@@ -96,6 +96,8 @@ export const inboxRecords = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     aggregateVersion: bigint("aggregate_version", { mode: "number" }).notNull(),
+    aggregateType: text("aggregate_type"),
+    aggregateId: text("aggregate_id"),
     status: text("status").notNull().default("PENDING"),
     processedAt: timestamp("processed_at"),
     lastError: text("last_error"),
@@ -108,5 +110,12 @@ export const inboxRecords = pgTable(
       t.consumerName,
     ),
     index("idx_inbox_org_status").on(t.organizationId, t.status),
+    index("idx_inbox_aggregate_version").on(
+      t.organizationId,
+      t.consumerName,
+      t.aggregateType,
+      t.aggregateId,
+      t.aggregateVersion,
+    ),
   ],
 );

@@ -7,6 +7,7 @@ import { ExternalCalendarSyncService } from "./external-calendar-sync.service";
 import { CalendarSourceRegistry } from "./calendar-source.registry";
 import { CalendarSourcePreferencesService } from "./calendar-source-preferences.service";
 import { IntegrationsModule } from "../integrations/core/integrations.module";
+import { CalendarNativeEventSource } from "./calendar-native-event-source";
 
 @Module({
   imports: [IntegrationsModule],
@@ -18,6 +19,7 @@ import { IntegrationsModule } from "../integrations/core/integrations.module";
     ExternalCalendarSyncService,
     CalendarSourceRegistry,
     CalendarSourcePreferencesService,
+    CalendarNativeEventSource,
   ],
   exports: [CalendarService, CalendarSourceRegistry],
 })
