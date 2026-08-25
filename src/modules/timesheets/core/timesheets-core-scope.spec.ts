@@ -16,7 +16,7 @@ import {
   TS_REPORTS_VIEW_PERMISSION,
 } from "./timesheets-core-scope";
 
-const mockAccess = { resolveUserPermissions: jest.fn() } as unknown as AccessService;
+const mockAccess = { scopeFor: jest.fn() } as unknown as AccessService;
 
 function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {
   return {
@@ -37,52 +37,48 @@ beforeEach(() => {
 
 describe("resolveEntriesScope", () => {
   it("returns none when team permission is absent", async () => {
-    (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Map());
+    (mockAccess.scopeFor as jest.Mock).mockResolvedValue("none");
     await expect(resolveEntriesScope(mockAccess, makeUser())).resolves.toBe("none");
   });
 
   it("returns none when permission is not scopable", async () => {
-    (isScopable as jest.Mock).mockReturnValue(false);
+    (mockAccess.scopeFor as jest.Mock).mockResolvedValue("none");
     await expect(resolveEntriesScope(mockAccess, makeUser())).resolves.toBe("none");
   });
 });
 
 describe("resolveReportsScope", () => {
   it("returns none when reports permission is absent", async () => {
-    (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Map());
+    (mockAccess.scopeFor as jest.Mock).mockResolvedValue("none");
     await expect(resolveReportsScope(mockAccess, makeUser())).resolves.toBe("none");
   });
 
   it("does not fall back to own when permission is missing", async () => {
-    (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(
-      new Map([[TS_REPORTS_VIEW_PERMISSION, "team"]]),
-    );
+    (mockAccess.scopeFor as jest.Mock).mockResolvedValue("team");
     await expect(resolveReportsScope(mockAccess, makeUser())).resolves.toBe("team");
   });
 });
 
 describe("resolveApprovalScope", () => {
   it("returns none when permission is not scopable", async () => {
-    (isScopable as jest.Mock).mockReturnValue(false);
+    (mockAccess.scopeFor as jest.Mock).mockResolvedValue("none");
     await expect(resolveApprovalScope(mockAccess, makeUser())).resolves.toBe("none");
   });
 
   it("returns none when approvals permission is absent", async () => {
-    (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Map());
+    (mockAccess.scopeFor as jest.Mock).mockResolvedValue("none");
     await expect(resolveApprovalScope(mockAccess, makeUser())).resolves.toBe("none");
   });
 });
 
 describe("resolvePayrollScope", () => {
   it("returns none when payroll permission is absent", async () => {
-    (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Map());
+    (mockAccess.scopeFor as jest.Mock).mockResolvedValue("none");
     await expect(resolvePayrollScope(mockAccess, makeUser())).resolves.toBe("none");
   });
 
   it("returns resolved scope when payroll permission is present", async () => {
-    (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(
-      new Map([[TS_PAYROLL_VIEW_PERMISSION, "team"]]),
-    );
+    (mockAccess.scopeFor as jest.Mock).mockResolvedValue("team");
     await expect(resolvePayrollScope(mockAccess, makeUser())).resolves.toBe("team");
   });
 });

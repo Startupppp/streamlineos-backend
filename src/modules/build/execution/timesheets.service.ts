@@ -120,11 +120,10 @@ export class TimesheetsService {
       );
     }
 
-    const perms = await this.access.resolveUserPermissions(
-      user.orgId,
-      user.userId,
+    const isOwnerOrAdmin = await this.access.holds(
+      user,
+      "build:timesheets:manage",
     );
-    const isOwnerOrAdmin = perms.has("build:timesheets:manage");
     if (!isOwnerOrAdmin && entry.userId !== user.userId) {
       throw new ForbiddenException("You can only edit your own time entries");
     }
@@ -169,11 +168,10 @@ export class TimesheetsService {
       );
     }
 
-    const perms = await this.access.resolveUserPermissions(
-      user.orgId,
-      user.userId,
+    const isOwnerOrAdmin = await this.access.holds(
+      user,
+      "build:timesheets:manage",
     );
-    const isOwnerOrAdmin = perms.has("build:timesheets:manage");
     if (!isOwnerOrAdmin && entry.userId !== user.userId) {
       throw new ForbiddenException("You can only delete your own time entries");
     }
@@ -189,11 +187,7 @@ export class TimesheetsService {
   }
 
   async approveEntry(user: CurrentUserContext, entryId: number) {
-    const perms = await this.access.resolveUserPermissions(
-      user.orgId,
-      user.userId,
-    );
-    if (!perms.has("build:timesheets:manage")) {
+    if (!(await this.access.holds(user, "build:timesheets:manage"))) {
       throw new ForbiddenException("Only admins can approve timesheets");
     }
 
@@ -234,11 +228,7 @@ export class TimesheetsService {
     entryId: number,
     input: RejectEntryInput,
   ) {
-    const perms = await this.access.resolveUserPermissions(
-      user.orgId,
-      user.userId,
-    );
-    if (!perms.has("build:timesheets:manage")) {
+    if (!(await this.access.holds(user, "build:timesheets:manage"))) {
       throw new ForbiddenException("Only admins can reject timesheets");
     }
 
@@ -317,11 +307,7 @@ export class TimesheetsService {
   }
 
   async billingSummary(user: CurrentUserContext, query: BillingSummaryQuery) {
-    const perms = await this.access.resolveUserPermissions(
-      user.orgId,
-      user.userId,
-    );
-    const isAdmin = perms.has("build:manage");
+    const isAdmin = await this.access.holds(user, "build:manage");
     const { orgId, userId } = user;
     const startDate = query.startDate;
     const endDate = query.endDate;
@@ -388,11 +374,7 @@ export class TimesheetsService {
     });
     if (!ticket?.project) throw new NotFoundException("Ticket not found");
 
-    const perms = await this.access.resolveUserPermissions(
-      user.orgId,
-      user.userId,
-    );
-    const isOwnerOrAdmin = perms.has("build:manage");
+    const isOwnerOrAdmin = await this.access.holds(user, "build:manage");
     const isManager = ticket.project.managerId === user.userId;
 
     if (!isOwnerOrAdmin && !isManager) {

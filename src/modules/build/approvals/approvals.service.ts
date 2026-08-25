@@ -16,6 +16,7 @@ import { ChatChannelsService } from "../../chat/chat-channels.service";
 import { ChatMessagesService } from "../../chat/chat-messages.service";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type {
   CreateApprovalInput,
   DecideApprovalInput,
@@ -205,17 +206,16 @@ export class ApprovalsService {
   }
 
   async decideApproval(
-    orgId: string,
-    userId: string,
+    user: CurrentUserContext,
     projectId: number,
     approvalId: number,
     input: DecideApprovalInput,
   ) {
+    const { orgId, userId } = user;
     const approval = await this.loadApproval(orgId, projectId, approvalId);
 
     if (approval.approverId !== userId) {
-      const perms = await this.access.resolveUserPermissions(orgId, userId);
-      if (!perms.has("build:approvals:manage")) {
+      if (!(await this.access.holds(user, "build:approvals:manage"))) {
         throw new NotFoundException("Approval not found");
       }
     }

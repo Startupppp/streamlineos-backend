@@ -75,9 +75,10 @@ export class WhiteboardSharingService {
     const row = rows[0];
     if (!row) throw new NotFoundException("Whiteboard not found");
 
-    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    const scope = perms.get("build:whiteboards:manage");
-    const hasManagePermission = scope !== undefined && scope !== "none";
+    const hasManagePermission = await this.access.holds(
+      u,
+      "build:whiteboards:manage",
+    );
 
     const access = resolveWhiteboardAccess({
       board: { createdBy: row.board.createdBy, visibility: row.board.visibility },

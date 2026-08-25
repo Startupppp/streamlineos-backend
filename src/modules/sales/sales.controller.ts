@@ -80,9 +80,7 @@ export class SalesController {
     u: CurrentUserContext,
     requested: string | undefined,
   ): Promise<string | undefined> {
-    if (u.isOrgOwner) return requested;
-    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    if (perms.has("sales:manage")) return requested;
+    if (await this.access.holds(u, "sales:manage")) return requested;
     if (requested && requested !== u.userId) {
       throw new ForbiddenException("Not allowed to view another rep's records");
     }
