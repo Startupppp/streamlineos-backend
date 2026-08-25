@@ -4,6 +4,7 @@ import {
   pgTable,
   text,
   timestamp,
+  date,
   jsonb,
   doublePrecision,
   integer,
@@ -311,5 +312,82 @@ export const dataQualityFindings = pgTable(
       .on(t.organizationId, t.resolvedAt)
       .where(sql`resolved_at is not null`),
     unique("uniq_data_quality_findings_org_id").on(t.organizationId, t.findingId),
+  ],
+);
+
+/**
+ * What the dataset's health was, on a given day, for one tenant.
+ *
+ * A recorded number rather than a derived one, and that is the whole argument
+ * for this table. The open set at any past instant *looks* reconstructible from
+ * the findings themselves — `first_detected_at <= T and (resolved_at is null or
+ * resolved_at > T)` — but severity is not fixed. `DataQualityProducersService`
+ * files with `ON CONFLICT ... SET severity = excluded.severity`, so a nightly
+ * sweep that re-bands a finding retroactively re-bands every point in a
+ * reconstructed history. The graph would move because a detector was tuned, and
+ * the one question this number exists to answer — did working the queue help —
+ * would be unanswerable precisely when somebody had just changed something.
+ *
+ * A snapshot is also the only form that survives erasure. Findings carry
+ * `party_id` and evidence written from customer records; an aggregate carries
+ * nobody, so the trend stays honest after a party is removed instead of
+ * improving on the day a person exercised a right.
+ *
+ * One row per tenant per UTC day, upserted. Daily because "did this week of
+ * triage help" is the question and an hourly series answers a question nobody
+ * asks; upserted because capture is called from every sweep and every
+ * resolution, and an append-only table would grow with traffic rather than with
+ * time.
+ */
+export const dataQualityHealthSnapshots = pgTable(
+  "data_quality_health_snapshots",
+  {
+    snapshotId: text("snapshot_id")
+      .primaryKey()
+      .$defaultFn(() => randomUUID()),
+    organizationId: text("organization_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
+
+    /** The UTC day this point belongs to. The series' x-axis. */
+    capturedOn: date("captured_on").notNull(),
+    /** When the day's row was last refreshed, so a stale point is visible as one. */
+    capturedAt: timestamp("captured_at").defaultNow().notNull(),
+
+    /**
+     * The open queue weighted by `SEVERITY_WEIGHTS`.
+     *
+     * An integer because the weights are integers and a health number with
+     * decimal places invites reading precision that is not there.
+     */
+    composite: integer("composite").notNull(),
+    /** The unweighted count beside it: 8 and "one high" and "eight lows" differ. */
+    openTotal: integer("open_total").notNull(),
+
+    /**
+     * The composite decomposed by producer, and the counts by severity.
+     *
+     * `jsonb` rather than a row per class, and deliberately: this is read whole,
+     * as the shape of one day's problem, never aggregated across classes in SQL.
+     * A row per class would multiply the table by the producer count to serve a
+     * query nothing issues — the same reasoning `data_quality_resolutions.failures`
+     * records for keeping its failures inline.
+     */
+    byClass: jsonb("by_class")
+      .$type<{ producer: DataQualityProducer; count: number; weight: number }[]>()
+      .notNull(),
+    bySeverity: jsonb("by_severity").$type<Record<FindingSeverity, number>>().notNull(),
+  },
+  (t) => [
+    /**
+     * One point per tenant per day. This is the upsert target, and it is what
+     * makes capture cheap enough to call from every write path that changes the
+     * number rather than from a schedule nobody owns.
+     */
+    uniqueIndex("uniq_data_quality_health_snapshots_day").on(t.organizationId, t.capturedOn),
+    /** The series read: one tenant, newest first, bounded by a window. */
+    index("idx_data_quality_health_snapshots_series").on(t.organizationId, t.capturedOn),
+    /** The composite tenant key, for anything that later points at a snapshot. */
+    unique("uniq_data_quality_health_snapshots_org_id").on(t.organizationId, t.snapshotId),
   ],
 );
