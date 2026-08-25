@@ -1807,6 +1807,55 @@
       "when": 1787711553441,
       "tag": "0251_backfill_data_quality_permissions",
       "breakpoints": true
+    },
+    {
+      "idx": 258,
+      "version": "7",
+      "when": 1787715153441,
+      "tag": "0290_issue_records",
+      "breakpoints": true
+    },
+    {
+      "idx": 259,
+      "version": "7",
+      "when": 1787718753441,
+      "tag": "0260_party_identifiers",
+      "breakpoints": true
+    },
+    {
+      "idx": 260,
+      "version": "7",
+      "when": 1787722353441,
+      "tag": "0280_importer_at_scale",
+      "breakpoints": true
+    },
+    {
+      "idx": 261,
+      "version": "7",
+      "when": 1787725953441,
+      "tag": "0275_party_company_search",
+      "breakpoints": true
+    },
+    {
+      "idx": 262,
+      "version": "7",
+      "when": 1787729553441,
+      "tag": "0469_document_attachments",
+      "breakpoints": true
+    },
+    {
+      "idx": 263,
+      "version": "7",
+      "when": 1787733153441,
+      "tag": "0470_ar_document_pdf_cache",
+      "breakpoints": true
+    },
+    {
+      "idx": 264,
+      "version": "7",
+      "when": 1787736753441,
+      "tag": "0471_platform_waitlist",
+      "breakpoints": true
     }
   ]
 }
