@@ -1744,6 +1744,20 @@
       "when": 1787689953441,
       "tag": "0233_deals_value_not_null",
       "breakpoints": true
+    },
+    {
+      "idx": 249,
+      "version": "7",
+      "when": 1787697153441,
+      "tag": "0240_party_expand_legacy_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 250,
+      "version": "7",
+      "when": 1787700753441,
+      "tag": "0241_party_legacy_backfill",
+      "breakpoints": true
     }
   ]
 }
