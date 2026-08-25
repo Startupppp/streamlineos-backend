@@ -1716,6 +1716,13 @@
       "when": 1787664753441,
       "tag": "0230_backfill_import_permission",
       "breakpoints": true
+    },
+    {
+      "idx": 245,
+      "version": "7",
+      "when": 1787668353441,
+      "tag": "0231_crm_mailbox_sync",
+      "breakpoints": true
     }
   ]
 }
