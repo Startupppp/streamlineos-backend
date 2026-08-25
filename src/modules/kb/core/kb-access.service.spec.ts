@@ -9,7 +9,6 @@ function makeUser(over: Partial<CurrentUserContext>): CurrentUserContext {
     orgId: "o1",
     role: "member",
     isOrgOwner: false,
-    permissions: [],
     enabledModules: ["kb"],
     ...over,
   } as unknown as CurrentUserContext;
@@ -33,7 +32,7 @@ describe("KbAccessService.isAdmin", () => {
 
   it("is true for an org owner who holds nothing explicitly — seam is sole authority", async () => {
     expect(
-      await makeService(true).isAdmin(makeUser({ isOrgOwner: true, permissions: [] })),
+      await makeService(true).isAdmin(makeUser({ isOrgOwner: true })),
     ).toBe(true);
   });
 });

@@ -1,14 +1,16 @@
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { isPlanGatedModule } from "../../common/rbac/module-vocabulary";
-import { moduleAvailability } from "../../common/rbac/module-availability";
+import { moduleAvailability, moduleAvailabilityResolver } from "../../common/rbac/module-availability";
 import { moduleOf } from "./access.service";
 import type { AuthResult, DataScope } from "./access.types";
 import { isPersonalTokenPermissionDelegable } from "../../common/rbac/personal-token-policy";
+import { isCoreModuleKey } from "./entitlements.service";
 
 export interface AccessResolver {
   resolveUserPermissions(orgId: string, userId: string): Promise<Map<string, DataScope>>;
   isModuleEnabled(orgId: string, moduleKey: string): Promise<boolean>;
+  getModuleState?: (orgId: string, moduleKey: string) => Promise<boolean | undefined>;
   getUserDeniedModules?: (orgId: string, userId: string) => Promise<Set<string>>;
+  getPlanLockedModules?: (orgId: string) => Promise<readonly string[]>;
 }
 
 export async function authorize(
@@ -27,17 +29,27 @@ export async function authorize(
   }
 
   const moduleKey = moduleOf(permissionKey);
+  const getPlanLockedModules = access.getPlanLockedModules;
+  const getModuleState = access.getModuleState?.bind(access);
+  const getUserDeniedModules = access.getUserDeniedModules;
   const avail = await moduleAvailability(
-    {
-      isCoreModule: (key) => !isPlanGatedModule(key),
-      getModuleMap: async (orgId) => ({
-        [moduleKey]: await access.isModuleEnabled(orgId, moduleKey),
-      }),
-      getUserDeniedModules: access.getUserDeniedModules
-        ? (orgId, uid) => access.getUserDeniedModules!(orgId, uid)
-        : async () => new Set<string>(),
-      getPlanLockedModules: async () => [],
-    },
+    moduleAvailabilityResolver(
+      {
+        isCoreModule: isCoreModuleKey,
+        getModuleMap: async (orgId: string): Promise<Record<string, boolean>> => {
+          const state = getModuleState
+            ? await getModuleState(orgId, moduleKey)
+            : await access.isModuleEnabled(orgId, moduleKey);
+          return state === undefined ? {} : { [moduleKey]: state };
+        },
+        getPlanLockedModules: getPlanLockedModules
+          ? (orgId: string) => getPlanLockedModules(orgId)
+          : async (): Promise<readonly string[]> => [],
+      },
+      getUserDeniedModules
+        ? { getUserDeniedModules: (orgId: string, uid: string) => getUserDeniedModules(orgId, uid) }
+        : undefined,
+    ),
     ctx.orgId,
     ctx.userId,
     moduleKey,
@@ -51,16 +63,5 @@ export async function authorize(
   const scope = resolved.get(permissionKey);
   if (!scope || scope === "none") return { allow: false, scope: "none", reason: "FORBIDDEN" };
 
-  const tokenScopes = ctx.tokenScopes;
-  const granted: string[] = [];
-  for (const [key, grantedScope] of resolved) {
-    if (grantedScope === "none") continue;
-    if (
-      tokenScopes &&
-      (!isPersonalTokenPermissionDelegable(key) || !tokenScopes.includes(key))
-    )
-      continue;
-    granted.push(key);
-  }
-  return { allow: true, scope, permissions: granted };
+  return { allow: true, scope };
 }

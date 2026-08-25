@@ -25,7 +25,6 @@ function ctx(orgId: string): CurrentUserContext {
     userId: "user-1",
     orgId,
     role: "EMPLOYEE",
-    permissions: [],
     isOrgOwner: false,
     sessionId: "sess-1",
     tokenScopes: null,

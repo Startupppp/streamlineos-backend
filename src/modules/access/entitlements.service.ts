@@ -16,7 +16,8 @@ import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
 import { ADMINISTRABLE_MODULES, MODULE_CATALOG } from "../../common/rbac/module-vocabulary";
-import { coreModuleIds, moduleIdFromStored } from "../../common/rbac/module-registry";
+import { coreModuleIds, moduleDefinition, moduleIdFromStored } from "../../common/rbac/module-registry";
+import { moduleAvailabilityResolver, type ModuleAvailabilityResolver } from "../../common/rbac/module-availability";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { ACCESS_MANAGED_MODULES } from "../rbac/permissions";
 import { assignModuleOwnerRole } from "../ownership/module-owner-role.helper";
@@ -24,6 +25,26 @@ import { APP_CONFIG } from "../../config/config.module";
 import type { AppConfig } from "../../config/env.validation";
 
 export { MODULE_CATALOG };
+
+const CORE_KEYS: ReadonlySet<string> = new Set(coreModuleIds());
+
+/**
+ * Single canonical definition of "is this module core".
+ *
+ * A module is core (always available, bypasses org rows and per-person denies) if:
+ *   - it is not registered in MODULE_REGISTRY — unregistered namespaces like
+ *     `settings` and `ownership` have no toggle path and are always reachable, OR
+ *   - it is registered, is not plan-gated, and is not the platform-admin ladder.
+ *
+ * `billing` is registered with ladder=platform-admin and is therefore NOT core —
+ * it must be present as an org row (or explicitly enabled) before authorize() and
+ * the access snapshot will report it available, matching ModuleGuard's behaviour.
+ */
+export function isCoreModuleKey(rawKey: string): boolean {
+  const key = moduleIdFromStored(rawKey);
+  const def = moduleDefinition(key);
+  return def === undefined || CORE_KEYS.has(key);
+}
 
 const OWNERSHIP_MANAGED_MODULES = new Set<string>(ACCESS_MANAGED_MODULES);
 
@@ -149,7 +170,7 @@ export class EntitlementsService implements OnModuleInit {
 
   async isModuleEnabled(orgId: string, rawModuleKey: string): Promise<boolean> {
     const moduleKey = moduleIdFromStored(rawModuleKey);
-    if (this.coreModuleKeys.has(moduleKey)) return true;
+    if (isCoreModuleKey(moduleKey)) return true;
     const map = await this.getModuleMap(orgId);
     const enabled = map[moduleKey];
     if (enabled === undefined) {
@@ -161,13 +182,44 @@ export class EntitlementsService implements OnModuleInit {
     return enabled;
   }
 
+  /** Absent stays `undefined` so availability can tell "no row" from "disabled" and reach the plan check. */
+  async getModuleState(
+    orgId: string,
+    rawModuleKey: string,
+  ): Promise<boolean | undefined> {
+    const moduleKey = moduleIdFromStored(rawModuleKey);
+    if (isCoreModuleKey(moduleKey)) return true;
+    const map = await this.getModuleMap(orgId);
+    const enabled = map[moduleKey];
+    if (enabled === undefined)
+      return this.moduleTableUnavailable &&
+        this.config.RBAC_MIGRATION_MODE === "degrade"
+        ? true
+        : undefined;
+    return enabled;
+  }
+
   isCoreModule(moduleKey: string): boolean {
-    return this.coreModuleKeys.has(moduleIdFromStored(moduleKey));
+    return isCoreModuleKey(moduleKey);
   }
 
   async getPlanLockedModules(orgId: string): Promise<readonly string[]> {
     const { tier } = await this.planLimits.resolveTier(orgId);
     return PLAN_LOCKED_MODULES[tier];
+  }
+
+  buildModuleAvailabilityResolver(
+    getModuleMap: (orgId: string) => Promise<Record<string, boolean>>,
+    getUserDeniedModules?: (orgId: string, userId: string) => Promise<Set<string>>,
+  ): ModuleAvailabilityResolver {
+    return moduleAvailabilityResolver(
+      {
+        isCoreModule: isCoreModuleKey,
+        getModuleMap,
+        getPlanLockedModules: (orgId) => this.getPlanLockedModules(orgId),
+      },
+      getUserDeniedModules ? { getUserDeniedModules } : undefined,
+    );
   }
 
   async setModuleEnabled(

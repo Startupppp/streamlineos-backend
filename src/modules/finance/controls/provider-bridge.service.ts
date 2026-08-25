@@ -26,7 +26,6 @@ export class ProviderBridgeService {
       userId: actorUserId,
       orgId,
       role: "SYSTEM",
-      permissions: [],
       isOrgOwner: false,
       tokenScopes: null,
       sessionId: "provider-webhook",

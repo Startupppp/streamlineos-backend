@@ -45,7 +45,7 @@ export class KbPageBackfillService {
     private readonly indexing: KbIndexingService,
   ) {}
 
-  private async findEligibleUnindexedPages(orgId: string): Promise<Array<{ id: number }>> {
+  async findEligibleUnindexedPages(orgId: string): Promise<Array<{ id: number }>> {
     return this.db
       .select({ id: kbPages.id })
       .from(kbPages)
@@ -73,7 +73,7 @@ export class KbPageBackfillService {
       .orderBy(asc(kbPages.id));
   }
 
-  private async countPageBodyChunks(orgId: string): Promise<number> {
+  async countPageBodyChunks(orgId: string): Promise<number> {
     const [row] = await this.db
       .select({ n: count() })
       .from(kbArticleChunks)

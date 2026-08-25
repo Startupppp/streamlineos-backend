@@ -11,7 +11,6 @@ export interface CurrentUserContext {
   userId: string;
   orgId: string;
   role: string;
-  permissions: string[];
   isOrgOwner: boolean;
   sessionId: string;
   tokenScopes: string[] | null;

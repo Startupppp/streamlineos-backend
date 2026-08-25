@@ -8,7 +8,6 @@ const mockActor: CurrentUserContext = {
   userId: "user-1",
   orgId: "org-1",
   role: "member",
-  permissions: [],
   isOrgOwner: false,
   sessionId: "sess-1",
   tokenScopes: null,

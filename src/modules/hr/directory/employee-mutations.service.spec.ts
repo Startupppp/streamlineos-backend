@@ -31,7 +31,6 @@ function ctx(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {
     userId: "actor-1",
     orgId: "org-1",
     role: "HR",
-    permissions: ["hr:employees:manage"],
     isOrgOwner: false,
     sessionId: "sess-1",
     tokenScopes: null,
@@ -87,7 +86,6 @@ describe("EmployeeMutationsService.updateEmployee authorization", () => {
     const { access, db, service } = buildService("none");
     const staleActor = ctx({
       role: "LEGACY_HR_ADMIN",
-      permissions: ["hr:employees:manage"],
     });
 
     await expect(
@@ -100,7 +98,7 @@ describe("EmployeeMutationsService.updateEmployee authorization", () => {
 
   it("allows a database-resolved manage grant even when the token claim is empty", async () => {
     const { service } = buildService("all");
-    const grantedActor = ctx({ role: "MEMBER", permissions: [] });
+    const grantedActor = ctx({ role: "MEMBER" });
 
     await expect(
       service.updateEmployee(grantedActor, "target-1", { designation: "Manager" }),
@@ -111,7 +109,7 @@ describe("EmployeeMutationsService.updateEmployee authorization", () => {
     const { service } = buildService("none", { userId: "actor-1" });
 
     await expect(
-      service.updateEmployee(ctx({ permissions: [] }), "actor-1", { phone: "+919999999999" }),
+      service.updateEmployee(ctx({ }), "actor-1", { phone: "+919999999999" }),
     ).resolves.toEqual({ success: true });
   });
 

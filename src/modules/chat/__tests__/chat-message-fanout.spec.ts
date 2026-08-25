@@ -3,8 +3,9 @@ import { ChatMessagesService } from "../chat-messages.service";
 import { ChatMessageFanoutService, InProcessMessageFanout } from "../chat-message-fanout.service";
 import { QueuedMessageFanout, InMemoryFanoutDeferralPort } from "../chat-message-fanout-queued.service";
 import type { FanoutDeferredTask, FanoutInput } from "../message-fanout.interface";
+import type { PersistedMessage } from "../chat-message.types";
 
-const persisted = {
+const persisted: PersistedMessage = {
   id: 1,
   channelId: 1,
   senderId: "sender",
@@ -12,7 +13,7 @@ const persisted = {
   createdAt: new Date(),
   replyToId: null,
   metadata: null,
-  messageType: "TEXT",
+  messageType: "text",
 };
 
 function makeDb() {
@@ -126,7 +127,7 @@ describe("ChatMessagesService.send", () => {
 });
 
 describe("ChatMessageFanoutService", () => {
-  const message = { ...persisted };
+  const message: PersistedMessage = { ...persisted };
 
   function makeFanout() {
     const ably = { configured: true, publishChatMessage: jest.fn().mockResolvedValue(undefined) };
@@ -219,7 +220,7 @@ describe("ChatMessageFanoutService", () => {
 describe("parity: InProcessMessageFanout and QueuedMessageFanout address the same recipients", () => {
   beforeEach(() => { jest.spyOn(logger, "error").mockImplementation(() => undefined); });
 
-  const message = { ...persisted };
+  const message: PersistedMessage = { ...persisted };
 
   function makeCollaborators() {
     return {

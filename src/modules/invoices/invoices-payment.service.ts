@@ -232,13 +232,10 @@ export class InvoicesPaymentService {
         new Date(`${paymentDateIso}T00:00:00.000Z`),
       );
       const baseAmountSettled = (allocatedAmount * settledRate).toFixed(4);
-
-      const permissions: string[] = [];
       const user: CurrentUserContext = {
         userId,
         orgId,
         role: "system",
-        permissions,
         isOrgOwner: false,
         tokenScopes: null,
         sessionId: "",

@@ -84,7 +84,6 @@ export class KbResearchBriefHandler implements AiJobHandler, OnModuleInit {
       orgId: job.orgId,
       userId: job.userId ?? "",
       role: member?.role ?? "member",
-      permissions: [],
       isOrgOwner: member?.isOwner ?? false,
       tokenScopes: null,
       sessionId: "",

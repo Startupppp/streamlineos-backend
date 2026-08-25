@@ -12,6 +12,8 @@ import {
 } from "./module-registry";
 import { MODULE_CATALOG, isPlanGatedModule } from "./module-vocabulary";
 import { ACCESS_MANAGED_MODULES } from "../../modules/rbac/permissions";
+import { isCoreModuleKey } from "../../modules/access/entitlements.service";
+import { moduleAvailability, moduleAvailabilityResolver } from "./module-availability";
 
 /**
  * These assertions enumerate the registry rather than a literal list, so a
@@ -138,5 +140,67 @@ describe("money and surface are two facts, not one", () => {
 
   it("keeps the two sets genuinely different, which is the point of splitting them", () => {
     expect(administrableModuleIds().sort()).not.toEqual(coreModuleIds().sort());
+  });
+});
+
+describe("registry fields drive availability: end-to-end proof", () => {
+  it("every module in coreModuleIds() is core through isCoreModuleKey", () => {
+    for (const id of coreModuleIds()) expect(isCoreModuleKey(id)).toBe(true);
+  });
+
+  it("every plan-gated module is not core through isCoreModuleKey", () => {
+    for (const id of planGatedModuleIds()) expect(isCoreModuleKey(id)).toBe(false);
+  });
+
+  it("billing (planGated=false, ladder=platform-admin) is not core through isCoreModuleKey", () => {
+    expect(isCoreModuleKey("billing")).toBe(false);
+  });
+
+  it("core modules are unconditionally available even with a disabled org row, a user deny and a plan lock", async () => {
+    for (const id of coreModuleIds()) {
+      const resolver = moduleAvailabilityResolver(
+        {
+          isCoreModule: isCoreModuleKey,
+          getModuleMap: async () => ({ [id]: false }),
+          getPlanLockedModules: async () => [id],
+        },
+        { getUserDeniedModules: async () => new Set([id]) },
+      );
+      expect(await moduleAvailability(resolver, "org-1", "user-1", id)).toEqual({ available: true });
+    }
+  });
+
+  it("plan-gated modules are blocked with reason not-in-plan when absent from the org map and plan-locked", async () => {
+    for (const id of planGatedModuleIds()) {
+      const resolver = moduleAvailabilityResolver({
+        isCoreModule: isCoreModuleKey,
+        getModuleMap: async () => ({}),
+        getPlanLockedModules: async () => [id],
+      });
+      expect(await moduleAvailability(resolver, "org-1", "user-1", id)).toEqual({ available: false, reason: "not-in-plan" });
+    }
+  });
+
+  it("billing is blocked with reason org-disabled when absent from the org map", async () => {
+    const resolver = moduleAvailabilityResolver({
+      isCoreModule: isCoreModuleKey,
+      getModuleMap: async () => ({}),
+      getPlanLockedModules: async () => [],
+    });
+    expect(await moduleAvailability(resolver, "org-1", "user-1", "billing")).toEqual({ available: false, reason: "org-disabled" });
+  });
+
+  it("the constitution's named core modules resolve available: home, kb, chat, mail, calendar", async () => {
+    for (const id of ["home", "kb", "chat", "mail", "calendar"]) {
+      const resolver = moduleAvailabilityResolver(
+        {
+          isCoreModule: isCoreModuleKey,
+          getModuleMap: async () => ({ [id]: false }),
+          getPlanLockedModules: async () => [id],
+        },
+        { getUserDeniedModules: async () => new Set([id]) },
+      );
+      expect(await moduleAvailability(resolver, "org-1", "user-1", id)).toEqual({ available: true });
+    }
   });
 });

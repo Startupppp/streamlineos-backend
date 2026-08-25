@@ -22,9 +22,11 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { logger } from "../../../common/logger/logger.service";
-import { RazorpayService } from "./razorpay.service";
 import { AiCreditsService } from "./ai-credits.service";
 import { PlanLimitsService } from "./plan-limits.service";
+import { PaymentProviderAdapterRegistry } from "../payments/payment-provider-adapter.interface";
+import { APP_CONFIG } from "../../../config/config.module";
+import type { AppConfig } from "../../../config/env.validation";
 import {
   webhookEventSchema,
   type BillingCycle,
@@ -54,10 +56,11 @@ interface WebhookResult {
 export class BillingService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly razorpay: RazorpayService,
     private readonly audit: AuditService,
     private readonly aiCredits: AiCreditsService,
     private readonly planLimits: PlanLimitsService,
+    private readonly registry: PaymentProviderAdapterRegistry,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
   async getSubscription(orgId: string) {
@@ -71,15 +74,17 @@ export class BillingService {
       },
     });
 
+    const adapter = this.registry.get("razorpay");
     return {
       subscription: subscription ?? null,
-      razorpayKeyId: this.razorpay.getKeyId(),
-      isConfigured: this.razorpay.isConfigured(),
+      razorpayKeyId: adapter?.publicKeyId() ?? null,
+      isConfigured: adapter?.isReady() ?? false,
     };
   }
 
   async createOrder(orgId: string, userId: string, plan: Plan, billingCycle: BillingCycle = "monthly", couponId?: number) {
-    if (!this.razorpay.isConfigured()) {
+    const adapter = this.registry.get("razorpay");
+    if (adapter === undefined || !adapter.isReady()) {
       throw new ServiceUnavailableException("Payment gateway not configured. Contact support.");
     }
 
@@ -104,17 +109,20 @@ export class BillingService {
       }
     }
 
-    const order = await this.razorpay.createOrder({
-      amount,
+    const { providerOrderId } = await adapter.createOrder({
+      keyId: this.config.RAZORPAY_KEY_ID ?? "",
+      keySecret: this.config.RAZORPAY_KEY_SECRET ?? "",
+      amount: String(amount),
+      currency: "INR",
       receipt: `sub_${orgId.slice(-8)}_${Date.now().toString().slice(-8)}`,
       notes: { orgId, plan, userId, billingCycle },
     });
 
     return {
-      orderId: order.id,
-      amount: order.amount,
-      currency: order.currency,
-      keyId: this.razorpay.getKeyId(),
+      orderId: providerOrderId,
+      amount,
+      currency: "INR",
+      keyId: adapter.publicKeyId(),
       plan,
       billingCycle,
       discountAmount: couponDiscountAmount,
@@ -122,15 +130,17 @@ export class BillingService {
   }
 
   async verifyAndActivate(orgId: string, userId: string, input: VerifyPaymentInput) {
-    if (!this.razorpay.isConfigured()) {
+    const adapter = this.registry.get("razorpay");
+    if (adapter === undefined || !adapter.isReady()) {
       throw new ServiceUnavailableException("Payment gateway not configured. Contact support.");
     }
 
-    const valid = this.razorpay.verifyPaymentSignature(
-      input.razorpay_order_id,
-      input.razorpay_payment_id,
-      input.razorpay_signature,
-    );
+    const valid = adapter.verifyPaymentSignature({
+      orderId: input.razorpay_order_id,
+      paymentId: input.razorpay_payment_id,
+      signature: input.razorpay_signature,
+      keySecret: this.config.RAZORPAY_KEY_SECRET ?? "",
+    });
     if (!valid) {
       throw new BadRequestException("Payment verification failed: invalid signature");
     }
@@ -269,7 +279,13 @@ export class BillingService {
   }
 
   async handleRazorpayWebhook(rawBody: string, signature: string): Promise<WebhookResult> {
-    if (!this.razorpay.verifyWebhookSignature(rawBody, signature)) {
+    const adapter = this.registry.get("razorpay");
+    if (!adapter) {
+      logger.warn("[billing] no payment provider registered for webhook verification");
+      return { status: 503, body: { ok: false } };
+    }
+    const webhookSecret = this.config.RAZORPAY_WEBHOOK_SECRET ?? "";
+    if (!adapter.verifyWebhookSignature({ rawBody, signature, webhookSecret })) {
       logger.warn("[razorpay] invalid webhook signature");
       return { status: 401, body: { ok: false } };
     }
@@ -431,8 +447,15 @@ export class BillingService {
       const packs = await this.aiCredits.listPacks();
       const pack = packs.find((p) => p.id === packId);
       if (!pack) throw new BadRequestException("AI credit pack not found");
-      const order = await this.razorpay.createOrder({
-        amount: pack.priceInPaise * quantity,
+      const addonAdapter = this.registry.get("razorpay");
+      if (addonAdapter === undefined || !addonAdapter.isReady()) {
+        throw new ServiceUnavailableException("Payment gateway not configured. Contact support.");
+      }
+      const { providerOrderId: addonOrderId } = await addonAdapter.createOrder({
+        keyId: this.config.RAZORPAY_KEY_ID ?? "",
+        keySecret: this.config.RAZORPAY_KEY_SECRET ?? "",
+        amount: String(pack.priceInPaise * quantity),
+        currency: "INR",
         receipt: `aip_${packId}_${orgId.slice(-8)}_${Date.now().toString().slice(-8)}`,
         notes: {
           orgId: String(orgId),
@@ -441,10 +464,10 @@ export class BillingService {
         },
       });
       return {
-        orderId: order.id,
-        amount: order.amount,
-        currency: order.currency,
-        keyId: this.razorpay.getKeyId(),
+        orderId: addonOrderId,
+        amount: pack.priceInPaise * quantity,
+        currency: "INR",
+        keyId: addonAdapter.publicKeyId(),
         pack,
       };
     }
@@ -641,7 +664,7 @@ export class BillingService {
         failed: 0,
         voided: 0,
       },
-      isConfigured: this.razorpay.isConfigured(),
+      isConfigured: this.registry.get("razorpay")?.isReady() ?? false,
     };
   }
 }

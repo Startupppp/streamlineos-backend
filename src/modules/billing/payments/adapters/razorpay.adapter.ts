@@ -1,7 +1,13 @@
-import { Injectable, BadGatewayException, OnModuleInit } from "@nestjs/common";
+import { Injectable, BadGatewayException, OnModuleInit, Optional, Inject } from "@nestjs/common";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { PaymentProviderAdapterRegistry, type PaymentCredentialWarning, type PaymentProviderAdapter } from "../payment-provider-adapter.interface";
+import { APP_CONFIG } from "../../../../config/config.module";
+
+interface RazorpayCredentials {
+  readonly RAZORPAY_KEY_ID?: string | undefined;
+  readonly RAZORPAY_KEY_SECRET?: string | undefined;
+}
 
 const razorpayOrderResponseSchema = z.object({
   id: z.string(),
@@ -33,10 +39,21 @@ function constantTimeEquals(expected: string, provided: string): boolean {
 export class RazorpayAdapter implements PaymentProviderAdapter, OnModuleInit {
   readonly providerKey = "razorpay";
 
-  constructor(private readonly registry: PaymentProviderAdapterRegistry) {}
+  constructor(
+    private readonly registry: PaymentProviderAdapterRegistry,
+    @Optional() @Inject(APP_CONFIG) private readonly credentials?: RazorpayCredentials,
+  ) {}
 
   onModuleInit(): void {
     this.registry.register(this);
+  }
+
+  isReady(): boolean {
+    return Boolean(this.credentials?.RAZORPAY_KEY_ID && this.credentials?.RAZORPAY_KEY_SECRET);
+  }
+
+  publicKeyId(): string | null {
+    return this.credentials?.RAZORPAY_KEY_ID ?? null;
   }
 
   validateCredentialFormat(environment: "test" | "live", keyId: string): PaymentCredentialWarning | null {

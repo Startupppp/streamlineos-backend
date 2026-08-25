@@ -19,6 +19,7 @@ const baseSchema = z
       .enum(["development", "production", "test"])
       .default("development"),
     RBAC_MIGRATION_MODE: z.enum(["off", "degrade"]).default("off"),
+    CHAT_FANOUT: z.enum(["in-process", "queued"]).default("in-process"),
     PORT: z.coerce.number().int().positive().default(1500),
     DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
     /** The RLS-enforced application role. Falling back to DATABASE_URL bypasses every tenant policy. */

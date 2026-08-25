@@ -8,7 +8,6 @@ function makeUser(over: Partial<CurrentUserContext>): CurrentUserContext {
     orgId: "o1",
     role: "member",
     isOrgOwner: false,
-    permissions: [],
     enabledModules: ["kb"],
     ...over,
   } as unknown as CurrentUserContext;
@@ -30,7 +29,7 @@ describe("reviewerCanSeeAllReviews", () => {
   it("is true for an org owner who holds nothing explicitly — seam is sole authority", async () => {
     const access = makeAccess(true);
     expect(
-      await reviewerCanSeeAllReviews(makeUser({ isOrgOwner: true, permissions: [] }), access),
+      await reviewerCanSeeAllReviews(makeUser({ isOrgOwner: true }), access),
     ).toBe(true);
     expect(access.holds).toHaveBeenCalledWith(
       expect.objectContaining({ isOrgOwner: true }),

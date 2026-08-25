@@ -8,7 +8,6 @@ const makeUser = (overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
   userId: "user-1",
   orgId: "org-1",
   role: "member",
-  permissions: [],
   isOrgOwner: false,
   sessionId: "sess-1",
   tokenScopes: null,

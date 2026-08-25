@@ -19,7 +19,6 @@ function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
     userId: "u1",
     orgId: "o1",
     role: "EMPLOYEE",
-    permissions: [],
     isOrgOwner: false,
     sessionId: "s1",
     tokenScopes: null,

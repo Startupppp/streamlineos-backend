@@ -12,6 +12,9 @@ import type { DataScope } from "../access.types";
 import type { Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import type { EntitlementsService } from "../entitlements.service";
+import { isCoreModuleKey } from "../entitlements.service";
+import { moduleAvailabilityResolver } from "../../../common/rbac/module-availability";
+import { CATALOG_MODULES } from "../access-policy";
 import { makeMfaPolicyStub } from "../../../../test/helpers/mfa-policy-stub";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { OwnershipTransfersService } from "../../ownership/ownership-transfers.service";
@@ -105,11 +108,22 @@ function buildService(db: unknown): AccessService {
     cached: jest.fn().mockImplementation(async (_key: string, fn: () => Promise<unknown>) => fn()),
     invalidate: jest.fn().mockResolvedValue(undefined),
   };
+  const allEnabled: Record<string, boolean> = {};
+  for (const key of CATALOG_MODULES) allEnabled[key] = true;
   const entitlements = {
     isModuleEnabled: jest.fn().mockResolvedValue(true),
-    isCoreModule: jest.fn((moduleKey: string) => moduleKey === "kb" || moduleKey === "chat"),
-    getModuleMap: jest.fn().mockResolvedValue({}),
-    getEffectiveModuleMap: jest.fn().mockResolvedValue({}),
+    isCoreModule: jest.fn((moduleKey: string) => isCoreModuleKey(moduleKey)),
+    getModuleMap: jest.fn().mockResolvedValue(allEnabled),
+    buildModuleAvailabilityResolver: jest.fn().mockImplementation(
+      (
+        getMap: (orgId: string) => Promise<Record<string, boolean>>,
+        getDenied?: (orgId: string, userId: string) => Promise<Set<string>>,
+      ) =>
+        moduleAvailabilityResolver(
+          { isCoreModule: isCoreModuleKey, getModuleMap: getMap, getPlanLockedModules: async () => [] },
+          getDenied ? { getUserDeniedModules: getDenied } : undefined,
+        ),
+    ),
   };
   return new AccessService(
     withTenantTransactionMock(db as object) as unknown as Db,
@@ -175,7 +189,6 @@ describe("AccessService.getAccessSnapshot — org owner receives every catalog p
       userId: USER,
       orgId: ORG_A,
       role: "OWNER",
-      permissions: [],
       isOrgOwner: true,
       sessionId: "session-owner",
       tokenScopes: null,

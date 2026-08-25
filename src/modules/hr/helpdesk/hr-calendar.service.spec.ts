@@ -10,7 +10,6 @@ function makeUser(over: Partial<CurrentUserContext>): CurrentUserContext {
     orgId: "o1",
     role: "member",
     isOrgOwner: false,
-    permissions: [],
     enabledModules: ["hr"],
     ...over,
   } as unknown as CurrentUserContext;
@@ -71,7 +70,7 @@ describe("HrCalendarService — visibility checks via seam", () => {
     const db = makeDb();
     const access = makeAccess(true);
     const service = new HrCalendarService(db, makeCelebrations(), access);
-    await service.getEvents(makeUser({ isOrgOwner: true, permissions: [] }), travelOnly);
+    await service.getEvents(makeUser({ isOrgOwner: true }), travelOnly);
     expect(db.select).toHaveBeenCalled();
   });
 });

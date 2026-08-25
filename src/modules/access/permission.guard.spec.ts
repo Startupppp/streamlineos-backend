@@ -26,7 +26,6 @@ const user: CurrentUserContext = {
   userId: "user-1",
   orgId: "org-1",
   role: "ADMIN",
-  permissions: [],
   isOrgOwner: false,
   sessionId: "session-1",
   tokenScopes: null,

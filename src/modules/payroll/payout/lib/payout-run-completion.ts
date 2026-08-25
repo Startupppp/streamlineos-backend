@@ -199,7 +199,7 @@ export async function checkRunCompletion(
 
     if (paidRun[0]) {
       void deps.payrollPosting.postPaid(
-        { userId: actorId, orgId, role: "system", permissions: [], isOrgOwner: true, sessionId: "system", tokenScopes: null },
+        { userId: actorId, orgId, role: "system", isOrgOwner: true, sessionId: "system", tokenScopes: null },
         runId,
         paidRun[0].month,
         paidRun[0].netTotal ?? "0",

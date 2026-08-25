@@ -46,7 +46,6 @@ function makeUser(orgId = "org-42"): CurrentUserContext {
     orgId,
     isOrgOwner: false,
     role: "member",
-    permissions: [],
     sessionId: "sess-1",
     tokenScopes: null,
   };

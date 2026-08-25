@@ -36,8 +36,8 @@ describe("KbPageBackfillService — backfillOrg", () => {
     const indexing = makeIndexingService();
     const svc = new KbPageBackfillService(makeDb() as never, indexing as never);
 
-    jest.spyOn(svc as never, "findEligibleUnindexedPages").mockResolvedValue([]);
-    jest.spyOn(svc as never, "countPageBodyChunks").mockResolvedValue(3);
+    jest.spyOn(svc, "findEligibleUnindexedPages").mockResolvedValue([]);
+    jest.spyOn(svc, "countPageBodyChunks").mockResolvedValue(3);
 
     const result = await svc.backfillOrg("org-1", { delayMs: 0 });
 
@@ -49,11 +49,9 @@ describe("KbPageBackfillService — backfillOrg", () => {
     const indexing = makeIndexingService();
     const svc = new KbPageBackfillService(makeDb() as never, indexing as never);
 
-    jest
-      .spyOn(svc as never, "findEligibleUnindexedPages")
+    jest.spyOn(svc, "findEligibleUnindexedPages")
       .mockResolvedValue([{ id: 101 }, { id: 102 }, { id: 103 }]);
-    jest
-      .spyOn(svc as never, "countPageBodyChunks")
+    jest.spyOn(svc, "countPageBodyChunks")
       .mockResolvedValueOnce(0)
       .mockResolvedValueOnce(3);
 
@@ -74,10 +72,9 @@ describe("KbPageBackfillService — backfillOrg", () => {
     const indexing = makeIndexingService();
     const svc = new KbPageBackfillService(makeDb() as never, indexing as never);
 
-    jest
-      .spyOn(svc as never, "findEligibleUnindexedPages")
+    jest.spyOn(svc, "findEligibleUnindexedPages")
       .mockResolvedValue([{ id: 10 }, { id: 20 }]);
-    jest.spyOn(svc as never, "countPageBodyChunks").mockResolvedValue(0);
+    jest.spyOn(svc, "countPageBodyChunks").mockResolvedValue(0);
 
     await svc.backfillOrg("org-x", { delayMs: 0 });
 
@@ -89,11 +86,9 @@ describe("KbPageBackfillService — backfillOrg", () => {
     const indexing = makeIndexingService();
     const svc = new KbPageBackfillService(makeDb() as never, indexing as never);
 
-    jest
-      .spyOn(svc as never, "findEligibleUnindexedPages")
+    jest.spyOn(svc, "findEligibleUnindexedPages")
       .mockResolvedValue([{ id: 55 }]);
-    jest
-      .spyOn(svc as never, "countPageBodyChunks")
+    jest.spyOn(svc, "countPageBodyChunks")
       .mockResolvedValueOnce(7)
       .mockResolvedValueOnce(9);
 
@@ -112,10 +107,9 @@ describe("KbPageBackfillService — backfillOrg", () => {
 
     const svc = new KbPageBackfillService(makeDb() as never, indexing as never);
 
-    jest
-      .spyOn(svc as never, "findEligibleUnindexedPages")
+    jest.spyOn(svc, "findEligibleUnindexedPages")
       .mockResolvedValue([{ id: 1 }, { id: 2 }, { id: 3 }]);
-    jest.spyOn(svc as never, "countPageBodyChunks").mockResolvedValue(0);
+    jest.spyOn(svc, "countPageBodyChunks").mockResolvedValue(0);
 
     const result = await svc.backfillOrg("org-1", { delayMs: 0 });
 
@@ -129,13 +123,11 @@ describe("KbPageBackfillService — backfillOrg", () => {
     indexing.indexPage.mockRejectedValue(new Error("boom"));
 
     const svc = new KbPageBackfillService(makeDb() as never, indexing as never);
-    const countSpy = jest
-      .spyOn(svc as never, "countPageBodyChunks")
+    const countSpy = jest.spyOn(svc, "countPageBodyChunks")
       .mockResolvedValueOnce(4)
       .mockResolvedValueOnce(4);
 
-    jest
-      .spyOn(svc as never, "findEligibleUnindexedPages")
+    jest.spyOn(svc, "findEligibleUnindexedPages")
       .mockResolvedValue([{ id: 7 }]);
 
     await svc.backfillOrg("org-1", { delayMs: 0 });
@@ -147,8 +139,8 @@ describe("KbPageBackfillService — backfillOrg", () => {
     const indexing = makeIndexingService();
     const svc = new KbPageBackfillService(makeDb() as never, indexing as never);
 
-    jest.spyOn(svc as never, "findEligibleUnindexedPages").mockResolvedValue([]);
-    jest.spyOn(svc as never, "countPageBodyChunks").mockResolvedValue(12);
+    jest.spyOn(svc, "findEligibleUnindexedPages").mockResolvedValue([]);
+    jest.spyOn(svc, "countPageBodyChunks").mockResolvedValue(12);
 
     const result = await svc.backfillOrg("org-empty", { delayMs: 0 });
 
@@ -165,16 +157,16 @@ describe("KbPageBackfillService — resumability", () => {
     const indexing = makeIndexingService();
     const svc = new KbPageBackfillService(makeDb() as never, indexing as never);
 
-    jest.spyOn(svc as never, "findEligibleUnindexedPages").mockResolvedValue([{ id: 200 }]);
-    jest.spyOn(svc as never, "countPageBodyChunks").mockResolvedValue(0);
+    jest.spyOn(svc, "findEligibleUnindexedPages").mockResolvedValue([{ id: 200 }]);
+    jest.spyOn(svc, "countPageBodyChunks").mockResolvedValue(0);
 
     await svc.backfillOrg("org-1", { delayMs: 0 });
     expect(indexing.indexPage).toHaveBeenCalledTimes(1);
 
     jest.clearAllMocks();
 
-    jest.spyOn(svc as never, "findEligibleUnindexedPages").mockResolvedValue([]);
-    jest.spyOn(svc as never, "countPageBodyChunks").mockResolvedValue(1);
+    jest.spyOn(svc, "findEligibleUnindexedPages").mockResolvedValue([]);
+    jest.spyOn(svc, "countPageBodyChunks").mockResolvedValue(1);
 
     const secondRun = await svc.backfillOrg("org-1", { delayMs: 0 });
     expect(indexing.indexPage).not.toHaveBeenCalled();
@@ -301,7 +293,7 @@ describe("KbPageBackfillService — findEligibleUnindexedPages SQL shape", () =>
     const indexing = makeIndexingService();
     const svc = new KbPageBackfillService(db as never, indexing as never);
 
-    void (svc as never as { findEligibleUnindexedPages: (orgId: string) => unknown })
+    void (svc as { findEligibleUnindexedPages: (orgId: string) => unknown })
       .findEligibleUnindexedPages("org-z");
 
     expect(db.select).toHaveBeenCalledTimes(2);

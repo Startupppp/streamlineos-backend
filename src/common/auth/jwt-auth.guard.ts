@@ -210,7 +210,6 @@ export class JwtAuthGuard implements CanActivate {
         userId: claims.sub,
         orgId: resolvedOrgId,
         role,
-        permissions: [],
         isOrgOwner,
         sessionId: claims.sessionId,
         tokenScopes: null,
@@ -329,11 +328,8 @@ export class JwtAuthGuard implements CanActivate {
       userId: matched.userId,
       orgId: resolved.orgId,
       role: state.role,
-      permissions: [],
       isOrgOwner: state.isOwner,
       sessionId: `pat:${matched.id}`,
-      // An empty PAT scope list must deny every permission. `null` is reserved
-      // for interactive sessions and means "not constrained by a token".
       tokenScopes: matched.scopes,
     };
   }

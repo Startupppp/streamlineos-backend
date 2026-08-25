@@ -540,6 +540,15 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
   async isModuleEnabled(orgId: string, moduleKey: string): Promise<boolean> {
     return this.entitlements.isModuleEnabled(orgId, moduleKey);
   }
+  async getModuleState(
+    orgId: string,
+    moduleKey: string,
+  ): Promise<boolean | undefined> {
+    return this.entitlements.getModuleState(orgId, moduleKey);
+  }
+  async getPlanLockedModules(orgId: string): Promise<readonly string[]> {
+    return this.entitlements.getPlanLockedModules(orgId);
+  }
   async getAccessSnapshot(
     orgId: string,
     userId: string,

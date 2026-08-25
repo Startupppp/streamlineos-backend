@@ -42,12 +42,7 @@ export class DashboardController {
   ) {}
 
   private toActor(u: CurrentUserContext): DashboardActor {
-    return {
-      userId: u.userId,
-      role: u.role,
-      permissions: u.permissions,
-      isOrgOwner: u.isOrgOwner,
-    };
+    return u;
   }
 
   @Get("active-sprint")
