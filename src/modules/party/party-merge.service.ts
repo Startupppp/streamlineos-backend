@@ -4,6 +4,9 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
 import {
   businessParties,
+  clientPartyMap,
+  contactPartyMap,
+  leadPartyMap,
   partyContacts,
   partyDuplicateCandidates,
   partyMerges,
@@ -18,7 +21,22 @@ interface MergeSnapshot {
   mergedBefore: Record<string, unknown>;
   movedContactIds: string[];
   addedRoles: string[];
+  /**
+   * Legacy identifiers re-pointed onto the survivor, per kind.
+   *
+   * Optional because merges recorded before the expand step have no such
+   * identifiers, and a revert must still be able to read those snapshots.
+   */
+  movedLegacyIds?: LegacyIdsByKind;
 }
+
+interface LegacyIdsByKind {
+  lead: number[];
+  client: number[];
+  contact: number[];
+}
+
+const NO_LEGACY_IDS: LegacyIdsByKind = { lead: [], client: [], contact: [] };
 
 export interface MergeOutcome {
   partyMergeId: string;
@@ -126,12 +144,14 @@ export class PartyMergeService {
 
     const addedRoles = loserRoles.filter((role) => !survivorRoles.includes(role));
     const movedContactIds = loserContacts.map((contact) => contact.partyContactId);
+    const movedLegacyIds = await this.legacyIdsOf(organizationId, mergedId);
 
     const snapshot: MergeSnapshot = {
       survivorBefore: { ...survivor },
       mergedBefore: { ...loser },
       movedContactIds,
       addedRoles,
+      movedLegacyIds,
     };
 
     if (Object.keys(plan.survivorPatch).length > 0 || plan.customFields)
@@ -155,6 +175,12 @@ export class PartyMergeService {
             inArray(partyContacts.partyContactId, movedContactIds),
           ),
         );
+
+    // The lead, client and contact ids the loser answered for now answer for the
+    // survivor. Re-pointing them here, rather than teaching the resolver to walk
+    // the merge ledger, is what keeps one merge mechanism instead of two -- and
+    // it is what the snapshot has to put back on a revert.
+    await this.repointLegacyIds(organizationId, movedLegacyIds, survivorId);
 
     if (addedRoles.length > 0)
       await this.db
@@ -300,6 +326,12 @@ export class PartyMergeService {
           ),
         );
 
+    await this.repointLegacyIds(
+      organizationId,
+      snapshot.movedLegacyIds ?? NO_LEGACY_IDS,
+      record.mergedPartyId,
+    );
+
     // Only the roles the merge added: one the survivor already held is its own.
     if (snapshot.addedRoles.length > 0)
       await this.db
@@ -334,6 +366,86 @@ export class PartyMergeService {
       survivorPartyId: record.survivorPartyId,
       restoredPartyId: record.mergedPartyId,
     };
+  }
+
+  private async legacyIdsOf(
+    organizationId: string,
+    partyId: string,
+  ): Promise<LegacyIdsByKind> {
+    const [lead, client, contact] = await Promise.all([
+      this.db
+        .select({ id: leadPartyMap.leadId })
+        .from(leadPartyMap)
+        .where(
+          and(
+            eq(leadPartyMap.organizationId, organizationId),
+            eq(leadPartyMap.partyId, partyId),
+          ),
+        ),
+      this.db
+        .select({ id: clientPartyMap.clientId })
+        .from(clientPartyMap)
+        .where(
+          and(
+            eq(clientPartyMap.organizationId, organizationId),
+            eq(clientPartyMap.partyId, partyId),
+          ),
+        ),
+      this.db
+        .select({ id: contactPartyMap.contactId })
+        .from(contactPartyMap)
+        .where(
+          and(
+            eq(contactPartyMap.organizationId, organizationId),
+            eq(contactPartyMap.partyId, partyId),
+          ),
+        ),
+    ]);
+
+    return {
+      lead: lead.map((row) => row.id),
+      client: client.map((row) => row.id),
+      contact: contact.map((row) => row.id),
+    };
+  }
+
+  private async repointLegacyIds(
+    organizationId: string,
+    ids: LegacyIdsByKind,
+    partyId: string,
+  ): Promise<void> {
+    if (ids.lead.length > 0)
+      await this.db
+        .update(leadPartyMap)
+        .set({ partyId })
+        .where(
+          and(
+            eq(leadPartyMap.organizationId, organizationId),
+            inArray(leadPartyMap.leadId, ids.lead),
+          ),
+        );
+
+    if (ids.client.length > 0)
+      await this.db
+        .update(clientPartyMap)
+        .set({ partyId })
+        .where(
+          and(
+            eq(clientPartyMap.organizationId, organizationId),
+            inArray(clientPartyMap.clientId, ids.client),
+          ),
+        );
+
+    if (ids.contact.length > 0)
+      await this.db
+        .update(contactPartyMap)
+        .set({ partyId })
+        .where(
+          and(
+            eq(contactPartyMap.organizationId, organizationId),
+            inArray(contactPartyMap.contactId, ids.contact),
+          ),
+        );
   }
 
   private async rolesOf(organizationId: string, partyId: string): Promise<string[]> {
