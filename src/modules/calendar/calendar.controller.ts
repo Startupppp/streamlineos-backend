@@ -23,6 +23,9 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { CalendarService } from "./calendar.service";
 import { ExternalCalendarEventsService } from "./external-calendar-events.service";
+import { CalendarSourceRegistry } from "./calendar-source.registry";
+import { CalendarSourcePreferencesService } from "./calendar-source-preferences.service";
+import type { CalendarSourceContext } from "./calendar-event-source";
 import {
   createEventSchema,
   exportSchema,
@@ -37,6 +40,10 @@ import {
   type RsvpInput,
   type UpdateEventInput,
 } from "./dto/calendar.schemas";
+import {
+  setSourcePreferenceSchema,
+  type SetSourcePreferenceInput,
+} from "./dto/source-preference.schemas";
 
 function pad(value: number): string {
   return value < 10 ? `0${value}` : String(value);
@@ -63,6 +70,8 @@ export class CalendarController {
   constructor(
     private readonly calendar: CalendarService,
     private readonly externalEvents: ExternalCalendarEventsService,
+    private readonly registry: CalendarSourceRegistry,
+    private readonly sourcePreferences: CalendarSourcePreferencesService,
   ) {}
 
   @Get("events")
@@ -197,5 +206,29 @@ export class CalendarController {
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.setHeader("Cache-Control", "no-store");
     res.send(csvContent);
+  }
+
+  @Get("sources")
+  getSources(@CurrentUser() u: CurrentUserContext) {
+    const now = new Date();
+    const ctx: CalendarSourceContext = {
+      orgId: u.orgId,
+      userId: u.userId,
+      start: now,
+      end: now,
+      scope: "all",
+    };
+    return this.registry.getToggleList(ctx);
+  }
+
+  @Put("sources/:sourceKey")
+  @HttpCode(200)
+  async setSourcePreference(
+    @Param("sourceKey") sourceKey: string,
+    @Body(new ZodValidationPipe(setSourcePreferenceSchema)) body: SetSourcePreferenceInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    await this.sourcePreferences.setPreference(u.orgId, u.userId, sourceKey, body.enabled);
+    return { sourceKey, enabled: body.enabled };
   }
 }

@@ -5,6 +5,7 @@ import { CalendarEventsAggregateService } from "./calendar-events-aggregate.serv
 import { ExternalCalendarEventsService } from "./external-calendar-events.service";
 import { ExternalCalendarSyncService } from "./external-calendar-sync.service";
 import { CalendarSourceRegistry } from "./calendar-source.registry";
+import { CalendarSourcePreferencesService } from "./calendar-source-preferences.service";
 import { IntegrationsModule } from "../integrations/core/integrations.module";
 
 @Module({
@@ -16,6 +17,7 @@ import { IntegrationsModule } from "../integrations/core/integrations.module";
     ExternalCalendarEventsService,
     ExternalCalendarSyncService,
     CalendarSourceRegistry,
+    CalendarSourcePreferencesService,
   ],
   exports: [CalendarService, CalendarSourceRegistry],
 })

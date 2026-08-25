@@ -1534,6 +1534,13 @@
       "when": 1786701793560,
       "tag": "0463_modules_catalog_core_reconcile",
       "breakpoints": true
+    },
+    {
+      "idx": 220,
+      "version": "7",
+      "when": 1786701794560,
+      "tag": "0464_calendar_source_preferences",
+      "breakpoints": true
     }
   ]
 }

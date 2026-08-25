@@ -15,6 +15,7 @@ import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { CacheService } from "../../../common/cache/cache.service";
 import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
+import { AccessService } from "../../access/access.service";
 
 const KB_MANAGE_SPACES = "kb:spaces:manage";
 const KB_SPACE_VIEWER_PERMISSION = "kb:space:viewer";
@@ -24,12 +25,11 @@ export class KbAccessService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly access: AccessService,
   ) {}
 
-  isAdmin(user: CurrentUserContext): boolean {
-    return (
-      user.isOrgOwner || user.permissions.includes(KB_MANAGE_SPACES)
-    );
+  async isAdmin(user: CurrentUserContext): Promise<boolean> {
+    return this.access.holds(user, KB_MANAGE_SPACES);
   }
 
   private async resolveRoleSlugs(orgId: string, userId: string): Promise<string[]> {
@@ -74,7 +74,7 @@ export class KbAccessService {
       .from(kbSpaces)
       .where(and(eq(kbSpaces.orgId, user.orgId), isNull(kbSpaces.deletedAt)));
 
-    if (this.isAdmin(user)) return spaces.map((s) => s.id);
+    if (await this.isAdmin(user)) return spaces.map((s) => s.id);
 
     const roleSlugs = await this.resolveRoleSlugs(user.orgId, user.userId);
     const grantedRows = await this.db
@@ -144,7 +144,7 @@ export class KbAccessService {
     user: CurrentUserContext,
     row: { id: number; orgId: string; spaceId: number | null },
   ): Promise<void> {
-    if (this.isAdmin(user)) return;
+    if (await this.isAdmin(user)) return;
 
     if (row.spaceId !== null) {
       const accessible = await this.getAccessibleSpaceIds(user);
@@ -190,7 +190,7 @@ export class KbAccessService {
       columns: { id: true, orgId: true, spaceId: true },
     });
     if (!article) throw new NotFoundException("Article not found");
-    if (this.isAdmin(user)) return article;
+    if (await this.isAdmin(user)) return article;
 
     if (article.spaceId !== null) {
       const accessible = await this.getAccessibleSpaceIds(user);

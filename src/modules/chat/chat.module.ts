@@ -17,7 +17,9 @@ import { ChatRealtimeController } from "./chat-realtime.controller";
 import { ChatChannelsService } from "./chat-channels.service";
 import { ChatChannelMembersService } from "./chat-channel-members.service";
 import { ChatMessagesService } from "./chat-messages.service";
-import { ChatMessageFanoutService } from "./chat-message-fanout.service";
+import { ChatMessageFanoutService, InProcessMessageFanout } from "./chat-message-fanout.service";
+import { QueuedMessageFanout, InMemoryFanoutDeferralPort } from "./chat-message-fanout-queued.service";
+import { FANOUT_DEFERRAL_PORT } from "./message-fanout.interface";
 import { ChatPresenceService } from "./chat-presence.service";
 import { ChatTypingService } from "./chat-typing.service";
 import { ChatPinsService } from "./chat-pins.service";
@@ -31,16 +33,37 @@ import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import { ChatSummarizeService } from "./chat-summarize.service";
 import { RealtimeModule } from "../realtime/realtime.module";
 import { EntityReferenceModule } from "../entity-reference/entity-reference.module";
+import type { Provider } from "@nestjs/common";
+
+const fanoutProvider: Provider =
+  process.env["CHAT_FANOUT"] === "queued"
+    ? { provide: ChatMessageFanoutService, useClass: QueuedMessageFanout }
+    : { provide: ChatMessageFanoutService, useClass: InProcessMessageFanout };
 
 @Module({
   imports: [BillingModule, RealtimeModule, EntityReferenceModule],
-  controllers: [ChatActionsController,
-    ChatEntityActionsController, ChatChannelsController, ChatMessagesController, ChatPresenceController, ChatPinsController, ChatHuddlesController, ChatSearchController, ChatSavedController, ChatLinkPreviewController, ChatInviteLinksController, ChatOrgSettingsController, ChatSummarizeController, ChatRealtimeController],
+  controllers: [
+    ChatActionsController,
+    ChatEntityActionsController,
+    ChatChannelsController,
+    ChatMessagesController,
+    ChatPresenceController,
+    ChatPinsController,
+    ChatHuddlesController,
+    ChatSearchController,
+    ChatSavedController,
+    ChatLinkPreviewController,
+    ChatInviteLinksController,
+    ChatOrgSettingsController,
+    ChatSummarizeController,
+    ChatRealtimeController,
+  ],
   providers: [
+    { provide: FANOUT_DEFERRAL_PORT, useClass: InMemoryFanoutDeferralPort },
+    fanoutProvider,
     ChatChannelsService,
     ChatChannelMembersService,
     ChatMessagesService,
-    ChatMessageFanoutService,
     ChatPresenceService,
     ChatTypingService,
     ChatPinsService,

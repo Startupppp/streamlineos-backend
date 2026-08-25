@@ -12,6 +12,7 @@ import type {
   ApproveReviewInput,
   RejectReviewInput,
 } from "./dto/kb-page-reviews.schemas";
+import { AccessService } from "../../access/access.service";
 
 type ReviewRow = typeof kbPageReviews.$inferSelect;
 const REVIEW_STATUSES = ["pending", "approved", "rejected", "expired"] as const;
@@ -23,11 +24,11 @@ type ReviewWithContext = ReviewRow & {
   reviewerName: string | null;
 };
 
-export function reviewerCanSeeAllReviews(user: CurrentUserContext): boolean {
-  return (
-    user.isOrgOwner ||
-    user.permissions.includes("kb:reviews:manage")
-  );
+export async function reviewerCanSeeAllReviews(
+  user: CurrentUserContext,
+  access: Pick<AccessService, "holds">,
+): Promise<boolean> {
+  return access.holds(user, "kb:reviews:manage");
 }
 
 @Injectable()
@@ -36,6 +37,7 @@ export class KbPageReviewsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly dispatch: NotificationDispatchService,
+    private readonly access: AccessService,
   ) {}
 
   async list(
@@ -53,7 +55,7 @@ export class KbPageReviewsService {
     if (type && REVIEW_TYPES.includes(type as ReviewRow["type"])) {
       conditions.push(eq(kbPageReviews.type, type as ReviewRow["type"]));
     }
-    if (!reviewerCanSeeAllReviews(user)) {
+    if (!await reviewerCanSeeAllReviews(user, this.access)) {
       const ownOnly = or(
         eq(kbPageReviews.reviewerId, user.userId),
         eq(kbPageReviews.requestedById, user.userId),

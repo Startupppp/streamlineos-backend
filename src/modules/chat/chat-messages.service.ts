@@ -174,7 +174,7 @@ export class ChatMessagesService {
       }
     }
 
-    const { message, insertedAttachments } = await this.db.transaction(async (tx) => {
+    const { message, insertedAttachments, senderName, senderImage } = await this.db.transaction(async (tx) => {
       const [channel] = await tx
         .select({ id: chatChannels.id })
         .from(chatChannels)
@@ -182,6 +182,12 @@ export class ChatMessagesService {
         .limit(1);
 
       if (!channel) throw new NotFoundException("Channel not found");
+
+      const [senderRow] = await tx
+        .select({ name: users.name, image: users.image })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
 
       const [created] = await tx
         .insert(chatMessages)
@@ -220,7 +226,7 @@ export class ChatMessagesService {
         .set({ archivedAt: null })
         .where(eq(chatChannelMembers.channelId, channelId));
 
-      return { message: created, insertedAttachments: attachmentRows };
+      return { message: created, insertedAttachments: attachmentRows, senderName: senderRow?.name ?? null, senderImage: senderRow?.image ?? null };
     });
 
     const deferred = () =>
@@ -252,6 +258,8 @@ export class ChatMessagesService {
           mentionedUserIds,
           attachments: insertedAttachments,
           strippedMetadata: strippedReferenceMetadata(message.metadata),
+          senderName,
+          senderImage,
         });
       }).catch((error: unknown) => {
         logger.error("chat message side effects failed", {

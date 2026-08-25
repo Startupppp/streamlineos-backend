@@ -37,6 +37,7 @@ import {
   MANAGEABLE_MODULE_SET,
   moduleOf,
 } from "./access-policy";
+import { isPersonalTokenPermissionDelegable } from "../../common/rbac/personal-token-policy";
 import {
   AccessPermissionResolver,
   membershipCacheKey,
@@ -583,5 +584,22 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
         ),
       { orgId },
     );
+  }
+
+  async scopeFor(user: CurrentUserContext, key: string): Promise<DataScope> {
+    if (
+      user.tokenScopes !== null &&
+      (!isPersonalTokenPermissionDelegable(key) ||
+        !user.tokenScopes.includes(key))
+    ) {
+      return "none";
+    }
+    if (user.isOrgOwner) return "all";
+    const resolved = await this.resolveUserPermissions(user.orgId, user.userId);
+    return resolved.get(key) ?? "none";
+  }
+
+  async holds(user: CurrentUserContext, key: string): Promise<boolean> {
+    return (await this.scopeFor(user, key)) !== "none";
   }
 }

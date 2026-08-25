@@ -27,6 +27,8 @@ describe("CalendarController — a member's own calendar cannot be taken away", 
     "updateEvent",
     "removeEvent",
     "rsvp",
+    "getSources",
+    "setSourcePreference",
   ];
 
   it.each(ownCalendarMethods)("%s carries no permission gate at all", (method) => {

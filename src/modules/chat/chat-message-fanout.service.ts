@@ -1,46 +1,42 @@
-import { Inject, Injectable } from "@nestjs/common";
-import { eq } from "drizzle-orm";
-import { DRIZZLE } from "../../db/drizzle.constants";
-import type { Db } from "../../db/drizzle.module";
-import { users } from "../../db/schema";
+import { Injectable } from "@nestjs/common";
 import { logger } from "../../common/logger/logger.service";
+import { AuditService } from "../../common/audit/audit.service";
 import { AblyService } from "../realtime/ably.service";
 import { WebPushService } from "../realtime/web-push.service";
 import { ChatNotificationsService } from "./chat-notifications.service";
-import type { ChatAttachmentPayload, PersistedMessage } from "./chat-message.types";
+import type { FanoutInput, MessageFanout } from "./message-fanout.interface";
 
-export interface FanoutInput {
-  orgId: string;
-  channelId: number;
-  /** Realtime publish runs first; push, DM-notification and mention-notification are concurrent and independent. */
-  channelType: string | null;
-  message: PersistedMessage;
-  content: string | null;
-  mentionedUserIds: string[] | undefined;
-  attachments: ChatAttachmentPayload[];
-  strippedMetadata: Record<string, unknown> | null;
+export type { FanoutInput };
+
+type FanoutChannel = "push" | "dm_notification" | "mention_notification";
+
+export abstract class ChatMessageFanoutService implements MessageFanout {
+  abstract dispatch(input: FanoutInput): Promise<void>;
 }
 
 @Injectable()
-export class ChatMessageFanoutService {
+export class InProcessMessageFanout extends ChatMessageFanoutService {
   constructor(
-    @Inject(DRIZZLE) private readonly db: Db,
     private readonly ably: AblyService,
     private readonly webPush: WebPushService,
     private readonly notifications: ChatNotificationsService,
-  ) {}
+    private readonly audit: AuditService,
+  ) {
+    super();
+  }
 
   async dispatch(input: FanoutInput): Promise<void> {
-    const { orgId, channelId, channelType, message, attachments, mentionedUserIds, strippedMetadata } = input;
-
-    const [sender] = await this.db
-      .select({ name: users.name, image: users.image })
-      .from(users)
-      .where(eq(users.id, message.senderId))
-      .limit(1);
-
-    const senderName = sender?.name ?? null;
-    const senderImage = sender?.image ?? null;
+    const {
+      orgId,
+      channelId,
+      channelType,
+      message,
+      attachments,
+      mentionedUserIds,
+      strippedMetadata,
+      senderName,
+      senderImage,
+    } = input;
 
     await this.ably.publishChatMessage(orgId, channelId, {
       id: message.id,
@@ -65,6 +61,7 @@ export class ChatMessageFanoutService {
             channelId,
             error: err instanceof Error ? err.message : "unknown",
           });
+          this.recordFailure(orgId, channelId, message.senderId, message.id, "push", err);
         }),
     ];
 
@@ -83,6 +80,7 @@ export class ChatMessageFanoutService {
               channelId,
               error: err instanceof Error ? err.message : "unknown",
             });
+            this.recordFailure(orgId, channelId, message.senderId, message.id, "dm_notification", err);
           }),
       );
 
@@ -101,9 +99,37 @@ export class ChatMessageFanoutService {
               channelId,
               error: err instanceof Error ? err.message : "unknown",
             });
+            this.recordFailure(orgId, channelId, message.senderId, message.id, "mention_notification", err);
           }),
       );
 
     await Promise.all(tasks);
+  }
+
+  private recordFailure(
+    orgId: string,
+    channelId: number,
+    senderId: string,
+    messageId: number,
+    channel: FanoutChannel,
+    err: unknown,
+  ): void {
+    try {
+      this.audit.log({
+        action: "chat:fanout:failure",
+        userId: senderId,
+        orgId,
+        targetType: "chat_channel",
+        targetId: String(channelId),
+        result: "FAILURE",
+        metadata: {
+          channel,
+          messageId,
+          error: err instanceof Error ? err.message : "unknown",
+        },
+      });
+    } catch {
+      // Never propagate an audit failure into the send path.
+    }
   }
 }
