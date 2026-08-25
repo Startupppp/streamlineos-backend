@@ -29,9 +29,11 @@ import { IntakeService } from "./intake.service";
 import { OrgService } from "./org.service";
 import { PublicFormsService } from "./public-forms.service";
 import { ContactService } from "./contact.service";
+import { WaitlistService } from "./waitlist.service";
 import {
   applySchema,
   contactSubmitSchema,
+  waitlistJoinSchema,
   externalReferralSubmitSchema,
   externalReferrerRegisterSchema,
   intakeSchema,
@@ -47,6 +49,7 @@ import {
   roadmapVoteSchema,
   type ApplyInput,
   type ContactSubmitInput,
+  type WaitlistJoinInput,
   type ExternalReferralSubmitInput,
   type ExternalReferrerRegisterInput,
   type IntakeInput,
@@ -69,6 +72,12 @@ function clientIp(req: Request): string | undefined {
   return candidate ? candidate.slice(0, 100) : undefined;
 }
 
+function header(req: Request, name: string): string | undefined {
+  const raw = req.headers[name];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return value ? value.slice(0, 500) : undefined;
+}
+
 @Public()
 @Controller("public")
 export class PublicController {
@@ -81,6 +90,7 @@ export class PublicController {
     private readonly org: OrgService,
     private readonly publicForms: PublicFormsService,
     private readonly contact: ContactService,
+    private readonly waitlist: WaitlistService,
     @Inject(DRIZZLE) private readonly db: Db,
   ) {}
 
@@ -93,6 +103,21 @@ export class PublicController {
     @Req() req: Request,
   ) {
     return this.contact.submit(body, clientIp(req));
+  }
+
+  @Post("waitlist")
+  @HttpCode(201)
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("public:waitlist")
+  joinWaitlist(
+    @Body(new ZodValidationPipe(waitlistJoinSchema)) body: WaitlistJoinInput,
+    @Req() req: Request,
+  ) {
+    return this.waitlist.join(body, {
+      clientIp: clientIp(req),
+      userAgent: header(req, "user-agent"),
+      referrer: header(req, "referer"),
+    });
   }
 
   @Get("application-status/:token")

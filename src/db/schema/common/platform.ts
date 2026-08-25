@@ -42,6 +42,33 @@ export const platformMessages = pgTable(
   ],
 );
 
+export const platformWaitlist = pgTable(
+  "platform_waitlist",
+  {
+    id: serial("id").primaryKey(),
+    publicCode: text("public_code").notNull().unique(),
+    name: text("name").notNull(),
+    email: text("email").notNull(),
+    organization: text("organization"),
+    role: text("role"),
+    teamSize: text("team_size"),
+    notes: text("notes"),
+    status: text("status").default("PENDING").notNull(),
+    invitedAt: timestamp("invited_at"),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    referrerUrl: text("referrer_url"),
+    utm: jsonb("utm").$type<Record<string, string | null>>(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+  },
+  (table) => [
+    uniqueIndex("uniq_platform_waitlist_email").on(table.email),
+    index("idx_platform_waitlist_status").on(table.status),
+    index("idx_platform_waitlist_created").on(table.createdAt),
+  ],
+);
+
 export const platformVisits = pgTable(
   "platform_visits",
   {

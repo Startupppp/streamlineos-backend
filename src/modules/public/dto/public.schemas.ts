@@ -103,6 +103,20 @@ export const contactSubmitSchema = z
   })
   .strict();
 
+export const waitlistJoinSchema = z
+  .object({
+    name: z.string().trim().min(1).max(200),
+    email: z.string().trim().email().max(320).toLowerCase(),
+    organization: z.string().trim().max(200).optional(),
+    role: z.string().trim().max(120).optional(),
+    teamSize: z
+      .enum(["1-10", "11-50", "51-200", "201-500", "500+"])
+      .optional(),
+    notes: z.string().trim().max(2000).optional(),
+    cfTurnstileToken: z.string().trim().min(1).max(2048).optional(),
+  })
+  .strict();
+
 export type ApplyInput = z.infer<typeof applySchema>;
 export type OfferRespondInput = z.infer<typeof offerRespondSchema>;
 export type RoadmapQueryInput = z.infer<typeof roadmapQuerySchema>;
@@ -118,3 +132,4 @@ export type PublicFormSubmitInput = z.infer<typeof publicFormSubmitSchema>;
 export type ExternalReferrerRegisterInput = z.infer<typeof externalReferrerRegisterSchema>;
 export type ExternalReferralSubmitInput = z.infer<typeof externalReferralSubmitSchema>;
 export type ContactSubmitInput = z.infer<typeof contactSubmitSchema>;
+export type WaitlistJoinInput = z.infer<typeof waitlistJoinSchema>;

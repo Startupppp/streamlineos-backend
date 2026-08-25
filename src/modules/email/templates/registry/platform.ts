@@ -3,6 +3,8 @@ import {
   getContactAutoreplyEmail,
   getContactReplyEmail,
   getTrialReminderEmail,
+  getWaitlistAdminNotificationEmail,
+  getWaitlistConfirmationEmail,
 } from "../index";
 import { BASE_URL, BRAND } from "./_shared";
 import type { TemplateEntry } from "./_shared";
@@ -45,6 +47,34 @@ export const platformTemplates: Record<string, TemplateEntry> = {
           "Hi Rohan, we identified the duplicate charge and have initiated a refund. It should appear in 3-5 business days.",
         originalMessage: "I was charged twice for my subscription this month.",
         originalTopic: "billing",
+      }).html,
+  },
+  "platform.waitlist_admin": {
+    category: "Platform",
+    name: "Waitlist — Admin Notification",
+    subject: "New waitlist signup — Rohan Mehta",
+    generateHtml: () =>
+      getWaitlistAdminNotificationEmail({
+        name: "Rohan Mehta",
+        email: "rohan@example.com",
+        reference: "WL-2026-001",
+        receivedAt: "Wed, 2 Jul 2026, 10:15 AM",
+        position: 42,
+        organization: "Mehta Solutions",
+        role: "Head of Operations",
+        teamSize: "11-50",
+        notes: "We run HR on spreadsheets and projects in three different tools.",
+      }).html,
+  },
+  "platform.waitlist_confirmation": {
+    category: "Platform",
+    name: "Waitlist — Confirmation",
+    subject: `You're on the ${BRAND} waitlist`,
+    generateHtml: () =>
+      getWaitlistConfirmationEmail({
+        name: "Rohan Mehta",
+        reference: "WL-2026-001",
+        position: 42,
       }).html,
   },
   "platform.trial_reminder": {

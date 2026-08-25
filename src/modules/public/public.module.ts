@@ -10,6 +10,8 @@ import { IntakeService } from "./intake.service";
 import { OrgService } from "./org.service";
 import { PublicFormsService } from "./public-forms.service";
 import { ContactService } from "./contact.service";
+import { WaitlistService } from "./waitlist.service";
+import { TurnstileService } from "../../common/security/turnstile.service";
 
 @Module({
   imports: [CrmAutomationStudioModule, BillingModule],
@@ -23,6 +25,8 @@ import { ContactService } from "./contact.service";
     OrgService,
     PublicFormsService,
     ContactService,
+    WaitlistService,
+    TurnstileService,
   ],
 })
 export class PublicModule {}

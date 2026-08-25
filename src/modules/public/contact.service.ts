@@ -1,20 +1,12 @@
 import { randomUUID } from "node:crypto";
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  ServiceUnavailableException,
-} from "@nestjs/common";
+import { Inject, Injectable, ServiceUnavailableException } from "@nestjs/common";
 import { z } from "zod";
 import { APP_CONFIG } from "../../config/config.module";
 import type { AppConfig } from "../../config/env.validation";
+import { TurnstileService } from "../../common/security/turnstile.service";
 import { EmailService } from "../email/email.service";
 import { getContactAdminNotificationEmail } from "../email/templates";
 import type { ContactSubmitInput } from "./dto/public.schemas";
-
-const turnstileResponseSchema = z.object({
-  success: z.boolean(),
-});
 
 const notificationEmailSchema = z.string().trim().email();
 
@@ -23,13 +15,14 @@ export class ContactService {
   constructor(
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     private readonly email: EmailService,
+    private readonly turnstile: TurnstileService,
   ) {}
 
   async submit(
     input: ContactSubmitInput,
     clientIp: string | undefined,
   ): Promise<{ ok: true }> {
-    await this.verifyTurnstile(input.cfTurnstileToken, clientIp);
+    await this.turnstile.verify(input.cfTurnstileToken, clientIp);
 
     const recipient = this.getNotificationEmail();
     const reference = randomUUID().slice(0, 8).toUpperCase();
@@ -64,54 +57,5 @@ export class ContactService {
       );
     }
     return parsed.data;
-  }
-
-  private async verifyTurnstile(
-    token: string | undefined,
-    clientIp: string | undefined,
-  ): Promise<void> {
-    const secret = this.config.TURNSTILE_SECRET_KEY?.trim();
-    if (!secret) return;
-    if (!token) {
-      throw new BadRequestException("Bot verification is required");
-    }
-
-    const body = new URLSearchParams({
-      secret,
-      response: token,
-    });
-    if (clientIp) body.set("remoteip", clientIp);
-
-    let response: Response;
-    try {
-      response = await fetch(
-        "https://challenges.cloudflare.com/turnstile/v0/siteverify",
-        {
-          method: "POST",
-          body,
-          signal: AbortSignal.timeout(5000),
-        },
-      );
-    } catch {
-      throw new ServiceUnavailableException(
-        "Bot verification is temporarily unavailable",
-      );
-    }
-
-    if (!response.ok) {
-      throw new ServiceUnavailableException(
-        "Bot verification is temporarily unavailable",
-      );
-    }
-
-    const parsed = turnstileResponseSchema.safeParse(await response.json());
-    if (!parsed.success) {
-      throw new ServiceUnavailableException(
-        "Bot verification is temporarily unavailable",
-      );
-    }
-    if (!parsed.data.success) {
-      throw new BadRequestException("Bot verification failed");
-    }
   }
 }
