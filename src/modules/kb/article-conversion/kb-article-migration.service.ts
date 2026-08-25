@@ -3,6 +3,8 @@ import { and, eq, isNotNull, isNull, max, sql } from "drizzle-orm";
 import { kbArticles, kbPages, kbImportJobs } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { forEachOrg } from "../../../common/tenant/for-each-org";
+import type { TenantTx } from "../../../common/tenant/with-tenant";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { mapArticleToPage } from "./kb-article-migration.util";
 import type {
@@ -13,12 +15,56 @@ import type {
 
 const BATCH_SIZE = 50;
 
+export interface ArticleMigrationReport {
+  organizations: Array<ArticleMigrationPreview & { orgId: string }>;
+  totals: {
+    organizations: number;
+    total: number;
+    alreadyMigrated: number;
+    willMigrate: number;
+  };
+  retirementReady: boolean;
+}
+
+export function summarizeArticleMigrationReports(
+  organizations: ArticleMigrationReport["organizations"],
+): Pick<ArticleMigrationReport, "totals" | "retirementReady"> {
+  const totals = organizations.reduce(
+    (result, report) => ({
+      organizations: result.organizations + 1,
+      total: result.total + report.total,
+      alreadyMigrated: result.alreadyMigrated + report.alreadyMigrated,
+      willMigrate: result.willMigrate + report.willMigrate,
+    }),
+    { organizations: 0, total: 0, alreadyMigrated: 0, willMigrate: 0 },
+  );
+  return { totals, retirementReady: totals.willMigrate === 0 };
+}
+
 @Injectable()
 export class KbArticleMigrationService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async preview(orgId: string): Promise<ArticleMigrationPreview> {
-    const byStatusRows = await this.db
+    return this.previewOn(this.db, orgId);
+  }
+
+  /**
+   * Produces the c6 migration evidence for every active tenant. Discovery and
+   * counting happen inside each tenant transaction so the report never relies
+   * on a cross-tenant read that would bypass RLS.
+   */
+  async reportAll(): Promise<ArticleMigrationReport> {
+    const organizations: ArticleMigrationReport["organizations"] = [];
+    await forEachOrg(this.db, "kb-article-migration-report", async (tx, orgId) => {
+      organizations.push({ orgId, ...(await this.previewOn(tx, orgId)) });
+    });
+
+    return { organizations, ...summarizeArticleMigrationReports(organizations) };
+  }
+
+  private async previewOn(db: Db | TenantTx, orgId: string): Promise<ArticleMigrationPreview> {
+    const byStatusRows = await db
       .select({ status: kbArticles.status, count: sql<number>`count(*)::int` })
       .from(kbArticles)
       .where(eq(kbArticles.orgId, orgId))
@@ -31,7 +77,7 @@ export class KbArticleMigrationService {
       total += row.count;
     }
 
-    const migratedRows = await this.db
+    const migratedRows = await db
       .select({ sourceArticleId: kbPages.sourceArticleId })
       .from(kbPages)
       .where(and(eq(kbPages.orgId, orgId), isNotNull(kbPages.sourceArticleId)));
@@ -40,7 +86,7 @@ export class KbArticleMigrationService {
       migratedRows.map((r) => r.sourceArticleId).filter((v): v is number => v !== null),
     );
 
-    const candidates = await this.db
+    const candidates = await db
       .select({ id: kbArticles.id, title: kbArticles.title, visibility: kbArticles.visibility })
       .from(kbArticles)
       .where(and(eq(kbArticles.orgId, orgId), eq(kbArticles.status, "published")));

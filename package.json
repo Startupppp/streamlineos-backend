@@ -34,6 +34,7 @@
     "backfill:crm-metadata": "node --env-file=.env -r ts-node/register src/scripts/backfill-crm-metadata.ts",
     "backfill:person-employment": "node --env-file=.env -r ts-node/register src/scripts/backfill-person-employment.ts",
     "backfill:kb-pages": "node --env-file=.env -r ts-node/register src/scripts/backfill-kb-pages.ts",
+    "report:kb-article-migration": "node --env-file=.env -r ts-node/register src/scripts/report-kb-article-migration.ts",
     "seed:payroll-templates": "node --env-file=.env -r ts-node/register src/scripts/seed-payroll-templates.ts",
     "seed:enterprise": "node --env-file=.env -r ts-node/register src/scripts/seed-enterprise-workspace.ts",
     "seed:demo-coupons": "node --env-file=.env -r ts-node/register src/db/seeds/demo-coupons.seed.ts",
