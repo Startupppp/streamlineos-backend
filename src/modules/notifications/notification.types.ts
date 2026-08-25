@@ -19,6 +19,14 @@ export interface DispatchEventInput {
    * point, e.g. a security alert about your own session.
    */
   notifySelf?: boolean;
+  /**
+   * Collapses repeat emissions of the same intent onto one outbox row. Supply it only
+   * where a replay is possible and must not double-notify — a bus consumer passes the
+   * producer event id. Left unset, every emission is distinct, because the key carries
+   * no timestamp and outbox rows are never deleted: a stable default would silently
+   * swallow the second comment on a ticket forever.
+   */
+  dedupeKey?: string;
   entityType?: string;
   entityId?: string;
   title?: string;

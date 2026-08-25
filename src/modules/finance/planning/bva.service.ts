@@ -157,7 +157,7 @@ export class BvaService {
         const notifKey = `${budgetId}:${line.accountId}:${line.periodKey}`;
         if (!exceededNotifiedSet.has(notifKey)) {
           exceededNotifiedSet.add(notifKey);
-          void this.dispatch.emit({
+          await this.dispatch.emit({
             eventKey: "accounting.budget.exceeded",
             orgId,
             actorUserId: null,

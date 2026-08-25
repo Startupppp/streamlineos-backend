@@ -66,7 +66,7 @@ export class TaxComplianceService {
       };
       results.push(result);
 
-      void this.dispatch.emit({
+      await this.dispatch.emit({
         eventKey: "accounting.tax.due",
         orgId: oid,
         actorUserId: "system",

@@ -118,7 +118,7 @@ export class JournalApprovalsService {
 
     const targetUserIds = [entry[0].createdBy];
 
-    void this.dispatch.emit({
+    await this.dispatch.emit({
       eventKey: "accounting.approval.decided",
       orgId,
       actorUserId: userId,

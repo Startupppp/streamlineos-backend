@@ -131,7 +131,7 @@ export class RemindersService {
           }
 
           if (targetUserIds.length > 0) {
-            void this.dispatch.emit({
+            await this.dispatch.emit({
               eventKey: "accounting.invoice.overdue",
               orgId: inv.orgId,
               targetUserIds,

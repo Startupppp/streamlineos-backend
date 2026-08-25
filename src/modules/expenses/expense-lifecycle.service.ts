@@ -224,7 +224,7 @@ export class ExpenseLifecycleService {
     });
 
     if (approvalResult.approverUserId) {
-      void this.dispatch.emit({
+      await this.dispatch.emit({
         eventKey: "accounting.expense.submitted",
         orgId: u.orgId,
         actorUserId: u.userId,
@@ -348,7 +348,7 @@ export class ExpenseLifecycleService {
       metadata: { journalEntryId: postResult.entryId },
     });
 
-    void this.dispatch.emit({
+    await this.dispatch.emit({
       eventKey: "accounting.expense.approved",
       orgId: u.orgId,
       actorUserId: u.userId,
@@ -411,7 +411,7 @@ export class ExpenseLifecycleService {
       metadata: { rejectionReason },
     });
 
-    void this.dispatch.emit({
+    await this.dispatch.emit({
       eventKey: "accounting.expense.rejected",
       orgId: u.orgId,
       actorUserId: u.userId,

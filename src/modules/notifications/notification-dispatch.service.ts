@@ -20,7 +20,7 @@ import type {
   NotificationPriority,
 } from "./notification.types";
 import { filterOrgMemberIds } from "../../common/tenant/org-membership";
-import { registerAfterCommit } from "../../common/tenant/tenant-context";
+import { getTenantContext, registerAfterCommit } from "../../common/tenant/tenant-context";
 import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { type DbOrTx } from "../../common/rbac/access-invalidate";
 
@@ -67,22 +67,61 @@ export class NotificationDispatchService {
   ) {}
 
   /**
-   * PIPE-001. Durable overload: writes the intent inside the caller's transaction, so
-   * the domain change and the notification commit together or not at all. Prefer this
-   * wherever a transaction is already open — `emit(input)` defers with an in-memory
-   * hook and loses the notification if the process dies before it drains.
+   * PIPE-001. The one way to emit a notification. Await it: the intent is recorded
+   * inside the caller's transaction, so the domain change and the notification commit
+   * together or not at all, and a crash cannot lose it.
    *
-   * The relay (`NotificationOutboxRelayService`) picks the row up and runs the same
-   * `emitNow` pipeline, so routing, preferences and the PIPE-003 visibility check are
-   * unchanged. Only the trigger becomes durable.
+   * With an ambient tenant transaction it writes the intent and drains it the moment
+   * that transaction commits — durable, and no slower than the fire-and-forget hook it
+   * replaces. If the drain never runs or fails, the row is still PENDING and
+   * `NotificationOutboxRelayService` retries it.
+   *
+   * With no ambient transaction (a background sweep iterating organisations, or a
+   * bootstrap path) there is nothing to be atomic with, so it dispatches synchronously
+   * in its own tenant transaction and the caller sees the real counts.
    */
-  async emitDurable(tx: DbOrTx, input: DispatchEventInput): Promise<void> {
+  async emit(input: DispatchEventInput): Promise<DispatchResult> {
+    const ambient = getTenantContext();
+    if (!ambient || ambient.orgId !== input.orgId) return this.emitNow(input);
+
+    const dedupeKey = await this.writeIntent(ambient.tx, input);
+    registerAfterCommit(() => this.drainIntent(input, dedupeKey));
+
+    return {
+      eventKey: input.eventKey,
+      notified: 0,
+      deliveriesQueued: 0,
+      suppressed: 0,
+      deduped: 0,
+      deferred: true,
+    };
+  }
+
+  /**
+   * Runs the committed intent immediately so delivery latency is unchanged, then marks
+   * the row done. Failure is logged rather than rethrown — safe only because the row is
+   * already durable, so this is a retry rather than the loss it used to be. Nothing
+   * downstream can double-send: `notification_deliveries.idempotency_key` is unique.
+   */
+  private async drainIntent(input: DispatchEventInput, dedupeKey: string): Promise<void> {
+    try {
+      await this.emitNow(input);
+      await this.markIntentProcessed(input.orgId, dedupeKey);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `immediate drain failed for ${input.eventKey} in org ${input.orgId}; the intent stays PENDING for the relay: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+      );
+    }
+  }
+
+  private async writeIntent(tx: DbOrTx, input: DispatchEventInput): Promise<string> {
+    const dedupeKey = this.buildOutboxDedupeKey(input);
     await tx
       .insert(notificationOutbox)
       .values({
         orgId: input.orgId,
         eventKey: input.eventKey,
-        dedupeKey: this.buildOutboxDedupeKey(input),
+        dedupeKey,
         actorUserId: input.actorUserId ?? null,
         notifySelf: input.notifySelf ?? false,
         targetUserIds: input.targetUserIds,
@@ -94,40 +133,42 @@ export class NotificationDispatchService {
         variables: (input.variables ?? {}) as Record<string, unknown>,
         metadata: input.metadata ?? null,
       })
-      // Same intent from a retried request is a no-op, not a second notification.
+      // A replayed intent carrying an explicit dedupe key is a no-op, not a second
+      // notification. Without one the key is unique, so this never fires.
       .onConflictDoNothing({
         target: [notificationOutbox.orgId, notificationOutbox.dedupeKey],
       });
+    return dedupeKey;
   }
 
   /**
-   * Stable across retries of the same logical request: same event, same recipients,
-   * same entity → same key. Deliberately excludes the timestamp.
+   * Opens its own tenant transaction: after-commit hooks run once the request's
+   * transaction has already returned, so there is no ambient context and the bare
+   * handle carries no tenant GUC — `notification_outbox` is under RLS and would
+   * refuse this 42501. Left unmarked the relay re-dispatches, which for an event
+   * with no dedupe window is a second notification, not a no-op.
+   */
+  private markIntentProcessed(orgId: string, dedupeKey: string): Promise<void> {
+    return runInNewTenantTransaction(this.db, orgId, async (tx) => {
+      await tx
+        .update(notificationOutbox)
+        .set({ state: "PROCESSED", processedAt: new Date() })
+        .where(
+          and(eq(notificationOutbox.orgId, orgId), eq(notificationOutbox.dedupeKey, dedupeKey)),
+        );
+    });
+  }
+
+  /**
+   * The unique index is `(org_id, dedupe_key)` and rows are never deleted, so a key
+   * built only from (event, entity, targets) would collapse every later emission into
+   * the first one — permanently, and invisibly through `onConflictDoNothing`. Callers
+   * that genuinely need replay collapsing say so; everyone else gets a unique row.
    */
   private buildOutboxDedupeKey(input: DispatchEventInput): string {
     const targets = [...input.targetUserIds].sort().join(",");
-    return `${input.eventKey}:${input.entityType ?? ""}:${input.entityId ?? ""}:${targets}`;
-  }
-
-  emit(input: DispatchEventInput): Promise<DispatchResult> {
-    const queued = registerAfterCommit(() =>
-      this.emitNow(input).catch((error: unknown) => {
-        this.logger.error(
-          `notification dispatch failed for ${input.eventKey} in org ${input.orgId}: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
-        );
-      }),
-    );
-
-    if (!queued) return this.emitNow(input);
-
-    return Promise.resolve({
-      eventKey: input.eventKey,
-      notified: 0,
-      deliveriesQueued: 0,
-      suppressed: 0,
-      deduped: 0,
-      deferred: true,
-    });
+    const discriminator = input.dedupeKey ?? randomUUID();
+    return `${input.eventKey}:${input.entityType ?? ""}:${input.entityId ?? ""}:${targets}:${discriminator}`;
   }
 
   /** Cannot borrow the caller's transaction: by the time this runs it has often committed, and the released handle carries no tenant GUC. */

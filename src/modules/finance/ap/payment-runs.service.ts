@@ -222,7 +222,7 @@ export class PaymentRunsService {
     const check = await checkApprovalPolicy(this.db, orgId, "VENDOR_PAYMENT", total);
 
     if (check.needsApproval && check.approverUserId && check.approverUserId !== userId) {
-      void this.dispatch.emit({
+      await this.dispatch.emit({
         eventKey: "accounting.bill.approval_requested",
         orgId,
         actorUserId: userId,
@@ -380,7 +380,7 @@ export class PaymentRunsService {
             .set({ status: "PAID", vendorPaymentId: payment.id })
             .where(eq(finPaymentRunItems.id, item.id));
 
-          void this.dispatch.emit({
+          await this.dispatch.emit({
             eventKey: "accounting.payment.recorded",
             orgId,
             actorUserId: userId,

@@ -136,7 +136,7 @@ export class CreditNotesService {
         note: `Credit note ${cn.creditNoteNumber} requires approval`,
       });
       if (activePolicy.approverUserId) {
-        void this.dispatch.emit({
+        await this.dispatch.emit({
           eventKey: "accounting.approval.requested",
           orgId,
           actorUserId: userId,

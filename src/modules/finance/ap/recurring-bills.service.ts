@@ -223,7 +223,7 @@ export class RecurringBillsService {
           .set({ lastRunDate: today, nextRunDate: nextRun, updatedAt: new Date() })
           .where(and(eq(finRecurringBillTemplates.id, template.id), eq(finRecurringBillTemplates.orgId, template.orgId)));
 
-        void this.dispatch.emit({
+        await this.dispatch.emit({
           eventKey: "accounting.bill.recurring_generated",
           orgId: template.orgId,
           actorUserId: null,

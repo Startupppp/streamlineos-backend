@@ -91,8 +91,9 @@ export class SurveyResponseSubmittedConsumerService
     }
 
     if (survey.ownerUserId) {
-      await this.dispatch.emitDurable(this.db, {
+      await this.dispatch.emit({
         orgId,
+        dedupeKey: event.eventId,
         eventKey: "survey.response.received",
         targetUserIds: [survey.ownerUserId],
         entityType: "survey",
@@ -132,8 +133,9 @@ export class SurveyResponseSubmittedConsumerService
           const certKey = passed
             ? "survey.certification.passed"
             : "survey.certification.failed";
-          await this.dispatch.emitDurable(this.db, {
+          await this.dispatch.emit({
             orgId,
+            dedupeKey: event.eventId,
             eventKey: certKey,
             targetUserIds: [respondentUserId],
             entityType: "survey_response",

@@ -20,12 +20,19 @@ const ORG = "org-a";
 const USER = "user-1";
 
 /**
- * A fire-and-forget dispatch that runs on the request's own transaction handle
- * hits it after commit, when the handle has been released to the pool and the
- * transaction-local tenant GUC is gone — every notification write then dies
- * with SQLSTATE 42501. Nothing had ever been written to `notifications`.
+ * Two failures are pinned here, and they are opposites.
+ *
+ * The first: a fire-and-forget dispatch that runs on the request's own transaction
+ * handle hits it after commit, when the handle has been released to the pool and the
+ * transaction-local tenant GUC is gone — every write then dies with SQLSTATE 42501.
+ * Nothing had ever been written to `notifications`.
+ *
+ * The second: deferring with an in-memory hook and catching its failure into a log
+ * loses the notification outright whenever the process dies between commit and drain.
+ * `emit` now records the intent inside the caller's transaction first, so the drain is
+ * an optimisation rather than the only chance — and a failed drain is a retry.
  */
-describe("NotificationDispatchService transaction safety", () => {
+describe("NotificationDispatchService durability", () => {
   const resolveDefinition = jest.fn();
 
   const DEFINITION = {
@@ -51,7 +58,12 @@ describe("NotificationDispatchService transaction safety", () => {
     transaction: jest.Mock;
     select: jest.Mock;
     execute: jest.Mock;
+    insert: jest.Mock;
+    update: jest.Mock;
   }
+
+  const insertedValues: Array<Record<string, unknown>> = [];
+  const updatedValues: Array<Record<string, unknown>> = [];
 
   const db: MockDb = {
     transaction: jest.fn((fn: (t: MockDb) => Promise<unknown>) => fn(db)),
@@ -59,12 +71,26 @@ describe("NotificationDispatchService transaction safety", () => {
       from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
     }),
     execute: jest.fn().mockResolvedValue([]),
+    insert: jest.fn().mockImplementation(() => ({
+      values: jest.fn().mockImplementation((v: Record<string, unknown>) => {
+        insertedValues.push(v);
+        return { onConflictDoNothing: jest.fn().mockResolvedValue(undefined) };
+      }),
+    })),
+    update: jest.fn().mockImplementation(() => ({
+      set: jest.fn().mockImplementation((v: Record<string, unknown>) => {
+        updatedValues.push(v);
+        return { where: jest.fn().mockResolvedValue(undefined) };
+      }),
+    })),
   };
 
   let svc: NotificationDispatchService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    insertedValues.length = 0;
+    updatedValues.length = 0;
     resolveDefinition.mockResolvedValue({ definition: DEFINITION, enabled: false });
 
     const moduleRef = await Test.createTestingModule({
@@ -124,46 +150,87 @@ describe("NotificationDispatchService transaction safety", () => {
     return JSON.stringify(db.execute.mock.calls).includes("app.organization_id");
   }
 
-  it("touches no database until the caller's transaction commits", async () => {
+  it("records the intent inside the caller's transaction before dispatching anything", async () => {
     const afterCommit: AfterCommitHook[] = [];
 
     const result = await inRequestTransaction(afterCommit, () => svc.emit(input));
 
     expect(result.deferred).toBe(true);
-    expect(afterCommit).toHaveLength(1);
+    expect(insertedValues).toHaveLength(1);
+    expect(insertedValues[0]).toMatchObject({
+      orgId: ORG,
+      eventKey: input.eventKey,
+      targetUserIds: [USER],
+    });
+    // The intent is durable; the pipeline itself has not run yet.
     expect(resolveDefinition).not.toHaveBeenCalled();
     expect(db.transaction).not.toHaveBeenCalled();
+    expect(afterCommit).toHaveLength(1);
   });
 
-  it("opens its own tenant transaction when the deferred hook runs", async () => {
+  /**
+   * Two transactions, and the second one is the point. After-commit hooks run once the
+   * request's transaction has already returned, so there is no ambient context: both
+   * the dispatch AND the mark have to open their own, or the mark hits `notification_outbox`
+   * — an RLS table — on a handle with no tenant GUC and is refused 42501. An unmarked
+   * row is re-dispatched by the relay, which for an event with no dedupe window is a
+   * second notification rather than a no-op.
+   */
+  it("drains the intent as soon as the caller's transaction commits, marking it in its own tenant transaction", async () => {
     const afterCommit: AfterCommitHook[] = [];
     await inRequestTransaction(afterCommit, () => svc.emit(input));
 
     await afterCommit[0]?.();
 
-    expect(db.transaction).toHaveBeenCalledTimes(1);
+    expect(db.transaction).toHaveBeenCalledTimes(2);
     expect(setsTenantGuc()).toBe(true);
     expect(resolveDefinition).toHaveBeenCalledWith(ORG, input.eventKey);
+    expect(updatedValues).toContainEqual(expect.objectContaining({ state: "PROCESSED" }));
   });
 
-  it("dispatches immediately when there is no transaction to wait for", async () => {
-    const result = await svc.emit(input);
-
-    expect(result.deferred).toBe(false);
-    expect(resolveDefinition).toHaveBeenCalledWith(ORG, input.eventKey);
-    expect(setsTenantGuc()).toBe(true);
-  });
-
-  it("reports a deferred failure instead of swallowing it", async () => {
+  it("leaves a failed drain PENDING for the relay instead of losing the notification", async () => {
     const afterCommit: AfterCommitHook[] = [];
-    const { logger } = svc as unknown as { logger: { error: (message: string) => void } };
-    const logged = jest.spyOn(logger, "error").mockImplementation(() => undefined);
+    const { logger } = svc as unknown as { logger: { warn: (message: string) => void } };
+    const logged = jest.spyOn(logger, "warn").mockImplementation(() => undefined);
     resolveDefinition.mockRejectedValue(new Error("42501 no tenant context"));
 
     await inRequestTransaction(afterCommit, () => svc.emit(input));
     await expect(afterCommit[0]?.()).resolves.not.toThrow();
 
     expect(logged).toHaveBeenCalledWith(expect.stringContaining("42501"));
+    // Never marked PROCESSED — the relay must still find it.
+    expect(updatedValues).not.toContainEqual(expect.objectContaining({ state: "PROCESSED" }));
+  });
+
+  it("dispatches synchronously when there is no transaction to record the intent in", async () => {
+    const result = await svc.emit(input);
+
+    expect(result.deferred).toBe(false);
+    expect(insertedValues).toHaveLength(0);
+    expect(resolveDefinition).toHaveBeenCalledWith(ORG, input.eventKey);
+    expect(setsTenantGuc()).toBe(true);
+  });
+
+  /**
+   * The dedupe key carries no timestamp and outbox rows are never deleted, so a key
+   * built only from (event, entity, targets) would collapse the second comment on a
+   * ticket into the first — permanently, and silently, via onConflictDoNothing.
+   */
+  it("gives two genuine emissions of the same event distinct dedupe keys", async () => {
+    await inRequestTransaction([], () => svc.emit(input));
+    await inRequestTransaction([], () => svc.emit(input));
+
+    expect(insertedValues).toHaveLength(2);
+    expect(insertedValues[0]?.dedupeKey).not.toEqual(insertedValues[1]?.dedupeKey);
+  });
+
+  it("keeps an explicit dedupe key stable so a replayed consumer cannot double-notify", async () => {
+    const replayed: DispatchEventInput = { ...input, dedupeKey: "outbox-event-7" };
+
+    await inRequestTransaction([], () => svc.emit(replayed));
+    await inRequestTransaction([], () => svc.emit(replayed));
+
+    expect(insertedValues[0]?.dedupeKey).toEqual(insertedValues[1]?.dedupeKey);
   });
 
   it("does not queue a hook outside a request transaction", () => {

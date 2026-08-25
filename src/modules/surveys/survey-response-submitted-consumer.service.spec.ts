@@ -99,14 +99,14 @@ async function buildService(options: {
   survey?: { ownerUserId: string | null } | null;
   session?: { participantId: number | null; anonymous: boolean } | null;
   participant?: { userId: string | null } | null;
-  emitDurableImpl?: () => Promise<void>;
+  emitImpl?: () => Promise<void>;
 }) {
-  const { emitDurableImpl = async () => undefined } = options;
+  const { emitImpl = async () => undefined } = options;
 
   const db = buildDbMock(options);
 
   const dispatch = {
-    emitDurable: jest.fn().mockImplementation(emitDurableImpl),
+    emit: jest.fn().mockImplementation(emitImpl),
   } as unknown as NotificationDispatchService;
 
   const registry = new OutboxConsumerRegistry();
@@ -144,14 +144,14 @@ describe("SurveyResponseSubmittedConsumerService", () => {
     it("skips processing when the inbox record was already claimed", async () => {
       const { svc, dispatch } = await buildService({ claimed: false });
       await svc.handle(makeEvent());
-      expect(dispatch.emitDurable).not.toHaveBeenCalled();
+      expect(dispatch.emit).not.toHaveBeenCalled();
     });
 
     it("is idempotent: a second call with the same event does not dispatch", async () => {
       const { svc, dispatch } = await buildService({ claimed: false });
       await svc.handle(makeEvent());
       await svc.handle(makeEvent());
-      expect(dispatch.emitDurable).not.toHaveBeenCalled();
+      expect(dispatch.emit).not.toHaveBeenCalled();
     });
 
     it("calls db.insert to attempt the inbox claim on every handle() invocation", async () => {
@@ -180,7 +180,7 @@ describe("SurveyResponseSubmittedConsumerService", () => {
       const { svc, dispatch, db } = await buildService({ survey: null });
       await svc.handle(makeEvent());
 
-      expect(dispatch.emitDurable).not.toHaveBeenCalled();
+      expect(dispatch.emit).not.toHaveBeenCalled();
       const setCall = (db.update as jest.Mock).mock.results[0]?.value as { set: jest.Mock } | undefined;
       expect(setCall?.set).toHaveBeenCalledWith(expect.objectContaining({ status: "SKIPPED" }));
     });
@@ -194,8 +194,7 @@ describe("SurveyResponseSubmittedConsumerService", () => {
 
       await svc.handle(makeEvent());
 
-      expect(dispatch.emitDurable).toHaveBeenCalledWith(
-        expect.anything(),
+      expect(dispatch.emit).toHaveBeenCalledWith(
         expect.objectContaining({
           eventKey: "survey.response.received",
           orgId: ORG_ID,
@@ -213,8 +212,7 @@ describe("SurveyResponseSubmittedConsumerService", () => {
 
       await svc.handle(makeEvent());
 
-      expect(dispatch.emitDurable).not.toHaveBeenCalledWith(
-        expect.anything(),
+      expect(dispatch.emit).not.toHaveBeenCalledWith(
         expect.objectContaining({ eventKey: "survey.response.received" }),
       );
     });
@@ -236,8 +234,7 @@ describe("SurveyResponseSubmittedConsumerService", () => {
 
       await svc.handle(makeAssessmentEvent(true));
 
-      expect(dispatch.emitDurable).toHaveBeenCalledWith(
-        expect.anything(),
+      expect(dispatch.emit).toHaveBeenCalledWith(
         expect.objectContaining({
           eventKey: "survey.certification.passed",
           orgId: ORG_ID,
@@ -257,8 +254,7 @@ describe("SurveyResponseSubmittedConsumerService", () => {
 
       await svc.handle(makeAssessmentEvent(false));
 
-      expect(dispatch.emitDurable).toHaveBeenCalledWith(
-        expect.anything(),
+      expect(dispatch.emit).toHaveBeenCalledWith(
         expect.objectContaining({
           eventKey: "survey.certification.failed",
           orgId: ORG_ID,
@@ -274,8 +270,7 @@ describe("SurveyResponseSubmittedConsumerService", () => {
 
       await svc.handle(makeAssessmentEvent(null));
 
-      expect(dispatch.emitDurable).not.toHaveBeenCalledWith(
-        expect.anything(),
+      expect(dispatch.emit).not.toHaveBeenCalledWith(
         expect.objectContaining({ eventKey: expect.stringContaining("certification") }),
       );
     });
@@ -288,8 +283,7 @@ describe("SurveyResponseSubmittedConsumerService", () => {
 
       await svc.handle(makeAssessmentEvent(true));
 
-      expect(dispatch.emitDurable).not.toHaveBeenCalledWith(
-        expect.anything(),
+      expect(dispatch.emit).not.toHaveBeenCalledWith(
         expect.objectContaining({ eventKey: expect.stringContaining("certification") }),
       );
     });
@@ -303,8 +297,7 @@ describe("SurveyResponseSubmittedConsumerService", () => {
 
       await svc.handle(makeAssessmentEvent(true));
 
-      expect(dispatch.emitDurable).not.toHaveBeenCalledWith(
-        expect.anything(),
+      expect(dispatch.emit).not.toHaveBeenCalledWith(
         expect.objectContaining({ eventKey: expect.stringContaining("certification") }),
       );
     });
@@ -317,8 +310,7 @@ describe("SurveyResponseSubmittedConsumerService", () => {
 
       await svc.handle(makeAssessmentEvent(true));
 
-      expect(dispatch.emitDurable).not.toHaveBeenCalledWith(
-        expect.anything(),
+      expect(dispatch.emit).not.toHaveBeenCalledWith(
         expect.objectContaining({ eventKey: expect.stringContaining("certification") }),
       );
     });
@@ -341,7 +333,7 @@ describe("SurveyResponseSubmittedConsumerService", () => {
     it("propagates a thrown error so the relay marks the outbox event RETRY, not DELIVERED", async () => {
       const { svc } = await buildService({
         survey: { ownerUserId: OWNER_USER_ID },
-        emitDurableImpl: async () => {
+        emitImpl: async () => {
           throw new Error("downstream failure");
         },
       });

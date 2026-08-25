@@ -279,7 +279,7 @@ export class ReimbursementsService {
       const employeeExpenses = batchExpenses.filter((e) => e.userId === employeeId);
       const employeeTotal = formatDecimal(employeeExpenses.reduce((s, e) => addDecimals(s, e.amount), "0"), 2);
 
-      void this.dispatch.emit({
+      await this.dispatch.emit({
         eventKey: "accounting.reimbursement.paid",
         orgId: u.orgId,
         actorUserId: u.userId,

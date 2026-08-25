@@ -181,7 +181,7 @@ export class MfaService {
       .where(eq(users.id, userId));
     await this.mfaPolicy.invalidateUser(userId);
 
-    void this.dispatch.emit({
+    await this.dispatch.emit({
       eventKey: "security.mfa.disabled",
       orgId,
       actorUserId: userId,

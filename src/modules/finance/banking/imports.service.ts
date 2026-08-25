@@ -196,7 +196,7 @@ export class ImportsService {
       await this.matching.suggestMatches(u, input.bankAccountId, newTransactionIds);
     }
 
-    void this.dispatch.emit({
+    await this.dispatch.emit({
       eventKey: "accounting.bank.import_completed",
       orgId,
       actorUserId: userId,

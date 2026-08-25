@@ -221,7 +221,7 @@ export class PeriodsService {
     await this.cache.invalidate(periodsKey(orgId));
     this.audit.log({ action: "accounting.period.closed", userId, orgId, resourceType: "accounting_period", resourceId: String(periodId) });
 
-    void this.dispatch.emit({
+    await this.dispatch.emit({
       eventKey: "accounting.period.closed",
       orgId,
       actorUserId: userId,
@@ -289,7 +289,7 @@ export class PeriodsService {
     await this.cache.invalidate(periodsKey(orgId));
     this.audit.log({ action: "accounting.period.reopened", userId, orgId, resourceType: "accounting_period", resourceId: String(periodId) });
 
-    void this.dispatch.emit({
+    await this.dispatch.emit({
       eventKey: "accounting.period.reopened",
       orgId,
       actorUserId: userId,

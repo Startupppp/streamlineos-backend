@@ -93,7 +93,7 @@ export class BillsWorkflowService {
     });
 
     if (check.approverUserId) {
-      void this.dispatch.emit({
+      await this.dispatch.emit({
         eventKey: "accounting.bill.approval_requested",
         orgId,
         actorUserId: userId,

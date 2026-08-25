@@ -356,7 +356,7 @@ export class ReconciliationService {
         parseFloat(ledgerBalance) - parseFloat(refreshedAccount.currentBalance),
       ) > 0.01
     ) {
-      void this.dispatch.emit({
+      await this.dispatch.emit({
         eventKey: "accounting.reconciliation.mismatch",
         orgId,
         actorUserId: userId,

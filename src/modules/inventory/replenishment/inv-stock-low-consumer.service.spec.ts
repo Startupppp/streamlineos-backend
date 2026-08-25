@@ -69,20 +69,20 @@ function buildDbMock(options: { claimed?: boolean }): DbMock {
 async function buildService(options: {
   claimed?: boolean;
   members?: { userId: string; membershipId: number }[];
-  emitDurableImpl?: () => Promise<void>;
+  emitImpl?: () => Promise<void>;
 }) {
   const {
     members = [
       { userId: USER_ID_A, membershipId: 1 },
       { userId: USER_ID_B, membershipId: 2 },
     ],
-    emitDurableImpl = async () => undefined,
+    emitImpl = async () => undefined,
   } = options;
 
   const db = buildDbMock(options);
 
   const dispatch = {
-    emitDurable: jest.fn().mockImplementation(emitDurableImpl),
+    emit: jest.fn().mockImplementation(emitImpl),
   } as unknown as NotificationDispatchService;
 
   const access = {
@@ -125,14 +125,14 @@ describe("InvStockLowConsumerService", () => {
     it("skips processing when the inbox record was already claimed", async () => {
       const { svc, dispatch } = await buildService({ claimed: false });
       await svc.handle(makeEvent());
-      expect(dispatch.emitDurable).not.toHaveBeenCalled();
+      expect(dispatch.emit).not.toHaveBeenCalled();
     });
 
     it("is idempotent: a second call with the same event does not dispatch", async () => {
       const { svc, dispatch } = await buildService({ claimed: false });
       await svc.handle(makeEvent());
       await svc.handle(makeEvent());
-      expect(dispatch.emitDurable).not.toHaveBeenCalled();
+      expect(dispatch.emit).not.toHaveBeenCalled();
     });
 
     it("calls db.insert to attempt the inbox claim on every handle() invocation", async () => {
@@ -165,7 +165,7 @@ describe("InvStockLowConsumerService", () => {
       const { svc, dispatch, db } = await buildService({ members: [] });
       await svc.handle(makeEvent());
 
-      expect(dispatch.emitDurable).not.toHaveBeenCalled();
+      expect(dispatch.emit).not.toHaveBeenCalled();
       const setCall = (db.update as jest.Mock).mock.results[0]?.value as
         | { set: jest.Mock }
         | undefined;
@@ -186,8 +186,7 @@ describe("InvStockLowConsumerService", () => {
 
       await svc.handle(makeEvent());
 
-      expect(dispatch.emitDurable).toHaveBeenCalledWith(
-        expect.anything(),
+      expect(dispatch.emit).toHaveBeenCalledWith(
         expect.objectContaining({
           eventKey: "inventory.stock.low",
           orgId: ORG_ID,
@@ -223,7 +222,7 @@ describe("InvStockLowConsumerService", () => {
   describe("error propagation", () => {
     it("propagates a thrown error so the relay marks the outbox event RETRY, not DELIVERED", async () => {
       const { svc } = await buildService({
-        emitDurableImpl: async () => {
+        emitImpl: async () => {
           throw new Error("downstream failure");
         },
       });

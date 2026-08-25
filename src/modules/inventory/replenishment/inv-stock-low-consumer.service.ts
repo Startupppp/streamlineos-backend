@@ -83,8 +83,9 @@ export class InvStockLowConsumerService
 
     const targetUserIds = members.map((m) => m.userId);
 
-    await this.dispatch.emitDurable(this.db, {
+    await this.dispatch.emit({
       orgId,
+      dedupeKey: event.eventId,
       eventKey: "inventory.stock.low",
       targetUserIds,
       entityType: "inv_product_variant",

@@ -381,7 +381,7 @@ export class FinancePostingService {
         });
 
         if (applicablePolicy.approverUserId) {
-          void this.dispatch.emit({
+          await this.dispatch.emit({
             eventKey: "accounting.approval.requested",
             orgId,
             actorUserId: userId,

@@ -100,7 +100,7 @@ export class TaxPaymentsService {
       result: "SUCCESS",
     });
 
-    void this.dispatch.emit({
+    await this.dispatch.emit({
       eventKey: "accounting.tax.payment_posted",
       orgId,
       actorUserId: userId,

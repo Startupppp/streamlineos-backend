@@ -146,7 +146,7 @@ export class RecurringInvoicesService {
       .set({ lastRunDate: new Date().toISOString().slice(0, 10), nextRunDate, updatedAt: new Date() })
       .where(eq(finRecurringInvoiceTemplates.id, tpl.id));
 
-    void this.dispatch.emit({
+    await this.dispatch.emit({
       eventKey: "accounting.invoice.recurring_generated",
       orgId,
       targetUserIds: [userId],

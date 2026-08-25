@@ -65,7 +65,7 @@ export class BillsDueCheckService {
 
       const outstanding = (Number(bill.total ?? 0) - Number(bill.amountPaid ?? 0)).toFixed(2);
 
-      void this.dispatch.emit({
+      await this.dispatch.emit({
         eventKey: "accounting.bill.due",
         orgId: bill.orgId,
         actorUserId: null,
