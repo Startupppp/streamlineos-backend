@@ -27,7 +27,7 @@ async function main(): Promise<void> {
 
   try {
     const db = app.get<Db>(DRIZZLE);
-    const organizations: Array<{ kb: Row; calendar: Row }> = [];
+    const organizations: Array<{ orgId: string; kb: Row; calendar: Row }> = [];
     const sweep = await forEachOrg(db, "kb-calendar-runtime-evidence", async (tx, orgId) => {
       await tx.execute(sql`SET TRANSACTION READ ONLY`);
 
@@ -66,6 +66,10 @@ async function main(): Promise<void> {
           (SELECT count(*) FROM eligible) - (SELECT count(*) FROM index_candidates) AS contentless_eligible_pages,
           (SELECT count(*) FROM indexed) AS indexed_eligible_pages,
           (SELECT count(*) FROM index_candidates e LEFT JOIN indexed i ON i.page_id = e.id WHERE i.page_id IS NULL) AS eligible_without_chunk,
+          (SELECT coalesce(array_agg(e.id ORDER BY e.id), ARRAY[]::integer[])
+             FROM index_candidates e
+             LEFT JOIN indexed i ON i.page_id = e.id
+            WHERE i.page_id IS NULL) AS eligible_without_chunk_page_ids,
           (SELECT count(*) FROM acl_mismatches) AS chunk_acl_mismatches,
           (SELECT count(*) FROM kb_article_chunks c LEFT JOIN kb_pages p ON p.id = c.page_id AND p.org_id = c.org_id WHERE c.org_id = ${orgId} AND p.id IS NULL) AS orphan_chunks
       `));
@@ -86,7 +90,7 @@ async function main(): Promise<void> {
         WHERE p.org_id = ${orgId}
       `));
 
-      organizations.push({ kb, calendar });
+      organizations.push({ orgId, kb, calendar });
     });
 
     const sum = (field: string, source: "kb" | "calendar") =>
@@ -106,6 +110,12 @@ async function main(): Promise<void> {
         contentlessEligiblePages: sum("contentless_eligible_pages", "kb"),
         indexedEligiblePages: sum("indexed_eligible_pages", "kb"),
         eligibleWithoutChunk: sum("eligible_without_chunk", "kb"),
+        targets: organizations.flatMap(({ orgId, kb }) => {
+          const pageIds = Array.isArray(kb.eligible_without_chunk_page_ids)
+            ? kb.eligible_without_chunk_page_ids.map(Number)
+            : [];
+          return pageIds.length > 0 ? [{ orgId, pageIds }] : [];
+        }),
         chunkAclMismatches: sum("chunk_acl_mismatches", "kb"),
         orphanChunks: sum("orphan_chunks", "kb"),
       },
@@ -120,6 +130,7 @@ async function main(): Promise<void> {
       interpretation: {
         c1: [
           "eligibleWithoutChunk counts only lifecycle-eligible pages with non-empty contentText and no page_body chunk, matching indexPage's data eligibility",
+          "targets contains only tenant and page identifiers needed to scope an operator-approved backfill; it emits no page content or user identifiers",
           "eligibleWithoutChunk=0 is an achievable coverage invariant only while embeddingProviderConfigured=true; provider availability during a run remains an external runtime prerequisite",
           "contentlessEligiblePages are lifecycle-eligible but intentionally make no embedding call",
           "chunkAclMismatches=0 is required for page/chunk visibility metadata parity",
