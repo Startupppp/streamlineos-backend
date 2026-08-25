@@ -18,11 +18,15 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { CrmImportService, type ImportProgress } from "./crm-import.service";
+import { CrmConnectorService } from "./crm-connector.service";
+import type { ConnectorProvider, ConnectorStream } from "./connectors/connector-source";
 import { ImportPump } from "./import-pump";
 import { CrmExportService, type ExportEntity } from "./crm-export.service";
 import {
+  connectorSyncSchema,
   exportQuerySchema,
   previewImportSchema,
+  type ConnectorSyncInput,
   type ExportQuery,
   type PreviewImportInput,
 } from "./dto/crm-import.schemas";
@@ -33,6 +37,7 @@ export class CrmImportController {
   constructor(
     private readonly imports: CrmImportService,
     private readonly exports: CrmExportService,
+    private readonly connectors: CrmConnectorService,
     private readonly pump: ImportPump,
   ) {}
 
@@ -122,6 +127,59 @@ export class CrmImportController {
     @CurrentUser() u: CurrentUserContext,
   ): Promise<ImportProgress> {
     return this.imports.progress(u.orgId, crmImportId);
+  }
+
+  /**
+   * Read a connected CRM forward, and advance it while you are here.
+   *
+   * The same shape as the commit, and for the same two reasons. `startSync`
+   * creates the durable run so the work survives this process, and `advance`
+   * executes one attempt because **nothing in this repository schedules
+   * `/cron/workflow-tick`** — without the pump a connector would sit at zero
+   * while the UI politely polled it.
+   *
+   * Safe to call repeatedly, and meant to be: each call walks another batch of
+   * pages and reports where it got to. A collection larger than one import
+   * finishes over several calls, each producing its own reviewable, separately
+   * revertable import.
+   *
+   * Gated on `crm:imports:manage` rather than on an integrations key: what this
+   * authorises is writing records into the CRM, and the connection itself was
+   * authorised when somebody connected it.
+   */
+  @Post("connectors/sync")
+  @Idempotent("crm.connector.sync")
+  @RequirePermission("crm:imports:manage")
+  async sync(
+    @Body(new ZodValidationPipe(connectorSyncSchema)) body: ConnectorSyncInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const { crmConnectorSyncId, workflowRunId } = await this.connectors.startSync({
+      organizationId: u.orgId,
+      userId: u.userId,
+      connectionId: body.connectionId,
+      provider: body.provider as ConnectorProvider,
+      stream: body.stream as ConnectorStream,
+    });
+
+    await this.pump.advance(u.orgId, workflowRunId);
+    return this.connectors.progress(u.orgId, crmConnectorSyncId);
+  }
+
+  /**
+   * Where a connector has got to, without touching it.
+   *
+   * `resuming` is the one field worth reading twice: true means a walk is
+   * part-way through the collection and the next call continues it rather than
+   * starting again.
+   */
+  @Get("connectors/:crmConnectorSyncId")
+  @RequirePermission("crm:imports:manage")
+  connectorProgress(
+    @Param("crmConnectorSyncId") crmConnectorSyncId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.connectors.progress(u.orgId, crmConnectorSyncId);
   }
 
   /**

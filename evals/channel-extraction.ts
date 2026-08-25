@@ -20,10 +20,10 @@ import type { InboundCommunicationEvent } from "../src/modules/ingress/inbound-e
  *
  * The path is `AutonomyService.processActivity`'s, step for step, rather than an
  * approximation of it: subject and body joined, capped at the same four thousand
- * characters, short-circuited on the same eligibility floor, redacted with the
+ * characters, short-circuited on the same eligibility rule, redacted with the
  * same denylist and fenced by the same prompt builder. Two of the findings the
  * suites record were only visible because the real path was used — the
- * eligibility floor silently drops most of a WhatsApp burst, and a form's
+ * eligibility rule drops the barest fragments of a WhatsApp burst, and a form's
  * subject is the form's name rather than anything a submitter wrote.
  */
 
@@ -120,8 +120,15 @@ export function conversationFor(event: InboundCommunicationEvent): string {
  * One event, taken as far as the real pipeline would take it.
  *
  * The short-circuit is first and it is not a detail: `hasEligibleContext`
- * refuses anything under twenty characters, so a channel whose messages are
- * mostly shorter than that never reaches a model however good the model is.
+ * refuses a window that says nothing, and refuses a fragment standing alone with
+ * fewer than three content words. So a channel whose messages are mostly bare
+ * fragments never reaches a model however good the model is.
+ *
+ * That rule replaced a flat twenty-character floor in ticket 23, and the swap
+ * changed no case in any of the four datasets — each message was checked against
+ * both. What changed is why a fragment is refused: the length was written for
+ * mail and was doing the safety work of stopping two words advancing a deal by
+ * accident. `eligibility.ts` carries the reasoning.
  */
 export function extractFromEvent(
   event: InboundCommunicationEvent,

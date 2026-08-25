@@ -1,10 +1,13 @@
 import { Module } from "@nestjs/common";
 import { WorkflowModule } from "../../common/workflow/workflow.module";
+import { IntegrationsModule } from "../integrations/core/integrations.module";
 import { CrmImportController } from "./crm-import.controller";
 import { CrmImportService } from "./crm-import.service";
 import { CrmExportService } from "./crm-export.service";
 import { CrmImportWorkflow } from "./crm-import.workflow";
 import { ImportPump } from "./import-pump";
+import { CrmConnectorService } from "./crm-connector.service";
+import { CrmConnectorWorkflow } from "./crm-connector.workflow";
 
 /**
  * Bringing a competitor's export in, and taking everything back out.
@@ -14,9 +17,19 @@ import { ImportPump } from "./import-pump";
  * both cheap.
  */
 @Module({
-  imports: [WorkflowModule],
+  // `IntegrationsModule` for `ComposioGateway` only. Nothing here touches
+  // `IntegrationsService`, and nothing writes `user_integration_connections`:
+  // the connectors read that table as a mirror and go out through the gateway.
+  imports: [WorkflowModule, IntegrationsModule],
   controllers: [CrmImportController],
-  providers: [CrmImportService, CrmExportService, CrmImportWorkflow, ImportPump],
-  exports: [CrmImportService, CrmExportService],
+  providers: [
+    CrmImportService,
+    CrmExportService,
+    CrmImportWorkflow,
+    CrmConnectorService,
+    CrmConnectorWorkflow,
+    ImportPump,
+  ],
+  exports: [CrmImportService, CrmExportService, CrmConnectorService],
 })
 export class CrmImportModule {}

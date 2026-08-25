@@ -7,6 +7,7 @@ export * from "./autonomy-scoring";
 export * from "./autonomy-holds";
 export * from "./imports";
 export * from "./mailbox-sync";
+export * from "./connector-syncs";
 export * from "./campaigns";
 export * from "./leads";
 export * from "./contacts";

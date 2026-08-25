@@ -79,12 +79,15 @@ export function batchStepName(phase: "commit" | "revert", index: number): string
 /**
  * The name of the pause taken after a window.
  *
+ * `sync` is a third phase because the connectors walk pages under the same
+ * attempt budget, and a page is the unit there rather than a row window.
+ *
  * Keyed on the window it follows, so it is unique within a run however many
  * attempts it takes: names must not repeat inside one execution, and a pause
  * that has already elapsed is a completed step a resumed run walks straight
  * past. Which windows a given attempt pauses after depends on how fast the
  * machine was, and that is fine — a name is only ever attached to one decision.
  */
-export function pauseStepName(phase: "commit" | "revert", index: number): string {
+export function pauseStepName(phase: "commit" | "revert" | "sync", index: number): string {
   return `${phase}-pause-after-${String(index)}`;
 }

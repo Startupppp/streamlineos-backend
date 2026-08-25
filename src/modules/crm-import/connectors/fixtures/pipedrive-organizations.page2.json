@@ -1,0 +1,23 @@
+{
+  "success": true,
+  "data": [
+    {
+      "id": 43,
+      "name": "Saltmarsh Brewing Co",
+      "address": "The Maltings, Woodbridge",
+      "owner_id": { "id": 9034, "name": "Elena Sokolova" },
+      "label": null,
+      "people_count": 2,
+      "open_deals_count": 3,
+      "add_time": "2026-02-19 09:00:00",
+      "update_time": "2026-08-23 19:02:10"
+    }
+  ],
+  "additional_data": {
+    "pagination": {
+      "start": 100,
+      "limit": 100,
+      "more_items_in_collection": false
+    }
+  }
+}

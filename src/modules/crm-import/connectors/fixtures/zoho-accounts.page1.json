@@ -1,0 +1,47 @@
+{
+  "data": [
+    {
+      "id": "554023000000123001",
+      "Account_Name": "Sundaram Textiles Pvt Ltd",
+      "Account_Type": "Customer",
+      "Email": "accounts@sundaramtextiles.example",
+      "Phone": "+91 44 2841 7700",
+      "Fax": null,
+      "Website": "www.sundaramtextiles.example",
+      "Description": "Bulk buyer. Quarterly terms.",
+      "Billing_Street": "22 Anna Salai",
+      "Annual_Revenue": 9800000,
+      "Employees": 320,
+      "Ownership": "Private",
+      "Parent_Account": { "name": "Sundaram Holdings", "id": "554023000000122001" },
+      "Owner": { "name": "Kavitha Nair", "id": "554023000000100001", "email": "kavitha@ourcompany.example" },
+      "Modified_Time": "2026-08-17T14:20:31+05:30",
+      "Created_Time": "2023-06-01T09:00:00+05:30"
+    },
+    {
+      "id": "554023000000123002",
+      "Account_Name": "Deccan Agro Exports",
+      "Account_Type": "Vendor",
+      "Email": null,
+      "Phone": "+91 40 2331 5566",
+      "Fax": null,
+      "Website": null,
+      "Description": null,
+      "Billing_Street": null,
+      "Annual_Revenue": null,
+      "Employees": null,
+      "Ownership": null,
+      "Parent_Account": null,
+      "Owner": { "name": "Kavitha Nair", "id": "554023000000100001" },
+      "Modified_Time": "2026-08-22T11:05:00+05:30",
+      "Created_Time": "2024-01-15T09:00:00+05:30"
+    }
+  ],
+  "info": {
+    "per_page": 200,
+    "count": 2,
+    "page": 1,
+    "more_records": true,
+    "next_page_token": "8f4c1a9b2d7e5f30a1b6c8d94e2f7a05"
+  }
+}

@@ -36,7 +36,7 @@ import { COMMIT_WORKFLOW, REVERT_WORKFLOW } from "./import-workflow-names";
  * or multipart upload behind it would move the failure from a clear refusal to a
  * 413 nobody can act on.
  */
-const MAX_ROWS = 5_000;
+export const MAX_ROWS = 5_000;
 
 /**
  * How many existing parties one preview will weigh a file against.

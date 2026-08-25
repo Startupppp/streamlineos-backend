@@ -145,3 +145,77 @@ describe("needsConfirmation", () => {
     expect(needsConfirmation(mapColumns(["Company Name", "Email", "Phone"]))).toHaveLength(0);
   });
 });
+
+describe("columns that belong to another record", () => {
+  /**
+   * The failure this guard exists for, stated once.
+   *
+   * `email`, `phone`, `taxNumber`, `website` and `name` are what
+   * `party-duplicates` matches on, so a value from somebody else landing in one
+   * of them does not make a slightly wrong record — it makes the wrong record.
+   * One rep owns two hundred accounts, so `Account Owner Email` read as the
+   * customer's address gives two hundred rows one identity, and the scorer
+   * merges anything sharing one above 0.85.
+   */
+  it("keeps another person's contact details out of the identity columns", () => {
+    for (const header of [
+      "Owner Email",
+      "Account Owner Email",
+      "Account Manager Email",
+      "Created By Email",
+      "Assistant Phone",
+      "Asst. Phone",
+    ])
+      expect(mapColumn(header)).toEqual({ kind: "custom", key: expect.any(String) });
+  });
+
+  it("keeps a related company out of the name column", () => {
+    // Salesforce and Zoho both ship "Parent Account"; HubSpot ships
+    // "Associated Company" on every contacts export.
+    for (const header of ["Parent Account", "Ultimate Parent Account", "Associated Company"])
+      expect(mapColumn(header)).toEqual({ kind: "custom", key: expect.any(String) });
+  });
+
+  /**
+   * Pipedrive spells every header `Entity - Field`, so a Persons export carries
+   * the person's company under a header whose head noun is a synonym of `name`.
+   * Read as the party's own name, every person at one company collapses into
+   * that company.
+   */
+  it("reads Pipedrive's entity prefix as naming a different record", () => {
+    for (const header of ["Person - Organization", "Deal - Organization", "Activity - Organization"])
+      expect(mapColumn(header)).toEqual({ kind: "custom", key: expect.any(String) });
+
+    // The person's own columns are unaffected: same prefix, its own fields.
+    expect(mapColumn("Person - Name")).toMatchObject({ kind: "mapped", field: "name" });
+    expect(mapColumn("Person - Email")).toMatchObject({ kind: "mapped", field: "email" });
+  });
+
+  /**
+   * The guard must not fire on a qualifier that describes the row rather than
+   * pointing away from it, or a file of customers loses its phone numbers.
+   */
+  it("leaves the row's own qualified columns alone", () => {
+    expect(mapColumn("Company Phone")).toMatchObject({ kind: "mapped", field: "phone" });
+    expect(mapColumn("Billing Email")).toMatchObject({ kind: "mapped", field: "email" });
+    expect(mapColumn("Primary Contact Email")).toMatchObject({ kind: "mapped", field: "email" });
+    expect(mapColumn("Company Domain Name")).toMatchObject({ kind: "mapped", field: "website" });
+    // "Company / Account" is one header naming one thing, not a cross-reference
+    // from a company to an account.
+    expect(mapColumn("Company / Account")).toMatchObject({ kind: "mapped", field: "name" });
+  });
+
+  /**
+   * A location label, not a URL. `website` is a blocking key, so reading
+   * "HQ" as a host gives every account at one office the same one.
+   */
+  it("does not read Salesforce's site label as a website", () => {
+    expect(mapColumn("Account Site")).toEqual({ kind: "custom", key: "account_site" });
+    expect(mapColumn("Web Site")).toMatchObject({ kind: "mapped", field: "website" });
+  });
+
+  it("recognises a timestamp Pipedrive spells without a date word", () => {
+    expect(mapColumn("Organization - Created")).toEqual({ kind: "unmapped" });
+    expect(mapColumn("Person - Updated")).toEqual({ kind: "unmapped" });
+  });
+});

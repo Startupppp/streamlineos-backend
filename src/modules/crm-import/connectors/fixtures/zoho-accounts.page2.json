@@ -1,0 +1,28 @@
+{
+  "data": [
+    {
+      "id": "554023000000123003",
+      "Account_Name": "Konkan Ceramics",
+      "Account_Type": "Customer",
+      "Email": "hello@konkanceramics.example",
+      "Phone": null,
+      "Fax": null,
+      "Website": "konkanceramics.example",
+      "Description": null,
+      "Billing_Street": null,
+      "Annual_Revenue": null,
+      "Employees": null,
+      "Ownership": null,
+      "Parent_Account": null,
+      "Owner": { "name": "Rahul Desai", "id": "554023000000100002" },
+      "Modified_Time": "2026-08-24T08:12:44+05:30",
+      "Created_Time": "2025-03-20T09:00:00+05:30"
+    }
+  ],
+  "info": {
+    "per_page": 200,
+    "count": 1,
+    "page": 2,
+    "more_records": false
+  }
+}
