@@ -1,6 +1,11 @@
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { authorize, type AccessResolver } from "./authorize";
 import type { DataScope } from "./access.types";
+import {
+  moduleAvailabilityResolver,
+  type ModuleAvailabilityResolver,
+} from "../../common/rbac/module-availability";
+import { isCoreModuleKey } from "./entitlements.service";
 
 function makeCtx(partial: Partial<CurrentUserContext> = {}): CurrentUserContext {
   return {
@@ -14,10 +19,41 @@ function makeCtx(partial: Partial<CurrentUserContext> = {}): CurrentUserContext 
   };
 }
 
-function makeResolver(map: Map<string, DataScope>, enabledModules: string[]): AccessResolver {
+function makeResolver(
+  map: Map<string, DataScope>,
+  enabledModules: string[],
+  options: {
+    deniedModules?: Set<string>;
+    planLockedModules?: readonly string[];
+    onPlanLockedRead?: () => void;
+    useModuleState?: boolean;
+    moduleState?: boolean;
+  } = {},
+): AccessResolver {
+  const availabilityResolver = (
+    getModuleMap: (orgId: string) => Promise<Record<string, boolean>>,
+  ): ModuleAvailabilityResolver =>
+    moduleAvailabilityResolver(
+      {
+        isCoreModule: isCoreModuleKey,
+        getModuleMap,
+        getPlanLockedModules: async () => {
+          options.onPlanLockedRead?.();
+          return options.planLockedModules ?? [];
+        },
+      },
+      {
+        getUserDeniedModules: async () => options.deniedModules ?? new Set<string>(),
+      },
+    );
+
   return {
     resolveUserPermissions: () => Promise.resolve(map),
     isModuleEnabled: (_orgId, moduleKey) => Promise.resolve(enabledModules.includes(moduleKey)),
+    buildModuleAvailabilityResolver: availabilityResolver,
+    ...(options.useModuleState
+      ? { getModuleState: async () => options.moduleState }
+      : {}),
   };
 }
 
@@ -64,6 +100,34 @@ describe("authorize", () => {
   it("denies with NO_MODULE when the key's module is not enabled", async () => {
     const resolver = makeResolver(new Map([["hr:employees:view", "all"]]), ["crm"]);
     const result = await authorize(resolver, makeCtx(), "hr:employees:view");
+    expect(result).toEqual({ allow: false, scope: "none", reason: "NO_MODULE" });
+  });
+
+  it("reads the canonical plan-lock input when an org has no module row", async () => {
+    const onPlanLockedRead = jest.fn();
+    const result = await authorize(
+      makeResolver(new Map([ ["hr:employees:view", "all"] ]), [], {
+        planLockedModules: ["hr"],
+        onPlanLockedRead,
+        useModuleState: true,
+      }),
+      makeCtx(),
+      "hr:employees:view",
+    );
+
+    expect(result).toEqual({ allow: false, scope: "none", reason: "NO_MODULE" });
+    expect(onPlanLockedRead).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the canonical user-deny input before the org module state", async () => {
+    const result = await authorize(
+      makeResolver(new Map([["hr:employees:view", "all"]]), ["hr"], {
+        deniedModules: new Set(["hr"]),
+      }),
+      makeCtx(),
+      "hr:employees:view",
+    );
+
     expect(result).toEqual({ allow: false, scope: "none", reason: "NO_MODULE" });
   });
 

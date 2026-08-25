@@ -157,6 +157,40 @@ describe("AccessSnapshotResolver — module flags", () => {
     expect(snap.modules["hr"]).toBe(false);
   });
 
+  it("reads the canonical plan-lock input when a gated module has no org row", async () => {
+    const getPlanLockedModules = jest.fn().mockResolvedValue(["hr"]);
+    const resolver = new AccessSnapshotResolver(
+      {
+        getModuleMap: jest.fn().mockResolvedValue({}),
+        isCoreModule: jest.fn((key: string) => isCoreModuleKey(key)),
+        buildModuleAvailabilityResolver: jest.fn().mockImplementation(
+          (
+            getMap: (orgId: string) => Promise<Record<string, boolean>>,
+            getDenied?: (orgId: string, userId: string) => Promise<Set<string>>,
+          ) =>
+            moduleAvailabilityResolver(
+              {
+                isCoreModule: isCoreModuleKey,
+                getModuleMap: getMap,
+                getPlanLockedModules,
+              },
+              getDenied ? { getUserDeniedModules: getDenied } : undefined,
+            ),
+        ),
+      } as unknown as EntitlementsService,
+      makeMfaPolicyStub(),
+      jest.fn().mockResolvedValue(1),
+      jest.fn().mockResolvedValue(new Map<string, DataScope>()),
+      jest.fn().mockResolvedValue(new Set<string>()),
+      jest.fn().mockResolvedValue(false),
+    );
+
+    const snap = await resolver.computeAccessSnapshot(ORG, USER, NON_OWNER_CTX);
+
+    expect(snap.modules["hr"]).toBe(false);
+    expect(getPlanLockedModules).toHaveBeenCalled();
+  });
+
   it("keeps an enabled plan-gated module for an owner, who carries no denies", async () => {
     const snap = await makeFlagResolver(
       { hr: true },

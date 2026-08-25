@@ -224,7 +224,7 @@ export class EntitlementsService implements OnModuleInit {
   ): ModuleAvailabilityResolver {
     return moduleAvailabilityResolver(
       {
-        isCoreModule: isCoreModuleKey,
+        isCoreModule: (moduleKey) => this.isCoreModule(moduleKey),
         getModuleMap,
         getPlanLockedModules: (orgId) => this.getPlanLockedModules(orgId),
       },

@@ -48,6 +48,7 @@ import {
   type PermissionMember,
 } from "./access-permission-members.resolver";
 import { AccessSnapshotResolver } from "./access-snapshot.resolver";
+import type { ModuleAvailabilityResolver } from "../../common/rbac/module-availability";
 
 export {
   broadest,
@@ -540,6 +541,21 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
   async isModuleEnabled(orgId: string, moduleKey: string): Promise<boolean> {
     return this.entitlements.isModuleEnabled(orgId, moduleKey);
   }
+
+  isCoreModule(moduleKey: string): boolean {
+    return this.entitlements.isCoreModule(moduleKey);
+  }
+
+  /** Build availability from the canonical entitlement facts plus user denies. */
+  buildModuleAvailabilityResolver(
+    getModuleMap: (orgId: string) => Promise<Record<string, boolean>>,
+  ): ModuleAvailabilityResolver {
+    return this.entitlements.buildModuleAvailabilityResolver(
+      getModuleMap,
+      (orgId, userId) => this.getUserDeniedModules(orgId, userId),
+    );
+  }
+
   async getModuleState(
     orgId: string,
     moduleKey: string,
