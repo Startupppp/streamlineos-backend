@@ -1,6 +1,9 @@
 import { eq, inArray } from "drizzle-orm";
-import { kbPages } from "src/db/schema";
+import { kbArticleChunks, kbPages } from "src/db/schema";
 import { KbPagesService } from "src/modules/kb/wiki/kb-pages.service";
+import { KbSearchService } from "src/modules/kb/retrieval/kb-search.service";
+import { EmbeddingsService } from "src/modules/ai/core/providers/embeddings.service";
+import { KB_EMBEDDING_DIMENSIONS } from "src/db/schema/support/kb-chunks";
 import { runInNewTenantTransaction } from "src/common/tenant/run-in-tenant-transaction";
 import { DRIZZLE } from "src/db/drizzle.constants";
 import type { Db } from "src/db/drizzle.module";
@@ -138,6 +141,105 @@ describe("[seeded-e2e] a page that belongs to a project", () => {
         ).resolves.toMatchObject({ id: own.id });
       } finally {
         if (pageId !== null) await db.delete(kbPages).where(eq(kbPages.id, pageId));
+        await fixture.teardown();
+      }
+    },
+    120_000,
+  );
+
+  it(
+    "keeps direct reads, keyword page search, and vector retrieval on the same visibility result",
+    async () => {
+      const fixture = await seedOrg(seededApp.seedDb)
+        .addMember("insider")
+        .addMember("outsider")
+        .addProject("parity")
+        .addProjectMember("parity", "insider")
+        .build();
+
+      const db = seededApp.seedDb;
+      const pages = seededApp.app.get(KbPagesService);
+      const search = seededApp.app.get(KbSearchService);
+      const embeddings = seededApp.app.get(EmbeddingsService);
+      const insider = fixture.members["insider"];
+      const outsider = fixture.members["outsider"];
+      const project = fixture.projects["parity"];
+      if (!insider || !outsider || !project) throw new Error("seed: parity fixture missing");
+
+      const vector = Array.from({ length: KB_EMBEDDING_DIMENSIONS }, (_, index) =>
+        index === 0 ? 1 : 0,
+      );
+      const created: { pageId: number; chunkId: number } = { pageId: 0, chunkId: 0 };
+      const query = "seeded parity needle";
+      const insiderCtx = asMember(insider.userId, fixture.orgId);
+      const outsiderCtx = asMember(outsider.userId, fixture.orgId);
+
+      // This is the production KbSearchService against the seeded database.
+      // Only the external embedding request is deterministic here; the pgvector
+      // candidate query, denormalized ACL columns, and final page re-check are real.
+      const configured = jest.spyOn(embeddings, "isConfigured").mockReturnValue(true);
+      const embedQuery = jest.spyOn(embeddings, "embedQuery").mockResolvedValue(vector);
+      try {
+        const [page] = await db
+          .insert(kbPages)
+          .values({
+            orgId: fixture.orgId,
+            title: "Seeded parity needle",
+            contentText: "This seeded parity needle is visible only to the project member.",
+            visibility: "org",
+            projectId: project.projectId,
+            createdById: insider.userId,
+          })
+          .returning({ id: kbPages.id });
+        if (!page) throw new Error("seed: parity page insert failed");
+        created.pageId = page.id;
+
+        const [chunk] = await db
+          .insert(kbArticleChunks)
+          .values({
+            orgId: fixture.orgId,
+            pageId: page.id,
+            source: "page_body",
+            chunkIndex: 0,
+            content: "This seeded parity needle is the vector chunk.",
+            embedding: vector,
+            embeddingModel: "seeded-parity-test",
+            pageVisibility: "org",
+            pageProjectId: project.projectId,
+            pageCreatedById: insider.userId,
+          })
+          .returning({ id: kbArticleChunks.id });
+        if (!chunk) throw new Error("seed: parity chunk insert failed");
+        created.chunkId = chunk.id;
+
+        const read = await asReader(fixture.orgId, () => pages.get(insiderCtx, page.id, false));
+        expect(read.id).toBe(page.id);
+
+        const keyword = await asReader(fixture.orgId, () => pages.search(insiderCtx, query));
+        expect(keyword.map((row) => row.id)).toContain(page.id);
+
+        const vectorResults = await asReader(fixture.orgId, () =>
+          search.retrieveTopArticles(insiderCtx, query, 5),
+        );
+        expect(vectorResults.filter((row) => row.kind === "page").map((row) => row.id)).toContain(page.id);
+
+        await expect(
+          asReader(fixture.orgId, () => pages.get(outsiderCtx, page.id, false)),
+        ).rejects.toMatchObject({ status: 404 });
+
+        const outsiderKeyword = await asReader(fixture.orgId, () => pages.search(outsiderCtx, query));
+        expect(outsiderKeyword.map((row) => row.id)).not.toContain(page.id);
+
+        const outsiderVector = await asReader(fixture.orgId, () =>
+          search.retrieveTopArticles(outsiderCtx, query, 5),
+        );
+        expect(outsiderVector.filter((row) => row.kind === "page").map((row) => row.id)).not.toContain(page.id);
+        expect(embedQuery).toHaveBeenCalledWith(query);
+      } finally {
+        configured.mockRestore();
+        embedQuery.mockRestore();
+        if (created.chunkId > 0) await db.delete(kbArticleChunks).where(eq(kbArticleChunks.id, created.chunkId));
+        if (created.pageId > 0) await db.delete(kbPages).where(eq(kbPages.id, created.pageId));
         await fixture.teardown();
       }
     },
