@@ -76,10 +76,25 @@ export class ComposioGateway {
     return Boolean(this.config.COMPOSIO_API_KEY);
   }
 
+  /**
+   * A record rather than a chain, so that adding a toolkit to
+   * `IntegrationToolkit` is a compile error here until somebody gives it an auth
+   * config.
+   *
+   * What this replaces ended in an unguarded `return COMPOSIO_AUTH_CONFIG_OUTLOOK`,
+   * which was right only because `outlook` happened to be the last member left.
+   * A fourth toolkit would have been handed Outlook's auth config and sent that
+   * person to the wrong provider's consent screen — succeeding, from the code's
+   * point of view. Two Phase 2 channel adapters hit this independently while
+   * looking for somewhere to put a carrier and a messaging provider.
+   */
   authConfigIdFor(toolkit: IntegrationToolkit): string | null {
-    if (toolkit === "googlecalendar") return this.config.COMPOSIO_AUTH_CONFIG_GOOGLE_CALENDAR ?? null;
-    if (toolkit === "gmail") return this.config.COMPOSIO_AUTH_CONFIG_GMAIL ?? null;
-    return this.config.COMPOSIO_AUTH_CONFIG_OUTLOOK ?? null;
+    const configs: Record<IntegrationToolkit, string | undefined> = {
+      googlecalendar: this.config.COMPOSIO_AUTH_CONFIG_GOOGLE_CALENDAR,
+      gmail: this.config.COMPOSIO_AUTH_CONFIG_GMAIL,
+      outlook: this.config.COMPOSIO_AUTH_CONFIG_OUTLOOK,
+    };
+    return configs[toolkit] ?? null;
   }
 
   private getClient(): Composio {
