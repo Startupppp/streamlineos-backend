@@ -1786,6 +1786,27 @@
       "when": 1787715153441,
       "tag": "0290_issue_records",
       "breakpoints": true
+    },
+    {
+      "idx": 255,
+      "version": "7",
+      "when": 1787718753441,
+      "tag": "0260_party_identifiers",
+      "breakpoints": true
+    },
+    {
+      "idx": 256,
+      "version": "7",
+      "when": 1787722353441,
+      "tag": "0280_importer_at_scale",
+      "breakpoints": true
+    },
+    {
+      "idx": 257,
+      "version": "7",
+      "when": 1787725953441,
+      "tag": "0275_party_company_search",
+      "breakpoints": true
     }
   ]
 }
