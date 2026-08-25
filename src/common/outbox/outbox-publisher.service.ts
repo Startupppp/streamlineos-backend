@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { organizations, outboxEvents } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -23,6 +23,7 @@ export interface OutboxFlushResult {
   suppressed: number;
   retried: number;
   dead: number;
+  fenced: number;
 }
 
 export interface OutboxMetrics {
@@ -42,6 +43,14 @@ export interface OutboxOrganizationReport {
   oldestEventAt: Date | null;
   oldestEventAgeSeconds: number | null;
   distinctEventTypes: number;
+}
+
+export interface OutboxReport {
+  generatedAt: string;
+  organizations: number;
+  succeeded: number;
+  failed: number;
+  reports: OutboxOrganizationReport[];
 }
 
 /**
@@ -79,34 +88,36 @@ export class OutboxPublisherService {
         );
         this.noBrokerWarned = true;
       }
-      return { claimed: 0, delivered: 0, suppressed: 0, retried: 0, dead: 0 };
+      return { claimed: 0, delivered: 0, suppressed: 0, retried: 0, dead: 0, fenced: 0 };
     }
     const claimed = await this.claimBatch();
     let delivered = 0;
     let suppressed = 0;
     let retried = 0;
     let dead = 0;
+    let fenced = 0;
 
     for (const event of claimed) {
       try {
         const lifecycle = await this.readOrgLifecycle(event.organizationId);
         if (!lifecycle.found || shouldSuppressForLifecycle(lifecycle.status)) {
-          await this.mark(event, "SUPPRESSED");
-          suppressed++;
+          if (await this.mark(event, "SUPPRESSED")) suppressed++;
+          else fenced++;
           continue;
         }
 
         await this.deliver(event);
-        await this.mark(event, "DELIVERED", { publishedAt: new Date() });
-        delivered++;
+        if (await this.mark(event, "DELIVERED", { publishedAt: new Date() })) delivered++;
+        else fenced++;
       } catch (error: unknown) {
         const outcome = await this.handleFailure(event, error);
         if (outcome === "DEAD") dead++;
-        else retried++;
+        else if (outcome === "RETRY") retried++;
+        else fenced++;
       }
     }
 
-    return { claimed: claimed.length, delivered, suppressed, retried, dead };
+    return { claimed: claimed.length, delivered, suppressed, retried, dead, fenced };
   }
 
   async metrics(): Promise<OutboxMetrics> {
@@ -165,6 +176,49 @@ export class OutboxPublisherService {
       });
     });
     return reports;
+  }
+
+  /**
+   * Returns both the rows and the sweep accounting. A plain array is insufficient evidence:
+   * forEachOrg intentionally continues after a tenant failure, so a missing row must not be
+   * mistaken for an empty outbox.
+   */
+  async report(): Promise<OutboxReport> {
+    const reports: OutboxOrganizationReport[] = [];
+    const result = await forEachOrg(this.db, "outbox-events-report", async (tx, organizationId) => {
+      const rows = await tx
+        .select({
+          totalRows: sql<number>`count(*)`,
+          pending: sql<number>`count(*) filter (where ${outboxEvents.deliveryState} = 'PENDING')`,
+          inFlight: sql<number>`count(*) filter (where ${outboxEvents.deliveryState} = 'IN_FLIGHT')`,
+          dead: sql<number>`count(*) filter (where ${outboxEvents.deliveryState} = 'DEAD')`,
+          oldestPendingAt: sql<Date | null>`min(${outboxEvents.createdAt}) filter (where ${outboxEvents.deliveryState} = 'PENDING')`,
+          oldestEventAt: sql<Date | null>`min(${outboxEvents.createdAt})`,
+          distinctEventTypes: sql<number>`count(distinct ${outboxEvents.eventType})`,
+        })
+        .from(outboxEvents);
+      const row = rows[0];
+      reports.push({
+        organizationId,
+        totalRows: Number(row?.totalRows ?? 0),
+        pending: Number(row?.pending ?? 0),
+        inFlight: Number(row?.inFlight ?? 0),
+        dead: Number(row?.dead ?? 0),
+        oldestPendingAt: row?.oldestPendingAt ?? null,
+        oldestEventAt: row?.oldestEventAt ?? null,
+        oldestEventAgeSeconds: row?.oldestEventAt
+          ? Math.max(0, Math.floor((Date.now() - new Date(row.oldestEventAt).getTime()) / 1000))
+          : null,
+        distinctEventTypes: Number(row?.distinctEventTypes ?? 0),
+      });
+    });
+    return {
+      generatedAt: new Date().toISOString(),
+      organizations: result.organizations,
+      succeeded: result.succeeded,
+      failed: result.failed,
+      reports,
+    };
   }
 
   private async claimBatch(): Promise<OutboxEventRow[]> {
@@ -233,13 +287,13 @@ export class OutboxPublisherService {
   private async handleFailure(
     event: OutboxEventRow,
     error: unknown,
-  ): Promise<"DEAD" | "RETRY"> {
+  ): Promise<"DEAD" | "RETRY" | "FENCED"> {
     const message = error instanceof Error ? error.message : String(error);
     const retryCount = event.retryCount + 1;
 
     if (shouldDeadLetter(retryCount)) {
-      await runInNewTenantTransaction(this.db, event.organizationId, async (tx) => {
-        await tx
+      const updated = await runInNewTenantTransaction(this.db, event.organizationId, async (tx) => {
+        const query = tx
           .update(outboxEvents)
           .set({
             deliveryState: "DEAD",
@@ -247,16 +301,26 @@ export class OutboxPublisherService {
             lastError: message,
             deadLetteredAt: new Date(),
           })
-          .where(eq(outboxEvents.outboxEventId, event.outboxEventId));
+          .where(and(
+            eq(outboxEvents.outboxEventId, event.outboxEventId),
+            eq(outboxEvents.deliveryState, "IN_FLIGHT"),
+            event.leaseExpiresAt === null
+              ? isNull(outboxEvents.leaseExpiresAt)
+              : eq(outboxEvents.leaseExpiresAt, event.leaseExpiresAt),
+          ));
+        return typeof (query as { returning?: unknown } | undefined)?.returning === "function"
+          ? (query as { returning: (fields: unknown) => unknown }).returning({ outboxEventId: outboxEvents.outboxEventId })
+          : query;
       });
+      if (Array.isArray(updated) && updated.length === 0) return "FENCED";
       this.logger.error(
         `outbox ${event.eventId} dead-lettered after ${retryCount} attempts: ${message}`,
       );
       return "DEAD";
     }
 
-    await runInNewTenantTransaction(this.db, event.organizationId, async (tx) => {
-      await tx
+    const updated = await runInNewTenantTransaction(this.db, event.organizationId, async (tx) => {
+      const query = tx
         .update(outboxEvents)
         .set({
           deliveryState: "PENDING",
@@ -264,8 +328,18 @@ export class OutboxPublisherService {
           lastError: message,
           leaseExpiresAt: new Date(Date.now() + nextRetryDelayMs(retryCount)),
         })
-        .where(eq(outboxEvents.outboxEventId, event.outboxEventId));
+        .where(and(
+          eq(outboxEvents.outboxEventId, event.outboxEventId),
+          eq(outboxEvents.deliveryState, "IN_FLIGHT"),
+          event.leaseExpiresAt === null
+            ? isNull(outboxEvents.leaseExpiresAt)
+            : eq(outboxEvents.leaseExpiresAt, event.leaseExpiresAt),
+        ));
+      return typeof (query as { returning?: unknown } | undefined)?.returning === "function"
+        ? (query as { returning: (fields: unknown) => unknown }).returning({ outboxEventId: outboxEvents.outboxEventId })
+        : query;
     });
+    if (Array.isArray(updated) && updated.length === 0) return "FENCED";
     return "RETRY";
   }
 
@@ -273,12 +347,22 @@ export class OutboxPublisherService {
     event: OutboxEventRow,
     deliveryState: "DELIVERED" | "SUPPRESSED",
     extra: { publishedAt?: Date } = {},
-  ): Promise<void> {
-    await runInNewTenantTransaction(this.db, event.organizationId, async (tx) => {
-      await tx
+  ): Promise<boolean> {
+    const updated = await runInNewTenantTransaction(this.db, event.organizationId, async (tx) => {
+      const query = tx
         .update(outboxEvents)
-        .set({ deliveryState, ...extra })
-        .where(eq(outboxEvents.outboxEventId, event.outboxEventId));
+        .set({ deliveryState, leaseExpiresAt: null, ...extra })
+        .where(and(
+          eq(outboxEvents.outboxEventId, event.outboxEventId),
+          eq(outboxEvents.deliveryState, "IN_FLIGHT"),
+          event.leaseExpiresAt === null
+            ? isNull(outboxEvents.leaseExpiresAt)
+            : eq(outboxEvents.leaseExpiresAt, event.leaseExpiresAt),
+        ));
+      return typeof (query as { returning?: unknown } | undefined)?.returning === "function"
+        ? (query as { returning: (fields: unknown) => unknown }).returning({ outboxEventId: outboxEvents.outboxEventId })
+        : query;
     });
+    return !Array.isArray(updated) || updated.length > 0;
   }
 }

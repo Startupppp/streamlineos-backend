@@ -8,8 +8,9 @@ async function main(): Promise<void> {
     logger: ["error", "warn"],
   });
   try {
-    const report = await app.get(OutboxPublisherService).reportByOrganization();
-    console.log(JSON.stringify({ generatedAt: new Date().toISOString(), organizations: report }, null, 2));
+    const report = await app.get(OutboxPublisherService).report();
+    console.log(JSON.stringify(report, null, 2));
+    if (report.failed > 0 || report.succeeded !== report.organizations) process.exitCode = 1;
   } finally {
     await app.close();
   }

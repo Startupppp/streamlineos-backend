@@ -8,6 +8,7 @@ import {
   OutboxConsumerRegistry,
   type OutboxEventConsumer,
   type OutboxEventRow,
+  outboxEffectIdempotencyKey,
 } from "../../../common/outbox/outbox-consumer.registry";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { buildReleasePublishedPayloadSchema } from "./dto/build-release-published-payload.schema";
@@ -97,7 +98,7 @@ export class BuildReleasePublishedConsumerService
 
     await this.dispatch.emit({
       orgId,
-      dedupeKey: event.eventId,
+      dedupeKey: outboxEffectIdempotencyKey(event, CONSUMER_NAME),
       eventKey: "build.release.published",
       targetUserIds: targets,
       entityType: "release",

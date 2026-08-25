@@ -8,6 +8,7 @@ import {
   OutboxConsumerRegistry,
   type OutboxEventConsumer,
   type OutboxEventRow,
+  outboxEffectIdempotencyKey,
 } from "../../../common/outbox/outbox-consumer.registry";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { accountingBillApprovedPayloadSchema } from "./dto/accounting-bill-approved-payload.schema";
@@ -87,7 +88,7 @@ export class AccountingBillApprovedConsumerService
 
     await this.dispatch.emit({
       orgId,
-      dedupeKey: event.eventId,
+      dedupeKey: outboxEffectIdempotencyKey(event, CONSUMER_NAME),
       eventKey: "accounting.bill.approved",
       actorUserId: approverUserId,
       targetUserIds: [approvalReq.requestedBy],

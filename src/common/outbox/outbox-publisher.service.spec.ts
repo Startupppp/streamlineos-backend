@@ -111,8 +111,8 @@ describe("OutboxPublisherService.flush — dispatch disabled", () => {
     const first = await service.flush();
     const second = await service.flush();
 
-    expect(first).toEqual({ claimed: 0, delivered: 0, suppressed: 0, retried: 0, dead: 0 });
-    expect(second).toEqual({ claimed: 0, delivered: 0, suppressed: 0, retried: 0, dead: 0 });
+    expect(first).toEqual({ claimed: 0, delivered: 0, suppressed: 0, retried: 0, dead: 0, fenced: 0 });
+    expect(second).toEqual({ claimed: 0, delivered: 0, suppressed: 0, retried: 0, dead: 0, fenced: 0 });
     expect(Logger.prototype.warn).toHaveBeenCalledTimes(1);
     expect(mockForEachOrg).not.toHaveBeenCalled();
   });
@@ -348,5 +348,61 @@ describe("OutboxPublisherService.metrics", () => {
       oldestPendingAt: oldest,
     });
     expect(mockForEachOrg).toHaveBeenCalledWith(db, "outbox-events-metrics", expect.any(Function));
+  });
+
+  it("reports every aggregate field and exposes tenant sweep failures", async () => {
+    const oldest = new Date("2026-08-20T00:00:00.000Z");
+    mockForEachOrg.mockImplementation(
+      async (_db: unknown, _sweep: string, fn: (tx: TenantTx, orgId: string) => Promise<void>) => {
+        await fn({
+          select: jest.fn().mockReturnValue({
+            from: jest.fn().mockResolvedValue([{
+              totalRows: "4", pending: "2", inFlight: "1", dead: "1",
+              oldestPendingAt: oldest, oldestEventAt: oldest, distinctEventTypes: "3",
+            }]),
+          }),
+        } as never, "org-1");
+        return { organizations: 2, succeeded: 1, failed: 1 };
+      },
+    );
+
+    const report = await makeService(makeDb(), makeConfig(true), makeRegistry()).report();
+
+    expect(report).toMatchObject({ organizations: 2, succeeded: 1, failed: 1 });
+    expect(report.reports).toHaveLength(1);
+    expect(report.reports[0]).toMatchObject({
+      organizationId: "org-1", totalRows: 4, pending: 2, inFlight: 1, dead: 1,
+      oldestPendingAt: oldest, oldestEventAt: oldest, distinctEventTypes: 3,
+    });
+    expect(report.reports[0].oldestEventAgeSeconds).toEqual(expect.any(Number));
+  });
+
+  it("does not let a stale worker finalize a row reclaimed by a newer lease", async () => {
+    const row = makeRow({
+      eventType: "deal.closed",
+      deliveryState: "IN_FLIGHT",
+      leaseExpiresAt: new Date("2026-08-25T00:00:00.000Z"),
+    });
+    forEachOrgWithRow(row);
+    const db = makeDb("ACTIVE");
+    let transactionCalls = 0;
+    mockRunInNewTenantTransaction.mockImplementation(
+      async (_db: unknown, _orgId: string, fn: (tx: any) => Promise<unknown>) => {
+        transactionCalls++;
+        if (transactionCalls === 3) {
+          const returning = jest.fn().mockResolvedValue([]);
+          const where = jest.fn().mockReturnValue({ returning });
+          const tx = { update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where }) }) };
+          return fn(tx);
+        }
+        return fn({ ...makeTxMock(), select: db.select });
+      },
+    );
+    const service = makeService(db, makeConfig(true), makeRegistry("deal.closed"));
+
+    const result = await service.flush();
+
+    expect(result).toMatchObject({ claimed: 1, delivered: 0, fenced: 1 });
+    expect(result.retried).toBe(0);
   });
 });

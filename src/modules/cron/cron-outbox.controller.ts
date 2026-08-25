@@ -24,6 +24,18 @@ export class CronOutboxController {
     return this.run(authorization);
   }
 
+  @Get("outbox-events-metrics")
+  metrics(@Headers("authorization") authorization?: string) {
+    assertCronSecret(authorization);
+    return this.publisher.metrics();
+  }
+
+  @Get("outbox-events-report")
+  report(@Headers("authorization") authorization?: string) {
+    assertCronSecret(authorization);
+    return this.publisher.report();
+  }
+
   private async run(authorization?: string) {
     assertCronSecret(authorization);
     const outcome = await this.lease.withLease("outbox-events-worker", 120, () =>
