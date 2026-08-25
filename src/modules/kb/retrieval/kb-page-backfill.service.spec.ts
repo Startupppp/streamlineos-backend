@@ -179,6 +179,27 @@ describe("KbPageBackfillService — backfillOrg", () => {
     expect(countSpy).toHaveBeenCalledTimes(2);
   });
 
+  it("treats a zero-chunk result as retryable failure and does not advance past it", async () => {
+    const indexing = makeIndexingService();
+    indexing.indexPage.mockResolvedValueOnce(0).mockResolvedValueOnce(1);
+
+    const svc = new KbPageBackfillService(makeDb() as never, indexing as never);
+    jest.spyOn(svc, "findEligibleUnindexedPages")
+      .mockResolvedValue([{ id: 41 }, { id: 42 }]);
+    jest.spyOn(svc, "countPageBodyChunks")
+      .mockResolvedValueOnce(0)
+      .mockResolvedValueOnce(1);
+
+    const result = await svc.backfillOrg("org-1", { delayMs: 0 });
+
+    expect(result).toMatchObject({
+      indexed: 1,
+      failed: 1,
+      nextPageId: 0,
+      failedPageIds: [41],
+    });
+  });
+
   it("returns before === after and indexed === 0 when the org has no eligible pages", async () => {
     const indexing = makeIndexingService();
     const svc = new KbPageBackfillService(makeDb() as never, indexing as never);

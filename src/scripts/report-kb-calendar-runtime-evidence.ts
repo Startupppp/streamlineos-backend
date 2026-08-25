@@ -37,24 +37,35 @@ async function main(): Promise<void> {
           FROM kb_pages
           WHERE org_id = ${orgId} AND deleted_at IS NULL AND status <> 'archived'
         ),
+        index_candidates AS (
+          SELECT e.*
+          FROM eligible e
+          JOIN kb_pages p ON p.id = e.id AND p.org_id = e.org_id
+          WHERE p.content_text IS NOT NULL AND trim(p.content_text) <> ''
+        ),
         indexed AS (
           SELECT DISTINCT c.page_id
           FROM kb_article_chunks c
-          JOIN eligible p ON p.id = c.page_id AND p.org_id = c.org_id
+          JOIN index_candidates p ON p.id = c.page_id AND p.org_id = c.org_id
+          WHERE c.source = 'page_body'
         ),
         acl_mismatches AS (
           SELECT c.id
           FROM kb_article_chunks c
           JOIN kb_pages p ON p.id = c.page_id AND p.org_id = c.org_id
-          WHERE c.page_visibility IS DISTINCT FROM p.visibility
+          WHERE c.org_id = ${orgId}
+            AND c.source = 'page_body'
+            AND (c.page_visibility IS DISTINCT FROM p.visibility
              OR c.page_project_id IS DISTINCT FROM p.project_id
-             OR c.page_created_by_id IS DISTINCT FROM p.created_by_id
+             OR c.page_created_by_id IS DISTINCT FROM p.created_by_id)
         )
         SELECT
           (SELECT count(*) FROM kb_pages WHERE org_id = ${orgId}) AS total_pages,
           (SELECT count(*) FROM eligible) AS eligible_pages,
+          (SELECT count(*) FROM index_candidates) AS index_candidate_pages,
+          (SELECT count(*) FROM eligible) - (SELECT count(*) FROM index_candidates) AS contentless_eligible_pages,
           (SELECT count(*) FROM indexed) AS indexed_eligible_pages,
-          (SELECT count(*) FROM eligible e LEFT JOIN indexed i ON i.page_id = e.id WHERE i.page_id IS NULL) AS eligible_without_chunk,
+          (SELECT count(*) FROM index_candidates e LEFT JOIN indexed i ON i.page_id = e.id WHERE i.page_id IS NULL) AS eligible_without_chunk,
           (SELECT count(*) FROM acl_mismatches) AS chunk_acl_mismatches,
           (SELECT count(*) FROM kb_article_chunks c LEFT JOIN kb_pages p ON p.id = c.page_id AND p.org_id = c.org_id WHERE c.org_id = ${orgId} AND p.id IS NULL) AS orphan_chunks
       `));
@@ -88,8 +99,11 @@ async function main(): Promise<void> {
       failed: sweep.failed,
       readOnly: true,
       c1: {
+        embeddingProviderConfigured: Boolean(process.env.OPENAI_API_KEY?.trim()),
         totalPages: sum("total_pages", "kb"),
         eligiblePages: sum("eligible_pages", "kb"),
+        indexCandidatePages: sum("index_candidate_pages", "kb"),
+        contentlessEligiblePages: sum("contentless_eligible_pages", "kb"),
         indexedEligiblePages: sum("indexed_eligible_pages", "kb"),
         eligibleWithoutChunk: sum("eligible_without_chunk", "kb"),
         chunkAclMismatches: sum("chunk_acl_mismatches", "kb"),
@@ -105,7 +119,9 @@ async function main(): Promise<void> {
       },
       interpretation: {
         c1: [
-          "eligibleWithoutChunk=0 is required for complete index coverage of live pages",
+          "eligibleWithoutChunk counts only lifecycle-eligible pages with non-empty contentText and no page_body chunk, matching indexPage's data eligibility",
+          "eligibleWithoutChunk=0 is an achievable coverage invariant only while embeddingProviderConfigured=true; provider availability during a run remains an external runtime prerequisite",
+          "contentlessEligiblePages are lifecycle-eligible but intentionally make no embedding call",
           "chunkAclMismatches=0 is required for page/chunk visibility metadata parity",
           "orphanChunks=0 is required for referential retrieval hygiene",
           "These are read-only database invariants; they do not replace a seeded end-to-end viewer parity run.",

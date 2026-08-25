@@ -16,6 +16,7 @@ export interface OrgBackfillResult {
   scanned: number;
   nextPageId: number | null;
   error?: string;
+  failedPageIds?: number[];
 }
 
 export interface BackfillAllResult {
@@ -122,6 +123,7 @@ export class KbPageBackfillService {
 
     let indexed = 0;
     let failed = 0;
+    const failedPageIds: number[] = [];
     let scanned = 0;
     let cursor = Math.max(0, Math.floor(options.afterPageId ?? 0));
     let resumeCursor: number | null = null;
@@ -153,13 +155,25 @@ export class KbPageBackfillService {
               this.indexing.indexPage(orgId, page.id),
             ),
           );
-          // Older/test doubles may not return a count; a resolved call still
-          // represents a successful indexing attempt in that case. The real
-          // service returns zero when embeddings are unavailable.
-          if (written === undefined || written > 0) indexed += 1;
-          cursor = page.id;
+          // Every discovered page has non-empty content and no page-body
+          // chunk. A zero result therefore means the page was not indexed
+          // (for example, embeddings became unavailable or the page changed
+          // lifecycle state after discovery). Do not advance the resumable
+          // cursor past it or report a false success.
+          if (written === 0) {
+            failed += 1;
+            failedPageIds.push(page.id);
+            resumeCursor ??= cursor;
+            this.logger.error(
+              `[kb-page-backfill] page ${String(page.id)} org ${orgId}: indexing produced no chunks`,
+            );
+          } else {
+            indexed += 1;
+            cursor = page.id;
+          }
         } catch (err) {
           failed += 1;
+          failedPageIds.push(page.id);
           // `cursor` is the last successful page, not the failed page. The
           // discovery query is strict-greater-than, so retaining this cursor
           // makes the failed page the first candidate on the next run.
@@ -193,6 +207,7 @@ export class KbPageBackfillService {
       scanned,
       nextPageId:
         resumeCursor ?? (scanned >= maxPages ? cursor : null),
+      failedPageIds: failedPageIds.length > 0 ? failedPageIds : undefined,
     };
   }
 

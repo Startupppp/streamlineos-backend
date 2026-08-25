@@ -43,6 +43,13 @@ export function summarizeArticleMigrationReports(
   return { totals, retirementReady: failedOrganizations === 0 && totals.willMigrate === 0 };
 }
 
+export function unresolvedArticleIds(
+  candidateIds: readonly number[],
+  convertedIds: ReadonlySet<number>,
+): number[] {
+  return candidateIds.filter((id) => !convertedIds.has(id));
+}
+
 @Injectable()
 export class KbArticleMigrationService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
@@ -110,7 +117,7 @@ export class KbArticleMigrationService {
 
   async run(user: CurrentUserContext, input: RunArticleMigrationInput): Promise<MigrationResult> {
     const { orgId } = user;
-    const { dryRun = false } = input;
+    const { dryRun } = input;
 
     const migratedRows = await this.db
       .select({ sourceArticleId: kbPages.sourceArticleId })
@@ -131,7 +138,7 @@ export class KbArticleMigrationService {
     const total = articles.length;
 
     if (dryRun) {
-      return { migrated: toMigrate.length, skipped, total, dryRun: true };
+      return { migrated: toMigrate.length, skipped, total, failed: 0, dryRun: true };
     }
 
     const [maxRow] = await this.db
@@ -140,8 +147,6 @@ export class KbArticleMigrationService {
       .where(and(eq(kbPages.orgId, orgId), isNull(kbPages.parentPageId), isNull(kbPages.deletedAt)));
 
     const baseSort = (maxRow?.maxSort ?? 0) + 100;
-    let migrated = 0;
-
     for (let i = 0; i < toMigrate.length; i += BATCH_SIZE) {
       const batch = toMigrate.slice(i, i + BATCH_SIZE);
       const values = batch.map((article, j) => ({
@@ -151,23 +156,21 @@ export class KbArticleMigrationService {
 
       try {
         await this.db.transaction(async (tx) => {
-          const inserted = await tx
+          await tx
             .insert(kbPages)
             .values(values)
             .onConflictDoNothing()
             .returning({ id: kbPages.id });
-          migrated += inserted.length;
         });
       } catch {
         for (const article of batch) {
           try {
             const idx = toMigrate.indexOf(article);
-            const [inserted] = await this.db
+            await this.db
               .insert(kbPages)
               .values({ orgId, ...mapArticleToPage(article, baseSort + idx * 100) })
               .onConflictDoNothing()
               .returning({ id: kbPages.id });
-            if (inserted) migrated++;
           } catch {
             // unrecoverable row (broken FK) — skip
           }
@@ -175,20 +178,47 @@ export class KbArticleMigrationService {
       }
     }
 
+    // Reconcile against durable state. A concurrent conversion may make an
+    // ON CONFLICT insert return no row even though the article is converted;
+    // conversely, caught row errors must remain visible if no page exists.
+    const convertedRows = await this.db
+      .select({ sourceArticleId: kbPages.sourceArticleId })
+      .from(kbPages)
+      .where(and(eq(kbPages.orgId, orgId), isNotNull(kbPages.sourceArticleId)));
+    const convertedIds = new Set(
+      convertedRows
+        .map((row) => row.sourceArticleId)
+        .filter((id): id is number => id !== null),
+    );
+    const failedArticleIds = unresolvedArticleIds(
+      toMigrate.map((article) => article.id),
+      convertedIds,
+    );
+    const succeeded = toMigrate.length - failedArticleIds.length;
+
     const [job] = await this.db
       .insert(kbImportJobs)
       .values({
         orgId,
         sourceType: "support_kb",
-        status: "completed",
+        status: failedArticleIds.length > 0 ? "failed" : "completed",
         totalItems: toMigrate.length,
         processedItems: toMigrate.length,
-        succeededItems: migrated,
-        failedItems: toMigrate.length - migrated,
+        succeededItems: succeeded,
+        failedItems: failedArticleIds.length,
+        errorReport: failedArticleIds.length > 0 ? { failedArticleIds } : undefined,
         createdById: user.userId,
       })
       .returning();
 
-    return { migrated, skipped, total, dryRun: false, jobId: job?.id };
+    return {
+      migrated: succeeded,
+      skipped,
+      total,
+      failed: failedArticleIds.length,
+      failedArticleIds: failedArticleIds.length > 0 ? failedArticleIds : undefined,
+      dryRun: false,
+      jobId: job?.id,
+    };
   }
 }
