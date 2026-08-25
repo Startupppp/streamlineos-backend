@@ -6,7 +6,6 @@ const makeUser = (overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
   userId: "user-1",
   orgId: "org-1",
   role: "member",
-  permissions: [],
   isOrgOwner: false,
   sessionId: "sess-1",
   tokenScopes: null,
@@ -16,9 +15,14 @@ const makeUser = (overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
 const makeResolver = (resolved: Map<string, DataScope>) =>
   new AccessSnapshotResolver(
     {
-      getModuleMap: async () => ({}),
-      getEffectiveModuleMap: async () => ({}),
+      getModuleMap: async (): Promise<Record<string, boolean>> => ({}),
       isCoreModule: () => false,
+      buildModuleAvailabilityResolver: () => ({
+        isCoreModule: () => false,
+        getModuleMap: async (): Promise<Record<string, boolean>> => ({}),
+        getUserDeniedModules: async (): Promise<Set<string>> => new Set<string>(),
+        getPlanLockedModules: async (): Promise<readonly string[]> => [],
+      }),
     } as never,
     { resolve: async () => ({ enforced: false, satisfied: true }) } as never,
     async () => 7,

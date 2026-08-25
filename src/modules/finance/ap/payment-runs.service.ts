@@ -539,13 +539,10 @@ export class PaymentRunsService {
         new Date(`${paymentDateIso}T00:00:00.000Z`),
       );
       const baseAmountSettled = (capture.amount * settledRate).toFixed(4);
-
-      const permissions: string[] = [];
       const user: CurrentUserContext = {
         userId: capture.userId,
         orgId,
         role: "system",
-        permissions,
         isOrgOwner: false,
         tokenScopes: null,
         sessionId: "",

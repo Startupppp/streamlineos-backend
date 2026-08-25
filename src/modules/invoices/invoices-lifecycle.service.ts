@@ -120,7 +120,6 @@ export class InvoicesLifecycleService {
         userId,
         orgId,
         role: "system",
-        permissions: [],
         isOrgOwner: false,
         tokenScopes: null,
         sessionId: "",

@@ -45,7 +45,6 @@ export class BuildNotificationVisibility implements OnModuleInit {
           role: state.role,
           // getTicket resolves DataScope through AccessService from (orgId, userId),
           // so carrying permissions here would be both redundant and a §21 violation.
-          permissions: [],
           isOrgOwner: state.isOwner,
           sessionId: `notify:${userId}`,
           tokenScopes: null,

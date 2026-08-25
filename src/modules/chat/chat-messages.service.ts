@@ -18,6 +18,7 @@ import { ChatMessageFanoutService } from "./chat-message-fanout.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
+import { resolveMentionedUserIds } from "./chat-mentions";
 import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { CacheService } from "../../common/cache/cache.service";
@@ -173,7 +174,7 @@ export class ChatMessagesService {
       }
     }
 
-    const { message, insertedAttachments } = await this.db.transaction(async (tx) => {
+    const { message, insertedAttachments, senderName, senderImage } = await this.db.transaction(async (tx) => {
       const [channel] = await tx
         .select({ id: chatChannels.id })
         .from(chatChannels)
@@ -181,6 +182,12 @@ export class ChatMessagesService {
         .limit(1);
 
       if (!channel) throw new NotFoundException("Channel not found");
+
+      const [senderRow] = await tx
+        .select({ name: users.name, image: users.image })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
 
       const [created] = await tx
         .insert(chatMessages)
@@ -219,7 +226,7 @@ export class ChatMessagesService {
         .set({ archivedAt: null })
         .where(eq(chatChannelMembers.channelId, channelId));
 
-      return { message: created, insertedAttachments: attachmentRows };
+      return { message: created, insertedAttachments: attachmentRows, senderName: senderRow?.name ?? null, senderImage: senderRow?.image ?? null };
     });
 
     const deferred = () =>
@@ -235,15 +242,24 @@ export class ChatMessagesService {
           where: eq(chatChannels.id, channelId),
           columns: { type: true },
         });
+        const mentionedUserIds = await resolveMentionedUserIds(this.db, {
+          orgId,
+          channelId,
+          senderId: userId,
+          content: body?.content ?? "",
+          mentionedUserIds: body?.mentionedUserIds,
+        });
         await this.fanout.dispatch({
           orgId,
           channelId,
           channelType: channelRow?.type ?? null,
           message,
           content: body?.content ?? null,
-          mentionedUserIds: body?.mentionedUserIds,
+          mentionedUserIds,
           attachments: insertedAttachments,
           strippedMetadata: strippedReferenceMetadata(message.metadata),
+          senderName,
+          senderImage,
         });
       }).catch((error: unknown) => {
         logger.error("chat message side effects failed", {

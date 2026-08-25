@@ -8,7 +8,6 @@ function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
     orgId: "org-1",
     isOrgOwner: false,
     role: "member",
-    permissions: [],
     sessionId: "sess-1",
     tokenScopes: null,
     ...overrides,

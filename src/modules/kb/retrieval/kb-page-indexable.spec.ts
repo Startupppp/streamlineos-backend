@@ -1,26 +1,17 @@
 import { isPageIndexable } from "./kb-indexing.service";
 
-type PageLike = { status: string; visibility: string; deletedAt: Date | null };
+type PageLike = { status: string; deletedAt: Date | null };
 
 function make(overrides: Partial<PageLike> = {}): PageLike {
-  return {
-    status: "published",
-    visibility: "org",
-    deletedAt: null,
-    ...overrides,
-  };
+  return { status: "published", deletedAt: null, ...overrides };
 }
 
 describe("isPageIndexable", () => {
-  it("returns true for a published org-visible non-deleted page", () => {
+  it("returns true for a published non-deleted page", () => {
     expect(isPageIndexable(make())).toBe(true);
   });
 
-  it("returns true for a published public page", () => {
-    expect(isPageIndexable(make({ visibility: "public" }))).toBe(true);
-  });
-
-  it("returns true for a draft org-visible page (draft is the working state)", () => {
+  it("returns true for a draft page (draft is the working state)", () => {
     expect(isPageIndexable(make({ status: "draft" }))).toBe(true);
   });
 
@@ -30,10 +21,6 @@ describe("isPageIndexable", () => {
 
   it("returns false for an archived page", () => {
     expect(isPageIndexable(make({ status: "archived" }))).toBe(false);
-  });
-
-  it("returns false for a private page even if published", () => {
-    expect(isPageIndexable(make({ visibility: "private" }))).toBe(false);
   });
 
   it("returns false for a soft-deleted page", () => {

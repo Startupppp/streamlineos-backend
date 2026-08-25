@@ -18,7 +18,6 @@ const actor: CurrentUserContext = {
   userId: "org-admin",
   orgId: "org-1",
   role: "ORG_ADMIN",
-  permissions: [],
   isOrgOwner: false,
   sessionId: "session-1",
   tokenScopes: null,

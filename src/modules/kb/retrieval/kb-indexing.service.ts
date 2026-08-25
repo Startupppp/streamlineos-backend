@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { createHash } from "node:crypto";
 import { Readable } from "stream";
-import { and, count, eq, isNull, sql } from "drizzle-orm";
+import { and, count, eq, isNull, ne, sql } from "drizzle-orm";
 import {
   kbArticles,
   kbArticleAttachments,
@@ -22,14 +22,9 @@ import {
 
 export function isPageIndexable(page: {
   status: string;
-  visibility: string;
   deletedAt: Date | null;
 }): boolean {
-  return (
-    page.status !== "archived" &&
-    (page.visibility === "org" || page.visibility === "public") &&
-    page.deletedAt === null
-  );
+  return page.status !== "archived" && page.deletedAt === null;
 }
 
 @Injectable()
@@ -583,10 +578,9 @@ export class KbIndexingService {
   }
 
   async reindexAllPages(orgId?: string): Promise<{ reindexed: number }> {
-    const indexable = sql`${kbPages.visibility} IN ('org', 'public') AND ${kbPages.status} <> 'archived'`;
     const where = orgId
-      ? and(eq(kbPages.orgId, orgId), indexable, isNull(kbPages.deletedAt))
-      : and(indexable, isNull(kbPages.deletedAt));
+      ? and(eq(kbPages.orgId, orgId), ne(kbPages.status, "archived"), isNull(kbPages.deletedAt))
+      : and(ne(kbPages.status, "archived"), isNull(kbPages.deletedAt));
 
     const pages = await this.db
       .select({ id: kbPages.id, orgId: kbPages.orgId })

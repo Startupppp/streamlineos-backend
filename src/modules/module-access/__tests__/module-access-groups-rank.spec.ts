@@ -13,7 +13,6 @@ function actor(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext 
     userId: "u1",
     orgId: "org-1",
     role: "MEMBER",
-    permissions: [],
     isOrgOwner: false,
     sessionId: "s1",
     tokenScopes: null,

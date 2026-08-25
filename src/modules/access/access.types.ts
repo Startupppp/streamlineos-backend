@@ -6,7 +6,6 @@ export interface AuthResult {
   allow: boolean;
   scope: DataScope;
   reason?: DenyReason;
-  permissions?: string[];
 }
 
 export interface MfaState {

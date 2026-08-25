@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { chatChannelMembers } from "../../db/schema";
 import { type Db } from "../../db/drizzle.module";
 
@@ -6,6 +6,7 @@ const MENTION_PATTERN = /@([^\s@]+)/g;
 const EVERYONE_ALIASES = new Set(["channel", "everyone", "here"]);
 
 export interface MentionResolutionInput {
+  orgId: string;
   channelId: number;
   senderId: string;
   content: string;
@@ -27,7 +28,10 @@ export async function resolveMentionedUserIds(
   if (!everyone && claimed.size === 0) return [];
 
   const members = await db.query.chatChannelMembers.findMany({
-    where: eq(chatChannelMembers.channelId, input.channelId),
+    where: and(
+      eq(chatChannelMembers.orgId, input.orgId),
+      eq(chatChannelMembers.channelId, input.channelId),
+    ),
     columns: { userId: true },
   });
 

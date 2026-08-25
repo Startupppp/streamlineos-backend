@@ -352,7 +352,6 @@ export class DepreciationRunsService {
           userId: "system",
           orgId: oId,
           role: "SYSTEM",
-          permissions: [],
           isOrgOwner: false,
           tokenScopes: null,
           sessionId: "cron",

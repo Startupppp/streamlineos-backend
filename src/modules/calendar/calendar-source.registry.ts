@@ -6,10 +6,18 @@ import {
   moduleAvailability,
   moduleAvailabilityResolver,
 } from "../../common/rbac/module-availability";
+import { CalendarSourcePreferencesService } from "./calendar-source-preferences.service";
+
+export interface ToggleEntry {
+  key: string;
+  label: string;
+  module: string;
+  enabled: boolean;
+}
 
 export interface CalendarSourceOutput {
   events: CalendarEventProjection[];
-  toggleList: ReadonlyArray<{ key: string; label: string; module: string }>;
+  toggleList: ReadonlyArray<ToggleEntry>;
   failures: ReadonlyArray<{ key: string; error: unknown }>;
 }
 
@@ -20,17 +28,16 @@ export class CalendarSourceRegistry {
   constructor(
     private readonly entitlements: EntitlementsService,
     private readonly access: AccessService,
+    private readonly preferences: CalendarSourcePreferencesService,
   ) {}
 
   register(source: CalendarEventSource): void {
     this.sources.add(source);
   }
 
-  async loadAll(ctx: CalendarSourceContext): Promise<CalendarSourceOutput> {
+  private async resolveAvailable(ctx: CalendarSourceContext): Promise<CalendarEventSource[]> {
     const sources = [...this.sources];
-    const toggleList = sources.map((s) => ({ key: s.key, label: s.label, module: s.module }));
-
-    const available = (
+    return (
       await Promise.all(
         sources.map(async (s) => {
           // moduleAvailability, not isModuleEnabled: the latter takes no userId, so a
@@ -45,9 +52,34 @@ export class CalendarSourceRegistry {
         }),
       )
     ).filter((s): s is CalendarEventSource => s !== null);
+  }
 
-    const keys = available.map((s) => s.key);
-    const settled = await Promise.allSettled(available.map((s) => s.load(ctx)));
+  async getToggleList(ctx: CalendarSourceContext): Promise<ReadonlyArray<ToggleEntry>> {
+    const available = await this.resolveAvailable(ctx);
+    const disabledKeys = await this.preferences.getDisabledKeys(ctx.orgId, ctx.userId);
+    return available.map((s) => ({
+      key: s.key,
+      label: s.label,
+      module: s.module,
+      enabled: !disabledKeys.has(s.key),
+    }));
+  }
+
+  async loadAll(ctx: CalendarSourceContext): Promise<CalendarSourceOutput> {
+    const available = await this.resolveAvailable(ctx);
+
+    const disabledKeys = await this.preferences.getDisabledKeys(ctx.orgId, ctx.userId);
+
+    const toggleList: ToggleEntry[] = available.map((s) => ({
+      key: s.key,
+      label: s.label,
+      module: s.module,
+      enabled: !disabledKeys.has(s.key),
+    }));
+
+    const enabledSources = available.filter((s) => !disabledKeys.has(s.key));
+    const keys = enabledSources.map((s) => s.key);
+    const settled = await Promise.allSettled(enabledSources.map((s) => s.load(ctx)));
 
     const events: CalendarEventProjection[] = [];
     const failures: Array<{ key: string; error: unknown }> = [];

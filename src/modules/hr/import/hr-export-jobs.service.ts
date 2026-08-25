@@ -222,7 +222,6 @@ export class HrExportJobsService {
       userId: job.requestedBy,
       orgId: job.orgId,
       role: member.role,
-      permissions: [],
       isOrgOwner: member.isOwner,
       sessionId: "hr-export-worker",
       tokenScopes: null,

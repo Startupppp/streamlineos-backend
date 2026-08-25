@@ -4,9 +4,11 @@ import { BillingService } from "../billing.service";
 import { AiCreditsService } from "../ai-credits.service";
 import { AiCreditsReservationService } from "../ai-credits-reservation.service";
 import { AiCreditsPacksService } from "../ai-credits-packs.service";
-import { RazorpayService } from "../razorpay.service";
 import { AuditService } from "../../../../common/audit/audit.service";
 import { PlanLimitsService } from "../plan-limits.service";
+import { APP_CONFIG } from "../../../../config/config.module";
+import { PaymentProviderAdapterRegistry } from "../../payments/payment-provider-adapter.interface";
+import { FakeProviderAdapter, FAKE_VALID_PAYMENT_SIG } from "../../payments/testing/fake-provider-adapter";
 import { creditsToMilli, milliToCredits } from "../../../ai/core/billing/ai-model-pricing.constants";
 import { planGrantMilli } from "../ai-credit-units";
 
@@ -49,16 +51,14 @@ describe("creditsToMilli / milliToCredits — round-trip invariants", () => {
 const VERIFY_INPUT = {
   razorpay_order_id: "order_idp_001",
   razorpay_payment_id: "pay_idp_abc",
-  razorpay_signature: "sig_valid",
+  razorpay_signature: FAKE_VALID_PAYMENT_SIG,
   plan: "STARTER" as const,
 };
 
-function makeRazorpay(configured = true, signatureValid = true) {
-  return {
-    isConfigured: jest.fn().mockReturnValue(configured),
-    verifyPaymentSignature: jest.fn().mockReturnValue(signatureValid),
-    getKeyId: jest.fn().mockReturnValue("rzp_test"),
-  };
+function makeRegistry(withAdapter = true) {
+  const registry = new PaymentProviderAdapterRegistry();
+  if (withAdapter) registry.register(new FakeProviderAdapter());
+  return registry;
 }
 
 function makePlanLimits() {
@@ -74,15 +74,16 @@ function makeMockAiCreditsForBilling() {
 }
 
 describe("BillingService.verifyAndActivate — idempotency", () => {
-  async function buildBilling(db: unknown): Promise<BillingService> {
+  async function buildBilling(db: unknown, registry = makeRegistry()): Promise<BillingService> {
     const module = await Test.createTestingModule({
       providers: [
         BillingService,
         { provide: DRIZZLE, useValue: db },
-        { provide: RazorpayService, useValue: makeRazorpay() },
         { provide: AiCreditsService, useValue: makeMockAiCreditsForBilling() },
         { provide: AuditService, useValue: makeAuditService() },
         { provide: PlanLimitsService, useValue: makePlanLimits() },
+        { provide: PaymentProviderAdapterRegistry, useValue: registry },
+        { provide: APP_CONFIG, useValue: { RAZORPAY_WEBHOOK_SECRET: "test-secret" } },
       ],
     }).compile();
     return module.get(BillingService);
@@ -145,19 +146,9 @@ describe("BillingService.verifyAndActivate — idempotency", () => {
   });
 
   it("invalid signature → throws BadRequestException before any DB write", async () => {
-    const module = await Test.createTestingModule({
-      providers: [
-        BillingService,
-        { provide: DRIZZLE, useValue: { transaction: jest.fn() } },
-        { provide: RazorpayService, useValue: makeRazorpay(true, false) },
-        { provide: AiCreditsService, useValue: makeMockAiCreditsForBilling() },
-        { provide: AuditService, useValue: makeAuditService() },
-        { provide: PlanLimitsService, useValue: makePlanLimits() },
-      ],
-    }).compile();
-    const svc = module.get(BillingService);
-
-    await expect(svc.verifyAndActivate("org-1", "user-1", VERIFY_INPUT)).rejects.toThrow(
+    const wrongSigInput = { ...VERIFY_INPUT, razorpay_signature: "wrong-signature" };
+    const svc = await buildBilling({ transaction: jest.fn() });
+    await expect(svc.verifyAndActivate("org-1", "user-1", wrongSigInput)).rejects.toThrow(
       "Payment verification failed",
     );
   });

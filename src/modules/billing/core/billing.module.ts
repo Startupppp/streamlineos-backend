@@ -14,9 +14,10 @@ import { RevenueAnalyticsService } from "./revenue-analytics.service";
 import { EnterpriseQuotesService } from "./enterprise-quotes.service";
 import { PlanLimitsService } from "./plan-limits.service";
 import { NotificationsModule } from "../../notifications/notifications.module";
+import { PaymentsModule } from "../payments/payments.module";
 
 @Module({
-  imports: [NotificationsModule],
+  imports: [NotificationsModule, PaymentsModule],
   controllers: [BillingController, RazorpayWebhookController],
   providers: [BillingService, RazorpayService, MarketplaceService, AiCreditsService, AiCreditsReservationService, AiCreditsPacksService, AiCreditsUsageService, AffiliateService, ReferralService, RevenueAnalyticsService, EnterpriseQuotesService, PlanLimitsService],
   exports: [AiCreditsService, AiCreditsUsageService, RevenueAnalyticsService, PlanLimitsService],

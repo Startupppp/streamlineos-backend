@@ -20,7 +20,6 @@ const USER_CTX: CurrentUserContext = {
   userId: "u1",
   orgId: ORG_ID,
   role: "ADMIN",
-  permissions: [],
   isOrgOwner: false,
   sessionId: "sess1",
   tokenScopes: null,

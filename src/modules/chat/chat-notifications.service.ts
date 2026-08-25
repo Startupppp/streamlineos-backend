@@ -101,6 +101,7 @@ export class ChatNotificationsService {
       .from(chatChannelMembers)
       .where(
         and(
+          eq(chatChannelMembers.orgId, orgId),
           eq(chatChannelMembers.channelId, channelId),
           inArray(chatChannelMembers.userId, mentionedUserIds),
         ),

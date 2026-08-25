@@ -21,6 +21,7 @@ function makeRegistry(enabledModules: string[]) {
       getPlanLockedModules: async () => [],
     } as never,
     { getUserDeniedModules: async () => new Set<string>() } as never,
+    { getDisabledKeys: async () => new Set<string>() } as never,
   );
 }
 

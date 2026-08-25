@@ -2,7 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { listCompatibleHolidays } from "../../db/compat/organization-holidays";
-import type { CalendarEventItem, LinkedTicket } from "./calendar.types";
+import type { CalendarEventItem, CalendarEventsResult, LinkedTicket } from "./calendar.types";
 import { dateOnly } from "./calendar.types";
 import type { CalendarEventProjection, CalendarSourceContext } from "./calendar-event-source";
 import { CalendarSourceRegistry } from "./calendar-source.registry";
@@ -62,15 +62,24 @@ export class CalendarEventsAggregateService {
     userId: string,
     start: Date,
     end: Date,
-  ): Promise<CalendarEventItem[]> {
+  ): Promise<CalendarEventsResult> {
     const ctx: CalendarSourceContext = { orgId, userId, start, end, scope: "all" };
 
-    const [{ eventsData, rsvpMap, linkedTicketMap }, holidaysData, { events: projections }] =
-      await Promise.all([
-        this.nativeLoader.load(orgId, userId, start, end),
-        listCompatibleHolidays(this.db, orgId, dateOnly(start), dateOnly(end)),
-        this.registry.loadAll(ctx),
-      ]);
+    const [
+      { eventsData, rsvpMap, linkedTicketMap },
+      holidaysData,
+      { events: projections, toggleList, failures: rawFailures },
+    ] = await Promise.all([
+      this.nativeLoader.load(orgId, userId, start, end),
+      listCompatibleHolidays(this.db, orgId, dateOnly(start), dateOnly(end)),
+      this.registry.loadAll(ctx),
+    ]);
+
+    const labelMap = new Map<string, string>(toggleList.map((t) => [t.key, t.label]));
+    const failures = rawFailures.map(({ key }) => ({
+      key,
+      label: labelMap.get(key) ?? key,
+    }));
 
     const result: CalendarEventItem[] = [];
 
@@ -116,6 +125,6 @@ export class CalendarEventsAggregateService {
 
     for (const projection of projections) result.push(projectionToItem(projection));
 
-    return result.sort((a, b) => a.start.getTime() - b.start.getTime());
+    return { events: result.sort((a, b) => a.start.getTime() - b.start.getTime()), failures };
   }
 }

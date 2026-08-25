@@ -23,7 +23,6 @@ function ownerActor(orgId = "org-1"): CurrentUserContext {
     userId: "user-1",
     orgId,
     role: "OWNER",
-    permissions: [],
     isOrgOwner: true,
     sessionId: "s1",
     tokenScopes: null,

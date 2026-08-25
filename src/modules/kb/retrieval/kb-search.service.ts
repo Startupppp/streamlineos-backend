@@ -52,7 +52,7 @@ export class KbSearchService {
       return { items: [], total: 0, page: input.page, pageSize: input.pageSize, totalPages: 0 };
     }
 
-    const isAdmin = this.access.isAdmin(user);
+    const isAdmin = await this.access.isAdmin(user);
     const principal = await this.access.getPrincipalIds(user);
 
     const tsquery = sql`websearch_to_tsquery('english', ${input.q})`;
@@ -121,7 +121,7 @@ export class KbSearchService {
     const q = query.trim();
     if (!q) return [];
 
-    const isAdmin = this.access.isAdmin(user);
+    const isAdmin = await this.access.isAdmin(user);
     const principal = await this.access.getPrincipalIds(user);
 
     const pool = Math.max(limit * 3, limit);

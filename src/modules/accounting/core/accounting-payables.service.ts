@@ -385,12 +385,10 @@ export class AccountingPayablesService {
       );
       const baseAmountSettled = (allocatedAmount * settledRate).toFixed(4);
 
-      const permissions: string[] = [];
       const user: CurrentUserContext = {
         userId,
         orgId,
         role: "system",
-        permissions,
         isOrgOwner: false,
         tokenScopes: null,
         sessionId: "",

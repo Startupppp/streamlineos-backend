@@ -138,7 +138,6 @@ export class SupportKbGapService {
       orgId,
       userId: actorUserId,
       role: "support",
-      permissions: [],
       isOrgOwner: false,
       tokenScopes: null,
       sessionId: "",

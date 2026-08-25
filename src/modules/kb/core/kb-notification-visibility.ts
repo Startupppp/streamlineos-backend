@@ -47,7 +47,6 @@ export class KbNotificationVisibility implements OnModuleInit {
           // Deliberately empty: `pageVisibleTo` reads only userId and isOrgOwner, and
           // permissions must never be carried as claims (§21). The PAT path in
           // jwt-auth.guard.ts does the same.
-          permissions: [],
           isOrgOwner: state.isOwner,
           sessionId: `notify:${userId}`,
           tokenScopes: null,

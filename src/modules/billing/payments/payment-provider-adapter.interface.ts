@@ -16,6 +16,22 @@ export interface PaymentProviderAdapter {
   /** Cheap, synchronous sanity check (e.g. key-prefix format) — not a live API call. */
   validateCredentialFormat?(environment: "test" | "live", keyId: string): PaymentCredentialWarning | null;
 
+  /**
+   * Returns true when the provider has the credentials it needs to process payments.
+   * Used by callers that need to gate flows on provider availability without knowing
+   * which provider or which specific credential is missing.
+   */
+  isReady(): boolean;
+
+  /**
+   * Returns the public key the browser must present to the provider to open the checkout
+   * UI (e.g. Razorpay's key_id), or null when the provider is not configured.
+   * This is the only piece of provider identity that legitimately crosses the seam:
+   * the key is public by design and the browser cannot open checkout without it.
+   * The private key and webhook secret never cross this boundary.
+   */
+  publicKeyId(): string | null;
+
   createOrder(params: {
     keyId: string;
     keySecret: string;
