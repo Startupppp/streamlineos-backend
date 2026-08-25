@@ -12,6 +12,6 @@ import { OutlookMailProvider } from "./providers/outlook-mail.provider";
   imports: [IntegrationsModule, AiGatewayModule],
   controllers: [MailController],
   providers: [MailService, MailAccountsService, MailAiService, GmailMailProvider, OutlookMailProvider],
-  exports: [MailService, MailAccountsService, MailAiService],
+  exports: [MailService, MailAccountsService, MailAiService, GmailMailProvider, OutlookMailProvider],
 })
 export class MailModule {}

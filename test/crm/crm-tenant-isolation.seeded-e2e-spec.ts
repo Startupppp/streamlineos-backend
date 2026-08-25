@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { sql } from "drizzle-orm";
 import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
@@ -20,8 +20,21 @@ import { seedOrg } from "test/helpers/seed-builder";
  * Skipped, loudly, when APP_DATABASE_URL is absent — a silent skip would look
  * like a green isolation suite to anybody reading CI.
  */
-const APP_URL = process.env.APP_DATABASE_URL;
-const describeIfAppRole = APP_URL ? describe : describe.skip;
+/**
+ * The suite provisions its own application-role credential.
+ *
+ * `streamline_app` exists with no BYPASSRLS, but its password cannot be set
+ * durably from SQL: Neon manages role credentials in its control plane, so an
+ * `ALTER ROLE ... PASSWORD` authenticates immediately and reverts when the
+ * compute suspends. Rather than depend on a credential that stops working
+ * overnight — or skip the only test that proves isolation is real — this mints
+ * a fresh one per run using the owner connection it already has.
+ *
+ * `APP_DATABASE_URL` still wins when it is set, because a deployment with a
+ * properly provisioned role should be tested with that one.
+ */
+const OWNER_URL = process.env.DATABASE_URL;
+const describeIfAppRole = OWNER_URL ? describe : describe.skip;
 
 /** Every CRM table that carries tenant data and has a policy. */
 const TENANT_TABLES = [
@@ -38,6 +51,29 @@ const TENANT_TABLES = [
   "autonomy_settings",
 ] as const;
 
+/**
+ * A short-lived password for `streamline_app`, set through the owner connection.
+ *
+ * Never reused and never written anywhere: it exists for the length of this
+ * suite. If the role is absent the caller sees the connection fail, which is
+ * the right outcome — a missing application role means RLS is not being
+ * enforced anywhere, and that should be loud.
+ */
+async function provisionAppRoleUrl(ownerUrl: string): Promise<string> {
+  const password = randomBytes(24).toString("base64url");
+  const owner = postgres(ownerUrl, { max: 1, prepare: false });
+  try {
+    await owner.unsafe(`ALTER ROLE "streamline_app" WITH LOGIN PASSWORD '${password}'`);
+  } finally {
+    await owner.end();
+  }
+
+  const url = new URL(ownerUrl);
+  url.username = "streamline_app";
+  url.password = password;
+  return url.toString();
+}
+
 describeIfAppRole("[seeded-e2e] CRM tenant isolation, as the application role", () => {
   let seededApp: SeededE2eApp;
   let appSql: postgres.Sql;
@@ -48,7 +84,9 @@ describeIfAppRole("[seeded-e2e] CRM tenant isolation, as the application role", 
 
   beforeAll(async () => {
     seededApp = await createSeededE2eApp();
-    appSql = postgres(APP_URL!, { max: 2, prepare: false });
+
+    const appUrl = process.env.APP_DATABASE_URL ?? (await provisionAppRoleUrl(OWNER_URL!));
+    appSql = postgres(appUrl, { max: 2, prepare: false });
 
     const a = await seedOrg(seededApp.seedDb).addMember("owner-a").build();
     const b = await seedOrg(seededApp.seedDb).addMember("owner-b").build();
