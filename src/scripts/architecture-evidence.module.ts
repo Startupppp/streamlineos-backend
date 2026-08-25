@@ -4,6 +4,7 @@ import { DrizzleModule } from "../db/drizzle.module";
 import { OutboxPublisherService } from "../common/outbox/outbox-publisher.service";
 import { OutboxConsumerRegistry } from "../common/outbox/outbox-consumer.registry";
 import { KbArticleMigrationService } from "../modules/kb/article-conversion/kb-article-migration.service";
+import { ExternalEffectLedger } from "../common/outbox/external-effect-ledger";
 
 /**
  * Minimal application context for architecture evidence commands.
@@ -17,8 +18,9 @@ import { KbArticleMigrationService } from "../modules/kb/article-conversion/kb-a
   providers: [
     OutboxConsumerRegistry,
     OutboxPublisherService,
+    ExternalEffectLedger,
     KbArticleMigrationService,
   ],
-  exports: [OutboxPublisherService, KbArticleMigrationService],
+  exports: [OutboxPublisherService, ExternalEffectLedger, KbArticleMigrationService],
 })
 export class ArchitectureEvidenceModule {}

@@ -67,6 +67,26 @@ const effect = {
 beforeEach(() => jest.clearAllMocks());
 
 describe("ExternalEffectLedger", () => {
+  it("reports an undeployed ledger without querying tenant rows", async () => {
+    const db = { execute: jest.fn().mockResolvedValue([{ deployed: false }]) };
+
+    await expect(new ExternalEffectLedger(db as never).report()).resolves.toEqual({
+      deployed: false,
+      organizations: 0,
+      succeeded: 0,
+      failed: 0,
+      totalRows: 0,
+      pending: 0,
+      inFlight: 0,
+      succeededEffects: 0,
+      failedEffects: 0,
+      uncertainRetries: 0,
+      providerEnforcedEffects: 0,
+      stableKeyOnlyEffects: 0,
+      noProviderIdempotencyEffects: 0,
+    });
+  });
+
   it("records success and suppresses a later replay", async () => {
     const harness = makeHarness();
     const send = jest.fn().mockResolvedValue(undefined);
