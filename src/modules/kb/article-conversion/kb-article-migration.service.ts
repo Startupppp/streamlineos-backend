@@ -17,6 +17,7 @@ const BATCH_SIZE = 50;
 
 export interface ArticleMigrationReport {
   organizations: Array<ArticleMigrationPreview & { orgId: string }>;
+  failedOrganizations: number;
   totals: {
     organizations: number;
     total: number;
@@ -28,6 +29,7 @@ export interface ArticleMigrationReport {
 
 export function summarizeArticleMigrationReports(
   organizations: ArticleMigrationReport["organizations"],
+  failedOrganizations = 0,
 ): Pick<ArticleMigrationReport, "totals" | "retirementReady"> {
   const totals = organizations.reduce(
     (result, report) => ({
@@ -38,7 +40,7 @@ export function summarizeArticleMigrationReports(
     }),
     { organizations: 0, total: 0, alreadyMigrated: 0, willMigrate: 0 },
   );
-  return { totals, retirementReady: totals.willMigrate === 0 };
+  return { totals, retirementReady: failedOrganizations === 0 && totals.willMigrate === 0 };
 }
 
 @Injectable()
@@ -56,11 +58,15 @@ export class KbArticleMigrationService {
    */
   async reportAll(): Promise<ArticleMigrationReport> {
     const organizations: ArticleMigrationReport["organizations"] = [];
-    await forEachOrg(this.db, "kb-article-migration-report", async (tx, orgId) => {
+    const sweep = await forEachOrg(this.db, "kb-article-migration-report", async (tx, orgId) => {
       organizations.push({ orgId, ...(await this.previewOn(tx, orgId)) });
     });
 
-    return { organizations, ...summarizeArticleMigrationReports(organizations) };
+    return {
+      organizations,
+      failedOrganizations: sweep.failed,
+      ...summarizeArticleMigrationReports(organizations, sweep.failed),
+    };
   }
 
   private async previewOn(db: Db | TenantTx, orgId: string): Promise<ArticleMigrationPreview> {

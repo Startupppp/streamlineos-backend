@@ -41,4 +41,17 @@ describe("summarizeArticleMigrationReports", () => {
       ]).retirementReady,
     ).toBe(true);
   });
+
+  it("never reports retirement readiness when a tenant sweep fails", () => {
+    const reports = [{
+      orgId: "org-a",
+      total: 0,
+      byStatus: {},
+      alreadyMigrated: 0,
+      willMigrate: 0,
+      sample: [],
+    }];
+
+    expect(summarizeArticleMigrationReports(reports, 1).retirementReady).toBe(false);
+  });
 });

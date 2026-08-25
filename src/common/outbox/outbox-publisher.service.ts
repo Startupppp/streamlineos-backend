@@ -34,10 +34,13 @@ export interface OutboxMetrics {
 
 export interface OutboxOrganizationReport {
   organizationId: string;
+  totalRows: number;
   pending: number;
   inFlight: number;
   dead: number;
   oldestPendingAt: Date | null;
+  oldestEventAt: Date | null;
+  oldestEventAgeSeconds: number | null;
   distinctEventTypes: number;
 }
 
@@ -111,10 +114,12 @@ export class OutboxPublisherService {
     await forEachOrg(this.db, "outbox-events-metrics", async (tx) => {
       const rows = await tx
         .select({
+          totalRows: sql<number>`count(*)`,
           pending: sql<number>`count(*) filter (where ${outboxEvents.deliveryState} = 'PENDING')`,
           inFlight: sql<number>`count(*) filter (where ${outboxEvents.deliveryState} = 'IN_FLIGHT')`,
           dead: sql<number>`count(*) filter (where ${outboxEvents.deliveryState} = 'DEAD')`,
           oldestPendingAt: sql<Date | null>`min(${outboxEvents.createdAt}) filter (where ${outboxEvents.deliveryState} = 'PENDING')`,
+          oldestEventAt: sql<Date | null>`min(${outboxEvents.createdAt})`,
         })
         .from(outboxEvents);
       const row = rows[0];
@@ -135,20 +140,27 @@ export class OutboxPublisherService {
     await forEachOrg(this.db, "outbox-events-report", async (tx, organizationId) => {
       const rows = await tx
         .select({
+          totalRows: sql<number>`count(*)`,
           pending: sql<number>`count(*) filter (where ${outboxEvents.deliveryState} = 'PENDING')`,
           inFlight: sql<number>`count(*) filter (where ${outboxEvents.deliveryState} = 'IN_FLIGHT')`,
           dead: sql<number>`count(*) filter (where ${outboxEvents.deliveryState} = 'DEAD')`,
           oldestPendingAt: sql<Date | null>`min(${outboxEvents.createdAt}) filter (where ${outboxEvents.deliveryState} = 'PENDING')`,
+          oldestEventAt: sql<Date | null>`min(${outboxEvents.createdAt})`,
           distinctEventTypes: sql<number>`count(distinct ${outboxEvents.eventType})`,
         })
         .from(outboxEvents);
       const row = rows[0];
       reports.push({
         organizationId,
+        totalRows: Number(row?.totalRows ?? 0),
         pending: Number(row?.pending ?? 0),
         inFlight: Number(row?.inFlight ?? 0),
         dead: Number(row?.dead ?? 0),
         oldestPendingAt: row?.oldestPendingAt ?? null,
+        oldestEventAt: row?.oldestEventAt ?? null,
+        oldestEventAgeSeconds: row?.oldestEventAt
+          ? Math.max(0, Math.floor((Date.now() - new Date(row.oldestEventAt).getTime()) / 1000))
+          : null,
         distinctEventTypes: Number(row?.distinctEventTypes ?? 0),
       });
     });

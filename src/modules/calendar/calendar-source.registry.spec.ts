@@ -30,6 +30,7 @@ async function buildRegistry(
   sources: CalendarEventSource[],
   isEnabled: (moduleKey: string) => boolean,
   disabledKeys: Set<string> = new Set(),
+  deniedModules: Set<string> = new Set(),
 ): Promise<CalendarSourceRegistry> {
   const module = await Test.createTestingModule({
     providers: [
@@ -56,7 +57,7 @@ async function buildRegistry(
                 getModuleMap,
                 getPlanLockedModules: jest.fn().mockResolvedValue([]),
               },
-              { getUserDeniedModules: jest.fn().mockResolvedValue(new Set<string>()) },
+              { getUserDeniedModules: jest.fn().mockResolvedValue(deniedModules) },
             ),
         },
       },
@@ -184,7 +185,7 @@ describe("CalendarSourceRegistry", () => {
     it("a person denied a module gets neither its events nor its toggle entry", async () => {
       const a = makeSource("a", "hr", [projection("a1")]);
       const b = makeSource("b", "build", [projection("b1")]);
-      const registry = await buildRegistry([a.source, b.source], (m) => m === "hr");
+      const registry = await buildRegistry([a.source, b.source], () => true, new Set(), new Set(["build"]));
 
       const result = await registry.loadAll(ctx);
 

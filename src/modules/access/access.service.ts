@@ -39,6 +39,10 @@ import {
 } from "./access-policy";
 import { isPersonalTokenPermissionDelegable } from "../../common/rbac/personal-token-policy";
 import {
+  moduleAvailability,
+  type ModuleAvailabilityResult,
+} from "../../common/rbac/module-availability";
+import {
   AccessPermissionResolver,
   membershipCacheKey,
   type MembershipAccessState,
@@ -567,6 +571,19 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     moduleKey: string,
   ): Promise<boolean | undefined> {
     return this.entitlements.getModuleState(orgId, moduleKey);
+  }
+
+  /** Canonical person-aware module answer for dashboards and other read models. */
+  async moduleAvailability(
+    user: CurrentUserContext,
+    moduleKey: string,
+  ): Promise<ModuleAvailabilityResult> {
+    return moduleAvailability(
+      this.buildModuleAvailabilityResolver((orgId) => this.entitlements.getModuleMap(orgId)),
+      user.orgId,
+      user.userId,
+      moduleKey,
+    );
   }
   async getPlanLockedModules(orgId: string): Promise<readonly string[]> {
     return this.entitlements.getPlanLockedModules(orgId);

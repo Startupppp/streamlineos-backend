@@ -25,9 +25,11 @@ export interface InboxEvent {
 }
 
 /**
- * Consumer-side exactly-once fence over the outbox. `claim` atomically records a
- * (producer event, consumer) row; a duplicate redelivery hits the unique index and is skipped,
- * so the handler runs at most once even under at-least-once delivery.
+ * Consumer-side duplicate-suppression fence over the outbox. `claim` atomically
+ * records a (producer event, consumer) row; a duplicate redelivery hits the
+ * unique index and is skipped. This gives at-least-once delivery with
+ * idempotent database application; external side effects require their own
+ * stable idempotency keys.
  */
 export class InboxConsumer {
   constructor(private readonly db: DbOrTx) {}

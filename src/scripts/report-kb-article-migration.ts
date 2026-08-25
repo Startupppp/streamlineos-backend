@@ -10,7 +10,9 @@ async function main(): Promise<void> {
 
   try {
     const service = app.get(KbArticleMigrationService);
-    console.log(JSON.stringify(await service.reportAll(), null, 2));
+    const report = await service.reportAll();
+    console.log(JSON.stringify(report, null, 2));
+    if (report.failedOrganizations > 0) process.exitCode = 1;
   } finally {
     await app.close();
   }

@@ -80,9 +80,9 @@ export const outboxEvents = pgTable(
 );
 
 /**
- * Consumer-side dedup / inbox. One completion row per (producer event, consumer) enforces
- * exactly-once application: a handler records its state change and this row atomically, and a
- * duplicate or stale-version redelivery is safely ignored.
+ * Consumer-side dedup / inbox. One completion row per (producer event, consumer) provides
+ * duplicate suppression for at-least-once delivery; external effects are not made exactly-once
+ * by this table alone. A duplicate or stale-version redelivery is safely ignored.
  */
 export const inboxRecords = pgTable(
   "inbox_records",

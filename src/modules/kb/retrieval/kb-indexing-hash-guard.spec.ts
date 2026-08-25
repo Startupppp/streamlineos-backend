@@ -62,6 +62,9 @@ const makeDb = (storedHash: string | null, tx?: MockTx, storedAcl?: StoredAcl) =
           where: jest.fn().mockResolvedValue(undefined),
         }),
       }),
+      delete: jest.fn().mockReturnValue({
+        where: jest.fn().mockResolvedValue(undefined),
+      }),
       transaction: jest.fn().mockImplementation(async (fn: (t: MockTx) => unknown) => fn(txObj)),
       query: {
         kbArticles: { findFirst: jest.fn().mockResolvedValue(null) },
@@ -73,6 +76,44 @@ const makeDb = (storedHash: string | null, tx?: MockTx, storedAcl?: StoredAcl) =
 };
 
 describe("KbIndexingService — content-hash guard", () => {
+  it("does not call the embedder for archived, deleted, or unconfigured pages", async () => {
+    for (const page of [
+      { status: "archived", deletedAt: null },
+      { status: "published", deletedAt: new Date() },
+    ]) {
+      const { db } = makeDb(null);
+      (db.query.kbPages.findFirst as jest.Mock).mockResolvedValue({
+        ...page,
+        visibility: "private",
+        contentText: "content that must not be embedded",
+        projectId: null,
+        createdById: "user-7",
+      });
+      const embeddings = makeEmbeddings();
+      const svc = new KbIndexingService(db as never, embeddings as never, makeStorage() as never);
+
+      await svc.indexPage("org-1", 99);
+
+      expect(embeddings.embedQuery).not.toHaveBeenCalled();
+    }
+
+    const { db } = makeDb(null);
+    (db.query.kbPages.findFirst as jest.Mock).mockResolvedValue({
+      status: "published",
+      visibility: "private",
+      deletedAt: null,
+      contentText: "content with embeddings disabled",
+      projectId: null,
+      createdById: "user-7",
+    });
+    const embeddings = makeEmbeddings(false);
+    const svc = new KbIndexingService(db as never, embeddings as never, makeStorage() as never);
+
+    await svc.indexPage("org-1", 99);
+
+    expect(embeddings.embedQuery).not.toHaveBeenCalled();
+  });
+
   it("skips re-embedding when the stored hash matches the current article text", async () => {
     const text = "Hello world content unchanged";
     const { db } = makeDb(sha256(text));
