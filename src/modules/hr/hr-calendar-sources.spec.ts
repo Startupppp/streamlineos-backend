@@ -28,6 +28,7 @@ function projection(source: string): CalendarEventProjection {
 
 function buildLegacy() {
   return {
+    loadSource: jest.fn().mockImplementation(async (_ctx: CalendarSourceContext, source: string) => [projection(source)]),
     load: jest.fn().mockResolvedValue([
       projection("leave"),
       projection("interview"),
@@ -68,8 +69,10 @@ describe("granular HR calendar sources", () => {
     await expect(leaves.load(ctx)).resolves.toEqual([projection("leave")]);
     await expect(interviews.load(ctx)).resolves.toEqual([projection("interview")]);
     await expect(attendance.load(ctx)).resolves.toEqual([projection("attendance")]);
-    expect(legacy.load).toHaveBeenCalledTimes(3);
-    expect(legacy.load).toHaveBeenCalledWith(ctx);
+    expect(legacy.loadSource).toHaveBeenCalledTimes(3);
+    expect(legacy.loadSource).toHaveBeenNthCalledWith(1, ctx, "leave");
+    expect(legacy.loadSource).toHaveBeenNthCalledWith(2, ctx, "interview");
+    expect(legacy.loadSource).toHaveBeenNthCalledWith(3, ctx, "attendance");
   });
 
   it("registers each source independently so registry preferences can disable one", () => {

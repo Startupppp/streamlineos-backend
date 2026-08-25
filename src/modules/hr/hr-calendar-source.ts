@@ -55,6 +55,103 @@ export class HrCalendarSource implements CalendarEventSource {
     private readonly attendancePolicy: AttendancePolicyService,
   ) {}
 
+  /**
+   * The registry owns source selection. Granular HR adapters use this method
+   * so disabling leaves or interviews does not invoke the aggregate loader.
+   * Attendance retains the aggregate calculation because absence/WFH status
+   * depends on the same attendance policy projection.
+   */
+  async loadSource(
+    ctx: CalendarSourceContext,
+    source: "leave" | "interview" | "attendance",
+  ): Promise<CalendarEventProjection[]> {
+    if (source === "leave") return this.loadLeaves(ctx);
+    if (source === "interview") return this.loadInterviews(ctx);
+    return (await this.load(ctx)).filter((projection) => projection.meta["source"] === source);
+  }
+
+  private async loadLeaves(ctx: CalendarSourceContext): Promise<CalendarEventProjection[]> {
+    const rows = await this.db
+      .select({
+        id: leaveRequests.id,
+        userId: leaveRequests.userId,
+        startDate: leaveRequests.startDate,
+        endDate: leaveRequests.endDate,
+        reason: leaveRequests.reason,
+        userName: users.name,
+        isHalfDay: leaveRequests.isHalfDay,
+        halfDayPeriod: leaveRequests.halfDayPeriod,
+      })
+      .from(leaveRequests)
+      .innerJoin(users, eq(leaveRequests.userId, users.id))
+      .where(and(
+        eq(leaveRequests.orgId, ctx.orgId),
+        eq(leaveRequests.status, "APPROVED"),
+        lte(leaveRequests.startDate, dateOnly(ctx.end)),
+        gte(leaveRequests.endDate, dateOnly(ctx.start)),
+      ));
+
+    return rows.map((leave) => ({
+      id: `leave-${leave.id}`,
+      title: `${leave.userName ?? "Employee"} - ${leave.isHalfDay ? `Half-day leave${leave.halfDayPeriod ? ` (${leave.halfDayPeriod})` : ""}` : "OOO"}`,
+      start: dateAtNoon(leave.startDate),
+      end: dateAtNoon(leave.endDate),
+      allDay: true,
+      color: "green",
+      category: "leave",
+      meta: {
+        source: "leave",
+        description: leave.userId === ctx.userId ? (leave.reason ?? null) : null,
+        creatorName: leave.userName ?? null,
+      },
+    }));
+  }
+
+  private async loadInterviews(ctx: CalendarSourceContext): Promise<CalendarEventProjection[]> {
+    const rows = await this.db
+      .select({
+        id: interviews.id,
+        scheduledAt: interviews.scheduledAt,
+        duration: interviews.duration,
+        type: interviews.type,
+        interviewerId: interviews.interviewerId,
+        location: interviews.location,
+        meetingLink: interviews.meetingLink,
+      })
+      .from(interviews)
+      .where(and(
+        eq(interviews.orgId, ctx.orgId),
+        gte(interviews.scheduledAt, ctx.start),
+        lte(interviews.scheduledAt, ctx.end),
+        or(
+          eq(interviews.interviewerId, ctx.userId),
+          exists(this.db.select({ id: interviewPanelMembers.id })
+            .from(interviewPanelMembers)
+            .where(and(
+              eq(interviewPanelMembers.orgId, ctx.orgId),
+              eq(interviewPanelMembers.interviewId, interviews.id),
+              eq(interviewPanelMembers.userId, ctx.userId),
+            )),
+          ),
+        ),
+      ));
+
+    return rows.map((interview) => {
+      const end = new Date(interview.scheduledAt);
+      end.setMinutes(end.getMinutes() + (interview.duration ?? 60));
+      return {
+        id: `interview-${interview.id}`,
+        title: `Interview (${interview.type ?? "Video"})`,
+        start: interview.scheduledAt,
+        end,
+        allDay: false,
+        color: "orange",
+        category: "interview",
+        meta: { source: "interview", location: interview.location ?? interview.meetingLink ?? null },
+      };
+    });
+  }
+
   async load(ctx: CalendarSourceContext): Promise<CalendarEventProjection[]> {
     const { orgId, userId, start, end } = ctx;
     const startStr = dateOnly(start);

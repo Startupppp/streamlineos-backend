@@ -25,7 +25,12 @@ abstract class HrProjectionSource implements CalendarEventSource, OnModuleInit {
   }
 
   async load(ctx: CalendarSourceContext): Promise<CalendarEventProjection[]> {
-    const projections = await this.legacy.load(ctx);
+    const source = this.key === "hr-leaves"
+      ? "leave"
+      : this.key === "hr-interviews"
+        ? "interview"
+        : "attendance";
+    const projections = await this.legacy.loadSource(ctx, source);
     return projections.filter((projection) => this.owns(projection));
   }
 
