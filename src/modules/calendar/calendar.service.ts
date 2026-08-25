@@ -15,7 +15,7 @@ import type { CreateEventInput, RsvpInput, UpdateEventInput } from "./dto/calend
 import { EmailService } from "../email/email.service";
 import { getCalendarInviteEmail } from "../email/templates/calendar";
 import { CalendarEventsAggregateService } from "./calendar-events-aggregate.service";
-import type { CalendarEventItem, OooConflict } from "./calendar.types";
+import type { CalendarEventItem, CalendarEventsResult, OooConflict } from "./calendar.types";
 import { dateOnly } from "./calendar.types";
 import { assertUsersInOrg } from "../../common/tenant/org-membership";
 
@@ -35,7 +35,7 @@ export class CalendarService {
     userId: string,
     start: Date,
     end: Date,
-  ): Promise<CalendarEventItem[]> {
+  ): Promise<CalendarEventsResult> {
     return this.eventsAggregate.getEvents(orgId, userId, start, end);
   }
 

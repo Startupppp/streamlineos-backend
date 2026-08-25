@@ -155,6 +155,10 @@ const baseSchema = z
       emptyToUndefined,
       z.enum(["true", "false"]).optional(),
     ),
+    OUTBOX_DISPATCH_ENABLED: z.preprocess(
+      emptyToUndefined,
+      z.enum(["true", "false"]).optional(),
+    ),
     /** Override default STARTER trial length (days). Defaults to 14 when unset. */
     TRIAL_DAYS: z.preprocess(
       emptyToUndefined,
