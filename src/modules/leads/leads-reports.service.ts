@@ -2,20 +2,25 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, notInArray, sql } from "drizzle-orm";
 import { AccessService } from "../access/access.service";
 import {
-  leads,
   leadActivities,
   deals,
   users,
   crmOptions,
   crmPipelineStages,
 } from "../../db/schema";
+import { businessParties, leadPartyMap } from "../../db/schema/party";
+import {
+  LEAD_PARTY_COLUMNS,
+  LEAD_PARTY_JOIN,
+  leadPartyScope,
+  pushLeadPartyViewScope,
+} from "./lead-party-reader";
 import { resolveLeadStatusSemantics } from "./lead-status-semantics";
 import type {
   AnalyticsQuery,
   FollowUpsQuery,
 } from "./dto/lead-reports.schemas";
 import { type Db } from "../../db/drizzle.module";
-import { applyScope } from "../access/apply-scope";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { DataScope } from "../access/access.types";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
@@ -36,17 +41,12 @@ export class LeadsReportsService {
     filters: AnalyticsQuery,
     viewScope?: { scope: DataScope; userId: string },
   ) {
-    const f = [eq(leads.orgId, orgId), isNull(leads.deletedAt)];
-    if (viewScope)
-      f.push(
-        applyScope(viewScope.scope, orgId, viewScope.userId, {
-          ownerColumn: leads.assignedToId,
-        }),
-      );
+    const f = leadPartyScope(orgId);
+    pushLeadPartyViewScope(f, orgId, viewScope?.scope, viewScope?.userId);
     if (filters.dateFrom)
-      f.push(gte(leads.createdAt, new Date(filters.dateFrom)));
+      f.push(gte(LEAD_PARTY_COLUMNS.createdAt, new Date(filters.dateFrom)));
     if (filters.dateTo)
-      f.push(lte(leads.createdAt, new Date(filters.dateTo + "T23:59:59")));
+      f.push(lte(LEAD_PARTY_COLUMNS.createdAt, new Date(filters.dateTo + "T23:59:59")));
 
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -60,7 +60,7 @@ export class LeadsReportsService {
 
     const convertedExpr =
       semantics.convertedKeys.length > 0
-        ? sql`${leads.status} = ANY(ARRAY[${sql.join(
+        ? sql`${LEAD_PARTY_COLUMNS.status} = ANY(ARRAY[${sql.join(
             semantics.convertedKeys.map((k) => sql`${k}`),
             sql`, `,
           )}])`
@@ -73,20 +73,21 @@ export class LeadsReportsService {
             total: sql<number>`COUNT(*)::int`,
             converted: sql<number>`COUNT(*) FILTER (WHERE ${convertedExpr})::int`,
           })
-          .from(leads)
+          .from(leadPartyMap)
+          .innerJoin(businessParties, LEAD_PARTY_JOIN)
           .where(and(...f)),
         this.db
           .select({
             total: sql<number>`COUNT(*)::int`,
             converted: sql<number>`COUNT(*) FILTER (WHERE ${convertedExpr})::int`,
           })
-          .from(leads)
+          .from(leadPartyMap)
+          .innerJoin(businessParties, LEAD_PARTY_JOIN)
           .where(
             and(
-              eq(leads.orgId, orgId),
-              isNull(leads.deletedAt),
-              gte(leads.createdAt, sixtyDaysAgo),
-              lte(leads.createdAt, thirtyDaysAgo),
+              ...leadPartyScope(orgId),
+              gte(LEAD_PARTY_COLUMNS.createdAt, sixtyDaysAgo),
+              lte(LEAD_PARTY_COLUMNS.createdAt, thirtyDaysAgo),
             ),
           ),
         this.db
@@ -100,21 +101,23 @@ export class LeadsReportsService {
           ),
         this.db
           .select({
-            source: sql<string>`COALESCE(${leads.source}::text, 'other')`,
+            source: LEAD_PARTY_COLUMNS.source,
             total: sql<number>`COUNT(*)::int`,
             converted: sql<number>`COUNT(*) FILTER (WHERE ${convertedExpr})::int`,
           })
-          .from(leads)
+          .from(leadPartyMap)
+          .innerJoin(businessParties, LEAD_PARTY_JOIN)
           .where(and(...f))
-          .groupBy(sql`COALESCE(${leads.source}::text, 'other')`),
+          .groupBy(LEAD_PARTY_COLUMNS.source),
         this.db
           .select({
-            assignedToId: leads.assignedToId,
+            assignedToId: LEAD_PARTY_COLUMNS.assignedToId,
             cnt: sql<number>`COUNT(*)::int`,
           })
-          .from(leads)
-          .where(and(...f, isNotNull(leads.assignedToId)))
-          .groupBy(leads.assignedToId),
+          .from(leadPartyMap)
+          .innerJoin(businessParties, LEAD_PARTY_JOIN)
+          .where(and(...f, isNotNull(LEAD_PARTY_COLUMNS.assignedToId)))
+          .groupBy(LEAD_PARTY_COLUMNS.assignedToId),
         this.access.membersWithPermission(orgId, "crm:leads:view"),
       ]);
 
@@ -219,10 +222,11 @@ export class LeadsReportsService {
 
         const [leadCounts, activityCounts, followUpCount] = await Promise.all([
           this.db
-            .select({ status: leads.status, cnt: count() })
-            .from(leads)
-            .where(and(eq(leads.orgId, orgId), isNull(leads.deletedAt)))
-            .groupBy(leads.status),
+            .select({ status: LEAD_PARTY_COLUMNS.status, cnt: count() })
+            .from(leadPartyMap)
+            .innerJoin(businessParties, LEAD_PARTY_JOIN)
+            .where(and(...leadPartyScope(orgId)))
+            .groupBy(LEAD_PARTY_COLUMNS.status),
           this.db
             .select({ type: leadActivities.type, cnt: count() })
             .from(leadActivities)
@@ -235,13 +239,13 @@ export class LeadsReportsService {
             .groupBy(leadActivities.type),
           this.db
             .select({ cnt: count() })
-            .from(leads)
+            .from(leadPartyMap)
+            .innerJoin(businessParties, LEAD_PARTY_JOIN)
             .where(
               and(
-                eq(leads.orgId, orgId),
-                isNull(leads.deletedAt),
-                notInArray(leads.status, terminalKeys),
-                lt(leads.updatedAt, threeDaysAgo),
+                ...leadPartyScope(orgId),
+                notInArray(LEAD_PARTY_COLUMNS.status, terminalKeys),
+                lt(LEAD_PARTY_COLUMNS.updatedAt, threeDaysAgo),
               ),
             )
             .then((r) => r[0]?.cnt ?? 0),
@@ -294,14 +298,15 @@ export class LeadsReportsService {
 
         const rows = await this.db
           .select({
-            source: sql<string>`COALESCE(${leads.source}::text, 'other')`,
+            source: LEAD_PARTY_COLUMNS.source,
             count: sql<number>`count(*)::int`,
-            converted: sql<number>`count(*) FILTER (WHERE ${leads.status} IN (${convertedExpr}))::int`,
-            totalValue: sql<number>`COALESCE(SUM(${leads.potentialValue}::numeric), 0)::float`,
+            converted: sql<number>`count(*) FILTER (WHERE ${LEAD_PARTY_COLUMNS.status} IN (${convertedExpr}))::int`,
+            totalValue: sql<number>`COALESCE(SUM(${LEAD_PARTY_COLUMNS.potentialValue}::numeric), 0)::float`,
           })
-          .from(leads)
-          .where(and(eq(leads.orgId, orgId), isNull(leads.deletedAt)))
-          .groupBy(sql`COALESCE(${leads.source}::text, 'other')`)
+          .from(leadPartyMap)
+          .innerJoin(businessParties, LEAD_PARTY_JOIN)
+          .where(and(...leadPartyScope(orgId)))
+          .groupBy(LEAD_PARTY_COLUMNS.source)
           .orderBy(sql`count(*) desc`);
 
         const total = rows.reduce((sum, r) => sum + r.count, 0);
@@ -336,34 +341,39 @@ export class LeadsReportsService {
   async getFollowUps(orgId: string, query: FollowUpsQuery) {
     const maxResults = Math.min(query.limit ?? 20, 100);
 
-    const conditions = [eq(leads.orgId, orgId), isNull(leads.deletedAt), isNotNull(leads.followUpDate)];
+    const conditions = [
+      ...leadPartyScope(orgId),
+      isNotNull(LEAD_PARTY_COLUMNS.followUpDate),
+    ];
     if (query.overdue === "true") {
-      conditions.push(lte(leads.followUpDate, new Date()));
+      conditions.push(lte(LEAD_PARTY_COLUMNS.followUpDate, new Date()));
     }
 
     const [results, totalRow] = await Promise.all([
       this.db
         .select({
-          id: leads.id,
-          name: leads.name,
-          email: leads.email,
-          phone: leads.phone,
-          company: leads.company,
-          status: leads.status,
-          priority: leads.priority,
-          followUpDate: leads.followUpDate,
-          followUpNotes: leads.followUpNotes,
-          assignedToId: leads.assignedToId,
+          id: LEAD_PARTY_COLUMNS.id,
+          name: LEAD_PARTY_COLUMNS.name,
+          email: LEAD_PARTY_COLUMNS.email,
+          phone: LEAD_PARTY_COLUMNS.phone,
+          company: LEAD_PARTY_COLUMNS.company,
+          status: LEAD_PARTY_COLUMNS.status,
+          priority: LEAD_PARTY_COLUMNS.priority,
+          followUpDate: LEAD_PARTY_COLUMNS.followUpDate,
+          followUpNotes: LEAD_PARTY_COLUMNS.followUpNotes,
+          assignedToId: LEAD_PARTY_COLUMNS.assignedToId,
           assigneeName: users.name,
         })
-        .from(leads)
-        .leftJoin(users, eq(leads.assignedToId, users.id))
+        .from(leadPartyMap)
+        .innerJoin(businessParties, LEAD_PARTY_JOIN)
+        .leftJoin(users, eq(LEAD_PARTY_COLUMNS.assignedToId, users.id))
         .where(and(...conditions))
-        .orderBy(asc(leads.followUpDate))
+        .orderBy(asc(LEAD_PARTY_COLUMNS.followUpDate), asc(LEAD_PARTY_COLUMNS.id))
         .limit(maxResults),
       this.db
         .select({ cnt: count() })
-        .from(leads)
+        .from(leadPartyMap)
+        .innerJoin(businessParties, LEAD_PARTY_JOIN)
         .where(and(...conditions))
         .then((r) => r[0]?.cnt ?? 0),
     ]);
@@ -377,16 +387,31 @@ export class LeadsReportsService {
     const semantics = resolveLeadStatusSemantics(statusOptions);
     const activeKeys = semantics.activeKeys.length > 0 ? semantics.activeKeys : ["NEW"];
 
-    return this.db.query.leads.findMany({
-      where: and(
-        eq(leads.orgId, orgId),
-        isNull(leads.deletedAt),
-        inArray(leads.status, activeKeys),
-        sql`${leads.verifiedById} IS NULL`,
-      ),
-      with: { assignedTo: { columns: { id: true, name: true, image: true } } },
-      orderBy: [desc(leads.createdAt)],
-      limit: 100,
-    });
+    const rows = await this.db
+      .select({
+        lead: LEAD_PARTY_COLUMNS,
+        assigneeId: users.id,
+        assigneeName: users.name,
+        assigneeImage: users.image,
+      })
+      .from(leadPartyMap)
+      .innerJoin(businessParties, LEAD_PARTY_JOIN)
+      .leftJoin(users, eq(LEAD_PARTY_COLUMNS.assignedToId, users.id))
+      .where(
+        and(
+          ...leadPartyScope(orgId),
+          inArray(LEAD_PARTY_COLUMNS.status, activeKeys),
+          isNull(LEAD_PARTY_COLUMNS.verifiedById),
+        ),
+      )
+      .orderBy(desc(LEAD_PARTY_COLUMNS.createdAt), desc(LEAD_PARTY_COLUMNS.id))
+      .limit(100);
+
+    return rows.map((row) => ({
+      ...row.lead,
+      assignedTo: row.assigneeId
+        ? { id: row.assigneeId, name: row.assigneeName, image: row.assigneeImage }
+        : null,
+    }));
   }
 }

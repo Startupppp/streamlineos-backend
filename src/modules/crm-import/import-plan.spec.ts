@@ -26,7 +26,14 @@ describe("planImport", () => {
   it("creates a row that is new", () => {
     const result = plan([["Globex", "hello@globex.example", "", "", ""]]);
     expect(result.rows[0]).toMatchObject({ rowNumber: 1, action: "create" });
-    expect(result.summary).toMatchObject({ create: 1, update: 0, skip: 0, total: 1 });
+    expect(result.summary).toMatchObject({
+      create: 1,
+      update: 0,
+      merge: 0,
+      review: 0,
+      skip: 0,
+      total: 1,
+    });
   });
 
   it("reads mapped columns into fields and unknown ones into custom fields", () => {
@@ -57,8 +64,55 @@ describe("planImport", () => {
         ["Acme Trading Limited", "ops@acme.example", "", "", ""],
       ]);
       expect(result.rows[0]).toMatchObject({ action: "create" });
-      expect(result.rows[1]).toMatchObject({ action: "skip", duplicateOfRow: 1 });
-      expect(result.summary).toMatchObject({ create: 1, skip: 1 });
+      expect(result.rows[1]).toMatchObject({ action: "merge", duplicateOfRow: 1 });
+      expect(result.summary).toMatchObject({ create: 1, merge: 1, skip: 0 });
+    });
+
+    /**
+     * The reason the repeat is a `merge` and not a `skip`. A file listing Acme
+     * twice, once with the phone number and once with the tax number, describes
+     * one company that has both — and reporting the second line as skipped
+     * quietly dropped a column the user can see in their own file.
+     */
+    it("folds the repeat's values into the row it repeats", () => {
+      const result = plan([
+        ["Acme Trading Ltd", "ops@acme.example", "", "", "North"],
+        ["Acme Trading Limited", "ops@acme.example", "+441234567890", "GST42", "South"],
+      ]);
+
+      expect(result.rows[0]?.values).toMatchObject({
+        name: "Acme Trading Ltd",
+        phone: "+441234567890",
+        taxNumber: "GST42",
+      });
+      expect(result.rows[0]?.customFields).toEqual({ territory: "North" });
+    });
+
+    it("does not let a repeat overwrite what the first line already said", () => {
+      // First occurrence wins, matching the rule the commit applies to an
+      // existing party: a value already there is not replaced by a later one.
+      const result = plan([
+        ["Acme Trading Ltd", "ops@acme.example", "", "", ""],
+        ["Acme Trading Limited", "ops@acme.example", "", "", ""],
+      ]);
+      expect(result.rows[0]?.values.name).toBe("Acme Trading Ltd");
+    });
+
+    /**
+     * The fold can supply an identifier the surviving row did not have, and a
+     * third occurrence may match only on that one. Blocking is by identifier, so
+     * the index has to learn about it or the third line is silently created as a
+     * second copy.
+     */
+    it("matches a third occurrence on an identifier a fold supplied", () => {
+      const result = plan([
+        ["Acme Trading Ltd", "ops@acme.example", "", "", ""],
+        ["Acme Trading Limited", "ops@acme.example", "", "GST42", ""],
+        ["Acme Trading Co", "", "", "GST42", ""],
+      ]);
+
+      expect(result.rows[2]).toMatchObject({ action: "merge", duplicateOfRow: 1 });
+      expect(result.summary.create).toBe(1);
     });
 
     it("does not treat two different companies as one", () => {
@@ -80,19 +134,43 @@ describe("planImport", () => {
     });
 
     /**
-     * The expensive mistake is merging two companies' histories, which a later
-     * reversal cannot cleanly separate. Creating a second record is the cheap
-     * one, and the duplicate queue already exists to catch it.
+     * Between the two thresholds nothing is written at all.
+     *
+     * Phase 1 created a second record here and left the duplicate queue to catch
+     * it afterwards. An import performs that speculative write at scale — a file
+     * of near-matches silently doubles a customer list, and the person who
+     * approved the preview was told "created separately for review" in a row
+     * sample they did not read.
      */
-    it("creates rather than merges when it is only fairly sure", () => {
+    it("holds a row for review when it is only fairly sure", () => {
       // A shared phone and a close-but-different name: enough to be worth a
       // look, nowhere near enough to fuse two companies' histories.
       const result = plan(
         [["Acme Trading", "", "+441234567890", "", ""]],
         [existingParty({ name: "Acme Trading Group", email: null, phone: "+441234567890" })],
       );
-      expect(result.rows[0]?.action).toBe("create");
+      expect(result.rows[0]?.action).toBe("review");
+      expect(result.rows[0]?.matchedPartyId).toBe("p-1");
       expect(result.rows[0]?.reason).toMatch(/not close enough/i);
+      expect(result.summary).toMatchObject({ create: 0, review: 1 });
+    });
+
+    /**
+     * The finding the held row files needs the score and the signals, and
+     * re-deriving them at commit time against a table that has moved on would
+     * let the commit disagree with the preview the tenant approved.
+     */
+    it("records what the scorer saw on the row it was unsure about", () => {
+      const result = plan(
+        [["Acme Trading", "", "+441234567890", "", ""]],
+        [existingParty({ name: "Acme Trading Group", email: null, phone: "+441234567890" })],
+      );
+
+      expect(result.rows[0]?.match).toMatchObject({
+        signals: expect.arrayContaining(["phone"]),
+        candidateName: "Acme Trading Group",
+      });
+      expect(result.rows[0]?.match?.score).toBeGreaterThanOrEqual(REVIEW_THRESHOLD);
     });
 
     it("never matches across a contradiction", () => {
@@ -131,8 +209,8 @@ describe("planImport", () => {
         ["Globex", "", "", "", ""],
         ["Acme Trading Limited", "ops@acme.example", "", "", ""],
       ]);
-      const { create, update, skip, total } = result.summary;
-      expect(create + update + skip).toBe(total);
+      const { create, update, merge, review, skip, total } = result.summary;
+      expect(create + update + merge + review + skip).toBe(total);
       expect(total).toBe(4);
     });
   });
@@ -231,5 +309,39 @@ describe("planImport", () => {
       existing: [],
     });
     expect(result.rows[0]?.values).toEqual({ name: "Acme" });
+  });
+});
+
+/**
+ * The preview is the ceiling now that the commit is durable and chunked, and
+ * comparing every row against every row is what makes it one — five thousand
+ * rows is twelve million scorings before anything is written. Blocking removes
+ * that, and these pin the argument that it is sound rather than merely fast.
+ */
+describe("comparing a large file without comparing everything twice", () => {
+  const many = (count: number): string[][] =>
+    Array.from({ length: count }, (_, index) => [
+      `Company ${String(index)}`,
+      `contact${String(index)}@example-${String(index)}.test`,
+      "",
+      `GST${String(index)}`,
+      "",
+    ]);
+
+  it("plans a file of five thousand distinct companies", () => {
+    const started = Date.now();
+    const result = plan(many(5_000));
+    // A generous bound: the point is that it is linear, not that it is fast on
+    // any particular machine. The quadratic version does not finish near this.
+    expect(Date.now() - started).toBeLessThan(10_000);
+    expect(result.summary.create).toBe(5_000);
+  });
+
+  it("still finds the repeat buried in a large file", () => {
+    const rows = many(2_000);
+    rows.push(["Company 3", "contact3@example-3.test", "", "GST3", ""]);
+
+    const result = plan(rows);
+    expect(result.rows.at(-1)).toMatchObject({ action: "merge", duplicateOfRow: 4 });
   });
 });

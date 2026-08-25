@@ -281,5 +281,17 @@ function participantFrom(
   const address = number ? normaliseNumber(number) : "";
   if (!address) return null;
   const name = displayName?.trim();
-  return name ? { address, displayName: name, role } : { address, role };
+  /**
+   * Every address on a call is a telephone number, and this is where that is
+   * stated rather than inferred.
+   *
+   * The resolver keys `party_identifiers` on `(kind, value)`, and the kind has
+   * to come from the adapter that knows what it read. Left to a guess, `+1-555…`
+   * is just a string, and the guess that used to be made wrote it into
+   * `business_parties.email`.
+   */
+  const identifierKind = "phone" as const;
+  return name
+    ? { address, displayName: name, role, identifierKind }
+    : { address, role, identifierKind };
 }

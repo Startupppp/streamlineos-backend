@@ -1,6 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
-import { contacts, crmOrganizations, clients, deals, leads } from "../../../db/schema";
+import { contacts, crmOrganizations, deals } from "../../../db/schema";
+import { businessParties, clientPartyMap, contactPartyMap, leadPartyMap } from "../../../db/schema/party";
+import { PARTY_OF_CLIENT, PARTY_OF_CONTACT, PARTY_OF_LEAD, leadStatus } from "../crm-party-reads";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AccessService } from "../../access/access.service";
@@ -69,9 +71,10 @@ export class CrmCustomer360Service {
     const permSet = new Set(Object.keys(permissions));
 
     const [clientRow] = await this.db
-      .select({ id: clients.id, name: clients.name })
-      .from(clients)
-      .where(and(eq(clients.id, clientId), eq(clients.orgId, orgId)));
+      .select({ id: clientPartyMap.clientId, name: businessParties.name })
+      .from(clientPartyMap)
+      .innerJoin(businessParties, PARTY_OF_CLIENT)
+      .where(and(eq(clientPartyMap.clientId, clientId), eq(clientPartyMap.organizationId, orgId)));
 
     if (!clientRow) return {};
 
@@ -130,15 +133,26 @@ export class CrmCustomer360Service {
     const safeName = orgRow.name.replaceAll("%", "\\%").replaceAll("_", "\\_");
 
     const [contactRows, dealRows, leadRows] = await Promise.all([
+      // `contacts.organization_id` has no Party column to move to, so the legacy
+      // row still says who works at this company; the name and the date on the
+      // event come from the party it maps to.
       this.db
         .select({
           id: contacts.id,
-          name: contacts.name,
-          createdAt: contacts.createdAt,
+          name: businessParties.name,
+          createdAt: businessParties.createdAt,
         })
         .from(contacts)
-        .where(and(eq(contacts.orgId, orgId), eq(contacts.organizationId, companyId), sql`${contacts.createdAt} < ${cursorDate.toISOString()}`))
-        .orderBy(desc(contacts.createdAt))
+        .innerJoin(
+          contactPartyMap,
+          and(
+            eq(contactPartyMap.contactId, contacts.id),
+            eq(contactPartyMap.organizationId, orgId),
+          ),
+        )
+        .innerJoin(businessParties, PARTY_OF_CONTACT)
+        .where(and(eq(contacts.orgId, orgId), eq(contacts.organizationId, companyId), sql`${businessParties.createdAt} < ${cursorDate.toISOString()}`))
+        .orderBy(desc(businessParties.createdAt))
         .limit(limit),
       this.db
         .select({ id: deals.id, name: deals.name, stage: deals.stage, createdAt: deals.createdAt })
@@ -147,10 +161,21 @@ export class CrmCustomer360Service {
         .orderBy(desc(deals.createdAt))
         .limit(limit),
       this.db
-        .select({ id: leads.id, name: leads.name, status: leads.status, createdAt: leads.createdAt })
-        .from(leads)
-        .where(and(eq(leads.orgId, orgId), sql`${leads.company} ILIKE ${"%" + safeName + "%"}`, isNull(leads.deletedAt), sql`${leads.createdAt} < ${cursorDate.toISOString()}`))
-        .orderBy(desc(leads.createdAt))
+        .select({
+          id: leadPartyMap.leadId,
+          name: businessParties.name,
+          status: leadStatus,
+          createdAt: businessParties.createdAt,
+        })
+        .from(leadPartyMap)
+        .innerJoin(businessParties, PARTY_OF_LEAD)
+        .where(and(
+          eq(leadPartyMap.organizationId, orgId),
+          sql`${businessParties.companyName} ILIKE ${"%" + safeName + "%"}`,
+          isNull(businessParties.deletedAt),
+          sql`${businessParties.createdAt} < ${cursorDate.toISOString()}`,
+        ))
+        .orderBy(desc(businessParties.createdAt))
         .limit(limit),
     ]);
 

@@ -3,6 +3,8 @@ import { CrmValidationService, type ValidationContext } from "./crm-validation.s
 const mockDb = {
   select: jest.fn().mockReturnThis(),
   from: jest.fn().mockReturnThis(),
+  // The uniqueness probe reads `business_parties` through the legacy id maps.
+  innerJoin: jest.fn().mockReturnThis(),
   where: jest.fn().mockReturnThis(),
   orderBy: jest.fn().mockResolvedValue([]),
   limit: jest.fn().mockReturnThis(),

@@ -5,9 +5,10 @@ import {
   crmActivities,
   crmMonthlyMetrics,
   crmOptions,
-  leads,
   leadActivities,
 } from "../../../db/schema";
+import { businessParties, leadPartyMap } from "../../../db/schema/party";
+import { PARTY_OF_LEAD, leadStatus } from "../crm-party-reads";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -73,15 +74,21 @@ export class CrmSalesDashboardService {
         this.db
           .select({ type: leadActivities.type, actCount: count() })
           .from(leadActivities)
-          .innerJoin(leads, eq(leads.id, leadActivities.leadId))
-          .where(and(eq(leads.orgId, orgId), gte(leadActivities.createdAt, subDays(new Date(), 7))))
+          // The map alone answers the question the join asked -- does a lead in
+          // this org own this activity -- so the party row is not read.
+          .innerJoin(leadPartyMap, and(
+            eq(leadPartyMap.leadId, leadActivities.leadId),
+            eq(leadPartyMap.organizationId, orgId),
+          ))
+          .where(gte(leadActivities.createdAt, subDays(new Date(), 7)))
           .groupBy(leadActivities.type),
 
         this.db
-          .select({ status: leads.status, cnt: count() })
-          .from(leads)
-          .where(eq(leads.orgId, orgId))
-          .groupBy(leads.status),
+          .select({ status: leadStatus, cnt: count() })
+          .from(leadPartyMap)
+          .innerJoin(businessParties, PARTY_OF_LEAD)
+          .where(eq(leadPartyMap.organizationId, orgId))
+          .groupBy(leadStatus),
 
         this.db.select().from(crmOptions)
           .where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, "lead_status"))),

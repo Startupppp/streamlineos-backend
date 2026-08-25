@@ -1,5 +1,6 @@
 process.env.APP_URL ??= "http://localhost:1000";
 
+import { leadPartyMap } from "../../../db/schema/party";
 import { LeadsOpsService } from "../leads-ops.service";
 
 function buildSelectWhere(directResult: unknown[], limitResult: unknown[]) {
@@ -16,21 +17,35 @@ function buildDb(orgHasMember: boolean, assignableUserIds: string[]) {
   }));
   const memberRows = orgHasMember ? [{ userId: "member-1" }] : [];
 
+  /*
+   * Leads are read through `lead_party_map` joined to `business_parties` now, so
+   * the two reads have to be told apart: answering the lead query with the user
+   * rows would hand `distribute` rows that are not leads at all. This org has no
+   * leads, which is what the permission assertions below are about anyway.
+   */
+  const leadChain: Record<string, jest.Mock> = {
+    where: jest.fn().mockResolvedValue([]),
+  };
+  leadChain.innerJoin = jest.fn().mockImplementation(() => leadChain);
+  leadChain.leftJoin = jest.fn().mockImplementation(() => leadChain);
+
+  const otherChain: Record<string, jest.Mock> = {
+    where: jest.fn().mockImplementation(() => buildSelectWhere(userRows, memberRows)),
+  };
+  otherChain.innerJoin = jest.fn().mockImplementation(() => otherChain);
+  otherChain.leftJoin = jest.fn().mockImplementation(() => otherChain);
+
   return {
     select: jest.fn().mockImplementation(() => ({
-      from: jest.fn().mockImplementation(() => ({
-        where: jest.fn().mockImplementation(() =>
-          buildSelectWhere(userRows, memberRows),
+      from: jest
+        .fn()
+        .mockImplementation((table: unknown) =>
+          table === leadPartyMap ? leadChain : otherChain,
         ),
-      })),
     })),
     query: {
       users: {
         findMany: jest.fn().mockResolvedValue(userRows),
-      },
-      leads: {
-        findMany: jest.fn().mockResolvedValue([]),
-        findFirst: jest.fn().mockResolvedValue(null),
       },
       leaveRequests: {
         findMany: jest.fn().mockResolvedValue([]),
@@ -68,8 +83,6 @@ describe("LeadsOpsService — crm:leads:assign permission routing", () => {
       db as never,
       { log: jest.fn() } as never,
       undefined as never,
-      undefined as never,
-      undefined as never,
       access as never,
     );
 
@@ -90,8 +103,6 @@ describe("LeadsOpsService — crm:leads:assign permission routing", () => {
       db as never,
       { log: jest.fn() } as never,
       undefined as never,
-      undefined as never,
-      undefined as never,
       access as never,
     );
 
@@ -111,8 +122,6 @@ describe("LeadsOpsService — crm:leads:assign permission routing", () => {
     const service = new LeadsOpsService(
       db as never,
       { log: jest.fn() } as never,
-      undefined as never,
-      undefined as never,
       undefined as never,
       access as never,
     );

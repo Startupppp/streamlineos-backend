@@ -1,7 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, and, desc, inArray, isNull } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import {
-  leads,
   leadActivities,
   leadNotes,
   leadTasks,
@@ -23,8 +22,9 @@ import type {
   RejectInput,
   VerifyInput,
 } from "./dto/lead-mutations.schemas";
-
-type LeadRow = typeof leads.$inferSelect;
+import { updateMirroredLeads } from "../party/party-legacy-leads";
+import type { LeadInsert, LeadRow } from "../party/party-legacy-writer";
+import { loadLeadView, loadLeadViews } from "./lead-party-reader";
 
 export type MergeLoserResult =
   | { ok: true }
@@ -115,10 +115,10 @@ export class LeadsDetailService {
   }
 
   async getScoreExplanation(orgId: string, leadId: number) {
-    const [lead] = await this.db
-      .select()
-      .from(leads)
-      .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId), isNull(leads.deletedAt)));
+    // The whole row, in `leads`' vocabulary: a scoring rule stores the field name
+    // a tenant picked (`score`, `city`, `status`), and the rule loop below looks
+    // it up by that name.
+    const lead = await loadLeadView(this.db, orgId, leadId);
 
     if (!lead) return null;
 
@@ -199,81 +199,60 @@ export class LeadsDetailService {
   }
 
   async updateCustomData(orgId: string, leadId: number, input: CustomDataInput) {
-    const [existing] = await this.db
-      .select({ id: leads.id })
-      .from(leads)
-      .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId), isNull(leads.deletedAt)))
-      .limit(1);
+    const existing = await loadLeadView(this.db, orgId, leadId);
 
     if (!existing) return null;
 
-    const [updated] = await this.db
-      .update(leads)
-      .set({ customData: input.customData, updatedAt: new Date() })
-      .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId)))
-      .returning();
+    const [updated] = await updateMirroredLeads(this.db, orgId, [leadId], {
+      customData: input.customData,
+      updatedAt: new Date(),
+    });
 
-    return { customData: updated.customData };
+    return { customData: updated?.customData ?? null };
   }
 
   async verify(orgId: string, userId: string, leadId: number, input: VerifyInput) {
-    const updateData: Partial<typeof leads.$inferInsert> = {
+    const updateData: Partial<LeadInsert> = {
       verifiedById: userId,
       updatedAt: new Date(),
     };
     if (input.priority) updateData.priority = input.priority;
     if (input.notes) updateData.notes = input.notes;
 
-    const [updated] = await this.db
-      .update(leads)
-      .set(updateData)
-      .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId)))
-      .returning();
+    const [updated] = await updateMirroredLeads(this.db, orgId, [leadId], updateData);
 
     return updated ?? null;
   }
 
   async reject(orgId: string, userId: string, leadId: number, input: RejectInput) {
-    const [updated] = await this.db
-      .update(leads)
-      .set({
-        status: "LOST",
-        lostReason: input.reason || "Rejected during review",
-        verifiedById: userId,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId)))
-      .returning();
+    const [updated] = await updateMirroredLeads(this.db, orgId, [leadId], {
+      status: "LOST",
+      lostReason: input.reason || "Rejected during review",
+      verifiedById: userId,
+      updatedAt: new Date(),
+    });
 
     return updated ?? null;
   }
 
   async selfAssign(orgId: string, userId: string, leadId: number) {
-    const [updated] = await this.db
-      .update(leads)
-      .set({
-        assignedToId: userId,
-        assignedById: userId,
-        assignedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId)))
-      .returning();
+    const [updated] = await updateMirroredLeads(this.db, orgId, [leadId], {
+      assignedToId: userId,
+      assignedById: userId,
+      assignedAt: new Date(),
+      updatedAt: new Date(),
+    });
 
     return updated ?? null;
   }
 
   async assign(orgId: string, userId: string, leadId: number, input: AssignInput) {
-    const [updated] = await this.db
-      .update(leads)
-      .set({
-        assignedToId: input.assignedToId,
-        assignedById: userId,
-        assignedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId)))
-      .returning();
+    const [updated] = await updateMirroredLeads(this.db, orgId, [leadId], {
+      assignedToId: input.assignedToId,
+      assignedById: userId,
+      assignedAt: new Date(),
+      updatedAt: new Date(),
+    });
 
     if (!updated) return null;
 
@@ -353,29 +332,21 @@ export class LeadsDetailService {
       return { ok: false, reason: "self" };
     }
 
-    const [keepLead] = await this.db
-      .select({ id: leads.id })
-      .from(leads)
-      .where(and(eq(leads.id, keepLeadId), eq(leads.orgId, orgId), isNull(leads.deletedAt)));
+    // Both in one read: two round trips answered one question, and the answer
+    // for the second was only ever used to reject the whole request.
+    const live = new Set(
+      (await loadLeadViews(this.db, orgId, [keepLeadId, mergeLeadId])).map((lead) => lead.id),
+    );
 
-    if (!keepLead) return { ok: false, reason: "keep_not_found" };
+    if (!live.has(keepLeadId)) return { ok: false, reason: "keep_not_found" };
+    if (!live.has(mergeLeadId)) return { ok: false, reason: "merge_not_found" };
 
-    const [mergeLead] = await this.db
-      .select({ id: leads.id })
-      .from(leads)
-      .where(and(eq(leads.id, mergeLeadId), eq(leads.orgId, orgId), isNull(leads.deletedAt)));
-
-    if (!mergeLead) return { ok: false, reason: "merge_not_found" };
-
-    await this.db
-      .update(leads)
-      .set({
-        status: "LOST",
-        lostReason: `Merged with lead #${keepLeadId}`,
-        notes: `Merged with lead #${keepLeadId} — this record is a duplicate.`,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(leads.id, mergeLeadId), eq(leads.orgId, orgId)));
+    await updateMirroredLeads(this.db, orgId, [mergeLeadId], {
+      status: "LOST",
+      lostReason: `Merged with lead #${keepLeadId}`,
+      notes: `Merged with lead #${keepLeadId} — this record is a duplicate.`,
+      updatedAt: new Date(),
+    });
 
     return { ok: true };
   }

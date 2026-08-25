@@ -14,13 +14,33 @@ import {
 } from "../../db/schema";
 import { AuditService } from "../../common/audit/audit.service";
 import { assessDuplicate, type PartyFingerprint } from "./party-duplicates";
+import {
+  identifiersOfParty,
+  moveIdentifiers,
+  restoreIdentifiers,
+  type IdentifierClaim,
+} from "./party-identifiers";
 import { chooseSurvivor, orderPair, planMerge } from "./party-merge-plan";
+import {
+  refreshPartyMirrors,
+  restorePartyWithMirror,
+  softDeletePartyWithMirror,
+  updatePartyWithMirror,
+} from "./party-legacy-writer";
 
 interface MergeSnapshot {
   survivorBefore: Record<string, unknown>;
   mergedBefore: Record<string, unknown>;
   movedContactIds: string[];
   addedRoles: string[];
+  /**
+   * Identifier rows handed to the survivor, so a revert can hand them back.
+   *
+   * Optional for the same reason as `movedLegacyIds`: merges recorded before
+   * `party_identifiers` existed have none, and a revert has to read those
+   * snapshots too.
+   */
+  movedIdentifierIds?: string[];
   /**
    * Legacy identifiers re-pointed onto the survivor, per kind.
    *
@@ -74,11 +94,15 @@ export class PartyMergeService {
     return row;
   }
 
-  private static fingerprint(row: Record<string, unknown>): PartyFingerprint {
+  private static fingerprint(
+    row: Record<string, unknown>,
+    identifiers: readonly IdentifierClaim[],
+  ): PartyFingerprint {
     return {
       partyId: String(row.partyId),
       name: String(row.name ?? ""),
       legalName: (row.legalName ?? null) as string | null,
+      identifiers,
       email: (row.email ?? null) as string | null,
       phone: (row.phone ?? null) as string | null,
       taxNumber: (row.taxNumber ?? null) as string | null,
@@ -121,10 +145,6 @@ export class PartyMergeService {
     const survivor = survivorId === left.partyId ? left : right;
     const loser = survivorId === left.partyId ? right : left;
 
-    const assessment = assessDuplicate(
-      PartyMergeService.fingerprint(survivor),
-      PartyMergeService.fingerprint(loser),
-    );
     const plan = planMerge(survivor, loser);
 
     const [survivorRoles, loserRoles, loserContacts] = await Promise.all([
@@ -146,24 +166,55 @@ export class PartyMergeService {
     const movedContactIds = loserContacts.map((contact) => contact.partyContactId);
     const movedLegacyIds = await this.legacyIdsOf(organizationId, mergedId);
 
+    /**
+     * Read before the move below, which is the only moment the two sides still
+     * have identifiers of their own — afterwards they all belong to the
+     * survivor. The assessment is a record of why this merge happened, and
+     * "they share a telephone number" is the strongest thing it can say.
+     */
+    const [survivorIdentifiers, loserIdentifiers] = await Promise.all([
+      identifiersOfParty(this.db, organizationId, survivorId),
+      identifiersOfParty(this.db, organizationId, mergedId),
+    ]);
+
+    const assessment = assessDuplicate(
+      PartyMergeService.fingerprint(survivor, survivorIdentifiers),
+      PartyMergeService.fingerprint(loser, loserIdentifiers),
+    );
+
+    /**
+     * Before the survivor's patch, not after.
+     *
+     * The patch fills the survivor's blank contact columns from the loser's,
+     * and the writer then claims those values as identifiers — which the unique
+     * index refuses while the loser still holds them, silently. Moving first
+     * means the survivor already owns them and the claim is a no-op.
+     *
+     * Not moving them at all would be worse than either: the next message from
+     * that address would resolve to a party the merge deleted, which is a live
+     * wrong answer rather than a missing one.
+     */
+    const movedIdentifierIds = await moveIdentifiers(
+      this.db,
+      organizationId,
+      mergedId,
+      survivorId,
+    );
+
     const snapshot: MergeSnapshot = {
       survivorBefore: { ...survivor },
       mergedBefore: { ...loser },
       movedContactIds,
       addedRoles,
       movedLegacyIds,
+      movedIdentifierIds,
     };
 
     if (Object.keys(plan.survivorPatch).length > 0 || plan.customFields)
-      await this.db
-        .update(businessParties)
-        .set({ ...plan.survivorPatch, customFields: plan.customFields })
-        .where(
-          and(
-            eq(businessParties.organizationId, organizationId),
-            eq(businessParties.partyId, survivorId),
-          ),
-        );
+      await updatePartyWithMirror(this.db, organizationId, survivorId, {
+        ...plan.survivorPatch,
+        customFields: plan.customFields,
+      });
 
     if (movedContactIds.length > 0)
       await this.db
@@ -182,6 +233,10 @@ export class PartyMergeService {
     // it is what the snapshot has to put back on a revert.
     await this.repointLegacyIds(organizationId, movedLegacyIds, survivorId);
 
+    // After the re-point, not before it: the survivor has just inherited legacy
+    // rows it has never derived, and they still hold the loser's values.
+    await refreshPartyMirrors(this.db, organizationId, survivorId);
+
     if (addedRoles.length > 0)
       await this.db
         .insert(partyRoles)
@@ -190,15 +245,7 @@ export class PartyMergeService {
         )
         .onConflictDoNothing();
 
-    await this.db
-      .update(businessParties)
-      .set({ deletedAt: new Date() })
-      .where(
-        and(
-          eq(businessParties.organizationId, organizationId),
-          eq(businessParties.partyId, mergedId),
-        ),
-      );
+    await softDeletePartyWithMirror(this.db, organizationId, mergedId);
 
     const [record] = await this.db
       .insert(partyMerges)
@@ -274,46 +321,29 @@ export class PartyMergeService {
     const survivorBefore = snapshot.survivorBefore;
     const mergedBefore = snapshot.mergedBefore;
 
-    await this.db
-      .update(businessParties)
-      .set({
-        name: String(survivorBefore.name ?? ""),
-        legalName: (survivorBefore.legalName ?? null) as string | null,
-        displayName: (survivorBefore.displayName ?? null) as string | null,
-        taxNumber: (survivorBefore.taxNumber ?? null) as string | null,
-        website: (survivorBefore.website ?? null) as string | null,
-        email: (survivorBefore.email ?? null) as string | null,
-        phone: (survivorBefore.phone ?? null) as string | null,
-        notes: (survivorBefore.notes ?? null) as string | null,
-        customFields: (survivorBefore.customFields ?? null) as Record<string, unknown> | null,
-      })
-      .where(
-        and(
-          eq(businessParties.organizationId, organizationId),
-          eq(businessParties.partyId, record.survivorPartyId),
-        ),
-      );
+    await updatePartyWithMirror(this.db, organizationId, record.survivorPartyId, {
+      name: String(survivorBefore.name ?? ""),
+      legalName: (survivorBefore.legalName ?? null) as string | null,
+      displayName: (survivorBefore.displayName ?? null) as string | null,
+      taxNumber: (survivorBefore.taxNumber ?? null) as string | null,
+      website: (survivorBefore.website ?? null) as string | null,
+      email: (survivorBefore.email ?? null) as string | null,
+      phone: (survivorBefore.phone ?? null) as string | null,
+      notes: (survivorBefore.notes ?? null) as string | null,
+      customFields: (survivorBefore.customFields ?? null) as Record<string, unknown> | null,
+    });
 
-    await this.db
-      .update(businessParties)
-      .set({
-        deletedAt: null,
-        name: String(mergedBefore.name ?? ""),
-        legalName: (mergedBefore.legalName ?? null) as string | null,
-        displayName: (mergedBefore.displayName ?? null) as string | null,
-        taxNumber: (mergedBefore.taxNumber ?? null) as string | null,
-        website: (mergedBefore.website ?? null) as string | null,
-        email: (mergedBefore.email ?? null) as string | null,
-        phone: (mergedBefore.phone ?? null) as string | null,
-        notes: (mergedBefore.notes ?? null) as string | null,
-        customFields: (mergedBefore.customFields ?? null) as Record<string, unknown> | null,
-      })
-      .where(
-        and(
-          eq(businessParties.organizationId, organizationId),
-          eq(businessParties.partyId, record.mergedPartyId),
-        ),
-      );
+    await restorePartyWithMirror(this.db, organizationId, record.mergedPartyId, {
+      name: String(mergedBefore.name ?? ""),
+      legalName: (mergedBefore.legalName ?? null) as string | null,
+      displayName: (mergedBefore.displayName ?? null) as string | null,
+      taxNumber: (mergedBefore.taxNumber ?? null) as string | null,
+      website: (mergedBefore.website ?? null) as string | null,
+      email: (mergedBefore.email ?? null) as string | null,
+      phone: (mergedBefore.phone ?? null) as string | null,
+      notes: (mergedBefore.notes ?? null) as string | null,
+      customFields: (mergedBefore.customFields ?? null) as Record<string, unknown> | null,
+    });
 
     if (snapshot.movedContactIds.length > 0)
       await this.db
@@ -326,11 +356,23 @@ export class PartyMergeService {
           ),
         );
 
+    await restoreIdentifiers(
+      this.db,
+      organizationId,
+      snapshot.movedIdentifierIds ?? [],
+      record.mergedPartyId,
+    );
+
     await this.repointLegacyIds(
       organizationId,
       snapshot.movedLegacyIds ?? NO_LEGACY_IDS,
       record.mergedPartyId,
     );
+
+    // Both sides, after the ids move back: the restored party has re-acquired
+    // legacy rows the survivor was deriving a moment ago.
+    await refreshPartyMirrors(this.db, organizationId, record.mergedPartyId);
+    await refreshPartyMirrors(this.db, organizationId, record.survivorPartyId);
 
     // Only the roles the merge added: one the survivor already held is its own.
     if (snapshot.addedRoles.length > 0)

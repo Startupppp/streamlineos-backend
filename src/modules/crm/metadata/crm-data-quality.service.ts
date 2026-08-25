@@ -2,7 +2,9 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, count, desc, eq, isNull, lt, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import { leads, deals, dealActivities, crmPipelineStages } from "../../../db/schema";
+import { deals, dealActivities, crmPipelineStages } from "../../../db/schema";
+import { businessParties, leadPartyMap } from "../../../db/schema/party";
+import { PARTY_OF_LEAD } from "../crm-party-reads";
 
 const OFFENDER_LIMIT = 10;
 const PHONE_BASIC_RE = /^[+\d\s\-().]{7,20}$/;
@@ -70,15 +72,22 @@ export class CrmDataQualityService {
   }
 
   private async leadsWithoutEmail(orgId: string): Promise<DataQualityAggregate> {
+    const where = and(
+      eq(leadPartyMap.organizationId, orgId),
+      isNull(businessParties.deletedAt),
+      isNull(businessParties.email),
+    );
     const [countRow] = await this.db
       .select({ n: count() })
-      .from(leads)
-      .where(and(eq(leads.orgId, orgId), isNull(leads.deletedAt), isNull(leads.email)));
+      .from(leadPartyMap)
+      .innerJoin(businessParties, PARTY_OF_LEAD)
+      .where(where);
     const offenderRows = await this.db
-      .select({ id: leads.id, name: leads.name })
-      .from(leads)
-      .where(and(eq(leads.orgId, orgId), isNull(leads.deletedAt), isNull(leads.email)))
-      .orderBy(desc(leads.createdAt))
+      .select({ id: leadPartyMap.leadId, name: businessParties.name })
+      .from(leadPartyMap)
+      .innerJoin(businessParties, PARTY_OF_LEAD)
+      .where(where)
+      .orderBy(desc(businessParties.createdAt))
       .limit(OFFENDER_LIMIT);
     return {
       count: Number(countRow?.n ?? 0),
@@ -88,10 +97,11 @@ export class CrmDataQualityService {
 
   private async leadsWithInvalidPhone(orgId: string): Promise<DataQualityAggregate> {
     const rows = await this.db
-      .select({ id: leads.id, name: leads.name, phone: leads.phone })
-      .from(leads)
-      .where(and(eq(leads.orgId, orgId), isNull(leads.deletedAt)))
-      .orderBy(desc(leads.createdAt));
+      .select({ id: leadPartyMap.leadId, name: businessParties.name, phone: businessParties.phone })
+      .from(leadPartyMap)
+      .innerJoin(businessParties, PARTY_OF_LEAD)
+      .where(and(eq(leadPartyMap.organizationId, orgId), isNull(businessParties.deletedAt)))
+      .orderBy(desc(businessParties.createdAt));
     const invalid = rows.filter(
       (r) => r.phone !== null && r.phone !== undefined && r.phone !== "" && !PHONE_BASIC_RE.test(r.phone),
     );
@@ -104,30 +114,36 @@ export class CrmDataQualityService {
   private async duplicateLeads(orgId: string): Promise<DataQualityAggregate> {
     const emailDups = await this.db.execute(
       sql`
-        SELECT email,
-               string_agg(id::text, ',') AS ids,
-               string_agg(name, ' | ') AS names
-        FROM leads
-        WHERE org_id = ${orgId}
-          AND deleted_at IS NULL
-          AND email IS NOT NULL
-          AND email != ''
-        GROUP BY email
+        SELECT p.email,
+               string_agg(m.lead_id::text, ',') AS ids,
+               string_agg(p.name, ' | ') AS names
+        FROM ${leadPartyMap} m
+        JOIN ${businessParties} p
+          ON p.party_id = m.party_id
+         AND p.organization_id = m.organization_id
+        WHERE m.organization_id = ${orgId}
+          AND p.deleted_at IS NULL
+          AND p.email IS NOT NULL
+          AND p.email != ''
+        GROUP BY p.email
         HAVING count(*) > 1
         LIMIT ${OFFENDER_LIMIT}
       `,
     );
     const phoneDups = await this.db.execute(
       sql`
-        SELECT phone,
-               string_agg(id::text, ',') AS ids,
-               string_agg(name, ' | ') AS names
-        FROM leads
-        WHERE org_id = ${orgId}
-          AND deleted_at IS NULL
-          AND phone IS NOT NULL
-          AND phone != ''
-        GROUP BY phone
+        SELECT p.phone,
+               string_agg(m.lead_id::text, ',') AS ids,
+               string_agg(p.name, ' | ') AS names
+        FROM ${leadPartyMap} m
+        JOIN ${businessParties} p
+          ON p.party_id = m.party_id
+         AND p.organization_id = m.organization_id
+        WHERE m.organization_id = ${orgId}
+          AND p.deleted_at IS NULL
+          AND p.phone IS NOT NULL
+          AND p.phone != ''
+        GROUP BY p.phone
         HAVING count(*) > 1
         LIMIT ${OFFENDER_LIMIT}
       `,
@@ -222,15 +238,22 @@ export class CrmDataQualityService {
   }
 
   private async leadsWithNoOwner(orgId: string): Promise<DataQualityAggregate> {
+    const where = and(
+      eq(leadPartyMap.organizationId, orgId),
+      isNull(businessParties.deletedAt),
+      isNull(businessParties.ownerUserId),
+    );
     const [countRow] = await this.db
       .select({ n: count() })
-      .from(leads)
-      .where(and(eq(leads.orgId, orgId), isNull(leads.deletedAt), isNull(leads.assignedToId)));
+      .from(leadPartyMap)
+      .innerJoin(businessParties, PARTY_OF_LEAD)
+      .where(where);
     const offenderRows = await this.db
-      .select({ id: leads.id, name: leads.name })
-      .from(leads)
-      .where(and(eq(leads.orgId, orgId), isNull(leads.deletedAt), isNull(leads.assignedToId)))
-      .orderBy(desc(leads.createdAt))
+      .select({ id: leadPartyMap.leadId, name: businessParties.name })
+      .from(leadPartyMap)
+      .innerJoin(businessParties, PARTY_OF_LEAD)
+      .where(where)
+      .orderBy(desc(businessParties.createdAt))
       .limit(OFFENDER_LIMIT);
     return {
       count: Number(countRow?.n ?? 0),

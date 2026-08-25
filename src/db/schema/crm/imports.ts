@@ -4,12 +4,21 @@ import { pgTable, text, timestamp, integer, jsonb, index, uniqueIndex, unique } 
 import { organizations } from "../common/auth";
 
 /**
- * Declared here rather than imported from the import module.
+ * What one line of the file will do, decided before anything is written.
  *
- * Schema is the lower layer — modules read it, not the other way round — so the
- * shapes a column stores are named here and the module imports them back.
+ * Declared here rather than imported from the import module: schema is the lower
+ * layer — modules read it, not the other way round — so the shapes a column
+ * stores are named here and the module imports them back.
+ *
+ * `merge` and `review` are not decorations on `skip` and `create`. A `merge` is
+ * two lines of the file becoming one record, with the later line's values folded
+ * into the earlier one — reported as a skip, that is a column the user can see
+ * in their file and cannot find afterwards. A `review` is a line the duplicate
+ * scorer was unsure about: it writes NOTHING and files a data-quality finding
+ * instead, because creating a second record for a near-match is the speculative
+ * write an import performs five thousand times before anybody notices.
  */
-export type RowAction = "create" | "update" | "skip";
+export type RowAction = "create" | "update" | "merge" | "review" | "skip";
 
 /** The stored form of one column's decided meaning. */
 export interface StoredColumnMapping {
@@ -25,6 +34,15 @@ export const IMPORT_STATUSES = [
   "previewing",
   "committing",
   "committed",
+  /**
+   * The undo is running, and is not finished.
+   *
+   * A real state rather than a flag on `committed`: putting five thousand rows
+   * back is many transactions across several attempts, and without it an undo
+   * that stopped halfway is indistinguishable from one that never started —
+   * which is how a half-reverted import gets reverted twice.
+   */
+  "reverting",
   "reverted",
   "failed",
 ] as const;
@@ -53,11 +71,29 @@ export const crmImports = pgTable(
      */
     columns: jsonb("columns").$type<StoredColumnMapping[]>(),
     summary: jsonb("summary").$type<Record<string, number>>(),
+    /**
+     * The durable run executing the commit, and the one executing the undo.
+     *
+     * Two columns rather than one, because an import that was committed and then
+     * taken back has had two runs and the record of the first must survive the
+     * second. Held so a repeated `commit` re-uses the live run instead of
+     * starting a second one alongside it.
+     */
     workflowRunId: text("workflow_run_id"),
+    revertWorkflowRunId: text("revert_workflow_run_id"),
 
     /** No FK to users — see migration 0223. */
     createdByUserId: text("created_by_user_id"),
     committedAt: timestamp("committed_at"),
+    /**
+     * When this import stops being reversible.
+     *
+     * Stamped at the moment the commit finishes rather than derived from
+     * `committed_at` and a constant, because it is a promise made to the tenant
+     * at that moment. Deriving it would mean shortening the window in code
+     * silently retracted an undo somebody was already relying on.
+     */
+    revertDeadlineAt: timestamp("revert_deadline_at"),
     revertedAt: timestamp("reverted_at"),
     revertedByUserId: text("reverted_by_user_id"),
     error: text("error"),
@@ -103,6 +139,19 @@ export const crmImportRows = pgTable(
     duplicateOfRow: integer("duplicate_of_row"),
 
     /**
+     * What the duplicate scorer saw, for the rows where what it saw is the
+     * decision.
+     *
+     * Stored rather than recomputed at commit time for the same reason the
+     * mapping is: the score is what put a row under review, and re-deriving it
+     * against a table that has moved on would let the commit disagree with the
+     * preview the tenant approved. It is also the evidence the data-quality
+     * finding carries, so a person can judge the row without re-running an
+     * import.
+     */
+    match: jsonb("match").$type<{ score: number; signals: string[]; candidateName?: string }>(),
+
+    /**
      * What it actually did. Both halves are needed to undo it: one says what to
      * delete, the other what to put back. Without the before-image an undo can
      * remove what it created but not restore what it overwrote — which is the
@@ -110,8 +159,21 @@ export const crmImportRows = pgTable(
      */
     createdPartyId: text("created_party_id"),
     previous: jsonb("previous").$type<Record<string, unknown>>(),
+    /** The finding a `review` row filed, so the undo can close it again. */
+    dataQualityFindingId: text("data_quality_finding_id"),
 
+    /**
+     * Set the instant a row is claimed, in the same savepoint as the write.
+     *
+     * This is the whole idempotency story. A batch step re-runs whenever its
+     * previous attempt FAILED, and two runs can overlap after a dead-letter, so
+     * the claim `committed_at IS NULL` is what stops a row being written twice —
+     * and being in the row's savepoint is what makes a rolled-back row claimable
+     * again.
+     */
     committedAt: timestamp("committed_at"),
+    /** The same claim, for the undo. A row is put back exactly once. */
+    revertedAt: timestamp("reverted_at"),
     error: text("error"),
 
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -124,5 +186,16 @@ export const crmImportRows = pgTable(
     index("idx_crm_import_rows_committed")
       .on(t.organizationId, t.crmImportId)
       .where(sql`${t.committedAt} IS NOT NULL`),
+    /**
+     * The read every batch step makes: the outstanding rows of one window.
+     *
+     * Partial on `committed_at IS NULL`, so the index shrinks as the import
+     * progresses instead of the scan growing — which is the difference between
+     * a fifty-batch import costing fifty scans of the whole file and fifty
+     * scans of what is left.
+     */
+    index("idx_crm_import_rows_pending")
+      .on(t.organizationId, t.crmImportId, t.rowNumber)
+      .where(sql`${t.committedAt} IS NULL`),
   ],
 );

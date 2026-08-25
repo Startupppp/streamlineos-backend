@@ -27,6 +27,7 @@ import { AutonomyHoldService } from "./autonomy-hold.service";
 import { planReversal, type TargetState } from "./reversal-plan";
 import { resolveSwitch, switchesFor, type SwitchRow } from "./kill-switch";
 import { ROUTINE_KINDS, type ListDecisionsQuery, type ReverseDecisionInput, type SetSwitchInput } from "./dto/autonomy-review.schemas";
+import { softDeletePartyWithMirror } from "../party/party-legacy-writer";
 
 /**
  * Reading and undoing what the system did on its own.
@@ -337,16 +338,22 @@ export class AutonomyReviewService {
       }
 
       case "delete-party": {
-        await this.db
-          .update(businessParties)
-          .set({ deletedAt: new Date() })
+        // The party is canonical and every legacy row mapped to it is a mirror,
+        // so reversing an autonomous creation has to take both down together --
+        // otherwise the record the system created is still visible on every
+        // screen that reads `leads` or `contacts`.
+        const [live] = await this.db
+          .select({ partyId: businessParties.partyId })
+          .from(businessParties)
           .where(
             and(
               eq(businessParties.organizationId, organizationId),
               eq(businessParties.partyId, plan.partyId),
               isNull(businessParties.deletedAt),
             ),
-          );
+          )
+          .limit(1);
+        if (live) await softDeletePartyWithMirror(this.db, organizationId, live.partyId);
 
         return { field: "party", systemValue: "created", humanValue: "removed" };
       }

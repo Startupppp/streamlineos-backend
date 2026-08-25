@@ -1,6 +1,8 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, gte, inArray, isNull, lt, lte, not, sql } from "drizzle-orm";
-import { tasks, leads, leadEmails, deals, dealMeetings } from "../../../db/schema";
+import { tasks, leadEmails, deals, dealMeetings } from "../../../db/schema";
+import { businessParties, leadPartyMap } from "../../../db/schema/party";
+import { PARTY_OF_LEAD, leadStatus } from "../crm-party-reads";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import type { DataScope } from "../../access/access.types";
@@ -71,7 +73,7 @@ export class CrmInboxService {
     const fourHoursFromNow = new Date(now.getTime() + INBOX_SLA_HORIZON_MS);
 
     const scopeFilter = applyScope(scope, orgId, userId, { ownerColumn: tasks.assigneeId });
-    const leadScopeFilter = applyScope(scope, orgId, userId, { ownerColumn: leads.assignedToId });
+    const leadScopeFilter = applyScope(scope, orgId, userId, { ownerColumn: businessParties.ownerUserId });
 
     const { terminalLeadKeys, openStageKeys } = await this.aiActions.resolveMetadata(orgId);
 
@@ -135,23 +137,24 @@ export class CrmInboxService {
 
       this.db
         .select({
-          id: leads.id,
-          name: leads.name,
-          followUpDate: leads.followUpDate,
-          assignedToId: leads.assignedToId,
-          status: leads.status,
+          id: leadPartyMap.leadId,
+          name: businessParties.name,
+          followUpDate: businessParties.nextFollowUpAt,
+          assignedToId: businessParties.ownerUserId,
+          status: leadStatus,
         })
-        .from(leads)
+        .from(leadPartyMap)
+        .innerJoin(businessParties, PARTY_OF_LEAD)
         .where(
           and(
-            eq(leads.orgId, orgId),
-            not(inArray(leads.status, terminalLeadKeys)),
-            lte(leads.followUpDate, now),
-            isNull(leads.deletedAt),
+            eq(leadPartyMap.organizationId, orgId),
+            not(inArray(leadStatus, terminalLeadKeys)),
+            lte(businessParties.nextFollowUpAt, now),
+            isNull(businessParties.deletedAt),
             leadScopeFilter,
           ),
         )
-        .orderBy(leads.followUpDate)
+        .orderBy(businessParties.nextFollowUpAt)
         .limit(10),
 
       this.db
@@ -194,23 +197,24 @@ export class CrmInboxService {
 
       this.db
         .select({
-          id: leads.id,
-          name: leads.name,
-          slaDeadline: leads.slaDeadline,
-          assignedToId: leads.assignedToId,
-          status: leads.status,
+          id: leadPartyMap.leadId,
+          name: businessParties.name,
+          slaDeadline: businessParties.slaDueAt,
+          assignedToId: businessParties.ownerUserId,
+          status: leadStatus,
         })
-        .from(leads)
+        .from(leadPartyMap)
+        .innerJoin(businessParties, PARTY_OF_LEAD)
         .where(
           and(
-            eq(leads.orgId, orgId),
-            not(inArray(leads.status, terminalLeadKeys)),
-            lte(leads.slaDeadline, fourHoursFromNow),
-            isNull(leads.deletedAt),
+            eq(leadPartyMap.organizationId, orgId),
+            not(inArray(leadStatus, terminalLeadKeys)),
+            lte(businessParties.slaDueAt, fourHoursFromNow),
+            isNull(businessParties.deletedAt),
             leadScopeFilter,
           ),
         )
-        .orderBy(leads.slaDeadline)
+        .orderBy(businessParties.slaDueAt)
         .limit(10),
 
       openStageKeys.length > 0
@@ -240,23 +244,24 @@ export class CrmInboxService {
 
       this.db
         .select({
-          id: leads.id,
-          name: leads.name,
-          assignedAt: leads.assignedAt,
-          assignedToId: leads.assignedToId,
-          status: leads.status,
+          id: leadPartyMap.leadId,
+          name: businessParties.name,
+          assignedAt: businessParties.assignedAt,
+          assignedToId: businessParties.ownerUserId,
+          status: leadStatus,
         })
-        .from(leads)
+        .from(leadPartyMap)
+        .innerJoin(businessParties, PARTY_OF_LEAD)
         .where(
           and(
-            eq(leads.orgId, orgId),
-            eq(leads.assignedToId, userId),
-            gte(leads.assignedAt, fortyEightHoursAgo),
-            not(inArray(leads.status, terminalLeadKeys)),
-            isNull(leads.deletedAt),
+            eq(leadPartyMap.organizationId, orgId),
+            eq(businessParties.ownerUserId, userId),
+            gte(businessParties.assignedAt, fortyEightHoursAgo),
+            not(inArray(leadStatus, terminalLeadKeys)),
+            isNull(businessParties.deletedAt),
           ),
         )
-        .orderBy(desc(leads.assignedAt))
+        .orderBy(desc(businessParties.assignedAt))
         .limit(10),
 
       this.aiActions.computeAiActions(orgId, userId, scope, terminalLeadKeys, openStageKeys),
@@ -398,7 +403,7 @@ export class CrmInboxService {
     const fourHoursFromNow = new Date(now.getTime() + INBOX_SLA_HORIZON_MS);
 
     const scopeFilter = applyScope(scope, orgId, userId, { ownerColumn: tasks.assigneeId });
-    const leadScopeFilter = applyScope(scope, orgId, userId, { ownerColumn: leads.assignedToId });
+    const leadScopeFilter = applyScope(scope, orgId, userId, { ownerColumn: businessParties.ownerUserId });
 
     const { terminalLeadKeys, openStageKeys } = await this.aiActions.resolveMetadata(orgId);
 
@@ -424,8 +429,9 @@ export class CrmInboxService {
         .then((r) => Number(r[0]?.n ?? 0)),
       this.db
         .select({ n: sql<number>`count(*)` })
-        .from(leads)
-        .where(and(eq(leads.orgId, orgId), not(inArray(leads.status, terminalLeadKeys)), lte(leads.followUpDate, now), isNull(leads.deletedAt), leadScopeFilter))
+        .from(leadPartyMap)
+        .innerJoin(businessParties, PARTY_OF_LEAD)
+        .where(and(eq(leadPartyMap.organizationId, orgId), not(inArray(leadStatus, terminalLeadKeys)), lte(businessParties.nextFollowUpAt, now), isNull(businessParties.deletedAt), leadScopeFilter))
         .then((r) => Number(r[0]?.n ?? 0)),
       this.db
         .select({ n: sql<number>`count(*)` })
@@ -439,8 +445,9 @@ export class CrmInboxService {
         .then((r) => Number(r[0]?.n ?? 0)),
       this.db
         .select({ n: sql<number>`count(*)` })
-        .from(leads)
-        .where(and(eq(leads.orgId, orgId), not(inArray(leads.status, terminalLeadKeys)), lte(leads.slaDeadline, fourHoursFromNow), isNull(leads.deletedAt), leadScopeFilter))
+        .from(leadPartyMap)
+        .innerJoin(businessParties, PARTY_OF_LEAD)
+        .where(and(eq(leadPartyMap.organizationId, orgId), not(inArray(leadStatus, terminalLeadKeys)), lte(businessParties.slaDueAt, fourHoursFromNow), isNull(businessParties.deletedAt), leadScopeFilter))
         .then((r) => Number(r[0]?.n ?? 0)),
       openStageKeys.length > 0
         ? this.db
@@ -451,8 +458,9 @@ export class CrmInboxService {
         : Promise.resolve(0),
       this.db
         .select({ n: sql<number>`count(*)` })
-        .from(leads)
-        .where(and(eq(leads.orgId, orgId), eq(leads.assignedToId, userId), gte(leads.assignedAt, fortyEightHoursAgo), not(inArray(leads.status, terminalLeadKeys)), isNull(leads.deletedAt)))
+        .from(leadPartyMap)
+        .innerJoin(businessParties, PARTY_OF_LEAD)
+        .where(and(eq(leadPartyMap.organizationId, orgId), eq(businessParties.ownerUserId, userId), gte(businessParties.assignedAt, fortyEightHoursAgo), not(inArray(leadStatus, terminalLeadKeys)), isNull(businessParties.deletedAt)))
         .then((r) => Number(r[0]?.n ?? 0)),
     ]);
 

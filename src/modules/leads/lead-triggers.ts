@@ -1,16 +1,24 @@
 import { eq, and, asc, count, sql } from "drizzle-orm";
 import {
-  leads,
   leadAssignmentRules,
   assignmentRuleState,
   leadScoringRules,
   crmSla,
   crmOptions,
 } from "../../db/schema";
+import { businessParties, leadPartyMap } from "../../db/schema/party";
 import type { Db } from "../../db/drizzle.module";
 import type { AssignmentConfig } from "../../db/schema/crm/leads";
 import { TerritoryMatchService } from "../crm/core/territory-match.service";
+import {
+  INCLUDE_DELETED,
+  LEAD_PARTY_COLUMNS,
+  LEAD_PARTY_JOIN,
+  leadPartyScope,
+  loadLeadView,
+} from "./lead-party-reader";
 import { resolveLeadStatusSemantics } from "./lead-status-semantics";
+import { updateMirroredLeads } from "../party/party-legacy-leads";
 
 async function advanceRoundRobinState(db: Db, ruleId: number, userIds: string[]): Promise<string> {
   const [state] = await db.select().from(assignmentRuleState).where(eq(assignmentRuleState.ruleId, ruleId));
@@ -39,16 +47,17 @@ async function pickWeightedRoundRobin(
 
 async function pickLeastLoaded(db: Db, orgId: string, userIds: string[], openKeys: string[]): Promise<string> {
   const rows = await db
-    .select({ userId: leads.assignedToId, cnt: count() })
-    .from(leads)
+    .select({ userId: LEAD_PARTY_COLUMNS.assignedToId, cnt: count() })
+    .from(leadPartyMap)
+    .innerJoin(businessParties, LEAD_PARTY_JOIN)
     .where(
       and(
-        eq(leads.orgId, orgId),
-        sql`${leads.assignedToId} = ANY(ARRAY[${sql.join(userIds.map((id) => sql`${id}`), sql`, `)}]::text[])`,
-        sql`${leads.status} = ANY(ARRAY[${sql.join(openKeys.map((k) => sql`${k}`), sql`, `)}]::text[])`,
+        ...leadPartyScope(orgId, INCLUDE_DELETED),
+        sql`${LEAD_PARTY_COLUMNS.assignedToId} = ANY(ARRAY[${sql.join(userIds.map((id) => sql`${id}`), sql`, `)}]::text[])`,
+        sql`${LEAD_PARTY_COLUMNS.status} = ANY(ARRAY[${sql.join(openKeys.map((k) => sql`${k}`), sql`, `)}]::text[])`,
       ),
     )
-    .groupBy(leads.assignedToId);
+    .groupBy(LEAD_PARTY_COLUMNS.assignedToId);
 
   const loadMap = new Map<string, number>();
   for (const r of rows) {
@@ -81,10 +90,12 @@ export async function evaluateAssignmentRules(
 
   if (rules.length === 0) return { assigned: false, userId: null, ruleName: null };
 
-  const [lead] = await db.select().from(leads).where(and(eq(leads.id, leadId), eq(leads.orgId, orgId)));
+  const lead = await loadLeadView(db, orgId, leadId, INCLUDE_DELETED);
   if (!lead) return { assigned: false, userId: null, ruleName: null };
 
-  const leadRecord = lead as Record<string, unknown>;
+  // A rule's `field` is a column name a tenant chose against `leads`' vocabulary,
+  // which is why the seam hands the row back under those names.
+  const leadRecord: Record<string, unknown> = { ...lead };
 
   const statusOptions = await db
     .select()
@@ -144,10 +155,11 @@ export async function evaluateAssignmentRules(
     }
 
     if (assignedUserId) {
-      await db
-        .update(leads)
-        .set({ assignedToId: assignedUserId, assignedAt: new Date(), updatedAt: new Date() })
-        .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId)));
+      await updateMirroredLeads(db, orgId, [leadId], {
+        assignedToId: assignedUserId,
+        assignedAt: new Date(),
+        updatedAt: new Date(),
+      });
       return { assigned: true, userId: assignedUserId, ruleName: rule.name };
     }
   }
@@ -183,10 +195,10 @@ export async function recalculateLeadScore(
   const rules = await db.select().from(leadScoringRules).where(eq(leadScoringRules.orgId, orgId));
   if (rules.length === 0) return null;
 
-  const [lead] = await db.select().from(leads).where(and(eq(leads.id, leadId), eq(leads.orgId, orgId)));
+  const lead = await loadLeadView(db, orgId, leadId, INCLUDE_DELETED);
   if (!lead) return null;
 
-  const leadRecord = lead as Record<string, unknown>;
+  const leadRecord: Record<string, unknown> = { ...lead };
   const dimensionBreakdown: Record<string, number> = {};
   let total = 0;
 
@@ -200,7 +212,7 @@ export async function recalculateLeadScore(
   const score = Math.max(0, Math.min(100, total));
   const changed = lead.score !== score;
 
-  await db.update(leads).set({ score, updatedAt: new Date() }).where(and(eq(leads.id, leadId), eq(leads.orgId, orgId)));
+  await updateMirroredLeads(db, orgId, [leadId], { score, updatedAt: new Date() });
 
   return { score, changed, dimensionBreakdown };
 }
@@ -210,10 +222,10 @@ export async function applySlaPolicy(
   orgId: string,
   leadId: number,
 ): Promise<{ slaApplied: boolean; deadline?: Date }> {
-  const [lead] = await db.select().from(leads).where(and(eq(leads.id, leadId), eq(leads.orgId, orgId)));
+  const lead = await loadLeadView(db, orgId, leadId, INCLUDE_DELETED);
   if (!lead) return { slaApplied: false };
 
-  const priorityKey = (lead.priority ?? "WARM").toUpperCase();
+  const priorityKey = lead.priority.toUpperCase();
 
   const allPolicies = await db
     .select()
@@ -233,7 +245,7 @@ export async function applySlaPolicy(
   const deadline = new Date(lead.createdAt);
   deadline.setHours(deadline.getHours() + policy.firstResponseHours);
 
-  await db.update(leads).set({ slaDeadline: deadline, updatedAt: new Date() }).where(and(eq(leads.id, leadId), eq(leads.orgId, orgId)));
+  await updateMirroredLeads(db, orgId, [leadId], { slaDeadline: deadline, updatedAt: new Date() });
 
   return { slaApplied: true, deadline };
 }

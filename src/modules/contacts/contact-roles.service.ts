@@ -7,6 +7,7 @@ import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { CONTACT_ROLE_DEFAULTS, type ContactRoleCreateInput, type DuplicatesQueryInput, type MergeContactsInput } from "./dto/contact-roles.schemas";
+import { updateMirroredContacts } from "../party/party-legacy-contacts";
 
 function isDbConflict(err: unknown): boolean {
   return (
@@ -185,10 +186,10 @@ export class ContactRolesService {
       if (!primary.organizationId && duplicate.organizationId) scalarPatch.organizationId = duplicate.organizationId;
 
       if (Object.keys(scalarPatch).length > 0) {
-        await tx
-          .update(contacts)
-          .set({ ...scalarPatch, updatedAt: new Date() })
-          .where(eq(contacts.id, input.primaryId));
+        await updateMirroredContacts(tx, orgId, [input.primaryId], {
+          ...scalarPatch,
+          updatedAt: new Date(),
+        });
       }
 
       await tx
@@ -201,10 +202,11 @@ export class ContactRolesService {
         .set({ contactId: input.primaryId })
         .where(and(eq(surveyParticipants.contactId, input.duplicateId), eq(surveyParticipants.orgId, orgId)));
 
-      await tx
-        .update(contacts)
-        .set({ deletedAt: new Date(), mergedIntoId: input.primaryId, updatedAt: new Date() })
-        .where(eq(contacts.id, input.duplicateId));
+      await updateMirroredContacts(tx, orgId, [input.duplicateId], {
+        deletedAt: new Date(),
+        mergedIntoId: input.primaryId,
+        updatedAt: new Date(),
+      });
     });
 
     this.audit.log({

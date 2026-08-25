@@ -1,6 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, count, desc, eq, isNotNull, lt, notInArray, sql } from "drizzle-orm";
-import { crmOptions, crmSla, leads } from "../../../db/schema";
+import { crmOptions, crmSla } from "../../../db/schema";
+import { businessParties, leadPartyMap } from "../../../db/schema/party";
+import { PARTY_OF_LEAD, leadPriority, leadStatus } from "../crm-party-reads";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -96,21 +98,22 @@ export class CrmSlaService {
 
     return this.db
       .select({
-        id: leads.id,
-        name: leads.name,
-        email: leads.email,
-        status: leads.status,
-        priority: leads.priority,
-        slaDeadline: leads.slaDeadline,
-        createdAt: leads.createdAt,
+        id: leadPartyMap.leadId,
+        name: businessParties.name,
+        email: businessParties.email,
+        status: leadStatus,
+        priority: leadPriority,
+        slaDeadline: businessParties.slaDueAt,
+        createdAt: businessParties.createdAt,
       })
-      .from(leads)
+      .from(leadPartyMap)
+      .innerJoin(businessParties, PARTY_OF_LEAD)
       .where(
         and(
-          eq(leads.orgId, orgId),
-          isNotNull(leads.slaDeadline),
-          lt(leads.slaDeadline, now),
-          notInArray(leads.status, terminalKeys),
+          eq(leadPartyMap.organizationId, orgId),
+          isNotNull(businessParties.slaDueAt),
+          lt(businessParties.slaDueAt, now),
+          notInArray(leadStatus, terminalKeys),
         ),
       )
       .limit(100);
@@ -125,18 +128,20 @@ export class CrmSlaService {
 
     const [totals] = await this.db
       .select({ total: count() })
-      .from(leads)
-      .where(and(eq(leads.orgId, orgId), isNotNull(leads.slaDeadline)));
+      .from(leadPartyMap)
+      .innerJoin(businessParties, PARTY_OF_LEAD)
+      .where(and(eq(leadPartyMap.organizationId, orgId), isNotNull(businessParties.slaDueAt)));
 
     const [breached] = await this.db
       .select({ count: count() })
-      .from(leads)
+      .from(leadPartyMap)
+      .innerJoin(businessParties, PARTY_OF_LEAD)
       .where(
         and(
-          eq(leads.orgId, orgId),
-          isNotNull(leads.slaDeadline),
-          sql`${leads.slaDeadline} < ${now.toISOString()}`,
-          notInArray(leads.status, terminalKeys),
+          eq(leadPartyMap.organizationId, orgId),
+          isNotNull(businessParties.slaDueAt),
+          sql`${businessParties.slaDueAt} < ${now.toISOString()}`,
+          notInArray(leadStatus, terminalKeys),
         ),
       );
 

@@ -2,11 +2,12 @@ import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import {
-  contacts,
   crmContactChannelConsent,
   crmContactConsentEvents,
   crmSuppressionHashes,
 } from "../../../db/schema";
+import { businessParties, contactPartyMap } from "../../../db/schema/party";
+import { PARTY_OF_CONTACT } from "../crm-party-reads";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
@@ -132,28 +133,29 @@ export class CrmConsentService {
     if (emails.length === 0) return new Set();
     const normalised = [...new Set(emails.map((email) => email.trim().toLowerCase()))];
 
-    // Deliberately does NOT filter `isNull(contacts.deletedAt)`. An opt-out must
-    // outlive the record it was captured on: if the contact is deleted and the
-    // same address is later re-added, suppression still applies. Adding that
+    // Deliberately does NOT filter `isNull(businessParties.deletedAt)`. An opt-out
+    // must outlive the record it was captured on: if the contact is deleted and
+    // the same address is later re-added, suppression still applies. Adding that
     // filter here would silently resume emailing people who opted out — the one
     // direction this query must never fail in. `countMissingConsent` filters
     // deleted contacts because it is a coverage metric, not a safety gate.
     const rows = await this.db
-      .select({ email: contacts.email })
+      .select({ email: businessParties.email })
       .from(crmContactChannelConsent)
       .innerJoin(
-        contacts,
+        contactPartyMap,
         and(
-          eq(contacts.id, crmContactChannelConsent.contactId),
-          eq(contacts.orgId, orgId),
+          eq(contactPartyMap.contactId, crmContactChannelConsent.contactId),
+          eq(contactPartyMap.organizationId, orgId),
         ),
       )
+      .innerJoin(businessParties, PARTY_OF_CONTACT)
       .where(
         and(
           eq(crmContactChannelConsent.orgId, orgId),
           eq(crmContactChannelConsent.channel, "EMAIL"),
           eq(crmContactChannelConsent.status, "OPTED_OUT"),
-          inArray(sql`lower(${contacts.email})`, normalised),
+          inArray(sql`lower(${businessParties.email})`, normalised),
         ),
       );
 
@@ -310,19 +312,20 @@ export class CrmConsentService {
   async countMissingConsent(orgId: string, channel: ConsentChannel): Promise<number> {
     const [row] = await this.db
       .select({ cnt: sql<number>`count(*)` })
-      .from(contacts)
+      .from(contactPartyMap)
+      .innerJoin(businessParties, PARTY_OF_CONTACT)
       .leftJoin(
         crmContactChannelConsent,
         and(
-          eq(crmContactChannelConsent.contactId, contacts.id),
+          eq(crmContactChannelConsent.contactId, contactPartyMap.contactId),
           eq(crmContactChannelConsent.orgId, orgId),
           eq(crmContactChannelConsent.channel, channel),
         ),
       )
       .where(
         and(
-          eq(contacts.orgId, orgId),
-          isNull(contacts.deletedAt),
+          eq(contactPartyMap.organizationId, orgId),
+          isNull(businessParties.deletedAt),
           isNull(crmContactChannelConsent.id),
         ),
       );

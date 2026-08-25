@@ -1,7 +1,6 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { eq, and, inArray, isNull } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import {
-  leads,
   notifications,
   organizationMembers,
   users,
@@ -21,6 +20,7 @@ import { TerritoryMatchService } from "../crm/core/territory-match.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import type { BoardOpts, StatsFilters } from "./leads-board.service";
 import { LeadsReadService, type ListFilters } from "./leads-read.service";
+import { loadLeadView } from "./lead-party-reader";
 import {
   evaluateAssignmentRules,
   recalculateLeadScore,
@@ -31,6 +31,11 @@ import type {
   UpdateInput,
   IngestInput,
 } from "./dto/lead.schemas";
+import {
+  createMirroredLead,
+  softDeleteMirroredLeads,
+  updateMirroredLead,
+} from "../party/party-legacy-leads";
 
 export type AssigneeNotMember = { error: "assignee_not_member" };
 
@@ -129,7 +134,10 @@ export class LeadsService {
       throw new BadRequestException(validation.errors.map((e) => e.message).join("; "));
     }
 
-    const [newLead] = await this.db.insert(leads).values({
+    // The party is written first and this row derived from it, in one
+    // transaction; see `party-legacy-writer`. Values stay in `leads`' vocabulary
+    // because that is what the DTO speaks -- the writer translates once.
+    const newLead = await createMirroredLead(this.db, orgId, {
       orgId,
       name: input.name,
       email: input.email || null,
@@ -149,7 +157,7 @@ export class LeadsService {
       assignedToId: input.assignedToId || null,
       assignedById: input.assignedToId ? userId : null,
       assignedAt: input.assignedToId ? new Date() : null,
-    }).returning();
+    });
 
     if (input.assignedToId) {
       await this.db.insert(notifications).values({
@@ -238,9 +246,7 @@ export class LeadsService {
   }
 
   async update(orgId: string, userId: string, id: number, input: UpdateInput) {
-    const existing = await this.db.query.leads.findFirst({
-      where: and(eq(leads.id, id), eq(leads.orgId, orgId), isNull(leads.deletedAt)),
-    });
+    const existing = await loadLeadView(this.db, orgId, id);
     if (!existing) return null;
 
     const record: Record<string, unknown> = {
@@ -259,10 +265,10 @@ export class LeadsService {
       throw new BadRequestException(validation.errors.map((e) => e.message).join("; "));
     }
 
-    const [updated] = await this.db.update(leads)
-      .set({ ...input, updatedAt: new Date() })
-      .where(and(eq(leads.id, id), eq(leads.orgId, orgId)))
-      .returning();
+    const updated = await updateMirroredLead(this.db, orgId, id, {
+      ...input,
+      updatedAt: new Date(),
+    });
 
     if (!updated) return null;
 
@@ -345,10 +351,7 @@ export class LeadsService {
   }
 
   async remove(orgId: string, userId: string, id: number) {
-    await this.db
-      .update(leads)
-      .set({ deletedAt: new Date() })
-      .where(and(eq(leads.id, id), eq(leads.orgId, orgId), isNull(leads.deletedAt)));
+    await softDeleteMirroredLeads(this.db, orgId, [id]);
     this.audit.log({
       action: "lead.deleted",
       userId,
@@ -362,9 +365,10 @@ export class LeadsService {
   async ingestCreate(orgId: string, input: IngestInput) {
     await this.planLimits.assertWithinLimit(orgId, "crmLeads");
 
-    const [lead] = await this.db
-      .insert(leads)
-      .values({
+    const lead = await createMirroredLead(
+      this.db,
+      orgId,
+      {
         orgId,
         name: input.name ?? input.email ?? input.phone ?? "Unknown",
         email: input.email ?? null,
@@ -373,8 +377,9 @@ export class LeadsService {
         source: "other" as const,
         notes: input.notes ?? null,
         status: "NEW" as const,
-      })
-      .returning({ id: leads.id });
+      },
+      { linkedBy: "leads:ingest" },
+    );
 
     void Promise.allSettled([
       evaluateAssignmentRules(this.db, orgId, lead.id, this.territoryMatch).catch((e: unknown) =>

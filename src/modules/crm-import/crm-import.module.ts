@@ -4,6 +4,7 @@ import { CrmImportController } from "./crm-import.controller";
 import { CrmImportService } from "./crm-import.service";
 import { CrmExportService } from "./crm-export.service";
 import { CrmImportWorkflow } from "./crm-import.workflow";
+import { ImportPump } from "./import-pump";
 
 /**
  * Bringing a competitor's export in, and taking everything back out.
@@ -15,7 +16,7 @@ import { CrmImportWorkflow } from "./crm-import.workflow";
 @Module({
   imports: [WorkflowModule],
   controllers: [CrmImportController],
-  providers: [CrmImportService, CrmExportService, CrmImportWorkflow],
+  providers: [CrmImportService, CrmExportService, CrmImportWorkflow, ImportPump],
   exports: [CrmImportService, CrmExportService],
 })
 export class CrmImportModule {}

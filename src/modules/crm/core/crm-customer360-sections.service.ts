@@ -1,9 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
 import {
+  clients,
   contacts,
   deals,
-  leads,
   invoices,
   payments,
   projects,
@@ -11,8 +11,10 @@ import {
   supportTickets,
   csatSurveys,
 } from "../../../db/schema";
+import { businessParties, contactPartyMap, leadPartyMap } from "../../../db/schema/party";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { PARTY_OF_CONTACT, PARTY_OF_LEAD, leadSource, leadStatus } from "../crm-party-reads";
 
 export const SECTION_LIMIT = 10;
 
@@ -39,82 +41,148 @@ export interface Customer360Response {
 export class CrmCustomer360SectionsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
+  /**
+   * The legacy row is still the only place "works at this company" is recorded --
+   * `contacts.organization_id` points at `crm_organizations`, and a party's
+   * employer cannot point at one until that table converges too. So it stays as
+   * the association, and every field on the card comes from the party.
+   */
+  private contactSection(orgId: string, where: SQL | undefined) {
+    return this.db
+      .select({
+        id: contacts.id,
+        name: businessParties.name,
+        email: businessParties.email,
+        title: businessParties.jobTitle,
+        createdAt: businessParties.createdAt,
+      })
+      .from(contacts)
+      .innerJoin(
+        contactPartyMap,
+        and(
+          eq(contactPartyMap.contactId, contacts.id),
+          eq(contactPartyMap.organizationId, orgId),
+        ),
+      )
+      .innerJoin(businessParties, PARTY_OF_CONTACT)
+      .where(where);
+  }
+
+  private contactSectionCount(orgId: string, where: SQL | undefined) {
+    return this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(contacts)
+      .innerJoin(
+        contactPartyMap,
+        and(
+          eq(contactPartyMap.contactId, contacts.id),
+          eq(contactPartyMap.organizationId, orgId),
+        ),
+      )
+      .innerJoin(businessParties, PARTY_OF_CONTACT)
+      .where(where);
+  }
+
   async fetchContacts(orgId: string, companyId: number): Promise<Customer360Section<unknown>> {
+    const where = and(
+      eq(contacts.orgId, orgId),
+      eq(contacts.organizationId, companyId),
+      isNull(businessParties.deletedAt),
+    );
     const [items, countRow] = await Promise.all([
-      this.db
-        .select({ id: contacts.id, name: contacts.name, email: contacts.email, title: contacts.title, createdAt: contacts.createdAt })
-        .from(contacts)
-        .where(and(eq(contacts.orgId, orgId), eq(contacts.organizationId, companyId), isNull(contacts.deletedAt)))
-        .orderBy(desc(contacts.createdAt))
+      this.contactSection(orgId, where)
+        .orderBy(desc(businessParties.createdAt))
         .limit(SECTION_LIMIT),
-      this.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(contacts)
-        .where(and(eq(contacts.orgId, orgId), eq(contacts.organizationId, companyId), isNull(contacts.deletedAt)))
-        .then((rows) => rows[0]),
+      this.contactSectionCount(orgId, where).then((rows) => rows[0]),
     ]);
     return { items, total: Number(countRow?.count ?? 0) };
   }
 
+  /**
+   * Which lead a client converted from.
+   *
+   * The two client sections below used to filter `leads` on `client_id`, a
+   * column `leads` has never had — the section 500ed rather than returning
+   * anything. `clients.lead_id` is the link that exists, and it is legacy-owned:
+   * a legacy-to-legacy pointer with no Party equivalent until `leads` is
+   * dropped, per `party-mirror-fields.ts`.
+   */
+  private async leadIdOfClient(orgId: string, clientId: number): Promise<number | null> {
+    const [row] = await this.db
+      .select({ leadId: clients.leadId })
+      .from(clients)
+      .where(and(eq(clients.orgId, orgId), eq(clients.id, clientId)))
+      .limit(1);
+    return row?.leadId ?? null;
+  }
+
   async fetchContactsForClient(orgId: string, clientId: number): Promise<Customer360Section<unknown>> {
-    const leadIds = await this.db
-      .select({ id: leads.id })
-      .from(leads)
-      .where(and(eq(leads.orgId, orgId), sql`client_id = ${clientId}`))
-      .then((rows) => rows.map((r) => r.id));
+    const leadId = await this.leadIdOfClient(orgId, clientId);
+    if (leadId === null) return { items: [], total: 0 };
 
-    if (leadIds.length === 0) return { items: [], total: 0 };
-
-    const contactsWhere = and(eq(contacts.orgId, orgId), inArray(contacts.leadId, leadIds), isNull(contacts.deletedAt));
+    const where = and(
+      eq(contacts.orgId, orgId),
+      eq(contacts.leadId, leadId),
+      isNull(businessParties.deletedAt),
+    );
     const [items, countRow] = await Promise.all([
-      this.db
-        .select({ id: contacts.id, name: contacts.name, email: contacts.email, title: contacts.title, createdAt: contacts.createdAt })
-        .from(contacts)
-        .where(contactsWhere)
-        .orderBy(desc(contacts.createdAt))
+      this.contactSection(orgId, where)
+        .orderBy(desc(businessParties.createdAt))
         .limit(SECTION_LIMIT),
-      this.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(contacts)
-        .where(contactsWhere)
-        .then((rows) => rows[0]),
+      this.contactSectionCount(orgId, where).then((rows) => rows[0]),
     ]);
 
     return { items, total: Number(countRow?.count ?? 0) };
+  }
+
+  private leadSection(where: SQL | undefined) {
+    return this.db
+      .select({
+        id: leadPartyMap.leadId,
+        name: businessParties.name,
+        status: leadStatus,
+        source: leadSource,
+        createdAt: businessParties.createdAt,
+      })
+      .from(leadPartyMap)
+      .innerJoin(businessParties, PARTY_OF_LEAD)
+      .where(where);
+  }
+
+  private leadSectionCount(where: SQL | undefined) {
+    return this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(leadPartyMap)
+      .innerJoin(businessParties, PARTY_OF_LEAD)
+      .where(where);
   }
 
   async fetchLeadsForOrg(orgId: string, orgName: string): Promise<Customer360Section<unknown>> {
     const safe = orgName.replaceAll("%", "\\%").replaceAll("_", "\\_");
+    const where = and(
+      eq(leadPartyMap.organizationId, orgId),
+      sql`${businessParties.companyName} ILIKE ${"%" + safe + "%"}`,
+      isNull(businessParties.deletedAt),
+    );
     const [items, countRow] = await Promise.all([
-      this.db
-        .select({ id: leads.id, name: leads.name, status: leads.status, source: leads.source, createdAt: leads.createdAt })
-        .from(leads)
-        .where(and(eq(leads.orgId, orgId), sql`${leads.company} ILIKE ${"%" + safe + "%"}`, isNull(leads.deletedAt)))
-        .orderBy(desc(leads.createdAt))
-        .limit(SECTION_LIMIT),
-      this.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(leads)
-        .where(and(eq(leads.orgId, orgId), sql`${leads.company} ILIKE ${"%" + safe + "%"}`, isNull(leads.deletedAt)))
-        .then((rows) => rows[0]),
+      this.leadSection(where).orderBy(desc(businessParties.createdAt)).limit(SECTION_LIMIT),
+      this.leadSectionCount(where).then((rows) => rows[0]),
     ]);
     return { items, total: Number(countRow?.count ?? 0) };
   }
 
   async fetchLeadsForClient(orgId: string, clientId: number): Promise<Customer360Section<unknown>> {
-    const where = and(eq(leads.orgId, orgId), sql`client_id = ${clientId}`, isNull(leads.deletedAt));
+    const leadId = await this.leadIdOfClient(orgId, clientId);
+    if (leadId === null) return { items: [], total: 0 };
+
+    const where = and(
+      eq(leadPartyMap.organizationId, orgId),
+      eq(leadPartyMap.leadId, leadId),
+      isNull(businessParties.deletedAt),
+    );
     const [items, countRow] = await Promise.all([
-      this.db
-        .select({ id: leads.id, name: leads.name, status: leads.status, source: leads.source, createdAt: leads.createdAt })
-        .from(leads)
-        .where(where)
-        .orderBy(desc(leads.createdAt))
-        .limit(SECTION_LIMIT),
-      this.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(leads)
-        .where(where)
-        .then((rows) => rows[0]),
+      this.leadSection(where).orderBy(desc(businessParties.createdAt)).limit(SECTION_LIMIT),
+      this.leadSectionCount(where).then((rows) => rows[0]),
     ]);
     return { items, total: Number(countRow?.count ?? 0) };
   }

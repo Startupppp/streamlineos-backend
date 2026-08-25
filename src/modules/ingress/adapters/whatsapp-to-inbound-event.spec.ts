@@ -167,8 +167,15 @@ describe("participants", () => {
   it("puts both ends of the conversation on the event", () => {
     const event = ok(whatsAppToInboundEvent(message(), context)).event;
     expect(event.participants).toEqual([
-      { address: "+919876543210", displayName: FIXTURE_CUSTOMER_NAME, role: "from" },
-      { address: "+15550001111", role: "to" },
+      {
+        address: "+919876543210",
+        displayName: FIXTURE_CUSTOMER_NAME,
+        role: "from",
+        // Stated by the adapter, because the channel cannot say it: web forms
+        // arrive as `message` too, carrying an email address.
+        identifierKind: "whatsapp",
+      },
+      { address: "+15550001111", role: "to", identifierKind: "whatsapp" },
     ]);
   });
 
@@ -359,13 +366,23 @@ describe("media", () => {
  * acted on one, which is the outcome these exist to prompt.
  */
 describe("below the seam", () => {
-  it("drops every WhatsApp participant, because the seam's filter is domain-shaped", () => {
+  /**
+   * The finding this pin was written to prompt, now acted on.
+   *
+   * `externalParticipants` used to keep a participant only if `addressDomain`
+   * found one, and a telephone number has no domain — so `record-participants`
+   * wrote nothing at all for this channel, and `AutonomyService.loadActivity`
+   * left-joined a table that could never hold this sender. Ticket 22 made the
+   * filter keep every kind: an address with no domain cannot be shown to be
+   * internal, and on an inbound channel that makes it external.
+   */
+  it("keeps both WhatsApp participants, now that the filter is not domain-shaped", () => {
     const event = ok(whatsAppToInboundEvent(message(), context)).event;
 
-    // `externalParticipants` keeps a participant only if `addressDomain` finds
-    // one, and a phone number has no domain — so the workflow's
-    // `record-participants` step writes nothing at all for this channel.
-    expect(externalParticipants(event, [])).toEqual([]);
+    expect(externalParticipants(event, []).map((participant) => participant.address)).toEqual([
+      "+919876543210",
+      "+15550001111",
+    ]);
   });
 
   it("names a party after its own phone number when the profile name is absent", () => {

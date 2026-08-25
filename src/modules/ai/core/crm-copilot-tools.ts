@@ -7,6 +7,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { ToolAccessService } from "./tool-access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { updateMirroredLeads } from "../../party/party-legacy-leads";
 
 export interface CrmCopilotContext {
   actor: CurrentUserContext;
@@ -50,7 +51,10 @@ export class CrmCopilotTools {
             return { success: false, message: "No status or priority provided to update." };
           }
 
-          await this.db.update(leads).set(updateData).where(eq(leads.id, lead.id));
+          // Through the writer, which re-asserts `orgId` on the write as well as
+          // on the lookup above: this controller is `@NoTenantTransaction`, so
+          // there is no RLS predicate standing behind a missing tenant clause.
+          await updateMirroredLeads(this.db, orgId, [lead.id], updateData);
           return {
             success: true,
             message: `Lead "${lead.name}" updated: ${status ? `status → ${status}` : ""}${status && priority ? ", " : ""}${priority ? `priority → ${priority}` : ""}`,

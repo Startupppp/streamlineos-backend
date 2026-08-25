@@ -24,6 +24,14 @@ import { customKeyFor, normaliseHeader, type ImportField, type MappedColumn } fr
 export type { RowAction } from "../../db/schema/crm/imports";
 import type { RowAction } from "../../db/schema/crm/imports";
 
+/** What the scorer saw, where what it saw is the row's decision. */
+export interface RowMatch {
+  readonly score: number;
+  readonly signals: readonly string[];
+  /** The candidate's name, so a person can judge the row without a second query. */
+  readonly candidateName?: string;
+}
+
 export interface PlannedRow {
   /** 1-based, matching what the user sees in their spreadsheet. */
   readonly rowNumber: number;
@@ -32,20 +40,33 @@ export interface PlannedRow {
   readonly reason: string;
   readonly values: Readonly<Record<string, string>>;
   readonly customFields: Readonly<Record<string, string>>;
-  /** The existing record this row updates or duplicates. */
+  /** The existing record this row updates, or was unsure about. */
   readonly matchedPartyId?: string;
-  /** An earlier row in this same file that this one repeats. */
+  /** An earlier row in this same file that this one was folded into. */
   readonly duplicateOfRow?: number;
+  /** Present on `update` and `review`: why the scorer landed where it did. */
+  readonly match?: RowMatch;
 }
+
+/**
+ * A type alias rather than an interface: this is stored in a `jsonb` column
+ * typed `Record<string, number>`, and TypeScript gives an object type alias an
+ * implicit index signature while an interface gets none.
+ */
+export type ImportSummary = {
+  readonly create: number;
+  readonly update: number;
+  /** Folded into an earlier row of this same file. */
+  readonly merge: number;
+  /** Held for a person: written nowhere, filed in the data-quality queue. */
+  readonly review: number;
+  readonly skip: number;
+  readonly total: number;
+};
 
 export interface ImportPlan {
   readonly rows: readonly PlannedRow[];
-  readonly summary: {
-    readonly create: number;
-    readonly update: number;
-    readonly skip: number;
-    readonly total: number;
-  };
+  readonly summary: ImportSummary;
 }
 
 export interface PlanInput {
@@ -203,6 +224,58 @@ export function blockingKeysFor(
   };
 }
 
+/**
+ * The same four identifiers as one list, prefixed by kind.
+ *
+ * Prefixed because a tax number and a phone number can be the same digits, and
+ * an index that let them collide would compare pairs that share nothing —
+ * harmless for correctness, but it re-introduces the cost this exists to remove.
+ */
+function blockingKeysOf(fingerprint: PartyFingerprint): string[] {
+  return [
+    `t:${normaliseTaxNumber(fingerprint.taxNumber)}`,
+    `e:${normaliseEmail(fingerprint.email)}`,
+    `p:${normalisePhone(fingerprint.phone)}`,
+    `h:${normaliseHost(fingerprint.website)}`,
+  ].filter((key) => key.length > 2);
+}
+
+/**
+ * Which records are worth comparing against which, by shared identifier.
+ *
+ * Comparing every row against every row is quadratic, and at the file sizes this
+ * ticket is about that is the preview's own ceiling — five thousand rows is
+ * twelve million scorings before anything is written. The soundness argument is
+ * exactly the one `blockingKeysFor` makes for the database side, only stricter:
+ * a pair sharing none of the four identifiers tops out at 0.42, and the bar for
+ * folding two rows together is 0.85.
+ */
+class BlockingIndex {
+  private readonly byKey = new Map<string, number[]>();
+
+  add(position: number, fingerprint: PartyFingerprint): void {
+    for (const key of blockingKeysOf(fingerprint)) {
+      const positions = this.byKey.get(key);
+      if (!positions) this.byKey.set(key, [position]);
+      else if (positions.at(-1) !== position) positions.push(position);
+    }
+  }
+
+  /**
+   * Ascending, and deduplicated.
+   *
+   * Order is not cosmetic: the caller takes the FIRST match, so this decides
+   * which row a repeat is folded into. Ascending means the earliest occurrence
+   * in the file wins, which is what a person reading their spreadsheet expects.
+   */
+  candidates(fingerprint: PartyFingerprint): number[] {
+    const found = new Set<number>();
+    for (const key of blockingKeysOf(fingerprint))
+      for (const position of this.byKey.get(key) ?? []) found.add(position);
+    return [...found].sort((left, right) => left - right);
+  }
+}
+
 function fingerprintOf(rowNumber: number, values: Record<string, string>): PartyFingerprint {
   return {
     partyId: `row:${rowNumber}`,
@@ -215,17 +288,53 @@ function fingerprintOf(rowNumber: number, values: Record<string, string>): Party
   };
 }
 
+/** A row on its way to becoming a `PlannedRow`; `values` are folded into in place. */
+interface Draft {
+  rowNumber: number;
+  action: RowAction;
+  reason: string;
+  values: Record<string, string>;
+  customFields: Record<string, string>;
+  matchedPartyId?: string;
+  duplicateOfRow?: number;
+  match?: RowMatch;
+}
+
+/**
+ * Folds a repeated row into the one it repeats, filling gaps only.
+ *
+ * A file that lists Acme twice, once with the phone number and once with the
+ * e-mail, describes one company that has both. Dropping the second line — which
+ * is what reporting it as a skip amounted to — loses a column the user can see
+ * in their own file. First occurrence wins on conflict, matching the rule the
+ * commit already applies to an existing party: a value already present is not
+ * overwritten by a later one.
+ */
+function fold(into: Draft, from: { values: Record<string, string>; customFields: Record<string, string> }): void {
+  for (const [key, value] of Object.entries(from.values))
+    if (value && !into.values[key]) into.values[key] = value;
+
+  for (const [key, value] of Object.entries(from.customFields))
+    if (value && !into.customFields[key]) into.customFields[key] = value;
+}
+
 /**
  * What this file would do to this organisation.
  *
- * Order matters. A row is checked against earlier rows in the same file first,
- * because a file that lists one company twice should create it once — and if it
- * were checked against the database first, both copies would look new and both
- * would be created.
+ * Two passes, and the order between them is the same one Phase 1 had for the
+ * same reason: a file that lists one company twice must create it once, and
+ * checking against the database first would make both copies look new and create
+ * both. Separating the passes rather than interleaving them is what lets a fold
+ * change the surviving row's identifiers — a repeat that supplies the tax number
+ * the first line lacked genuinely changes which existing party the survivor
+ * matches, and a single interleaved pass would have matched it already.
  */
 export function planImport(input: PlanInput): ImportPlan {
-  const planned: PlannedRow[] = [];
-  const seen: { rowNumber: number; fingerprint: PartyFingerprint }[] = [];
+  const drafts: Draft[] = [];
+
+  // ── Pass one: the file against itself ───────────────────────────────────
+  const survivors: { draft: Draft; fingerprint: PartyFingerprint }[] = [];
+  const withinFile = new BlockingIndex();
 
   input.rows.forEach((cells, index) => {
     const rowNumber = index + 1;
@@ -233,7 +342,7 @@ export function planImport(input: PlanInput): ImportPlan {
 
     // A party is its name. Without one there is nothing to create.
     if (!values.name?.trim()) {
-      planned.push({
+      drafts.push({
         rowNumber,
         action: "skip",
         reason: "No name in this row, so there is nothing to create.",
@@ -245,82 +354,106 @@ export function planImport(input: PlanInput): ImportPlan {
 
     const fingerprint = fingerprintOf(rowNumber, values);
 
-    const withinFile = seen.find(
-      (candidate) => assessDuplicate(candidate.fingerprint, fingerprint).score >= AUTO_MERGE_THRESHOLD,
-    );
+    const repeated = withinFile
+      .candidates(fingerprint)
+      .find(
+        (position) =>
+          assessDuplicate(survivors[position]!.fingerprint, fingerprint).score >=
+          AUTO_MERGE_THRESHOLD,
+      );
 
-    if (withinFile) {
-      planned.push({
+    if (repeated !== undefined) {
+      const survivor = survivors[repeated]!;
+      fold(survivor.draft, { values, customFields });
+      // Re-fingerprinted because the fold may have supplied an identifier the
+      // surviving row did not have, and the index has to know about it or a
+      // third occurrence matching only on that identifier would be missed.
+      survivor.fingerprint = fingerprintOf(survivor.draft.rowNumber, survivor.draft.values);
+      withinFile.add(repeated, survivor.fingerprint);
+
+      drafts.push({
         rowNumber,
-        action: "skip",
-        reason: `Repeats row ${withinFile.rowNumber} of this file.`,
+        action: "merge",
+        reason: `Repeats row ${String(survivor.draft.rowNumber)} of this file; its values were folded into that row.`,
         values,
         customFields,
-        duplicateOfRow: withinFile.rowNumber,
+        duplicateOfRow: survivor.draft.rowNumber,
       });
       return;
     }
 
-    seen.push({ rowNumber, fingerprint });
-
-    let best: { partyId: string; score: number } | null = null;
-    for (const candidate of input.existing) {
-      const { score, blockers } = assessDuplicate(candidate, fingerprint);
-      // A contradiction — two different tax numbers — is proof these are
-      // different companies, however similar the names look.
-      if (blockers.length > 0) continue;
-      if (!best || score > best.score) best = { partyId: candidate.partyId, score };
-    }
-
-    if (best && best.score >= AUTO_MERGE_THRESHOLD) {
-      planned.push({
-        rowNumber,
-        action: "update",
-        reason: "Matches a party you already have; its details will be filled in.",
-        values,
-        customFields,
-        matchedPartyId: best.partyId,
-      });
-      return;
-    }
-
-    /**
-     * A near-match is not an update.
-     *
-     * Between the two thresholds the system is unsure, and quietly merging into
-     * an existing customer is the expensive mistake — it fuses two companies'
-     * histories, which a later reversal cannot cleanly separate. Creating a
-     * second record is the cheap one, and the duplicate queue from ticket 06
-     * already exists to catch it afterwards.
-     */
-    if (best && best.score >= REVIEW_THRESHOLD) {
-      planned.push({
-        rowNumber,
-        action: "create",
-        reason: "Looks similar to an existing party, but not close enough to be sure — created separately for review.",
-        values,
-        customFields,
-        matchedPartyId: best.partyId,
-      });
-      return;
-    }
-
-    planned.push({
+    const draft: Draft = {
       rowNumber,
+      // Decided in pass two, once the row has absorbed every repeat of itself.
       action: "create",
       reason: "New to this organisation.",
       values,
       customFields,
-    });
+    };
+
+    drafts.push(draft);
+    survivors.push({ draft, fingerprint });
+    withinFile.add(survivors.length - 1, fingerprint);
   });
 
+  // ── Pass two: the surviving rows against what already exists ────────────
+  const existingIndex = new BlockingIndex();
+  input.existing.forEach((party, position) => existingIndex.add(position, party));
+
+  for (const survivor of survivors) {
+    let best: { partyId: string; name: string; score: number; signals: readonly string[] } | null =
+      null;
+
+    for (const position of existingIndex.candidates(survivor.fingerprint)) {
+      const candidate = input.existing[position]!;
+      const { score, blockers, signals } = assessDuplicate(candidate, survivor.fingerprint);
+      // A contradiction — two different tax numbers — is proof these are
+      // different companies, however similar the names look.
+      if (blockers.length > 0) continue;
+      if (!best || score > best.score)
+        best = { partyId: candidate.partyId, name: candidate.name, score, signals };
+    }
+
+    if (!best || best.score < REVIEW_THRESHOLD) continue;
+
+    if (best.score >= AUTO_MERGE_THRESHOLD) {
+      survivor.draft.action = "update";
+      survivor.draft.reason = "Matches a party you already have; its details will be filled in.";
+      survivor.draft.matchedPartyId = best.partyId;
+      survivor.draft.match = { score: best.score, signals: best.signals, candidateName: best.name };
+      continue;
+    }
+
+    /**
+     * Between the two thresholds, nothing is written at all.
+     *
+     * Phase 1 created a second record here and left the duplicate queue to catch
+     * it. That is a speculative write, and an import performs it at scale: a
+     * file of near-matches silently doubles a customer list, and the person who
+     * approved the preview was told "created separately for review" in a row
+     * sample they did not read. Holding the row costs them a queue item; writing
+     * it costs them a merge they may never notice is needed.
+     */
+    survivor.draft.action = "review";
+    survivor.draft.reason =
+      `Looks like "${best.name}", but not close enough to be sure. ` +
+      "Held for review rather than creating a second record.";
+    survivor.draft.matchedPartyId = best.partyId;
+    survivor.draft.match = { score: best.score, signals: best.signals, candidateName: best.name };
+  }
+
+  const rows: PlannedRow[] = drafts.map((draft) => ({ ...draft }));
+  const count = (action: RowAction): number => rows.filter((row) => row.action === action).length;
+
   return {
-    rows: planned,
+    rows,
     summary: {
-      create: planned.filter((row) => row.action === "create").length,
-      update: planned.filter((row) => row.action === "update").length,
-      skip: planned.filter((row) => row.action === "skip").length,
-      total: planned.length,
+      create: count("create"),
+      update: count("update"),
+      merge: count("merge"),
+      review: count("review"),
+      skip: count("skip"),
+      total: rows.length,
     },
   };
 }

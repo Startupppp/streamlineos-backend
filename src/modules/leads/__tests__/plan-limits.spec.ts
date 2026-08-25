@@ -14,6 +14,30 @@ import { CrmAutomationBusService } from "../../crm/automation-studio/crm-automat
 import { CrmAttributionReportService } from "../../crm/core/crm-attribution-report.service";
 import { TerritoryMatchService } from "../../crm/core/territory-match.service";
 import { LeadsBoardService } from "../leads-board.service";
+import { createMirroredLead } from "../../party/party-legacy-leads";
+
+/**
+ * The write is stubbed at the mirror seam, which is where it now begins.
+ *
+ * A lead is a party row written first and a `leads` row derived from it, so
+ * "did the create reach the database" is no longer "was `db.insert` called" --
+ * it is "did it reach the writer". What this file is about is unchanged: the
+ * plan limit is checked before anything is written at all.
+ */
+jest.mock("../../party/party-legacy-leads", () => ({
+  createMirroredLead: jest.fn().mockResolvedValue({
+    id: 1,
+    name: "Test Lead",
+    source: "direct",
+    priority: "WARM",
+    orgId: "org-limits-test",
+    assignedToId: null,
+  }),
+  softDeleteMirroredLeads: jest.fn().mockResolvedValue([]),
+  updateMirroredLead: jest.fn().mockResolvedValue(undefined),
+}));
+
+const mirrorCreate = createMirroredLead as unknown as jest.Mock;
 
 const ORG = "org-limits-test";
 const USER = "user-1";
@@ -33,6 +57,9 @@ const makeDb = () => {
   chain.returning = jest.fn().mockResolvedValue([{ id: 1, name: "Test Lead", source: "direct", priority: "WARM", orgId: ORG, assignedToId: null }]);
   chain.select = jest.fn().mockReturnValue(chain);
   chain.from = jest.fn().mockReturnValue(chain);
+  // The after-effects of a create read the lead back through the Party seam,
+  // which joins the map to `business_parties`.
+  chain.innerJoin = jest.fn().mockReturnValue(chain);
   chain.where = jest.fn().mockResolvedValue([]);
   chain.update = jest.fn().mockReturnValue(chain);
   chain.set = jest.fn().mockReturnValue(chain);
@@ -48,7 +75,7 @@ describe("LeadsService plan-limit enforcement", () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         LeadsService,
-        { provide: DRIZZLE, useValue: { ...db, query: { organizationMembers: { findFirst: jest.fn().mockResolvedValue(null) }, leads: { findFirst: jest.fn().mockResolvedValue(null) } } } },
+        { provide: DRIZZLE, useValue: { ...db, query: { organizationMembers: { findFirst: jest.fn().mockResolvedValue(null) } } } },
         { provide: PlanLimitsService, useValue: planLimitsMock },
         { provide: CacheService, useValue: { invalidateNamespace: jest.fn() } },
         { provide: AuditService, useValue: { log: jest.fn() } },
@@ -67,6 +94,10 @@ describe("LeadsService plan-limit enforcement", () => {
     return module.get(LeadsService);
   };
 
+  beforeEach(() => {
+    mirrorCreate.mockClear();
+  });
+
   it("throws ForbiddenException when plan limit is exceeded on create", async () => {
     const db = makeDb();
     const planLimits = makeMockPlanLimits(true);
@@ -77,7 +108,7 @@ describe("LeadsService plan-limit enforcement", () => {
     ).rejects.toThrow(ForbiddenException);
 
     expect(planLimits.assertWithinLimit).toHaveBeenCalledWith(ORG, "crmLeads");
-    expect(db.insert).not.toHaveBeenCalled();
+    expect(mirrorCreate).not.toHaveBeenCalled();
   });
 
   it("does not call insert when plan limit throws before validation", async () => {
@@ -89,7 +120,7 @@ describe("LeadsService plan-limit enforcement", () => {
       svc.create(ORG, USER, { name: "Test Lead", source: "direct", priority: "WARM" }),
     ).rejects.toBeInstanceOf(ForbiddenException);
 
-    expect(db.insert).not.toHaveBeenCalled();
+    expect(mirrorCreate).not.toHaveBeenCalled();
   });
 
   it("proceeds past limit check when within limit", async () => {
@@ -100,6 +131,10 @@ describe("LeadsService plan-limit enforcement", () => {
     await svc.create(ORG, USER, { name: "Test Lead", source: "direct", priority: "WARM" });
 
     expect(planLimits.assertWithinLimit).toHaveBeenCalledWith(ORG, "crmLeads");
-    expect(db.insert).toHaveBeenCalled();
+    expect(mirrorCreate).toHaveBeenCalledWith(
+      expect.anything(),
+      ORG,
+      expect.objectContaining({ orgId: ORG, name: "Test Lead" }),
+    );
   });
 });

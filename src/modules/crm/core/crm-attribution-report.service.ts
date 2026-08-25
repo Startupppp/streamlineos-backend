@@ -1,6 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-import { crmLeadTouchpoints, crmCampaigns, crmPipelineStages, leads, deals } from "../../../db/schema";
+import { crmLeadTouchpoints, crmCampaigns, crmPipelineStages, deals } from "../../../db/schema";
+import { businessParties, leadPartyMap } from "../../../db/schema/party";
+import { PARTY_OF_LEAD } from "../crm-party-reads";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 
@@ -25,7 +27,7 @@ export class CrmAttributionReportService {
         campaignId: crmLeadTouchpoints.campaignId,
         campaignName: sql<string>`COALESCE(${crmCampaigns.name}, 'Direct/Unknown')`,
         touchCount: sql<number>`count(${crmLeadTouchpoints.id})::int`,
-        convertedLeads: sql<number>`count(${leads.convertedAt})::int`,
+        convertedLeads: sql<number>`count(${businessParties.convertedAt})::int`,
         totalRevenue: sql<number>`COALESCE(SUM(${deals.value}::numeric), 0)::float`,
         spend: sql<number>`COALESCE(MAX(${crmCampaigns.spend}::numeric), 0)::float`,
       })
@@ -34,12 +36,13 @@ export class CrmAttributionReportService {
         eq(crmLeadTouchpoints.campaignId, crmCampaigns.id),
         eq(crmCampaigns.orgId, orgId),
       ))
-      .leftJoin(leads, and(
-        eq(crmLeadTouchpoints.leadId, leads.id),
-        eq(leads.orgId, orgId),
+      .leftJoin(leadPartyMap, and(
+        eq(crmLeadTouchpoints.leadId, leadPartyMap.leadId),
+        eq(leadPartyMap.organizationId, orgId),
       ))
+      .leftJoin(businessParties, PARTY_OF_LEAD)
       .leftJoin(deals, and(
-        eq(deals.leadId, leads.id),
+        eq(deals.leadId, leadPartyMap.leadId),
         eq(deals.orgId, orgId), isNull(deals.deletedAt),
         inArray(deals.stage, wonStageKeys),
       ))
@@ -70,7 +73,7 @@ export class CrmAttributionReportService {
         campaignId: crmLeadTouchpoints.campaignId,
         campaignName: sql<string>`COALESCE(${crmCampaigns.name}, 'Direct/Unknown')`,
         touchCount: sql<number>`count(${crmLeadTouchpoints.id})::int`,
-        convertedLeads: sql<number>`count(${leads.convertedAt})::int`,
+        convertedLeads: sql<number>`count(${businessParties.convertedAt})::int`,
         totalRevenue: sql<number>`COALESCE(SUM(${deals.value}::numeric), 0)::float`,
         spend: sql<number>`COALESCE(MAX(${crmCampaigns.spend}::numeric), 0)::float`,
       })
@@ -83,12 +86,13 @@ export class CrmAttributionReportService {
         eq(crmLeadTouchpoints.campaignId, crmCampaigns.id),
         eq(crmCampaigns.orgId, orgId),
       ))
-      .leftJoin(leads, and(
-        eq(crmLeadTouchpoints.leadId, leads.id),
-        eq(leads.orgId, orgId),
+      .leftJoin(leadPartyMap, and(
+        eq(crmLeadTouchpoints.leadId, leadPartyMap.leadId),
+        eq(leadPartyMap.organizationId, orgId),
       ))
+      .leftJoin(businessParties, PARTY_OF_LEAD)
       .leftJoin(deals, and(
-        eq(deals.leadId, leads.id),
+        eq(deals.leadId, leadPartyMap.leadId),
         eq(deals.orgId, orgId), isNull(deals.deletedAt),
         inArray(deals.stage, wonStageKeys),
       ))

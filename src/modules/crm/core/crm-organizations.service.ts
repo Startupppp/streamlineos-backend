@@ -1,6 +1,15 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, count, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
-import { crmOrganizations, contacts, deals, leads, tickets } from "../../../db/schema";
+import { crmOrganizations, contacts, deals, tickets } from "../../../db/schema";
+import { businessParties, contactPartyMap, leadPartyMap } from "../../../db/schema/party";
+import { CONTACT_MIRROR } from "../../party/party-legacy-mirror";
+import {
+  PARTY_OF_CONTACT,
+  PARTY_OF_LEAD,
+  leadPriority,
+  leadSource,
+  leadStatus,
+} from "../crm-party-reads";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -191,14 +200,28 @@ export class CrmOrganizationsService {
         .from(crmOrganizations)
         .where(and(eq(crmOrganizations.id, id), eq(crmOrganizations.orgId, orgId), isNull(crmOrganizations.deletedAt)))
         .limit(1),
+      // `contacts.organization_id` is the one column on this row Party does not
+      // own -- a party's employer should be another party, and nothing yet gives
+      // `crm_organizations` parties to point at -- so the legacy row still
+      // answers "who works here". Everything the caller then reads off it comes
+      // from the party, through the same derivation the writer uses, so the
+      // response is the party's values and not the mirror's copy of them.
       this.db
-        .select()
+        .select({ legacy: contacts, party: businessParties })
         .from(contacts)
+        .innerJoin(
+          contactPartyMap,
+          and(
+            eq(contactPartyMap.contactId, contacts.id),
+            eq(contactPartyMap.organizationId, orgId),
+          ),
+        )
+        .innerJoin(businessParties, PARTY_OF_CONTACT)
         .where(
           and(
             eq(contacts.orgId, orgId),
             eq(contacts.organizationId, id),
-            isNull(contacts.deletedAt),
+            isNull(businessParties.deletedAt),
           ),
         )
         .limit(ORG_CONTACTS_LIMIT),
@@ -207,7 +230,10 @@ export class CrmOrganizationsService {
     const [org] = orgRows;
     if (!org) return null;
 
-    return { ...org, contacts: orgContacts };
+    return {
+      ...org,
+      contacts: orgContacts.map((row) => ({ ...row.legacy, ...CONTACT_MIRROR.derive(row.party) })),
+    };
   }
 
   async exists(orgId: string, id: number): Promise<boolean> {
@@ -385,13 +411,14 @@ export class CrmOrganizationsService {
 
     const leadCountRows = await this.db
       .select({ count: sql<string>`count(*)` })
-      .from(leads)
+      .from(leadPartyMap)
+      .innerJoin(businessParties, PARTY_OF_LEAD)
       .where(
         and(
-          eq(leads.orgId, orgId),
-          isNull(leads.deletedAt),
+          eq(leadPartyMap.organizationId, orgId),
+          isNull(businessParties.deletedAt),
           orgNames.length > 0
-            ? or(...orgNames.map((n) => ilike(leads.company, `%${n.replaceAll("%", "\\%")}%`)))
+            ? or(...orgNames.map((n) => ilike(businessParties.companyName, `%${n.replaceAll("%", "\\%")}%`)))
             : sql`false`,
         ),
       );
@@ -424,10 +451,18 @@ export class CrmOrganizationsService {
 
     const [contactRows, dealRows, leadRows] = await Promise.all([
       this.db
-        .select({ id: contacts.id, name: contacts.name, createdAt: contacts.createdAt })
+        .select({ id: contacts.id, name: businessParties.name, createdAt: businessParties.createdAt })
         .from(contacts)
+        .innerJoin(
+          contactPartyMap,
+          and(
+            eq(contactPartyMap.contactId, contacts.id),
+            eq(contactPartyMap.organizationId, orgId),
+          ),
+        )
+        .innerJoin(businessParties, PARTY_OF_CONTACT)
         .where(and(eq(contacts.orgId, orgId), eq(contacts.organizationId, accountId)))
-        .orderBy(sql`${contacts.createdAt} desc`)
+        .orderBy(sql`${businessParties.createdAt} desc`)
         .limit(limit),
       this.db
         .select({ id: deals.id, name: deals.name, stage: deals.stage, createdAt: deals.createdAt })
@@ -436,10 +471,15 @@ export class CrmOrganizationsService {
         .orderBy(sql`${deals.createdAt} desc`)
         .limit(limit),
       this.db
-        .select({ id: leads.id, name: leads.name, createdAt: leads.createdAt })
-        .from(leads)
-        .where(and(eq(leads.orgId, orgId), isNull(leads.deletedAt), ilike(leads.company, `%${safeName}%`)))
-        .orderBy(sql`${leads.createdAt} desc`)
+        .select({ id: leadPartyMap.leadId, name: businessParties.name, createdAt: businessParties.createdAt })
+        .from(leadPartyMap)
+        .innerJoin(businessParties, PARTY_OF_LEAD)
+        .where(and(
+          eq(leadPartyMap.organizationId, orgId),
+          isNull(businessParties.deletedAt),
+          ilike(businessParties.companyName, `%${safeName}%`),
+        ))
+        .orderBy(sql`${businessParties.createdAt} desc`)
         .limit(limit),
     ]);
 
@@ -506,26 +546,31 @@ export class CrmOrganizationsService {
 
     const safeName = org.name.replaceAll("%", "\\%").replaceAll("_", "\\_");
 
-    const conditions = [ilike(leads.company, `%${safeName}%`)];
+    const conditions = [ilike(businessParties.companyName, `%${safeName}%`)];
     if (linkedContactLeadIds.length > 0) {
-      conditions.push(inArray(leads.id, linkedContactLeadIds));
+      conditions.push(inArray(leadPartyMap.leadId, linkedContactLeadIds));
     }
 
     return this.db
       .select({
-        id: leads.id,
-        name: leads.name,
-        email: leads.email,
-        phone: leads.phone,
-        status: leads.status,
-        priority: leads.priority,
-        company: leads.company,
-        source: leads.source,
-        createdAt: leads.createdAt,
+        id: leadPartyMap.leadId,
+        name: businessParties.name,
+        email: businessParties.email,
+        phone: businessParties.phone,
+        status: leadStatus,
+        priority: leadPriority,
+        company: businessParties.companyName,
+        source: leadSource,
+        createdAt: businessParties.createdAt,
       })
-      .from(leads)
-      .where(and(eq(leads.orgId, orgId), isNull(leads.deletedAt), or(...conditions)))
-      .orderBy(leads.createdAt)
+      .from(leadPartyMap)
+      .innerJoin(businessParties, PARTY_OF_LEAD)
+      .where(and(
+        eq(leadPartyMap.organizationId, orgId),
+        isNull(businessParties.deletedAt),
+        or(...conditions),
+      ))
+      .orderBy(businessParties.createdAt)
       .limit(50);
   }
 }

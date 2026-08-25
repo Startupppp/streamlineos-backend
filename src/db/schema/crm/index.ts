@@ -26,3 +26,4 @@ export * from "./metadata";
 export * from "./automation-studio";
 export * from "./attribution";
 export * from "./data-quality";
+export * from "./issue-records";

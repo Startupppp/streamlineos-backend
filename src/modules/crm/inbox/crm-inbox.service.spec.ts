@@ -6,6 +6,8 @@ function makeQueryChain(resolvedValue: unknown) {
   const chain = {
     select: jest.fn(),
     from: jest.fn(),
+    // The lead sections read `business_parties` through `lead_party_map`.
+    innerJoin: jest.fn(),
     where: jest.fn(),
     orderBy: jest.fn(),
     limit: jest.fn(),
@@ -17,6 +19,7 @@ function makeQueryChain(resolvedValue: unknown) {
   };
   chain.select.mockReturnValue(chain);
   chain.from.mockReturnValue(chain);
+  chain.innerJoin.mockReturnValue(chain);
   chain.where.mockReturnValue(chain);
   chain.orderBy.mockReturnValue(chain);
   chain.limit.mockResolvedValue(resolvedValue);

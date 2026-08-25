@@ -66,7 +66,27 @@ describe("the ingress seam still holds", () => {
       "providerThreadId",
       "subject",
     ]);
-    expect(fieldsOf("InboundParticipant")).toEqual(["address", "displayName", "role"]);
+    /**
+     * `identifierKind` was added by ticket 22, deliberately, and this line is
+     * where that decision is recorded.
+     *
+     * It is the one field Phase 2 could not do without, and the reason is
+     * specific rather than general. Below the seam a sender is matched against
+     * `party_identifiers`, which is keyed on `(kind, value)` — so something has
+     * to say what kind of address arrived. The channel cannot: WhatsApp and web
+     * forms both arrive as `message`, one carrying a telephone number and one an
+     * email address. Inferring it from the string is worse still, and is exactly
+     * how a telephone number came to be written into `business_parties.email`.
+     *
+     * The field is optional, so events already stored in
+     * `inbound_events.payload` still parse and fall back to the channel.
+     */
+    expect(fieldsOf("InboundParticipant")).toEqual([
+      "address",
+      "displayName",
+      "identifierKind",
+      "role",
+    ]);
   });
 
   /**

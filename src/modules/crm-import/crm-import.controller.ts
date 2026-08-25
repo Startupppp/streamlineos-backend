@@ -17,7 +17,8 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
-import { CrmImportService } from "./crm-import.service";
+import { CrmImportService, type ImportProgress } from "./crm-import.service";
+import { ImportPump } from "./import-pump";
 import { CrmExportService, type ExportEntity } from "./crm-export.service";
 import {
   exportQuerySchema,
@@ -32,6 +33,7 @@ export class CrmImportController {
   constructor(
     private readonly imports: CrmImportService,
     private readonly exports: CrmExportService,
+    private readonly pump: ImportPump,
   ) {}
 
   /** What this file would do. Writes nothing to the CRM. */
@@ -60,25 +62,66 @@ export class CrmImportController {
     return this.imports.getImport(u.orgId, crmImportId);
   }
 
+  /**
+   * Hand the file to the durable runtime, and advance it while you are here.
+   *
+   * Two things happen and both are necessary. `startCommit` creates the run —
+   * once, re-using a live one — so the work survives this process. `advance`
+   * then executes one attempt of it, because **nothing in this repository
+   * schedules `/cron/workflow-tick`**: without the pump a durable import in a
+   * deployment with no external ticker would sit at zero forever while the UI
+   * politely polled it. See `import-pump.ts`.
+   *
+   * Safe to call repeatedly, and meant to be: each call advances the import by
+   * one attempt and reports where it has got to, so a caller finishes a large
+   * file by calling again rather than by holding a request open. `complete` is
+   * the only terminating condition — a call that reports no progress means the
+   * run is between attempts, not that anything is wrong.
+   */
   @Post("imports/:crmImportId/commit")
   @Idempotent("crm.import.commit")
   @RequirePermission("crm:imports:manage")
-  commit(
+  async commit(
     @Param("crmImportId") crmImportId: string,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.imports.commit(u.orgId, crmImportId);
+  ): Promise<ImportProgress> {
+    const runId = await this.imports.startCommit(u.orgId, crmImportId);
+    await this.pump.advance(u.orgId, runId);
+    return this.imports.progress(u.orgId, crmImportId);
   }
 
-  /** Take the whole thing back, in one action. */
+  /**
+   * Take the whole thing back, inside the window it promised.
+   *
+   * The same shape as the commit, for the same reason: five thousand rows are
+   * five thousand rows to put back, and an undo that dies halfway through a
+   * request is worse than the import it was undoing.
+   */
   @Post("imports/:crmImportId/revert")
   @Idempotent("crm.import.revert")
   @RequirePermission("crm:imports:manage")
-  revert(
+  async revert(
     @Param("crmImportId") crmImportId: string,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.imports.revert(u.orgId, u.userId, crmImportId);
+  ): Promise<ImportProgress> {
+    const runId = await this.imports.startRevert(u.orgId, u.userId, crmImportId);
+    await this.pump.advance(u.orgId, runId);
+    return this.imports.progress(u.orgId, crmImportId);
+  }
+
+  /**
+   * Where it has got to, without touching it.
+   *
+   * A pure read, so a screen can watch an import that a cron tick is advancing
+   * without every observer starting an attempt of its own.
+   */
+  @Get("imports/:crmImportId/progress")
+  @RequirePermission("crm:imports:manage")
+  progress(
+    @Param("crmImportId") crmImportId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<ImportProgress> {
+    return this.imports.progress(u.orgId, crmImportId);
   }
 
   /**

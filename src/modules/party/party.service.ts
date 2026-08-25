@@ -5,6 +5,8 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
+import { softDeletePartyWithMirror, updatePartyWithMirror } from "./party-legacy-writer";
+import { claimIdentifiers, identifierClaimsOfColumns } from "./party-identifiers";
 import type {
   ListPartiesQuery,
   CreatePartyInput,
@@ -205,6 +207,16 @@ export class PartyService {
         throw err;
       });
     if (!row) throw new NotFoundException("Failed to create party");
+
+    /**
+     * Reachable from the moment it exists.
+     *
+     * `this.db` is the request's transaction, so the party and its identifiers
+     * commit together — a party with no identifier is one the next message from
+     * that customer would not match, and they would become a second record.
+     */
+    await claimIdentifiers(this.db, organizationId, row.partyId, identifierClaimsOfColumns(row));
+
     this.audit.log({
       action: "party.party.created",
       userId,
@@ -236,17 +248,11 @@ export class PartyService {
     if (input.notes !== undefined) patch.notes = input.notes ?? null;
     if (input.status !== undefined) patch.status = input.status;
 
-    const [updated] = await this.db
-      .update(businessParties)
-      .set(patch)
-      .where(
-        and(
-          eq(businessParties.partyId, partyId),
-          eq(businessParties.organizationId, organizationId),
-        ),
-      )
-      .returning()
-      .catch((err: unknown) => {
+    // Through the writer, not straight at the table: the party is the canonical
+    // record and every `leads`/`clients`/`contacts` row mapped to it is a mirror
+    // that has to move with it, in the same transaction.
+    const updated = await updatePartyWithMirror(this.db, organizationId, partyId, patch).catch(
+      (err: unknown) => {
         if (
           typeof err === "object" &&
           err !== null &&
@@ -256,8 +262,8 @@ export class PartyService {
           throw new ConflictException("A party with this identifier already exists in this organization.");
         }
         throw err;
-      });
-    if (!updated) throw new NotFoundException("Party not found");
+      },
+    );
     this.audit.log({
       action: "party.party.updated",
       userId,
@@ -271,15 +277,7 @@ export class PartyService {
 
   async softDeleteParty(organizationId: string, userId: string, partyId: string) {
     await this.loadParty(organizationId, partyId);
-    await this.db
-      .update(businessParties)
-      .set({ deletedAt: new Date() })
-      .where(
-        and(
-          eq(businessParties.partyId, partyId),
-          eq(businessParties.organizationId, organizationId),
-        ),
-      );
+    await softDeletePartyWithMirror(this.db, organizationId, partyId);
     this.audit.log({
       action: "party.party.deleted",
       userId,

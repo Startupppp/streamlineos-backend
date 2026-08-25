@@ -24,6 +24,7 @@ import {
   activityParticipants,
   businessParties,
   inboundEvents,
+  partyIdentifiers,
 } from "../../db/schema";
 import { InboundIngressWorkflow } from "./inbound-ingress.workflow";
 import type { InboundCommunicationEvent } from "./inbound-event";
@@ -88,6 +89,7 @@ function tableName(table: unknown): string {
   if (table === activities) return "activities";
   if (table === activityParticipants) return "activity_participants";
   if (table === inboundEvents) return "inbound_events";
+  if (table === partyIdentifiers) return "party_identifiers";
   return "unknown";
 }
 
@@ -95,7 +97,7 @@ function tableName(table: unknown): string {
  * A database stand-in that answers the four reads the workflow makes and records
  * every write, so the assertions are about behaviour rather than about SQL.
  */
-function makeDb(recorder: Recorder, existingParty: string | null): Db {
+function makeDb(recorder: Recorder, existingParty: string | null, payload = FIXTURE): Db {
   let selectCall = 0;
 
   return {
@@ -104,9 +106,14 @@ function makeDb(recorder: Recorder, existingParty: string | null): Db {
         where: jest.fn().mockImplementation(() => ({
           limit: jest.fn().mockImplementation(async () => {
             selectCall += 1;
-            // First read: the receipt's payload. Second: an existing party.
-            if (selectCall === 1) return [{ payload: FIXTURE }];
-            return existingParty ? [{ partyId: existingParty }] : [];
+            // First read: the receipt's payload. Second: the sender's identifier.
+            // Third: whether the party holding it is still live.
+            if (selectCall === 1) return [{ payload }];
+            if (selectCall === 2)
+              return existingParty
+                ? [{ partyIdentifierId: "identifier-1", partyId: existingParty }]
+                : [];
+            return existingParty ? [{ deletedAt: null }] : [];
           }),
         })),
       })),
@@ -121,6 +128,9 @@ function makeDb(recorder: Recorder, existingParty: string | null): Db {
           returning: jest.fn().mockResolvedValue([
             { partyId: "party-new", activityId: "activity-new" },
           ]),
+          // An identifier claim tolerates a value another party already holds:
+          // losing the claim leaves a duplicate to merge, which is recoverable.
+          onConflictDoNothing: jest.fn().mockResolvedValue([]),
         };
       }),
     })),
@@ -132,6 +142,33 @@ function makeDb(recorder: Recorder, existingParty: string | null): Db {
     })),
   } as unknown as Db;
 }
+
+/**
+ * A call, which is the channel that could not be filed at all before ticket 22.
+ *
+ * Every caller is a telephone number, and the resolver used to compare the
+ * sender against `business_parties.email` — so a phone number was written into
+ * the email column, and the same person's next email did not match it.
+ */
+const CALL_FIXTURE: InboundCommunicationEvent = {
+  organizationId: "org-1",
+  channel: "call",
+  provider: "fixture-telephony",
+  providerMessageId: "call-1",
+  providerThreadId: "call-thread-1",
+  occurredAt: "2026-08-23T11:00:00.000Z",
+  subject: null,
+  body: null,
+  participants: [
+    {
+      address: "+1 (415) 555-1212",
+      displayName: "Priya Raman",
+      role: "from",
+      identifierKind: "phone",
+    },
+    { address: "+14155559000", role: "to", identifierKind: "phone" },
+  ],
+};
 
 async function runWorkflow(db: Db, store: WorkflowStepStore): Promise<void> {
   const registry = new WorkflowRegistry();
@@ -219,6 +256,79 @@ describe("inbound ingress, end to end from a fixture", () => {
     expect(participants.map((row) => row.address)).toEqual(
       expect.arrayContaining(["priya@example.com", "sales@acme-crm.test"]),
     );
+  });
+
+  /**
+   * The claim, written with the party rather than after it.
+   *
+   * A party created with no identifier is one the sender's next message will
+   * not match, so they would become a second record — which is the failure the
+   * whole table exists to end.
+   */
+  it("claims the sender's address for the party it just created", async () => {
+    const recorder: Recorder = { inserts: [], updates: [] };
+    await runWorkflow(makeDb(recorder, null), memoryStore());
+
+    expect(insertsInto(recorder, "party_identifiers")).toEqual([
+      {
+        organizationId: "org-1",
+        partyId: "party-new",
+        kind: "email",
+        value: "Priya@Example.com",
+        normalisedValue: "priya@example.com",
+      },
+    ]);
+  });
+
+  describe("a call, which is the channel that could not be filed before", () => {
+    /**
+     * The defect this ticket exists for, asserted from the other side: the
+     * number lands in the column that holds numbers, and the party is claimed
+     * under kind `phone`.
+     */
+    it("files a caller as a telephone number rather than as an email address", async () => {
+      const recorder: Recorder = { inserts: [], updates: [] };
+      await runWorkflow(makeDb(recorder, null, CALL_FIXTURE), memoryStore());
+
+      const [party] = insertsInto(recorder, "business_parties");
+      expect(party).toMatchObject({ name: "Priya Raman", phone: "+14155551212" });
+      expect(party?.email).toBeUndefined();
+
+      expect(insertsInto(recorder, "party_identifiers")).toEqual([
+        {
+          organizationId: "org-1",
+          partyId: "party-new",
+          kind: "phone",
+          value: "+1 (415) 555-1212",
+          normalisedValue: "+14155551212",
+        },
+      ]);
+    });
+
+    /**
+     * `record-participants` used to write zero rows for this channel, because
+     * `externalParticipants` required a domain. `AutonomyService.loadActivity`
+     * then left-joined that table for a sender that could never be in it, and
+     * handed the bounce classifier an empty address for every call.
+     */
+    it("records both ends of the call, normalised as telephone numbers", async () => {
+      const recorder: Recorder = { inserts: [], updates: [] };
+      await runWorkflow(makeDb(recorder, null, CALL_FIXTURE), memoryStore());
+
+      expect(insertsInto(recorder, "activity_participants")).toEqual([
+        expect.objectContaining({ address: "+14155551212", role: "from", partyId: "party-new" }),
+        expect.objectContaining({ address: "+14155559000", role: "to", partyId: null }),
+      ]);
+    });
+
+    it("matches a caller it already knows without creating a duplicate", async () => {
+      const recorder: Recorder = { inserts: [], updates: [] };
+      await runWorkflow(makeDb(recorder, "party-existing", CALL_FIXTURE), memoryStore());
+
+      expect(insertsInto(recorder, "business_parties")).toHaveLength(0);
+      expect(insertsInto(recorder, "party_identifiers")).toHaveLength(0);
+      expect(insertsInto(recorder, "activities")[0]).toMatchObject({ partyId: "party-existing" });
+    });
   });
 
   it("closes the receipt so a later delivery is recognised as a duplicate", async () => {

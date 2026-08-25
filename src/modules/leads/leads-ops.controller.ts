@@ -19,6 +19,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
+import { LeadsImportService } from "./leads-import.service";
 import { LeadsOpsService } from "./leads-ops.service";
 import {
   bulkDeleteSchema,
@@ -38,7 +39,10 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 @Controller("leads")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class LeadsOpsController {
-  constructor(private readonly ops: LeadsOpsService) {}
+  constructor(
+    private readonly ops: LeadsOpsService,
+    private readonly imports: LeadsImportService,
+  ) {}
 
   @Get("import/:batchId")
   @RequirePermission("crm:leads:view")
@@ -97,7 +101,7 @@ export class LeadsOpsController {
     @Body(new ZodValidationPipe(importSchema)) body: ImportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.ops.importLeads(u.orgId, u.userId, body);
+    return this.imports.importLeads(u.orgId, u.userId, body);
   }
 
   @Post("distribute")

@@ -279,8 +279,24 @@ export function whatsAppToInboundEvent(
 
   const occurredAt = normaliseTimestamp(message.timestamp);
 
+  /**
+   * `whatsapp`, not `phone`, and stated here rather than derived below.
+   *
+   * The channel cannot say it: web forms arrive as `message` too, carrying an
+   * email address. And the distinction from `phone` is real — a WhatsApp number
+   * is a messaging account that happens to be named after a telephone line, and
+   * ticket 01 gave it its own column for that reason. The resolver treats the
+   * two as one line when it has to; deciding that is its job, not this file's.
+   */
+  const identifierKind = "whatsapp" as const;
+
   const participants: InboundParticipant[] = [
-    { address: from, displayName: message.profileName?.trim() || null, role: "from" },
+    {
+      address: from,
+      displayName: message.profileName?.trim() || null,
+      role: "from",
+      identifierKind,
+    },
     /**
      * The business number is on the event as the recipient.
      *
@@ -289,7 +305,7 @@ export function whatsAppToInboundEvent(
      * to. It costs nothing: the workflow's participant step keeps addresses it
      * cannot resolve to a party.
      */
-    { address: business, role: "to" },
+    { address: business, role: "to", identifierKind },
   ];
 
   return {
