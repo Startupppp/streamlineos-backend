@@ -30,6 +30,8 @@ const TIERS: Record<string, Tier> = {
   // prefetching the link, bounded against enumeration.
   "notifications:unsubscribe": { limit: 30, windowSecs: 60 },
   "public:contact": { limit: 5, windowSecs: 3600 },
+  "public:kb": { limit: 60, windowSecs: 60 },
+  "public:kb-article": { limit: 60, windowSecs: 60 },
   "public:roadmap": { limit: 60, windowSecs: 60 },
   "public:roadmap-vote": { limit: 10, windowSecs: 3600 },
   "public:roadmap-feedback": { limit: 5, windowSecs: 3600 },

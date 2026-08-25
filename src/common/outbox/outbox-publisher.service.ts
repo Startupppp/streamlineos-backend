@@ -3,16 +3,18 @@ import { and, eq, inArray, isNull, lte, or } from "drizzle-orm";
 import { organizations, outboxEvents } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { APP_CONFIG } from "../../config/config.module";
+import type { AppConfig } from "../../config/env.validation";
 import {
   nextRetryDelayMs,
   shouldDeadLetter,
   shouldSuppressForLifecycle,
 } from "./outbox-envelope";
+import { OutboxConsumerRegistry, type OutboxEventRow } from "./outbox-consumer.registry";
+import { runInNewTenantTransaction } from "../tenant/run-in-tenant-transaction";
 
 const BATCH_SIZE = 50;
 const LEASE_MS = 30_000;
-
-type OutboxEventRow = typeof outboxEvents.$inferSelect;
 
 export interface OutboxFlushResult {
   claimed: number;
@@ -27,24 +29,22 @@ export interface OutboxFlushResult {
  * expired IN_FLIGHT leases from a crashed worker), re-checks the owning organization's lifecycle
  * immediately before delivery (an archived/purged org is SUPPRESSED, never delivered), then marks
  * each DELIVERED or reschedules with bounded backoff / dead-letters past the retry ceiling.
- * Phase 1 records delivery in-place; `deliver` is the single seam to swap for broker dispatch.
+ * Routing is via OutboxConsumerRegistry; an unroutable event type throws rather than being silently
+ * marked delivered. Each consumer runs in its own tenant transaction via runInNewTenantTransaction.
  */
 @Injectable()
 export class OutboxPublisherService {
   private readonly logger = new Logger(OutboxPublisherService.name);
   private noBrokerWarned = false;
 
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
+    private readonly registry: OutboxConsumerRegistry,
+  ) {}
 
-  /**
-   * Returns true only once a real broker is injected and deliver() is implemented.
-   * Phase-1 default is false: flush() is a deliberate no-op so events stay PENDING
-   * (unclaimed) until a real dispatch target is wired, rather than being falsely
-   * marked DELIVERED. Override in a concrete subclass or swap to true here when
-   * wiring Kafka / SQS / EventBus dispatch.
-   */
-  protected isDispatchConfigured(): boolean {
-    return false;
+  private isDispatchConfigured(): boolean {
+    return this.config.OUTBOX_DISPATCH_ENABLED === "true";
   }
 
   async flush(): Promise<OutboxFlushResult> {
@@ -52,8 +52,8 @@ export class OutboxPublisherService {
       if (!this.noBrokerWarned) {
         this.logger.warn(
           "OutboxPublisher: no dispatch target is configured — flush is a no-op; events remain " +
-            "PENDING and will be retried when a broker is wired. Override isDispatchConfigured() " +
-            "and implement deliver() to enable real dispatch. (Further warnings suppressed.)",
+            "PENDING and will be retried when a broker is wired. Set OUTBOX_DISPATCH_ENABLED=true " +
+            "and register consumers to enable real dispatch. (Further warnings suppressed.)",
         );
         this.noBrokerWarned = true;
       }
@@ -132,13 +132,15 @@ export class OutboxPublisherService {
   }
 
   private async deliver(event: OutboxEventRow): Promise<void> {
-    // Replace this body with real EventBus / Kafka / SQS dispatch, keyed on event.eventType
-    // or event.aggregateType prefix. This method is only called once isDispatchConfigured()
-    // returns true — throwing here prevents any uncaught "delivered" marking if someone
-    // overrides isDispatchConfigured() before wiring a real dispatch target.
-    throw new Error(
-      `no dispatch handler for event type '${event.eventType}' — implement routing in deliver()`,
-    );
+    const consumer = this.registry.get(event.eventType);
+    if (!consumer) {
+      throw new Error(
+        `no dispatch handler for event type '${event.eventType}' — register a consumer via OutboxConsumerRegistry`,
+      );
+    }
+    await runInNewTenantTransaction(this.db, event.organizationId, async () => {
+      await consumer.handle(event);
+    });
   }
 
   private async handleFailure(

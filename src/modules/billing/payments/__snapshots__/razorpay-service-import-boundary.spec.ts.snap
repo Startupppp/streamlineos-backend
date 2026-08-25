@@ -1,8 +1,3 @@
 // Jest Snapshot v1, https://goo.gl/fbAQLP
 
-exports[`RazorpayService import boundary documents every current importer so regressions are visible 1`] = `
-[
-  "src/modules/billing/core/billing.controller.ts",
-  "src/modules/billing/core/billing.module.ts",
-]
-`;
+exports[`RazorpayService import boundary documents every current importer so regressions are visible 1`] = `[]`;
