@@ -76,6 +76,10 @@ export class ProjectsTicketsService {
     return this.create.createFromFeedback(orgId, actingUserId, projectId, input);
   }
 
+  async getTicketByKey(u: CurrentUserContext, projectId: number, ticketNumber: number) {
+    return this.read.getTicketByKey(u, projectId, ticketNumber);
+  }
+
   async getTicket(u: CurrentUserContext, ticketId: number) {
     return this.read.getTicket(u, ticketId);
   }

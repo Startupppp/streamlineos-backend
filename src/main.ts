@@ -74,16 +74,17 @@ async function bootstrap(): Promise<void> {
   app.useGlobalInterceptors(new ResponseTransformInterceptor());
   app.useBodyParser("urlencoded", { extended: true, limit: "1mb" });
 
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle("StreamlineOS API")
-    .setDescription("StreamlineOS platform REST API")
-    .setVersion("1.0")
-    .addBearerAuth()
-    .build();
+  if (isDevelopment) {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle("StreamlineOS API")
+      .setDescription("StreamlineOS platform REST API")
+      .setVersion("1.0")
+      .addBearerAuth()
+      .build();
 
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-
-  SwaggerModule.setup("api/docs", app, document);
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup("api/docs", app, document);
+  }
 
   await app.listen(config.PORT);
 }

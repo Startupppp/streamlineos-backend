@@ -3,6 +3,7 @@ import { Test } from "@nestjs/testing";
 import { FinancePostingService } from "./finance-posting.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AuditService } from "../../../common/audit/audit.service";
+import { CacheService } from "../../../common/cache/cache.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { PostJournalInput } from "../core/finance-posting.types";
@@ -66,12 +67,15 @@ describe("FinancePostingService", () => {
     mockAudit = { log: jest.fn() };
     mockDispatch = { emit: jest.fn().mockResolvedValue(undefined) };
 
+    const mockCache = { invalidateNamespace: jest.fn().mockResolvedValue(undefined) };
+
     const module = await Test.createTestingModule({
       providers: [
         FinancePostingService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AuditService, useValue: mockAudit },
         { provide: NotificationDispatchService, useValue: mockDispatch },
+        { provide: CacheService, useValue: mockCache },
       ],
     }).compile();
 

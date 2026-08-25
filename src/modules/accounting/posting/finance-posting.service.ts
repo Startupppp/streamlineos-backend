@@ -15,8 +15,11 @@ import {
 } from "../../../db/schema";
 import type { NewJournalLine } from "../../../db/schema/accounting/accounting";
 import { AuditService } from "../../../common/audit/audit.service";
+import { CacheService } from "../../../common/cache/cache.service";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { ACCT_STATEMENTS_NS } from "../settings/accounting-settings.constants";
 import {
   addDecimals,
   assertDebitsEqualsCredits,
@@ -72,6 +75,7 @@ export class FinancePostingService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly dispatch: NotificationDispatchService,
+    private readonly cache: CacheService,
   ) {}
 
   async resolveSystemAccount(orgId: string, purpose: SystemAccountPurpose): Promise<number> {
@@ -266,6 +270,7 @@ export class FinancePostingService {
       );
     }
 
+    let postedDirectly = false;
     const result = await this.db.transaction(async (tx) => {
       const existing = await tx
         .select({ id: journalEntries.id, entryNumber: journalEntries.entryNumber })
@@ -315,6 +320,7 @@ export class FinancePostingService {
       const needsApproval = input.sourceType === "manual" && applicablePolicy !== undefined;
 
       const initialStatus = needsApproval ? "PENDING_APPROVAL" : "POSTED";
+      postedDirectly = initialStatus === "POSTED";
 
       const [inserted] = await tx
         .insert(journalEntries)
@@ -395,6 +401,11 @@ export class FinancePostingService {
 
       return { entryId: inserted.id, entryNumber: inserted.entryNumber, replayed: false };
     });
+
+    if (postedDirectly) {
+      const invalidate = () => this.cache.invalidateNamespace(ACCT_STATEMENTS_NS(orgId));
+      if (!registerAfterCommit(invalidate)) await invalidate();
+    }
 
     this.audit.log({
       action: "accounting.journal.post",
@@ -515,6 +526,9 @@ export class FinancePostingService {
 
       return reversal.id;
     });
+
+    const invalidate = () => this.cache.invalidateNamespace(ACCT_STATEMENTS_NS(orgId));
+    if (!registerAfterCommit(invalidate)) await invalidate();
 
     this.audit.log({
       action: "accounting.journal.reverse",

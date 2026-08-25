@@ -41,7 +41,8 @@ export const CACHE_KEYS = {
     `tickets:list:${orgId}:${projectId}:${hash}`,
 
   salesDashboard: (orgId: string) => `sales:dashboard:${orgId}`,
-  salesKpis: (orgId: string) => `sales:kpis:${orgId}:::`,
+  salesKpisNamespace: (orgId: string) => `sales:kpis:${orgId}`,
+  salesKpisSubKey: (from: string, to: string, repId: string) => `${from}:${to}:${repId}`,
   ceDashboard: (orgId: string) => `ce:dashboard:${orgId}`,
   supportDashboard: (orgId: string) => `support:dashboard:${orgId}`,
 
@@ -167,6 +168,7 @@ export const CACHE_KEYS = {
     kind ? `org:units:${orgId}:${kind}` : `org:units:${orgId}`,
   orgHierarchyNamespace: (orgId: string) => `org:hierarchy:${orgId}`,
   hrHeadcountNamespace: (orgId: string) => `hr:headcount:${orgId}`,
+  leaveAnalyticsNamespace: (orgId: string) => `hr:leave-analytics:${orgId}`,
 
   supportReportsOverview: (orgId: string) =>
     `support:reports:overview:${orgId}`,

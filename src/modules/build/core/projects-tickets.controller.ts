@@ -148,6 +148,16 @@ export class ProjectsTicketsController {
     });
   }
 
+  @Get(":projectId/tickets/key/:ticketNumber")
+  @RequirePermission("build:tickets:view")
+  getTicketByKey(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("ticketNumber", ParseIntPipe) ticketNumber: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.tickets.getTicketByKey(u, projectId, ticketNumber);
+  }
+
   @Get(":projectId/tickets/:ticketId")
   @RequirePermission("build:tickets:view")
   getTicket(

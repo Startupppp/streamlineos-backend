@@ -373,7 +373,7 @@ export class DealsService {
       this.cache.invalidate(CACHE_KEYS.salesDashboard(orgId)),
     ];
     if (stageChanged) {
-      invalidations.push(this.cache.invalidate(CACHE_KEYS.salesKpis(orgId)));
+      invalidations.push(this.cache.invalidateNamespace(CACHE_KEYS.salesKpisNamespace(orgId)));
     }
     await Promise.all(invalidations);
 

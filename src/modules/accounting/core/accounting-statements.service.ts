@@ -5,6 +5,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
+import { ACCT_STATEMENTS_NS } from "../settings/accounting-settings.constants";
 import { ACCOUNT_CODES } from "./posting-rules";
 import type { AccountType, BalanceSheetRow } from "./accounting.types";
 import {
@@ -75,8 +76,7 @@ export class AccountingStatementsService {
 
   async trialBalance(orgId: string, query: TrialBalanceQuery) {
     const { asOf } = query;
-    const key = `acct:trial-balance:${orgId}:${asOf}`;
-    return this.cache.cached(key, () => this.computeTrialBalance(orgId, asOf), CACHE_TTL.MEDIUM);
+    return this.cache.cachedVersioned(ACCT_STATEMENTS_NS(orgId), `trial-balance:${asOf}`, () => this.computeTrialBalance(orgId, asOf), CACHE_TTL.MEDIUM);
   }
 
   private async computeTrialBalance(orgId: string, asOf: string) {
@@ -134,8 +134,7 @@ export class AccountingStatementsService {
     if (!from || !to) throw new BadRequestException("from and to are required");
     const fromStr = from.toISOString().slice(0, 10);
     const toStr = to.toISOString().slice(0, 10);
-    const key = `acct:profit-loss:${orgId}:${fromStr}:${toStr}`;
-    return this.cache.cached(key, () => this.computeProfitLoss(orgId, from, to), CACHE_TTL.MEDIUM);
+    return this.cache.cachedVersioned(ACCT_STATEMENTS_NS(orgId), `profit-loss:${fromStr}:${toStr}`, () => this.computeProfitLoss(orgId, from, to), CACHE_TTL.MEDIUM);
   }
 
   private async computeProfitLoss(orgId: string, from: Date, to: Date) {
@@ -202,8 +201,7 @@ export class AccountingStatementsService {
 
   async balanceSheet(orgId: string, query: BalanceSheetQuery) {
     const { asOf } = query;
-    const key = `acct:balance-sheet:${orgId}:${asOf}`;
-    return this.cache.cached(key, () => this.computeBalanceSheet(orgId, asOf), CACHE_TTL.MEDIUM);
+    return this.cache.cachedVersioned(ACCT_STATEMENTS_NS(orgId), `balance-sheet:${asOf}`, () => this.computeBalanceSheet(orgId, asOf), CACHE_TTL.MEDIUM);
   }
 
   private async computeBalanceSheet(orgId: string, asOf: string) {
@@ -259,8 +257,7 @@ export class AccountingStatementsService {
     if (!from || !to) throw new BadRequestException("from and to are required");
     const fromStr = from.toISOString().slice(0, 10);
     const toStr = to.toISOString().slice(0, 10);
-    const key = `acct:cash-flow:${orgId}:${fromStr}:${toStr}`;
-    return this.cache.cached(key, () => this.computeCashFlow(orgId, from, to), CACHE_TTL.MEDIUM);
+    return this.cache.cachedVersioned(ACCT_STATEMENTS_NS(orgId), `cash-flow:${fromStr}:${toStr}`, () => this.computeCashFlow(orgId, from, to), CACHE_TTL.MEDIUM);
   }
 
   private async computeCashFlow(orgId: string, from: Date, to: Date) {

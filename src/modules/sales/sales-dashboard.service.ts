@@ -4,7 +4,7 @@ import { crmDeals, salesQuotas } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_TTL } from "../../common/cache/cache-keys";
+import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 
 export interface DateRange {
   from?: Date;
@@ -100,8 +100,12 @@ export class SalesDashboardService {
   }
 
   getKpis(orgId: string, range: DateRange = {}, repId?: number): Promise<SalesDashboardKPIs> {
-    const cacheKey = `sales:kpis:${orgId}:${range.from?.toISOString() ?? ""}:${range.to?.toISOString() ?? ""}:${repId ?? ""}`;
-    return this.cache.cached(cacheKey, () => this.computeKpis(orgId, range, repId), CACHE_TTL.MEDIUM);
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.salesKpisNamespace(orgId),
+      CACHE_KEYS.salesKpisSubKey(range.from?.toISOString() ?? "", range.to?.toISOString() ?? "", String(repId ?? "")),
+      () => this.computeKpis(orgId, range, repId),
+      CACHE_TTL.MEDIUM,
+    );
   }
 
   private async computeKpis(orgId: string, range: DateRange, repId?: number): Promise<SalesDashboardKPIs> {

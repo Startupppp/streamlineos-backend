@@ -153,6 +153,9 @@ const baseSchema = z
       emptyToUndefined,
       z.string().trim().optional(),
     ),
+    TURN_URLS: z.preprocess(emptyToUndefined, z.string().trim().optional()),
+    TURN_USERNAME: z.preprocess(emptyToUndefined, z.string().trim().optional()),
+    TURN_CREDENTIAL: z.preprocess(emptyToUndefined, z.string().trim().optional()),
     CHAT_REPLY_REMINDER_MINUTES: z.preprocess(
       emptyToUndefined,
       z.coerce.number().int().positive().optional(),

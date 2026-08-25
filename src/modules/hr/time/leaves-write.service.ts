@@ -25,6 +25,7 @@ import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { HrWorkflowEngineService } from "../workflows/hr-workflow-engine.service";
 import { CacheService } from "../../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { AccessService } from "../../access/access.service";
 import type { CreateLeaveInput } from "./dto/leaves.schemas";
 import { LeaveApproverService } from "./leave-approver.service";
@@ -50,7 +51,7 @@ export class LeavesWriteService {
   ) {}
 
   private async invalidateLeaveAnalytics(orgId: string): Promise<void> {
-    await this.cache.invalidateNamespace(`hr:leave-analytics:${orgId}`);
+    await this.cache.invalidateNamespace(CACHE_KEYS.leaveAnalyticsNamespace(orgId));
   }
 
   async create(currentUser: CurrentUserContext, body: CreateLeaveInput) {

@@ -13,9 +13,12 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
 import { AuditService } from "../../../common/audit/audit.service";
+import { CacheService } from "../../../common/cache/cache.service";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { JournalPostingService, type DraftLine } from "../posting/journal-posting.service";
 import { FinancePostingService } from "../posting/finance-posting.service";
+import { ACCT_STATEMENTS_NS } from "../settings/accounting-settings.constants";
 import { addDecimals, compareDecimals } from "./money.util";
 import {
   type CreateAccountInput,
@@ -50,6 +53,7 @@ export class AccountingLedgerService {
     private readonly finPosting: FinancePostingService,
     private readonly audit: AuditService,
     private readonly dispatch: NotificationDispatchService,
+    private readonly cache: CacheService,
   ) {}
 
   async listAccounts(orgId: string, query: ListAccountsQuery) {
@@ -313,6 +317,9 @@ export class AccountingLedgerService {
         status: journalEntries.status,
       });
 
+    const invalidate = () => this.cache.invalidateNamespace(ACCT_STATEMENTS_NS(orgId));
+    if (!registerAfterCommit(invalidate)) await invalidate();
+
     this.audit.log({
       action: "accounting.journal.post",
       userId,
@@ -401,6 +408,9 @@ export class AccountingLedgerService {
 
       return reversed;
     });
+
+    const invalidateStatements = () => this.cache.invalidateNamespace(ACCT_STATEMENTS_NS(orgId));
+    if (!registerAfterCommit(invalidateStatements)) await invalidateStatements();
 
     this.audit.log({
       action: "accounting.journal.reverse",

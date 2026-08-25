@@ -12,7 +12,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_TTL } from "../../../common/cache/cache-keys";
+import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { resolveLeavesViewScope } from "./leaves-scope";
@@ -213,8 +213,8 @@ export class LeavesService {
     if (scope === "none") throw new ForbiddenException("Forbidden");
 
     return this.cache.cachedVersioned(
-      `hr:leave-analytics:${u.orgId}`,
-      String(year),
+      CACHE_KEYS.leaveAnalyticsNamespace(u.orgId),
+      `${scope}:${year}`,
       () => this.queryAnalytics(u.orgId, year),
       CACHE_TTL.MEDIUM,
     );
