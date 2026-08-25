@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { and, eq, inArray, isNull, lte, or } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { organizations, outboxEvents } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -12,6 +12,7 @@ import {
 } from "./outbox-envelope";
 import { OutboxConsumerRegistry, type OutboxEventRow } from "./outbox-consumer.registry";
 import { runInNewTenantTransaction } from "../tenant/run-in-tenant-transaction";
+import { forEachOrg } from "../tenant";
 
 const BATCH_SIZE = 50;
 const LEASE_MS = 30_000;
@@ -25,12 +26,13 @@ export interface OutboxFlushResult {
 }
 
 /**
- * Drains the transactional outbox: atomically leases a batch of due PENDING events (and reclaims
- * expired IN_FLIGHT leases from a crashed worker), re-checks the owning organization's lifecycle
- * immediately before delivery (an archived/purged org is SUPPRESSED, never delivered), then marks
- * each DELIVERED or reschedules with bounded backoff / dead-letters past the retry ceiling.
- * Routing is via OutboxConsumerRegistry; an unroutable event type throws rather than being silently
- * marked delivered. Each consumer runs in its own tenant transaction via runInNewTenantTransaction.
+ * Drains the transactional outbox: leases a batch of due PENDING events per organisation (each in
+ * its own tenant transaction via forEachOrg — a cross-org sweep has no ambient GUC and is denied
+ * 42501 by the outbox_events RLS policy), re-checks the owning organisation's lifecycle immediately
+ * before delivery, then marks each DELIVERED or reschedules with bounded backoff / dead-letters past
+ * the retry ceiling. Event types with no registered consumer are SUPPRESSED, not retried — "nobody
+ * subscribed" is not a delivery failure; an event is never marked DELIVERED without a consumer
+ * having handled it. All state mutations run in their own per-org tenant transaction.
  */
 @Injectable()
 export class OutboxPublisherService {
@@ -68,13 +70,21 @@ export class OutboxPublisherService {
     for (const event of claimed) {
       const lifecycle = await this.readOrgLifecycle(event.organizationId);
       if (!lifecycle.found || shouldSuppressForLifecycle(lifecycle.status)) {
-        await this.mark(event.outboxEventId, "SUPPRESSED");
+        await this.mark(event, "SUPPRESSED");
+        suppressed++;
+        continue;
+      }
+      if (!this.registry.get(event.eventType)) {
+        this.logger.warn(
+          `outbox event ${event.eventId} type '${event.eventType}' has no registered consumer — suppressing`,
+        );
+        await this.mark(event, "SUPPRESSED");
         suppressed++;
         continue;
       }
       try {
         await this.deliver(event);
-        await this.mark(event.outboxEventId, "DELIVERED", { publishedAt: new Date() });
+        await this.mark(event, "DELIVERED", { publishedAt: new Date() });
         delivered++;
       } catch (error: unknown) {
         const outcome = await this.handleFailure(event, error);
@@ -88,34 +98,38 @@ export class OutboxPublisherService {
 
   private async claimBatch(): Promise<OutboxEventRow[]> {
     const now = new Date();
-    const dueIds = this.db
-      .select({ id: outboxEvents.outboxEventId })
-      .from(outboxEvents)
-      .where(
-        or(
-          and(
-            eq(outboxEvents.deliveryState, "PENDING"),
-            or(
-              isNull(outboxEvents.leaseExpiresAt),
-              lte(outboxEvents.leaseExpiresAt, now),
-            ),
-          ),
-          and(
-            eq(outboxEvents.deliveryState, "IN_FLIGHT"),
-            lte(outboxEvents.leaseExpiresAt, now),
-          ),
-        ),
-      )
-      .limit(BATCH_SIZE);
+    const leaseUntil = new Date(now.getTime() + LEASE_MS);
+    const claimed: OutboxEventRow[] = [];
 
-    return this.db
-      .update(outboxEvents)
-      .set({
-        deliveryState: "IN_FLIGHT",
-        leaseExpiresAt: new Date(now.getTime() + LEASE_MS),
-      })
-      .where(inArray(outboxEvents.outboxEventId, dueIds))
-      .returning();
+    await forEachOrg(this.db, "outbox-events-flush", async (tx, orgId) => {
+      const remaining = BATCH_SIZE - claimed.length;
+      if (remaining <= 0) return;
+
+      const rows = await tx
+        .update(outboxEvents)
+        .set({
+          deliveryState: "IN_FLIGHT",
+          leaseExpiresAt: leaseUntil,
+        })
+        .where(
+          sql`${outboxEvents.outboxEventId} in (
+            select outbox_event_id from ${outboxEvents}
+            where organization_id = ${orgId}
+              and (
+                (delivery_state = 'PENDING' and (lease_expires_at is null or lease_expires_at <= ${now.toISOString()}::timestamptz))
+                or (delivery_state = 'IN_FLIGHT' and lease_expires_at <= ${now.toISOString()}::timestamptz)
+              )
+            order by outbox_event_id
+            limit ${remaining}
+            for update skip locked
+          )`,
+        )
+        .returning();
+
+      claimed.push(...rows);
+    });
+
+    return claimed;
   }
 
   private async readOrgLifecycle(
@@ -151,41 +165,47 @@ export class OutboxPublisherService {
     const retryCount = event.retryCount + 1;
 
     if (shouldDeadLetter(retryCount)) {
-      await this.db
-        .update(outboxEvents)
-        .set({
-          deliveryState: "DEAD",
-          retryCount,
-          lastError: message,
-          deadLetteredAt: new Date(),
-        })
-        .where(eq(outboxEvents.outboxEventId, event.outboxEventId));
+      await runInNewTenantTransaction(this.db, event.organizationId, async (tx) => {
+        await tx
+          .update(outboxEvents)
+          .set({
+            deliveryState: "DEAD",
+            retryCount,
+            lastError: message,
+            deadLetteredAt: new Date(),
+          })
+          .where(eq(outboxEvents.outboxEventId, event.outboxEventId));
+      });
       this.logger.error(
         `outbox ${event.eventId} dead-lettered after ${retryCount} attempts: ${message}`,
       );
       return "DEAD";
     }
 
-    await this.db
-      .update(outboxEvents)
-      .set({
-        deliveryState: "PENDING",
-        retryCount,
-        lastError: message,
-        leaseExpiresAt: new Date(Date.now() + nextRetryDelayMs(retryCount)),
-      })
-      .where(eq(outboxEvents.outboxEventId, event.outboxEventId));
+    await runInNewTenantTransaction(this.db, event.organizationId, async (tx) => {
+      await tx
+        .update(outboxEvents)
+        .set({
+          deliveryState: "PENDING",
+          retryCount,
+          lastError: message,
+          leaseExpiresAt: new Date(Date.now() + nextRetryDelayMs(retryCount)),
+        })
+        .where(eq(outboxEvents.outboxEventId, event.outboxEventId));
+    });
     return "RETRY";
   }
 
   private async mark(
-    outboxEventId: number,
+    event: OutboxEventRow,
     deliveryState: "DELIVERED" | "SUPPRESSED",
     extra: { publishedAt?: Date } = {},
   ): Promise<void> {
-    await this.db
-      .update(outboxEvents)
-      .set({ deliveryState, ...extra })
-      .where(eq(outboxEvents.outboxEventId, outboxEventId));
+    await runInNewTenantTransaction(this.db, event.organizationId, async (tx) => {
+      await tx
+        .update(outboxEvents)
+        .set({ deliveryState, ...extra })
+        .where(eq(outboxEvents.outboxEventId, event.outboxEventId));
+    });
   }
 }
