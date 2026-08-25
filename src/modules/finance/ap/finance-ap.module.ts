@@ -2,6 +2,8 @@ import { Module } from "@nestjs/common";
 import { AccountingModule } from "../../accounting/core/accounting.module";
 import { NotificationsModule } from "../../notifications/notifications.module";
 import { FinanceControlsModule } from "../controls/finance-controls.module";
+import { OutboxModule } from "../../../common/outbox/outbox.module";
+import { AccountingBillApprovedConsumerService } from "./accounting-bill-approved-consumer.service";
 import { BillsWorkflowController } from "./bills-workflow.controller";
 import { VendorCreditsController } from "./vendor-credits.controller";
 import { RecurringBillsController } from "./recurring-bills.controller";
@@ -17,7 +19,7 @@ import { VendorPaymentsListService } from "./vendor-payments-list.service";
 import { BillsDueCheckService } from "./bills-due-check.service";
 
 @Module({
-  imports: [AccountingModule, NotificationsModule, FinanceControlsModule],
+  imports: [AccountingModule, NotificationsModule, FinanceControlsModule, OutboxModule],
   controllers: [
     BillsWorkflowController,
     VendorCreditsController,
@@ -27,6 +29,7 @@ import { BillsDueCheckService } from "./bills-due-check.service";
     VendorPaymentsListController,
   ],
   providers: [
+    AccountingBillApprovedConsumerService,
     BillsWorkflowService,
     VendorCreditsService,
     RecurringBillsService,

@@ -1,6 +1,9 @@
 import { Module } from "@nestjs/common";
 import { ProjectsModule } from "../../build/core/projects.module";
 import { TimesheetsCoreModule } from "../../timesheets/core/timesheets-core.module";
+import { NotificationsModule } from "../../notifications/notifications.module";
+import { OutboxModule } from "../../../common/outbox/outbox.module";
+import { BuildSprintCompletedConsumerService } from "./build-sprint-completed-consumer.service";
 import {
   CyclesController,
   EpicsController,
@@ -38,7 +41,7 @@ import {
 import { TimesheetsService } from "./timesheets.service";
 
 @Module({
-  imports: [ProjectsModule, TimesheetsCoreModule],
+  imports: [ProjectsModule, TimesheetsCoreModule, NotificationsModule, OutboxModule],
   controllers: [
     SprintsController,
     CyclesController,
@@ -57,6 +60,7 @@ import { TimesheetsService } from "./timesheets.service";
     TicketTimeEntriesController,
   ],
   providers: [
+    BuildSprintCompletedConsumerService,
     SprintsService,
     CyclesService,
     ModulesService,

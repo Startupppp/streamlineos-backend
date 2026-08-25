@@ -143,6 +143,15 @@ const PROJECTS = [
     defaultChannels: IA_EMAIL,
     ttlSeconds: 86400,
   }),
+  e("build.sprint.completed", "build", "PROJECTS", "Sprint completed", {
+    defaultType: "SUCCESS",
+    defaultChannels: IA,
+  }),
+  e("build.release.published", "build", "PROJECTS", "Release published", {
+    defaultPriority: "LOW",
+    defaultType: "SUCCESS",
+    defaultChannels: IA,
+  }),
   e("build.blocker.created", "build", "PROJECTS", "Blocker reported", {
     defaultPriority: "HIGH",
     defaultType: "WARNING",
@@ -886,6 +895,10 @@ const ACCOUNTING = [
     "Bill approval requested",
     { defaultPriority: "HIGH", defaultChannels: IA_EMAIL },
   ),
+  e("accounting.bill.approved", "accounting", "ACCOUNTING", "Bill approved", {
+    defaultType: "SUCCESS",
+    defaultChannels: IA_EMAIL,
+  }),
   e(
     "accounting.bill.recurring_generated",
     "accounting",
