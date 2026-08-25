@@ -1,10 +1,24 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, count, desc, eq, isNull, max } from "drizzle-orm";
-import { dealActivities, deals, leadActivities, leads, clients } from "../../../../db/schema";
+import { dealActivities, deals, leadActivities } from "../../../../db/schema";
+import { businessParties, clientPartyMap, leadPartyMap } from "../../../../db/schema/party";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import { logger } from "../../../../common/logger/logger.service";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
+import {
+  INCLUDE_DELETED,
+  LEAD_PARTY_COLUMNS,
+  LEAD_PARTY_JOIN,
+  leadIdIs,
+  leadPartyScope,
+} from "../../../leads/lead-party-reader";
+import {
+  CLIENT_PARTY_COLUMNS,
+  CLIENT_PARTY_JOIN,
+  clientIdIs,
+  clientPartyScope,
+} from "../../../clients/client-party-reader";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
 
 import {
@@ -53,26 +67,29 @@ export class CrmScoringService {
   async scoreLead(orgId: string, leadId: number, userId?: string): Promise<LeadScoreResult | null> {
     const ctx = await runInTenantTransaction(this.db, async (tx) => {
       const [[lead], [activityResult]] = await Promise.all([
+        // Scoring is an after-effect of a write and has always run against the
+        // record as it stands, deletion included; the party answers the same way.
         tx
           .select({
-            id: leads.id,
-            name: leads.name,
-            email: leads.email,
-            phone: leads.phone,
-            company: leads.company,
-            designation: leads.designation,
-            city: leads.city,
-            source: leads.source,
-            priority: leads.priority,
-            potentialValue: leads.potentialValue,
-            investmentInterest: leads.investmentInterest,
-            notes: leads.notes,
-            tags: leads.tags,
-            createdAt: leads.createdAt,
-            assignedToId: leads.assignedToId,
+            id: LEAD_PARTY_COLUMNS.id,
+            name: LEAD_PARTY_COLUMNS.name,
+            email: LEAD_PARTY_COLUMNS.email,
+            phone: LEAD_PARTY_COLUMNS.phone,
+            company: LEAD_PARTY_COLUMNS.company,
+            designation: LEAD_PARTY_COLUMNS.designation,
+            city: LEAD_PARTY_COLUMNS.city,
+            source: LEAD_PARTY_COLUMNS.source,
+            priority: LEAD_PARTY_COLUMNS.priority,
+            potentialValue: LEAD_PARTY_COLUMNS.potentialValue,
+            investmentInterest: LEAD_PARTY_COLUMNS.investmentInterest,
+            notes: LEAD_PARTY_COLUMNS.notes,
+            tags: LEAD_PARTY_COLUMNS.tags,
+            createdAt: LEAD_PARTY_COLUMNS.createdAt,
+            assignedToId: LEAD_PARTY_COLUMNS.assignedToId,
           })
-          .from(leads)
-          .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId))),
+          .from(leadPartyMap)
+          .innerJoin(businessParties, LEAD_PARTY_JOIN)
+          .where(and(...leadPartyScope(orgId, INCLUDE_DELETED), leadIdIs(leadId))),
         tx
           .select({ count: count() })
           .from(leadActivities)
@@ -236,17 +253,18 @@ export class CrmScoringService {
     const client = await runInTenantTransaction(this.db, async (tx) => {
       const [row] = await tx
         .select({
-          id: clients.id,
-          name: clients.name,
-          company: clients.company,
-          healthScore: clients.healthScore,
-          investmentValue: clients.investmentValue,
-          convertedAt: clients.convertedAt,
-          createdAt: clients.createdAt,
-          status: clients.status,
+          id: CLIENT_PARTY_COLUMNS.id,
+          name: CLIENT_PARTY_COLUMNS.name,
+          company: CLIENT_PARTY_COLUMNS.company,
+          healthScore: CLIENT_PARTY_COLUMNS.healthScore,
+          investmentValue: CLIENT_PARTY_COLUMNS.investmentValue,
+          convertedAt: CLIENT_PARTY_COLUMNS.convertedAt,
+          createdAt: CLIENT_PARTY_COLUMNS.createdAt,
+          status: CLIENT_PARTY_COLUMNS.status,
         })
-        .from(clients)
-        .where(and(eq(clients.id, clientId), eq(clients.orgId, orgId)));
+        .from(clientPartyMap)
+        .innerJoin(businessParties, CLIENT_PARTY_JOIN)
+        .where(and(...clientPartyScope(orgId), clientIdIs(clientId)));
       return row ?? null;
     }, { orgId });
 
@@ -310,17 +328,18 @@ export class CrmScoringService {
       const [[lead], [lastActivity]] = await Promise.all([
         tx
           .select({
-            id: leads.id,
-            name: leads.name,
-            status: leads.status,
-            priority: leads.priority,
-            potentialValue: leads.potentialValue,
-            assignedToId: leads.assignedToId,
-            followUpDate: leads.followUpDate,
-            notes: leads.notes,
+            id: LEAD_PARTY_COLUMNS.id,
+            name: LEAD_PARTY_COLUMNS.name,
+            status: LEAD_PARTY_COLUMNS.status,
+            priority: LEAD_PARTY_COLUMNS.priority,
+            potentialValue: LEAD_PARTY_COLUMNS.potentialValue,
+            assignedToId: LEAD_PARTY_COLUMNS.assignedToId,
+            followUpDate: LEAD_PARTY_COLUMNS.followUpDate,
+            notes: LEAD_PARTY_COLUMNS.notes,
           })
-          .from(leads)
-          .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId))),
+          .from(leadPartyMap)
+          .innerJoin(businessParties, LEAD_PARTY_JOIN)
+          .where(and(...leadPartyScope(orgId, INCLUDE_DELETED), leadIdIs(leadId))),
         tx
           .select({ type: leadActivities.type, date: leadActivities.date })
           .from(leadActivities)
@@ -377,21 +396,22 @@ export class CrmScoringService {
       const [[lead], [lastActivity], recentActivities] = await Promise.all([
         tx
           .select({
-            id: leads.id,
-            name: leads.name,
-            status: leads.status,
-            priority: leads.priority,
-            potentialValue: leads.potentialValue,
-            assignedToId: leads.assignedToId,
-            followUpDate: leads.followUpDate,
-            notes: leads.notes,
-            source: leads.source,
-            company: leads.company,
-            email: leads.email,
-            score: leads.score,
+            id: LEAD_PARTY_COLUMNS.id,
+            name: LEAD_PARTY_COLUMNS.name,
+            status: LEAD_PARTY_COLUMNS.status,
+            priority: LEAD_PARTY_COLUMNS.priority,
+            potentialValue: LEAD_PARTY_COLUMNS.potentialValue,
+            assignedToId: LEAD_PARTY_COLUMNS.assignedToId,
+            followUpDate: LEAD_PARTY_COLUMNS.followUpDate,
+            notes: LEAD_PARTY_COLUMNS.notes,
+            source: LEAD_PARTY_COLUMNS.source,
+            company: LEAD_PARTY_COLUMNS.company,
+            email: LEAD_PARTY_COLUMNS.email,
+            score: LEAD_PARTY_COLUMNS.score,
           })
-          .from(leads)
-          .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId))),
+          .from(leadPartyMap)
+          .innerJoin(businessParties, LEAD_PARTY_JOIN)
+          .where(and(...leadPartyScope(orgId, INCLUDE_DELETED), leadIdIs(leadId))),
         tx
           .select({ type: leadActivities.type, date: leadActivities.date, outcome: leadActivities.outcome })
           .from(leadActivities)

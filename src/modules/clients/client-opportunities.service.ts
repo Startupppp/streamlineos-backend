@@ -1,8 +1,15 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, and, type SQL } from "drizzle-orm";
-import { clientOpportunities, clients } from "../../db/schema";
+import { eq, and, asc, type SQL } from "drizzle-orm";
+import { clientOpportunities } from "../../db/schema";
+import { businessParties, clientPartyMap } from "../../db/schema/party";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import {
+  CLIENT_PARTY_COLUMNS,
+  CLIENT_PARTY_JOIN,
+  clientIdIs,
+  clientPartyScope,
+} from "./client-party-reader";
 import type { CreateOpportunityInput, UpdateOpportunityInput } from "./dto/clients.schemas";
 
 @Injectable()
@@ -27,20 +34,35 @@ export class ClientOpportunitiesService {
         createdBy: clientOpportunities.createdBy,
         createdAt: clientOpportunities.createdAt,
         updatedAt: clientOpportunities.updatedAt,
-        client: { id: clients.id, name: clients.name },
+        client: { id: CLIENT_PARTY_COLUMNS.id, name: CLIENT_PARTY_COLUMNS.name },
       })
       .from(clientOpportunities)
-      .leftJoin(clients, eq(clientOpportunities.clientId, clients.id))
+      // The old join carried no tenant predicate at all -- `client_id = id` and
+      // nothing else -- so it leaned entirely on the foreign key having been
+      // written for the right organisation. The map row is matched on the tenant
+      // as well, and the join onto the party carries it across.
+      .leftJoin(
+        clientPartyMap,
+        and(
+          eq(clientPartyMap.clientId, clientOpportunities.clientId),
+          eq(clientPartyMap.organizationId, orgId),
+        ),
+      )
+      .leftJoin(businessParties, CLIENT_PARTY_JOIN)
       .where(and(...conditions))
-      .orderBy(clientOpportunities.createdAt)
+      // `created_at` is not unique, so a hundredth row was previously whichever
+      // the heap offered; the id settles it.
+      .orderBy(asc(clientOpportunities.createdAt), asc(clientOpportunities.id))
       .limit(100);
   }
 
   async create(orgId: string, userId: string, input: CreateOpportunityInput) {
-    const client = await this.db.query.clients.findFirst({
-      where: and(eq(clients.id, input.clientId), eq(clients.orgId, orgId)),
-      columns: { id: true },
-    });
+    const [client] = await this.db
+      .select({ id: CLIENT_PARTY_COLUMNS.id })
+      .from(clientPartyMap)
+      .innerJoin(businessParties, CLIENT_PARTY_JOIN)
+      .where(and(...clientPartyScope(orgId), clientIdIs(input.clientId)))
+      .limit(1);
     if (!client) return null;
 
     const [inserted] = await this.db

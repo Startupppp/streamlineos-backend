@@ -28,6 +28,9 @@ function makeDb(overrides: Record<string, unknown> = {}) {
   const base = {
     select: jest.fn().mockReturnThis(),
     from: jest.fn().mockReturnThis(),
+    // Both merge candidates now come from `contact_party_map` joined onto
+    // `business_parties`, with `contacts` alongside for its association columns.
+    innerJoin: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
     limit: jest.fn().mockReturnThis(),

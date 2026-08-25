@@ -40,6 +40,10 @@ function buildThenableChain(resolved: unknown[]) {
   const promise = Promise.resolve(resolved);
   const chain: Record<string, unknown> = {
     from: jest.fn().mockImplementation(() => chain),
+    // Every lead read reaches `business_parties` through `lead_party_map`, and
+    // the natural-language search hangs the assignee off it with a left join.
+    innerJoin: jest.fn().mockImplementation(() => chain),
+    leftJoin: jest.fn().mockImplementation(() => chain),
     where: jest.fn().mockImplementation(() => chain),
     orderBy: jest.fn().mockImplementation(() => chain),
     limit: jest.fn().mockImplementation(() => promise),

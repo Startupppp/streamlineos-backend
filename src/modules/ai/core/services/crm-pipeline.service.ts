@@ -1,8 +1,14 @@
 import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { and, count, eq, isNull, lt, max } from "drizzle-orm";
-import { dealActivities, deals, leads } from "../../../../db/schema";
+import { and, asc, count, eq, isNull, lt, max } from "drizzle-orm";
+import { dealActivities, deals } from "../../../../db/schema";
+import { businessParties, leadPartyMap } from "../../../../db/schema/party";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
+import {
+  LEAD_PARTY_COLUMNS,
+  LEAD_PARTY_JOIN,
+  leadPartyScope,
+} from "../../../leads/lead-party-reader";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
 
 import { OrgFeaturesService } from "./org-features.service";
@@ -133,15 +139,23 @@ export class CrmPipelineService {
     if (!flags.aiLeadScoring) throw new ForbiddenException("AI features are disabled for this organization");
 
     const [leadsNoEmail, leadsNoOwner, dealsIncomplete, duplicateGroups] = await Promise.all([
+      // Both gap lists read the party: an address the mirror has not caught up
+      // with is exactly the "missing email" this would otherwise report.
       this.db
-        .select({ id: leads.id, name: leads.name })
-        .from(leads)
-        .where(and(eq(leads.orgId, orgId), isNull(leads.email), isNull(leads.deletedAt)))
+        .select({ id: LEAD_PARTY_COLUMNS.id, name: LEAD_PARTY_COLUMNS.name })
+        .from(leadPartyMap)
+        .innerJoin(businessParties, LEAD_PARTY_JOIN)
+        .where(and(...leadPartyScope(orgId), isNull(LEAD_PARTY_COLUMNS.email)))
+        // Twenty of an unbounded set, and the old read let the heap choose which
+        // twenty. Stated, so the same org sees the same list twice running.
+        .orderBy(asc(LEAD_PARTY_COLUMNS.id))
         .limit(20),
       this.db
-        .select({ id: leads.id, name: leads.name })
-        .from(leads)
-        .where(and(eq(leads.orgId, orgId), isNull(leads.assignedToId), isNull(leads.deletedAt)))
+        .select({ id: LEAD_PARTY_COLUMNS.id, name: LEAD_PARTY_COLUMNS.name })
+        .from(leadPartyMap)
+        .innerJoin(businessParties, LEAD_PARTY_JOIN)
+        .where(and(...leadPartyScope(orgId), isNull(LEAD_PARTY_COLUMNS.assignedToId)))
+        .orderBy(asc(LEAD_PARTY_COLUMNS.id))
         .limit(20),
       this.db
         .select({ id: deals.id, name: deals.name, stage: deals.stage })
