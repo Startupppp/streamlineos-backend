@@ -7,6 +7,7 @@ import { CrmModule } from "../crm/core/crm.module";
 import { CrmAutomationStudioModule } from "../crm/automation-studio/crm-automation-studio.module";
 import { BillingModule } from "../billing/core/billing.module";
 import { AiModule } from "../ai/core/ai.module";
+import { PartyModule } from "../party/party.module";
 import { LeadsController } from "./leads.controller";
 import { LeadsIngestController } from "./leads.ingest.controller";
 import { LeadsReportsController } from "./leads-reports.controller";
@@ -19,12 +20,14 @@ import { LeadsReportsService } from "./leads-reports.service";
 import { LeadsReportsTeamService } from "./leads-reports-team.service";
 import { LeadsExportsService } from "./leads-exports.service";
 import { LeadsDetailService } from "./leads-detail.service";
+import { LeadConversionService } from "./lead-conversion.service";
 import { LeadStatusService } from "./lead-status.service";
+import { LeadsImportService } from "./leads-import.service";
 import { LeadsOpsService } from "./leads-ops.service";
 import { LeadNotificationAiService } from "./lead-notification-ai.service";
 
 @Module({
-  imports: [NotificationsModule, AutomationModule, WebhooksModule, CrmMetadataModule, CrmModule, CrmAutomationStudioModule, BillingModule, AiModule],
+  imports: [NotificationsModule, AutomationModule, WebhooksModule, CrmMetadataModule, CrmModule, CrmAutomationStudioModule, BillingModule, AiModule, PartyModule],
   controllers: [
     LeadsReportsController,
     LeadsOpsController,
@@ -40,8 +43,10 @@ import { LeadNotificationAiService } from "./lead-notification-ai.service";
     LeadsReportsTeamService,
     LeadsExportsService,
     LeadsDetailService,
+    LeadConversionService,
     LeadStatusService,
     LeadsOpsService,
+    LeadsImportService,
     LeadNotificationAiService,
   ],
   exports: [LeadsService, LeadsDetailService],

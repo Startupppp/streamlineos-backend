@@ -57,6 +57,9 @@ const makeDb = () => {
   chain.returning = jest.fn().mockResolvedValue([{ id: 1, name: "Test Lead", source: "direct", priority: "WARM", orgId: ORG, assignedToId: null }]);
   chain.select = jest.fn().mockReturnValue(chain);
   chain.from = jest.fn().mockReturnValue(chain);
+  // The after-effects of a create read the lead back through the Party seam,
+  // which joins the map to `business_parties`.
+  chain.innerJoin = jest.fn().mockReturnValue(chain);
   chain.where = jest.fn().mockResolvedValue([]);
   chain.update = jest.fn().mockReturnValue(chain);
   chain.set = jest.fn().mockReturnValue(chain);
@@ -72,7 +75,7 @@ describe("LeadsService plan-limit enforcement", () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         LeadsService,
-        { provide: DRIZZLE, useValue: { ...db, query: { organizationMembers: { findFirst: jest.fn().mockResolvedValue(null) }, leads: { findFirst: jest.fn().mockResolvedValue(null) } } } },
+        { provide: DRIZZLE, useValue: { ...db, query: { organizationMembers: { findFirst: jest.fn().mockResolvedValue(null) } } } },
         { provide: PlanLimitsService, useValue: planLimitsMock },
         { provide: CacheService, useValue: { invalidateNamespace: jest.fn() } },
         { provide: AuditService, useValue: { log: jest.fn() } },

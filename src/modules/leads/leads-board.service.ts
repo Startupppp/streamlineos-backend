@@ -1,31 +1,22 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, and, desc, asc, sql, count, gte, lte, inArray, isNull, type SQL } from "drizzle-orm";
-import { leads, users, crmOptions, crmPipelines, crmPipelineStages } from "../../db/schema";
+import { eq, and, desc, asc, sql, count, gte, lte, inArray } from "drizzle-orm";
+import { users, crmOptions, crmPipelines, crmPipelineStages } from "../../db/schema";
+import { businessParties, leadPartyMap } from "../../db/schema/party";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
+import {
+  LEAD_PARTY_COLUMNS,
+  LEAD_PARTY_JOIN,
+  leadPartyScope,
+  pushLeadPartyViewScope,
+} from "./lead-party-reader";
 import { resolveLeadStatusSemantics } from "./lead-status-semantics";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 
 export type BoardOpts = { userId?: string; limitPerStatus?: number; scope?: DataScope };
 export type StatsFilters = { dateFrom?: string; dateTo?: string; userId?: string; scope?: DataScope };
-
-function pushLeadsViewScope(
-  where: SQL[],
-  orgId: string,
-  scope: DataScope | undefined,
-  userId: string | undefined,
-): void {
-  if (!scope) return;
-  if (scope === "none") {
-    where.push(sql`false`);
-    return;
-  }
-  if (!userId) return;
-  where.push(applyScope(scope, orgId, userId, { ownerColumn: leads.assignedToId }));
-}
 
 @Injectable()
 export class LeadsBoardService {
@@ -60,10 +51,11 @@ export class LeadsBoardService {
       if (options.length > 0) return options.map((o) => o.key);
 
       const existing = await this.db
-        .select({ status: leads.status })
-        .from(leads)
-        .where(and(eq(leads.orgId, orgId), isNull(leads.deletedAt)))
-        .groupBy(leads.status);
+        .select({ status: LEAD_PARTY_COLUMNS.status })
+        .from(leadPartyMap)
+        .innerJoin(businessParties, LEAD_PARTY_JOIN)
+        .where(and(...leadPartyScope(orgId)))
+        .groupBy(LEAD_PARTY_COLUMNS.status);
       return existing.map((r) => r.status);
     }, CACHE_TTL.MEDIUM);
   }
@@ -72,40 +64,48 @@ export class LeadsBoardService {
     const hash = Buffer.from(JSON.stringify(opts ?? {})).toString("base64");
 
     return this.cache.cachedVersioned(`leads:${orgId}`, `board:${hash}`, async () => {
-      const baseFilters = [eq(leads.orgId, orgId), isNull(leads.deletedAt)];
+      const baseFilters = leadPartyScope(orgId);
 
-      pushLeadsViewScope(baseFilters, orgId, opts?.scope, opts?.userId);
+      pushLeadPartyViewScope(baseFilters, orgId, opts?.scope, opts?.userId);
 
       const statusKeys = await this.resolveLeadStatusKeys(orgId);
       const limitPerStatus = opts?.limitPerStatus ?? 50;
 
       const columns = {
-        id: leads.id,
-        name: leads.name,
-        email: leads.email,
-        phone: leads.phone,
-        company: leads.company,
-        source: leads.source,
-        priority: leads.priority,
-        status: leads.status,
-        score: leads.score,
-        potentialValue: leads.potentialValue,
-        slaDeadline: leads.slaDeadline,
-        assignedToId: leads.assignedToId,
-        createdAt: leads.createdAt,
+        id: LEAD_PARTY_COLUMNS.id,
+        name: LEAD_PARTY_COLUMNS.name,
+        email: LEAD_PARTY_COLUMNS.email,
+        phone: LEAD_PARTY_COLUMNS.phone,
+        company: LEAD_PARTY_COLUMNS.company,
+        source: LEAD_PARTY_COLUMNS.source,
+        priority: LEAD_PARTY_COLUMNS.priority,
+        status: LEAD_PARTY_COLUMNS.status,
+        score: LEAD_PARTY_COLUMNS.score,
+        potentialValue: LEAD_PARTY_COLUMNS.potentialValue,
+        slaDeadline: LEAD_PARTY_COLUMNS.slaDeadline,
+        assignedToId: LEAD_PARTY_COLUMNS.assignedToId,
+        createdAt: LEAD_PARTY_COLUMNS.createdAt,
       } as const;
 
       const perStatusResults = await Promise.all(
         statusKeys.map(async (status) => {
-          const statusFilter = [...baseFilters, eq(leads.status, status)];
+          const statusFilter = [...baseFilters, eq(LEAD_PARTY_COLUMNS.status, status)];
           const [rows, countResult] = await Promise.all([
             this.db
               .select(columns)
-              .from(leads)
+              .from(leadPartyMap)
+              .innerJoin(businessParties, LEAD_PARTY_JOIN)
               .where(and(...statusFilter))
-              .orderBy(desc(leads.createdAt))
+              // Newest first, and the lead id to break a tie: a column capped at
+              // `limitPerStatus` must cut the same place twice or the board
+              // shuffles between refreshes.
+              .orderBy(desc(LEAD_PARTY_COLUMNS.createdAt), desc(LEAD_PARTY_COLUMNS.id))
               .limit(limitPerStatus),
-            this.db.select({ total: count() }).from(leads).where(and(...statusFilter)),
+            this.db
+              .select({ total: count() })
+              .from(leadPartyMap)
+              .innerJoin(businessParties, LEAD_PARTY_JOIN)
+              .where(and(...statusFilter)),
           ]);
           return { status, rows, total: countResult[0]?.total ?? 0 };
         }),
@@ -144,16 +144,16 @@ export class LeadsBoardService {
   }
 
   async getStats(orgId: string, filters?: StatsFilters) {
-    const statsFilters = [eq(leads.orgId, orgId), isNull(leads.deletedAt)];
-    pushLeadsViewScope(statsFilters, orgId, filters?.scope, filters?.userId);
+    const statsFilters = leadPartyScope(orgId);
+    pushLeadPartyViewScope(statsFilters, orgId, filters?.scope, filters?.userId);
 
     if (filters?.dateFrom) {
-      statsFilters.push(gte(leads.createdAt, new Date(filters.dateFrom)));
+      statsFilters.push(gte(LEAD_PARTY_COLUMNS.createdAt, new Date(filters.dateFrom)));
     }
     if (filters?.dateTo) {
       const to = new Date(filters.dateTo);
       to.setHours(23, 59, 59, 999);
-      statsFilters.push(lte(leads.createdAt, to));
+      statsFilters.push(lte(LEAD_PARTY_COLUMNS.createdAt, to));
     }
 
     const now = new Date();
@@ -161,18 +161,20 @@ export class LeadsBoardService {
 
     const [statusCounts, totals, statusOptions] = await Promise.all([
       this.db
-        .select({ status: leads.status, cnt: count() })
-        .from(leads)
+        .select({ status: LEAD_PARTY_COLUMNS.status, cnt: count() })
+        .from(leadPartyMap)
+        .innerJoin(businessParties, LEAD_PARTY_JOIN)
         .where(and(...statsFilters))
-        .groupBy(leads.status),
+        .groupBy(LEAD_PARTY_COLUMNS.status),
       this.db
         .select({
           total: count(),
-          totalPotentialValue: sql<string>`COALESCE(SUM(CAST(${leads.potentialValue} AS NUMERIC)), 0)`,
-          unassigned: sql<string>`COUNT(*) FILTER (WHERE ${leads.assignedToId} IS NULL)`,
-          thisMonth: sql<string>`COUNT(*) FILTER (WHERE ${leads.createdAt} >= ${thisMonthStart.toISOString()})`,
+          totalPotentialValue: sql<string>`COALESCE(SUM(CAST(${LEAD_PARTY_COLUMNS.potentialValue} AS NUMERIC)), 0)`,
+          unassigned: sql<string>`COUNT(*) FILTER (WHERE ${LEAD_PARTY_COLUMNS.assignedToId} IS NULL)`,
+          thisMonth: sql<string>`COUNT(*) FILTER (WHERE ${LEAD_PARTY_COLUMNS.createdAt} >= ${thisMonthStart.toISOString()})`,
         })
-        .from(leads)
+        .from(leadPartyMap)
+        .innerJoin(businessParties, LEAD_PARTY_JOIN)
         .where(and(...statsFilters)),
       this.db.select().from(crmOptions).where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, "lead_status"))),
     ]);

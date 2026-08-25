@@ -1,6 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, gte, inArray, isNotNull, isNull, lt, lte, not } from "drizzle-orm";
-import { leads, deals, quotes, crmOptions, crmPipelineStages } from "../../../db/schema";
+import { deals, quotes, crmOptions, crmPipelineStages } from "../../../db/schema";
+import { businessParties, leadPartyMap } from "../../../db/schema/party";
+import { PARTY_OF_LEAD, leadStatus } from "../crm-party-reads";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import type { DataScope } from "../../access/access.types";
@@ -58,22 +60,27 @@ export class CrmInboxAiActionsService {
     const todayString = now.toISOString().slice(0, 10);
     const threeDaysFromNow = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-    const leadScopeFilter = applyScope(scope, orgId, userId, { ownerColumn: leads.assignedToId });
+    const leadScopeFilter = applyScope(scope, orgId, userId, { ownerColumn: businessParties.ownerUserId });
 
     const [hotLeads, slaDeals, expiringQuotes] = await Promise.all([
       this.db
-        .select({ id: leads.id, name: leads.name })
-        .from(leads)
+        .select({ id: leadPartyMap.leadId, name: businessParties.name })
+        .from(leadPartyMap)
+        .innerJoin(businessParties, PARTY_OF_LEAD)
         .where(
           and(
-            eq(leads.orgId, orgId),
-            not(inArray(leads.status, terminalLeadKeys)),
-            isNull(leads.deletedAt),
-            lte(leads.updatedAt, sevenDaysAgo),
+            eq(leadPartyMap.organizationId, orgId),
+            not(inArray(leadStatus, terminalLeadKeys)),
+            isNull(businessParties.deletedAt),
+            // "Nothing has happened to this record in a week" now reads the
+            // party's own stamp. Both tables are written in one transaction, so
+            // they carry the same instant -- and 0241 carried the legacy value
+            // across, so this is not a clock that restarted at the backfill.
+            lte(businessParties.updatedAt, sevenDaysAgo),
             leadScopeFilter,
           ),
         )
-        .orderBy(leads.followUpDate)
+        .orderBy(businessParties.nextFollowUpAt)
         .limit(3),
 
       openStageKeys.length > 0

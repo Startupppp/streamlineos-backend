@@ -20,8 +20,8 @@ function mockRule(overrides: Record<string, unknown>) {
 
 function makeDbWithRules(rules: unknown[], leadCounts: Record<string, number> = {}) {
   return {
-    select: jest.fn().mockImplementation(() => ({
-      from: jest.fn().mockReturnValue({
+    select: jest.fn().mockImplementation(() => {
+      const afterFrom: Record<string, unknown> = {
         where: jest.fn().mockReturnValue({
           orderBy: jest.fn().mockReturnValue({
             limit: jest.fn().mockResolvedValue(rules),
@@ -30,8 +30,12 @@ function makeDbWithRules(rules: unknown[], leadCounts: Record<string, number> = 
             Object.entries(leadCounts).map(([assignedToId, cnt]) => ({ assignedToId, cnt })),
           ),
         }),
-      }),
-    })),
+      };
+      // The lead count reads `business_parties` through `lead_party_map`, so the
+      // chain now has a join in it.
+      afterFrom.innerJoin = jest.fn().mockReturnValue(afterFrom);
+      return { from: jest.fn().mockReturnValue(afterFrom) };
+    }),
   };
 }
 

@@ -2,7 +2,9 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, ne } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { crmValidationRules, leads, contacts } from "../../../db/schema";
+import { crmValidationRules } from "../../../db/schema";
+import { businessParties, contactPartyMap, leadPartyMap } from "../../../db/schema/party";
+import { PARTY_OF_CONTACT, PARTY_OF_LEAD } from "../crm-party-reads";
 
 export interface ValidationContext {
   pipelineId?: string;
@@ -146,19 +148,29 @@ export class CrmValidationService {
 
   private async checkUnique(rule: RuleRow, value: string, existingId?: string): Promise<boolean> {
     if (rule.entityType === "lead") {
-      const fieldCol = rule.field === "email" ? leads.email : rule.field === "phone" ? leads.phone : null;
+      const fieldCol = rule.field === "email" ? businessParties.email : rule.field === "phone" ? businessParties.phone : null;
       if (!fieldCol) return false;
-      const conditions = [eq(leads.orgId, rule.orgId), eq(fieldCol, value)];
-      if (existingId) conditions.push(ne(leads.id, Number(existingId)));
-      const [row] = await this.db.select({ id: leads.id }).from(leads).where(and(...conditions)).limit(1);
+      const conditions = [eq(leadPartyMap.organizationId, rule.orgId), eq(fieldCol, value)];
+      if (existingId) conditions.push(ne(leadPartyMap.leadId, Number(existingId)));
+      const [row] = await this.db
+        .select({ id: leadPartyMap.leadId })
+        .from(leadPartyMap)
+        .innerJoin(businessParties, PARTY_OF_LEAD)
+        .where(and(...conditions))
+        .limit(1);
       return row !== undefined;
     }
     if (rule.entityType === "contact") {
-      const fieldCol = rule.field === "email" ? contacts.email : null;
+      const fieldCol = rule.field === "email" ? businessParties.email : null;
       if (!fieldCol) return false;
-      const conditions = [eq(contacts.orgId, rule.orgId), eq(fieldCol, value)];
-      if (existingId) conditions.push(ne(contacts.id, Number(existingId)));
-      const [row] = await this.db.select({ id: contacts.id }).from(contacts).where(and(...conditions)).limit(1);
+      const conditions = [eq(contactPartyMap.organizationId, rule.orgId), eq(fieldCol, value)];
+      if (existingId) conditions.push(ne(contactPartyMap.contactId, Number(existingId)));
+      const [row] = await this.db
+        .select({ id: contactPartyMap.contactId })
+        .from(contactPartyMap)
+        .innerJoin(businessParties, PARTY_OF_CONTACT)
+        .where(and(...conditions))
+        .limit(1);
       return row !== undefined;
     }
     return false;

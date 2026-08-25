@@ -1,12 +1,17 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, and, inArray, isNull, notInArray, sql, lte, isNotNull } from "drizzle-orm";
+import { eq, and, asc, inArray, isNull, notInArray, sql, lte, isNotNull } from "drizzle-orm";
 import { AccessService } from "../access/access.service";
 import {
-  leads,
   leadActivities,
   users,
   crmOptions,
 } from "../../db/schema";
+import { businessParties, leadPartyMap } from "../../db/schema/party";
+import {
+  LEAD_PARTY_COLUMNS,
+  LEAD_PARTY_JOIN,
+  leadPartyScope,
+} from "./lead-party-reader";
 import { resolveLeadStatusSemantics } from "./lead-status-semantics";
 import { type Db } from "../../db/drizzle.module";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -42,7 +47,7 @@ export class LeadsReportsTeamService {
 
         const convertedExpr =
           convertedKeysArr.length > 0
-            ? sql`${leads.status} = ANY(ARRAY[${sql.join(
+            ? sql`${LEAD_PARTY_COLUMNS.status} = ANY(ARRAY[${sql.join(
                 convertedKeysArr.map((k) => sql`${k}`),
                 sql`, `,
               )}])`
@@ -51,20 +56,17 @@ export class LeadsReportsTeamService {
         const [leadAggs, activityAggs] = await Promise.all([
           this.db
             .select({
-              assignedToId: leads.assignedToId,
+              assignedToId: LEAD_PARTY_COLUMNS.assignedToId,
               leadsAssigned: sql<number>`COUNT(*)::int`,
               leadsConverted: sql<number>`COUNT(*) FILTER (WHERE ${convertedExpr})::int`,
-              totalRevenue: sql<number>`COALESCE(SUM(${leads.potentialValue}::numeric) FILTER (WHERE ${convertedExpr}), 0)::float`,
+              totalRevenue: sql<number>`COALESCE(SUM(${LEAD_PARTY_COLUMNS.potentialValue}::numeric) FILTER (WHERE ${convertedExpr}), 0)::float`,
             })
-            .from(leads)
+            .from(leadPartyMap)
+            .innerJoin(businessParties, LEAD_PARTY_JOIN)
             .where(
-              and(
-                eq(leads.orgId, orgId),
-                isNull(leads.deletedAt),
-                isNotNull(leads.assignedToId),
-              ),
+              and(...leadPartyScope(orgId), isNotNull(LEAD_PARTY_COLUMNS.assignedToId)),
             )
-            .groupBy(leads.assignedToId),
+            .groupBy(LEAD_PARTY_COLUMNS.assignedToId),
           this.db
             .select({
               userId: leadActivities.userId,
@@ -187,19 +189,19 @@ export class LeadsReportsTeamService {
           terminalKeys.length > 0
             ? await this.db
                 .select({
-                  assignedToId: leads.assignedToId,
+                  assignedToId: LEAD_PARTY_COLUMNS.assignedToId,
                   cnt: sql<number>`COUNT(*)::int`,
                 })
-                .from(leads)
+                .from(leadPartyMap)
+                .innerJoin(businessParties, LEAD_PARTY_JOIN)
                 .where(
                   and(
-                    eq(leads.orgId, orgId),
-                    isNull(leads.deletedAt),
-                    notInArray(leads.status, terminalKeys),
-                    isNotNull(leads.assignedToId),
+                    ...leadPartyScope(orgId),
+                    notInArray(LEAD_PARTY_COLUMNS.status, terminalKeys),
+                    isNotNull(LEAD_PARTY_COLUMNS.assignedToId),
                   ),
                 )
-                .groupBy(leads.assignedToId)
+                .groupBy(LEAD_PARTY_COLUMNS.assignedToId)
             : [];
 
         const countMap = new Map<string, number>();
@@ -234,29 +236,33 @@ export class LeadsReportsTeamService {
     const semantics = resolveLeadStatusSemantics(statusOptions);
 
     const slaFilters = [
-      eq(leads.orgId, orgId),
-      isNull(leads.deletedAt),
-      inArray(leads.status, semantics.slaOpenKeys),
-      lte(leads.updatedAt, twentyFourHoursAgo),
+      ...leadPartyScope(orgId),
+      inArray(LEAD_PARTY_COLUMNS.status, semantics.slaOpenKeys),
+      lte(LEAD_PARTY_COLUMNS.updatedAt, twentyFourHoursAgo),
     ];
     if (opts.ownScope && opts.userId) {
-      slaFilters.push(eq(leads.assignedToId, opts.userId));
+      slaFilters.push(eq(LEAD_PARTY_COLUMNS.assignedToId, opts.userId));
     }
 
-    const slaLeads = await this.db.query.leads.findMany({
-      where: and(...slaFilters),
-      columns: {
-        id: true,
-        name: true,
-        status: true,
-        priority: true,
-        updatedAt: true,
-        createdAt: true,
-        assignedToId: true,
-      },
-      with: { assignedTo: { columns: { id: true, name: true } } },
-      limit: 100,
-    });
+    const slaLeads = await this.db
+      .select({
+        id: LEAD_PARTY_COLUMNS.id,
+        name: LEAD_PARTY_COLUMNS.name,
+        status: LEAD_PARTY_COLUMNS.status,
+        priority: LEAD_PARTY_COLUMNS.priority,
+        updatedAt: LEAD_PARTY_COLUMNS.updatedAt,
+        createdAt: LEAD_PARTY_COLUMNS.createdAt,
+        assigneeName: users.name,
+      })
+      .from(leadPartyMap)
+      .innerJoin(businessParties, LEAD_PARTY_JOIN)
+      .leftJoin(users, eq(LEAD_PARTY_COLUMNS.assignedToId, users.id))
+      .where(and(...slaFilters))
+      // Oldest first, where the query this replaces had no order at all: with a
+      // cap of 100 and no ORDER BY, an org with more breaches than that showed an
+      // arbitrary hundred of them and called the worst ones missing.
+      .orderBy(asc(LEAD_PARTY_COLUMNS.updatedAt), asc(LEAD_PARTY_COLUMNS.id))
+      .limit(100);
 
     const slaBreached = slaLeads.map((lead) => {
       const updatedAt = lead.updatedAt
@@ -271,7 +277,7 @@ export class LeadsReportsTeamService {
         leadId: lead.id,
         leadName: lead.name,
         status: lead.status,
-        assignedTo: lead.assignedTo?.name ?? null,
+        assignedTo: lead.assigneeName ?? null,
         hoursSinceUpdate: hoursSince,
         priority: lead.priority,
       };

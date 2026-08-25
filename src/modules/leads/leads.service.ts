@@ -1,7 +1,6 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { eq, and, inArray, isNull } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import {
-  leads,
   notifications,
   organizationMembers,
   users,
@@ -21,6 +20,7 @@ import { TerritoryMatchService } from "../crm/core/territory-match.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import type { BoardOpts, StatsFilters } from "./leads-board.service";
 import { LeadsReadService, type ListFilters } from "./leads-read.service";
+import { loadLeadView } from "./lead-party-reader";
 import {
   evaluateAssignmentRules,
   recalculateLeadScore,
@@ -246,9 +246,7 @@ export class LeadsService {
   }
 
   async update(orgId: string, userId: string, id: number, input: UpdateInput) {
-    const existing = await this.db.query.leads.findFirst({
-      where: and(eq(leads.id, id), eq(leads.orgId, orgId), isNull(leads.deletedAt)),
-    });
+    const existing = await loadLeadView(this.db, orgId, id);
     if (!existing) return null;
 
     const record: Record<string, unknown> = {

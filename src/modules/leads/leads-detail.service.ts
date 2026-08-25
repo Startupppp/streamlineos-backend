@@ -1,7 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, and, desc, inArray, isNull } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import {
-  leads,
   leadActivities,
   leadNotes,
   leadTasks,
@@ -24,8 +23,8 @@ import type {
   VerifyInput,
 } from "./dto/lead-mutations.schemas";
 import { updateMirroredLeads } from "../party/party-legacy-leads";
-
-type LeadRow = typeof leads.$inferSelect;
+import type { LeadInsert, LeadRow } from "../party/party-legacy-writer";
+import { loadLeadView, loadLeadViews } from "./lead-party-reader";
 
 export type MergeLoserResult =
   | { ok: true }
@@ -116,10 +115,10 @@ export class LeadsDetailService {
   }
 
   async getScoreExplanation(orgId: string, leadId: number) {
-    const [lead] = await this.db
-      .select()
-      .from(leads)
-      .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId), isNull(leads.deletedAt)));
+    // The whole row, in `leads`' vocabulary: a scoring rule stores the field name
+    // a tenant picked (`score`, `city`, `status`), and the rule loop below looks
+    // it up by that name.
+    const lead = await loadLeadView(this.db, orgId, leadId);
 
     if (!lead) return null;
 
@@ -200,11 +199,7 @@ export class LeadsDetailService {
   }
 
   async updateCustomData(orgId: string, leadId: number, input: CustomDataInput) {
-    const [existing] = await this.db
-      .select({ id: leads.id })
-      .from(leads)
-      .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId), isNull(leads.deletedAt)))
-      .limit(1);
+    const existing = await loadLeadView(this.db, orgId, leadId);
 
     if (!existing) return null;
 
@@ -217,7 +212,7 @@ export class LeadsDetailService {
   }
 
   async verify(orgId: string, userId: string, leadId: number, input: VerifyInput) {
-    const updateData: Partial<typeof leads.$inferInsert> = {
+    const updateData: Partial<LeadInsert> = {
       verifiedById: userId,
       updatedAt: new Date(),
     };
@@ -337,19 +332,14 @@ export class LeadsDetailService {
       return { ok: false, reason: "self" };
     }
 
-    const [keepLead] = await this.db
-      .select({ id: leads.id })
-      .from(leads)
-      .where(and(eq(leads.id, keepLeadId), eq(leads.orgId, orgId), isNull(leads.deletedAt)));
+    // Both in one read: two round trips answered one question, and the answer
+    // for the second was only ever used to reject the whole request.
+    const live = new Set(
+      (await loadLeadViews(this.db, orgId, [keepLeadId, mergeLeadId])).map((lead) => lead.id),
+    );
 
-    if (!keepLead) return { ok: false, reason: "keep_not_found" };
-
-    const [mergeLead] = await this.db
-      .select({ id: leads.id })
-      .from(leads)
-      .where(and(eq(leads.id, mergeLeadId), eq(leads.orgId, orgId), isNull(leads.deletedAt)));
-
-    if (!mergeLead) return { ok: false, reason: "merge_not_found" };
+    if (!live.has(keepLeadId)) return { ok: false, reason: "keep_not_found" };
+    if (!live.has(mergeLeadId)) return { ok: false, reason: "merge_not_found" };
 
     await updateMirroredLeads(this.db, orgId, [mergeLeadId], {
       status: "LOST",

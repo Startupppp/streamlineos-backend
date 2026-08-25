@@ -4,6 +4,19 @@ import { LeadsBoardService } from "../leads-board.service";
 import * as applyScopeMod from "../../access/apply-scope";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
 
+/**
+ * Leads are read from `lead_party_map` joined to `business_parties` now, so every
+ * builder below starts `.from(...).innerJoin(...)`. The join returns the same
+ * step object, which keeps these mocks about what they were always about — which
+ * scope reaches `applyScope` — rather than about the shape of the query.
+ */
+function withJoins<T extends object>(step: T): T {
+  return Object.assign(step, {
+    innerJoin: jest.fn().mockImplementation(() => step),
+    leftJoin: jest.fn().mockImplementation(() => step),
+  });
+}
+
 function buildDb() {
   const leadsRow = Object.assign(Promise.resolve([]), {
     orderBy: jest.fn().mockReturnValue({
@@ -16,14 +29,16 @@ function buildDb() {
   let callN = 0;
   return {
     select: jest.fn().mockReturnValue({
-      from: jest.fn().mockReturnValue({
-        where: jest.fn().mockImplementation(() => {
-          return callN++ % 2 === 0 ? leadsRow : countRow;
+      from: jest.fn().mockReturnValue(
+        withJoins({
+          where: jest.fn().mockImplementation(() => {
+            return callN++ % 2 === 0 ? leadsRow : countRow;
+          }),
+          orderBy: jest.fn().mockReturnValue({
+            limit: jest.fn().mockResolvedValue([]),
+          }),
         }),
-        orderBy: jest.fn().mockReturnValue({
-          limit: jest.fn().mockResolvedValue([]),
-        }),
-      }),
+      ),
     }),
   };
 }
@@ -99,7 +114,7 @@ describe("LeadsBoardService.getBoard — DataScope routing (no branch filter)", 
     expect(applyScopeSpy).not.toHaveBeenCalled();
   });
 
-  it("does not call applyScope when scope=none (pushLeadsViewScope short-circuits to sql false)", async () => {
+  it("does not call applyScope when scope=none (pushLeadPartyViewScope short-circuits to sql false)", async () => {
     const db = buildDb();
     const cache = buildCache(["NEW"]);
     const svc = new LeadsBoardService(db as never, cache as never);
@@ -135,9 +150,9 @@ describe("LeadsBoardService.getStats — DataScope routing (no branch filter)", 
     });
     return {
       select: jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({
-          where: jest.fn().mockReturnValue(whereResult),
-        }),
+        from: jest
+          .fn()
+          .mockReturnValue(withJoins({ where: jest.fn().mockReturnValue(whereResult) })),
       }),
     };
   }

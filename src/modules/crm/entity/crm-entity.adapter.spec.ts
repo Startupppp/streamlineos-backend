@@ -9,11 +9,22 @@ const ACTOR: EntityActor = {
   isOrgOwner: false,
 };
 
-function makeAdapter(keys: string[], rows: Record<string, unknown>[] = []) {
+/**
+ * The client read reaches `business_parties` through `client_party_map`, so the
+ * chain now carries a join; the deal read still does not.
+ */
+function makeSelect(rows: Record<string, unknown>[]) {
   const limit = jest.fn(async () => rows);
-  const where = jest.fn(() => ({ limit }));
-  const from = jest.fn(() => ({ where }));
-  const select = jest.fn(() => ({ from }));
+  const afterFrom: { where: jest.Mock; innerJoin: jest.Mock } = {
+    where: jest.fn(() => ({ limit })),
+    innerJoin: jest.fn(() => afterFrom),
+  };
+  const from = jest.fn(() => afterFrom);
+  return { select: jest.fn(() => ({ from })) };
+}
+
+function makeAdapter(keys: string[], rows: Record<string, unknown>[] = []) {
+  const { select } = makeSelect(rows);
   const db = { select } as unknown as Db;
   const access = {
     resolveUserPermissions: jest.fn(
@@ -27,10 +38,7 @@ function makeAdapterScoped(
   entries: ReadonlyArray<[string, DataScope]>,
   rows: Record<string, unknown>[] = [],
 ) {
-  const limit = jest.fn(async () => rows);
-  const where = jest.fn(() => ({ limit }));
-  const from = jest.fn(() => ({ where }));
-  const select = jest.fn(() => ({ from }));
+  const { select } = makeSelect(rows);
   const db = { select } as unknown as Db;
   const access = {
     resolveUserPermissions: jest.fn(
