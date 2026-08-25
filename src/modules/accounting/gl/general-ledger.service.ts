@@ -54,13 +54,6 @@ export class GeneralLedgerService {
     if (projectId !== undefined) rangeConds.push(eq(journalLines.projectId, projectId));
     if (departmentId !== undefined) rangeConds.push(eq(journalLines.departmentId, departmentId));
 
-    const totalRows = await this.db
-      .select({ c: count() })
-      .from(journalLines)
-      .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
-      .where(and(...rangeConds));
-
-    const total = Number(totalRows[0]?.c ?? 0);
     const { offset, limit } = paginateOffset({ page, pageSize });
 
     let priorPageBalance = openingBalance;
@@ -115,6 +108,7 @@ export class GeneralLedgerService {
         vendorId: journalLines.vendorId,
         projectId: journalLines.projectId,
         departmentId: journalLines.departmentId,
+        total: sql<string>`count(*) OVER ()`,
       })
       .from(journalLines)
       .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
@@ -124,12 +118,27 @@ export class GeneralLedgerService {
       .offset(offset)
       .limit(limit);
 
+    let total: number;
+    if (rows[0]) {
+      total = Number(rows[0].total);
+    } else if (offset === 0) {
+      total = 0;
+    } else {
+      const fallback = await this.db
+        .select({ c: count() })
+        .from(journalLines)
+        .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
+        .where(and(...rangeConds));
+      total = Number(fallback[0]?.c ?? 0);
+    }
+
     let runningBalance = priorPageBalance;
     const items = rows.map((row) => {
-      const debit = parseDecimal(row.debit);
-      const credit = parseDecimal(row.credit);
+      const { total: _total, ...rest } = row;
+      const debit = parseDecimal(rest.debit);
+      const credit = parseDecimal(rest.credit);
       runningBalance = runningBalance + debit - credit;
-      return { ...row, debit, credit, runningBalance };
+      return { ...rest, debit, credit, runningBalance };
     });
 
     const allRangeRows = await this.db

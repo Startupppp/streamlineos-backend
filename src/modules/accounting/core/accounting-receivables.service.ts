@@ -81,6 +81,7 @@ export class AccountingReceivablesService {
         gstin: clients.gstin,
         invoiceCount: invoiceCountExpr,
         outstanding: outstandingExpr,
+        total: sql<string>`count(*) OVER ()`,
       })
       .from(clients)
       .leftJoin(invoices, and(eq(invoices.clientId, clients.id), eq(invoices.orgId, orgId)))
@@ -103,20 +104,29 @@ export class AccountingReceivablesService {
       outstanding: Number(r.outstanding ?? 0).toFixed(2),
     }));
 
-    const totalRows = onlyOutstanding
-      ? await this.db.select({ c: count() }).from(
-          this.db
-            .select({ id: clients.id })
-            .from(clients)
-            .leftJoin(invoices, and(eq(invoices.clientId, clients.id), eq(invoices.orgId, orgId)))
-            .where(and(...conds))
-            .groupBy(clients.id)
-            .having(gt(outstandingExpr, "0"))
-            .as("filtered_clients"),
-        )
-      : await this.db.select({ c: count() }).from(clients).where(and(...conds));
+    let totalCount: number;
+    if (rows[0]) {
+      totalCount = Number(rows[0].total);
+    } else if (offset === 0) {
+      totalCount = 0;
+    } else if (!onlyOutstanding) {
+      const fallback = await this.db.select({ c: count() }).from(clients).where(and(...conds));
+      totalCount = Number(fallback[0]?.c ?? 0);
+    } else {
+      const fallback = await this.db.select({ c: count() }).from(
+        this.db
+          .select({ id: clients.id })
+          .from(clients)
+          .leftJoin(invoices, and(eq(invoices.clientId, clients.id), eq(invoices.orgId, orgId)))
+          .where(and(...conds))
+          .groupBy(clients.id)
+          .having(gt(outstandingExpr, "0"))
+          .as("g"),
+      );
+      totalCount = Number(fallback[0]?.c ?? 0);
+    }
 
-    return buildListResponse(items, Number(totalRows[0]?.c ?? 0), { page, pageSize });
+    return buildListResponse(items, totalCount, { page, pageSize });
   }
 
   async customerLedger(orgId: string, clientId: number, query: ListCustomerLedgerQuery): Promise<CustomerLedger> {

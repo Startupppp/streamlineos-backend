@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, count, desc, eq, gte, ilike, isNull, lte } from "drizzle-orm";
+import { and, asc, count, desc, eq, getTableColumns, gte, ilike, isNull, lte, sql } from "drizzle-orm";
 import { ledgerAccounts, journalEntries, journalLines, finApprovalPolicies, finApprovalRequests, users } from "../../../db/schema";
 import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
@@ -68,17 +68,26 @@ export class AccountingLedgerService {
 
     const where = and(...conds);
     const { offset, limit } = paginateOffset({ page, pageSize });
-    const [items, totalRows] = await Promise.all([
-      this.db
-        .select()
-        .from(ledgerAccounts)
-        .where(where)
-        .orderBy(asc(ledgerAccounts.code))
-        .offset(offset)
-        .limit(limit),
-      this.db.select({ c: count() }).from(ledgerAccounts).where(where),
-    ]);
-    return buildListResponse(items, Number(totalRows[0]?.c ?? 0), { page, pageSize });
+    const rows = await this.db
+      .select({ ...getTableColumns(ledgerAccounts), total: sql<string>`count(*) OVER ()` })
+      .from(ledgerAccounts)
+      .where(where)
+      .orderBy(asc(ledgerAccounts.code))
+      .offset(offset)
+      .limit(limit);
+
+    let totalCount: number;
+    if (rows[0]) {
+      totalCount = Number(rows[0].total);
+    } else if (offset === 0) {
+      totalCount = 0;
+    } else {
+      const fallback = await this.db.select({ c: count() }).from(ledgerAccounts).where(where);
+      totalCount = Number(fallback[0]?.c ?? 0);
+    }
+
+    const items = rows.map(({ total: _total, ...rest }) => rest);
+    return buildListResponse(items, totalCount, { page, pageSize });
   }
 
   async createAccount(orgId: string, input: CreateAccountInput) {
@@ -119,17 +128,26 @@ export class AccountingLedgerService {
 
     const where = and(...conds);
     const { offset, limit } = paginateOffset({ page, pageSize });
-    const [items, totalRows] = await Promise.all([
-      this.db
-        .select()
-        .from(journalEntries)
-        .where(where)
-        .orderBy(desc(journalEntries.entryDate), asc(journalEntries.id))
-        .offset(offset)
-        .limit(limit),
-      this.db.select({ c: count() }).from(journalEntries).where(where),
-    ]);
-    return buildListResponse(items, Number(totalRows[0]?.c ?? 0), { page, pageSize });
+    const rows = await this.db
+      .select({ ...getTableColumns(journalEntries), total: sql<string>`count(*) OVER ()` })
+      .from(journalEntries)
+      .where(where)
+      .orderBy(desc(journalEntries.entryDate), asc(journalEntries.id))
+      .offset(offset)
+      .limit(limit);
+
+    let totalCount: number;
+    if (rows[0]) {
+      totalCount = Number(rows[0].total);
+    } else if (offset === 0) {
+      totalCount = 0;
+    } else {
+      const fallback = await this.db.select({ c: count() }).from(journalEntries).where(where);
+      totalCount = Number(fallback[0]?.c ?? 0);
+    }
+
+    const items = rows.map(({ total: _total, ...rest }) => rest);
+    return buildListResponse(items, totalCount, { page, pageSize });
   }
 
   async createJournalEntry(orgId: string, userId: string, input: CreateJournalEntryInput) {

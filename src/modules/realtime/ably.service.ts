@@ -83,7 +83,15 @@ export class AblyService {
     await this.rest()
       .channels.get(this.channelName(orgId, channelId))
       .publish(event, data)
-      .catch(() => undefined);
+      .catch((error: unknown) => {
+        this.logger.error("ably: publishChatEvent failed", {
+          orgId,
+          channelId,
+          event,
+          error: error instanceof Error ? error.message : String(error),
+          cause: error instanceof Error && error.cause instanceof Error ? error.cause.message : undefined,
+        });
+      });
   }
 
   async publishHuddleEvent(
@@ -96,7 +104,15 @@ export class AblyService {
     await this.rest()
       .channels.get(`huddle:${orgId}:${channelId}`)
       .publish(event, data)
-      .catch(() => undefined);
+      .catch((error: unknown) => {
+        this.logger.error("ably: publishHuddleEvent failed", {
+          orgId,
+          channelId,
+          event,
+          error: error instanceof Error ? error.message : String(error),
+          cause: error instanceof Error && error.cause instanceof Error ? error.cause.message : undefined,
+        });
+      });
   }
 
   async publishHuddleSignal(
@@ -109,7 +125,15 @@ export class AblyService {
     await this.rest()
       .channels.get(`huddle-signal:${orgId}:${channelId}:${targetUserId}`)
       .publish("signal", data)
-      .catch(() => undefined);
+      .catch((error: unknown) => {
+        this.logger.error("ably: publishHuddleSignal failed", {
+          orgId,
+          channelId,
+          targetUserId,
+          error: error instanceof Error ? error.message : String(error),
+          cause: error instanceof Error && error.cause instanceof Error ? error.cause.message : undefined,
+        });
+      });
   }
 
   async publishToUser(
@@ -183,7 +207,15 @@ export class AblyService {
     await this.rest()
       .channels.get(this.supportChannelName(orgId, ticketId))
       .publish(event, data)
-      .catch(() => undefined);
+      .catch((error: unknown) => {
+        this.logger.error("ably: publishSupportTicketEvent failed", {
+          orgId,
+          ticketId,
+          event,
+          error: error instanceof Error ? error.message : String(error),
+          cause: error instanceof Error && error.cause instanceof Error ? error.cause.message : undefined,
+        });
+      });
   }
 
   private rest(): Ably.Rest {

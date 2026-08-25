@@ -332,7 +332,7 @@ export class ChatMessagesService {
       content: content.trim(),
       isEdited: true,
       updatedAt: updatedAt.toISOString(),
-    }).catch(() => undefined);
+    });
 
     return { ok: true };
   }
@@ -358,7 +358,7 @@ export class ChatMessagesService {
     void this.ably.publishChatEvent(orgId, message.channelId, "message:deleted", {
       id: messageId,
       channelId: message.channelId,
-    }).catch(() => undefined);
+    });
 
     return { ok: true };
   }
@@ -514,7 +514,15 @@ export class ChatMessagesService {
         messageType: "system",
         attachments: [],
       })
-      .catch(() => undefined);
+      .catch((error: unknown) => {
+        logger.error("ably: publishChatMessage (system message) failed", {
+          orgId,
+          channelId,
+          messageId: message.id,
+          error: error instanceof Error ? error.message : String(error),
+          cause: error instanceof Error && error.cause instanceof Error ? error.cause.message : undefined,
+        });
+      });
   }
 
   async react(channelId: number, messageId: number, userId: string, orgId: string, emoji: string) {
@@ -553,7 +561,7 @@ export class ChatMessagesService {
       messageId,
       channelId,
       reactions: updated,
-    }).catch(() => undefined);
+    });
 
     return { reactions: updated };
   }

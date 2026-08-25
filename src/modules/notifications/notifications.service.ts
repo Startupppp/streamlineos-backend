@@ -10,6 +10,7 @@ import type {
 import { NotificationEventService } from "./notification-event.service";
 import { WebPushService } from "../realtime/web-push.service";
 import { NotificationsReadService } from "./notifications-read.service";
+import { logger } from "../../common/logger/logger.service";
 import { NotificationsLifecycleService } from "./notifications-lifecycle.service";
 import { isNotificationCategory } from "./notifications.types";
 import type {
@@ -118,7 +119,13 @@ export class NotificationsService {
         category: isNotificationCategory(input.category) ? input.category : undefined,
         url: input.link ?? "/notifications",
       })
-      .catch(() => undefined);
+      .catch((err: unknown) => {
+        logger.warn("web push delivery failed", {
+          userId: input.userId,
+          notificationId: input.id,
+          cause: err instanceof Error ? (err.cause ?? err.message) : String(err),
+        });
+      });
   }
 
   list(orgId: string, userId: string, filters: ListInput) {

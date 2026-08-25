@@ -1,4 +1,4 @@
-import { Body, Controller, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Logger, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -37,6 +37,8 @@ import type {
 @Controller("chat/entity-actions")
 @UseGuards(JwtAuthGuard)
 export class ChatEntityActionsController {
+  private readonly logger = new Logger(ChatEntityActionsController.name);
+
   constructor(
     private readonly entities: EntityReferenceService,
     private readonly members: ChatChannelMembersService,
@@ -111,6 +113,13 @@ export class ChatEntityActionsController {
       .sendSystemMessage(channelId, u.userId, u.orgId, result.message, {
         entities: [reference],
       })
-      .catch(() => undefined);
+      .catch((error: unknown) => {
+        this.logger.warn("chat: entity action announcement failed", {
+          orgId: u.orgId,
+          channelId,
+          error: error instanceof Error ? error.message : String(error),
+          cause: error instanceof Error && error.cause instanceof Error ? error.cause.message : undefined,
+        });
+      });
   }
 }

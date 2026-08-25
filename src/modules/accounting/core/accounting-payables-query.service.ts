@@ -90,18 +90,27 @@ export class AccountingPayablesQueryService {
 
     const where = and(...conds);
     const { offset, limit } = paginateOffset({ page, pageSize });
-    const [items, totalRows] = await Promise.all([
-      this.db
-        .select(BILL_COLUMNS)
-        .from(purchaseBills)
-        .leftJoin(clients, eq(clients.id, purchaseBills.vendorId))
-        .where(where)
-        .orderBy(desc(purchaseBills.billDate), asc(purchaseBills.id))
-        .offset(offset)
-        .limit(limit),
-      this.db.select({ c: count() }).from(purchaseBills).where(where),
-    ]);
-    return buildListResponse(items, Number(totalRows[0]?.c ?? 0), { page, pageSize });
+    const rows = await this.db
+      .select({ ...BILL_COLUMNS, total: sql<string>`count(*) OVER ()` })
+      .from(purchaseBills)
+      .leftJoin(clients, eq(clients.id, purchaseBills.vendorId))
+      .where(where)
+      .orderBy(desc(purchaseBills.billDate), asc(purchaseBills.id))
+      .offset(offset)
+      .limit(limit);
+
+    let totalCount: number;
+    if (rows[0]) {
+      totalCount = Number(rows[0].total);
+    } else if (offset === 0) {
+      totalCount = 0;
+    } else {
+      const fallback = await this.db.select({ c: count() }).from(purchaseBills).where(where);
+      totalCount = Number(fallback[0]?.c ?? 0);
+    }
+
+    const items = rows.map(({ total: _total, ...rest }) => rest);
+    return buildListResponse(items, totalCount, { page, pageSize });
   }
 
   async getPurchaseBill(orgId: string, billId: number) {
@@ -161,6 +170,7 @@ export class AccountingPayablesQueryService {
         billCount: sql<number>`COUNT(${purchaseBills.id}) FILTER (WHERE ${billStatusIn})::int`,
         totalBilled: totalBilledExpr,
         totalPaid: totalPaidExpr,
+        total: sql<string>`count(*) OVER ()`,
       })
       .from(clients)
       .leftJoin(purchaseBills, and(eq(purchaseBills.vendorId, clients.id), eq(purchaseBills.orgId, orgId)))
@@ -169,21 +179,7 @@ export class AccountingPayablesQueryService {
       .$dynamic();
     if (onlyOutstanding) listQuery = listQuery.having(gt(outstandingExpr, "0"));
 
-    const [rows, totalRows] = await Promise.all([
-      listQuery.offset(offset).limit(limit),
-      onlyOutstanding
-        ? this.db.select({ c: count() }).from(
-            this.db
-              .select({ id: clients.id })
-              .from(clients)
-              .leftJoin(purchaseBills, and(eq(purchaseBills.vendorId, clients.id), eq(purchaseBills.orgId, orgId)))
-              .where(where)
-              .groupBy(clients.id)
-              .having(gt(outstandingExpr, "0"))
-              .as("filtered_vendors"),
-          )
-        : this.db.select({ c: count() }).from(clients).where(where),
-    ]);
+    const rows = await listQuery.offset(offset).limit(limit);
 
     const items = rows.map((r) => ({
       vendorId: r.vendorId,
@@ -194,7 +190,29 @@ export class AccountingPayablesQueryService {
       outstanding: (Number(r.totalBilled ?? 0) - Number(r.totalPaid ?? 0)).toFixed(2),
     }));
 
-    return buildListResponse(items, Number(totalRows[0]?.c ?? 0), { page, pageSize });
+    let totalCount: number;
+    if (rows[0]) {
+      totalCount = Number(rows[0].total);
+    } else if (offset === 0) {
+      totalCount = 0;
+    } else if (!onlyOutstanding) {
+      const fallback = await this.db.select({ c: count() }).from(clients).where(where);
+      totalCount = Number(fallback[0]?.c ?? 0);
+    } else {
+      const fallback = await this.db.select({ c: count() }).from(
+        this.db
+          .select({ id: clients.id })
+          .from(clients)
+          .leftJoin(purchaseBills, and(eq(purchaseBills.vendorId, clients.id), eq(purchaseBills.orgId, orgId)))
+          .where(where)
+          .groupBy(clients.id)
+          .having(gt(outstandingExpr, "0"))
+          .as("g"),
+      );
+      totalCount = Number(fallback[0]?.c ?? 0);
+    }
+
+    return buildListResponse(items, totalCount, { page, pageSize });
   }
 
   async vendorLedger(orgId: string, vendorId: number) {
