@@ -188,16 +188,19 @@ describe("NotificationDispatchService durability", () => {
     expect(updatedValues).toContainEqual(expect.objectContaining({ state: "PROCESSED" }));
   });
 
-  it("leaves a failed drain PENDING for the relay instead of losing the notification", async () => {
+  /**
+   * The drain must not swallow. The intent is already committed, so surfacing the
+   * failure costs nothing and is the difference between a visible retry and the silent
+   * outage this pipeline has had before: the interceptor logs a rejected hook at error
+   * and routes it through reportError.
+   */
+  it("surfaces a failed drain and leaves the intent PENDING for the relay", async () => {
     const afterCommit: AfterCommitHook[] = [];
-    const { logger } = svc as unknown as { logger: { warn: (message: string) => void } };
-    const logged = jest.spyOn(logger, "warn").mockImplementation(() => undefined);
     resolveDefinition.mockRejectedValue(new Error("42501 no tenant context"));
 
     await inRequestTransaction(afterCommit, () => svc.emit(input));
-    await expect(afterCommit[0]?.()).resolves.not.toThrow();
 
-    expect(logged).toHaveBeenCalledWith(expect.stringContaining("42501"));
+    await expect(afterCommit[0]?.()).rejects.toThrow("42501");
     // Never marked PROCESSED — the relay must still find it.
     expect(updatedValues).not.toContainEqual(expect.objectContaining({ state: "PROCESSED" }));
   });

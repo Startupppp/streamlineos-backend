@@ -1,4 +1,4 @@
-import { Inject, Injectable, BadRequestException, Logger } from "@nestjs/common";
+import { Inject, Injectable, BadRequestException } from "@nestjs/common";
 import { randomUUID } from "crypto";
 import { inArray, eq, and } from "drizzle-orm";
 import { notifications, notificationDeliveries, notificationQueue, notificationOutbox, notificationPreferences, notificationTemplates, userPreferences, users } from "../../db/schema";
@@ -53,8 +53,6 @@ export interface DispatchResult {
 
 @Injectable()
 export class NotificationDispatchService {
-  private readonly logger = new Logger(NotificationDispatchService.name);
-
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly registry: NotificationEventRegistryService,
@@ -73,8 +71,9 @@ export class NotificationDispatchService {
    *
    * With an ambient tenant transaction it writes the intent and drains it the moment
    * that transaction commits — durable, and no slower than the fire-and-forget hook it
-   * replaces. If the drain never runs or fails, the row is still PENDING and
-   * `NotificationOutboxRelayService` retries it.
+   * replaces. The drain deliberately does not catch: the intent is already committed, so
+   * a throw leaves the row PENDING for `NotificationOutboxRelayService` and reaches the
+   * interceptor's reportError, where a systematically failing drain stays visible.
    *
    * With no ambient transaction (a background sweep iterating organisations, or a
    * bootstrap path) there is nothing to be atomic with, so it dispatches synchronously
@@ -85,7 +84,12 @@ export class NotificationDispatchService {
     if (!ambient || ambient.orgId !== input.orgId) return this.emitNow(input);
 
     const dedupeKey = await this.writeIntent(ambient.tx, input);
-    registerAfterCommit(() => this.drainIntent(input, dedupeKey));
+    registerAfterCommit(async () => {
+      // Carries the computed key so that if the mark below fails and the relay replays
+      // this same row, the delivery keys match and the second attempt dedupes.
+      await this.emitNow({ ...input, dedupeKey });
+      await this.markIntentProcessed(input.orgId, dedupeKey);
+    });
 
     return {
       eventKey: input.eventKey,
@@ -95,23 +99,6 @@ export class NotificationDispatchService {
       deduped: 0,
       deferred: true,
     };
-  }
-
-  /**
-   * Runs the committed intent immediately so delivery latency is unchanged, then marks
-   * the row done. Failure is logged rather than rethrown — safe only because the row is
-   * already durable, so this is a retry rather than the loss it used to be. Nothing
-   * downstream can double-send: `notification_deliveries.idempotency_key` is unique.
-   */
-  private async drainIntent(input: DispatchEventInput, dedupeKey: string): Promise<void> {
-    try {
-      await this.emitNow(input);
-      await this.markIntentProcessed(input.orgId, dedupeKey);
-    } catch (error: unknown) {
-      this.logger.warn(
-        `immediate drain failed for ${input.eventKey} in org ${input.orgId}; the intent stays PENDING for the relay: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
-      );
-    }
   }
 
   private async writeIntent(tx: DbOrTx, input: DispatchEventInput): Promise<string> {
@@ -337,9 +324,18 @@ export class NotificationDispatchService {
     return row ? 1 : 0;
   }
 
+  /**
+   * `dedupeKey` identifies one emission, so a redelivery of that same emission lands on
+   * the same key and is refused by the unique index. Without it, an event that opts out
+   * of the time window (`dedupeWindowSeconds: 0` — mentions, DMs, chat, where repeats are
+   * legitimate) falls back to a fresh uuid and has no dedupe at all, so a relay replay
+   * after a half-finished drain would deliver a second copy.
+   */
   private buildIdempotencyKey(input: DispatchEventInput, userId: string, channel: NotificationChannel, dedupeWindowSeconds: number): string {
     const entity = `${input.entityType ?? ""}:${input.entityId ?? ""}`;
-    const bucket = dedupeWindowSeconds > 0 ? Math.floor(Date.now() / (dedupeWindowSeconds * 1000)).toString() : randomUUID();
+    const windowBucket =
+      dedupeWindowSeconds > 0 ? Math.floor(Date.now() / (dedupeWindowSeconds * 1000)).toString() : randomUUID();
+    const bucket = input.dedupeKey ?? windowBucket;
     return `org:${input.orgId}:event:${input.eventKey}:user:${userId}:entity:${entity}:channel:${channel}:dedupe:${bucket}`;
   }
 

@@ -23,9 +23,12 @@ export interface OutboxRelayResult {
  * PIPE-001. Drains `notification_outbox` into the existing dispatch pipeline.
  *
  * At-least-once by construction: a row is leased, processed, then marked. If the
- * process dies mid-flight the lease expires and another pass reclaims it. Everything
- * downstream is already idempotent — `notification_deliveries.idempotency_key` is a
- * unique constraint — so a replayed row cannot produce a second notification.
+ * process dies mid-flight the lease expires and another pass reclaims it. A replay
+ * cannot produce a second notification because the row's own `dedupeKey` is passed
+ * down as the delivery idempotency discriminator, so the retry rebuilds the same
+ * `notification_deliveries.idempotency_key` and the unique index refuses it. Do not
+ * drop that argument: the time-bucket fallback is absent for the 9 events that set
+ * `dedupeWindowSeconds: 0` — mentions, DMs, invites — and they would double-deliver.
  *
  * Runs per tenant via `forEachOrg`: `notification_outbox` enforces
  * `org_id = app.current_org_id()`, so a global sweep is denied `42501` (§20).
@@ -84,6 +87,7 @@ export class NotificationOutboxRelayService {
         await this.dispatch.emitNow({
           eventKey: row.eventKey,
           orgId: row.orgId,
+          dedupeKey: row.dedupeKey,
           actorUserId: row.actorUserId,
           notifySelf: row.notifySelf,
           targetUserIds: row.targetUserIds,
