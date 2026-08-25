@@ -1,6 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, eq, gte, isNotNull, isNull, lte, sql, sum } from "drizzle-orm";
-import { crmDeals, crmPeople, deals, leads } from "../../db/schema";
+import { and, count, countDistinct, eq, gte, isNotNull, isNull, lte, sql, sum } from "drizzle-orm";
+import { crmDeals, crmPeople, deals } from "../../db/schema";
+import { businessParties, leadPartyMap } from "../../db/schema/party";
+import { PARTY_OF_LEAD } from "../crm/crm-party-reads";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -60,27 +62,35 @@ export class SalesAnalyticsService {
   private async computeCohort(orgId: string, numMonths: number): Promise<CohortRow[]> {
     const rangeStart = startOfMonth(subMonths(new Date(), numMonths - 1));
 
+    /*
+     * The cohort counts parties, not `lead_party_map` rows. A merge leaves the
+     * losing lead's map row pointing at the survivor, so counting rows would put
+     * one customer in the month's cohort twice and, if the two were created in
+     * different months, in two cohorts at once.
+     */
     const dbRows = await this.db
       .select({
-        cohortMonth: sql<string>`to_char(date_trunc('month', ${leads.createdAt}), 'YYYY-MM')`,
-        created: count(leads.id),
-        converted: sql<number>`count(*) filter (where ${leads.convertedAt} is not null)`,
+        cohortMonth: sql<string>`to_char(date_trunc('month', ${businessParties.createdAt}), 'YYYY-MM')`,
+        created: countDistinct(businessParties.partyId),
+        converted: sql<number>`count(distinct ${businessParties.partyId}) filter (where ${businessParties.convertedAt} is not null)`,
         avgDays: sql<number | null>`
           round(avg(
-            extract(epoch from ${leads.convertedAt} - ${leads.createdAt}) / 86400.0
-          ) filter (where ${leads.convertedAt} is not null))
+            extract(epoch from ${businessParties.convertedAt} - ${businessParties.createdAt}) / 86400.0
+          ) filter (where ${businessParties.convertedAt} is not null))
         `,
       })
-      .from(leads)
+      .from(leadPartyMap)
+      .innerJoin(businessParties, PARTY_OF_LEAD)
       .where(
         and(
-          eq(leads.orgId, orgId),
-          gte(leads.createdAt, rangeStart),
-          sql`${leads.deletedAt} IS NULL`,
+          eq(leadPartyMap.organizationId, orgId),
+          eq(businessParties.organizationId, orgId),
+          gte(businessParties.createdAt, rangeStart),
+          isNull(businessParties.deletedAt),
         ),
       )
-      .groupBy(sql`date_trunc('month', ${leads.createdAt})`)
-      .orderBy(sql`date_trunc('month', ${leads.createdAt})`);
+      .groupBy(sql`date_trunc('month', ${businessParties.createdAt})`)
+      .orderBy(sql`date_trunc('month', ${businessParties.createdAt})`);
 
     const statsMap = new Map(dbRows.map((r) => [r.cohortMonth, r]));
 

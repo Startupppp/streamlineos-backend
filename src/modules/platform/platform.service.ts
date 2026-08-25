@@ -9,8 +9,9 @@ import {
   organizations,
   organizationMembers,
   users,
-  leads,
 } from "../../db/schema";
+import { businessParties, leadPartyMap } from "../../db/schema/party";
+import { PARTY_OF_LEAD, leadSource, leadStatus } from "../crm/crm-party-reads";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
@@ -175,12 +176,8 @@ export class PlatformService {
         .from(platformMessages)
         .where(eq(platformMessages.status, "NEW"))
         .then((r) => r[0]?.n ?? 0),
-      this.db.select({ n: sql<number>`count(*)::int` }).from(leads).then((r) => r[0]?.n ?? 0),
-      this.db
-        .select({ n: sql<number>`count(*)::int` })
-        .from(leads)
-        .where(gte(leads.createdAt, since7d))
-        .then((r) => r[0]?.n ?? 0),
+      this.countLeadParties().then((r) => r[0]?.n ?? 0),
+      this.countLeadParties(gte(businessParties.createdAt, since7d)).then((r) => r[0]?.n ?? 0),
       this.db
         .select({ n: sql<number>`count(*)::int` })
         .from(platformVisits)
@@ -373,30 +370,54 @@ export class PlatformService {
     return { ok: true };
   }
 
+  /**
+   * Every tenant's leads at once, counted as customers.
+   *
+   * The one read in this file that deliberately carries no organisation
+   * predicate: this is the platform operator's own console, and the question is
+   * how many leads exist across every tenant. `organization_id` still leads the
+   * join so a party is only ever counted against the tenant its map row names.
+   *
+   * Distinct parties, because a merge leaves the losing lead's map row pointing
+   * at the survivor and its `leads` row alive beside it — so `count(*) FROM
+   * leads` reported one customer as two.
+   */
+  private countLeadParties(...conditions: SQL[]) {
+    return this.db
+      .select({ n: sql<number>`count(distinct ${businessParties.partyId})::int` })
+      .from(leadPartyMap)
+      .innerJoin(businessParties, PARTY_OF_LEAD)
+      .where(and(isNull(businessParties.deletedAt), ...conditions));
+  }
+
   async listLeads(limit = 200) {
     const rows = await this.db
       .select({
-        id: leads.id,
-        name: leads.name,
-        email: leads.email,
-        company: leads.company,
-        status: leads.status,
-        source: leads.source,
+        id: leadPartyMap.leadId,
+        name: businessParties.name,
+        email: businessParties.email,
+        company: businessParties.companyName,
+        status: leadStatus,
+        source: leadSource,
         orgName: organizations.name,
         orgSlug: organizations.slug,
-        createdAt: leads.createdAt,
+        createdAt: businessParties.createdAt,
       })
-      .from(leads)
-      .leftJoin(organizations, eq(organizations.id, leads.orgId))
-      .orderBy(desc(leads.createdAt))
-      .limit(limit);
+      .from(leadPartyMap)
+      .innerJoin(businessParties, PARTY_OF_LEAD)
+      .leftJoin(organizations, eq(organizations.id, leadPartyMap.organizationId))
+      .where(isNull(businessParties.deletedAt))
+      // `created_at` alone is not unique, so an equal-timestamped pair could swap
+      // places between two calls and paginate over or past a row.
+      .orderBy(desc(businessParties.createdAt), desc(leadPartyMap.leadId))
+      .limit(Math.min(limit, 400));
 
     return rows.map((r) => ({
       publicCode: `LEAD-${r.id.toString().padStart(5, "0")}`,
       name: r.name,
       email: r.email,
       company: r.company,
-      status: r.status ?? "NEW",
+      status: r.status,
       source: r.source,
       organizationName: r.orgName,
       organizationSlug: r.orgSlug,

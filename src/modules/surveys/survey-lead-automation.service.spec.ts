@@ -1,10 +1,23 @@
 import { SurveyLeadAutomationService, scoreToPriority, extractAnswerMap } from "./survey-lead-automation.service";
 import { isAssigneeNotMember } from "../leads/leads.service";
+import { resolvePartyByIdentifier } from "../party/party-identifiers";
+import type { PartyRow } from "../party/party-legacy-mirror";
 import type { AutomationRule } from "./survey-automation.service";
 
 jest.mock("../leads/leads.service", () => ({
   ...jest.requireActual("../leads/leads.service"),
 }));
+
+/*
+ * The identifier resolver is stubbed, not reimplemented: it owns normalisation
+ * and the soft-delete release, both of which have their own tests, and what
+ * matters here is only whether the automation found a lead or created one.
+ */
+jest.mock("../party/party-identifiers", () => ({
+  resolvePartyByIdentifier: jest.fn(),
+}));
+
+const resolveIdentifier = jest.mocked(resolvePartyByIdentifier);
 
 describe("scoreToPriority", () => {
   it("returns COLD below 40", () => {
@@ -48,14 +61,34 @@ describe("extractAnswerMap", () => {
   });
 });
 
-function buildService(overrides: { existingLead?: unknown } = {}) {
-  const db = {
-    query: {
-      leads: {
-        findFirst: jest.fn().mockResolvedValue(overrides.existingLead ?? null),
-      },
-    },
-  };
+/** Only the columns `LEAD_MIRROR.derive` and `leadViewFrom` actually read. */
+function partyOf(overrides: Partial<PartyRow>): PartyRow {
+  return {
+    partyId: "party_7",
+    organizationId: "org_1",
+    name: "Jane",
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+    deletedAt: null,
+    ...overrides,
+  } as PartyRow;
+}
+
+function buildService(overrides: { existingLead?: { id: number; party: Partial<PartyRow> } } = {}) {
+  const existing = overrides.existingLead;
+  resolveIdentifier.mockReset();
+  resolveIdentifier.mockResolvedValue(existing ? partyOf(existing.party).partyId : null);
+
+  // The lead read is `select(...).from(lead_party_map).innerJoin(business_parties)
+  // .where(...).orderBy(...).limit(1)`, so the mock is that chain and nothing else.
+  const limit = jest
+    .fn()
+    .mockResolvedValue(existing ? [{ leadId: existing.id, party: partyOf(existing.party) }] : []);
+  const orderBy = jest.fn().mockReturnValue({ limit });
+  const where = jest.fn().mockReturnValue({ orderBy });
+  const innerJoin = jest.fn().mockReturnValue({ where });
+  const from = jest.fn().mockReturnValue({ innerJoin });
+  const db = { select: jest.fn().mockReturnValue({ from }) };
   const leadsService = {
     create: jest.fn().mockResolvedValue({ id: 42, name: "Survey respondent", assignedToId: null }),
     update: jest.fn().mockResolvedValue({}),
@@ -121,7 +154,10 @@ describe("SurveyLeadAutomationService.run", () => {
   });
 
   it("updates and dedupes against an existing lead matched by email instead of creating a duplicate", async () => {
-    const existingLead = { id: 7, notes: "Prior note", customData: { foo: "bar" } };
+    const existingLead = {
+      id: 7,
+      party: { notes: "Prior note", customFields: { foo: "bar" } },
+    };
     const { service, leadsService } = buildService({ existingLead });
     const rule = createLeadRule();
     await service.run(

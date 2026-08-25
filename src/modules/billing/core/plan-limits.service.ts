@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from "@nestjs/common";
-import { sql } from "drizzle-orm";
+import { sql, type Column, type SQL } from "drizzle-orm";
+import { businessParties, contactPartyMap, leadPartyMap } from "../../../db/schema/party";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import type { Db } from "../../../db/drizzle.module";
@@ -38,6 +39,29 @@ const TIER_CACHE_TTL_MS = 30_000;
 const ENTITLEMENTS_CACHE_TTL = 60;
 
 const QUOTA_ALERT_TTL_SECONDS = 30 * 24 * 60 * 60;
+
+/**
+ * How many live customers a `*_party_map` accounts for, as a scalar subquery.
+ *
+ * `COUNT(*) FROM leads WHERE deleted_at IS NULL` counted the mirror, which is
+ * wrong twice over now that Party is the record. A merge re-points the losing
+ * legacy row's map row onto the survivor and refreshes it from there, so the
+ * duplicate `leads` row is left alive holding the survivor's values — one
+ * customer, charged against the plan twice. And `leads.deleted_at` is a derived
+ * column: it is the Party's deletion that decides.
+ *
+ * Written as SQL rather than a query builder because it is interpolated into the
+ * one statement that fetches all fourteen counts together; the alternative is
+ * fourteen round trips or two shapes of the same count.
+ */
+function liveCustomerCount(partyIdColumn: Column, orgColumn: Column, orgId: string): SQL {
+  return sql`SELECT count(distinct ${businessParties.partyId})::int
+    FROM ${businessParties}
+    JOIN ${partyIdColumn.table} ON ${partyIdColumn} = ${businessParties.partyId}
+      AND ${orgColumn} = ${businessParties.organizationId}
+    WHERE ${businessParties.organizationId} = ${orgId}
+      AND ${businessParties.deletedAt} IS NULL`;
+}
 
 const LIMIT_KEY_LABELS: Record<LimitKey, string> = {
   members: "team members",
@@ -177,8 +201,8 @@ export class PlanLimitsService {
           (SELECT COUNT(*)::int FROM build.projects WHERE org_id = ${orgId})                                                              AS projects,
           (SELECT COUNT(*)::int FROM kb_pages WHERE org_id = ${orgId} AND deleted_at IS NULL)                                             AS "kbPages",
           (SELECT COUNT(*)::int FROM chat_channels WHERE org_id = ${orgId})                                                               AS "chatChannels",
-          (SELECT COUNT(*)::int FROM leads WHERE org_id = ${orgId} AND deleted_at IS NULL)                                                AS "crmLeads",
-          (SELECT COUNT(*)::int FROM contacts WHERE org_id = ${orgId} AND deleted_at IS NULL)                                             AS "crmContacts",
+          (${liveCustomerCount(leadPartyMap.partyId, leadPartyMap.organizationId, orgId)})                                                AS "crmLeads",
+          (${liveCustomerCount(contactPartyMap.partyId, contactPartyMap.organizationId, orgId)})                                          AS "crmContacts",
           (SELECT COUNT(*)::int FROM deals WHERE org_id = ${orgId})                                                                    AS "crmDeals",
           (SELECT COUNT(*)::int FROM support_tickets WHERE org_id = ${orgId})                                                             AS "supportTickets",
           (SELECT COUNT(*)::int FROM automation_rules WHERE org_id = ${orgId})                                                              AS automations,
@@ -322,13 +346,13 @@ export class PlanLimitsService {
       }
       case "crmLeads": {
         const rows = await this.db.execute(
-          sql`SELECT COUNT(*)::int AS count FROM leads WHERE org_id = ${orgId} AND deleted_at IS NULL`,
+          sql`SELECT (${liveCustomerCount(leadPartyMap.partyId, leadPartyMap.organizationId, orgId)}) AS count`,
         );
         return Number(rows[0]?.["count"] ?? 0);
       }
       case "crmContacts": {
         const rows = await this.db.execute(
-          sql`SELECT COUNT(*)::int AS count FROM contacts WHERE org_id = ${orgId} AND deleted_at IS NULL`,
+          sql`SELECT (${liveCustomerCount(contactPartyMap.partyId, contactPartyMap.organizationId, orgId)}) AS count`,
         );
         return Number(rows[0]?.["count"] ?? 0);
       }
