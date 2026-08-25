@@ -1,7 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import type { DataScope } from "../../modules/access/access.types";
 import { registerAfterCommit } from "../tenant";
-import { CACHE_KEYS, CACHE_TTL } from "./cache-keys";
+import { CACHE_TTL } from "./cache-keys";
 import { CacheService } from "./cache.service";
 
 export interface OrgHierarchyCacheContext {
@@ -23,8 +23,9 @@ export class OrgHierarchyCacheService {
     context: OrgHierarchyCacheContext,
     fetcher: () => Promise<T>,
   ): Promise<T> {
-    return this.cache.cachedVersioned(
-      CACHE_KEYS.orgHierarchyNamespace(orgId),
+    return this.cache.cachedVersionedForOrg(
+      orgId,
+      "org:hierarchy",
       `${resource}:${this.viewerKey(context)}`,
       fetcher,
       CACHE_TTL.LONG,
@@ -34,10 +35,8 @@ export class OrgHierarchyCacheService {
   async invalidateAfterMutation(orgId: string): Promise<void> {
     const invalidate = () =>
       Promise.all([
-        this.cache.invalidateNamespace(
-          CACHE_KEYS.orgHierarchyNamespace(orgId),
-        ),
-        this.cache.invalidateNamespace(CACHE_KEYS.hrHeadcountNamespace(orgId)),
+        this.cache.invalidateNamespaceForOrg(orgId, "org:hierarchy"),
+        this.cache.invalidateNamespaceForOrg(orgId, "hr:headcount"),
       ]).then(() => undefined);
 
     if (!registerAfterCommit(invalidate)) {

@@ -21,6 +21,8 @@ import {
 } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
 import { StorageService } from "../../storage/storage.service";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
+import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { decryptBankDetails } from "../../../modules/hr/payroll/lib/encryption";
 import type { PayoutBatchFormat } from "./dto/payout.schemas";
 import { PayrollPostingService } from "../payroll-posting.service";
@@ -208,10 +210,6 @@ export class PayoutBatchesService {
       const csvBuffer = Buffer.from(csvContent, "utf-8");
       const fileName = `payroll-batch-${month}-${currencyCode}-${Date.now()}.csv`;
 
-      const uploadResult = this.storage.isConfigured()
-        ? await this.storage.uploadFile(csvBuffer, "payroll/bank-batches", fileName, "text/csv")
-        : { url: null as string | null, key: null as string | null };
-
       const seq = baseSeq + groupIdx + 1;
       const batchNumber = `PAY-${monthNum}-${currencyCode}-${String(seq).padStart(3, "0")}`;
       const totalAmountPaise = itemsData.reduce((s, i) => s + toPaise(i.amount), 0);
@@ -232,7 +230,7 @@ export class PayoutBatchesService {
               totalAmount,
               itemCount: itemsData.length,
               idempotencyKey: subKey ?? null,
-              fileKey: uploadResult.key ?? null,
+              fileKey: null,
               generatedBy: userId,
               generatedAt: now,
             })
@@ -266,7 +264,7 @@ export class PayoutBatchesService {
               totalAmount,
               format: groupFormat,
               currencyCode,
-              fileKey: uploadResult.key ?? null,
+              fileKey: null,
             },
           });
 
@@ -306,20 +304,26 @@ export class PayoutBatchesService {
         metadata: { batchId: newBatch.id, batchNumber, itemCount: itemsData.length, totalAmount, currencyCode },
       });
 
+      if (this.storage.isConfigured()) {
+        const batchId = newBatch.id;
+        const hooked = registerAfterCommit(async () => {
+          const uploaded = await this.storage.uploadFile(csvBuffer, "payroll/bank-batches", fileName, "text/csv");
+          await runInNewTenantTransaction(this.db, orgId, async (tx) => {
+            await tx
+              .update(payrollBankBatches)
+              .set({ fileKey: uploaded.key })
+              .where(and(eq(payrollBankBatches.id, batchId), eq(payrollBankBatches.orgId, orgId)));
+          });
+        });
+        if (!hooked)
+          this.logger.warn("createBatch: no ambient tenant context; CSV upload skipped for batch", { batchId, orgId });
+      }
+
       const batchItems = await this.db.query.payrollBankBatchItems.findMany({
         where: eq(payrollBankBatchItems.batchId, newBatch.id),
       });
 
-      let fileUrl: string | null = null;
-      if (uploadResult.key && this.storage.isConfigured()) {
-        try {
-          fileUrl = await this.storage.getFileUrl(uploadResult.key, 3600);
-        } catch {
-          fileUrl = uploadResult.url ?? null;
-        }
-      }
-
-      results.push({ batch: newBatch, items: batchItems, fileUrl, currencyCode, replayed: false });
+      results.push({ batch: newBatch, items: batchItems, fileUrl: null, currencyCode, replayed: false });
       groupIdx++;
     }
 

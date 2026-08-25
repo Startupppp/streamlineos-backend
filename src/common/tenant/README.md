@@ -117,6 +117,21 @@ the wrong tenant into the remainder of the outer transaction.
 5. **Switch** — set `APP_DATABASE_URL`. This is the step that turns every policy
    on at once, so do it in staging first. Rollback is unsetting the variable.
 
+## Choosing a mechanism for side effects
+
+Every side effect that reaches the database outside the request transaction must answer one question: **does the work need a connection, and must it happen if and only if the transaction commits?**
+
+| Need | Mechanism | Rule |
+|---|---|---|
+| Caller needs the result before returning | Inline, with a timeout | Blob uploads, presigned-URL generation, third-party calls that produce a field in the response — put them inline **only** when the caller genuinely cannot proceed without the result. Set `requestTimeout` on the provider client. |
+| Work must succeed if and only if the transaction commits | Outbox | Write the intent row inside the current transaction; a cron-guarded relay retries. Use for notifications, emails, webhooks — any side effect that must not be lost on process restart. `NotificationDispatchService.emit()` follows this pattern. |
+| Work is advisory — a failure leaves the primary record intact | `registerAfterCommit` + `runInNewTenantTransaction` | Deferred hooks run once the request's transaction has committed. They **must** open their own tenant context via `runInNewTenantTransaction` before any write, because the request's GUC is gone at that point. The interceptor logs and routes failures through `reportError`. Use for blob uploads where the primary row is the real artefact (e.g. CSV export for a payroll batch). |
+| Recurrent background sweep | `forEachOrg` + `runInNewTenantTransaction` per org | No ambient context exists. Pass the orgId explicitly. Never rely on an inherited GUC. |
+
+**The mistake this rule prevents:** uploading a file or sending a request *inside* the `withTenant` transaction holds the pooled connection for the full I/O duration, because Neon's transaction-mode pooler ties the server connection to the transaction. Move anything that is not a database write outside it.
+
+**The 42501 rule:** any `this.db` call made from an after-commit hook, a background sweep, or any code that runs after `withTenant` returns, reaches the pool with no tenant GUC and is denied by RLS. The only fix is `runInNewTenantTransaction` — not a cast, not a direct pool query, not a bare `transaction()`.
+
 ## Tables that need a different policy
 
 - **8 tables have a nullable `org_id` holding genuinely global rows** —

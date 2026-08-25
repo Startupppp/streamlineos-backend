@@ -43,11 +43,17 @@ export const notifications = pgTable("notifications", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  // SCH-007: org-led and partial, matching the actual unread predicate. The old
-  // (user_id, is_read, created_at) index was not org-led (§19) and scanned archived rows.
-  index("idx_notifications_org_user_unread")
-    .on(table.orgId, table.userId, table.isRead, table.createdAt.desc())
-    .where(sql`deleted_at is null and archived_at is null`),
+  // C21-03: idx_notifications_org_user_unread (is_read + created_at) replaced by two
+  // purpose-built indexes that match the actual query shape (ORDER BY id DESC).
+  // idx_notifications_list_cursor: cursor pagination for list endpoints.
+  index("idx_notifications_list_cursor")
+    .on(table.orgId, table.userId, table.id.desc())
+    .where(sql`deleted_at IS NULL AND archived_at IS NULL`),
+  // idx_notifications_unread_count: partial on is_read=false so the count seeks
+  // past the watermark and counts only newly-arrived unread rows.
+  index("idx_notifications_unread_count")
+    .on(table.orgId, table.userId, table.id)
+    .where(sql`deleted_at IS NULL AND archived_at IS NULL AND is_read = false`),
   index("idx_notifications_org_created").on(table.orgId, table.createdAt),
   index("idx_notifications_user_archived").on(table.userId, table.archivedAt),
   index("idx_notifications_org_category").on(table.orgId, table.category),
@@ -57,6 +63,21 @@ export const notifications = pgTable("notifications", {
     .where(sql`deleted_at IS NULL`),
   unique("uniq_notifications_org_id").on(table.orgId, table.id),
 ]);
+
+export const notificationReadWatermarks = pgTable(
+  "notification_read_watermarks",
+  {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+    userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    lastReadNotificationId: bigint("last_read_notification_id", { mode: "number" }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull().$onUpdate(() => new Date()),
+  },
+  (t) => [
+    uniqueIndex("uniq_notification_read_watermarks_org_user").on(t.orgId, t.userId),
+    unique("uniq_notification_read_watermarks_org_id").on(t.orgId, t.id),
+  ],
+);
 
 export const notificationTemplates = pgTable("notification_templates", {
   id: serial("id").primaryKey(),

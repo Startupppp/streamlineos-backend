@@ -243,9 +243,9 @@ export class PublishingService {
       if (pubStatus === "PUBLISHED") {
         published++;
         if (upsertedPub && !wasAlreadyPublished && payee.subject.userId) {
-          this.notifications
+          await this.notifications
             .notifyPayslipPublished(orgId, payee.subject.userId, upsertedPub.id, run.month)
-            .catch(e => logger.error("notifyPayslipPublished failed", { error: e }));
+            .catch((e: unknown) => logger.error("notifyPayslipPublished failed", { error: e }));
         }
 
         if (!wasAlreadyPublished && emailPayslips && payee.email && renderedPdfBuffer) {

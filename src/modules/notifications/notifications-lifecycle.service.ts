@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, and, isNull, inArray } from "drizzle-orm";
-import { notifications } from "../../db/schema";
+import { eq, and, isNull, inArray, max } from "drizzle-orm";
+import { notifications, notificationReadWatermarks } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -79,17 +79,26 @@ export class NotificationsLifecycleService {
   }
 
   async markAllRead(orgId: string, userId: string) {
-    await this.db
-      .update(notifications)
-      .set({ isRead: true })
+    const [latest] = await this.db
+      .select({ maxId: max(notifications.id) })
+      .from(notifications)
       .where(
         and(
           eq(notifications.orgId, orgId),
           eq(notifications.userId, userId),
-          eq(notifications.isRead, false),
           isNull(notifications.deletedAt),
         ),
       );
+    const maxId = latest?.maxId != null ? Number(latest.maxId) : null;
+    if (maxId != null && maxId > 0) {
+      await this.db
+        .insert(notificationReadWatermarks)
+        .values({ orgId, userId, lastReadNotificationId: maxId })
+        .onConflictDoUpdate({
+          target: [notificationReadWatermarks.orgId, notificationReadWatermarks.userId],
+          set: { lastReadNotificationId: maxId, updatedAt: new Date() },
+        });
+    }
     await this.invalidateCache(userId, orgId);
     this.notifEvents.emit({ userId, orgId, type: "count_changed" });
     return { success: true };

@@ -1,5 +1,4 @@
 import { runWithTenantContext } from "../tenant";
-import { CACHE_KEYS } from "./cache-keys";
 import type { CacheService } from "./cache.service";
 import {
   OrgHierarchyCacheService,
@@ -10,23 +9,24 @@ const TREE: OrgHierarchyCacheResource = "tree:ADJACENCY:r1";
 
 describe("OrgHierarchyCacheService", () => {
   let cache: {
-    cachedVersioned: jest.Mock;
-    invalidateNamespace: jest.Mock;
+    cachedVersionedForOrg: jest.Mock;
+    invalidateNamespaceForOrg: jest.Mock;
   };
   let service: OrgHierarchyCacheService;
 
   beforeEach(() => {
     cache = {
-      cachedVersioned: jest
+      cachedVersionedForOrg: jest
         .fn()
         .mockImplementation(
           async (
+            _orgId: string,
             _namespace: string,
             _cacheKey: string,
             fetcher: () => Promise<unknown>,
           ) => fetcher(),
         ),
-      invalidateNamespace: jest.fn().mockResolvedValue(undefined),
+      invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
     };
     service = new OrgHierarchyCacheService(cache as unknown as CacheService);
   });
@@ -59,14 +59,14 @@ describe("OrgHierarchyCacheService", () => {
       fetchTree,
     );
 
-    expect(cache.cachedVersioned.mock.calls.map((cacheCall) => cacheCall[0]))
+    expect(cache.cachedVersionedForOrg.mock.calls.map((c) => [c[0], c[1]]))
       .toEqual([
-        CACHE_KEYS.orgHierarchyNamespace("org-1"),
-        CACHE_KEYS.orgHierarchyNamespace("org-1"),
-        CACHE_KEYS.orgHierarchyNamespace("org-1"),
-        CACHE_KEYS.orgHierarchyNamespace("org-2"),
+        ["org-1", "org:hierarchy"],
+        ["org-1", "org:hierarchy"],
+        ["org-1", "org:hierarchy"],
+        ["org-2", "org:hierarchy"],
       ]);
-    expect(cache.cachedVersioned.mock.calls.map((cacheCall) => cacheCall[1]))
+    expect(cache.cachedVersionedForOrg.mock.calls.map((c) => c[2]))
       .toEqual([
         "tree:ADJACENCY:r1:scope:all",
         "tree:ADJACENCY:r1:scope:team:actor:user-1",
@@ -78,13 +78,9 @@ describe("OrgHierarchyCacheService", () => {
   it("invalidates canonical hierarchy and HR headcount namespaces immediately outside a transaction", async () => {
     await service.invalidateAfterMutation("org-1");
 
-    expect(cache.invalidateNamespace).toHaveBeenCalledTimes(2);
-    expect(cache.invalidateNamespace).toHaveBeenCalledWith(
-      CACHE_KEYS.orgHierarchyNamespace("org-1"),
-    );
-    expect(cache.invalidateNamespace).toHaveBeenCalledWith(
-      CACHE_KEYS.hrHeadcountNamespace("org-1"),
-    );
+    expect(cache.invalidateNamespaceForOrg).toHaveBeenCalledTimes(2);
+    expect(cache.invalidateNamespaceForOrg).toHaveBeenCalledWith("org-1", "org:hierarchy");
+    expect(cache.invalidateNamespaceForOrg).toHaveBeenCalledWith("org-1", "hr:headcount");
   });
 
   it("defers invalidation until the tenant transaction commits", async () => {
@@ -100,9 +96,9 @@ describe("OrgHierarchyCacheService", () => {
       () => service.invalidateAfterMutation("org-1"),
     );
 
-    expect(cache.invalidateNamespace).not.toHaveBeenCalled();
+    expect(cache.invalidateNamespaceForOrg).not.toHaveBeenCalled();
     expect(afterCommit).toHaveLength(1);
     await afterCommit[0]!();
-    expect(cache.invalidateNamespace).toHaveBeenCalledTimes(2);
+    expect(cache.invalidateNamespaceForOrg).toHaveBeenCalledTimes(2);
   });
 });
