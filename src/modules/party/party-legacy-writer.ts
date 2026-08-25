@@ -17,6 +17,7 @@ import {
   type PartyRow,
 } from "./party-legacy-mirror";
 import type { MappedLegacyKind } from "./party-legacy-seam";
+import { claimIdentifiers, claimsOfPatch, identifierClaimsOfColumns } from "./party-identifiers";
 
 /**
  * The shared half of the Party-first write, and the Party surface itself.
@@ -115,6 +116,22 @@ export async function applyPartyPatch(
     )
     .returning();
   if (!updated) throw new Error(`Party ${partyId} vanished mid-transaction`);
+
+  /**
+   * The contact columns claimed as identifiers, in the caller's transaction.
+   *
+   * 0260 backfilled every address that existed when it ran. Without this the
+   * backfill would be a snapshot: a lead created or edited afterwards would
+   * carry an email address that `resolve-party` cannot match, so the next
+   * message from that customer would create a second record — a migration that
+   * improved the past and broke the present.
+   *
+   * Gated on the patch rather than on the row so that a write touching neither
+   * an address nor a number costs nothing, which is almost all of them.
+   */
+  if (claimsOfPatch(patch) !== null)
+    await claimIdentifiers(db, organizationId, partyId, identifierClaimsOfColumns(updated));
+
   return updated;
 }
 
@@ -209,6 +226,13 @@ export async function movePartiesFor(
       )
       .returning();
     for (const row of rows) moved.set(row.partyId, row);
+
+    // The same claim `applyPartyPatch` makes, for the bulk path that does not
+    // go through it. Gated on the payload, so the ownership and stage sweeps
+    // that make up nearly every bulk write cost nothing extra.
+    if (claimsOfPatch(group.payload) !== null)
+      for (const row of rows)
+        await claimIdentifiers(db, organizationId, row.partyId, identifierClaimsOfColumns(row));
   }
 
   return moved;

@@ -1,11 +1,21 @@
 import { z } from "zod";
-import { INBOUND_CHANNELS, PARTICIPANT_ROLES } from "../inbound-event";
+import { IDENTIFIER_KINDS, INBOUND_CHANNELS, PARTICIPANT_ROLES } from "../inbound-event";
 
 const participantSchema = z
   .object({
     address: z.string().trim().min(1).max(320),
     displayName: z.string().trim().max(200).nullish(),
     role: z.enum(PARTICIPANT_ROLES),
+    /**
+     * Optional on the wire, and it has to be accepted here for the field to
+     * mean anything at all.
+     *
+     * The schema is `.strict()`, so leaving it out would reject the key rather
+     * than ignore it — a caller posting an event in process would carry the
+     * kind and the same caller posting it over HTTP would be refused, which is
+     * a divergence between two paths that are supposed to be one seam.
+     */
+    identifierKind: z.enum(IDENTIFIER_KINDS).optional(),
   })
   .strict();
 

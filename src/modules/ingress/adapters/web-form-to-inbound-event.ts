@@ -4,6 +4,7 @@ import { mapColumn, normaliseHeader, type ImportField } from "../../crm-import/c
 import {
   addressDomain,
   normaliseAddress,
+  type IdentifierKind,
   type InboundChannel,
   type InboundCommunicationEvent,
   type InboundParticipant,
@@ -99,11 +100,7 @@ export interface WebFormIngressContext {
   readonly receivedAt: string;
 }
 
-export type WebFormSkipReason =
-  | "unknown-form"
-  | "no-fields"
-  | "no-identity"
-  | "unresolvable-identity";
+export type WebFormSkipReason = "unknown-form" | "no-fields" | "no-identity";
 
 export type WebFormIngressResult =
   | {
@@ -160,32 +157,41 @@ export function webFormToInboundEvent(
   const identity = identify(readings);
 
   /**
-   * No email means no party, and that is a refusal rather than a substitution.
+   * Whichever identifier the submitter gave, labelled as what it is.
    *
-   * The resolver below the seam matches a sender against `business_parties.email`
-   * and creates a row with the address in that column when it finds nothing. Hand
-   * it a phone number and it writes a phone number into the email column: the
-   * next time that person sends an email they do not match, so the CRM gains a
-   * second record of them, and the first one is unreachable by the only channel
-   * that is wired.
+   * This used to refuse a submitter who left a phone number and no email, under
+   * the name `unresolvable-identity`, because the resolver below the seam
+   * matched against `business_parties.email` and would have written a telephone
+   * number into that column. Ticket 22 keyed the resolver on
+   * `party_identifiers` instead, so a phone number is now an identifier of kind
+   * `phone` and files exactly as an address does — and the refusal is deleted
+   * rather than left beside the new path, because two ways of handling the same
+   * submission is how one of them silently stops being reached.
    *
-   * So a submitter with a phone and no email is `unresolvable-identity` — the
-   * system knows who they are and cannot yet file them — and one with neither is
-   * `no-identity`. Both create nothing. The distinction is not cosmetic: the
-   * first names a gap that a resolver keyed on more than an email address would
-   * close, and the second is simply a form somebody put no contact details into.
+   * Email is preferred where both were given: it is the channel this system can
+   * currently reply on, and the one a form labels explicitly most often.
+   *
+   * A submission with neither is still `no-identity`. That is not the same gap
+   * — it is a form somebody put no contact details into, and there is nobody to
+   * file it against at all.
    */
-  if (!identity.email)
-    return { ok: false, reason: identity.phone ? "unresolvable-identity" : "no-identity" };
+  const sender = identity.email
+    ? { address: identity.email, identifierKind: "email" as IdentifierKind }
+    : identity.phone
+      ? { address: identity.phone, identifierKind: "phone" as IdentifierKind }
+      : null;
+
+  if (!sender) return { ok: false, reason: "no-identity" };
 
   const occurredAt = resolveOccurredAt(submission.submittedAt, context.receivedAt);
   const messageId = messageIdFor(submission, formKey);
 
   const participants: InboundParticipant[] = [
     {
-      address: identity.email,
+      address: sender.address,
       ...(identity.name ? { displayName: identity.name } : {}),
       role: "from",
+      identifierKind: sender.identifierKind,
     },
   ];
 
@@ -305,12 +311,14 @@ function looksLikePhone(value: string): boolean {
 }
 
 /**
- * Whether the whole value is an address the seam can work with.
+ * Whether the whole value is an address rather than something else entirely.
  *
- * `addressDomain` is the seam's own test, and using it here is not a
- * convenience: `externalParticipants` filters participants on exactly this
- * predicate when it writes `activity_participants`, so an address that fails it
- * is a participant that vanishes below the seam with nothing recorded.
+ * `addressDomain` is the seam's own test, and it is used here so that "this
+ * field holds an email address" means the same thing in the adapter as it does
+ * below the seam. It is no longer a survival test: `externalParticipants` used
+ * to drop every participant that failed this predicate — which is why calls and
+ * WhatsApp wrote no `activity_participants` rows at all — and now keeps every
+ * kind. This decides only which identifier kind the value is.
  */
 function looksLikeEmail(value: string): boolean {
   return value.length <= 320 && addressDomain(value) !== null;

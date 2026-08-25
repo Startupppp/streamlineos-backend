@@ -165,6 +165,11 @@ describe("PartyService", () => {
       (mockDb as { insert: jest.Mock }).insert.mockReturnValue({
         values: jest.fn().mockReturnValue({
           returning: jest.fn().mockResolvedValue([row]),
+          // The party's contact columns are claimed as identifiers in the same
+          // statement stream, so `resolve-party` can find this record when the
+          // customer writes in. Conflicts are ignored: a value another party
+          // already holds is left with them rather than failing the save.
+          onConflictDoNothing: jest.fn().mockResolvedValue([]),
         }),
       });
 

@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, Optional, type OnModuleInit } from "@nestjs/common";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
 import {
@@ -20,12 +20,19 @@ import { INBOUND_WORKFLOW } from "./inbound-ingress.service";
 import {
   activityKindFor,
   externalParticipants,
-  normaliseAddress,
+  identifierKindOf,
+  identifierOf,
+  normaliseIdentifier,
   partyNameFor,
   senderOf,
   threadIdentity,
   type InboundCommunicationEvent,
 } from "./inbound-event";
+import {
+  COLUMN_FOR_KIND,
+  claimIdentifiers,
+  resolvePartyByIdentifier,
+} from "../party/party-identifiers";
 
 /** One activity produces at most a task and a stage move; the cap is a backstop. */
 const MAX_SCORED_PER_RUN = 10;
@@ -110,40 +117,74 @@ export class InboundIngressWorkflow implements OnModuleInit {
       const sender = senderOf(event);
       if (!sender) throw new Error("inbound: event has no sender");
 
-      const address = normaliseAddress(sender.address);
+      /**
+       * The sender as an identity, not as a string.
+       *
+       * `identifierOf` pairs the address with the kind the ADAPTER stated —
+       * never with one inferred from the characters. This step used to compare
+       * the address against `business_parties.email` and, on a miss, insert it
+       * into that column, so a telephone number arrived as an email address:
+       * the row looked right, the caller's next email did not match it, and the
+       * record they were actually filed under was unreachable by the only
+       * channel that was wired.
+       */
+      const identifier = identifierOf(event, sender);
+      if (!identifier) throw new Error("inbound: the sender's address carries no identifier");
+
+      const { kind, normalisedValue: address } = identifier;
 
       /**
        * A known sender matches; an unknown one becomes a party.
        *
-       * Matched on the normalised address, which is why the seam lower-cases it —
-       * `Priya@Example.com` and `priya@example.com` are one person, and matching
-       * on the raw string is how the same customer becomes three records.
+       * Matched through `party_identifiers` on the normalised value, which is
+       * why every kind has a normaliser — `Priya@Example.com` and
+       * `priya@example.com` are one person, and so are `+44 20 7123 4567` and
+       * `+442071234567`. Matching raw strings is how the same customer becomes
+       * three records.
        */
-      const [existing] = await this.db
-        .select({ partyId: businessParties.partyId })
-        .from(businessParties)
-        .where(
-          and(
-            eq(businessParties.organizationId, context.organizationId),
-            eq(businessParties.email, address),
-            isNull(businessParties.deletedAt),
-          ),
-        )
-        .limit(1);
+      const existingPartyId = await resolvePartyByIdentifier(
+        this.db,
+        context.organizationId,
+        kind,
+        sender.address,
+      );
 
-      if (existing) return { partyId: existing.partyId, created: false };
+      if (existingPartyId) return { partyId: existingPartyId, created: false };
+
+      /**
+       * The display column the kind belongs in, and only that one.
+       *
+       * A handle has none, and a party created from one carries no contact
+       * column at all — which is correct, and is the case the old code could
+       * not express without lying about what the value was.
+       */
+      const contact: { email?: string; phone?: string; whatsappPhone?: string } = {};
+      const column = COLUMN_FOR_KIND[kind];
+      if (column) contact[column] = address;
 
       const [created] = await this.db
         .insert(businessParties)
         .values({
           organizationId: context.organizationId,
           name: partyNameFor(sender),
-          email: address,
           partyType: "CUSTOMER",
+          ...contact,
         })
         .returning({ partyId: businessParties.partyId });
 
       if (!created) throw new Error("inbound: could not create a party for the sender");
+
+      /**
+       * The claim, in the same statement stream as the party.
+       *
+       * A party with no identifier is a party the next message from the same
+       * person will not match, so it would silently become two records — the
+       * exact failure this table exists to end. Both writes are inside the
+       * step, so they commit with the tenant transaction or not at all.
+       */
+      await claimIdentifiers(this.db, context.organizationId, created.partyId, [
+        { kind, value: sender.address },
+      ]);
 
       /**
        * Recorded here rather than by the extractor, because this is an
@@ -163,7 +204,7 @@ export class InboundIngressWorkflow implements OnModuleInit {
           triggerType: "inbound-event",
           triggerId: inboundEventId,
           partyId: created.partyId,
-          inputs: { address, channel: event.channel },
+          inputs: { address, identifierKind: kind, channel: event.channel },
           decision: { partyId: created.partyId, name: partyNameFor(sender) },
           summary: `Created a record for ${address}, who was not on file, after they made contact by ${event.channel}.`,
         }),
@@ -229,7 +270,11 @@ export class InboundIngressWorkflow implements OnModuleInit {
           // Only the sender is resolved to a party in this ticket; the rest keep
           // their address, which is exactly what the nullable columns are for.
           partyId: participant.role === "from" ? party.partyId : null,
-          address: normaliseAddress(participant.address),
+          // Normalised by kind rather than as an address, so a call's `from`
+          // row holds the number in the one shape everything else matches on.
+          address:
+            normaliseIdentifier(identifierKindOf(event, participant), participant.address) ||
+            participant.address.trim(),
           role: participant.role,
         })),
       );

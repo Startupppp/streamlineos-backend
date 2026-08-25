@@ -14,6 +14,12 @@ import {
 } from "../../db/schema";
 import { AuditService } from "../../common/audit/audit.service";
 import { assessDuplicate, type PartyFingerprint } from "./party-duplicates";
+import {
+  identifiersOfParty,
+  moveIdentifiers,
+  restoreIdentifiers,
+  type IdentifierClaim,
+} from "./party-identifiers";
 import { chooseSurvivor, orderPair, planMerge } from "./party-merge-plan";
 import {
   refreshPartyMirrors,
@@ -27,6 +33,14 @@ interface MergeSnapshot {
   mergedBefore: Record<string, unknown>;
   movedContactIds: string[];
   addedRoles: string[];
+  /**
+   * Identifier rows handed to the survivor, so a revert can hand them back.
+   *
+   * Optional for the same reason as `movedLegacyIds`: merges recorded before
+   * `party_identifiers` existed have none, and a revert has to read those
+   * snapshots too.
+   */
+  movedIdentifierIds?: string[];
   /**
    * Legacy identifiers re-pointed onto the survivor, per kind.
    *
@@ -80,11 +94,15 @@ export class PartyMergeService {
     return row;
   }
 
-  private static fingerprint(row: Record<string, unknown>): PartyFingerprint {
+  private static fingerprint(
+    row: Record<string, unknown>,
+    identifiers: readonly IdentifierClaim[],
+  ): PartyFingerprint {
     return {
       partyId: String(row.partyId),
       name: String(row.name ?? ""),
       legalName: (row.legalName ?? null) as string | null,
+      identifiers,
       email: (row.email ?? null) as string | null,
       phone: (row.phone ?? null) as string | null,
       taxNumber: (row.taxNumber ?? null) as string | null,
@@ -127,10 +145,6 @@ export class PartyMergeService {
     const survivor = survivorId === left.partyId ? left : right;
     const loser = survivorId === left.partyId ? right : left;
 
-    const assessment = assessDuplicate(
-      PartyMergeService.fingerprint(survivor),
-      PartyMergeService.fingerprint(loser),
-    );
     const plan = planMerge(survivor, loser);
 
     const [survivorRoles, loserRoles, loserContacts] = await Promise.all([
@@ -152,12 +166,48 @@ export class PartyMergeService {
     const movedContactIds = loserContacts.map((contact) => contact.partyContactId);
     const movedLegacyIds = await this.legacyIdsOf(organizationId, mergedId);
 
+    /**
+     * Read before the move below, which is the only moment the two sides still
+     * have identifiers of their own — afterwards they all belong to the
+     * survivor. The assessment is a record of why this merge happened, and
+     * "they share a telephone number" is the strongest thing it can say.
+     */
+    const [survivorIdentifiers, loserIdentifiers] = await Promise.all([
+      identifiersOfParty(this.db, organizationId, survivorId),
+      identifiersOfParty(this.db, organizationId, mergedId),
+    ]);
+
+    const assessment = assessDuplicate(
+      PartyMergeService.fingerprint(survivor, survivorIdentifiers),
+      PartyMergeService.fingerprint(loser, loserIdentifiers),
+    );
+
+    /**
+     * Before the survivor's patch, not after.
+     *
+     * The patch fills the survivor's blank contact columns from the loser's,
+     * and the writer then claims those values as identifiers — which the unique
+     * index refuses while the loser still holds them, silently. Moving first
+     * means the survivor already owns them and the claim is a no-op.
+     *
+     * Not moving them at all would be worse than either: the next message from
+     * that address would resolve to a party the merge deleted, which is a live
+     * wrong answer rather than a missing one.
+     */
+    const movedIdentifierIds = await moveIdentifiers(
+      this.db,
+      organizationId,
+      mergedId,
+      survivorId,
+    );
+
     const snapshot: MergeSnapshot = {
       survivorBefore: { ...survivor },
       mergedBefore: { ...loser },
       movedContactIds,
       addedRoles,
       movedLegacyIds,
+      movedIdentifierIds,
     };
 
     if (Object.keys(plan.survivorPatch).length > 0 || plan.customFields)
@@ -305,6 +355,13 @@ export class PartyMergeService {
             inArray(partyContacts.partyContactId, snapshot.movedContactIds),
           ),
         );
+
+    await restoreIdentifiers(
+      this.db,
+      organizationId,
+      snapshot.movedIdentifierIds ?? [],
+      record.mergedPartyId,
+    );
 
     await this.repointLegacyIds(
       organizationId,
