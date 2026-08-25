@@ -321,7 +321,7 @@ describe("module-availability parity: snapshot ↔ authorize ↔ guard", () => {
   });
 
   describe("billing module (planGated=false, ladder=platform-admin)", () => {
-    it("org row absent — all three return org-disabled", async () => {
+    it("org row absent — all three return available: billing is core, and no org carries a row for it", async () => {
       const auth = await runCheck(
         buildAuthorizeResolver(PLATFORM_ADMIN_MODULE, undefined, false, NONE),
         PLATFORM_ADMIN_MODULE,
@@ -335,9 +335,9 @@ describe("module-availability parity: snapshot ↔ authorize ↔ guard", () => {
         PLATFORM_ADMIN_MODULE,
       );
 
-      expect(auth).toEqual({ available: false, reason: "org-disabled" });
-      expect(snap).toEqual({ available: false, reason: "org-disabled" });
-      expect(guard).toEqual({ available: false, reason: "org-disabled" });
+      expect(auth).toEqual({ available: true });
+      expect(snap).toEqual({ available: true });
+      expect(guard).toEqual({ available: true });
     });
   });
 });

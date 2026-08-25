@@ -16,7 +16,7 @@ import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
 import { ADMINISTRABLE_MODULES, MODULE_CATALOG } from "../../common/rbac/module-vocabulary";
-import { coreModuleIds, moduleDefinition, moduleIdFromStored } from "../../common/rbac/module-registry";
+import { coreModuleIds, moduleDefinition, moduleIdFromStored, MODULE_REGISTRY } from "../../common/rbac/module-registry";
 import { moduleAvailabilityResolver, type ModuleAvailabilityResolver } from "../../common/rbac/module-availability";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { ACCESS_MANAGED_MODULES } from "../rbac/permissions";
@@ -26,7 +26,16 @@ import type { AppConfig } from "../../config/env.validation";
 
 export { MODULE_CATALOG };
 
-const CORE_KEYS: ReadonlySet<string> = new Set(coreModuleIds());
+// AVAILABILITY, not delegability. `coreModuleIds()` answers "is this a free SURFACE" and
+// deliberately excludes billing — money and surface are two facts. Availability turns on
+// plan gating alone, so billing belongs here: no org carries an org_modules row for it and
+// its routes have no @RequireModule, so excluding it made billing unreachable for everyone.
+const CORE_KEYS: ReadonlySet<string> = new Set([
+  ...coreModuleIds(),
+  ...MODULE_REGISTRY.filter((definition) => !definition.planGated).map(
+    (definition) => definition.id,
+  ),
+]);
 
 /**
  * Single canonical definition of "is this module core".
@@ -34,11 +43,12 @@ const CORE_KEYS: ReadonlySet<string> = new Set(coreModuleIds());
  * A module is core (always available, bypasses org rows and per-person denies) if:
  *   - it is not registered in MODULE_REGISTRY — unregistered namespaces like
  *     `settings` and `ownership` have no toggle path and are always reachable, OR
- *   - it is registered, is not plan-gated, and is not the platform-admin ladder.
+ *   - it is registered and is not plan-gated.
  *
- * `billing` is registered with ladder=platform-admin and is therefore NOT core —
- * it must be present as an org row (or explicitly enabled) before authorize() and
- * the access snapshot will report it available, matching ModuleGuard's behaviour.
+ * `billing` IS core here. Its ladder is platform-admin, which governs delegability, not
+ * availability — `assertPermissionsGrantable` is what keeps the billing namespace
+ * undelegatable. Treating the ladder as an availability signal made billing unreachable
+ * for every org, because none carries an org_modules row for it.
  */
 export function isCoreModuleKey(rawKey: string): boolean {
   const key = moduleIdFromStored(rawKey);

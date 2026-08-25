@@ -152,8 +152,8 @@ describe("registry fields drive availability: end-to-end proof", () => {
     for (const id of planGatedModuleIds()) expect(isCoreModuleKey(id)).toBe(false);
   });
 
-  it("billing (planGated=false, ladder=platform-admin) is not core through isCoreModuleKey", () => {
-    expect(isCoreModuleKey("billing")).toBe(false);
+  it("billing is core through isCoreModuleKey — the ladder governs delegability, not availability", () => {
+    expect(isCoreModuleKey("billing")).toBe(true);
   });
 
   it("core modules are unconditionally available even with a disabled org row, a user deny and a plan lock", async () => {
@@ -181,13 +181,13 @@ describe("registry fields drive availability: end-to-end proof", () => {
     }
   });
 
-  it("billing is blocked with reason org-disabled when absent from the org map", async () => {
+  it("billing stays available when absent from the org map — no org carries a row for it", async () => {
     const resolver = moduleAvailabilityResolver({
       isCoreModule: isCoreModuleKey,
       getModuleMap: async () => ({}),
       getPlanLockedModules: async () => [],
     });
-    expect(await moduleAvailability(resolver, "org-1", "user-1", "billing")).toEqual({ available: false, reason: "org-disabled" });
+    expect(await moduleAvailability(resolver, "org-1", "user-1", "billing")).toEqual({ available: true });
   });
 
   it("the constitution's named core modules resolve available: home, kb, chat, mail, calendar", async () => {
