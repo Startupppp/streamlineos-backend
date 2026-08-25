@@ -1,10 +1,18 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
-import { auditLogs, dealActivities, deals, leadActivities, leads } from "../../../../db/schema";
+import { auditLogs, dealActivities, deals, leadActivities } from "../../../../db/schema";
+import { businessParties, leadPartyMap } from "../../../../db/schema/party";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
+import {
+  INCLUDE_DELETED,
+  LEAD_PARTY_COLUMNS,
+  LEAD_PARTY_JOIN,
+  leadIdIs,
+  leadPartyScope,
+} from "../../../leads/lead-party-reader";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
 
 import { OrgFeaturesService } from "./org-features.service";
@@ -78,20 +86,23 @@ export class CrmCopilotService {
 
     const ctx = await runInTenantTransaction(this.db, async (tx) => {
       const [[lead], activities] = await Promise.all([
+        // A deleted lead's detail page has always rendered, and so has its
+        // summary; the party answers for it the same way.
         tx
           .select({
-            id: leads.id,
-            name: leads.name,
-            email: leads.email,
-            company: leads.company,
-            status: leads.status,
-            priority: leads.priority,
-            score: leads.score,
-            potentialValue: leads.potentialValue,
-            notes: leads.notes,
+            id: LEAD_PARTY_COLUMNS.id,
+            name: LEAD_PARTY_COLUMNS.name,
+            email: LEAD_PARTY_COLUMNS.email,
+            company: LEAD_PARTY_COLUMNS.company,
+            status: LEAD_PARTY_COLUMNS.status,
+            priority: LEAD_PARTY_COLUMNS.priority,
+            score: LEAD_PARTY_COLUMNS.score,
+            potentialValue: LEAD_PARTY_COLUMNS.potentialValue,
+            notes: LEAD_PARTY_COLUMNS.notes,
           })
-          .from(leads)
-          .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId))),
+          .from(leadPartyMap)
+          .innerJoin(businessParties, LEAD_PARTY_JOIN)
+          .where(and(...leadPartyScope(orgId, INCLUDE_DELETED), leadIdIs(leadId))),
         tx
           .select({
             type: leadActivities.type,
@@ -242,10 +253,18 @@ ${truncate(activitiesText, 1500)}`;
     const fetchLimit = Math.min(limit * 2, 40);
     const topLeads = await runInTenantTransaction(this.db, (tx) =>
       tx
-        .select({ id: leads.id, name: leads.name, score: leads.score })
-        .from(leads)
-        .where(and(eq(leads.orgId, orgId), isNull(leads.deletedAt)))
-        .orderBy(desc(leads.score))
+        .select({
+          id: LEAD_PARTY_COLUMNS.id,
+          name: LEAD_PARTY_COLUMNS.name,
+          score: LEAD_PARTY_COLUMNS.score,
+        })
+        .from(leadPartyMap)
+        .innerJoin(businessParties, LEAD_PARTY_JOIN)
+        .where(and(...leadPartyScope(orgId)))
+        // Scores tie constantly -- every unscored lead is a zero -- so the id
+        // decides which of them the top-N contains rather than the heap order,
+        // which reading through the map changes.
+        .orderBy(desc(LEAD_PARTY_COLUMNS.score), desc(LEAD_PARTY_COLUMNS.id))
         .limit(fetchLimit),
       { orgId },
     );
@@ -283,9 +302,16 @@ ${truncate(activitiesText, 1500)}`;
     const entityCtx = await runInTenantTransaction(this.db, async (tx) => {
       if (input.entityType === "lead") {
         const [lead] = await tx
-          .select({ name: leads.name, company: leads.company, designation: leads.designation, potentialValue: leads.potentialValue, status: leads.status })
-          .from(leads)
-          .where(and(eq(leads.id, input.entityId), eq(leads.orgId, orgId)));
+          .select({
+            name: LEAD_PARTY_COLUMNS.name,
+            company: LEAD_PARTY_COLUMNS.company,
+            designation: LEAD_PARTY_COLUMNS.designation,
+            potentialValue: LEAD_PARTY_COLUMNS.potentialValue,
+            status: LEAD_PARTY_COLUMNS.status,
+          })
+          .from(leadPartyMap)
+          .innerJoin(businessParties, LEAD_PARTY_JOIN)
+          .where(and(...leadPartyScope(orgId, INCLUDE_DELETED), leadIdIs(input.entityId)));
         if (!lead) throw new NotFoundException("Lead not found");
         return { entityName: lead.name, company: lead.company, contextLine: `Status: ${lead.status}, Value: ${lead.potentialValue ?? "N/A"}` };
       } else {
@@ -359,9 +385,10 @@ Return JSON with summary, keyPoints, actionItems, objections, sentiment.`,
 
     const { lead, allGroups } = await runInTenantTransaction(this.db, async (tx) => {
       const [lead] = await tx
-        .select({ id: leads.id, name: leads.name })
-        .from(leads)
-        .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId)));
+        .select({ id: LEAD_PARTY_COLUMNS.id, name: LEAD_PARTY_COLUMNS.name })
+        .from(leadPartyMap)
+        .innerJoin(businessParties, LEAD_PARTY_JOIN)
+        .where(and(...leadPartyScope(orgId, INCLUDE_DELETED), leadIdIs(leadId)));
 
       if (!lead) return { lead: null, allGroups: [] as Awaited<ReturnType<typeof findDuplicateLeads>> };
 
@@ -409,9 +436,17 @@ Return JSON with summary, keyPoints, actionItems, objections, sentiment.`,
     const { lead, citations } = await runInTenantTransaction(this.db, async (tx) => {
       const [[lead], activityCount] = await Promise.all([
         tx
-          .select({ id: leads.id, name: leads.name, score: leads.score, priority: leads.priority, status: leads.status, source: leads.source })
-          .from(leads)
-          .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId))),
+          .select({
+            id: LEAD_PARTY_COLUMNS.id,
+            name: LEAD_PARTY_COLUMNS.name,
+            score: LEAD_PARTY_COLUMNS.score,
+            priority: LEAD_PARTY_COLUMNS.priority,
+            status: LEAD_PARTY_COLUMNS.status,
+            source: LEAD_PARTY_COLUMNS.source,
+          })
+          .from(leadPartyMap)
+          .innerJoin(businessParties, LEAD_PARTY_JOIN)
+          .where(and(...leadPartyScope(orgId, INCLUDE_DELETED), leadIdIs(leadId))),
         tx
           .select({ date: leadActivities.date })
           .from(leadActivities)

@@ -4,12 +4,19 @@ import {
   clientAccountActivities,
   clientAccounts,
   leadActivities,
-  leads,
   users,
 } from "../../../../db/schema";
+import { businessParties, leadPartyMap } from "../../../../db/schema/party";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
+import {
+  INCLUDE_DELETED,
+  LEAD_PARTY_COLUMNS,
+  LEAD_PARTY_JOIN,
+  leadIdIs,
+  leadPartyScope,
+} from "../../../leads/lead-party-reader";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
 
 import { NlSearchFilterSchema } from "../dto/output.schemas";
@@ -40,6 +47,65 @@ function trunc(s: string | null | undefined): string {
   return s.length > MAX_NOTES ? s.slice(0, MAX_NOTES) + "…" : s;
 }
 
+/**
+ * The lead behind a client account, or a meeting's attendee.
+ *
+ * Through `lead_party_map`: `leads` is a mirror derived from the party as of
+ * ticket 02, so reading it is reading a copy. The organisation is now a
+ * predicate rather than an assumption -- the two account-summary paths used to
+ * look up `account.lead_id` with no tenant clause at all, leaning on the id
+ * having come from a scoped read. That held, but `leads`' RLS policy is inert
+ * while the application connects as an owner role, so nothing stood behind it.
+ *
+ * Deleted leads still resolve. An account whose originating lead was deleted has
+ * always still shown its lead context, and a summary that silently loses a
+ * section is worse than one that names a deleted record.
+ */
+async function loadLeadContext(db: Db, orgId: string, leadId: number) {
+  const [row] = await db
+    .select({
+      id: LEAD_PARTY_COLUMNS.id,
+      name: LEAD_PARTY_COLUMNS.name,
+      source: LEAD_PARTY_COLUMNS.source,
+      priority: LEAD_PARTY_COLUMNS.priority,
+      city: LEAD_PARTY_COLUMNS.city,
+      company: LEAD_PARTY_COLUMNS.company,
+    })
+    .from(leadPartyMap)
+    .innerJoin(businessParties, LEAD_PARTY_JOIN)
+    .where(and(...leadPartyScope(orgId, INCLUDE_DELETED), leadIdIs(leadId)))
+    .limit(1);
+  return row ?? null;
+}
+
+/** Everything the meeting brief puts on the page, in `leads`' vocabulary. */
+async function loadLeadProfile(db: Db, orgId: string, leadId: number) {
+  const [row] = await db
+    .select({
+      id: LEAD_PARTY_COLUMNS.id,
+      name: LEAD_PARTY_COLUMNS.name,
+      email: LEAD_PARTY_COLUMNS.email,
+      phone: LEAD_PARTY_COLUMNS.phone,
+      company: LEAD_PARTY_COLUMNS.company,
+      designation: LEAD_PARTY_COLUMNS.designation,
+      city: LEAD_PARTY_COLUMNS.city,
+      source: LEAD_PARTY_COLUMNS.source,
+      status: LEAD_PARTY_COLUMNS.status,
+      priority: LEAD_PARTY_COLUMNS.priority,
+      score: LEAD_PARTY_COLUMNS.score,
+      potentialValue: LEAD_PARTY_COLUMNS.potentialValue,
+      investmentInterest: LEAD_PARTY_COLUMNS.investmentInterest,
+      tags: LEAD_PARTY_COLUMNS.tags,
+      notes: LEAD_PARTY_COLUMNS.notes,
+      followUpNotes: LEAD_PARTY_COLUMNS.followUpNotes,
+    })
+    .from(leadPartyMap)
+    .innerJoin(businessParties, LEAD_PARTY_JOIN)
+    .where(and(...leadPartyScope(orgId, INCLUDE_DELETED), leadIdIs(leadId)))
+    .limit(1);
+  return row ?? null;
+}
+
 @Injectable()
 export class CrmBriefService {
   constructor(
@@ -57,9 +123,7 @@ export class CrmBriefService {
       if (!account) return null;
 
       const [resolvedLead, activities] = await Promise.all([
-        account.leadId
-          ? tx.query.leads.findFirst({ where: eq(leads.id, account.leadId) })
-          : Promise.resolve(null),
+        account.leadId ? loadLeadContext(tx, orgId, account.leadId) : Promise.resolve(null),
         tx
           .select({
             activityType: clientAccountActivities.activityType,
@@ -150,9 +214,7 @@ Please generate a comprehensive account summary with:
     const ctx = await runInTenantTransaction(this.db, async (tx) => {
       if (attendeeType === "lead") {
         const [lead, activities] = await Promise.all([
-          tx.query.leads.findFirst({
-            where: and(eq(leads.id, attendeeId), eq(leads.orgId, orgId)),
-          }),
+          loadLeadProfile(tx, orgId, attendeeId),
           tx
             .select({
               type: leadActivities.type,
@@ -317,39 +379,56 @@ Please generate a structured pre-meeting brief with:
     const parsedFilters = result.data;
 
     const leadsResult = await runInTenantTransaction(this.db, async (tx) => {
-      const conditions = [eq(leads.orgId, orgId)];
-      if (parsedFilters.status?.length) conditions.push(inArray(leads.status, parsedFilters.status));
-      if (parsedFilters.priority?.length) conditions.push(inArray(leads.priority, parsedFilters.priority));
-      if (parsedFilters.source) conditions.push(ilike(leads.source, `%${parsedFilters.source}%`));
-      if (parsedFilters.city) conditions.push(ilike(leads.city, `%${parsedFilters.city}%`));
-      if (parsedFilters.company) conditions.push(ilike(leads.company, `%${parsedFilters.company}%`));
-      if (parsedFilters.nameSearch) conditions.push(ilike(leads.name, `%${parsedFilters.nameSearch}%`));
+      /*
+       * The coalesced columns are what the filters compare against, not the raw
+       * party ones. `lifecycle_stage` is nullable where `leads.status` was NOT
+       * NULL, so an `IN (…)` against the raw column drops every lead that never
+       * left NEW -- the search would answer "no results" for the commonest
+       * status in the pipeline. Same for priority and source.
+       */
+      const conditions = [...leadPartyScope(orgId, INCLUDE_DELETED)];
+      if (parsedFilters.status?.length)
+        conditions.push(inArray(LEAD_PARTY_COLUMNS.status, parsedFilters.status));
+      if (parsedFilters.priority?.length)
+        conditions.push(inArray(LEAD_PARTY_COLUMNS.priority, parsedFilters.priority));
+      if (parsedFilters.source)
+        conditions.push(ilike(LEAD_PARTY_COLUMNS.source, `%${parsedFilters.source}%`));
+      if (parsedFilters.city) conditions.push(ilike(LEAD_PARTY_COLUMNS.city, `%${parsedFilters.city}%`));
+      if (parsedFilters.company)
+        conditions.push(ilike(LEAD_PARTY_COLUMNS.company, `%${parsedFilters.company}%`));
+      if (parsedFilters.nameSearch)
+        conditions.push(ilike(LEAD_PARTY_COLUMNS.name, `%${parsedFilters.nameSearch}%`));
       if (parsedFilters.minValue !== undefined) {
-        conditions.push(gte(leads.potentialValue, String(parsedFilters.minValue)));
+        conditions.push(gte(LEAD_PARTY_COLUMNS.potentialValue, String(parsedFilters.minValue)));
       }
       if (parsedFilters.maxValue !== undefined) {
-        conditions.push(lte(leads.potentialValue, String(parsedFilters.maxValue)));
+        conditions.push(lte(LEAD_PARTY_COLUMNS.potentialValue, String(parsedFilters.maxValue)));
       }
 
       const rows = await tx
         .select({
-          id: leads.id,
-          name: leads.name,
-          email: leads.email,
-          company: leads.company,
-          status: leads.status,
-          priority: leads.priority,
-          source: leads.source,
-          value: leads.potentialValue,
-          city: leads.city,
-          assignedToId: leads.assignedToId,
+          id: LEAD_PARTY_COLUMNS.id,
+          name: LEAD_PARTY_COLUMNS.name,
+          email: LEAD_PARTY_COLUMNS.email,
+          company: LEAD_PARTY_COLUMNS.company,
+          status: LEAD_PARTY_COLUMNS.status,
+          priority: LEAD_PARTY_COLUMNS.priority,
+          source: LEAD_PARTY_COLUMNS.source,
+          value: LEAD_PARTY_COLUMNS.potentialValue,
+          city: LEAD_PARTY_COLUMNS.city,
+          assignedToId: LEAD_PARTY_COLUMNS.assignedToId,
           assigneeName: users.name,
           assigneeFirstName: users.firstName,
           assigneeLastName: users.lastName,
         })
-        .from(leads)
-        .leftJoin(users, eq(leads.assignedToId, users.id))
+        .from(leadPartyMap)
+        .innerJoin(businessParties, LEAD_PARTY_JOIN)
+        .leftJoin(users, eq(LEAD_PARTY_COLUMNS.assignedToId, users.id))
         .where(and(...conditions))
+        // Fifty of however many matched, and the old read let the heap pick
+        // which fifty -- an order the map join changes. Newest first, id to break
+        // the tie, so the same question twice gives the same answer.
+        .orderBy(desc(LEAD_PARTY_COLUMNS.createdAt), desc(LEAD_PARTY_COLUMNS.id))
         .limit(50);
 
       let filteredRows = rows;
@@ -386,9 +465,7 @@ Please generate a structured pre-meeting brief with:
 
     const attendeeName = await runInTenantTransaction(this.db, async (tx) => {
       if (input.attendeeType === "lead") {
-        const lead = await tx.query.leads.findFirst({
-          where: and(eq(leads.id, input.attendeeId), eq(leads.orgId, orgId)),
-        });
+        const lead = await loadLeadContext(tx, orgId, input.attendeeId);
         if (!lead) throw new NotFoundException("Lead not found");
         return lead.name;
       } else {
@@ -447,9 +524,7 @@ Keep the tone professional but warm. Max 200 words for the body.`;
       if (!account) return null;
 
       const [resolvedLead, activities] = await Promise.all([
-        account.leadId
-          ? tx.query.leads.findFirst({ where: eq(leads.id, account.leadId) })
-          : Promise.resolve(null),
+        account.leadId ? loadLeadContext(tx, orgId, account.leadId) : Promise.resolve(null),
         tx
           .select({
             activityType: clientAccountActivities.activityType,

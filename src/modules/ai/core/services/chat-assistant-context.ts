@@ -2,16 +2,31 @@ import { and, count, desc, eq, isNull, sql } from "drizzle-orm";
 import {
   attendance,
   deals,
-  leads,
   leaveRequests,
   payrollRuns,
   payrollRunEmployees,
   projects,
   tickets,
 } from "../../../../db/schema";
+import { businessParties, leadPartyMap } from "../../../../db/schema/party";
 import { getTodayString } from "../../../../common/date";
 import { type Db } from "../../../../db/drizzle.module";
+import {
+  INCLUDE_DELETED,
+  LEAD_PARTY_COLUMNS,
+  LEAD_PARTY_JOIN,
+  leadPartyScope,
+} from "../../../leads/lead-party-reader";
 import type { ChatContext } from "./chat-assistant-model";
+
+/**
+ * The three lead figures the assistant quotes come through `lead_party_map`.
+ *
+ * `INCLUDE_DELETED` on all three because none of them filtered `deleted_at`
+ * before, and a count that silently drops by a few the day this lands is a
+ * migration reporting itself as a data change. Recorded as a finding rather than
+ * fixed in passing.
+ */
 
 export async function fetchChatContext(
   db: Db,
@@ -72,12 +87,21 @@ export async function fetchChatContext(
       .limit(3),
     db
       .select({ count: count() })
-      .from(leads)
-      .where(and(eq(leads.orgId, orgId), eq(leads.assignedToId, userId))),
+      .from(leadPartyMap)
+      .innerJoin(businessParties, LEAD_PARTY_JOIN)
+      .where(
+        and(
+          ...leadPartyScope(orgId, INCLUDE_DELETED),
+          eq(LEAD_PARTY_COLUMNS.assignedToId, userId),
+        ),
+      ),
     db
       .select({ count: count() })
-      .from(leads)
-      .where(and(eq(leads.orgId, orgId), eq(leads.priority, "HOT"))),
+      .from(leadPartyMap)
+      .innerJoin(businessParties, LEAD_PARTY_JOIN)
+      .where(
+        and(...leadPartyScope(orgId, INCLUDE_DELETED), eq(LEAD_PARTY_COLUMNS.priority, "HOT")),
+      ),
     db
       .select({ count: count() })
       .from(deals)
@@ -91,13 +115,20 @@ export async function fetchChatContext(
       ),
     db
       .select({
-        name: leads.name,
-        status: leads.status,
-        priority: leads.priority,
+        name: LEAD_PARTY_COLUMNS.name,
+        status: LEAD_PARTY_COLUMNS.status,
+        priority: LEAD_PARTY_COLUMNS.priority,
       })
-      .from(leads)
-      .where(and(eq(leads.orgId, orgId), eq(leads.assignedToId, userId)))
-      .orderBy(desc(leads.createdAt))
+      .from(leadPartyMap)
+      .innerJoin(businessParties, LEAD_PARTY_JOIN)
+      .where(
+        and(
+          ...leadPartyScope(orgId, INCLUDE_DELETED),
+          eq(LEAD_PARTY_COLUMNS.assignedToId, userId),
+        ),
+      )
+      // `created_at` is not unique; the id decides which five, rather than the heap.
+      .orderBy(desc(LEAD_PARTY_COLUMNS.createdAt), desc(LEAD_PARTY_COLUMNS.id))
       .limit(5),
   ]);
 
