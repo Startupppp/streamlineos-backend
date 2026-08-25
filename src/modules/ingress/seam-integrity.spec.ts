@@ -141,9 +141,22 @@ describe("the ingress seam still holds", () => {
     const normalisers = readdirSync(join(ingressDir, "adapters"))
       .filter((f) => f.endsWith("-to-inbound-event.ts"))
       .sort();
-    expect(normalisers.length).toBeGreaterThan(0);
-    // Grows as Phase 2 lands its channels; each addition is a deliberate edit here.
-    expect(normalisers).toContain("mail-to-inbound-event.ts");
+    /**
+     * Pinned, not counted. A channel arriving without a normaliser means its
+     * provider-specific parsing went somewhere else — into a transport, or into
+     * the workflow — and there is then no single place to test it from a fixture.
+     *
+     * Each entry was a deliberate edit when that channel landed. Three of them
+     * arrived together in Phase 2, and all three adapters left this line alone
+     * and said so, which is the behaviour this file is trying to encourage:
+     * widening the pin is a decision, never a step in getting green.
+     */
+    expect(normalisers).toEqual([
+      "mail-to-inbound-event.ts",
+      "telephony-to-inbound-event.ts",
+      "web-form-to-inbound-event.ts",
+      "whatsapp-to-inbound-event.ts",
+    ]);
   });
 
   /**
