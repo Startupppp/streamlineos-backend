@@ -106,6 +106,18 @@ const accessStub = {
     current().permissions.includes(permissionKey) ? "all" : "none",
   holds: async (_user: unknown, permissionKey: string): Promise<boolean> =>
     current().permissions.includes(permissionKey),
+  moduleAvailability: async (_user: unknown, moduleKey: string) =>
+    current().enabledModules.includes(moduleKey.toLowerCase())
+      ? { available: true as const }
+      : { available: false as const, reason: "org-disabled" as const },
+  moduleAvailabilityFor: async (
+    _orgId: string,
+    _userId: string,
+    moduleKey: string,
+  ) =>
+    current().enabledModules.includes(moduleKey.toLowerCase())
+      ? { available: true as const }
+      : { available: false as const, reason: "org-disabled" as const },
   buildModuleAvailabilityResolver: (
     getModuleMap: (orgId: string) => Promise<Record<string, boolean>>,
   ) =>
