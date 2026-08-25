@@ -1,11 +1,11 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
-import { AppModule } from "../app.module";
+import { ArchitectureEvidenceModule } from "./architecture-evidence.module";
 import { KbArticleMigrationService } from "../modules/kb/article-conversion/kb-article-migration.service";
 
 async function main(): Promise<void> {
-  const app = await NestFactory.createApplicationContext(AppModule, {
-    logger: ["error", "warn", "log"],
+  const app = await NestFactory.createApplicationContext(ArchitectureEvidenceModule, {
+    logger: false,
   });
 
   try {

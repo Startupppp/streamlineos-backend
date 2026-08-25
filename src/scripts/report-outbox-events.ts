@@ -1,11 +1,11 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
-import { AppModule } from "../app.module";
+import { ArchitectureEvidenceModule } from "./architecture-evidence.module";
 import { OutboxPublisherService } from "../common/outbox/outbox-publisher.service";
 
 async function main(): Promise<void> {
-  const app = await NestFactory.createApplicationContext(AppModule, {
-    logger: ["error", "warn"],
+  const app = await NestFactory.createApplicationContext(ArchitectureEvidenceModule, {
+    logger: false,
   });
   try {
     const report = await app.get(OutboxPublisherService).report();
