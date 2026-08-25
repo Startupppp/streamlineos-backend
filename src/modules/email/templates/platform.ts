@@ -154,3 +154,79 @@ ${daysLeft <= 3 ? renderCallout("Act now — once the trial expires, access to y
     }),
   };
 }
+
+export interface WaitlistAdminEmailParams {
+  name: string;
+  email: string;
+  reference: string;
+  receivedAt: string;
+  position: number;
+  organization?: string;
+  role?: string;
+  teamSize?: string;
+  notes?: string;
+  returning?: boolean;
+}
+
+export function getWaitlistAdminNotificationEmail(params: WaitlistAdminEmailParams): { subject: string; html: string } {
+  const { name, email, reference, receivedAt, position, organization, role, teamSize, notes, returning } = params;
+  const subject = returning
+    ? `Waitlist signup updated — ${name}`
+    : `New waitlist signup — ${name}`;
+
+  const rows: Array<{ label: string; value: string }> = [
+    { label: "Reference", value: reference },
+    { label: "Name", value: name },
+    { label: "Email", value: email },
+  ];
+  if (organization) rows.push({ label: "Organization", value: organization });
+  if (role) rows.push({ label: "Role", value: role });
+  if (teamSize) rows.push({ label: "Team size", value: teamSize });
+  rows.push({ label: "Position", value: `#${position}` });
+  rows.push({ label: "Received", value: receivedAt });
+
+  const content = `
+<h1 class="email-title">${escapeHtml(subject)}</h1>
+${renderKeyValueRows(rows)}
+${notes ? renderCallout(escapeHtml(notes).replace(/\n/g, "<br>"), "info") : ""}
+`;
+  return {
+    subject,
+    html: getEmailTemplate({
+      title: subject,
+      preheader: `${escapeHtml(name)}${organization ? ` (${escapeHtml(organization)})` : ""} joined the waitlist.`,
+      content,
+    }),
+  };
+}
+
+export interface WaitlistConfirmationEmailParams {
+  name: string;
+  reference: string;
+  position: number;
+}
+
+export function getWaitlistConfirmationEmail(params: WaitlistConfirmationEmailParams): { subject: string; html: string } {
+  const { name, reference, position } = params;
+  const brand = getBrandName();
+  const subject = `You're on the ${brand} waitlist`;
+  const firstName = escapeHtml(name.split(" ")[0] ?? name);
+
+  const content = `
+<h1 class="email-title">${escapeHtml(subject)}</h1>
+<p class="email-text">Hi ${firstName}, you're on the list. We're opening ${escapeHtml(brand)} to new teams in small batches, and we'll email you the moment your invite is ready.</p>
+${renderKeyValueRows([
+  { label: "Your reference", value: reference },
+  { label: "Position", value: `#${position}` },
+])}
+<p class="email-text">Reply to this email if you'd like to tell us more about what you're trying to run — teams that do tend to get in sooner.</p>
+`;
+  return {
+    subject,
+    html: getEmailTemplate({
+      title: subject,
+      preheader: `You're #${position} on the ${escapeHtml(brand)} waitlist.`,
+      content,
+    }),
+  };
+}

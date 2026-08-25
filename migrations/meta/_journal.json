@@ -1807,6 +1807,13 @@
       "when": 1787725953441,
       "tag": "0275_party_company_search",
       "breakpoints": true
+    },
+    {
+      "idx": 258,
+      "version": "7",
+      "when": 1787736753441,
+      "tag": "0471_platform_waitlist",
+      "breakpoints": true
     }
   ]
 }

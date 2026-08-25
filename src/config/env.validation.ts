@@ -56,6 +56,10 @@ const baseSchema = z
     CRON_SECRET: deploymentSecret,
     INTERNAL_API_SECRET: deploymentSecret,
     CONTACT_NOTIFICATION_EMAIL: optionalEmail,
+    WAITLIST_NOTIFICATION_EMAILS: z.preprocess(
+      emptyToUndefined,
+      z.string().trim().optional(),
+    ),
     EMAIL_PROVIDER: z.preprocess(
       emptyToUndefined,
       z.enum(["zeptomail", "resend"]).optional(),

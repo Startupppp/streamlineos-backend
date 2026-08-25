@@ -68,6 +68,8 @@ export {
   getContactAutoreplyEmail,
   getContactReplyEmail,
   getTrialReminderEmail,
+  getWaitlistAdminNotificationEmail,
+  getWaitlistConfirmationEmail,
 } from "./platform";
 
 export {
