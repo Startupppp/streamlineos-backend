@@ -7,6 +7,7 @@ import { dateOnly } from "./calendar.types";
 import type { CalendarEventProjection, CalendarSourceContext } from "./calendar-event-source";
 import { CalendarSourceRegistry } from "./calendar-source.registry";
 import { CalendarEventSourceLoader } from "./calendar-event-source.loader";
+import { CALENDAR_EVENTS_CAP } from "./dto/calendar.schemas";
 
 function dateAtNoonUtc(date: string): Date {
   return new Date(`${date}T12:00:00.000Z`);
@@ -125,6 +126,12 @@ export class CalendarEventsAggregateService {
 
     for (const projection of projections) result.push(projectionToItem(projection));
 
-    return { events: result.sort((a, b) => a.start.getTime() - b.start.getTime()), failures };
+    const sorted = result.sort((a, b) => a.start.getTime() - b.start.getTime());
+    const truncated = sorted.length > CALENDAR_EVENTS_CAP;
+    return {
+      events: truncated ? sorted.slice(0, CALENDAR_EVENTS_CAP) : sorted,
+      failures,
+      truncated,
+    };
   }
 }

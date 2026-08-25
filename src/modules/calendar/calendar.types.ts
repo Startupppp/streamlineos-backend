@@ -14,6 +14,7 @@ export interface SourceFailure {
 export interface CalendarEventsResult {
   events: CalendarEventItem[];
   failures: ReadonlyArray<SourceFailure>;
+  truncated: boolean;
 }
 
 export interface CalendarEventItem {
