@@ -2,7 +2,6 @@
 import { BillingController } from "./billing.controller";
 import { RazorpayWebhookController } from "./razorpay-webhook.controller";
 import { BillingService } from "./billing.service";
-import { RazorpayService } from "./razorpay.service";
 import { MarketplaceService } from "./marketplace.service";
 import { AiCreditsService } from "./ai-credits.service";
 import { AiCreditsReservationService } from "./ai-credits-reservation.service";
@@ -19,7 +18,7 @@ import { PaymentsModule } from "../payments/payments.module";
 @Module({
   imports: [NotificationsModule, PaymentsModule],
   controllers: [BillingController, RazorpayWebhookController],
-  providers: [BillingService, RazorpayService, MarketplaceService, AiCreditsService, AiCreditsReservationService, AiCreditsPacksService, AiCreditsUsageService, AffiliateService, ReferralService, RevenueAnalyticsService, EnterpriseQuotesService, PlanLimitsService],
+  providers: [BillingService, MarketplaceService, AiCreditsService, AiCreditsReservationService, AiCreditsPacksService, AiCreditsUsageService, AffiliateService, ReferralService, RevenueAnalyticsService, EnterpriseQuotesService, PlanLimitsService],
   exports: [AiCreditsService, AiCreditsUsageService, RevenueAnalyticsService, PlanLimitsService],
 })
 export class BillingModule {}

@@ -47,12 +47,7 @@ describe("RazorpayService import boundary", () => {
 
   it("no production file outside billing/payments/adapters/ imports RazorpayService (test files excepted)", () => {
     const productionViolators = relativeViolators.filter((f) => !f.endsWith(".spec.ts") && !f.endsWith("-spec.ts"));
-    const knownRemaining = [
-      "src/modules/billing/core/billing.controller.ts",
-      "src/modules/billing/core/billing.module.ts",
-    ];
-    const unexpected = productionViolators.filter((f) => !knownRemaining.includes(f));
-    expect(unexpected).toEqual([]);
+    expect(productionViolators).toEqual([]);
   });
 
   it("documents every current importer so regressions are visible", () => {
