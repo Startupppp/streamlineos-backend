@@ -51,10 +51,13 @@ export const DATA_QUALITY_PRODUCERS = [
   /**
    * Rows an import could not resolve confidently.
    *
-   * Declared so the queue's shape is right when the importer starts emitting
-   * them. Nothing writes this today — `import-plan.ts` resolves every row to a
-   * definite create/update/skip and persists no uncertainty — and there is
-   * deliberately no ingest pretending otherwise.
+   * Written by `crm-import` since ticket 13: a row whose best existing match
+   * scores between the review and auto-merge thresholds is not written at all,
+   * and files one of these instead. It stays out of `SWEEPABLE_PRODUCERS`
+   * because a sweep re-derives its findings from the current state of the
+   * database and there is nothing here to re-derive from — the uncertainty
+   * existed for the duration of one import and is only knowable from the plan
+   * that recorded it.
    */
   "import-uncertainty",
 ] as const;
