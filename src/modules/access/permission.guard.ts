@@ -31,7 +31,9 @@ export class PermissionGuard implements CanActivate {
       throw new ForbiddenException("Permission denied");
     }
 
-    const req = context.switchToHttp().getRequest<Request & { user?: CurrentUserContext }>();
+    const req = context
+      .switchToHttp()
+      .getRequest<Request & { user?: CurrentUserContext; rbacScope?: AuthResult["scope"] }>();
 
     let result: AuthResult;
     try {
