@@ -18,8 +18,6 @@ import { surveyResponseSubmittedPayloadSchema } from "./dto/survey-response-subm
 
 const CONSUMER_NAME = "surveys:survey-response-submitted";
 
-type TxHandle = Parameters<Parameters<Db["transaction"]>[0]>[0];
-
 @Injectable()
 export class SurveyResponseSubmittedConsumerService
   implements OutboxEventConsumer, OnModuleInit
@@ -40,123 +38,120 @@ export class SurveyResponseSubmittedConsumerService
   }
 
   async handle(event: OutboxEventRow): Promise<void> {
-    await this.db.transaction(async (tx) => {
-      const txHandle = tx as TxHandle;
-      const txInbox = new InboxConsumer(txHandle);
+    const inbox = new InboxConsumer(this.db);
 
-      const claimed = await txInbox.claim(CONSUMER_NAME, {
-        eventId: event.eventId,
-        organizationId: event.organizationId,
-        aggregateVersion: event.aggregateVersion,
-      });
-      if (!claimed) {
-        this.logger.debug(
-          `survey.response.submitted ${event.eventId} already processed by ${CONSUMER_NAME} — skipping`,
-        );
-        return;
-      }
-
-      const parseResult = surveyResponseSubmittedPayloadSchema.safeParse(
-        event.payload,
+    const claimed = await inbox.claim(CONSUMER_NAME, {
+      eventId: event.eventId,
+      organizationId: event.organizationId,
+      aggregateVersion: event.aggregateVersion,
+    });
+    if (!claimed) {
+      this.logger.debug(
+        `survey.response.submitted ${event.eventId} already processed by ${CONSUMER_NAME} — skipping`,
       );
-      if (!parseResult.success) {
-        this.logger.warn(
-          `survey.response.submitted ${event.eventId} has invalid payload: ${parseResult.error.message}`,
-        );
-        await txInbox.markProcessed(
-          CONSUMER_NAME,
-          event.eventId,
-          "FAILED",
-          parseResult.error.message,
-        );
-        return;
-      }
+      return;
+    }
 
-      const { sessionId, surveyId, passed } = parseResult.data;
-      const orgId = event.organizationId;
+    const parseResult = surveyResponseSubmittedPayloadSchema.safeParse(
+      event.payload,
+    );
+    if (!parseResult.success) {
+      this.logger.warn(
+        `survey.response.submitted ${event.eventId} has invalid payload: ${parseResult.error.message}`,
+      );
+      await inbox.markProcessed(
+        CONSUMER_NAME,
+        event.eventId,
+        "FAILED",
+        parseResult.error.message,
+      );
+      return;
+    }
 
-      const [survey] = await (tx as Db)
-        .select({ ownerUserId: surveyForms.ownerUserId })
-        .from(surveyForms)
-        .where(and(eq(surveyForms.id, surveyId), eq(surveyForms.orgId, orgId)))
+    const { sessionId, surveyId, passed } = parseResult.data;
+    const orgId = event.organizationId;
+
+    const [survey] = await this.db
+      .select({ ownerUserId: surveyForms.ownerUserId })
+      .from(surveyForms)
+      .where(and(eq(surveyForms.id, surveyId), eq(surveyForms.orgId, orgId)))
+      .limit(1);
+
+    if (!survey) {
+      this.logger.debug(
+        `survey.response.submitted ${event.eventId}: survey ${surveyId} not found in org ${orgId} — skipping`,
+      );
+      await inbox.markProcessed(
+        CONSUMER_NAME,
+        event.eventId,
+        "SKIPPED",
+        "survey not found",
+      );
+      return;
+    }
+
+    if (survey.ownerUserId) {
+      await this.dispatch.emitDurable(this.db, {
+        orgId,
+        eventKey: "survey.response.received",
+        targetUserIds: [survey.ownerUserId],
+        entityType: "survey",
+        entityId: String(surveyId),
+      });
+    }
+
+    if (passed !== null) {
+      const [session] = await this.db
+        .select({
+          participantId: surveyResponseSessions.participantId,
+          anonymous: surveyResponseSessions.anonymous,
+        })
+        .from(surveyResponseSessions)
+        .where(
+          and(
+            eq(surveyResponseSessions.id, sessionId),
+            eq(surveyResponseSessions.orgId, orgId),
+          ),
+        )
         .limit(1);
 
-      if (!survey) {
-        this.logger.debug(
-          `survey.response.submitted ${event.eventId}: survey ${surveyId} not found in org ${orgId} — skipping`,
-        );
-        await txInbox.markProcessed(
-          CONSUMER_NAME,
-          event.eventId,
-          "SKIPPED",
-          "survey not found",
-        );
-        return;
-      }
-
-      if (survey.ownerUserId) {
-        await this.dispatch.emitDurable(txHandle, {
-          orgId,
-          eventKey: "survey.response.received",
-          targetUserIds: [survey.ownerUserId],
-          entityType: "survey",
-          entityId: String(surveyId),
-        });
-      }
-
-      if (passed !== null) {
-        const [session] = await (tx as Db)
-          .select({
-            participantId: surveyResponseSessions.participantId,
-            anonymous: surveyResponseSessions.anonymous,
-          })
-          .from(surveyResponseSessions)
+      if (session && !session.anonymous && session.participantId !== null) {
+        const [participant] = await this.db
+          .select({ userId: surveyParticipants.userId })
+          .from(surveyParticipants)
           .where(
             and(
-              eq(surveyResponseSessions.id, sessionId),
-              eq(surveyResponseSessions.orgId, orgId),
+              eq(surveyParticipants.id, session.participantId),
+              eq(surveyParticipants.orgId, orgId),
             ),
           )
           .limit(1);
 
-        if (session && !session.anonymous && session.participantId !== null) {
-          const [participant] = await (tx as Db)
-            .select({ userId: surveyParticipants.userId })
-            .from(surveyParticipants)
-            .where(
-              and(
-                eq(surveyParticipants.id, session.participantId),
-                eq(surveyParticipants.orgId, orgId),
-              ),
-            )
-            .limit(1);
-
-          const respondentUserId = participant?.userId ?? null;
-          if (respondentUserId) {
-            const certKey = passed
-              ? "survey.certification.passed"
-              : "survey.certification.failed";
-            await this.dispatch.emitDurable(txHandle, {
-              orgId,
-              eventKey: certKey,
-              targetUserIds: [respondentUserId],
-              entityType: "survey_response",
-              entityId: String(sessionId),
-            });
-          }
+        const respondentUserId = participant?.userId ?? null;
+        if (respondentUserId) {
+          const certKey = passed
+            ? "survey.certification.passed"
+            : "survey.certification.failed";
+          await this.dispatch.emitDurable(this.db, {
+            orgId,
+            eventKey: certKey,
+            targetUserIds: [respondentUserId],
+            entityType: "survey_response",
+            entityId: String(sessionId),
+          });
         }
       }
+    }
 
-      await txInbox.markProcessed(
-        CONSUMER_NAME,
-        event.eventId,
-        "COMPLETED",
-        null,
-      );
+    await inbox.markProcessed(
+      CONSUMER_NAME,
+      event.eventId,
+      "COMPLETED",
+      null,
+    );
 
-      this.logger.log(
-        `survey.response.submitted ${event.eventId}: notifications dispatched for session ${sessionId} org ${orgId}`,
-      );
-    });
+    this.logger.log(
+      `survey.response.submitted ${event.eventId}: notifications dispatched for session ${sessionId} org ${orgId}`,
+    );
   }
 }

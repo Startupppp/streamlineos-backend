@@ -47,41 +47,51 @@ function makeEvent(overrides: Record<string, unknown> = {}): OutboxEventRow {
   };
 }
 
-function buildInboxSelectChain(returning: unknown[]) {
-  const ret = jest.fn().mockResolvedValue(returning);
-  const onConflictDoNothing = jest.fn().mockReturnValue({ returning: ret });
-  const values = jest.fn().mockReturnValue({ onConflictDoNothing });
-  const insert = jest.fn().mockReturnValue({ values });
-  return { insert, _returning: ret };
-}
-
-function buildSelectChain(result: unknown[]) {
-  const limit = jest.fn().mockResolvedValue(result);
-  const where = jest.fn().mockReturnValue({ limit });
-  const from = jest.fn().mockReturnValue({ where });
-  const select = jest.fn().mockReturnValue({ from });
-  return { select };
-}
-
-function buildUpdateChain() {
-  const where = jest.fn().mockResolvedValue(undefined);
-  const set = jest.fn().mockReturnValue({ where });
-  const update = jest.fn().mockReturnValue({ set });
-  return { update };
-}
-
-interface TxMock {
+interface DbMock {
   insert: jest.Mock;
   select: jest.Mock;
   update: jest.Mock;
 }
 
-function buildTx(overrides: Partial<TxMock> = {}): TxMock {
-  return {
-    insert: overrides.insert ?? jest.fn(),
-    select: overrides.select ?? jest.fn(),
-    update: overrides.update ?? jest.fn(),
-  };
+function buildDbMock(options: {
+  claimed?: boolean;
+  survey?: { ownerUserId: string | null } | null;
+  session?: { participantId: number | null; anonymous: boolean } | null;
+  participant?: { userId: string | null } | null;
+}): DbMock {
+  const {
+    claimed = true,
+    survey = { ownerUserId: OWNER_USER_ID },
+    session = null,
+    participant = null,
+  } = options;
+
+  const claimReturn = claimed ? [{ id: 1 }] : [];
+  const claimReturning = jest.fn().mockResolvedValue(claimReturn);
+  const claimOnConflict = jest.fn().mockReturnValue({ returning: claimReturning });
+  const claimValues = jest.fn().mockReturnValue({ onConflictDoNothing: claimOnConflict });
+  const dbInsert = jest.fn().mockReturnValue({ values: claimValues });
+
+  const updateWhere = jest.fn().mockResolvedValue(undefined);
+  const updateSet = jest.fn().mockReturnValue({ where: updateWhere });
+  const dbUpdate = jest.fn().mockReturnValue({ set: updateSet });
+
+  const selectCalls: unknown[][] = [];
+  if (survey !== undefined) selectCalls.push(survey !== null ? [survey] : []);
+  if (session !== undefined) selectCalls.push(session !== null ? [session] : []);
+  if (participant !== undefined) selectCalls.push(participant !== null ? [participant] : []);
+
+  let selectCallIndex = 0;
+  const dbSelect = jest.fn().mockImplementation(() => {
+    const result = selectCalls[selectCallIndex] ?? [];
+    selectCallIndex++;
+    const limit = jest.fn().mockResolvedValue(result);
+    const where = jest.fn().mockReturnValue({ limit });
+    const from = jest.fn().mockReturnValue({ where });
+    return { from };
+  });
+
+  return { insert: dbInsert, select: dbSelect, update: dbUpdate };
 }
 
 async function buildService(options: {
@@ -91,48 +101,9 @@ async function buildService(options: {
   participant?: { userId: string | null } | null;
   emitDurableImpl?: () => Promise<void>;
 }) {
-  const {
-    claimed = true,
-    survey = { ownerUserId: OWNER_USER_ID },
-    session = null,
-    participant = null,
-    emitDurableImpl = async () => undefined,
-  } = options;
+  const { emitDurableImpl = async () => undefined } = options;
 
-  const claimReturn = claimed ? [{ id: 1 }] : [];
-  const markProcessedWhere = jest.fn().mockResolvedValue(undefined);
-  const markProcessedSet = jest.fn().mockReturnValue({ where: markProcessedWhere });
-  const markProcessedUpdate = jest.fn().mockReturnValue({ set: markProcessedSet });
-
-  const claimReturning = jest.fn().mockResolvedValue(claimReturn);
-  const claimOnConflict = jest.fn().mockReturnValue({ returning: claimReturning });
-  const claimValues = jest.fn().mockReturnValue({ onConflictDoNothing: claimOnConflict });
-  const claimInsert = jest.fn().mockReturnValue({ values: claimValues });
-
-  const selectCalls: unknown[][] = [];
-  if (survey !== undefined) selectCalls.push(survey !== null ? [survey] : []);
-  if (session !== undefined) selectCalls.push(session !== null ? [session] : []);
-  if (participant !== undefined) selectCalls.push(participant !== null ? [participant] : []);
-
-  let selectCallIndex = 0;
-  const txSelect = jest.fn().mockImplementation(() => {
-    const result = selectCalls[selectCallIndex] ?? [];
-    selectCallIndex++;
-    const limit = jest.fn().mockResolvedValue(result);
-    const where = jest.fn().mockReturnValue({ limit });
-    const from = jest.fn().mockReturnValue({ where });
-    return { from };
-  });
-
-  const tx: TxMock & { update: jest.Mock } = {
-    insert: claimInsert,
-    select: txSelect,
-    update: markProcessedUpdate,
-  };
-
-  const db = {
-    transaction: jest.fn().mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback(tx)),
-  };
+  const db = buildDbMock(options);
 
   const dispatch = {
     emitDurable: jest.fn().mockImplementation(emitDurableImpl),
@@ -151,7 +122,7 @@ async function buildService(options: {
 
   const svc = module.get(SurveyResponseSubmittedConsumerService);
 
-  return { svc, db, dispatch, registry, tx };
+  return { svc, db, dispatch, registry };
 }
 
 describe("SurveyResponseSubmittedConsumerService", () => {
@@ -176,38 +147,41 @@ describe("SurveyResponseSubmittedConsumerService", () => {
       expect(dispatch.emitDurable).not.toHaveBeenCalled();
     });
 
-    it("is idempotent: a second call with the same event is skipped", async () => {
-      const { svc, dispatch, db } = await buildService({ claimed: false });
+    it("is idempotent: a second call with the same event does not dispatch", async () => {
+      const { svc, dispatch } = await buildService({ claimed: false });
       await svc.handle(makeEvent());
       await svc.handle(makeEvent());
       expect(dispatch.emitDurable).not.toHaveBeenCalled();
-      expect(db.transaction).toHaveBeenCalledTimes(2);
+    });
+
+    it("calls db.insert to attempt the inbox claim on every handle() invocation", async () => {
+      const { svc, db } = await buildService({ claimed: false });
+      await svc.handle(makeEvent());
+      expect(db.insert).toHaveBeenCalledTimes(1);
     });
   });
 
   describe("payload validation", () => {
     it("marks inbox FAILED when the payload does not match the schema", async () => {
-      const { svc, tx } = await buildService({ survey: null });
+      const { svc, db } = await buildService({ survey: null });
 
       const badEvent = makeEvent();
       (badEvent.payload as Record<string, unknown>)["sessionId"] = "not-a-number";
 
       await svc.handle(badEvent);
 
-      const updateArg = (tx.update as jest.Mock).mock.calls[0];
-      expect(updateArg).toBeDefined();
-      const setCall = (tx.update as jest.Mock).mock.results[0]?.value as { set: jest.Mock } | undefined;
+      const setCall = (db.update as jest.Mock).mock.results[0]?.value as { set: jest.Mock } | undefined;
       expect(setCall?.set).toHaveBeenCalledWith(expect.objectContaining({ status: "FAILED" }));
     });
   });
 
   describe("survey not found", () => {
     it("marks inbox SKIPPED when the survey does not exist in the org", async () => {
-      const { svc, dispatch, tx } = await buildService({ survey: null });
+      const { svc, dispatch, db } = await buildService({ survey: null });
       await svc.handle(makeEvent());
 
       expect(dispatch.emitDurable).not.toHaveBeenCalled();
-      const setCall = (tx.update as jest.Mock).mock.results[0]?.value as { set: jest.Mock } | undefined;
+      const setCall = (db.update as jest.Mock).mock.results[0]?.value as { set: jest.Mock } | undefined;
       expect(setCall?.set).toHaveBeenCalledWith(expect.objectContaining({ status: "SKIPPED" }));
     });
   });
@@ -350,25 +324,15 @@ describe("SurveyResponseSubmittedConsumerService", () => {
     });
   });
 
-  describe("transaction boundaries and error handling", () => {
-    it("runs all work inside a single transaction", async () => {
+  describe("inbox marking and error handling", () => {
+    it("marks inbox COMPLETED on success", async () => {
       const { svc, db } = await buildService({
         survey: { ownerUserId: OWNER_USER_ID },
       });
 
       await svc.handle(makeEvent());
 
-      expect(db.transaction).toHaveBeenCalledTimes(1);
-    });
-
-    it("marks inbox COMPLETED inside the transaction on success", async () => {
-      const { svc, tx } = await buildService({
-        survey: { ownerUserId: OWNER_USER_ID },
-      });
-
-      await svc.handle(makeEvent());
-
-      const setCall = (tx.update as jest.Mock).mock.results[0]?.value as { set: jest.Mock } | undefined;
+      const setCall = (db.update as jest.Mock).mock.results[0]?.value as { set: jest.Mock } | undefined;
       expect(setCall?.set).toHaveBeenCalledWith(
         expect.objectContaining({ status: "COMPLETED" }),
       );
