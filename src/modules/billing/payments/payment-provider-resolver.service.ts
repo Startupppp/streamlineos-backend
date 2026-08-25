@@ -3,7 +3,7 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { paymentProviders } from "../../../db/schema";
-import { PaymentProviderAdapterRegistry, type PaymentProviderAdapter } from "./payment-provider-adapter.interface";
+import { PaymentProviderAdapterRegistry, type PaymentProviderAdapter, type PaymentWebhookNormalization } from "./payment-provider-adapter.interface";
 import { PaymentProviderSetupService } from "./payment-provider-setup.service";
 
 export type PaymentEnvironment = "test" | "live";
@@ -25,6 +25,7 @@ export interface OrganizationPaymentProvider {
     signature: string;
   }): boolean;
   verifyWebhookSignature(params: { rawBody: string; signature: string }): boolean;
+  normalizeWebhook(rawBody: string): PaymentWebhookNormalization;
 }
 
 /**
@@ -102,5 +103,6 @@ function createOrganizationProvider(
       if (!webhookSecret) return false;
       return adapter.verifyWebhookSignature({ ...params, webhookSecret });
     },
+    normalizeWebhook: (rawBody) => adapter.normalizeWebhook(rawBody),
   };
 }

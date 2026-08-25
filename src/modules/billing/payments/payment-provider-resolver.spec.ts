@@ -30,7 +30,14 @@ describe("PaymentProviderResolver", () => {
     expect(provider?.publicKeyId()).toBe("rzp_test_org_a");
     expect(provider?.isReady()).toBe(true);
     expect(provider && "keySecret" in provider).toBe(false);
+    expect(provider && "webhookSecret" in provider).toBe(false);
     await provider?.createOrder({ amount: "100", currency: "INR", receipt: "receipt" });
+    expect(provider?.normalizeWebhook(JSON.stringify({ event: "payment.captured", payload: {} }))).toEqual({
+      ok: true,
+      eventType: "payment.captured",
+      payload: {},
+    });
+    expect(provider?.verifyWebhookSignature({ rawBody: "body", signature: "signature" })).toBe(false);
     expect(setup.getDecryptedSecret).toHaveBeenCalledWith("org-a", 7, "test");
   });
 

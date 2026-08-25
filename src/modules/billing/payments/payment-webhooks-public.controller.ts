@@ -3,7 +3,7 @@ import type { Request, Response } from "express";
 import { Public } from "../../../common/auth/public.decorator";
 import { PaymentWebhookHealthService } from "./payment-webhook-health.service";
 
-// Public, unauthenticated receiver — Razorpay/Stripe post here directly. Every request MUST
+// Public, unauthenticated receiver — payment providers post here directly. Every request MUST
 // have its signature verified before any DB write or business effect (see
 // PaymentWebhookHealthService.processIncomingWebhook). orgId is embedded in the URL path so we
 // know which tenant's webhook secret to verify against without trusting any request field.
@@ -18,6 +18,8 @@ export class PaymentWebhooksPublicController {
     @Param("environment") environment: string,
     @Param("orgId") orgId: string,
     @Req() req: RawBodyRequest<Request>,
+    @Headers("x-payment-signature") paymentSignature: string | undefined,
+    @Headers("x-payment-event-id") paymentEventId: string | undefined,
     @Headers("x-razorpay-signature") razorpaySignature: string | undefined,
     @Headers("x-razorpay-event-id") razorpayEventId: string | undefined,
     @Res() res: Response,
@@ -33,8 +35,10 @@ export class PaymentWebhooksPublicController {
       environment,
       orgId,
       rawBody,
-      signature: razorpaySignature,
-      providerEventIdHeader: razorpayEventId,
+      // Keep the old Razorpay names as a compatibility fallback while all new providers use
+      // the neutral headers. Provider-specific header aliases belong at this HTTP adapter seam.
+      signature: paymentSignature ?? razorpaySignature,
+      providerEventIdHeader: paymentEventId ?? razorpayEventId,
     });
     res.status(result.status).json(result.body);
   }

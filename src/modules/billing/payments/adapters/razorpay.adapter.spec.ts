@@ -87,4 +87,30 @@ describe("RazorpayAdapter", () => {
       expect(adapter.verifyWebhookSignature({ rawBody, signature: "", webhookSecret })).toBe(false);
     });
   });
+
+  describe("normalizeWebhook", () => {
+    it("returns a provider-neutral event without exposing credential fields", () => {
+      const result = adapter.normalizeWebhook(JSON.stringify({
+        id: "evt_123",
+        event: "payment.captured",
+        payload: { payment: { entity: { id: "pay_123", amount: 100 } } },
+      }));
+
+      expect(result).toEqual({
+        ok: true,
+        eventType: "payment.captured",
+        providerEventId: "evt_123",
+        payload: { payment: { entity: { id: "pay_123", amount: 100 } } },
+      });
+      expect(JSON.stringify(result)).not.toContain("secret");
+    });
+
+    it("distinguishes malformed JSON from an invalid provider envelope", () => {
+      expect(adapter.normalizeWebhook("not-json")).toEqual({ ok: false, error: "invalid_json" });
+      expect(adapter.normalizeWebhook(JSON.stringify({ payload: {} }))).toEqual({
+        ok: false,
+        error: "invalid_payload",
+      });
+    });
+  });
 });

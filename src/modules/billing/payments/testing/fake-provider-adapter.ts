@@ -1,4 +1,4 @@
-import type { PaymentProviderAdapter } from "../payment-provider-adapter.interface";
+import type { PaymentProviderAdapter, PaymentWebhookNormalization } from "../payment-provider-adapter.interface";
 
 export const FAKE_WEBHOOK_SECRET = "fake-webhook-secret-at-least-32chars";
 export const FAKE_VALID_WEBHOOK_SIG = "fake-valid-webhook-signature";
@@ -46,5 +46,17 @@ export class FakeProviderAdapter implements PaymentProviderAdapter {
       params.signature === FAKE_VALID_WEBHOOK_SIG &&
       params.webhookSecret === FAKE_WEBHOOK_SECRET
     );
+  }
+
+  normalizeWebhook(rawBody: string): PaymentWebhookNormalization {
+    try {
+      const raw = JSON.parse(rawBody) as { event?: unknown; payload?: unknown };
+      if (typeof raw.event !== "string" || !raw.payload || typeof raw.payload !== "object") {
+        return { ok: false, error: "invalid_payload" };
+      }
+      return { ok: true, eventType: raw.event, payload: raw.payload as Record<string, unknown> };
+    } catch {
+      return { ok: false, error: "invalid_json" };
+    }
   }
 }

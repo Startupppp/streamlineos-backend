@@ -5,11 +5,9 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { paymentProviders, paymentWebhookEndpoints, paymentWebhookEvents } from "../../../db/schema";
 import { getCatalogEntry } from "./payment-provider-catalog";
-import { PaymentProviderAdapterRegistry } from "./payment-provider-adapter.interface";
-import { PaymentProviderSetupService } from "./payment-provider-setup.service";
+import { PaymentProviderResolver } from "./payment-provider-resolver.service";
 import { PaymentAuditService } from "./payment-audit.service";
 import { PaymentAnalyticsService } from "./payment-analytics.service";
-import { webhookEnvelopeSchema } from "./dto/webhook.schemas";
 import { ProviderBridgeService } from "../../finance/controls/provider-bridge.service";
 import type { RequestActorContext } from "../../../common/audit/actor-context";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
@@ -37,8 +35,7 @@ export class PaymentWebhookHealthService {
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly registry: PaymentProviderAdapterRegistry,
-    private readonly providers: PaymentProviderSetupService,
+    private readonly providers: PaymentProviderResolver,
     private readonly audit: PaymentAuditService,
     private readonly paymentAnalytics: PaymentAnalyticsService,
     private readonly providerBridge: ProviderBridgeService,
@@ -110,16 +107,12 @@ export class PaymentWebhookHealthService {
       return endpoint;
     }
 
-    const adapter = this.registry.get(providerKey);
-    if (!adapter) throw new BadRequestException(`No backend integration available for provider: ${providerKey}`);
+    const providerFacade = await this.providers.resolve(orgId, providerKey, environment);
+    if (!providerFacade) throw new BadRequestException(`No backend integration available for provider: ${providerKey}`);
 
-    const creds = await this.providers.getDecryptedSecret(orgId, provider.id, environment);
-    if (!creds?.webhookSecret) throw new BadRequestException("Save a webhook secret before verifying");
-
-    const valid = adapter.verifyWebhookSignature({
+    const valid = providerFacade.verifyWebhookSignature({
       rawBody: sample.rawBody,
       signature: sample.signature,
-      webhookSecret: creds.webhookSecret,
     });
 
     const [updated] = await this.db
@@ -170,9 +163,6 @@ export class PaymentWebhookHealthService {
     signature: string | undefined;
     providerEventIdHeader: string | undefined;
   }): Promise<{ status: number; body: Record<string, unknown> }> {
-    const adapter = this.registry.get(params.providerKey);
-    if (!adapter) return { status: 404, body: { ok: false, error: "unknown provider" } };
-
     const provider = await runInTenantTransaction(this.db, async (tx) => {
       const [row] = await tx
         .select()
@@ -183,13 +173,12 @@ export class PaymentWebhookHealthService {
     }, { orgId: params.orgId });
     if (!provider) return { status: 404, body: { ok: false, error: "provider not configured" } };
 
-    const creds = await this.providers.getDecryptedSecret(params.orgId, provider.id, params.environment);
-    if (!creds?.webhookSecret) return { status: 400, body: { ok: false, error: "webhook not configured" } };
+    const providerFacade = await this.providers.resolve(params.orgId, params.providerKey, params.environment);
+    if (!providerFacade) return { status: 400, body: { ok: false, error: "webhook not configured" } };
 
-    const signatureValid = adapter.verifyWebhookSignature({
+    const signatureValid = providerFacade.verifyWebhookSignature({
       rawBody: params.rawBody,
       signature: params.signature ?? "",
-      webhookSecret: creds.webhookSecret,
     });
 
     const endpoint = await runInTenantTransaction(this.db, async (tx) => {
@@ -222,18 +211,16 @@ export class PaymentWebhookHealthService {
       return { status: 401, body: { ok: false, error: "invalid signature" } };
     }
 
-    let envelope: { event: string; payload: Record<string, unknown> };
-    try {
-      const raw: unknown = JSON.parse(params.rawBody);
-      const parsed = webhookEnvelopeSchema.safeParse(raw);
-      if (!parsed.success) return { status: 400, body: { ok: false, error: "invalid payload" } };
-      envelope = parsed.data;
-    } catch {
-      return { status: 400, body: { ok: false, error: "invalid JSON" } };
+    const normalized = providerFacade.normalizeWebhook(params.rawBody);
+    if (!normalized.ok) {
+      return {
+        status: 400,
+        body: { ok: false, error: normalized.error === "invalid_json" ? "invalid JSON" : "invalid payload" },
+      };
     }
 
     const providerEventId =
-      params.providerEventIdHeader ?? createHash("sha256").update(params.rawBody).digest("hex");
+      params.providerEventIdHeader ?? normalized.providerEventId ?? createHash("sha256").update(params.rawBody).digest("hex");
 
     const [inserted] = await runInTenantTransaction(this.db, async (tx) => {
       return tx
@@ -243,11 +230,11 @@ export class PaymentWebhookHealthService {
           providerId: provider.id,
           environment: params.environment,
           providerEventId,
-          eventType: envelope.event,
+          eventType: normalized.eventType,
           signatureValid: true,
           processingStatus: "processed",
           idempotencyKey: providerEventId,
-          payloadRedacted: redactPayload(envelope.payload),
+          payloadRedacted: redactPayload(normalized.payload),
           processedAt: new Date(),
         })
         .onConflictDoNothing({
@@ -270,8 +257,8 @@ export class PaymentWebhookHealthService {
     }
 
     try {
-      const paymentEntity = this.extractPaymentEntity(envelope.payload);
-      if (paymentEntity && envelope.event.includes("payment") && typeof paymentEntity.amount === "number") {
+      const paymentEntity = this.extractPaymentEntity(normalized.payload);
+      if (paymentEntity && normalized.eventType.includes("payment") && typeof paymentEntity.amount === "number") {
         await this.providerBridge.recordProviderPayment(params.orgId, "system", {
           provider: params.providerKey,
           providerEventId: providerEventId,

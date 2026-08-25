@@ -2,7 +2,8 @@ import { Injectable, BadGatewayException, OnModuleInit, Optional, Inject } from 
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { outboundRequest } from "../../../../common/http/outbound-request";
-import { PaymentProviderAdapterRegistry, type PaymentCredentialWarning, type PaymentProviderAdapter } from "../payment-provider-adapter.interface";
+import { PaymentProviderAdapterRegistry, type PaymentCredentialWarning, type PaymentProviderAdapter, type PaymentWebhookNormalization } from "../payment-provider-adapter.interface";
+import { webhookEnvelopeSchema } from "../dto/webhook.schemas";
 import { APP_CONFIG } from "../../../../config/config.module";
 
 interface RazorpayCredentials {
@@ -128,5 +129,26 @@ export class RazorpayAdapter implements PaymentProviderAdapter, OnModuleInit {
     } catch {
       return false;
     }
+  }
+
+  normalizeWebhook(rawBody: string): PaymentWebhookNormalization {
+    let raw: unknown;
+    try {
+      raw = JSON.parse(rawBody);
+    } catch {
+      return { ok: false, error: "invalid_json" };
+    }
+
+    const parsed = webhookEnvelopeSchema.safeParse(raw);
+    if (!parsed.success) return { ok: false, error: "invalid_payload" };
+
+    const providerEventId =
+      typeof (raw as { id?: unknown }).id === "string" ? (raw as { id: string }).id : undefined;
+    return {
+      ok: true,
+      eventType: parsed.data.event,
+      payload: parsed.data.payload,
+      ...(providerEventId ? { providerEventId } : {}),
+    };
   }
 }

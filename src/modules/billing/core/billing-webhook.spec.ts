@@ -73,6 +73,7 @@ function makeResolver(adapter?: FakeProviderAdapter, webhookSecret = FAKE_WEBHOO
         createOrder: (params) => adapter.createOrder({ ...params, keyId: "fake-public", keySecret: "fake-private" }),
         verifyPaymentSignature: (params) => adapter.verifyPaymentSignature({ ...params, keySecret: "fake-private" }),
         verifyWebhookSignature: (params) => adapter.verifyWebhookSignature({ ...params, webhookSecret }),
+        normalizeWebhook: (rawBody) => adapter.normalizeWebhook(rawBody),
       }
     : undefined;
   return {

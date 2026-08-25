@@ -5,6 +5,18 @@ export interface PaymentCredentialWarning {
   message: string;
 }
 
+export type PaymentWebhookNormalization =
+  | {
+      ok: true;
+      eventType: string;
+      payload: Record<string, unknown>;
+      providerEventId?: string;
+    }
+  | {
+      ok: false;
+      error: "invalid_json" | "invalid_payload";
+    };
+
 /**
  * Provider-specific behavior lives behind this interface so PaymentProviderSetupService,
  * webhook handling, and test transactions stay provider-agnostic. RazorpayAdapter is the first
@@ -53,6 +65,13 @@ export interface PaymentProviderAdapter {
     signature: string;
     webhookSecret: string;
   }): boolean;
+
+  /**
+   * Converts a provider's raw webhook into the small provider-neutral shape used by billing.
+   * Parsing and provider-specific envelope knowledge stay in the adapter; callers never need
+   * to know whether an event was nested under `payload`, `data`, or another provider envelope.
+   */
+  normalizeWebhook(rawBody: string): PaymentWebhookNormalization;
 }
 
 @Injectable()
