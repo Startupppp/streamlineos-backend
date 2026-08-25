@@ -1702,6 +1702,20 @@
       "when": 1787657553441,
       "tag": "0228_autonomy_holds",
       "breakpoints": true
+    },
+    {
+      "idx": 243,
+      "version": "7",
+      "when": 1787661153441,
+      "tag": "0229_crm_imports",
+      "breakpoints": true
+    },
+    {
+      "idx": 244,
+      "version": "7",
+      "when": 1787664753441,
+      "tag": "0230_backfill_import_permission",
+      "breakpoints": true
     }
   ]
 }

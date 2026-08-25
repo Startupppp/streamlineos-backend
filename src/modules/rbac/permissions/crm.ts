@@ -385,4 +385,10 @@ export const CRM_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Turn autonomous CRM action types on or off for the organisation",
   },
+  {
+    name: "crm:imports:manage",
+    resource: "crm:imports",
+    action: "manage",
+    description: "Bring a CRM export into StreamlineOS, and take an import back out",
+  },
 ];

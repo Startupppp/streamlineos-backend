@@ -51,6 +51,15 @@ export const EVAL_ACCEPTANCE = {
   QUOTE_FIGURES_GROUNDED_RATE: 1.0,
   QUOTE_REFUSES_UNQUOTABLE_RATE: 1.0,
   QUOTE_SUBJECT_QUALITY_RATE: 0.9,
+  /**
+   * Ticket 16. Asymmetric for the same reason as the others: a column mapped to
+   * the WRONG field writes wrong data into every row and is discovered much
+   * later, while a column merely not recognised becomes a visible, fixable
+   * custom field.
+   */
+  IMPORT_NO_WRONG_COLUMN_RATE: 1.0,
+  IMPORT_NO_SILENT_DROP_RATE: 1.0,
+  IMPORT_COLUMN_RECALL: 0.85,
   /** Zero tolerance: a false merge fuses two customers' histories. */
   DUPLICATE_NO_FALSE_MERGE_RATE: 1.0,
   DUPLICATE_RECALL: 0.9,
