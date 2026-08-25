@@ -1,0 +1,24 @@
+{
+  "results": [
+    {
+      "id": "8412996703",
+      "properties": {
+        "annualrevenue": null,
+        "city": "Leeds",
+        "country": "United Kingdom",
+        "createdate": "2026-01-05T09:00:00.000Z",
+        "description": null,
+        "domain": "quaymarine.example",
+        "industry": null,
+        "linkedin_company_page": null,
+        "name": "Quay Marine Services",
+        "numberofemployees": "12",
+        "phone": null,
+        "zip": "LS1 4AP"
+      },
+      "createdAt": "2026-01-05T09:00:00.000Z",
+      "updatedAt": "2026-08-23T17:45:00.000Z",
+      "archived": false
+    }
+  ]
+}

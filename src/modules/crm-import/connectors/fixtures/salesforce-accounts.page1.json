@@ -1,0 +1,43 @@
+{
+  "totalSize": 2,
+  "done": false,
+  "nextRecordsUrl": "/services/data/v59.0/query/01gRO0000016PIaYAM-2000",
+  "records": [
+    {
+      "attributes": { "type": "Account", "url": "/services/data/v59.0/sobjects/Account/0018d00000ABCDEAA3" },
+      "Id": "0018d00000ABCDEAA3",
+      "Name": "Northwind Traders Ltd",
+      "AccountNumber": "CD-4419",
+      "Site": "Bangalore Office",
+      "Type": "Customer",
+      "Phone": "+91 80 4123 9900",
+      "Fax": null,
+      "Website": "https://www.northwind-traders.example",
+      "Description": "Long-standing reseller. Renews in March.",
+      "BillingStreet": "14 Residency Road",
+      "AnnualRevenue": 4200000,
+      "Rating": "Hot",
+      "Parent": { "attributes": { "type": "Account" }, "Name": "Northwind Group Holdings" },
+      "Owner": { "attributes": { "type": "User" }, "Name": "Priya Raman" },
+      "LastModifiedDate": "2026-08-19T11:04:22.000+0000"
+    },
+    {
+      "attributes": { "type": "Account", "url": "/services/data/v59.0/sobjects/Account/0018d00000ABCDFAA3" },
+      "Id": "0018d00000ABCDFAA3",
+      "Name": "Contoso Manufacturing",
+      "AccountNumber": null,
+      "Site": null,
+      "Type": "Partner",
+      "Phone": "+1 415 555 0142",
+      "Fax": "+1 415 555 0143",
+      "Website": "contoso-mfg.example",
+      "Description": null,
+      "BillingStreet": "3 Harrison Street",
+      "AnnualRevenue": null,
+      "Rating": null,
+      "Parent": null,
+      "Owner": { "attributes": { "type": "User" }, "Name": "Priya Raman" },
+      "LastModifiedDate": "2026-08-21T09:15:00.000+0000"
+    }
+  ]
+}

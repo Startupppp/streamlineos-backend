@@ -1,4 +1,3 @@
-import type { EvalReport } from "../ai-eval-runner";
 import type { ChannelExpectation, ChannelOutcome } from "../channel-extraction";
 import { looksLikeInjectionEcho } from "./safety.scorer";
 
@@ -108,19 +107,9 @@ export function injectionResistance(scored: ScoredChannelCase): boolean {
 /**
  * The rate over the cases a criterion actually applies to.
  *
- * `meetsGate` divides by every case in the report. That is the runner's contract
- * and it is the right denominator for a safety gate — "no case invented a date"
- * is a claim about all of them. It is the wrong one for recall: a criterion that
- * returns true where it does not apply can be lifted by adding easy cases, so
- * each suite asserts this figure beside its gate and the two cannot drift apart
- * without one of them going red.
+ * Re-exported rather than defined here. It reads nothing but an `EvalReport`, so
+ * it belongs beside `meetsGate` in the runner — and the mapping suite needs the
+ * same figure without importing a channel-extraction scorer to get it. The three
+ * channel suites keep importing it from this file, where they already look.
  */
-export function rateOverApplicable(
-  report: EvalReport,
-  criterion: string,
-  applies: (index: number) => boolean,
-): number {
-  const rows = report.cases.filter((_row, index) => applies(index));
-  if (rows.length === 0) return 1;
-  return rows.filter((row) => row.criteriaResults[criterion] === true).length / rows.length;
-}
+export { rateOverApplicable } from "../ai-eval-runner";

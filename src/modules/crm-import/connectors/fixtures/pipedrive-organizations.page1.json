@@ -1,0 +1,35 @@
+{
+  "success": true,
+  "data": [
+    {
+      "id": 41,
+      "name": "Kestrel Signage Ltd",
+      "address": "Unit 7, Bridgewater Estate, Manchester",
+      "owner_id": { "id": 9021, "name": "Tom Whitfield", "email": "tom@ourcompany.example" },
+      "label": 2,
+      "people_count": 4,
+      "open_deals_count": 1,
+      "add_time": "2024-09-12 10:14:02",
+      "update_time": "2026-08-16 07:55:41"
+    },
+    {
+      "id": 42,
+      "name": "Ardent Consulting",
+      "address": null,
+      "owner_id": { "id": 9021, "name": "Tom Whitfield" },
+      "label": null,
+      "people_count": 1,
+      "open_deals_count": 0,
+      "add_time": "2025-04-02 15:00:00",
+      "update_time": "2026-08-19 12:30:00"
+    }
+  ],
+  "additional_data": {
+    "pagination": {
+      "start": 0,
+      "limit": 100,
+      "more_items_in_collection": true,
+      "next_start": 100
+    }
+  }
+}

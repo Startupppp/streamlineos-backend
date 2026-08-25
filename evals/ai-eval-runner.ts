@@ -4,9 +4,15 @@ export interface EvalCase<TInput, TOutput> {
   expectedOutput?: TOutput;
 }
 
-export interface EvalCriterion<TOutput> {
+export interface EvalCriterion<TOutput, TInput = unknown> {
   name: string;
-  check: (output: TOutput, input: unknown) => boolean | Promise<boolean>;
+  /**
+   * `TInput` defaults to `unknown` so criteria that ignore the input stay
+   * unannotated. A criterion that reads the case — every ticket-16 and
+   * ticket-14 scorer does — could not be assigned to an `input: unknown`
+   * parameter, which is why those two suites never typechecked.
+   */
+  check: (output: TOutput, input: TInput) => boolean | Promise<boolean>;
 }
 
 export interface CaseResult {
@@ -59,7 +65,43 @@ export const EVAL_ACCEPTANCE = {
    */
   IMPORT_NO_WRONG_COLUMN_RATE: 1.0,
   IMPORT_NO_SILENT_DROP_RATE: 1.0,
-  IMPORT_COLUMN_RECALL: 0.85,
+  /**
+   * Raised from 0.85 by ticket 15, and recorded here on purpose.
+   *
+   * 0.85 was set against a 33-header dataset. The dataset is now 123 headers
+   * across all four products and all four of their exports, and the mapper
+   * scores 122 of them — so 0.85 had stopped being a gate and become a floor
+   * nothing could fall through: a fifth of the file could start mapping wrongly
+   * and this would still be green.
+   *
+   * 0.99 rather than the measured 0.9919, which would be a hash of the dataset's
+   * current size. The arithmetic is the same either way — a second miss is
+   * 122/124 = 0.984 and goes red, another passing header is 123/124 = 0.992 and
+   * stays green — so a genuinely hard header can be added honestly, as
+   * `Due Date Only` was, and the next one has to be argued for here.
+   *
+   * This is recall, so it is the recoverable half: a column not recognised
+   * becomes a visible custom field. The two gates above it are the ones with no
+   * tolerance, and they are unaffected by this number.
+   */
+  IMPORT_COLUMN_RECALL: 0.99,
+  /**
+   * Ticket 15. A separate gate from the one above, on purpose, and the
+   * separation is the whole point rather than tidiness.
+   *
+   * `IMPORT_NO_WRONG_COLUMN_RATE` covers all ten fields with one number. The day
+   * somebody needs to relax it — because `partyType` is genuinely hard, or a
+   * product ships a header nobody can classify — they would relax the protection
+   * on `email`, `phone`, `taxNumber`, `website` and `name` in the same edit, and
+   * the commit message would say something reasonable about party types.
+   *
+   * These five decide WHICH record a row is. Two rows sharing one of them are
+   * scored as one party and merged above 0.85, so a rep's e-mail address read as
+   * two hundred customers' e-mail address is two hundred customers becoming one.
+   * That is not a percentage question, and holding it in its own key is what
+   * makes it survive a future tuning pass on a number that looks adjacent.
+   */
+  IMPORT_NO_FOREIGN_IDENTITY_RATE: 1.0,
   /**
    * Ticket 12, second half. Three channels, three sets of gates, and no blended
    * figure anywhere — because a blended one is how a channel gets quietly worse
@@ -98,7 +140,22 @@ export const EVAL_ACCEPTANCE = {
    */
   EXTRACTION_WHATSAPP_NO_FALSE_STAGE_ADVANCE_RATE: 1.0,
   EXTRACTION_WHATSAPP_STAGE_RECALL: 0.9,
-  EXTRACTION_WHATSAPP_NEXT_STEP_OWNERSHIP_RATE: 0.9,
+  /**
+   * Ratcheted from 0.9 by ticket 23, and this is a ratchet rather than a fix.
+   *
+   * The thread window let the extractor see the messages before a fragment, and
+   * the channel went from 10/12 to 11/12. The gate at 0.9 still held, so nothing
+   * was red — which is exactly why it had to move: this file's rule is that each
+   * figure sits at what the extractor actually scores, and a threshold left below
+   * a real improvement quietly gives back the improvement the next time somebody
+   * regresses it.
+   *
+   * 0.91 rather than 0.9167, which would be a hash of a twelve-case dataset.
+   * `whatsapp-extraction.eval.spec.ts` pins the measured 11/12 beside the gate,
+   * so the exact figure is recorded where a reader can see it and this stays a
+   * bound rather than a restatement of the dataset's size.
+   */
+  EXTRACTION_WHATSAPP_NEXT_STEP_OWNERSHIP_RATE: 0.91,
   EXTRACTION_WHATSAPP_NO_INVENTED_DATE_RATE: 1.0,
   EXTRACTION_WHATSAPP_INJECTION_RESISTANCE_RATE: 1.0,
 
@@ -123,7 +180,7 @@ export const EVAL_ACCEPTANCE = {
 export async function runEval<TInput, TOutput>(
   cases: readonly EvalCase<TInput, TOutput>[],
   produceOutput: (input: TInput) => Promise<TOutput>,
-  criteria: EvalCriterion<TOutput>[],
+  criteria: EvalCriterion<TOutput, TInput>[],
 ): Promise<EvalReport> {
   const byCriterion: Record<string, { passed: number; failed: number }> = {};
   for (const c of criteria) {
@@ -159,6 +216,26 @@ export async function runEval<TInput, TOutput>(
     byCriterion,
     cases: caseResults,
   };
+}
+
+/**
+ * The rate over the cases a criterion actually applies to.
+ *
+ * `meetsGate` divides by every case in the report. That is the runner's contract
+ * and it is the right denominator for a safety gate — "no case invented a date"
+ * is a claim about all of them. It is the wrong one for recall: a criterion that
+ * returns true where it does not apply can be lifted by adding easy cases, so
+ * each suite asserts this figure beside its gate and the two cannot drift apart
+ * without one of them going red.
+ */
+export function rateOverApplicable(
+  report: EvalReport,
+  criterion: string,
+  applies: (index: number) => boolean,
+): number {
+  const rows = report.cases.filter((_row, index) => applies(index));
+  if (rows.length === 0) return 1;
+  return rows.filter((row) => row.criteriaResults[criterion] === true).length / rows.length;
 }
 
 export function meetsGate(

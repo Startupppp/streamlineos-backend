@@ -70,10 +70,15 @@ const SYNONYMS: Readonly<Record<ImportField, readonly string[]>> = {
     "mobile number", "contact number", "tel", "office phone",
   ],
   website: [
-    "website", "web site", "url", "web", "homepage", "site", "company website",
+    "website", "web site", "url", "web", "homepage", "company website",
     // "Company Domain Name" is HubSpot's domain field. Listed as a phrase so it
     // beats the bare "name" that also ends that header.
     "domain", "domain name", "company domain name", "web address",
+    // A bare "site" is deliberately NOT here. Salesforce's "Account Site" is a
+    // location label — "HQ", "Bangalore" — and `website` is one of the four
+    // identifiers a row is matched on, so reading it as a URL gives every
+    // account at the same office the same blocking key. "Web site" still maps,
+    // because that spelling is unambiguous.
   ],
   taxNumber: ["tax number", "tax id", "vat", "vat number", "gst", "gstin", "abn", "ein", "tax registration"],
   notes: ["notes", "note", "description", "comments", "remarks", "background", "about"],
@@ -101,7 +106,105 @@ const KNOWN_IGNORED = new Set([
  * Checked on the head noun rather than the whole header, so "Organization - ID"
  * and "Account ID" are recognised without listing every product's prefix.
  */
-const IGNORABLE_HEAD = new Set(["id", "ids", "uuid", "guid", "date", "at", "by", "time"]);
+const IGNORABLE_HEAD = new Set([
+  "id", "ids", "uuid", "guid", "date", "at", "by", "time",
+  // Pipedrive writes its timestamps as "Organization - Created" and
+  // "Person - Updated", with no "date" or "time" to recognise them by. Same
+  // bookkeeping as "Created Date"; only the spelling differs.
+  "created", "modified", "updated",
+]);
+
+/**
+ * The fields that decide WHICH record a row is, rather than what it says.
+ *
+ * Four of these are the keys `import-plan` blocks and matches on, and `name` is
+ * what the record is called. A value that belongs to somebody else landing in
+ * one of them does not produce a slightly wrong record — it produces the wrong
+ * record, because two rows that share an identifier are scored as one party and
+ * merged above 0.85. Exported so the mapping evals can gate on exactly this set
+ * rather than on a second list that drifts from it.
+ */
+export const IDENTITY_FIELDS: readonly ImportField[] = [
+  "name",
+  "legalName",
+  "email",
+  "phone",
+  "taxNumber",
+  "website",
+];
+
+export function isIdentityField(field: string): boolean {
+  return (IDENTITY_FIELDS as readonly string[]).includes(field);
+}
+
+/**
+ * Words that make everything after them belong to a DIFFERENT record.
+ *
+ * Two kinds, and the reason is the same for both. `Account Owner Email` is the
+ * sales rep's address, not the customer's; `Asst. Phone` is a receptionist's
+ * line that fifty contacts share; `Parent Account` and `Associated Company`
+ * name a company that is not this row. Read as identity, each one hands the
+ * same e-mail address, phone number or name to every row that mentions the same
+ * rep, receptionist or parent — and rows that share an identifier are exactly
+ * what the duplicate scorer merges. That is how one customer becomes another,
+ * and it arrives at the scale of a file rather than one record at a time.
+ *
+ * These sit before the head noun, which is what distinguishes them from the
+ * qualifiers that are fine: `Company Phone` and `Billing Email` are still this
+ * party's phone and e-mail, because "company" and "billing" describe the row
+ * rather than pointing away from it.
+ */
+const FOREIGN_QUALIFIERS = new Set([
+  // Another person: whoever in OUR organisation, or theirs, is attached to the row.
+  "owner", "assistant", "asst", "manager", "creator", "referrer", "referred",
+  "reports", "assigned", "by",
+  // Another record: a company, deal or activity related to this one.
+  "parent", "ultimate", "associated", "related", "linked", "master",
+  "deal", "opportunity", "quote", "activity", "task", "meeting", "call",
+]);
+
+/**
+ * Nouns that name a kind of record, grouped by which kind.
+ *
+ * Needed for one shape the list above cannot express. Pipedrive spells every
+ * export header `Entity - Field`, so a Persons export carries
+ * `Person - Organization` — the company that person belongs to. Its head noun is
+ * `organization`, a synonym of `name`, so without this it reads as the party's
+ * own name and every person at one company collapses into that company.
+ *
+ * Grouped rather than listed flat because `Company / Account` is a real single
+ * header meaning one thing, and `company account` must not look like a
+ * cross-reference to itself. Same group means the header says the same kind of
+ * record twice; different groups mean it points at another one.
+ */
+const ENTITY_GROUP: Readonly<Record<string, string>> = {
+  company: "org", account: "org", organisation: "org", organization: "org",
+  business: "org", client: "org", customer: "org", vendor: "org", supplier: "org",
+  person: "person", contact: "person", individual: "person",
+  deal: "deal", opportunity: "deal", pipeline: "deal", quote: "deal",
+  activity: "activity", task: "activity",
+};
+
+/**
+ * Whether the words before the head noun make this column somebody else's.
+ *
+ * Applied to every field rather than only the identity ones. The rule is about
+ * provenance — the value is not this record's — and that is true of a parent
+ * account's description as much as of its e-mail address. Refusing uniformly is
+ * also the module's existing doctrine: ambiguity resolves away from a guess, and
+ * "whose is this?" is exactly the question a person can answer from the preview.
+ */
+function isCrossReference(prefixWords: readonly string[], headWord: string): boolean {
+  if (prefixWords.some((word) => FOREIGN_QUALIFIERS.has(word))) return true;
+
+  const headGroup = ENTITY_GROUP[headWord];
+  if (!headGroup) return false;
+
+  return prefixWords.some((word) => {
+    const group = ENTITY_GROUP[word];
+    return group !== undefined && group !== headGroup;
+  });
+}
 
 export function normaliseHeader(header: string): string {
   return header
@@ -150,6 +253,30 @@ export function mapColumn(header: string): ColumnMapping {
   if (head.length > 0) {
     const longest = Math.max(...head.map((candidate) => candidate.length));
     const winners = head.filter((candidate) => candidate.length === longest);
+
+    /**
+     * Whose value is this, before deciding what it is.
+     *
+     * Only the words the matched synonym did not cover count as qualifiers, so
+     * `Company Domain Name` — where the synonym IS the whole header — has no
+     * prefix to judge, while `Parent Account` has "parent". Checked here rather
+     * than at the top of the function because an EXACT synonym is a header a
+     * product chose to mean one field, and none of them contains a qualifier
+     * that points elsewhere; it is the partial, head-noun match that can be a
+     * relationship dressed as a field.
+     */
+    const prefix = normalised.slice(0, normalised.length - longest).trim();
+    if (prefix) {
+      const headWord = normalised.split(" ").at(-1) ?? "";
+      if (isCrossReference(prefix.split(" "), headWord))
+        /**
+         * A custom field, not `unmapped`. The column is real and the user can
+         * see it in their file; it simply describes another record. Keeping it
+         * under its own header means "Account Owner Email" is still there to be
+         * read, and is not an address anybody is matched on.
+         */
+        return { kind: "custom", key: customKeyFor(normalised) };
+    }
 
     if (winners.length === 1)
       return { kind: "mapped", field: winners[0]!.field, confidence: 0.7 };
