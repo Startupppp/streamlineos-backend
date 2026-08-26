@@ -12,6 +12,7 @@ import {
 import { and, eq } from "drizzle-orm";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
+import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -31,6 +32,7 @@ export class StorageVaultController {
   ) {}
 
   @Post(":documentId/url")
+  @AuthorizedInService("resolveUserPermissions(hr:documents:manage) + org-scoped lookup")
   @HttpCode(200)
   async download(
     @Param("candidateId", ParseIntPipe) candidateId: number,

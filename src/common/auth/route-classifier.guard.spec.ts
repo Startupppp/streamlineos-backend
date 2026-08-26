@@ -4,6 +4,7 @@ import { Reflector } from "@nestjs/core";
 import { RouteClassifierGuard } from "./route-classifier.guard";
 import { Public } from "./public.decorator";
 import { Universal } from "./universal.decorator";
+import { AuthorizedInService } from "./authorized-in-service.decorator";
 import { RequirePermission } from "../../modules/access/require-permission.decorator";
 
 class UnclassifiedController {
@@ -28,6 +29,23 @@ class PermissionedController {
   route(): void {}
 }
 Reflect.defineMetadata(PATH_METADATA, "permissioned", PermissionedController.prototype.route);
+
+@AuthorizedInService("assertModuleAccessPolicy")
+class InServiceController {
+  route(): void {}
+}
+Reflect.defineMetadata(PATH_METADATA, "in-service", InServiceController.prototype.route);
+
+/** An empty name is not a declaration — the point of the decorator is the name. */
+@AuthorizedInService("")
+class UnnamedInServiceController {
+  route(): void {}
+}
+Reflect.defineMetadata(
+  PATH_METADATA,
+  "unnamed-in-service",
+  UnnamedInServiceController.prototype.route,
+);
 
 function makeGuard(instances: object[]): RouteClassifierGuard {
   const reflector = new Reflector();
@@ -128,6 +146,28 @@ describe("RouteClassifierGuard.canActivate", () => {
       executionContext(PermissionedController, PermissionedController.prototype.route),
     );
     expect(result).toBe(true);
+  });
+
+  it("allows an @AuthorizedInService route regardless of enforcement", () => {
+    process.env["REQUIRE_ROUTE_CLASSIFICATION"] = "true";
+    const guard = makeGuard([]);
+    const result = guard.canActivate(
+      executionContext(InServiceController, InServiceController.prototype.route),
+    );
+    expect(result).toBe(true);
+  });
+
+  it("denies @AuthorizedInService with an empty name — naming the check is the point", () => {
+    process.env["REQUIRE_ROUTE_CLASSIFICATION"] = "true";
+    const guard = makeGuard([]);
+    expect(() =>
+      guard.canActivate(
+        executionContext(
+          UnnamedInServiceController,
+          UnnamedInServiceController.prototype.route,
+        ),
+      ),
+    ).toThrow(ForbiddenException);
   });
 
   it("denies an undeclared route with ForbiddenException when enforcement is on", () => {

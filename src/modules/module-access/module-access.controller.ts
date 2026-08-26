@@ -13,6 +13,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -61,6 +62,7 @@ import {
 
 @Controller("module-access")
 @UseGuards(JwtAuthGuard)
+@AuthorizedInService("assertModuleAccessPolicy")
 export class ModuleAccessController {
   constructor(
     private readonly svc: ModuleAccessService,

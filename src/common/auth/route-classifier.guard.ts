@@ -8,6 +8,7 @@ import {
 } from "@nestjs/common";
 import { PATH_METADATA } from "@nestjs/common/constants";
 import { DiscoveryService, MetadataScanner, Reflector } from "@nestjs/core";
+import { AUTHORIZED_IN_SERVICE } from "./authorized-in-service.decorator";
 import { IS_PUBLIC } from "./public.decorator";
 import { IS_UNIVERSAL } from "./universal.decorator";
 import { REQUIRE_PERMISSION } from "../../modules/access/require-permission.decorator";
@@ -15,9 +16,10 @@ import { REQUIRE_PERMISSION } from "../../modules/access/require-permission.deco
 /**
  * Every HTTP route must carry exactly one classification:
  *
- *   @Public()          — unauthenticated access permitted
- *   @Universal()       — authenticated, no permission key required
- *   @RequirePermission — gated by PermissionGuard
+ *   @Public()             — unauthenticated access permitted
+ *   @Universal()          — authenticated, no permission key required
+ *   @RequirePermission    — gated by PermissionGuard
+ *   @AuthorizedInService  — authorized downstream, naming what does it
  *
  * Absence is the defect this guard exists to surface: PermissionGuard is not
  * global, so a handler under a class-level JwtAuthGuard with no key today is
@@ -50,6 +52,8 @@ export class RouteClassifierGuard implements CanActivate, OnApplicationBootstrap
   private isDeclared(handler: Function, classRef: Function): boolean {
     if (this.reflector.getAllAndOverride<boolean>(IS_PUBLIC, [handler, classRef])) return true;
     if (this.reflector.getAllAndOverride<boolean>(IS_UNIVERSAL, [handler, classRef])) return true;
+    const by = this.reflector.getAllAndOverride<string | undefined>(AUTHORIZED_IN_SERVICE, [handler, classRef]);
+    if (by !== undefined && by !== "") return true;
     const key = this.reflector.getAllAndOverride<string | undefined>(REQUIRE_PERMISSION, [handler, classRef]);
     return key !== undefined;
   }
@@ -77,7 +81,7 @@ export class RouteClassifierGuard implements CanActivate, OnApplicationBootstrap
     }
 
     const list = [...this.undeclared].sort().join("\n  ");
-    const msg = `RouteClassifierGuard: ${this.undeclared.size} route(s) carry no exposure declaration (@Public / @Universal / @RequirePermission):\n  ${list}`;
+    const msg = `RouteClassifierGuard: ${this.undeclared.size} route(s) carry no exposure declaration (@Public / @Universal / @RequirePermission / @AuthorizedInService):\n  ${list}`;
 
     if (ENFORCE()) throw new Error(msg);
     this.logger.warn(msg);
