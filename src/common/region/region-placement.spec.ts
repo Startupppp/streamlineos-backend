@@ -74,3 +74,19 @@ describe("isPlaceable", () => {
     expect(isPlaceable(regionForCountry("IN"), [])).toBe(false);
   });
 });
+
+describe("regionForNewOrg", () => {
+  // Imported here rather than at the top because the registry is module-level
+  // state and these cases set it up and tear it down themselves.
+  const load = async () => import("./region-registry");
+
+  afterEach(async () => (await load()).clearRegionRegistry());
+
+  it("falls back to the documented default outside a booted application", async () => {
+    // Unit tests, seeds and scripts run with no registry. That path has to keep
+    // working, or every one of them becomes region-aware for no reason.
+    const { regionForNewOrg, DEFAULT_REGION } = await load();
+    expect(regionForNewOrg()).toBe(DEFAULT_REGION);
+    expect(regionForNewOrg("DE")).toBe(DEFAULT_REGION);
+  });
+});

@@ -1,5 +1,6 @@
 import type { Db } from "../../db/drizzle.types";
 import { isKnownRegion, type RegionDefinition, type RegionTopology } from "./region.config";
+import { isPlaceable, regionForCountry } from "./region-placement";
 
 /** One region's live handles. */
 export interface RegionBinding {
@@ -131,6 +132,17 @@ export function hasRegionRegistry(): boolean {
  */
 export const DEFAULT_REGION = "primary";
 
-export function regionForNewOrg(): string {
-  return hasRegionRegistry() ? getRegionRegistry().primary : DEFAULT_REGION;
+export function regionForNewOrg(country?: string | null): string {
+  if (!hasRegionRegistry()) return DEFAULT_REGION;
+
+  const registry = getRegionRegistry();
+  if (!country?.trim()) return registry.primary;
+
+  // A country that maps to a region this deployment does not serve falls back to
+  // the primary rather than failing. Placing a tenant somewhere unreachable
+  // fails at its first query instead of at signup, which is the wrong end -- and
+  // refusing the signup outright over an unserved region turns a customer into a
+  // support ticket.
+  const placement = regionForCountry(country);
+  return isPlaceable(placement, registry.keys) ? placement.region : registry.primary;
 }
