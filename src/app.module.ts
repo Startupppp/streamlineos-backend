@@ -19,6 +19,7 @@ import { DrizzleModule } from "./db/drizzle.module";
 import { CacheModule } from "./common/cache/cache.module";
 import { AuditModule } from "./common/audit/audit.module";
 import { RateLimitModule } from "./common/ratelimit/rate-limit.module";
+import { ActivationModule } from "./modules/onboarding-activation/activation.module";
 import { LeadsModule } from "./modules/leads/leads.module";
 import { ContactsModule } from "./modules/contacts/contacts.module";
 import { CsatModule } from "./modules/csat/csat.module";
@@ -101,6 +102,7 @@ import { ZodValidationInterceptor } from "./common/validation/zod-validation.int
 
 @Module({
   imports: [
+    ActivationModule,
     RegionModule,
     WorkflowModule,
     ConfigModule,
