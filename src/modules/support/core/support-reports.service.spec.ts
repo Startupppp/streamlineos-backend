@@ -16,8 +16,18 @@ const mockDb = {
   orderBy: jest.fn().mockResolvedValue([]),
 };
 
+/*
+  The overview read goes through the org-scoped form, whose fetcher is argument
+  2 rather than 1. `cached` stays aliased to the same spy so the "did we use the
+  cache?" assertions below keep observing every call.
+*/
+const cachedForOrg = jest.fn(
+  (_orgId: string, _key: string, fetcher: () => Promise<unknown>) => fetcher(),
+);
+
 const mockCache = {
-  cached: jest.fn((_key: string, fetcher: () => Promise<unknown>) => fetcher()),
+  cached: cachedForOrg,
+  cachedForOrg,
 };
 
 describe("SupportReportsService", () => {
@@ -33,7 +43,9 @@ describe("SupportReportsService", () => {
     mockDb.where.mockReturnThis();
     mockDb.groupBy.mockReturnThis();
     mockDb.orderBy.mockResolvedValue([]);
-    mockCache.cached.mockImplementation((_key: string, fetcher: () => Promise<unknown>) => fetcher());
+    mockCache.cached.mockImplementation(
+      (_orgId: string, _key: string, fetcher: () => Promise<unknown>) => fetcher(),
+    );
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [SupportReportsService, { provide: DRIZZLE, useValue: mockDb }, { provide: CacheService, useValue: mockCache }],

@@ -113,7 +113,7 @@ describe("OwnershipService — access / business-rule logic", () => {
         OwnershipTransferResponseService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AuditService, useValue: { log: jest.fn() } },
-        { provide: CacheService, useValue: { invalidate: jest.fn(), invalidateNamespace: jest.fn().mockResolvedValue(undefined), cached: jest.fn(), cachedVersioned: jest.fn() } },
+        { provide: CacheService, useValue: { cachedForOrg: jest.fn().mockImplementation(async (_orgId: string, _key: string, fn: () => Promise<unknown>) => fn()), cachedVersionedForOrg: jest.fn().mockImplementation(async (_orgId: string, _ns: string, _key: string, fn: () => Promise<unknown>) => fn()), invalidateForOrg: jest.fn().mockResolvedValue(undefined), invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined), invalidate: jest.fn(), invalidateNamespace: jest.fn().mockResolvedValue(undefined), cached: jest.fn(), cachedVersioned: jest.fn() } },
         { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();

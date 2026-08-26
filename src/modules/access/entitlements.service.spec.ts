@@ -62,16 +62,32 @@ function buildMockDb(ownerMembershipId: number | null = 42, mockRoleId: number |
 }
 
 function buildMockCache(
-  cachedImpl?: (key: string, fn: () => Promise<unknown>, ttl?: number) => Promise<unknown>,
+  cachedImpl?: (
+    orgId: string,
+    key: string,
+    fn: () => Promise<unknown>,
+    ttl?: number,
+  ) => Promise<unknown>,
 ) {
   const cached = jest.fn().mockImplementation(
-    cachedImpl ?? (async (_key: string, fn: () => Promise<unknown>) => fn()),
+    cachedImpl ?? (async (_orgId: string, _key: string, fn: () => Promise<unknown>) => fn()),
   );
   const invalidate = jest.fn().mockResolvedValue(undefined);
+  const invalidateForOrg = jest.fn().mockResolvedValue(undefined);
 
-  const cache: DeepPartial<CacheService> = { cached, invalidate };
+  // The reads run through the org-scoped form, so `cached` is aliased onto it
+  // rather than duplicated -- the call-count assertions stay on one spy.
+  const cache: DeepPartial<CacheService> = {
+    cached,
+    cachedForOrg: cached,
+    invalidate,
+    invalidateForOrg,
+  };
 
-  return { cache: cache as unknown as CacheService, mocks: { cached, invalidate } };
+  return {
+    cache: cache as unknown as CacheService,
+    mocks: { cached, invalidate, invalidateForOrg },
+  };
 }
 
 function buildService(
@@ -98,8 +114,11 @@ describe("EntitlementsService", () => {
 
       await buildService(db, cache).isModuleEnabled("org-1", "hr");
 
+      // The org moved out of the key string into its own leading argument, so
+      // the key is now the second position rather than the first.
       expect(cacheMocks.cached).toHaveBeenCalledWith(
-        "entitlements:modules:org-1",
+        "org-1",
+        "entitlements:modules",
         expect.any(Function),
         30,
       );
@@ -307,10 +326,13 @@ describe("EntitlementsService", () => {
 
       await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
 
-      expect(cacheMocks.invalidate).toHaveBeenCalledWith("entitlements:module:org-1:hr");
-      expect(cacheMocks.invalidate).toHaveBeenCalledWith("entitlements:modules:org-1");
+      // The two org-owned keys are dropped through the org-scoped form, which
+      // takes the tenant separately; only the user session key stays flat.
+      expect(cacheMocks.invalidateForOrg).toHaveBeenCalledWith("org-1", "entitlements:module:hr");
+      expect(cacheMocks.invalidateForOrg).toHaveBeenCalledWith("org-1", "entitlements:modules");
+      expect(cacheMocks.invalidateForOrg).toHaveBeenCalledTimes(2);
       expect(cacheMocks.invalidate).toHaveBeenCalledWith("user:session:user-1");
-      expect(cacheMocks.invalidate).toHaveBeenCalledTimes(3);
+      expect(cacheMocks.invalidate).toHaveBeenCalledTimes(1);
     });
 
     describe("ownership seeding", () => {

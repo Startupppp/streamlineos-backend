@@ -97,6 +97,14 @@ describe("OrgMembershipService access notifications", () => {
         {
           provide: CacheService,
           useValue: {
+            cachedForOrg: jest.fn().mockImplementation(
+              async (_orgId: string, _key: string, fn: () => Promise<unknown>) => fn(),
+            ),
+            cachedVersionedForOrg: jest.fn().mockImplementation(
+              async (_orgId: string, _ns: string, _key: string, fn: () => Promise<unknown>) => fn(),
+            ),
+            invalidateForOrg: jest.fn().mockResolvedValue(undefined),
+            invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
             invalidate: jest.fn().mockResolvedValue(undefined),
             invalidateNamespace: jest.fn().mockResolvedValue(undefined),
           },

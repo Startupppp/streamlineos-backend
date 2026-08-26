@@ -45,6 +45,14 @@ describe("OrgMembershipService member status guards", () => {
         {
           provide: CacheService,
           useValue: {
+            cachedForOrg: jest.fn().mockImplementation(
+              async (_orgId: string, _key: string, fn: () => Promise<unknown>) => fn(),
+            ),
+            cachedVersionedForOrg: jest.fn().mockImplementation(
+              async (_orgId: string, _ns: string, _key: string, fn: () => Promise<unknown>) => fn(),
+            ),
+            invalidateForOrg: jest.fn().mockResolvedValue(undefined),
+            invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
             invalidate: jest.fn(),
             invalidateNamespace: jest.fn().mockResolvedValue(undefined),
           },
@@ -170,6 +178,14 @@ describe("OrgMembershipService — module-ownership guards", () => {
         {
           provide: CacheService,
           useValue: {
+            cachedForOrg: jest.fn().mockImplementation(
+              async (_orgId: string, _key: string, fn: () => Promise<unknown>) => fn(),
+            ),
+            cachedVersionedForOrg: jest.fn().mockImplementation(
+              async (_orgId: string, _ns: string, _key: string, fn: () => Promise<unknown>) => fn(),
+            ),
+            invalidateForOrg: jest.fn().mockResolvedValue(undefined),
+            invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
             invalidate: cacheInvalidate,
             invalidateNamespace: cacheInvalidateNamespace,
           },

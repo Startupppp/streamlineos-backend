@@ -57,8 +57,17 @@ function buildService(roleGrants: { permissionKey: string; scope: string }[]) {
     set: () => Promise.resolve(),
     cached: <T>(_key: string, fetcher: () => Promise<T>) => fetcher(),
     cachedVersioned: <T>(_ns: string, _key: string, fetcher: () => Promise<T>) => fetcher(),
+    cachedForOrg: <T>(_orgId: string, _key: string, fetcher: () => Promise<T>) => fetcher(),
+    cachedVersionedForOrg: <T>(
+      _orgId: string,
+      _ns: string,
+      _key: string,
+      fetcher: () => Promise<T>,
+    ) => fetcher(),
     invalidate: () => Promise.resolve(),
     invalidateNamespace: () => Promise.resolve(),
+    invalidateForOrg: () => Promise.resolve(),
+    invalidateNamespaceForOrg: () => Promise.resolve(),
   };
   const entitlements = { isModuleEnabled: () => Promise.resolve(true) };
   const mfaPolicy = { isSatisfied: () => Promise.resolve(true) };

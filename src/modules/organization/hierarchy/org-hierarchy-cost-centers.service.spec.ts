@@ -33,6 +33,7 @@ describe("OrgHierarchyCostCentersService", () => {
     } as unknown as Db;
     const cache = {
       invalidate: jest.fn().mockResolvedValue(undefined),
+      invalidateForOrg: jest.fn().mockResolvedValue(undefined),
     } as unknown as CacheService;
     const audit = {
       logCritical: jest.fn().mockResolvedValue(undefined),
@@ -44,7 +45,8 @@ describe("OrgHierarchyCostCentersService", () => {
     expect(update).toHaveBeenCalledTimes(1);
     expect(set).toHaveBeenCalledWith({ deletedAt: expect.any(Date) });
     expect(hardDelete).not.toHaveBeenCalled();
-    expect(cache.invalidate).toHaveBeenCalled();
+    // Eviction moved to the org-scoped form, which takes the tenant separately.
+    expect(cache.invalidateForOrg).toHaveBeenCalledWith("org-1", "org:units:COST_CENTER");
     expect(audit.logCritical).toHaveBeenCalledWith(
       expect.objectContaining({ action: "org.costCenter.deleted" }),
     );

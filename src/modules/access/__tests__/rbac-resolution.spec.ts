@@ -106,7 +106,11 @@ function withTenantTransactionMock<T extends object>(database: T): T {
 function buildService(db: unknown): AccessService {
   const cache = {
     cached: jest.fn().mockImplementation(async (_key: string, fn: () => Promise<unknown>) => fn()),
+    cachedForOrg: jest.fn().mockImplementation(
+      async (_orgId: string, _key: string, fn: () => Promise<unknown>) => fn(),
+    ),
     invalidate: jest.fn().mockResolvedValue(undefined),
+    invalidateForOrg: jest.fn().mockResolvedValue(undefined),
   };
   const allEnabled: Record<string, boolean> = {};
   for (const key of CATALOG_MODULES) allEnabled[key] = true;

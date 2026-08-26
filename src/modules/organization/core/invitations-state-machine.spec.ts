@@ -64,7 +64,21 @@ describe("InvitationsService state transitions", () => {
         { provide: AuditService, useValue: { log: jest.fn() } },
         {
           provide: CacheService,
-          useValue: { invalidate, invalidatePattern, invalidateNamespace },
+          useValue: {
+            // The revoke path evicts through the org-scoped form; the same spy
+            // is aliased onto it so the assertion below still sees the call.
+            invalidateForOrg: invalidate,
+            invalidateNamespaceForOrg: invalidateNamespace,
+            cachedForOrg: jest.fn().mockImplementation(
+              async (_orgId: string, _key: string, fn: () => Promise<unknown>) => fn(),
+            ),
+            cachedVersionedForOrg: jest.fn().mockImplementation(
+              async (_orgId: string, _ns: string, _key: string, fn: () => Promise<unknown>) => fn(),
+            ),
+            invalidate,
+            invalidatePattern,
+            invalidateNamespace,
+          },
         },
         {
           provide: EmailService,
