@@ -27,6 +27,9 @@ export interface TrialBalanceQuery {
    */
   includeZeroActivity?: boolean;
   labelMode?: LabelMode;
+  /** Narrow to one branch or project (PRD 06 S4). */
+  branchId?: string;
+  projectId?: number;
 }
 
 export interface TrialBalanceLine {
@@ -62,6 +65,15 @@ export interface TrialBalanceReport {
    */
   balanced: boolean;
   differenceMinor: number;
+  /**
+   * True when a dimension filter is narrowing the report. A dimension lives on
+   * the journal line, not the account, and nothing requires both sides of a
+   * journal to carry the same one — so a filtered trial balance is a real slice
+   * of activity that is **not** expected to balance. Without this flag a reader
+   * would see `balanced: false` and reasonably conclude the ledger is broken.
+   */
+  filtered: boolean;
+  notes: string[];
 }
 
 /**
@@ -81,11 +93,12 @@ export class TrialBalanceService {
     const asOf = assertIsoDate(query.asOf);
     const mode: LabelMode = query.labelMode ?? "founder";
     const includeZeroActivity = query.includeZeroActivity ?? false;
+    const filtered = Boolean(query.branchId) || query.projectId !== undefined;
     const book = await resolveReportBook(this.books, orgId, query.bookId);
 
     const movements = await readAccountMovementsWithZeros(
       this.db,
-      { orgId, bookId: book.id, to: asOf },
+      { orgId, bookId: book.id, to: asOf, branchId: query.branchId, projectId: query.projectId },
       includeZeroActivity,
     );
 
@@ -130,6 +143,13 @@ export class TrialBalanceService {
       totalCreditMinor,
       balanced: totalDebitMinor === totalCreditMinor,
       differenceMinor: totalDebitMinor - totalCreditMinor,
+      filtered,
+      notes: filtered
+        ? [
+            "Narrowed to a branch or project. A dimension sits on the journal line, " +
+              "not the account, so this slice is not expected to balance.",
+          ]
+        : [],
     };
   }
 

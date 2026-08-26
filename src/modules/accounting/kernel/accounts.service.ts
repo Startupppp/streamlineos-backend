@@ -5,11 +5,24 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, count, eq, isNull, ne, sql } from "drizzle-orm";
-import { glAccounts, glJournalLines, type GlAccountType, type GlSystemTag } from "../../../db/schema";
+import { and, asc, count, eq, isNull, lte, ne, sql } from "drizzle-orm";
+import {
+  glAccounts,
+  glJournalLines,
+  glJournals,
+  type GlAccountType,
+  type GlSystemTag,
+} from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
+import { addDays, assertIsoDate, compareDates } from "./fiscal-calendar";
+import {
+  readAccountLedger,
+  type AccountBalance,
+  type AccountLedgerPage,
+  type AccountLedgerQuery,
+} from "./account-ledger";
 import type { DbOrTx } from "./sequence.service";
 
 export interface CreateAccountInput {
@@ -400,27 +413,49 @@ export class AccountsService {
     bookId: string,
     accountId: string,
     asOf: string,
-  ): Promise<{ debitMinor: number; creditMinor: number; balanceMinor: number }> {
+  ): Promise<AccountBalance> {
     const [row] = await this.db
       .select({
         debitMinor: sql<string>`coalesce(sum(${glJournalLines.debitMinor}), 0)`,
         creditMinor: sql<string>`coalesce(sum(${glJournalLines.creditMinor}), 0)`,
       })
       .from(glJournalLines)
-      .innerJoin(
-        sql`gl_journals`,
-        sql`gl_journals.id = ${glJournalLines.journalId} AND gl_journals.journal_date <= ${asOf}`,
-      )
+      .innerJoin(glJournals, eq(glJournalLines.journalId, glJournals.id))
       .where(
         and(
           eq(glJournalLines.orgId, orgId),
           eq(glJournalLines.bookId, bookId),
           eq(glJournalLines.accountId, accountId),
+          lte(glJournals.journalDate, assertIsoDate(asOf)),
         ),
       );
 
     const debitMinor = Number(row?.debitMinor ?? 0);
     const creditMinor = Number(row?.creditMinor ?? 0);
     return { debitMinor, creditMinor, balanceMinor: debitMinor - creditMinor };
+  }
+
+  /**
+   * Every posting on one account across a window, page by page.
+   *
+   * The account is resolved through `get`, so an id from another tenant or
+   * another book is a 404 rather than a 403 — a 403 would confirm it exists.
+   */
+  async ledger(
+    orgId: string,
+    bookId: string,
+    accountId: string,
+    query: AccountLedgerQuery,
+  ): Promise<AccountLedgerPage> {
+    const account = await this.get(orgId, bookId, accountId);
+
+    const from = assertIsoDate(query.from);
+    const to = assertIsoDate(query.to);
+    if (compareDates(to, from) < 0) {
+      throw new BadRequestException("The window ends before it starts");
+    }
+
+    const opening = await this.balance(orgId, bookId, accountId, addDays(from, -1));
+    return readAccountLedger(this.db, { orgId, bookId, account, from, to }, query, opening);
   }
 }

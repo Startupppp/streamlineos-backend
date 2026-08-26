@@ -3,6 +3,7 @@ import { AccountingKernelModule } from "../kernel/accounting-kernel.module";
 import { BankAccountsService } from "./bank-accounts.service";
 import { StatementImportService } from "./statement-import.service";
 import { MatchingService } from "./matching.service";
+import { ExplainLineService } from "./explain-line.service";
 import { ReconciliationService } from "./reconciliation.service";
 import { BankAccountsController } from "./bank-accounts.controller";
 import { BankStatementsController } from "./bank-statements.controller";
@@ -27,7 +28,19 @@ import { BankMatchingController } from "./matching.controller";
 @Module({
   imports: [AccountingKernelModule],
   controllers: [BankAccountsController, BankStatementsController, BankMatchingController],
-  providers: [BankAccountsService, StatementImportService, MatchingService, ReconciliationService],
-  exports: [BankAccountsService, StatementImportService, MatchingService, ReconciliationService],
+  providers: [
+    BankAccountsService,
+    StatementImportService,
+    MatchingService,
+    ReconciliationService,
+    ExplainLineService,
+  ],
+  exports: [
+    BankAccountsService,
+    StatementImportService,
+    MatchingService,
+    ReconciliationService,
+    ExplainLineService,
+  ],
 })
 export class BankingModule {}

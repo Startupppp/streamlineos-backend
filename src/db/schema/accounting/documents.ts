@@ -213,6 +213,22 @@ export const arDocuments = pgTable(
     ecommerceGstin: text("ecommerce_gstin"),
     exportWithIgst: boolean("export_with_igst").notNull().default(false),
 
+    /**
+     * The rendered tax-invoice PDF in object storage.
+     *
+     * A posted document is immutable, so its PDF is too — render once, keep the
+     * key, and every later download serves the same bytes the customer already
+     * has. Null until first requested, and null forever if R2 is not
+     * configured, which is why the endpoint still returns the bytes it just
+     * generated rather than failing.
+     *
+     * `accounting` is a private folder root, so the URL is the key rather than
+     * anything publicly fetchable — an invoice carries the customer's GSTIN and
+     * address and is served only through the permission-gated route.
+     */
+    pdfStorageKey: text("pdf_storage_key"),
+    pdfStorageUrl: text("pdf_storage_url"),
+
     /** CRM/project pointers, nullable — never a posting input. */
     crmDealId: text("crm_deal_id"),
     dimensionProjectId: integer("dimension_project_id"),

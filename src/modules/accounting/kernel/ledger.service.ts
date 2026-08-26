@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger, Optional } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, isNull, lte, gte, sql } from "drizzle-orm";
 import {
@@ -13,6 +13,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
+import { AuditService } from "../../../common/audit/audit.service";
 import { PackRegistry } from "../packs/pack.registry";
 import { assertIsoDate } from "./fiscal-calendar";
 import { assertCurrencyCode, assertSafeMinor } from "./money";
@@ -66,6 +67,12 @@ export class LedgerService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly sequences: SequenceService,
     private readonly packs: PackRegistry,
+    /**
+     * `@Optional()` so the kernel stays constructible with `new` in tests that
+     * have no request context. Production always gets it — `AuditModule` is
+     * global.
+     */
+    @Optional() private readonly audit?: AuditService,
   ) {}
 
   /* ------------------------------------------------------------- posting */
@@ -223,6 +230,28 @@ export class LedgerService {
 
     const posted = await this.loadJournal(orgId, journalId, tx);
     if (!posted) throw new Error(`Journal ${journalId} vanished immediately after insert`);
+
+    /**
+     * A posting is a privileged act and belongs in the platform audit log
+     * (PRD 09 §N). The outbox event beside it is for other systems to consume;
+     * this is the record a person can query when asked who booked something.
+     */
+    this.audit?.log({
+      action: "accounting.journal.posted",
+      userId: userId ?? "system",
+      orgId,
+      resourceType: "gl_journals",
+      resourceId: journalId,
+      after: {
+        journalNumber,
+        journalDate,
+        sourceType: command.sourceType,
+        sourceId: command.sourceId ?? null,
+        totalDebitMinor: posted.totalDebitMinor,
+        currency: posted.functionalCurrency,
+      },
+    });
+
     return posted;
   }
 
@@ -320,6 +349,16 @@ export class LedgerService {
         `Journal ${original.journalNumber} was reversed concurrently`,
       );
     }
+
+    this.audit?.log({
+      action: "accounting.journal.reversed",
+      userId: userId ?? "system",
+      orgId,
+      resourceType: "gl_journals",
+      resourceId: original.id,
+      before: { journalNumber: original.journalNumber },
+      after: { reversedByJournalNumber: reversal.journalNumber, reversalJournalId: reversal.id },
+    });
 
     return { ...reversal, reversesJournalId: original.id };
   }

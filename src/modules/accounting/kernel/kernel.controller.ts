@@ -323,8 +323,8 @@ export class AccountingKernelController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     const book = await this.books.requireDefault(u.orgId);
-    const opening = await this.accounts.balance(u.orgId, book.id, accountId, query.from);
-    return { accountId, from: query.from, to: query.to, opening };
+    const page = await this.accounts.ledger(u.orgId, book.id, accountId, query);
+    return { ...page, currency: book.baseCurrency };
   }
 
   /* -------------------------------------------------------------- FX */

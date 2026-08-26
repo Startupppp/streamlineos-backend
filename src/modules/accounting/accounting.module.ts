@@ -5,6 +5,7 @@ import { AccountingSetupModule } from "./setup/accounting-setup.module";
 import { AccountingComplianceModule } from "./compliance/accounting-compliance.module";
 import { AccountingAdaptersModule } from "./adapters/accounting-adapters.module";
 import { PartiesModule } from "./parties/parties.module";
+import { AccountingAttachmentsModule } from "./attachments/attachments.module";
 import { ArModule } from "./ar/ar.module";
 import { ApModule } from "./ap/ap.module";
 import { BankingModule } from "./banking/banking.module";
@@ -23,6 +24,7 @@ import { ReportsModule as AccountingReportsModule } from "./reports/reports.modu
  *   banking           cash as GL accounts, plus reconciliation.
  *   reports           reads journal lines and open items. No stored balances.
  *   compliance        e-invoicing state. Fields only in v1.
+ *   attachments       files hanging off a document. Reads, never posts.
  *   adapters          the anti-corruption layer other modules talk through.
  *
  * The rule the whole thing rests on: **only `LedgerService` writes
@@ -38,6 +40,7 @@ const ACCOUNTING_MODULES = [
   ArModule,
   ApModule,
   BankingModule,
+  AccountingAttachmentsModule,
   AccountingReportsModule,
   AccountingAdaptersModule,
 ];

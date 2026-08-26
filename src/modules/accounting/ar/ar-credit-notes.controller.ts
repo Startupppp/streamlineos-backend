@@ -8,8 +8,10 @@ import {
   Patch,
   Post,
   Query,
+  Res,
   UseGuards,
 } from "@nestjs/common";
+import type { Response } from "express";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -19,6 +21,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { ArDocumentsService } from "./ar-documents.service";
+import { ArDocumentPdfService } from "./ar-document-pdf.service";
 import { ArReceiptsService } from "./ar-receipts.service";
 import {
   createCreditNoteSchema,
@@ -44,6 +47,7 @@ export class ArCreditNotesController {
   constructor(
     private readonly documents: ArDocumentsService,
     private readonly receipts: ArReceiptsService,
+    private readonly pdf: ArDocumentPdfService,
   ) {}
 
   @Get()
@@ -79,6 +83,22 @@ export class ArCreditNotesController {
   @RequirePermission("accounting:credit-notes:read")
   previewTax(@Param("creditNoteId") creditNoteId: string, @CurrentUser() u: CurrentUserContext) {
     return this.documents.previewTax(u.orgId, creditNoteId);
+  }
+
+  /** Same layout as the invoice; the words and the signs differ. */
+  @Get(":creditNoteId/pdf")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:credit-notes:read")
+  async pdfDocument(
+    @Param("creditNoteId") creditNoteId: string,
+    @CurrentUser() u: CurrentUserContext,
+    @Res() res: Response,
+  ): Promise<void> {
+    const rendered = await this.pdf.render(u.orgId, creditNoteId, "CREDIT_NOTE");
+    res.setHeader("Content-Type", rendered.contentType);
+    res.setHeader("Content-Disposition", `attachment; filename="${rendered.fileName}"`);
+    res.setHeader("Content-Length", String(rendered.buffer.length));
+    res.send(rendered.buffer);
   }
 
   @Patch(":creditNoteId")

@@ -6,6 +6,7 @@ import { AccountingComplianceModule } from "../compliance/accounting-compliance.
 import { ArAgingController } from "./ar-aging.controller";
 import { ArAgingService } from "./ar-aging.service";
 import { ArCreditNotesController } from "./ar-credit-notes.controller";
+import { ArDocumentPdfService } from "./ar-document-pdf.service";
 import { ArDocumentsService } from "./ar-documents.service";
 import { ArInvoicesController } from "./ar-invoices.controller";
 import { ArReceiptsController } from "./ar-receipts.controller";
@@ -33,7 +34,7 @@ import { ArReceiptsService } from "./ar-receipts.service";
     ArReceiptsController,
     ArAgingController,
   ],
-  providers: [ArDocumentsService, ArReceiptsService, ArAgingService],
-  exports: [ArDocumentsService, ArReceiptsService, ArAgingService],
+  providers: [ArDocumentsService, ArDocumentPdfService, ArReceiptsService, ArAgingService],
+  exports: [ArDocumentsService, ArDocumentPdfService, ArReceiptsService, ArAgingService],
 })
 export class ArModule {}

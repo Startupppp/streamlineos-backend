@@ -169,3 +169,32 @@ export const unreconciledQuerySchema = z
   })
   .strict();
 export type UnreconciledQuery = z.infer<typeof unreconciledQuerySchema>;
+
+/**
+ * Explaining an unmatched bank line: name the other side by account id or by
+ * the role it plays, so a caller need not know a uuid.
+ */
+export const explainLineSchema = z
+  .object({
+    contraAccountId: z.string().min(1).optional(),
+    contraAccountTag: z
+      .enum([
+        "opex",
+        "payment_fees",
+        "other_income",
+        "fx_gain",
+        "fx_loss",
+        "rounding",
+        "statutory_payable",
+        "wht_payable",
+      ])
+      .optional(),
+    memo: z.string().max(500).optional(),
+    description: z.string().max(500).optional(),
+  })
+  .strict()
+  .refine(
+    (v) => Boolean(v.contraAccountId) !== Boolean(v.contraAccountTag),
+    "Give exactly one of contraAccountId or contraAccountTag",
+  );
+export type ExplainLineBody = z.infer<typeof explainLineSchema>;

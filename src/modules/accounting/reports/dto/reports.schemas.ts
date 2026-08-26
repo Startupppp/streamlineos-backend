@@ -21,15 +21,29 @@ const labelMode = z.enum(["founder", "accountant"]).default("founder");
 const format = z.enum(["json", "csv"]).default("json");
 const bookId = z.string().min(1).max(64).optional();
 
+/**
+ * Optional dimension filters (PRD 06 S4). A dimension lives on the journal
+ * line, not the account, so a filtered report is a slice of activity and is not
+ * required to balance — the services say so in the response.
+ */
+const branchId = z.string().min(1).max(64).optional();
+const projectId = z.coerce.number().int().positive().optional();
+
 const baseFields = {
   bookId,
   labelMode,
   format,
 };
 
+const dimensionFields = {
+  branchId,
+  projectId,
+};
+
 export const trialBalanceQuerySchema = z
   .object({
     ...baseFields,
+    ...dimensionFields,
     asOf: isoDate,
     includeZeroActivity: queryBoolean.optional(),
   })
@@ -39,6 +53,7 @@ export type TrialBalanceQueryDto = z.infer<typeof trialBalanceQuerySchema>;
 export const profitLossQuerySchema = z
   .object({
     ...baseFields,
+    ...dimensionFields,
     from: isoDate,
     to: isoDate,
     comparative: queryBoolean.optional(),

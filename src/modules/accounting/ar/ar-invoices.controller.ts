@@ -8,8 +8,10 @@ import {
   Patch,
   Post,
   Query,
+  Res,
   UseGuards,
 } from "@nestjs/common";
+import type { Response } from "express";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -19,6 +21,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { ArDocumentsService } from "./ar-documents.service";
+import { ArDocumentPdfService } from "./ar-document-pdf.service";
 import {
   createInvoiceSchema,
   creditNoteFromInvoiceSchema,
@@ -34,7 +37,10 @@ import {
 @Controller("accounting/ar/invoices")
 @UseGuards(JwtAuthGuard)
 export class ArInvoicesController {
-  constructor(private readonly documents: ArDocumentsService) {}
+  constructor(
+    private readonly documents: ArDocumentsService,
+    private readonly pdf: ArDocumentPdfService,
+  ) {}
 
   @Get()
   @UseGuards(PermissionGuard)
@@ -78,6 +84,29 @@ export class ArInvoicesController {
   @RequirePermission("accounting:taxes:read")
   taxLines(@Param("invoiceId") invoiceId: string, @CurrentUser() u: CurrentUserContext) {
     return this.documents.frozenTaxLines(u.orgId, invoiceId);
+  }
+
+  /**
+   * The printable tax invoice (PRD 05 M6, backlog §F "PDF can be plain").
+   *
+   * Only a posted invoice has one — a draft has no number and no frozen tax,
+   * so it 409s rather than printing a document that would be wrong the moment
+   * it was posted. Rendered once and kept in object storage; when storage is
+   * absent the bytes still come back.
+   */
+  @Get(":invoiceId/pdf")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:receivables:read")
+  async pdfDocument(
+    @Param("invoiceId") invoiceId: string,
+    @CurrentUser() u: CurrentUserContext,
+    @Res() res: Response,
+  ): Promise<void> {
+    const rendered = await this.pdf.render(u.orgId, invoiceId, "INVOICE");
+    res.setHeader("Content-Type", rendered.contentType);
+    res.setHeader("Content-Disposition", `attachment; filename="${rendered.fileName}"`);
+    res.setHeader("Content-Length", String(rendered.buffer.length));
+    res.send(rendered.buffer);
   }
 
   @Patch(":invoiceId")

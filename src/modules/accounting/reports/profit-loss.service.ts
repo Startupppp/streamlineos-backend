@@ -32,6 +32,9 @@ export interface ProfitLossQuery {
   clampToFiscalYear?: boolean;
   includeZeroActivity?: boolean;
   labelMode?: LabelMode;
+  /** Narrow to one branch or project (PRD 06 S4). */
+  branchId?: string;
+  projectId?: number;
 }
 
 export interface ProfitLossLine {
@@ -115,7 +118,7 @@ export class ProfitLossService {
 
     const movements = await readAccountMovementsWithZeros(
       this.db,
-      { orgId, bookId: book.id, from, to },
+      { orgId, bookId: book.id, from, to, branchId: query.branchId, projectId: query.projectId },
       includeZeroActivity,
     );
 

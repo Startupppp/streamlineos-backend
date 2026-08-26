@@ -7,20 +7,23 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { MatchingService } from "./matching.service";
+import { ExplainLineService } from "./explain-line.service";
 import {
+  explainLineSchema,
   matchCounterpartSchema,
   suggestionsQuerySchema,
   unreconciledQuerySchema,
   type MatchCounterpartBody,
   type SuggestionsQuery,
   type UnreconciledQuery,
+  type ExplainLineBody,
 } from "./dto/banking.schemas";
 
 @RequireModule("accounting")
 @Controller("accounting/banking")
 @UseGuards(JwtAuthGuard)
 export class BankMatchingController {
-  constructor(private readonly matching: MatchingService) {}
+  constructor(private readonly matching: MatchingService, private readonly explainLine: ExplainLineService) {}
 
   /** Rules-only candidates, each carrying the reasons it scored what it did. */
   @Get("statement-lines/:statementLineId/suggestions")
@@ -44,6 +47,23 @@ export class BankMatchingController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.matching.match(u.orgId, u.userId, statementLineId, body);
+  }
+
+  /**
+   * Post a journal for a line nothing explains, and match it — one action, one
+   * transaction (PRD 04 S2). Bank charges and interest have no receipt or
+   * payment to match against, and the second step is the one people skip.
+   */
+  @Post("statement-lines/:statementLineId/explain")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:banking:reconcile")
+  @HttpCode(201)
+  explain(
+    @Param("statementLineId") statementLineId: string,
+    @Body(new ZodValidationPipe(explainLineSchema)) body: ExplainLineBody,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.explainLine.explain(u.orgId, u.userId, statementLineId, body);
   }
 
   @Delete("statement-lines/:statementLineId/match")

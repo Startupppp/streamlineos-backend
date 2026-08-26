@@ -144,6 +144,18 @@ export interface MovementWindow {
   from?: string;
   /** Inclusive. Every report is as-of or up-to some date. */
   to: string;
+  /**
+   * Optional dimension filters (PRD 06 S4). A branch or project narrows the
+   * report to lines carrying that dimension.
+   *
+   * Note what this does to a balance sheet: a dimension is on the *line*, not
+   * the account, and nothing forces both sides of a journal to carry the same
+   * one — so a filtered trial balance is a genuine slice of activity but is not
+   * required to balance. Callers that assert balance must say so to the reader
+   * rather than hiding it.
+   */
+  branchId?: string;
+  projectId?: number;
 }
 
 /**
@@ -169,6 +181,10 @@ export async function readAccountMovements(
     lte(glJournals.journalDate, to),
   ];
   if (window.from) predicates.push(gte(glJournals.journalDate, assertIsoDate(window.from)));
+  if (window.branchId) predicates.push(eq(glJournalLines.dimensionBranchId, window.branchId));
+  if (window.projectId !== undefined) {
+    predicates.push(eq(glJournalLines.dimensionProjectId, window.projectId));
+  }
 
   const rows = await db
     .select({
